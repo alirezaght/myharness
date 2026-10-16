@@ -87,9 +87,9 @@ def test_scripted_interview_run(run, task_id):
     accepted = _propose(run, task_id, existing, "Keep old exports")
     group_out, group = _next(run, task_id, "--group")
     assert [qid for qid, _, _ in group] == [existing] and "rationale: because" in group_out
-    assert (
-        run("interview", "decide", task_id, str(accepted), "accept")[1] == f"P{accepted} accepted\n"
-    )
+    decided = run("interview", "decide", task_id, str(accepted), "accept")[1].splitlines()
+    assert decided[0] == f"P{accepted} accepted"
+    assert re.fullmatch(r"recorded DEC-0003 v1 -> .*/docs/decisions/DEC-0003-t\.md", decided[1])
     rejected = _propose(run, task_id, criteria, "Do nothing")
     assert (
         run("interview", "decide", task_id, str(rejected), "reject")[1] == f"P{rejected} rejected\n"

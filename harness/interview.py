@@ -7,6 +7,8 @@ from typing import Any
 from harness.classification import interview_depth
 from harness.controller import HarnessController, Task
 from harness.db import transaction, utcnow
+from harness.decision_workflow import discard_on_failure, record_approved_proposal
+from harness.decisions import DecisionRecord
 from harness.interview_catalogue import catalogue_for
 from harness.interview_report import InterviewChecklist, InterviewSummary
 from harness.interview_review import (
@@ -18,6 +20,7 @@ from harness.interview_review import (
     plan_sync,
 )
 from harness.phases import Phase
+from harness.registry import DecisionRegistry
 from harness.state_models import (
     Proposal,
     ProposalStatus,
@@ -45,11 +48,18 @@ def _is_non_answer(text: str) -> bool:
 
 
 class InterviewEngine:
-    def __init__(self, controller: HarnessController, task_id: str):
+    def __init__(
+        self,
+        controller: HarnessController,
+        task_id: str,
+        registry: DecisionRegistry | None = None,
+    ):
         self.controller = controller
         self.conn = controller.conn
         self.task_id = controller.get_task(task_id).id
         self.ws = controller.workspace(task_id)
+        self.registry = registry
+        self.last_record: DecisionRecord | None = None
 
     # Read-only views
 
@@ -124,25 +134,37 @@ class InterviewEngine:
         return question
 
     def propose(
-        self, question_id: int, title: str, recommendation: str, rationale: str
+        self,
+        question_id: int,
+        title: str,
+        recommendation: str,
+        rationale: str,
+        impact: str | None = None,
     ) -> Proposal:
         with self._mutation():
             self._open(question_id)
             self.ws.mark_asked(question_id)
-            proposal = self.ws.propose(title, recommendation, rationale, question_id)
+            proposal = self.ws.propose(title, recommendation, rationale, question_id, impact)
             self.ws.record_event("proposal.created", {"id": proposal.id, "question": question_id})
         return proposal
 
     def decide(self, proposal_id: int, status: ProposalStatus, response: str | None) -> Proposal:
-        with self._mutation():
+        """Resolve a recommendation; an approved decision question is recorded (last_record)."""
+        self.last_record = None
+        with discard_on_failure() as written, self._mutation():
             proposal = self.ws.resolve(proposal_id, status, response)
             qid = proposal.question_id
             if proposal.status in DECIDED and qid is not None:
-                if self.ws.question(qid).status is QuestionStatus.OPEN:
+                question = self.ws.question(qid)
+                if question.status is QuestionStatus.OPEN:
                     self.ws.mark_decided(qid)
+                if self.registry is not None:
+                    record = record_approved_proposal(self.ws, self.registry, proposal, question)
+                    written.extend([record] if record else [])
             self.ws.record_event(
                 "proposal.decided", {"id": proposal_id, "status": proposal.status, "question": qid}
             )
+        self.last_record = written[0] if written else None
         return proposal
 
     # Internals

@@ -6,6 +6,7 @@ import sys
 from harness import __version__
 from harness.classification import Complexity
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
+from harness.cli_decision import add_decision_parser
 from harness.cli_design import add_design_parser
 from harness.cli_interview import add_interview_parser
 from harness.controller import TaskNotFound
@@ -63,6 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_interview_parser(subparsers)
     add_design_parser(subparsers)
+    add_decision_parser(subparsers)
 
     resume = subparsers.add_parser("resume", help="resume an existing task")
     resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")
@@ -84,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         return NOT_IMPLEMENTED_EXIT_CODE
     try:
         return handler(args)
-    except (InvalidTransition, TaskNotFound, RecordNotFound, ValueError) as error:
+    except (InvalidTransition, TaskNotFound, RecordNotFound, ValueError, OSError) as error:
         print(f"harness {args.command}: {error}", file=sys.stderr)
         return ERROR_EXIT_CODE
 

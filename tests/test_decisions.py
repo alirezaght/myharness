@@ -6,7 +6,9 @@ from harness.decisions import (
     DecisionParseError,
     DecisionStatus,
     decision_files,
+    history_files,
     load_decisions,
+    load_history,
     parse_decision,
 )
 from tests.sample_repo import APPROVED
@@ -58,3 +60,27 @@ def test_supersedes_value_is_kept(tmp_path):
     path = tmp_path / "DEC-0003-new.md"
     path.write_text(APPROVED.replace("- **Supersedes:** none", "- **Supersedes:** DEC-0001"))
     assert parse_decision(path).supersedes == "DEC-0001"
+
+
+def test_superseded_by_and_history_files(tmp_path):
+    history = tmp_path / "history"
+    history.mkdir()
+    old = APPROVED.replace("approved", "superseded").replace(
+        "- **Supersedes:** none", "- **Supersedes:** none\n- **Superseded by:** DEC-0001 v2"
+    )
+    (history / "DEC-0001-v1-storage.md").write_text(old, encoding="utf-8")
+    (tmp_path / "DEC-0001-storage.md").write_text(
+        APPROVED.replace("- **Version:** 1", "- **Version:** 2"), encoding="utf-8"
+    )
+    assert [p.name for p in decision_files(tmp_path)] == ["DEC-0001-storage.md"]
+    assert [p.name for p in history_files(tmp_path)] == ["DEC-0001-v1-storage.md"]
+    [current] = load_decisions(tmp_path)
+    [previous] = load_history(tmp_path)
+    assert (current.version, current.superseded_by) == (2, None)
+    assert (previous.version, previous.status, previous.superseded_by) == (
+        1,
+        DecisionStatus.SUPERSEDED,
+        "DEC-0001 v2",
+    )
+    assert load_history(tmp_path, "DEC-0009") == []
+    assert history_files(tmp_path / "nope") == []

@@ -96,8 +96,8 @@ uv run harness interview answer <id> <qid> <text>   # record the developer's ans
 uv run harness interview unknown <id> <qid>   # "I don't know": the question stays open
 uv run harness interview skip <id> <qid> --source decision|codebase|not_relevant --ref <ref>   # skip with provenance
 uv run harness interview ask <id> <topic> <text> [--decision]   # add a follow-up question
-uv run harness interview propose <id> <qid> --title T --recommendation R --rationale W   # attach a recommendation
-uv run harness interview decide <id> <pid> accept|reject|modify [--response TEXT]   # developer's verdict
+uv run harness interview propose <id> <qid> --title T --recommendation R --rationale W [--impact I]   # attach a recommendation
+uv run harness interview decide <id> <pid> accept|reject|modify [--response TEXT] [--decisions PATH]   # developer's verdict (records a decision question's approval)
 uv run harness interview checklist <id> [--json]   # unresolved-decision checklist (read-only)
 uv run harness interview summary <id> [--json]   # requirements with provenance (read-only)
 uv run harness design add <id> <section> <text...> [--delegated]   # record a design element the developer stated
@@ -107,6 +107,12 @@ uv run harness design decide <id> <eid> accept|reject|modify [--response TEXT]  
 uv run harness design withdraw <id> <eid>   # withdraw an effective design entry
 uv run harness design show <id> [--json]   # design section with provenance (read-only)
 uv run harness design coverage <id> [--json]   # uncovered and unresolved design items (read-only)
+uv run harness decision list [--decisions PATH] [--json]   # latest version of every decision (read-only)
+uv run harness decision show <DEC-id> [--history] [--decisions PATH] [--json]   # one decision, --history adds every earlier version (read-only)
+uv run harness decision record <id> --title T --decision C --rationale W [--scope S] [--impact I] [--decisions PATH]   # record a decision the developer stated
+uv run harness decision change <id> <DEC-id> --decision C --rationale W --impact I [--title T] [--scope S] [--decisions PATH]   # preview a change, writes nothing
+uv run harness decision decide <id> <cid> accept|reject|modify [--response TEXT] [--decisions PATH]   # developer's verdict on a proposed change
+uv run harness decision suggest <id> --from PATH [--from PATH ...] [--json] [--decisions PATH]   # hints from other repositories' decisions (read-only)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -135,6 +141,14 @@ Provenance rules: a design entry exists only if the developer stated it (`add`),
 
 Every mutating command is one transaction that records an event and a `design` checkpoint, and fails with exit 1 outside the design phase (the error says how to get there). `show` and `coverage` are read-only and work in any phase. Nothing is written to the target repository.
 
+### Decisions
+
+`harness decision` manages the decision registry (SPEC §6.4, §6.3): one Git-versioned Markdown record per decision in the target repository's `docs/decisions` (by default the repository the task was investigated in, or `--decisions PATH`). A record carries its id, decision, rationale, scope, status, version, timestamp, supersedes and impact. A decision is recorded automatically when the developer approves it: `harness interview decide <id> <pid> accept|modify` on a decision question writes the record (the recommendation, or the developer's modification, with the rationale from the proposal and the `--impact` given to `interview propose`) and prints `recorded DEC-NNNN v1 -> <path>`. Rejecting writes nothing, and neither does a plain question. A decision the developer states directly is recorded with `harness decision record`. Blank scope and impact are stored as "not stated", never invented.
+
+Changing an earlier decision never edits it in place. `harness decision change` writes nothing: it prints the original decision, rationale and impact, what references it, the proposed new version and the consequences of the change, and keeps the change pending. Only the developer's `harness decision decide <id> <cid> accept|reject|modify` writes a file, and it is refused if the record changed on disk in the meantime. The new version keeps the same ID with the version incremented and a `Supersedes` line. The previous version moves to `docs/decisions/history/DEC-NNNN-v<N>-<slug>.md` with status `superseded` and a `Superseded by` line, so the whole chain stays in Git and a fresh clone reads every approved decision. `harness decision list` and `show` display the latest version by default; `show --history` and `--json` expose the chain. Only approved decisions can be changed.
+
+The three commands that write into the target repository's `docs/decisions` are `interview decide` (accept or modify on a decision question), `decision record` and `decision decide` (accept or modify on a pending change). `harness decision suggest --from PATH` is read-only: it reads approved decisions from the repositories you name with `--from`, never any others, and prints relevant ones as suggestions only. Nothing is written or applied, and adopting one means proposing it in the interview for the developer to decide.
+
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-06 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check). Next task: P1-07.
+Design spec approved for implementation; P1-01 to P1-07 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions). Next task: P1-08.

@@ -68,6 +68,7 @@ class Proposal:
     response: str | None
     created_at: str
     resolved_at: str | None
+    impact: str | None = None
 
 
 @dataclass(frozen=True)
@@ -120,6 +121,7 @@ def proposal_from_row(row: sqlite3.Row) -> Proposal:
         response=row["response"],
         created_at=row["created_at"],
         resolved_at=row["resolved_at"],
+        impact=row["impact"],
     )
 
 

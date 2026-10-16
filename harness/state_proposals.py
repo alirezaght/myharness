@@ -20,7 +20,12 @@ class ProposalsMixin:
     task_id: str
 
     def propose(
-        self, title: str, recommendation: str, rationale: str, question_id: int | None = None
+        self,
+        title: str,
+        recommendation: str,
+        rationale: str,
+        question_id: int | None = None,
+        impact: str | None = None,
     ) -> Proposal:
         title = required(title, "title")
         recommendation = required(recommendation, "recommendation")
@@ -29,7 +34,7 @@ class ProposalsMixin:
             self.question(question_id)
         cursor = self.conn.execute(
             "INSERT INTO proposals (task_id, question_id, title, recommendation, rationale,"
-            " status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " status, created_at, impact) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 self.task_id,
                 question_id,
@@ -38,6 +43,7 @@ class ProposalsMixin:
                 rationale,
                 ProposalStatus.PENDING,
                 utcnow(),
+                (impact or "").strip() or None,
             ),
         )
         return self.proposal(cursor.lastrowid)

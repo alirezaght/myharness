@@ -4,6 +4,7 @@ import argparse
 import json
 
 from harness.cli_commands import _controller
+from harness.cli_decision import registry_for
 from harness.interview import InterviewEngine
 from harness.state_models import ProposalStatus, Question, QuestionKind, SkipSource
 
@@ -32,7 +33,10 @@ def _print_question(engine: InterviewEngine, question: Question) -> None:
 
 def cmd_interview(args: argparse.Namespace) -> int:
     with _controller(args) as controller:
-        engine = InterviewEngine(controller, args.task_id)
+        registry = None
+        if args.interview_action == "decide":
+            registry = registry_for(controller, args.task_id, args.decisions)
+        engine = InterviewEngine(controller, args.task_id, registry)
         action = args.interview_action
         if action == "next":
             asked = engine.next(group=args.group)
@@ -59,12 +63,15 @@ def cmd_interview(args: argparse.Namespace) -> int:
             print(f"Q{question.id} added [{question.topic}]")
         elif action == "propose":
             proposal = engine.propose(
-                args.question_id, args.title, args.recommendation, args.rationale
+                args.question_id, args.title, args.recommendation, args.rationale, args.impact
             )
             print(f"P{proposal.id} pending for Q{args.question_id}")
         elif action == "decide":
             proposal = engine.decide(args.proposal_id, DECISIONS[args.verdict], args.response)
             print(f"P{proposal.id} {proposal.status}")
+            if engine.last_record is not None:
+                record = engine.last_record
+                print(f"recorded {record.id} v{record.version} -> {record.path}")
         else:
             view = engine.checklist() if action == "checklist" else engine.summary()
             print(
@@ -103,10 +110,14 @@ def add_interview_parser(subparsers: argparse._SubParsersAction) -> None:
     propose.add_argument("question_id", type=int)
     for flag in ("--title", "--recommendation", "--rationale"):
         propose.add_argument(flag, required=True)
+    propose.add_argument("--impact", help="consequences of the decision, recorded with it")
     decide = action("decide", "record the developer's decision on a recommendation")
     decide.add_argument("proposal_id", type=int)
     decide.add_argument("verdict", choices=list(DECISIONS))
     decide.add_argument("--response", help="the developer's change (required for modify)")
+    decide.add_argument(
+        "--decisions", metavar="PATH", help="registry (default: <repo>/docs/decisions)"
+    )
     for name, help_text in (
         ("checklist", "unresolved decision checklist (read-only)"),
         ("summary", "requirements with provenance (read-only)"),

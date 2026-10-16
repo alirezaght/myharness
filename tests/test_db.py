@@ -111,6 +111,7 @@ def test_existing_0001_database_upgrades_keeping_rows(tmp_path):
             "0002_workspace.sql",
             "0003_interview.sql",
             "0004_design.sql",
+            "0005_decision_changes.sql",
         ]
         controller = HarnessController(conn)
         assert controller.get_task("t-old00001").request == "Old task"
@@ -134,6 +135,7 @@ def test_upgrade_applies_only_the_new_migration(tmp_path, monkeypatch):
             "0002_workspace.sql",
             "0003_interview.sql",
             "0004_design.sql",
+            "0005_decision_changes.sql",
         ]
     finally:
         raw.close()
@@ -205,6 +207,7 @@ def test_0002_database_upgrades_questions_with_interview_columns(tmp_path, monke
             "0002_workspace.sql",
             "0003_interview.sql",
             "0004_design.sql",
+            "0005_decision_changes.sql",
         ]
         upgraded = HarnessController(conn).workspace(task.id).question(question_id)
         assert (upgraded.kind, upgraded.asked_at, upgraded.skip_source) == ("question", None, None)
@@ -233,11 +236,49 @@ def test_0003_database_upgrades_with_design_entries(tmp_path, monkeypatch):
     try:
         assert db_module.apply_migrations(conn) == []
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0004_design.sql"
+        assert names[-1] == "0005_decision_changes.sql"
         ws = HarnessController(conn).workspace(task.id)
         assert ws.question(question.id).text == "Which formats?"
         assert ws.design_entries() == []
         entry = ws.state_design("components", "an Exporter")
         assert ws.design_entries() == [entry]
+    finally:
+        conn.close()
+
+
+def test_0004_database_upgrades_with_decision_changes(tmp_path, monkeypatch):
+    from harness import db as db_module
+
+    db = tmp_path / "old.db"
+    first_four = [m for m in db_module._migrations() if m[0] <= 4]
+    monkeypatch.setattr(db_module, "_migrations", lambda: first_four)
+    old = connect(db)
+    task = HarnessController(old).create_task("Old task")
+    proposal = (
+        HarnessController(old)
+        .workspace(task.id)
+        .conn.execute(
+            "INSERT INTO proposals (task_id, title, recommendation, rationale, status, created_at)"
+            " VALUES (?, 'T', 'R', 'W', 'pending', 'then')",
+            (task.id,),
+        )
+        .lastrowid
+    )
+    old.close()
+    monkeypatch.undo()
+
+    conn = connect(db)
+    try:
+        ws = HarnessController(conn).workspace(task.id)
+        assert ws.proposal(proposal).impact is None
+        assert ws.decision_changes() == []
+        change = ws.propose_change("DEC-0001", 1, "T", "D", "R", "", "")
+        assert (change.ref, change.status, change.scope, change.impact) == (
+            "C1",
+            "pending",
+            "not stated",
+            "not stated",
+        )
+        assert ws.decision_changes("pending") == [change]
     finally:
         conn.close()

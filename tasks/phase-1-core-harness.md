@@ -53,11 +53,11 @@
 **Done when:** the design section of the spec covers every item in SPEC §3, step 3.
 
 ### P1-07 — Decision Registry (Git-versioned Markdown)
-- [ ] Decision record: id, content, rationale, scope, status, version, timestamp, supersedes, impact (§6.4)
-- [ ] Automatic recording on approval
-- [ ] Changing a decision shows the original rationale and the impact, and requires approval
-- [ ] The latest version is shown by default. History stays accessible (AC 13, 15)
-- [ ] Cross-project knowledge only produces suggestions and never auto-applies (§6.3)
+- [x] Decision record: id, content, rationale, scope, status, version, timestamp, supersedes, impact (§6.4)
+- [x] Automatic recording on approval
+- [x] Changing a decision shows the original rationale and the impact, and requires approval
+- [x] The latest version is shown by default. History stays accessible (AC 13, 15)
+- [x] Cross-project knowledge only produces suggestions and never auto-applies (§6.3)
 
 **Done when:** superseding a decision keeps the full chain, and a fresh clone can read every approved decision.
 
