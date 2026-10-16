@@ -74,7 +74,7 @@ def _create(sid, expected_run, **fields):
 
 def _fingerprint(entry):
     try:
-        return L.scope_fingerprint(entry["scope"], entry["env"], entry.get("sources", [])) if entry["scope"] else None
+        return L.scope_fingerprint(entry["scope"], entry["env"], entry.get("sources", []), entry["cwd"]) if entry["scope"] else None
     except L.FingerprintError as exc:
         entry["fingerprint_error"] = str(exc)
         return "unavailable"
@@ -104,7 +104,6 @@ def _stop(proc):
 
 def _execute(sid, entry, timeout, commit=True):
     """Run entry['argv'] in entry['cwd'], streaming everything into the log."""
-    cwd = al_store.REPO_ROOT / entry["cwd"]
     name = f"{entry.get('run') or 'run'}-{entry['id']}-{entry['area']}-{entry['kind']}.log"
     log = L.log_dir(sid) / name.replace("/", "_")
     entry["log"] = str(log)
@@ -114,8 +113,11 @@ def _execute(sid, entry, timeout, commit=True):
         out.flush()
         start = out.tell()
         try:
-            try:gaps=L.check_scope(entry['scope'],entry.get('sources',[]),entry['cwd']) if entry['scope'] else []
-            except L.FingerprintError as exc:raise PermissionError(str(exc)) from exc
+            try:
+                relative=Sources.canonical_cwd(al_store.REPO_ROOT,entry['cwd'])
+                gaps=L.check_scope(entry['scope'],entry.get('sources',[]),relative) if entry['scope'] else []
+                cwd=al_store.REPO_ROOT.resolve()/relative
+            except (L.FingerprintError,Sources.SourceError) as exc:raise PermissionError(str(exc)) from exc
             if entry.get('fingerprint_error') or gaps:
                 raise PermissionError(entry.get('fingerprint_error') or '; '.join(gaps))
             proc = subprocess.Popen(entry["argv"], cwd=cwd, stdout=out, stderr=subprocess.STDOUT,
@@ -206,7 +208,6 @@ def cmd_evidence_run(a, sid):
         if not scope:
             sys.exit("al_state: an ad-hoc evidence run needs --scope (what this command depends on)")
         sources=_sources_file(a)
-        _require_scope(scope,sources,a.cwd or ".")
         spec = {"area": a.area, "kind": a.kind, "tier": a.tier or "focused", "argv": a.command_argv,
                 "cwd": a.cwd or ".", "scope": scope, "sources": sources, "env": _split(a.env),
                 "preflight": a.preflight or None, "needs": _split(a.needs)}
@@ -215,6 +216,7 @@ def cmd_evidence_run(a, sid):
         if getattr(a,"sources_file",None):spec["sources"]=_sources_file(a)
     else:
         sys.exit(f"al_state: no planned check named {a.area}; plan it or pass `-- <argv>`")
+    _require_scope(spec["scope"],spec.get("sources",[]),spec["cwd"])
     if not (al_store.REPO_ROOT / spec["cwd"]).is_dir():
         sys.exit(f"al_state: cwd {spec['cwd']} does not exist under {al_store.REPO_ROOT}")
     missing = L.unmet(st, spec)

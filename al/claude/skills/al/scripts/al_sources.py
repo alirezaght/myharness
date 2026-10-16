@@ -35,7 +35,21 @@ def boundaries(rows):
     return {r['path']:r for r in rows if r.get('child') and r['child']['state']!='replaced'}
 
 
-def capability_gaps(scope,sources,rows,cwd='.'):
+def canonical_cwd(root,cwd):
+    if not isinstance(cwd,str) or not cwd or Path(cwd).is_absolute() or '..' in Path(cwd).parts:
+        raise SourceError('cwd must use the existing repository-relative path grammar')
+    try:
+        parent=Path(root).resolve();target=(parent/cwd).resolve()
+        if target!=parent and parent not in target.parents:
+            raise SourceError('cwd escapes parent repository')
+        if not target.is_dir():raise SourceError('cwd does not exist or is not a directory')
+        return target.relative_to(parent).as_posix()
+    except (OSError,RuntimeError) as exc:
+        raise SourceError('cannot resolve cwd: '+str(exc)) from exc
+
+
+def capability_gaps(scope,sources,rows,cwd='.',*,root):
+    cwd=canonical_cwd(root,cwd)
     declarations=validate_sources(sources)
     declared={item['path']:item['capability'] for item in declarations}
     links=boundaries(rows);by_path={r['path']:r for r in rows};out=[]

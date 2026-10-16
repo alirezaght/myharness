@@ -135,7 +135,7 @@ def test_explicit_gitlink_scope_and_irrelevant_declarations(repo,gitlink):
     assert L.check_scope(['svc/vendor'],PARENT)==[]
     assert L.scope_fingerprint(['svc/vendor'],sources=PARENT)
     irrelevant=[{'path':'svc/app.py','capability':'parent-entry'}]
-    assert any('not a submodule' in gap for gap in Sources.capability_gaps(['svc'],irrelevant,[{'path':'svc/app.py','worktree':{'type':'file'}}]))
+    assert any('not a submodule' in gap for gap in Sources.capability_gaps(['svc'],irrelevant,[{'path':'svc/app.py','worktree':{'type':'file'}}],root=repo))
 
 
 def test_discovery_requires_capability_and_preserves_reviewed_declarations(cli,repo,tmp_path,gitlink):
@@ -162,3 +162,45 @@ def test_removed_gitlink_gate_uses_each_stage_parent_state(cli,repo,tmp_path,git
     gate_plan(cli,tmp_path,command,['svc'],PARENT)
     invoke(cli,'gates','run','--stage',stage)
     finished(cli,'PASS')
+
+
+@pytest.mark.parametrize('form',['alias','absolute','dotdot','outside-alias','outside-absolute'])
+def test_canonical_cwd_child_and_outside_forms_never_launch(cli,repo,tmp_path,gitlink,form):
+    path,_,_=gitlink
+    outside=tmp_path/'outside';outside.mkdir()
+    (repo/'alias').symlink_to('svc/vendor',target_is_directory=True)
+    (repo/'outside-alias').symlink_to(outside,target_is_directory=True)
+    cwd={'alias':'alias','absolute':str(path),'dotdot':'svc/../svc/vendor',
+         'outside-alias':'outside-alias','outside-absolute':str(outside)}[form]
+    invoke(cli,'start','--spec','Reject parent-only evidence in child and outside working directories before any launch.')
+    marker=tmp_path/'never'
+    result=cli('evidence','run','--area','cwd','--scope','svc','--sources-file',source_file(tmp_path),
+               '--cwd',cwd,'--',*ok_cmd('1 passed',marker))
+    assert result[0]!=0 and not marker.exists()
+
+
+@pytest.mark.parametrize('cwd',['.','svc','safe-alias'])
+def test_canonical_cwd_ordinary_relative_and_contained_alias_execute(cli,repo,tmp_path,gitlink,cwd):
+    (repo/'safe-alias').symlink_to('svc',target_is_directory=True)
+    invoke(cli,'start','--spec','Preserve ordinary relative and safe contained alias working directory behavior.')
+    marker=tmp_path/'ran'
+    body='from pathlib import Path; Path('+repr(str(marker))+').write_text(str(Path.cwd())); print("1 passed")'
+    invoke(cli,'evidence','run','--area','ordinary-cwd','--scope','svc','--sources-file',source_file(tmp_path),
+           '--cwd',cwd,'--',sys.executable,'-c',body)
+    assert marker.read_text()==str(repo.resolve() if cwd=='.' else (repo/'svc').resolve())
+
+
+@pytest.mark.parametrize('fresh',[False,True])
+def test_canonical_cwd_planned_alias_retarget_cannot_reuse_or_launch(cli,repo,tmp_path,gitlink,state_file,fresh):
+    ordinary=repo/'svc/ordinary';ordinary.mkdir();(ordinary/'input').write_text('parent input')
+    alias=repo/'alias';alias.symlink_to('svc/ordinary',target_is_directory=True)
+    invoke(cli,'start','--spec','Revalidate a planned working directory before cached reuse and command execution.')
+    marker=tmp_path/'execution'
+    invoke(cli,'evidence','plan','--area','planned-cwd','--tier','focused','--scope','svc',
+           '--sources-file',source_file(tmp_path),'--cwd','alias','--',*ok_cmd('1 passed',marker))
+    invoke(cli,'evidence','run','--area','planned-cwd')
+    assert marker.exists();marker.unlink()
+    alias.unlink();alias.symlink_to('svc/vendor',target_is_directory=True)
+    result=cli('evidence','run','--area','planned-cwd',*(['--fresh'] if fresh else []))
+    assert result[0]!=0 and not marker.exists() and 'reused' not in result[1]
+    assert len(entries(state_file))==1

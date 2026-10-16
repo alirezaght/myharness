@@ -9,6 +9,8 @@ import al_checkouts
 from al_gate_process import Owner,stop
 import al_evidence as E
 import al_gate_discovery as D
+import al_gate_inventory as V
+import al_gitlinks as G
 import al_ledger as L
 import al_scope as S
 import al_store
@@ -50,9 +52,10 @@ def candidate_gaps(st):
     m=manifest(st)
     if m:
         changed=S.changed_paths(st['identity']['merge_base'])
+        opaque={row['path'] for row in S.source_rows() if G.opaque(row)}
         for raw in changed:
             p=raw; units=m.get('units',[])
-            unit='/'.join(p.split('/')[:2]) if p.startswith(('services/','apps/','packages/')) else '.'
+            unit=V.classify_unit(p,opaque)
             if unit not in units: return ['new touched unit requires extended base/candidate gates: '+unit]
     return gate_gaps(st,'candidate')
 
@@ -108,7 +111,7 @@ def cmd_run(a,sid):
                 with al_checkouts.materialize(st,a.stage,base=m['base_oid']) as checkout:
                     root=checkout['root']
                     gaps=L.check_scope(g['scope'],g.get('sources',[]),g['cwd'],require_matches=False)
-                    gaps+=Sources.capability_gaps(g['scope'],g.get('sources',[]),S.source_rows(root),g['cwd'])
+                    gaps+=Sources.capability_gaps(g['scope'],g.get('sources',[]),S.source_rows(root),g['cwd'],root=root)
                     if gaps:raise al_checkouts.MaterializationError('; '.join(gaps))
                     cwd=al_checkouts.gate_cwd(root,g['cwd'])
                     fp=checkout['capture']['fingerprint'] if a.stage=='candidate' else m['base_oid']
@@ -137,7 +140,7 @@ def cmd_run(a,sid):
             except al_checkouts.MaterializationError as exc:
                 status='INFRA';code=126;fp=None;note='rejected '+a.stage+' materialization'
                 log.write_text('Disposable materialization rejected: '+str(exc)+'\n')
-            except (L.FingerprintError, SystemExit) as exc:
+            except (L.FingerprintError, Sources.SourceError, SystemExit) as exc:
                 status='INFRA';code=126;fp=None;note='source capture/capability unavailable'
                 log.write_text(str(exc)+'\n')
             except KeyboardInterrupt:

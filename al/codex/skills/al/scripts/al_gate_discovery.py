@@ -52,7 +52,7 @@ def discover(st,paths,ci_context=None):
     rows=S.source_rows()
     for item in gates:
         if item['applicability']=='NOT_APPLICABLE':continue
-        gaps=Sources.capability_gaps(item['scope'],item.get('sources',[]),rows,item['cwd'])
+        gaps=Sources.capability_gaps(item['scope'],item.get('sources',[]),rows,item['cwd'],root=al_store.REPO_ROOT)
         if gaps:
             item.update(applicability='UNRESOLVED',reason='; '.join(gaps))
     manifest={'schema_version':1,'id':'G1','revision':1,'base_oid':st['identity']['merge_base'],'units':units,'paths':paths,'rules':rules,'gates':gates}

@@ -132,7 +132,7 @@ def check_scope(scope, sources=(), cwd='.', require_matches=True):
     if problems:return problems
     try:
         rows=S.source_rows()
-        return Sources.capability_gaps(scope,sources,rows,cwd)
+        return Sources.capability_gaps(scope,sources,rows,cwd,root=root)
     except (Sources.SourceError,SystemExit) as exc:
         raise FingerprintError(str(exc)) from exc
 
@@ -141,7 +141,7 @@ def _prefixes(p):
     return [Path(*parts[: i + 1]) for i in range(len(parts))] if p != "." else []
 
 
-def scope_fingerprint(scope, env_names=(), sources=()):
+def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
     root = al_store.REPO_ROOT
     h = hashlib.sha256(json.dumps(sorted(scope)).encode())
     if not scope:
@@ -149,7 +149,7 @@ def scope_fingerprint(scope, env_names=(), sources=()):
     try:
         rows=S.source_rows()
         normalized=Sources.validate_sources(sources)
-        gaps=Sources.capability_gaps(scope,normalized,rows)
+        gaps=Sources.capability_gaps(scope,normalized,rows,cwd,root=root)
         if gaps:raise FingerprintError('; '.join(gaps))
     except (Sources.SourceError,SystemExit) as exc:
         raise FingerprintError(str(exc)) from exc
@@ -293,7 +293,7 @@ def assess(e):
     if e["status"] != "PASS":
         return e["status"], e.get("note") or ""
     try:
-        now = scope_fingerprint(e["scope"], e.get("env"), e.get("sources", []))
+        now = scope_fingerprint(e["scope"], e.get("env"), e.get("sources", []), e.get("cwd", "."))
     except FingerprintError as exc:
         return "UNVERIFIABLE", str(exc)
     if now != e["fp_after"]:

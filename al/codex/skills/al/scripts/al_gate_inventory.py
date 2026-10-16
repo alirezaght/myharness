@@ -22,6 +22,11 @@ def source(path,job=None):
     return {'path':path,'job':job,'sha256':hashlib.sha256((al_store.REPO_ROOT/path).read_bytes()).hexdigest()}
 
 
+def classify_unit(path,opaque):
+    unit='/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.'
+    return '.' if any(Sources.contains(child,unit) for child in opaque) else unit
+
+
 def inventory(st,anticipated=(),ci_context=None):
     context=CC.profile(st,ci_context)
     paths=set(anticipated)
@@ -30,8 +35,9 @@ def inventory(st,anticipated=(),ci_context=None):
     opaque={r['path'] for r in S.source_rows() if G.opaque(r)}
     def inside(path):return any(Sources.contains(child,path) for child in opaque)
     paths=C.expand(sorted('.' if p=='.' else S.safe_path(p).as_posix() for p in paths))
+    paths=sorted({'.' if p=='.' else S.safe_path(p).as_posix() for p in paths})
     paths=[p for p in paths if not any(p!=child and Sources.contains(child,p) for child in opaque)]
-    units=set('/'.join(p.split('/')[:2]) if p.startswith(('services/','apps/','packages/')) and not inside('/'.join(p.split('/')[:2])) else '.' for p in paths)
+    units={classify_unit(p,opaque) for p in paths}
     services,unknown,dependencies=al_affected_services.select(al_store.REPO_ROOT,paths,opaque)
     units.update(services);names={p for p in dependencies if not al_affected_services.implementation_input(p)}
     for p in paths+services:

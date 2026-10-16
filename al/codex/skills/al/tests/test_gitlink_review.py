@@ -108,3 +108,48 @@ def test_failed_child_can_be_reported_from_initial_start_and_disjoint_check(cli,
     assert fingerprint and changed>0
     invoke(cli,'evidence','run','--area','disjoint','--scope','web','--',*ok_cmd('1 passed'))
     assert S.child_content_gaps(S.capture_candidate(state(base)))
+
+
+@pytest.mark.parametrize('namespace',['services','apps','packages'])
+@pytest.mark.parametrize('operation',['add','update','remove'])
+def test_opaque_unit_root_discovery_and_passed_candidate_gates_agree(cli,repo,tmp_path,gitlink,namespace,operation):
+    import sys
+    from batch13_helpers import start,finished
+    from gitlink_helpers import gate_plan
+    seed,_,_=gitlink;relative=namespace+'/opaque-unit';child=repo/relative
+    if operation=='add':start(cli,repo)
+    git(repo,'-c','protocol.file.allow=always','submodule','add','-q',str(seed),relative)
+    if operation!='add':
+        git(repo,'commit','-qam','unit-root child');start(cli,repo)
+    expected=oid(child)
+    if operation=='update':expected=commit_child(child,'updated pointer')
+    elif operation=='remove':git(repo,'update-index','--force-remove',relative);expected=None
+    check='import subprocess; actual=subprocess.check_output(["git","ls-files","--stage",'+repr(relative)+']); assert '
+    check+='actual.decode().startswith('+repr('160000 '+expected+' ')+')' if expected else 'actual==b""'
+    declarations=[{'path':relative,'capability':'parent-entry'}]
+    gate_plan(cli,tmp_path,[sys.executable,'-c',check],[namespace],declarations)
+    import al_artifacts as A
+    st=json.loads(cli('show')[1]);manifest=A.read_json(st['gate_manifests'][-1])
+    assert manifest['units']==['.']
+    invoke(cli,'gates','run','--stage','candidate')
+    finished(cli,'PASS')
+    assert json.loads(cli('gates','status')[1])['candidate']==[]
+
+
+@pytest.mark.parametrize('namespace',['services','apps','packages'])
+@pytest.mark.parametrize('nested_child',[False,True])
+def test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks(cli,repo,tmp_path,gitlink,namespace,nested_child):
+    from batch13_helpers import start
+    seed,_,_=gitlink;unit=namespace+'/ordinary-unit'
+    if nested_child:
+        git(repo,'-c','protocol.file.allow=always','submodule','add','-q',str(seed),unit+'/vendor')
+        git(repo,'commit','-qam','nested child boundary');start(cli,repo)
+        commit_child(repo/unit/'vendor','new nested pointer')
+    else:
+        target=repo/unit/'app.ts';target.parent.mkdir(parents=True);target.write_text('before')
+        start(cli,repo);target.write_text('changed')
+    file=tmp_path/'selected-paths.json';file.write_text(json.dumps([unit]))
+    manifest=json.loads(invoke(cli,'gates','discover','--paths-file',str(file))[1])
+    assert unit in manifest['units']
+    if namespace=='services':
+        assert any(g['category']=='lint-imports' and unit in g['units'] and g['applicability']!='NOT_APPLICABLE' for g in manifest['gates'])
