@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "evidence-sources",
+  "description": "Explicit capability declarations for parent gitlink boundaries. Runtime validation also enforces unique paths and scope containment.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["path", "capability"],
+    "properties": {
+      "path": {
+        "description": "Normalized parent-repository-relative gitlink path.",
+        "type": "string",
+        "minLength": 1
+      },
+      "capability": {
+        "enum": ["parent-entry", "child-content"]
+      }
+    },
+    "additionalProperties": false
+  }
+}

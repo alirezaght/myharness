@@ -1,0 +1,12 @@
+{
+  "id": "user-earlier-mr-corrections-omitted",
+  "observed_defect": "The user reports that earlier correction rounds have not consistently been reviewed again when a later merge-request round is approved.",
+  "source": "User-reported improvement request dated 2026-10-14, source-request item 5; AC-05",
+  "areas": [
+    "whole-merge-request",
+    "earlier-correction-rounds",
+    "review-coverage"
+  ],
+  "provenance": "user-reported",
+  "regression_evidence": []
+}

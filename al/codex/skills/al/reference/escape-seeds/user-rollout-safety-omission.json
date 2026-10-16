@@ -1,0 +1,16 @@
+{
+  "id": "user-rollout-safety-omission",
+  "observed_defect": "The user reports that approved changes have missed rollout safety for migrations, Terraform, environment configuration and events, including environment propagation through aggregators and consumer dead-letter queue/redrive requirements.",
+  "source": "User-reported improvement request dated 2026-10-14, source-request item 3; AC-03",
+  "areas": [
+    "migrations",
+    "terraform",
+    "environment-configuration",
+    "aggregator-propagation",
+    "event-consumers",
+    "dead-letter-queues",
+    "redrive"
+  ],
+  "provenance": "user-reported",
+  "regression_evidence": []
+}

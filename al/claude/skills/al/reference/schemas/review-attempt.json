@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "review-attempt",
+  "type": "object",
+  "required": ["attempt_id", "stage", "role", "model", "slug", "effort", "policy_digest", "fallback_event_reference"],
+  "properties": {
+    "attempt_id": {"type": "string", "pattern": "^[0-9a-f]{24}$"},
+    "stage": {"enum": ["fresh", "compare"]},
+    "role": {"const": "al-architect"},
+    "model": {"type": "string", "minLength": 1},
+    "slug": {"type": "string", "minLength": 1},
+    "effort": {"type": "string", "minLength": 1},
+    "policy_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "fallback_event_reference": {
+      "description": "Null for the approved primary slot; otherwise a content-addressed reference to the recorded model-unavailability event.",
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/artifact-reference"}
+      ]
+    }
+  },
+  "$defs": {
+    "artifact-reference": {
+      "type": "object",
+      "required": ["id", "kind", "sha256", "stored_path", "source", "captured_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "kind": {"const": "model-fallback-event"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "stored_path": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "captured_at": {"type": "number"}
+      }
+    }
+  }
+}

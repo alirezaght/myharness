@@ -1,0 +1,1 @@
+{"id":"illegal-transition","provenance":"simulation of user-described transition-bypass gap (item 1)","expected_baseline_failure":true,"actions":[{"argv":["start","--spec","A complete specification must pass through planning before implementation."]},{"argv":["phase","DONE"],"expected":"refuse","unchanged":true}]}

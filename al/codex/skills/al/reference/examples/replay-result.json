@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "simulation": true,
+  "cases": [
+    {
+      "candidate": {
+        "id": "harmless-searches",
+        "provenance": "simulation of harmless search policy checks",
+        "simulation": true,
+        "outcomes": [
+          {
+            "kind": "action",
+            "argv": [
+              "show",
+              "--line"
+            ],
+            "exit": 0,
+            "expected": "pass",
+            "matched": true,
+            "unsupported": false,
+            "output": "AL \u00b7 PLANNING"
+          },
+          {
+            "kind": "policy",
+            "policy": "shared",
+            "command": "rg 'git reset > cp --fix' .",
+            "expected": "allow",
+            "violations": [],
+            "matched": true,
+            "unsupported": false,
+            "module_origin": "/candidate/.codex/skills/al/scripts/al_shell.py"
+          }
+        ],
+        "matched": true,
+        "unavailable": false,
+        "counts": {
+          "action": {
+            "total": 1,
+            "matched": 1,
+            "failed": 0,
+            "unavailable": 0
+          },
+          "policy": {
+            "total": 1,
+            "matched": 1,
+            "failed": 0,
+            "unavailable": 0
+          }
+        },
+        "phase_count": 1,
+        "handoffs": 0,
+        "elapsed_seconds": 0.08
+      },
+      "baseline": null,
+      "baseline_comparison": "unavailable",
+      "expected_baseline_failure": false,
+      "safety_regression": false
+    }
+  ],
+  "safety_regressions": 0
+}

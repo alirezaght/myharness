@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "shared_files": [
+    "al_affected_services.py",
+    "al_artifacts.py",
+    "al_assessments.py",
+    "al_checkout_paths.py",
+    "al_checkouts.py",
+    "al_ci_context.py",
+    "al_ci_expression.py",
+    "al_ci_inventory.py",
+    "al_ci_rules.py",
+    "al_ci_yaml.py",
+    "al_comparison.py",
+    "al_conflicts.py",
+    "al_discovery_inputs.py",
+    "al_distribution.py",
+    "al_distribution_registry.py",
+    "al_distribution_roles.py",
+    "al_distribution_transaction.py",
+    "al_escapes.py",
+    "al_evidence.py",
+    "al_gate_coverage.py",
+    "al_gate_currency.py",
+    "al_gate_discovery.py",
+    "al_gate_inventory.py",
+    "al_gate_process.py",
+    "al_gate_recovery.py",
+    "al_gates.py",
+    "al_git_config.py",
+    "al_gitlinks.py",
+    "al_git_options.py",
+    "al_git_policy.py",
+    "al_guards.py",
+    "al_interpreters.py",
+    "al_isolation.py",
+    "al_ledger.py",
+    "al_package_policy.py",
+    "al_parallel.py",
+    "al_phases.py",
+    "al_preflight.py",
+    "al_recovery.py",
+    "al_remote_gates.py",
+    "al_render.py",
+    "al_replay.py",
+    "al_replay_policy.py",
+    "al_retry.py",
+    "al_review.py",
+    "al_review_attempts.py",
+    "al_review_history.py",
+    "al_rework.py",
+    "al_routing.py",
+    "al_schema.py",
+    "al_scope.py",
+    "al_shell.py",
+    "al_shell_select.py",
+    "al_shell_wrappers.py",
+    "al_sources.py",
+    "al_task.py",
+    "al_traceability.py",
+    "al_transitions.py",
+    "al_ui_paths.py",
+    "al_writers.py"
+  ],
+  "shared_reference_files": [
+    "escape-seeds/user-earlier-mr-corrections-omitted.json",
+    "escape-seeds/user-rollout-safety-omission.json",
+    "examples/ci-context-artifact.json",
+    "examples/replay-result.json",
+    "gates.md",
+    "parity-manifest.json",
+    "replay.md",
+    "replay/baseline-gate-regression.json",
+    "replay/criterion-links.json",
+    "replay/finding-links.json",
+    "replay/harmless-searches.json",
+    "replay/illegal-transition.json",
+    "replay/premature-approval.json",
+    "replay/proposal-assent.json",
+    "replay/recovery-resume.json",
+    "replay/red-repro.json",
+    "replay/repeated-mr-fixes.json",
+    "replay/rollout-omission.json",
+    "replay/stale-approval.json",
+    "replay/writer-overlap.json",
+    "repository-policy.md",
+    "review.md",
+    "schemas/architect-report.json",
+    "schemas/checkpoint.json",
+    "schemas/ci-context-artifact.json",
+    "schemas/evidence-sources.json",
+    "schemas/gate-manifest.json",
+    "schemas/replay-fixture.json",
+    "schemas/replay-result.json",
+    "schemas/resolution-validation.json",
+    "schemas/review-attempt.json",
+    "schemas/review-packet.json",
+    "schemas/task-package.json"
+  ],
+  "platform_adapters": {
+    "codex_only": [],
+    "claude_only": [
+      {
+        "stem": [
+          "al",
+          "readonly_guard"
+        ],
+        "extension": ".py"
+      },
+      {
+        "stem": [
+          "al",
+          "statusline"
+        ],
+        "extension": ".py"
+      },
+      {
+        "stem": [
+          "al",
+          "native_sessions"
+        ],
+        "extension": ".py"
+      }
+    ],
+    "different_content": [
+      "al_models.py",
+      "al_state.py",
+      "al_store.py"
+    ],
+    "codex_only_references": [],
+    "claude_only_references": [],
+    "different_reference_content": [
+      "distribution.md",
+      "handoffs.md",
+      "parallelism.md",
+      "routing.md"
+    ],
+    "reference_rationales": {
+      "distribution.md": "The command must select the target harness platform (`codex` or `claude`); every registry, provenance, preservation, and recovery rule is otherwise shared.",
+      "handoffs.md": "Harness handoffs use platform-specific repository-policy names, task-argument placeholders, and continuation APIs; review-stage isolation, typed approved inputs, inspected hashes, and evidence contracts are shared.",
+      "parallelism.md": "The available agent invocation, continuation, isolation, and progress APIs differ by harness; write ownership, non-overlapping scope, failure handling, and no-mid-write interruption policy are shared.",
+      "routing.md": "The user-facing skill invocation name is `$al` in Codex and `/al` in Claude; classification and execution paths are shared."
+    },
+    "native_adapter_rationales": {
+      "al_native_sessions.py": "This adapter maps Claude conversation identities to immutable AL run IDs and serializes per-conversation pointer/statusline behavior; Codex uses its repository-scoped current-run pointer."
+    }
+  }
+}

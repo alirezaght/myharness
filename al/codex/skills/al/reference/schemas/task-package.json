@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "task-package",
+  "type": "object",
+  "required": [
+    "original_request",
+    "accepted_spec",
+    "acceptance",
+    "constraints",
+    "ticket",
+    "criteria",
+    "invariants"
+  ],
+  "properties": {
+    "original_request": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accepted_spec": {
+      "type": "string",
+      "minLength": 20
+    },
+    "acceptance": {
+      "type": "object",
+      "required": [
+        "text",
+        "source"
+      ]
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ticket": {
+      "type": "object",
+      "required": [
+        "present"
+      ],
+      "properties": {
+        "present": {
+          "type": "boolean"
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

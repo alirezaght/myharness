@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "replay-fixture",
+  "type": "object",
+  "required": [
+    "id",
+    "provenance",
+    "actions"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provenance": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected_baseline_failure": {
+      "type": "boolean"
+    },
+    "baseline_comparison": {
+      "type": "string"
+    },
+    "files": {
+      "type": "object"
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "argv"
+        ],
+        "properties": {
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/stateReference"
+                }
+              ]
+            }
+          },
+          "expected": {
+            "enum": [
+              "pass",
+              "refuse"
+            ]
+          },
+          "contains": {
+            "type": "string"
+          },
+          "unchanged": {
+            "type": "boolean"
+          },
+          "writes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "content"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "readonly": {
+          "$ref": "#/$defs/policyCommands"
+        },
+        "shared": {
+          "$ref": "#/$defs/policyCommands"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "stateReference": {
+      "type": "object",
+      "required": [
+        "$state"
+      ],
+      "properties": {
+        "$state": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "policyCommands": {
+      "description": "Strings are passed as data to the named AL policy guard; they are never executed.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

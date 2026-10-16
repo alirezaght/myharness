@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "architect-report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "review_id",
+    "stage",
+    "invocation_id",
+    "reviewer_role",
+    "model",
+    "task_hash",
+    "candidate_hash",
+    "packet_hash",
+    "inspected_artifacts",
+    "criteria",
+    "findings",
+    "prior_resolutions",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer"
+    },
+    "review_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "fresh",
+        "compare"
+      ]
+    },
+    "invocation_id": {
+      "type": "string"
+    },
+    "reviewer_role": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string"
+    },
+    "attempt_id": {
+      "description": "Optional explicit echo of the immutable issued packet attempt; packet_hash is the required binding.",
+      "type": "string",
+      "minLength": 1
+    },
+    "effort": {
+      "description": "Optional explicit echo of the issued attempt's approved effort.",
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_digest": {
+      "description": "Optional explicit echo of the issued attempt's policy digest.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "task_hash": {
+      "type": "string"
+    },
+    "candidate_hash": {
+      "type": "string"
+    },
+    "packet_hash": {
+      "type": "string"
+    },
+    "inspected_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "rationale",
+          "locations",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "SATISFIED",
+              "UNSATISFIED"
+            ]
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locations": {
+            "type": "array",
+            "minItems": 1
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "severity",
+          "description"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1
+          },
+          "severity": {
+            "enum": [
+              "BLOCKING",
+              "NON_BLOCKING"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "resolution": {
+            "type": "object",
+            "required": [
+              "status",
+              "rationale",
+              "locations",
+              "evidence"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "fixed",
+                  "disputed",
+                  "deferred"
+                ]
+              },
+              "rationale": {
+                "type": "string",
+                "minLength": 1
+              },
+              "locations": {
+                "type": "array",
+                "minItems": 1
+              },
+              "evidence": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "prior_resolutions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "status",
+          "rationale",
+          "locations",
+          "evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "fixed",
+              "unresolved",
+              "deferred",
+              "disputed"
+            ]
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "plan_defects": {
+      "type": "array"
+    },
+    "assessments": {
+      "type": "object"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "compare"
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
+      "then": {
+        "required": [
+          "plan_defects",
+          "assessments"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "stage": {
+            "const": "fresh"
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
+      "then": {
+        "properties": {
+          "prior_resolutions": {
+            "maxItems": 0
+          },
+          "findings": {
+            "items": {
+              "not": {
+                "required": [
+                  "resolution"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

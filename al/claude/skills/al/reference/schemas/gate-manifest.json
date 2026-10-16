@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "gate-manifest",
+  "type": "object",
+  "required": ["schema_version", "base_oid", "paths", "units", "rules", "gates"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "id": {"description": "Optional discovery-assigned manifest identifier.", "type": "string", "minLength": 1},
+    "revision": {"description": "Optional discovery-assigned revision.", "type": "integer", "minimum": 1},
+    "base_oid": {"type": "string", "minLength": 1},
+    "paths": {
+      "description": "Selected and anticipated paths. Runtime inventory also retains previously declared paths and independently selected changes.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "units": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "job": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["id", "category", "applicability", "required", "reason", "units", "argv", "scope", "source", "execution_kind", "cwd"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "category": {"enum": ["lint-imports", "loc", "contracts", "pre-commit", "ci"]},
+          "applicability": {"enum": ["APPLICABLE", "NOT_APPLICABLE", "UNRESOLVED"]},
+          "required": {"type": "boolean"},
+          "reason": {"type": ["string", "null"]},
+          "units": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "argv": {"type": "array", "items": {"type": "string"}},
+          "scope": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "source": {"$ref": "#/$defs/source"},
+          "execution_kind": {"enum": ["local", "remote"]},
+          "cwd": {"type": "string", "minLength": 1},
+          "env_names": {
+            "description": "Names only; values are never stored. Omission means an empty dependency set.",
+            "default": [],
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}
+          },
+          "sources": {
+            "description": "Optional explicit parent gitlink capability declarations. Omission is equivalent to an empty array for ordinary scopes.",
+            "$ref": "evidence-sources.json"
+          },
+          "remote": {"type": "object"}
+        },
+        "not": {"required": ["env"]}
+      }
+    },
+    "ci_context": {
+      "description": "Optional, run-bound data artifact selecting one supported CI planning profile. Unsupported profiles stay unresolved.",
+      "$ref": "ci-context-artifact.json#/$defs/declaration"
+    }
+  },
+  "$defs": {
+    "source": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "job": {"type": ["string", "null"]}
+          }
+        }
+      ]
+    }
+  }
+}

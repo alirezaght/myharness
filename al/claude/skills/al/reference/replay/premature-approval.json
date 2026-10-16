@@ -1,0 +1,1 @@
+{"id":"premature-approval","provenance":"simulation of user-described approval precondition gap (item 1)","expected_baseline_failure":true,"actions":[{"argv":["start","--spec","Require a verified implementation before Architect approval."]},{"argv":["approved"],"expected":"refuse","unchanged":true}]}

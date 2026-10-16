@@ -22,6 +22,8 @@ module-root = ""
 [tool.ruff]
 target-version = "py313"
 line-length = 100
+# al/ is the vendored AL orchestrator package; it keeps its own style.
+extend-exclude = ["al"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,59 @@
+{
+  "id": "recovery-resume",
+  "provenance": "simulation of a failed agent awaiting reconciled recovery; no historical incident is claimed",
+  "expected_baseline_failure": true,
+  "files": {
+    "wait.json": {
+      "reason": "Awaiting a user decision.",
+      "resume_instructions": "Revalidate candidate before continuing."
+    }
+  },
+  "actions": [
+    {
+      "argv": [
+        "start",
+        "--spec",
+        "A pending agent failure must survive generic resume and use its guarded retry."
+      ]
+    },
+    {
+      "argv": [
+        "agent-failed",
+        "al-engineer",
+        "--reason",
+        "transient isolated runner failure",
+        "--retry-safe",
+        "yes"
+      ]
+    },
+    {
+      "argv": [
+        "waiting",
+        "--file",
+        "$file:wait.json"
+      ],
+      "expected": "refuse",
+      "unchanged": true
+    },
+    {
+      "argv": [
+        "resume",
+        "--checkpoint",
+        {
+          "$state": "checkpoints.0.id"
+        }
+      ],
+      "expected": "refuse",
+      "unchanged": true,
+      "contains": "pending agent failure"
+    },
+    {
+      "argv": [
+        "retry",
+        "al-engineer",
+        "--reason",
+        "retry after confirming the isolated runner stopped"
+      ]
+    }
+  ]
+}

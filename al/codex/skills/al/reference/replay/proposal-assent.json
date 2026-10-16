@@ -1,0 +1,1 @@
+{"id":"proposal-only-assent","provenance":"simulation of user-described incomplete task package (item 6)","expected_baseline_failure":true,"actions":[{"argv":["start","--spec","yes"],"expected":"refuse","contains":"assent alone"}]}

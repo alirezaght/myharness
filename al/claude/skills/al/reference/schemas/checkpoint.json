@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "checkpoint",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "identity",
+    "task_hash",
+    "candidate_hash",
+    "prior_phase",
+    "outstanding",
+    "reason",
+    "resume_instructions"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "identity": {
+      "type": "object"
+    },
+    "task_hash": {
+      "type": "string"
+    },
+    "candidate_hash": {
+      "type": "string"
+    },
+    "prior_phase": {
+      "type": "string"
+    },
+    "outstanding": {
+      "type": "array"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "resume_instructions": {
+      "type": "string"
+    }
+  }
+}

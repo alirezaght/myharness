@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "review-packet",
+  "type": "object",
+  "required": ["attempt", "schema_version", "review_id", "stage", "candidate_hash", "task_hash", "task_package", "amendments", "candidate", "evidence", "gates", "escapes"],
+  "properties": {
+    "attempt": {"$ref": "review-attempt.json"},
+    "schema_version": {"const": 1},
+    "review_id": {"type": "string", "minLength": 1},
+    "stage": {"enum": ["fresh", "compare"]},
+    "candidate_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "task_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "task_package": {"type": "object"},
+    "amendments": {"type": "array"},
+    "candidate": {"type": "object"},
+    "evidence": {"type": "object"},
+    "gates": {"type": "array"},
+    "escapes": {"type": "array"},
+    "fresh": {"type": "object"},
+    "prior_findings": {"type": "array"},
+    "comparison_artifacts": {"type": "array"},
+    "approved_inputs": {"type": "object"},
+    "comparison_contents": {"type": "array"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"stage": {"const": "compare"}}, "required": ["stage"]},
+      "then": {"required": ["fresh", "prior_findings", "comparison_artifacts", "approved_inputs", "comparison_contents"]}
+    },
+    {
+      "if": {"properties": {"stage": {"const": "fresh"}}, "required": ["stage"]},
+      "then": {"not": {"anyOf": [{"required": ["fresh"]}, {"required": ["prior_findings"]}, {"required": ["approved_inputs"]}]}}
+    }
+  ]
+}

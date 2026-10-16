@@ -1,0 +1,474 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "replay-result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "simulation",
+    "cases",
+    "safety_regressions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "simulation": {
+      "const": true
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "candidate",
+          "baseline",
+          "baseline_comparison",
+          "expected_baseline_failure",
+          "safety_regression"
+        ],
+        "properties": {
+          "candidate": {
+            "type": "object",
+            "required": [
+              "id",
+              "provenance",
+              "simulation",
+              "outcomes",
+              "matched",
+              "unavailable",
+              "counts",
+              "phase_count",
+              "handoffs",
+              "elapsed_seconds"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "provenance": {
+                "type": "string"
+              },
+              "simulation": {
+                "const": true
+              },
+              "outcomes": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "argv",
+                        "matched",
+                        "unsupported"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "action"
+                        },
+                        "argv": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "exit": {
+                          "type": "integer"
+                        },
+                        "expected": {
+                          "enum": [
+                            "pass",
+                            "refuse"
+                          ]
+                        },
+                        "matched": {
+                          "type": "boolean"
+                        },
+                        "unsupported": {
+                          "type": "boolean"
+                        },
+                        "output": {
+                          "type": "string"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "policy",
+                        "command",
+                        "expected",
+                        "violations",
+                        "matched",
+                        "unsupported"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "policy"
+                        },
+                        "policy": {
+                          "description": "Recognized policy names are readonly/shared; malformed declarations may preserve the unknown input for an explicit unavailable outcome.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "command": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "expected": {
+                          "const": "allow"
+                        },
+                        "violations": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "matched": {
+                          "type": "boolean"
+                        },
+                        "unsupported": {
+                          "type": "boolean"
+                        },
+                        "module_origin": {
+                          "type": "string"
+                        },
+                        "error": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              },
+              "matched": {
+                "type": "boolean"
+              },
+              "unavailable": {
+                "type": "boolean"
+              },
+              "counts": {
+                "type": "object",
+                "required": [
+                  "action",
+                  "policy"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "object",
+                    "required": [
+                      "total",
+                      "matched",
+                      "failed",
+                      "unavailable"
+                    ],
+                    "properties": {
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "matched": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "failed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unavailable": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  },
+                  "policy": {
+                    "type": "object",
+                    "required": [
+                      "total",
+                      "matched",
+                      "failed",
+                      "unavailable"
+                    ],
+                    "properties": {
+                      "total": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "matched": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "failed": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "unavailable": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    }
+                  }
+                }
+              },
+              "phase_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "handoffs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "elapsed_seconds": {
+                "type": "number",
+                "minimum": 0
+              }
+            }
+          },
+          "baseline": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": [
+                  "id",
+                  "provenance",
+                  "simulation",
+                  "outcomes",
+                  "matched",
+                  "unavailable",
+                  "counts",
+                  "phase_count",
+                  "handoffs",
+                  "elapsed_seconds"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "provenance": {
+                    "type": "string"
+                  },
+                  "simulation": {
+                    "const": true
+                  },
+                  "outcomes": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "argv",
+                            "matched",
+                            "unsupported"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "const": "action"
+                            },
+                            "argv": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "exit": {
+                              "type": "integer"
+                            },
+                            "expected": {
+                              "enum": [
+                                "pass",
+                                "refuse"
+                              ]
+                            },
+                            "matched": {
+                              "type": "boolean"
+                            },
+                            "unsupported": {
+                              "type": "boolean"
+                            },
+                            "output": {
+                              "type": "string"
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "policy",
+                            "command",
+                            "expected",
+                            "violations",
+                            "matched",
+                            "unsupported"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "const": "policy"
+                            },
+                            "policy": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "command": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "expected": {
+                              "const": "allow"
+                            },
+                            "violations": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "matched": {
+                              "type": "boolean"
+                            },
+                            "unsupported": {
+                              "type": "boolean"
+                            },
+                            "module_origin": {
+                              "type": "string"
+                            },
+                            "error": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "matched": {
+                    "type": "boolean"
+                  },
+                  "unavailable": {
+                    "type": "boolean"
+                  },
+                  "counts": {
+                    "type": "object",
+                    "required": [
+                      "action",
+                      "policy"
+                    ],
+                    "properties": {
+                      "action": {
+                        "type": "object",
+                        "required": [
+                          "total",
+                          "matched",
+                          "failed",
+                          "unavailable"
+                        ],
+                        "properties": {
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "matched": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "failed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "unavailable": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        }
+                      },
+                      "policy": {
+                        "type": "object",
+                        "required": [
+                          "total",
+                          "matched",
+                          "failed",
+                          "unavailable"
+                        ],
+                        "properties": {
+                          "total": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "matched": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "failed": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "unavailable": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "phase_count": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "handoffs": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "elapsed_seconds": {
+                    "type": "number",
+                    "minimum": 0
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "baseline_comparison": {
+            "enum": [
+              "available",
+              "unavailable"
+            ]
+          },
+          "expected_baseline_failure": {
+            "type": "boolean"
+          },
+          "safety_regression": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "safety_regressions": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

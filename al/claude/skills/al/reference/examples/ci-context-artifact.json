@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "profile": "merge_request_quality",
+  "session_id": "replace-with-current-session-id",
+  "run_id": "replace-with-current-run-id",
+  "task_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "selection": {
+    "label": "Supervisor-recorded CI profile selection",
+    "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}
