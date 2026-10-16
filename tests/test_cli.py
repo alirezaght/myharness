@@ -1,11 +1,15 @@
+import json
 import re
+import shutil
 import subprocess
 import sys
 
 import pytest
 
+from harness import cli_commands
 from harness.classification import INTERVIEW_TOPICS
 from harness.cli import main
+from tests.sample_repo import make_index_stale, tree_snapshot
 
 TASK_ID = re.compile(r"task (t-[0-9a-f]{8}) created")
 
@@ -191,3 +195,77 @@ def test_start_without_db_flag_creates_state_under_harness_home(isolated_home, c
     assert main(["start", "add an endpoint"]) == 0
     capsys.readouterr()
     assert list(isolated_home.glob("projects/*/state.db"))
+
+
+def _start(run, request):
+    code, out, _ = run("start", request)
+    assert code == 0
+    return TASK_ID.search(out).group(1)
+
+
+def test_investigate_prints_sections_in_order(run, sample_repo):
+    task = _start(run, "add csv export")
+    code, out, err = run("investigate", task, "--repo", str(sample_repo))
+    assert code == 0, err
+    assert out.startswith(f"investigation of {sample_repo.resolve()}")
+    headings = [
+        "approved decisions (",
+        "verified facts (",
+        "assumptions (",
+        "unresolved questions (",
+    ]
+    positions = [out.index(f"\n{heading}") for heading in headings]
+    assert positions == sorted(positions)
+    assert "DEC-0001 v1 — Storage engine" in out
+
+
+def test_investigate_json_output(run, sample_repo):
+    task = _start(run, "add csv export")
+    code, out, _ = run("investigate", task, "--repo", str(sample_repo), "--json")
+    assert code == 0
+    data = json.loads(out)
+    assert {"facts", "assumptions", "questions", "decisions", "counts"} <= set(data)
+    assert data["counts"]["decisions"] == 1
+
+
+def test_investigate_custom_decisions_dir(run, sample_repo, tmp_path):
+    task = _start(run, "add csv export")
+    empty = tmp_path / "no-decisions"
+    code, out, _ = run("investigate", task, "--repo", str(sample_repo), "--decisions", str(empty))
+    assert code == 0
+    assert "approved decisions (0):" in out
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_investigate_command_leaves_repo_untouched(run, sample_repo):
+    task = _start(run, "add csv export")
+    make_index_stale(sample_repo)
+    before = tree_snapshot(sample_repo)
+    code, _, _ = run("investigate", task, "--repo", str(sample_repo))
+    assert code == 0
+    assert tree_snapshot(sample_repo) == before
+
+
+def test_investigate_unknown_task_scans_nothing(run, task_id, sample_repo, monkeypatch):
+    def fail(*args, **kwargs):
+        raise AssertionError("analyze must not run for an unknown task")
+
+    monkeypatch.setattr(cli_commands, "analyze", fail)
+    code, out, err = run("investigate", "t-deadbeef", "--repo", str(sample_repo))
+    assert (code, out) == (1, "")
+    assert "t-deadbeef" in err
+
+
+def test_investigate_on_missing_db_creates_nothing(run, db_path, sample_repo):
+    code, _, err = run("investigate", "t-deadbeef", "--repo", str(sample_repo))
+    assert code == 1
+    assert "t-deadbeef" in err
+    assert not db_path.parent.exists()
+
+
+def test_investigate_repo_that_is_a_file_exits_1(run, task_id, tmp_path):
+    target = tmp_path / "file.txt"
+    target.write_text("x")
+    code, _, err = run("investigate", task_id, "--repo", str(target))
+    assert code == 1
+    assert "not a directory" in err

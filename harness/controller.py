@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from harness.classification import Complexity, classify_request
 from harness.db import transaction, utcnow
 from harness.errors import TaskNotFound
+from harness.investigation import InvestigationReport
 from harness.phases import (
     PHASE_ORDER,
     InvalidTransition,
@@ -16,6 +17,7 @@ from harness.phases import (
     validate_transition,
 )
 from harness.state import TaskWorkspace
+from harness.state_models import Checkpoint, QuestionSource
 
 __all__ = ["HarnessController", "PhaseTransition", "Task", "TaskNotFound"]
 
@@ -127,6 +129,31 @@ class HarnessController:
             )
             self.workspace(task_id).record_event("complexity.set", {"complexity": level})
         return self.get_task(task_id)
+
+    def record_investigation(self, task_id: str, report: InvestigationReport) -> Checkpoint:
+        """Store a report atomically: new open questions, one checkpoint and one event."""
+        with transaction(self.conn):
+            workspace = self.workspace(task_id)
+            known = {(q.topic, q.text) for q in workspace.questions()}
+            new = [q for q in report.questions if (q.topic, q.text) not in known]
+            for question in new:
+                workspace.ask(question.topic, question.text, QuestionSource.INVESTIGATION)
+            checkpoint = workspace.checkpoint("investigation", report.to_dict())
+            counts = report.to_dict()["counts"]
+            workspace.record_event(
+                "investigation.completed",
+                {
+                    "repo": report.repo_root,
+                    "revision": report.revision,
+                    "facts": counts["facts"],
+                    "assumptions": counts["assumptions"],
+                    "questions": counts["questions"],
+                    "new_questions": len(new),
+                    "decisions": counts["decisions"],
+                },
+            )
+            self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), task_id))
+        return checkpoint
 
     def history(self, task_id: str) -> list[PhaseTransition]:
         self.get_task(task_id)

@@ -5,7 +5,10 @@ import pytest
 from harness.classification import Complexity
 from harness.controller import HarnessController, TaskNotFound
 from harness.db import apply_migrations, connect
+from harness.investigation import Assumption, Fact, FactCategory, InvestigationReport, OpenQuestion
 from harness.phases import PHASE_ORDER, InvalidTransition, Phase
+from harness.state import TaskWorkspace
+from harness.state_models import QuestionSource
 
 
 def _row_counts(conn):
@@ -161,3 +164,69 @@ def test_transition_rows_require_an_existing_task(conn):
             "INSERT INTO phase_transitions (task_id, to_phase, created_at)"
             " VALUES ('nope', 'x', 'y')"
         )
+
+
+def _report(questions):
+    return InvestigationReport(
+        repo_root="/repo",
+        revision="abc",
+        request="add csv export",
+        decisions=(),
+        facts=(Fact(FactCategory.FILES, "`a.py` matches", "keyword match: csv"),),
+        assumptions=(Assumption("x", "y"),),
+        questions=tuple(OpenQuestion(topic, text) for topic, text in questions),
+    )
+
+
+def test_record_investigation_persists_questions_checkpoint_and_event(controller):
+    task = controller.create_task("Add CSV export")
+    report = _report([("scope", "Which package?"), ("tests", "No tests found?")])
+    checkpoint = controller.record_investigation(task.id, report)
+    workspace = controller.workspace(task.id)
+    questions = workspace.open_questions()
+    assert [(q.topic, q.text) for q in questions] == [
+        ("scope", "Which package?"),
+        ("tests", "No tests found?"),
+    ]
+    assert all(q.source is QuestionSource.INVESTIGATION for q in questions)
+    assert (checkpoint.label, checkpoint.payload) == ("investigation", report.to_dict())
+    assert checkpoint.phase is Phase.INVESTIGATION
+    [event] = [e for e in workspace.events() if e.kind == "investigation.completed"]
+    assert event.payload["new_questions"] == 2
+    assert event.payload["facts"] == 1
+
+
+def test_rerunning_investigation_adds_no_duplicate_questions(controller):
+    task = controller.create_task("Add CSV export")
+    controller.record_investigation(task.id, _report([("scope", "Which package?")]))
+    workspace = controller.workspace(task.id)
+    workspace.answer(workspace.open_questions()[0].id, "the root one")
+    controller.record_investigation(
+        task.id, _report([("scope", "Which package?"), ("tests", "New?")])
+    )
+    assert [(q.topic, q.text) for q in workspace.questions()] == [
+        ("scope", "Which package?"),
+        ("tests", "New?"),
+    ]
+    assert len([c for c in workspace.checkpoints() if c.label == "investigation"]) == 2
+    events = [e for e in workspace.events() if e.kind == "investigation.completed"]
+    assert [e.payload["new_questions"] for e in events] == [1, 1]
+
+
+def test_record_investigation_rolls_back_on_failure(controller, monkeypatch):
+    task = controller.create_task("Add CSV export")
+
+    def broken(self, label, payload=None):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(TaskWorkspace, "checkpoint", broken)
+    with pytest.raises(RuntimeError):
+        controller.record_investigation(task.id, _report([("scope", "Which package?")]))
+    workspace = controller.workspace(task.id)
+    assert workspace.questions() == []
+    assert [e.kind for e in workspace.events()] == ["task.created"]
+
+
+def test_record_investigation_unknown_task(controller):
+    with pytest.raises(TaskNotFound):
+        controller.record_investigation("t-deadbeef", _report([]))

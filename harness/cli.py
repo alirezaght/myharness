@@ -5,7 +5,7 @@ import sys
 
 from harness import __version__
 from harness.classification import Complexity
-from harness.cli_commands import cmd_classify, cmd_phase, cmd_show, cmd_start
+from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
 from harness.controller import TaskNotFound
 from harness.phases import InvalidTransition, Phase
 
@@ -46,6 +46,17 @@ def build_parser() -> argparse.ArgumentParser:
     show = subparsers.add_parser("show", help="show a task, its interview depth and history")
     show.add_argument("task_id")
     show.set_defaults(handler=cmd_show)
+
+    investigate = subparsers.add_parser(
+        "investigate", help="read-only repository investigation (facts / assumptions / questions)"
+    )
+    investigate.add_argument("task_id")
+    investigate.add_argument("--repo", metavar="PATH", help="target repository (default: git top)")
+    investigate.add_argument(
+        "--decisions", metavar="PATH", help="decision records (default: <repo>/docs/decisions)"
+    )
+    investigate.add_argument("--json", action="store_true", help="print the report as JSON")
+    investigate.set_defaults(handler=cmd_investigate)
 
     resume = subparsers.add_parser("resume", help="resume an existing task")
     resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")

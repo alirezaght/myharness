@@ -29,10 +29,10 @@
 **Done when:** state survives a process restart, and tests cover reading and writing every entity.
 
 ### P1-04 — Repository Analyzer (read-only)
-- [ ] Find the relevant components, files, dependencies, interfaces, schemas, config, tests and conventions
-- [ ] Load previously approved decisions before asking anything (AC 2)
-- [ ] Output keeps **verified facts**, **assumptions** and **unresolved questions** separate
-- [ ] Guarantee: no writes to the repo during investigation
+- [x] Find the relevant components, files, dependencies, interfaces, schemas, config, tests and conventions
+- [x] Load previously approved decisions before asking anything (AC 2)
+- [x] Output keeps **verified facts**, **assumptions** and **unresolved questions** separate
+- [x] Guarantee: no writes to the repo during investigation
 
 **Done when:** on a sample repo it produces a fact/assumption/question report, and a test proves the repo is unchanged afterwards.
 

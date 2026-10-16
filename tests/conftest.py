@@ -2,6 +2,7 @@ import pytest
 
 from harness.controller import HarnessController
 from harness.db import connect
+from tests.sample_repo import make_sample_repo
 
 
 @pytest.fixture(autouse=True)
@@ -27,3 +28,8 @@ def conn(db_path):
 @pytest.fixture
 def controller(conn):
     return HarnessController(conn)
+
+
+@pytest.fixture
+def sample_repo(tmp_path):
+    return make_sample_repo(tmp_path / "sample")

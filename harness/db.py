@@ -19,11 +19,19 @@ def utcnow() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _repo_root(cwd: Path) -> Path:
+def git_env() -> dict[str, str]:
+    """Environment for read-only git calls: never take optional locks or refresh the index."""
+    return {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+
+
+def repo_root(cwd: Path | None = None) -> Path:
+    """Git top-level of cwd (default: the current directory), or cwd itself outside git."""
+    cwd = Path.cwd() if cwd is None else Path(cwd)
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
             cwd=cwd,
+            env=git_env(),
             capture_output=True,
             text=True,
             check=False,
@@ -34,9 +42,9 @@ def _repo_root(cwd: Path) -> Path:
     return Path(top).resolve() if result.returncode == 0 and top else cwd.resolve()
 
 
-def default_db_path(repo_root: Path | None = None) -> Path:
+def default_db_path(root: Path | None = None) -> Path:
     """Per-repository state DB under $HARNESS_HOME, outside the target repo. Creates nothing."""
-    root = (repo_root or _repo_root(Path.cwd())).resolve()
+    root = (root or repo_root()).resolve()
     digest = hashlib.sha256(str(root).encode()).hexdigest()[:16]
     return _projects_dir() / digest / "state.db"
 

@@ -1,14 +1,16 @@
 """Handlers for the harness subcommands; each opens the state DB only when it runs."""
 
 import argparse
+import json
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from harness.analyzer import analyze
 from harness.classification import Complexity, interview_depth
 from harness.controller import SOURCE_PROPOSED, HarnessController, Task, TaskNotFound
-from harness.db import connect, default_db_path
+from harness.db import connect, default_db_path, repo_root
 from harness.phases import Phase
 
 
@@ -84,4 +86,18 @@ def cmd_show(args: argparse.Namespace) -> int:
         origin = step.from_phase or "-"
         reason = f" ({step.reason})" if step.reason else ""
         print(f"  {step.created_at} {origin} -> {step.to_phase}{reason}")
+    return 0
+
+
+def cmd_investigate(args: argparse.Namespace) -> int:
+    with _controller(args) as controller:
+        task = controller.get_task(args.task_id)
+        root = Path(args.repo) if args.repo else repo_root()
+        decisions = Path(args.decisions) if args.decisions else None
+        report = analyze(root, task.request, decisions)
+        controller.record_investigation(task.id, report)
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(report.render())
     return 0

@@ -90,6 +90,7 @@ uv run harness phase <id> next               # advance one phase
 uv run harness phase <id> back <phase> --reason "<why>"   # return to an earlier phase
 uv run harness classify <id> <level>         # override complexity (trivial|simple|standard|complex)
 uv run harness show <id>                     # task, interview topics and phase history
+uv run harness investigate <id> [--repo PATH] [--json]   # read-only repository investigation (facts / assumptions / questions)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -100,6 +101,10 @@ Task state lives in a per-developer SQLite database outside the repository, at `
 
 The database holds tasks, phase history, interview questions and answers (including open questions), proposals, events and checkpoints. Each task owns its own rows, so one task's state is isolated from another's, and state survives a process restart. On POSIX the database file is created with mode `0600`, and its directory with `0700` when the harness created it or it lies under `$HARNESS_HOME/projects`. An existing directory you point `HARNESS_DB` or `--db` at is left as it is. Migrations are applied automatically when the database is opened.
 
+### Investigation
+
+`harness investigate <id>` scans the target repository (the git top-level of the current directory, or `--repo PATH`) without writing anything to it, not even under `.git/`. It first loads the approved decision records from `docs/decisions`, then reports relevant files, components, dependencies, interfaces, schemas, config, tests and conventions, keeping **verified facts** (with evidence), **assumptions** (with their basis) and **unresolved questions** in separate sections. Contents of secret-bearing files such as `.env` are never read. Results are stored in the task workspace: the open questions, an `investigation` checkpoint and an `investigation.completed` event. Re-running adds a new checkpoint but no duplicate questions.
+
 ## Status
 
-Design spec approved for implementation; P1-01, P1-02 and P1-03 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces). Next task: P1-04.
+Design spec approved for implementation; P1-01 to P1-04 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer). Next task: P1-05.
