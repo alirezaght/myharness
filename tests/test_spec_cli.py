@@ -13,6 +13,7 @@ from harness.db import connect
 from harness.spec_document import SECTIONS
 from harness.spec_record import parse_spec, split_body
 from harness.spec_store import SpecStore
+from tests.complete_task import settle
 from tests.sample_repo import make_sample_repo, tree_snapshot
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -49,9 +50,18 @@ def _task(run, repo):
     return task
 
 
-def _to_approval(run, task):
-    for _ in range(4):
-        _ok(run, "phase", task, "next")
+def _settle(db_path, task):
+    conn = connect(db_path)
+    try:
+        settle(HarnessController(conn), task)
+    finally:
+        conn.close()
+
+
+def _to_approval(run, db_path, task):
+    """Complete the task with synthetic fixtures, then enter approval through the gate."""
+    _settle(db_path, task)
+    _ok(run, "phase", task, "next")
 
 
 def _db(db_path, task):
@@ -95,7 +105,7 @@ def test_scripted_draft_and_approval(run, sample_repo, db_path):
     assert code == 1 and f"is in phase interview; run: harness phase {task} next" in err
     assert tree_snapshot(sample_repo) == snapshot and _db(db_path, task)[1] == []
 
-    _to_approval(run, task)
+    _to_approval(run, db_path, task)
     out = _ok(run, "spec", "approve", task)
     record = parse_spec(specs / "v1.md")
     assert out.strip() == (
@@ -121,7 +131,7 @@ def test_approved_file_is_never_overwritten_and_tampering_is_detected(
     run, sample_repo, db_path, monkeypatch
 ):
     task = _task(run, sample_repo)
-    _to_approval(run, task)
+    _to_approval(run, db_path, task)
     _ok(run, "spec", "approve", task)
     v1 = sample_repo / "docs" / "specs" / task / "v1.md"
     sealed, rows = v1.read_bytes(), _db(db_path, task)[1]
@@ -153,7 +163,7 @@ def test_approved_file_is_never_overwritten_and_tampering_is_detected(
 @needs_git
 def test_superseding_keeps_the_chain(run, sample_repo, db_path):
     task = _task(run, sample_repo)
-    _to_approval(run, task)
+    _to_approval(run, db_path, task)
     _ok(run, "spec", "approve", task)
     specs = sample_repo / "docs" / "specs" / task
     first_body = parse_spec(specs / "v1.md").body
@@ -179,7 +189,7 @@ def test_no_commit_means_no_approval(run, tmp_path, db_path):
     specs = repo / "docs" / "specs" / task
     _ok(run, "spec", "draft", task)
     assert parse_spec(specs / "draft.md").revision is None
-    _to_approval(run, task)
+    _to_approval(run, db_path, task)
     snapshot, events = tree_snapshot(repo), len(_db(db_path, task)[0])
     code, _, err = run("spec", "approve", task)
     assert code == 1 and "the spec cannot be tied to a commit" in err
@@ -189,9 +199,9 @@ def test_no_commit_means_no_approval(run, tmp_path, db_path):
 
 
 @needs_git
-def test_fresh_clone_lists_and_verifies_the_approved_spec(run, sample_repo, tmp_path):
+def test_fresh_clone_lists_and_verifies_the_approved_spec(run, sample_repo, tmp_path, db_path):
     task = _task(run, sample_repo)
-    _to_approval(run, task)
+    _to_approval(run, db_path, task)
     _ok(run, "spec", "approve", task)
     _ok(run, "spec", "approve", task)
     approved_at = _head(sample_repo)
@@ -249,7 +259,7 @@ def test_failed_approval_restores_every_file_and_the_db(run, sample_repo, db_pat
     from harness.spec_manager import SpecificationManager
 
     task = _task(run, sample_repo)
-    _to_approval(run, task)
+    _to_approval(run, db_path, task)
     _ok(run, "spec", "approve", task)
     _ok(run, "spec", "draft", task)
     specs = sample_repo / "docs" / "specs" / task
@@ -273,7 +283,7 @@ def _section(shown, name):
 
 
 @needs_git
-def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sample_repo):
+def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sample_repo, db_path):
     task = _task(run, sample_repo)
     qid = re.search(r"- Q(\d+) \[acceptance_criteria\]", _ok(run, "spec", "show", task)).group(1)
     _ok(run, "phase", task, "next")
@@ -311,8 +321,9 @@ def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sam
         f"## {name}" for name in SECTIONS
     ]
 
-    _ok(run, "phase", task, "next")
-    _ok(run, "phase", task, "next")
+    _ok(run, "phase", task, "next")  # final_review
+    _settle(db_path, task)  # the review blocks on the unasked catalogue; keeps the approved plan
+    _ok(run, "phase", task, "next")  # approval, through the gate
     _ok(run, "spec", "approve", task)
     v1 = sample_repo / "docs" / "specs" / task / "v1.md"
     sealed = v1.read_bytes()

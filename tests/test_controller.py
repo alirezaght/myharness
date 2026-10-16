@@ -9,6 +9,7 @@ from harness.investigation import Assumption, Fact, FactCategory, InvestigationR
 from harness.phases import PHASE_ORDER, InvalidTransition, Phase
 from harness.state import TaskWorkspace
 from harness.state_models import QuestionSource
+from tests.complete_task import settle
 
 
 def _row_counts(conn):
@@ -45,9 +46,10 @@ def test_empty_request_is_rejected_without_writing(controller, conn, request_tex
 
 def test_step_through_every_phase_and_reject_past_approval(controller, conn):
     task = controller.create_task("Add CSV export")
-    for expected in PHASE_ORDER[1:]:
-        task = controller.advance(task.id)
-        assert task.phase is expected
+    task = settle(controller, task.id)  # steps investigation..final_review, review passing
+    assert task.phase is Phase.FINAL_REVIEW
+    task = controller.advance(task.id)
+    assert task.phase is Phase.APPROVAL
     before = _row_counts(conn)
     with pytest.raises(InvalidTransition):
         controller.advance(task.id)
@@ -59,8 +61,8 @@ def test_step_through_every_phase_and_reject_past_approval(controller, conn):
 
 def test_go_back_to_any_earlier_phase_records_reason(controller):
     task = controller.create_task("Add CSV export")
-    for _ in range(5):
-        controller.advance(task.id)
+    settle(controller, task.id)
+    controller.advance(task.id)  # final_review -> approval
     task = controller.go_back(task.id, Phase.INTERVIEW, "  design needs more detail ")
     assert task.phase is Phase.INTERVIEW
     last = controller.history(task.id)[-1]

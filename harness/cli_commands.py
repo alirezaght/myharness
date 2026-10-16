@@ -70,6 +70,8 @@ def cmd_phase(args: argparse.Namespace) -> int:
         else:
             task = controller.go_back(args.task_id, Phase(args.to_phase), args.reason or "")
     print(_summary(task))
+    if args.action == "next" and task.phase is Phase.APPROVAL:
+        print("final design review passed (checkpoint recorded)")
     return 0
 
 

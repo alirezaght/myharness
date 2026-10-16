@@ -9,6 +9,7 @@ from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_s
 from harness.cli_decision import add_decision_parser
 from harness.cli_design import add_design_parser
 from harness.cli_interview import add_interview_parser
+from harness.cli_review import add_review_parser
 from harness.cli_spec import add_spec_parser
 from harness.cli_testplan import add_testplan_parser
 from harness.controller import TaskNotFound
@@ -69,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_decision_parser(subparsers)
     add_testplan_parser(subparsers)
     add_spec_parser(subparsers)
+    add_review_parser(subparsers)
 
     resume = subparsers.add_parser("resume", help="resume an existing task")
     resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")

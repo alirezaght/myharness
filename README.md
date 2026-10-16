@@ -127,6 +127,7 @@ uv run harness spec draft <id> [--specs PATH]   # write the preview to docs/spec
 uv run harness spec approve <id> [--specs PATH]   # seal v<N>.md tied to the commit (approval phase only)
 uv run harness spec list <id> [--json] [--specs PATH]   # every specification version (read-only)
 uv run harness spec verify <id> [--specs PATH]   # check each approved file against its content hash (read-only)
+uv run harness review <id> [--json]   # final design review: SPEC §3 step 6 completeness check (read-only, exit 1 when it blocks)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -187,8 +188,29 @@ A specification moves through three states: **draft**, **approved** and **supers
 - Approving a new version marks the previous one `superseded`: only its header changes (status and a `Superseded by` line), the body and content hash are untouched. Approved files are never edited otherwise.
 - `harness spec verify <id>` re-reads every file and prints one result per version: `ok`, `MODIFIED (...)` (content hash mismatch, a difference from the local approval record, a version that does not match the file name, an unparseable or missing file) or `draft (not sealed)`. It exits 1 on any `MODIFIED`. `harness spec list <id>` (with `--json`) lists the versions. Both work without a local database, at file level only.
 
-`show`, `list` and `verify` never write. `draft` writes only `draft.md`, and `approve` writes only the new `v<N>.md` (plus the superseded header of the previous one). Task ids are validated before they are used as a path. The mandatory completeness check before approval is P1-10, and the developer-facing `harness approve` ("Approve & Implement") is P1-11. Until then `spec approve` is the only way to seal a specification.
+`show`, `list` and `verify` never write. `draft` writes only `draft.md`, and `approve` writes only the new `v<N>.md` (plus the superseded header of the previous one). Task ids are validated before they are used as a path. `spec approve` also re-runs the final design review (see below) and refuses to seal while anything blocks. The developer-facing `harness approve` ("Approve & Implement") is P1-11. Until then `spec approve` is the only way to seal a specification.
+
+### Final review
+
+`harness review <id> [--json]` is the mandatory completeness check of SPEC §3, step 6 (AC 10). It is read-only: it reads the state the earlier phases already recorded, never answers, decides or changes a phase, and exits 1 when anything blocks. The report always lists the ten items in SPEC order, each as `ok`, `BLOCKED` (with its findings and a `→` hint) or `n/a`, followed by `blocking: yes|no` and, when a phase can fix it, a `route back:` line. What each item reads and where it routes:
+
+| Item | Blocked when | Route |
+| --- | --- | --- |
+| Requirements are clear | interview checklist items `not_asked` | interview |
+| Significant decisions are approved | a recommendation `awaiting_decision` in the interview, design or test plan | earliest of interview, design, test_plan |
+| Architecture is consistent | a conflicting design entry, or configuration, failure_handling or required_behaviour uncovered or rejected | design |
+| Component responsibilities are defined | components or responsibilities uncovered or rejected | design |
+| Component interactions are understood | interactions, data_flow or interfaces uncovered or rejected | design |
+| Acceptance criteria are testable | no `acceptance_criteria` requirement recorded (the developer judges scenario coverage when approving the test plan) | interview |
+| The test plan is sufficient | plan `not_approved` or `changed_since_approval`, or a scenario `mock_flagged` | test_plan |
+| No blocking questions remain | interview questions `unanswered` or with a rejected recommendation | interview |
+| No unresolved diagram comments remain | never: reported `n/a` ("diagrams and comments are Phase 2") | none |
+| No known conflicts are ignored | a proposed decision change still `pending` | none: `harness decision decide <id> <cid> accept\|reject\|modify` |
+
+The route-back hints (`harness phase <id> back <phase> --reason "<why>"`) are advice only: the review never moves the task. The developer decides whether to go back.
+
+The review is a gate in both places a specification can advance. `harness phase <id> next` from `final_review` into `approval` runs it and, while anything blocks, exits 1 with the report and writes nothing. When it passes, the transition records a `final_review.passed` event and a `final_review` checkpoint (state hash and per-item states) in the same transaction, and prints `final design review passed (checkpoint recorded)`. `harness spec approve <id>` runs the review again (a decision change proposed while in `approval`, for instance, blocks it) and seals nothing while it blocks. A specification with an open blocking item therefore cannot reach approval.
 
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-09 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec). Next task: P1-10.
+Design spec approved for implementation; P1-01 to P1-10 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open). Next task: P1-11.

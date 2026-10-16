@@ -9,6 +9,9 @@ import pytest
 from harness import cli_commands
 from harness.classification import INTERVIEW_TOPICS
 from harness.cli import main
+from harness.controller import HarnessController
+from harness.db import connect
+from tests.complete_task import settle
 from tests.sample_repo import make_index_stale, tree_snapshot
 
 TASK_ID = re.compile(r"task (t-[0-9a-f]{8}) created")
@@ -53,11 +56,28 @@ def test_start_with_explicit_complexity_has_no_override_hint(run):
     assert "override:" not in out
 
 
-def test_phase_next_steps_through_every_phase_then_rejects(run, task_id):
-    for expected in ["interview", "design", "test_plan", "final_review", "approval"]:
+def test_phase_next_steps_through_every_phase_then_rejects(run, task_id, db_path):
+    for expected in ["interview", "design", "test_plan", "final_review"]:
         code, out, _ = run("phase", task_id, "next")
         assert code == 0
         assert f"phase {expected}" in out
+
+    code, out, err = run("phase", task_id, "next")  # the final design review gate refuses
+    assert code == 1
+    assert out == ""
+    assert err.startswith("harness phase: ")
+    assert f"harness phase {task_id} back interview" in err
+
+    conn = connect(db_path)
+    try:
+        settle(HarnessController(conn), task_id)
+    finally:
+        conn.close()
+    code, out, _ = run("phase", task_id, "next")
+    assert code == 0
+    assert "phase approval" in out
+    assert "final design review passed" in out
+
     code, out, err = run("phase", task_id, "next")
     assert code == 1
     assert out == ""

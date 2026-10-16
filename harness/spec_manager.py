@@ -16,6 +16,7 @@ from harness.design import ArchitectureDesigner
 from harness.interview import InterviewEngine
 from harness.phases import Phase
 from harness.repo_scan import git_state
+from harness.review import FinalReviewer
 from harness.spec_document import build_body
 from harness.spec_record import (
     SpecRecord,
@@ -189,6 +190,9 @@ class SpecificationManager:
             raise SpecError(
                 f"task {task.id} is in phase {task.phase}; run: harness phase {task.id} next"
             )
+        report = FinalReviewer(self.controller, self.task_id).report()
+        if report.blocking:
+            raise SpecError("final design review blocks approval:\n" + report.render())
         state = git_state(self.repo_root)
         if state.revision is None:
             raise SpecError(

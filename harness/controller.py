@@ -102,6 +102,10 @@ class HarnessController:
             target = next_phase(current)
             if target is None:
                 raise InvalidTransition(current, current, f"{current} is the last phase")
+            if target is Phase.APPROVAL:
+                from harness.review import pass_gate  # lazy: review imports the engines
+
+                pass_gate(self, task_id)
             self._move(task_id, current, target, None)
         return self.get_task(task_id)
 

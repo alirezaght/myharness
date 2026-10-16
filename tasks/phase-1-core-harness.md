@@ -76,8 +76,8 @@
 **Done when:** the approved test plan is embedded in the spec.
 
 ### P1-10 — Final Design Review (completeness gate)
-- [ ] Check every item in SPEC §3, step 6 (clear requirements, decisions approved, consistency, testable AC, no blocking questions, no ignored conflicts)
-- [ ] When something fails, route back to the right step (AC 10)
+- [x] Check every item in SPEC §3, step 6 (clear requirements, decisions approved, consistency, testable AC, no blocking questions, no ignored conflicts)
+- [x] When something fails, route back to the right step (AC 10)
 
 **Done when:** a spec with even one open blocking item cannot reach approval.
 
