@@ -47,8 +47,8 @@
 **Done when:** a scripted interview run leaves the right items unresolved, and no requirement shows up in the spec that the developer did not provide or approve.
 
 ### P1-06 — Architecture Designer (text)
-- [ ] Capture components, responsibilities, interactions, data flow, interfaces/contracts, config, failure handling and required behaviour
-- [ ] Mark what is delegated to AL (class/method names, file placement) versus what is fixed by the design
+- [x] Capture components, responsibilities, interactions, data flow, interfaces/contracts, config, failure handling and required behaviour
+- [x] Mark what is delegated to AL (class/method names, file placement) versus what is fixed by the design
 
 **Done when:** the design section of the spec covers every item in SPEC §3, step 3.
 

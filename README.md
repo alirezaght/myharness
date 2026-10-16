@@ -100,6 +100,13 @@ uv run harness interview propose <id> <qid> --title T --recommendation R --ratio
 uv run harness interview decide <id> <pid> accept|reject|modify [--response TEXT]   # developer's verdict
 uv run harness interview checklist <id> [--json]   # unresolved-decision checklist (read-only)
 uv run harness interview summary <id> [--json]   # requirements with provenance (read-only)
+uv run harness design add <id> <section> <text...> [--delegated]   # record a design element the developer stated
+uv run harness design none <id> <section> --reason R   # the developer states a section does not apply
+uv run harness design propose <id> <section> <text...> --rationale W [--delegated]   # attach a recommendation
+uv run harness design decide <id> <eid> accept|reject|modify [--response TEXT]   # developer's verdict
+uv run harness design withdraw <id> <eid>   # withdraw an effective design entry
+uv run harness design show <id> [--json]   # design section with provenance (read-only)
+uv run harness design coverage <id> [--json]   # uncovered and unresolved design items (read-only)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -120,6 +127,14 @@ The database holds tasks, phase history, interview questions and answers (includ
 
 Provenance rules: a requirement exists only if the developer typed an answer, or accepted (or modified) a recommendation. A decision question needs a recommendation with rationale (`propose`), and the developer accepts, rejects or modifies it. Rejected or pending recommendations never become requirements. A question is skipped only with provenance: an approved decision id from the investigation, or an evidence reference for the codebase. "I don't know" (`unknown`) never becomes an answer: the question stays open and blocking, and `next` moves on to others. `harness interview checklist` lists every unresolved item (never asked, unanswered, awaiting a decision, recommendation rejected) and says whether it is blocking. Due catalogue questions not asked yet appear as `catalogue:<key>`. Every mutating command is one transaction that records an event and an `interview` checkpoint, and fails with exit 1 outside the interview phase.
 
+### Design
+
+`harness design` captures the logical architecture of a task once it is in the `design` phase (SPEC §3, Phase 3). The design has eight sections: `components`, `responsibilities`, `interactions`, `data_flow`, `interfaces` (interfaces and contracts), `configuration`, `failure_handling` and `required_behaviour`. Claude Code (`/harness`) drafts recommendations from the investigation report and the interview summary, and relays the developer's verdicts. The CLI only stores and renders; it never writes design content itself.
+
+Provenance rules: a design entry exists only if the developer stated it (`add`), or accepted (or modified) a recommendation (`propose` then `decide`). Pending, rejected and withdrawn entries never appear as design content. A section that does not apply needs the developer's reason (`none --reason`). `harness design coverage` lists every uncovered or unresolved item (a section with no entry, a recommendation awaiting a decision, a section whose recommendations were all rejected, a section marked not applicable that also has elements) and says whether it is blocking: it blocks until all eight sections are covered. Each entry is marked **fixed** by the design (the default) or `--delegated` to AL, for details such as class and method names or file placement. `harness design show` renders the design section as Markdown, with each line tagged fixed or delegated and its provenance, plus a "Delegated to AL" list. It is the section P1-08 will embed in the spec.
+
+Every mutating command is one transaction that records an event and a `design` checkpoint, and fails with exit 1 outside the design phase (the error says how to get there). `show` and `coverage` are read-only and work in any phase. Nothing is written to the target repository.
+
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-05 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist). Next task: P1-06.
+Design spec approved for implementation; P1-01 to P1-06 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check). Next task: P1-07.

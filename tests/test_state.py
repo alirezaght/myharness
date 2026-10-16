@@ -220,6 +220,9 @@ def test_unknown_task_and_record(conn, ws):
         "INSERT INTO events (task_id, kind, payload, created_at) VALUES ('nope', 'k', '{}', 'n')",
         "INSERT INTO checkpoints (task_id, phase, label, payload, created_at)"
         " VALUES ('nope', 'design', 'l', '{}', 'n')",
+        "INSERT INTO design_entries (task_id, section, kind, origin, binding, statement, status,"
+        " created_at) VALUES ('nope', 'components', 'element', 'developer', 'fixed', 's',"
+        " 'stated', 'n')",
     ],
 )
 def test_child_rows_require_an_existing_task(conn, sql):
@@ -262,3 +265,40 @@ def test_latest_checkpoint_by_label(ws):
     assert ws.latest_checkpoint() == later
     assert ws.latest_checkpoint("investigation") == first
     assert ws.latest_checkpoint("missing") is None
+
+
+def test_design_entry_lifecycle_and_isolation(controller, conn, ws):
+    from harness.design_models import Binding, EntryKind, EntryOrigin, EntryStatus
+
+    stated = ws.state_design("components", " an Exporter ", Binding.DELEGATED)
+    assert (stated.statement, stated.origin, stated.status, stated.binding) == (
+        "an Exporter",
+        EntryOrigin.DEVELOPER,
+        EntryStatus.STATED,
+        Binding.DELEGATED,
+    )
+    na = ws.state_design("configuration", "none", kind=EntryKind.NOT_APPLICABLE)
+    pending = ws.propose_design("data_flow", "rows to csv", "streaming")
+    assert (pending.status, pending.rationale, pending.resolved_at) == (
+        EntryStatus.PENDING,
+        "streaming",
+        None,
+    )
+    assert ws.design_entries(EntryStatus.PENDING) == [pending]
+    resolved = ws.resolve_design(pending.id, EntryStatus.ACCEPTED, "  ")
+    assert resolved.response is None and resolved.resolved_at is not None
+    assert ws.withdraw_design(na.id).status is EntryStatus.WITHDRAWN
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE design_entries SET section = 'bogus' WHERE id = ?", (stated.id,))
+
+    other = controller.workspace(controller.create_task("Task B").id)
+    snapshot = _rows(conn, "design_entries")
+    assert other.design_entries() == []
+    for op in (
+        lambda: other.design_entry(stated.id),
+        lambda: other.resolve_design(pending.id, EntryStatus.REJECTED),
+        lambda: other.withdraw_design(stated.id),
+    ):
+        with pytest.raises(RecordNotFound):
+            op()
+    assert _rows(conn, "design_entries") == snapshot

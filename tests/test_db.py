@@ -106,7 +106,12 @@ def test_existing_0001_database_upgrades_keeping_rows(tmp_path):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names == ["0001_tasks.sql", "0002_workspace.sql", "0003_interview.sql"]
+        assert names == [
+            "0001_tasks.sql",
+            "0002_workspace.sql",
+            "0003_interview.sql",
+            "0004_design.sql",
+        ]
         controller = HarnessController(conn)
         assert controller.get_task("t-old00001").request == "Old task"
         cp = controller.workspace("t-old00001").checkpoint("after upgrade")
@@ -125,7 +130,11 @@ def test_upgrade_applies_only_the_new_migration(tmp_path, monkeypatch):
     monkeypatch.undo()
     raw = sqlite3.connect(db, autocommit=True)
     try:
-        assert db_module.apply_migrations(raw) == ["0002_workspace.sql", "0003_interview.sql"]
+        assert db_module.apply_migrations(raw) == [
+            "0002_workspace.sql",
+            "0003_interview.sql",
+            "0004_design.sql",
+        ]
     finally:
         raw.close()
 
@@ -191,9 +200,44 @@ def test_0002_database_upgrades_questions_with_interview_columns(tmp_path, monke
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names == ["0001_tasks.sql", "0002_workspace.sql", "0003_interview.sql"]
+        assert names == [
+            "0001_tasks.sql",
+            "0002_workspace.sql",
+            "0003_interview.sql",
+            "0004_design.sql",
+        ]
         upgraded = HarnessController(conn).workspace(task.id).question(question_id)
         assert (upgraded.kind, upgraded.asked_at, upgraded.skip_source) == ("question", None, None)
         assert upgraded.catalogue_key is None and upgraded.text == "Which formats?"
+    finally:
+        conn.close()
+
+
+def test_0003_database_upgrades_with_design_entries(tmp_path, monkeypatch):
+    from harness import db as db_module
+
+    db = tmp_path / "old.db"
+    first_three = [m for m in db_module._migrations() if m[0] <= 3]
+    monkeypatch.setattr(db_module, "_migrations", lambda: first_three)
+    old = connect(db)
+    task = HarnessController(old).create_task("Old task")
+    question = HarnessController(old).workspace(task.id).ask("scope", "Which formats?")
+    assert (
+        old.execute("SELECT name FROM sqlite_master WHERE name = 'design_entries'").fetchone()
+        is None
+    )
+    old.close()
+    monkeypatch.undo()
+
+    conn = connect(db)
+    try:
+        assert db_module.apply_migrations(conn) == []
+        names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
+        assert names[-1] == "0004_design.sql"
+        ws = HarnessController(conn).workspace(task.id)
+        assert ws.question(question.id).text == "Which formats?"
+        assert ws.design_entries() == []
+        entry = ws.state_design("components", "an Exporter")
+        assert ws.design_entries() == [entry]
     finally:
         conn.close()

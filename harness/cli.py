@@ -6,6 +6,7 @@ import sys
 from harness import __version__
 from harness.classification import Complexity
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
+from harness.cli_design import add_design_parser
 from harness.cli_interview import add_interview_parser
 from harness.controller import TaskNotFound
 from harness.errors import RecordNotFound
@@ -61,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.set_defaults(handler=cmd_investigate)
 
     add_interview_parser(subparsers)
+    add_design_parser(subparsers)
 
     resume = subparsers.add_parser("resume", help="resume an existing task")
     resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")
