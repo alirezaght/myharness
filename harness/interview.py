@@ -71,6 +71,17 @@ class InterviewEngine:
     def summary(self) -> InterviewSummary:
         return build_summary(self.ws.questions(), self.ws.proposals(), self.checklist())
 
+    def upcoming(self) -> Question | None:
+        """The question `next()` asks (or re-asks) from committed state; no sync, no write."""
+        askable = self._askable()
+        return askable[0] if askable else None
+
+    def sync_due(self) -> bool:
+        """True when `next()` would first seed, skip or reopen catalogue questions."""
+        task = self.controller.get_task(self.task_id)
+        plan = plan_sync(self.ws.questions(), catalogue_for(self._topics(task)))
+        return bool(plan.seed or plan.skip or plan.reopen)
+
     def pending_proposals(self, question_id: int) -> list[Proposal]:
         return [
             p for p in self.ws.proposals(ProposalStatus.PENDING) if p.question_id == question_id

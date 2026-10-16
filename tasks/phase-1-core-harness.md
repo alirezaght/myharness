@@ -88,8 +88,8 @@
 **Done when:** a test proves nothing can be handed off without an approval record.
 
 ### P1-12 — Resume
-- [ ] Resume an interrupted task from its last consistent checkpoint (AC 12)
-- [ ] List the tasks that can be resumed
+- [x] Resume an interrupted task from its last consistent checkpoint (AC 12)
+- [x] List the tasks that can be resumed
 
 **Done when:** killing the process mid-interview and resuming continues from the same question.
 

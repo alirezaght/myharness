@@ -15,10 +15,10 @@ def test_cli_version_flag(capsys):
     assert "0.1.0" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("argv", [["resume"]])
-def test_cli_stub_commands_exit_2(argv, capsys):
-    assert main(argv) == 2
-    assert "not implemented" in capsys.readouterr().err
+def test_cli_resume_without_state_lists_nothing(isolated_home, capsys):
+    assert main(["resume"]) == 0
+    assert capsys.readouterr().out == "no tasks to resume\n"
+    assert not isolated_home.exists()
 
 
 def test_cli_requires_a_subcommand(capsys):

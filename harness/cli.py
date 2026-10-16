@@ -10,6 +10,7 @@ from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_s
 from harness.cli_decision import add_decision_parser
 from harness.cli_design import add_design_parser
 from harness.cli_interview import add_interview_parser
+from harness.cli_resume import add_resume_parser
 from harness.cli_review import add_review_parser
 from harness.cli_spec import add_spec_parser
 from harness.cli_testplan import add_testplan_parser
@@ -18,7 +19,6 @@ from harness.errors import RecordNotFound
 from harness.phases import InvalidTransition, Phase
 
 ERROR_EXIT_CODE = 1
-NOT_IMPLEMENTED_EXIT_CODE = 2
 LEVELS = [str(level) for level in Complexity]
 PHASES = [str(phase) for phase in Phase]
 
@@ -73,8 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_spec_parser(subparsers)
     add_review_parser(subparsers)
 
-    resume = subparsers.add_parser("resume", help="resume an existing task")
-    resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")
+    add_resume_parser(subparsers)
     add_approve_parser(subparsers)
 
     return parser
@@ -82,15 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    handler = getattr(args, "handler", None)
-    if handler is None:
-        print(
-            f"harness {args.command}: not implemented yet (see tasks/phase-1-core-harness.md)",
-            file=sys.stderr,
-        )
-        return NOT_IMPLEMENTED_EXIT_CODE
     try:
-        return handler(args)
+        return args.handler(args)
     except (InvalidTransition, TaskNotFound, RecordNotFound, ValueError, OSError) as error:
         print(f"harness {args.command}: {error}", file=sys.stderr)
         return ERROR_EXIT_CODE

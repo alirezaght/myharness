@@ -15,7 +15,7 @@ DECISIONS = {
 }
 
 
-def _print_question(engine: InterviewEngine, question: Question) -> None:
+def print_question(engine: InterviewEngine, question: Question) -> None:
     tag = " (decision)" if question.kind is QuestionKind.DECISION else ""
     print(f"Q{question.id} [{question.topic}]{tag} {question.text}")
     pending = engine.pending_proposals(question.id)
@@ -41,7 +41,7 @@ def cmd_interview(args: argparse.Namespace) -> int:
         if action == "next":
             asked = engine.next(group=args.group)
             for question in asked:
-                _print_question(engine, question)
+                print_question(engine, question)
             unresolved = len(engine.ws.open_questions())
             if not asked and unresolved:
                 print(

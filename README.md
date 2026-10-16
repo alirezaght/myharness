@@ -129,6 +129,7 @@ uv run harness spec list <id> [--json] [--specs PATH]   # every specification ve
 uv run harness spec verify <id> [--specs PATH]   # check each approved file against its content hash (read-only)
 uv run harness approve <id> [--specs PATH]   # Approve & Implement: seal v<N>.md and record the approval that authorizes the handoff (approval phase only)
 uv run harness review <id> [--json]   # final design review: SPEC §3 step 6 completeness check (read-only, exit 1 when it blocks)
+uv run harness resume [<id>] [--json] [--specs PATH]   # where an interrupted task continues; no id lists resumable tasks (read-only)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -212,6 +213,38 @@ The route-back hints (`harness phase <id> back <phase> --reason "<why>"`) are ad
 
 The review is a gate in both places a specification can advance. `harness phase <id> next` from `final_review` into `approval` runs it and, while anything blocks, exits 1 with the report and writes nothing. When it passes, the transition records a `final_review.passed` event and a `final_review` checkpoint (state hash and per-item states) in the same transaction, and prints `final design review passed (checkpoint recorded)`. `harness spec approve <id>` runs the review again (a decision change proposed while in `approval`, for instance, blocks it) and seals nothing while it blocks. A specification with an open blocking item therefore cannot reach approval.
 
+### Resume
+
+`harness resume [<id>] [--json] [--specs PATH]` answers "where does an interrupted task continue?" (SPEC AC 12). It is derived from the committed SQLite state only, and it writes nothing: no row, event, checkpoint or file, and it never creates the database. Every mutating command is one transaction, so a process killed mid-way (for example in the middle of an interview) loses only its uncommitted transaction and the committed rows are the last consistent checkpoint. Resuming the interview therefore continues from the same question.
+
+`harness resume <id>` prints:
+
+- `task <id> · phase <phase> · complexity <level> (<source>)`
+- `request: <the original request>`
+- `checkpoint: <label> <timestamp> (#<n>)` for the latest checkpoint recorded in the task's current phase, or `checkpoint: none in this phase`
+- in the interview phase, the pending question exactly as `harness interview next` prints it (`Q<n> [<topic>] <text>`, with any pending recommendation or `recommendation needed` hint)
+- `approval: <status>` in the `approval` phase only (the same status `harness show` prints)
+- one `note:` line per finding about the draft (see below)
+- `next: <command>`, the command to run to continue, or `nothing to resume: approved for implementation (handoff is Phase 3)`
+
+The `next:` command depends on the phase:
+
+| Phase | `next:` |
+| --- | --- |
+| any phase, no `investigation` checkpoint yet | `harness investigate <id>` |
+| `investigation` | `harness phase <id> next` |
+| `interview` | `harness interview next <id>` when a catalogue re-sync is due (no question is shown), or when a question is pending (that question is printed); otherwise `harness interview checklist <id>` while the checklist blocks; otherwise `harness phase <id> next` |
+| `design` | `harness design coverage <id>` while coverage blocks, otherwise `harness phase <id> next` |
+| `test_plan` | `harness testplan review <id>` while the review blocks, otherwise `harness phase <id> next` |
+| `final_review` | `harness review <id>` while the final review blocks, otherwise `harness phase <id> next` |
+| `approval` | `nothing to resume: approved for implementation (handoff is Phase 3)` when the approval is current; otherwise `harness review <id>` while the final review blocks, otherwise `harness approve <id>` |
+
+`harness resume` without an id lists the resumable tasks: every task except those approved with a current approval, most recently updated first. Each task is three lines: `<id> · phase <phase> · complexity <level> · updated <timestamp>`, then `  <request>`, then `  next: <command>`. With no database it prints `no tasks to resume` (`[]` with `--json`) and creates nothing. `--json` prints the resume point (or the list) as JSON.
+
+`draft.md` is the only file the harness writes inside a transaction. When `docs/specs/<id>/draft.md` exists but no committed `spec` checkpoint records it (the write was interrupted), the output adds `note: unrecorded draft <path> (the write was interrupted); harness spec draft <id> rewrites it`. Resume never rewrites it for you.
+
+Exit codes: `0` on success (including an empty list), `1` for an unknown task id (`harness resume: unknown task: <id>`).
+
 ## Approve & Implement
 
 `harness approve <id> [--specs PATH]` is the developer-facing "Approve & Implement" step (SPEC §3 Phase 7). It is allowed only in the `approval` phase and, in one transaction, seals a new `v<N>.md` exactly as `spec approve` does (same output, including the superseded line for the previous version) and records the approval. It also re-runs the final design review and writes nothing (no file, row, event or checkpoint) if anything blocks, the task is outside `approval`, or there is no commit at HEAD. Success also prints `approval #<n> recorded: spec v<N> <content hash> (implementation handoff authorized; AL launch is Phase 3)`. The harness does not launch AL yet: that is Phase 3.
@@ -230,4 +263,4 @@ An approval binds the specification version, the path of the sealed file, the gi
 
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-11 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization). Next task: P1-12.
+Design spec approved for implementation; P1-01 to P1-12 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list). Next task: P1-13.
