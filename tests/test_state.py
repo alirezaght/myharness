@@ -324,3 +324,40 @@ def test_spec_versions_are_isolated_unique_and_superseded(controller, conn):
     assert a.current_spec_version() == v2
     assert [v.version for v in a.spec_versions()] == [1, 2]
     assert [v.path for v in b.spec_versions()] == ["b/v1.md"]
+
+
+def test_test_scenario_lifecycle_and_isolation(controller, conn, ws):
+    from harness.design_models import EntryOrigin, EntryStatus
+
+    stated = ws.state_scenario("unit", " header row ", ["Q1"], " clock ", " stable time ")
+    assert (stated.statement, stated.origin, stated.covers, stated.mock) == (
+        "header row",
+        EntryOrigin.DEVELOPER,
+        ("Q1",),
+        "clock",
+    )
+    assert stated.mock_justification == "stable time" and stated.updated_at == stated.created_at
+    pending = ws.propose_scenario("failure", "disk full", "error path", ["E1"])
+    assert ws.scenarios(EntryStatus.PENDING) == [pending]
+    with pytest.raises(ValueError, match="must cover at least one"):
+        ws.propose_scenario("unit", "x", "why", [])
+    ws.flag_scenario(stated.id, "hides missing writer")
+    approval = ws.record_plan_approval("sha256:abc", 1)
+    assert ws.latest_plan_approval() == approval
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute("UPDATE test_scenarios SET category = 'bogus' WHERE id = ?", (stated.id,))
+
+    other = controller.workspace(controller.create_task("Task B").id)
+    snapshot = {t: _rows(conn, t) for t in ("test_scenarios", "test_plan_approvals")}
+    assert other.scenarios() == [] and other.latest_plan_approval() is None
+    for op in (
+        lambda: other.scenario(stated.id),
+        lambda: other.resolve_scenario(pending.id, EntryStatus.REJECTED),
+        lambda: other.edit_scenario(stated.id, statement="y"),
+        lambda: other.withdraw_scenario(stated.id),
+        lambda: other.flag_scenario(stated.id, "x"),
+        lambda: other.clear_scenario_flag(stated.id),
+    ):
+        with pytest.raises(RecordNotFound):
+            op()
+    assert {t: _rows(conn, t) for t in snapshot} == snapshot

@@ -69,9 +69,9 @@
 **Done when:** an approved spec is an immutable file tied to a commit.
 
 ### P1-09 — Test Planner
-- [ ] Propose only the relevant unit, integration, E2E, regression, edge-case and failure tests
-- [ ] The developer can add, remove or modify scenarios, and approves the plan (AC 9)
-- [ ] Mocks only with a written justification. Flag any mock that hides missing behaviour
+- [x] Propose only the relevant unit, integration, E2E, regression, edge-case and failure tests
+- [x] The developer can add, remove or modify scenarios, and approves the plan (AC 9)
+- [x] Mocks only with a written justification. Flag any mock that hides missing behaviour
 
 **Done when:** the approved test plan is embedded in the spec.
 

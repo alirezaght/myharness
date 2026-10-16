@@ -67,6 +67,11 @@ _PROVENANCE = {
 }
 
 
+def provenance_for(status: EntryStatus) -> Provenance | None:
+    """Who the content is from: developer, accepted or modified recommendation; else None."""
+    return _PROVENANCE.get(EntryStatus(status))
+
+
 @dataclass(frozen=True)
 class DesignEntry:
     id: int
@@ -94,7 +99,7 @@ class DesignEntry:
 
     @property
     def provenance(self) -> Provenance | None:
-        return _PROVENANCE.get(self.status)
+        return provenance_for(self.status)
 
     @property
     def ref(self) -> str:

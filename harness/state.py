@@ -25,13 +25,14 @@ from harness.state_models import (
 )
 from harness.state_proposals import ProposalsMixin, required
 from harness.state_specs import SpecsMixin
+from harness.state_testplan import TestPlanMixin
 
 
 def _payload(payload: dict[str, Any] | None) -> str:
     return json.dumps(payload or {}, sort_keys=True)
 
 
-class TaskWorkspace(ProposalsMixin, DesignMixin, DecisionChangesMixin, SpecsMixin):
+class TaskWorkspace(ProposalsMixin, DesignMixin, DecisionChangesMixin, SpecsMixin, TestPlanMixin):
     def __init__(self, conn: sqlite3.Connection, task_id: str):
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
             raise TaskNotFound(task_id)

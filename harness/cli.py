@@ -10,6 +10,7 @@ from harness.cli_decision import add_decision_parser
 from harness.cli_design import add_design_parser
 from harness.cli_interview import add_interview_parser
 from harness.cli_spec import add_spec_parser
+from harness.cli_testplan import add_testplan_parser
 from harness.controller import TaskNotFound
 from harness.errors import RecordNotFound
 from harness.phases import InvalidTransition, Phase
@@ -66,6 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_interview_parser(subparsers)
     add_design_parser(subparsers)
     add_decision_parser(subparsers)
+    add_testplan_parser(subparsers)
     add_spec_parser(subparsers)
 
     resume = subparsers.add_parser("resume", help="resume an existing task")

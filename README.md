@@ -107,6 +107,15 @@ uv run harness design decide <id> <eid> accept|reject|modify [--response TEXT]  
 uv run harness design withdraw <id> <eid>   # withdraw an effective design entry
 uv run harness design show <id> [--json]   # design section with provenance (read-only)
 uv run harness design coverage <id> [--json]   # uncovered and unresolved design items (read-only)
+uv run harness testplan add <id> <category> <text...> [--covers Q1|E1 ...] [--mock T --mock-reason W]   # record a test scenario the developer stated
+uv run harness testplan propose <id> <category> <text...> --rationale W --covers Q1|E1 [--covers ...] [--mock T --mock-reason W]   # attach a recommended scenario
+uv run harness testplan decide <id> <sid> accept|reject|modify [--response TEXT]   # developer's verdict
+uv run harness testplan edit <id> <sid> [--text T] [--category C] [--covers REF ...] [--mock T --mock-reason W | --no-mock]   # change an effective scenario
+uv run harness testplan withdraw <id> <sid>   # withdraw an effective scenario
+uv run harness testplan flag <id> <sid> --reason R [--clear]   # flag a mock that hides missing behaviour, or clear the flag
+uv run harness testplan approve <id>   # approve the whole plan (test_plan phase only)
+uv run harness testplan show <id> [--json]   # the test plan with provenance (read-only)
+uv run harness testplan review <id> [--json]   # undecided, flagged and unapproved items (read-only)
 uv run harness decision list [--decisions PATH] [--json]   # latest version of every decision (read-only)
 uv run harness decision show <DEC-id> [--history] [--decisions PATH] [--json]   # one decision, --history adds every earlier version (read-only)
 uv run harness decision record <id> --title T --decision C --rationale W [--scope S] [--impact I] [--decisions PATH]   # record a decision the developer stated
@@ -146,6 +155,18 @@ Provenance rules: a design entry exists only if the developer stated it (`add`),
 
 Every mutating command is one transaction that records an event and a `design` checkpoint, and fails with exit 1 outside the design phase (the error says how to get there). `show` and `coverage` are read-only and work in any phase. Nothing is written to the target repository.
 
+### Test plan
+
+`harness testplan` captures the test scenarios of a task once it is in the `test_plan` phase (SPEC §3, Phase 5). A scenario belongs to one of six categories: `unit`, `integration`, `e2e`, `regression`, `edge_case` and `failure`. Claude Code (`/harness`) drafts only the scenarios that are relevant to the task, from the interview summary, the design and the investigation, and relays the developer's verdicts. The CLI only stores and renders; it never writes scenario text itself. A category with no scenario is reported but never blocks.
+
+Provenance rules: a scenario is test-plan content only if the developer stated it (`add`), or accepted (or modified) a recommendation (`propose` then `decide`). Pending, rejected and withdrawn scenarios never appear as plan content. The developer can `add`, `edit` and `withdraw` scenarios at any time while the task is in the phase. Relevance is traceability: a recommendation must name at least one `--covers` reference, which is either an answered requirement `Q<n>` (an interview question with an answer) or an effective design entry `E<n>` of the same task. References are case-sensitive (`Q1`, not `q1`). A scenario the developer adds may omit `--covers`; the plan then shows `covers (not stated)`.
+
+A mock is allowed only with a written justification: `--mock <target>` and `--mock-reason <why>` are required together (a scenario can hold both or neither, enforced in the database too). `harness testplan flag <id> <sid> --reason R` marks a mock that would stand in for behaviour the task must implement; a flagged scenario blocks approval until the flag is cleared with `flag --clear --reason R` (the reason is recorded), or the scenario is edited with a different mock, edited with `--no-mock` or withdrawn.
+
+`harness testplan review` lists what is open: scenarios `awaiting_decision`, mocks `mock_flagged`, and the plan itself as `not_approved` or `changed_since_approval`, with `blocking: yes|no`. `harness testplan approve <id>` is the developer's plan-level approval, allowed only in the `test_plan` phase. It is refused while any scenario is pending or flagged, or when there are no scenarios. It records a content hash over the effective scenarios. The specification embeds the plan in its Test plan section only while that hash still matches the current scenarios and nothing is flagged: any later add, edit, withdraw, decision or flag (even a flag raised after approval and cleared afterwards) shows the placeholder again until a new `testplan approve`. Sealed `v<N>.md` specifications are never rewritten.
+
+Every mutating command is one transaction that records an event and a `test_plan` checkpoint, and fails with exit 1 outside the test_plan phase (the error says how to get there). `show` and `review` are read-only and work in any phase. Nothing is written to the target repository.
+
 ### Decisions
 
 `harness decision` manages the decision registry (SPEC §6.4, §6.3): one Git-versioned Markdown record per decision in the target repository's `docs/decisions` (by default the repository the task was investigated in, or `--decisions PATH`). A record carries its id, decision, rationale, scope, status, version, timestamp, supersedes and impact. A decision is recorded automatically when the developer approves it: `harness interview decide <id> <pid> accept|modify` on a decision question writes the record (the recommendation, or the developer's modification, with the rationale from the proposal and the `--impact` given to `interview propose`) and prints `recorded DEC-NNNN v1 -> <path>`. Rejecting writes nothing, and neither does a plain question. A decision the developer states directly is recorded with `harness decision record`. Blank scope and impact are stored as "not stated", never invented.
@@ -156,7 +177,7 @@ The three commands that write into the target repository's `docs/decisions` are 
 
 ### Specification
 
-`harness spec` manages the task's implementation specification (SPEC §5, AC 30): a Markdown file in the target repository's `docs/specs/<task-id>/` (by default the repository the task was investigated in, or `--specs PATH`). The template has nine sections: Requirements, Architecture, Components and interfaces, Configuration, Acceptance criteria, Test plan, Rationale, Constraints and Unresolved items. They are rendered only from state the developer already stated or approved (the interview summary and the design section), with provenance; nothing is invented. The Test plan reads `- (no approved test plan recorded)` until the Test Planner (P1-09) embeds one.
+`harness spec` manages the task's implementation specification (SPEC §5, AC 30): a Markdown file in the target repository's `docs/specs/<task-id>/` (by default the repository the task was investigated in, or `--specs PATH`). The template has nine sections: Requirements, Architecture, Components and interfaces, Configuration, Acceptance criteria, Test plan, Rationale, Constraints and Unresolved items. They are rendered only from state the developer already stated or approved (the interview summary and the design section), with provenance; nothing is invented. The Test plan section embeds the plan approved with `harness testplan approve` (grouped by category, with provenance, mocks and their justifications) as long as the approval still matches the current scenarios; otherwise it reads `- (no approved test plan recorded)`.
 
 A specification moves through three states: **draft**, **approved** and **superseded**.
 
@@ -170,4 +191,4 @@ A specification moves through three states: **draft**, **approved** and **supers
 
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-08 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit). Next task: P1-09.
+Design spec approved for implementation; P1-01 to P1-09 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec). Next task: P1-10.

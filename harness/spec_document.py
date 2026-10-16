@@ -12,6 +12,7 @@ from harness.design_models import DesignSection, EntryOrigin
 from harness.design_report import DesignDocument
 from harness.interview_report import InterviewSummary, Requirement
 from harness.state_models import Proposal, ProposalStatus
+from harness.testplan_report import TestPlanDocument
 
 SECTIONS = (
     "Requirements",
@@ -87,7 +88,27 @@ def _constraints(decisions: Iterable[dict[str, Any]], summary: InterviewSummary)
     return _listed(lines)
 
 
-def _unresolved(summary: InterviewSummary, design: DesignDocument) -> list[str]:
+def _test_plan(plan: TestPlanDocument | None) -> list[str]:
+    """The approved plan only while its approval matches the current scenarios."""
+    if plan is None or not plan.approved:
+        return [NO_TEST_PLAN]
+    return [flow(line) for line in plan.plan_lines()]
+
+
+def _test_plan_review(plan: TestPlanDocument | None) -> list[str]:
+    if plan is None:
+        return ["### Test plan", "- (no test plan)", "- blocking: yes"]
+    review = plan.review
+    return [
+        "### Test plan",
+        *_listed(f"- {item.render()}" for item in review.items),
+        f"- blocking: {'yes' if review.blocking else 'no'}",
+    ]
+
+
+def _unresolved(
+    summary: InterviewSummary, design: DesignDocument, plan: TestPlanDocument | None
+) -> list[str]:
     checklist, coverage = summary.checklist, design.coverage
     interview = []
     for item in checklist.items:
@@ -100,6 +121,7 @@ def _unresolved(summary: InterviewSummary, design: DesignDocument) -> list[str]:
         "### Design",
         *_listed(f"- {item.render()}" for item in coverage.items),
         f"- blocking: {'yes' if coverage.blocking else 'no'}",
+        *_test_plan_review(plan),
     ]
 
 
@@ -109,6 +131,7 @@ def build_body(
     decisions: Iterable[dict[str, Any]],
     recorded: Iterable[DecisionRecord],
     proposals: Iterable[Proposal] = (),
+    test_plan: TestPlanDocument | None = None,
 ) -> str:
     """The `## ` sections of the spec, in template order; empty sections say `- (none)`."""
     requirements = [r for r in summary.requirements if r.topic != ACCEPTANCE_TOPIC]
@@ -123,10 +146,10 @@ def build_body(
         "Components and interfaces": _design(design, COMPONENTS),
         "Configuration": _listed(design.section_lines(DesignSection.CONFIGURATION)),
         "Acceptance criteria": _listed(_requirement(r) for r in criteria),
-        "Test plan": [NO_TEST_PLAN],
+        "Test plan": _test_plan(test_plan),
         "Rationale": _rationale(proposals, design, list(recorded)),
         "Constraints": _constraints(decisions, summary),
-        "Unresolved items": _unresolved(summary, design),
+        "Unresolved items": _unresolved(summary, design, test_plan),
     }
     parts = [f"## {name}\n\n" + "\n".join(content[name]) + "\n" for name in SECTIONS]
     return "\n".join(parts)

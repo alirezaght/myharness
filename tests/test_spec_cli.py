@@ -266,3 +266,61 @@ def test_failed_approval_restores_every_file_and_the_db(run, sample_repo, db_pat
     assert code == 1 and "disk full" in err
     assert {p.name: p.read_bytes() for p in specs.iterdir()} == files
     assert _db(db_path, task) == state
+
+
+def _section(shown, name):
+    return shown.split(f"## {name}\n\n")[1].split("\n\n## ")[0].rstrip("\n")
+
+
+@needs_git
+def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sample_repo):
+    task = _task(run, sample_repo)
+    qid = re.search(r"- Q(\d+) \[acceptance_criteria\]", _ok(run, "spec", "show", task)).group(1)
+    _ok(run, "phase", task, "next")
+    _ok(run, "phase", task, "next")
+    _ok(run, "testplan", "add", task, "unit", "rows\nwith quotes", "--covers", f"Q{qid}")
+    _ok(
+        run, "testplan", "propose", task, "integration", "writes", "the", "file",
+        "--rationale", "real path", "--covers", f"Q{qid}",
+        "--mock", "clock", "--mock-reason", "stable timestamps",
+    )  # fmt: skip
+    shown = _ok(run, "spec", "show", task)
+    assert _section(shown, "Test plan") == "- (no approved test plan recorded)"
+    review = _section(shown, "Unresolved items").split("### Test plan\n")[1].splitlines()
+    assert review == [
+        "- S2 [integration] awaiting_decision — writes the file",
+        "- plan not_approved",
+        "- blocking: yes",
+    ]
+    _ok(run, "testplan", "decide", task, "2", "accept")
+    out = _ok(run, "testplan", "approve", task)
+    digest = re.match(r"approved test plan \(2 scenario\(s\), (sha256:[0-9a-f]{64})\)$", out)
+    shown = _ok(run, "spec", "show", task)
+    plan = _section(shown, "Test plan").splitlines()
+    assert re.match(rf"- approved \S+ \(2 scenario\(s\); {digest.group(1)}\)$", plan[0])
+    assert plan[1:] == [
+        "### Unit tests",
+        "- S1 rows",
+        f"  with quotes — covers Q{qid} — mock: none (developer)",
+        "### Integration tests",
+        f"- S2 writes the file — covers Q{qid} — mock: clock (justified: stable timestamps)"
+        " (accepted_recommendation)",
+    ]
+    assert _section(shown, "Unresolved items").endswith("### Test plan\n- (none)\n- blocking: no")
+    assert [line for line in shown.splitlines() if line.startswith("## ")] == [
+        f"## {name}" for name in SECTIONS
+    ]
+
+    _ok(run, "phase", task, "next")
+    _ok(run, "phase", task, "next")
+    _ok(run, "spec", "approve", task)
+    v1 = sample_repo / "docs" / "specs" / task / "v1.md"
+    sealed = v1.read_bytes()
+    assert "### Integration tests\n- S2 writes the file" in parse_spec(v1).body
+    _ok(run, "phase", task, "back", "test_plan", "--reason", "drop a case")
+    _ok(run, "testplan", "withdraw", task, "1")
+    shown = _ok(run, "spec", "show", task)
+    assert _section(shown, "Test plan") == "- (no approved test plan recorded)"
+    assert "- plan changed_since_approval\n- blocking: yes" in shown
+    assert v1.read_bytes() == sealed
+    assert _ok(run, "spec", "verify", task) == "v1 ok\n"

@@ -27,6 +27,7 @@ from harness.spec_record import (
 )
 from harness.spec_store import SpecStore
 from harness.state_specs import SpecVersion
+from harness.testplan import TestPlanner
 
 RECORDED_EVENTS = ("decision.recorded", "decision.superseded")
 OK = "ok"
@@ -108,9 +109,9 @@ class SpecificationManager:
         checkpoint = self.ws.latest_checkpoint("investigation")
         decisions = checkpoint.payload.get("decisions", []) if checkpoint else []
         recorded = _recorded_decisions(self.ws.events())
-        return build_body(
-            engine.summary(), designer.document(), decisions, recorded, self.ws.proposals()
-        )
+        plan = TestPlanner(self.controller, self.task_id).document()
+        summary, design = engine.summary(), designer.document()
+        return build_body(summary, design, decisions, recorded, self.ws.proposals(), plan)
 
     def render(
         self,
