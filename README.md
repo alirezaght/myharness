@@ -61,6 +61,7 @@ The harness **does not** replace AL and must not become a competing orchestrator
 |---|---|
 | [`docs/SPEC.md`](docs/SPEC.md) | Full **Design Specification V1**: behaviour, architecture responsibilities, security, 30 acceptance criteria |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | The 5 delivery phases, estimates, Definition of Done, risks & open questions |
+| [`docs/decisions/`](docs/decisions/) | Approved decision records for the harness itself |
 | [`tasks/`](tasks/) | One task checklist per phase |
 
 ## Delivery phases
@@ -76,6 +77,16 @@ The harness **does not** replace AL and must not become a competing orchestrator
 
 Each phase ships something you can run on a real task, and no phase breaks the ones before it.
 
+## Development
+
+```bash
+uv sync                    # install Python 3.13 and dependencies
+uv run pytest              # run tests
+uv run ruff check .        # lint
+uv run ruff format .       # format
+uv run harness --version   # run the CLI
+```
+
 ## Status
 
-Design spec V1 is drafted and **awaiting final approval**. Implementation has not started. Next step: Phase 1, task `P1-01` (technology decision).
+Design spec approved for implementation; P1-01 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions). Next task: P1-02.

@@ -6,9 +6,9 @@
 ## Tasks
 
 ### P1-01 — Technology & project skeleton decision
-- [ ] Decide the runtime and language, the packaging (Claude Code skill/command plus a local service?), the SQLite library and the test framework
-- [ ] Record each choice as an approved decision (dogfoods P1-07)
-- [ ] Create the project skeleton, lint/format and a test runner that runs in CI
+- [x] Decide the runtime and language, the packaging (Claude Code skill/command plus a local service?), the SQLite library and the test framework
+- [x] Record each choice as an approved decision (dogfoods P1-07)
+- [x] Create the project skeleton, lint/format and a test runner that runs in CI
 
 **Done when:** the skeleton builds, an empty test passes, and the decisions are written down.
 
