@@ -1,0 +1,112 @@
+"""SQLite access: connection setup, default location and numbered .sql migrations (DEC-0003)."""
+
+import hashlib
+import os
+import re
+import sqlite3
+import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from importlib.resources import files
+from pathlib import Path
+
+MIGRATIONS_DIR = files("harness") / "migrations"
+_MIGRATION_NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
+
+
+def utcnow() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _repo_root(cwd: Path) -> Path:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return cwd.resolve()
+    top = result.stdout.strip()
+    return Path(top).resolve() if result.returncode == 0 and top else cwd.resolve()
+
+
+def default_db_path(repo_root: Path | None = None) -> Path:
+    """Per-repository state DB under $HARNESS_HOME, outside the target repo. Creates nothing."""
+    root = (repo_root or _repo_root(Path.cwd())).resolve()
+    home = os.environ.get("HARNESS_HOME")
+    base = Path(home) if home else Path.home() / ".local" / "share" / "harness"
+    digest = hashlib.sha256(str(root).encode()).hexdigest()[:16]
+    return base / "projects" / digest / "state.db"
+
+
+@contextmanager
+def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """BEGIN IMMEDIATE ... COMMIT, rolling back on any exception."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+
+
+def _migrations() -> list[tuple[int, str, str]]:
+    found = []
+    for entry in MIGRATIONS_DIR.iterdir():
+        match = _MIGRATION_NAME.match(entry.name)
+        if match:
+            found.append((int(match.group(1)), entry.name, entry.read_text(encoding="utf-8")))
+    found.sort()
+    versions = [version for version, _, _ in found]
+    if len(versions) != len(set(versions)):
+        raise RuntimeError(f"duplicate migration versions in {MIGRATIONS_DIR}")
+    return found
+
+
+def apply_migrations(conn: sqlite3.Connection) -> list[str]:
+    """Apply pending migrations, each atomically with its schema_migrations row."""
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations "
+        "(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+    )
+    applied = []
+    for version, name, sql in _migrations():
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            done = conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
+            ).fetchone()
+            if not done:
+                conn.executescript(sql)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                    (version, name, utcnow()),
+                )
+                applied.append(name)
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT")
+    return applied
+
+
+def connect(path: Path) -> sqlite3.Connection:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, autocommit=True)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        apply_migrations(conn)
+    except BaseException:
+        conn.close()
+        raise
+    return conn

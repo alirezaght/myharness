@@ -13,10 +13,10 @@
 **Done when:** the skeleton builds, an empty test passes, and the decisions are written down.
 
 ### P1-02 — `/harness` activation & Harness Controller
-- [ ] `/harness <request>` is the only entry point, with no implicit activation (AC 1)
-- [ ] Phase state machine: investigation → interview → design → test plan → final review → approval
-- [ ] Phase transitions are explicit and persisted. Going back to an earlier phase is allowed
-- [ ] Task classification (trivial → complex) drives interview depth (AC 3)
+- [x] `/harness <request>` is the only entry point, with no implicit activation (AC 1)
+- [x] Phase state machine: investigation → interview → design → test plan → final review → approval
+- [x] Phase transitions are explicit and persisted. Going back to an earlier phase is allowed
+- [x] Task classification (trivial → complex) drives interview depth (AC 3)
 
 **Done when:** a task can be created and stepped through every phase, and invalid transitions are rejected.
 

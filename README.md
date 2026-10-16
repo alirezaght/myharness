@@ -85,8 +85,19 @@ uv run pytest              # run tests
 uv run ruff check .        # lint
 uv run ruff format .       # format
 uv run harness --version   # run the CLI
+uv run harness start "<request>"             # create a task (the only entry point)
+uv run harness phase <id> next               # advance one phase
+uv run harness phase <id> back <phase> --reason "<why>"   # return to an earlier phase
+uv run harness classify <id> <level>         # override complexity (trivial|simple|standard|complex)
+uv run harness show <id>                     # task, interview topics and phase history
 ```
+
+Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
+
+### Local state
+
+Task state lives in a per-developer SQLite database outside the repository, at `$HARNESS_HOME/projects/<hash of repo root>/state.db` (`HARNESS_HOME` defaults to `~/.local/share/harness`). Set `HARNESS_DB` or pass `--db PATH` to use a specific file. Only `harness start` creates state; `--version`, `--help` and importing the package never write anything.
 
 ## Status
 
-Design spec approved for implementation; P1-01 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions). Next task: P1-02.
+Design spec approved for implementation; P1-01 and P1-02 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine and task classification). Next task: P1-03.
