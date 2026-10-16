@@ -6,7 +6,9 @@ import sys
 from harness import __version__
 from harness.classification import Complexity
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
+from harness.cli_interview import add_interview_parser
 from harness.controller import TaskNotFound
+from harness.errors import RecordNotFound
 from harness.phases import InvalidTransition, Phase
 
 ERROR_EXIT_CODE = 1
@@ -58,6 +60,8 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--json", action="store_true", help="print the report as JSON")
     investigate.set_defaults(handler=cmd_investigate)
 
+    add_interview_parser(subparsers)
+
     resume = subparsers.add_parser("resume", help="resume an existing task")
     resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")
 
@@ -78,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         return NOT_IMPLEMENTED_EXIT_CODE
     try:
         return handler(args)
-    except (InvalidTransition, TaskNotFound, ValueError) as error:
+    except (InvalidTransition, TaskNotFound, RecordNotFound, ValueError) as error:
         print(f"harness {args.command}: {error}", file=sys.stderr)
         return ERROR_EXIT_CODE
 

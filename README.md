@@ -90,7 +90,16 @@ uv run harness phase <id> next               # advance one phase
 uv run harness phase <id> back <phase> --reason "<why>"   # return to an earlier phase
 uv run harness classify <id> <level>         # override complexity (trivial|simple|standard|complex)
 uv run harness show <id>                     # task, interview topics and phase history
-uv run harness investigate <id> [--repo PATH] [--json]   # read-only repository investigation (facts / assumptions / questions)
+uv run harness investigate <id> [--repo PATH] [--decisions PATH] [--json]   # read-only repository investigation (facts / assumptions / questions)
+uv run harness interview next <id> [--group]   # ask the next open question (or every open question of its topic)
+uv run harness interview answer <id> <qid> <text>   # record the developer's answer
+uv run harness interview unknown <id> <qid>   # "I don't know": the question stays open
+uv run harness interview skip <id> <qid> --source decision|codebase|not_relevant --ref <ref>   # skip with provenance
+uv run harness interview ask <id> <topic> <text> [--decision]   # add a follow-up question
+uv run harness interview propose <id> <qid> --title T --recommendation R --rationale W   # attach a recommendation
+uv run harness interview decide <id> <pid> accept|reject|modify [--response TEXT]   # developer's verdict
+uv run harness interview checklist <id> [--json]   # unresolved-decision checklist (read-only)
+uv run harness interview summary <id> [--json]   # requirements with provenance (read-only)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -105,6 +114,12 @@ The database holds tasks, phase history, interview questions and answers (includ
 
 `harness investigate <id>` scans the target repository (the git top-level of the current directory, or `--repo PATH`) without writing anything to it, not even under `.git/`. It first loads the approved decision records from `docs/decisions`, then reports relevant files, components, dependencies, interfaces, schemas, config, tests and conventions, keeping **verified facts** (with evidence), **assumptions** (with their basis) and **unresolved questions** in separate sections. Contents of secret-bearing files such as `.env` are never read. Results are stored in the task workspace: the open questions, an `investigation` checkpoint and an `investigation.completed` event. Re-running adds a new checkpoint but no duplicate questions.
 
+### Interview
+
+`harness interview` runs the requirements interview once the task is in the `interview` phase and has been investigated. The CLI owns the question state and Claude Code (`/harness`) relays the questions and records every response. The catalogue covers all 14 interview topics (business requirements, functional behaviour, inputs/outputs, edge cases, component responsibilities and communication, schemas, API contracts, configuration, error handling, performance, security, observability and acceptance criteria). Only the topics in the task's complexity depth are asked, so a trivial task gets a short interview and a complex one the full set. Changing the complexity re-syncs the catalogue: never-asked extras are skipped as not relevant (or reopened when the depth grows again) and questions already asked are never touched. Investigation questions come first. `next` asks one question at a time, or a whole topic with `--group`.
+
+Provenance rules: a requirement exists only if the developer typed an answer, or accepted (or modified) a recommendation. A decision question needs a recommendation with rationale (`propose`), and the developer accepts, rejects or modifies it. Rejected or pending recommendations never become requirements. A question is skipped only with provenance: an approved decision id from the investigation, or an evidence reference for the codebase. "I don't know" (`unknown`) never becomes an answer: the question stays open and blocking, and `next` moves on to others. `harness interview checklist` lists every unresolved item (never asked, unanswered, awaiting a decision, recommendation rejected) and says whether it is blocking. Due catalogue questions not asked yet appear as `catalogue:<key>`. Every mutating command is one transaction that records an event and an `interview` checkpoint, and fails with exit 1 outside the interview phase.
+
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-04 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer). Next task: P1-05.
+Design spec approved for implementation; P1-01 to P1-05 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist). Next task: P1-06.

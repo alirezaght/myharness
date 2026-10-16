@@ -12,30 +12,23 @@ from harness.errors import RecordNotFound, TaskNotFound
 from harness.state_models import (
     Checkpoint,
     Event,
-    Proposal,
-    ProposalStatus,
     Question,
+    QuestionKind,
     QuestionSource,
     QuestionStatus,
+    SkipSource,
     checkpoint_from_row,
     event_from_row,
-    proposal_from_row,
     question_from_row,
 )
-
-
-def _required(value: str | None, what: str) -> str:
-    text = (value or "").strip()
-    if not text:
-        raise ValueError(f"{what} must not be empty")
-    return text
+from harness.state_proposals import ProposalsMixin, required
 
 
 def _payload(payload: dict[str, Any] | None) -> str:
     return json.dumps(payload or {}, sort_keys=True)
 
 
-class TaskWorkspace:
+class TaskWorkspace(ProposalsMixin):
     def __init__(self, conn: sqlite3.Connection, task_id: str):
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
             raise TaskNotFound(task_id)
@@ -59,31 +52,50 @@ class TaskWorkspace:
     # Questions
 
     def ask(
-        self, topic: str, text: str, source: QuestionSource = QuestionSource.INTERVIEW
+        self,
+        topic: str,
+        text: str,
+        source: QuestionSource = QuestionSource.INTERVIEW,
+        kind: QuestionKind = QuestionKind.QUESTION,
+        catalogue_key: str | None = None,
     ) -> Question:
-        topic, text, origin = (
-            _required(topic, "topic"),
-            _required(text, "question"),
-            QuestionSource(source),
-        )
+        topic, text = required(topic, "topic"), required(text, "question")
+        origin, form = QuestionSource(source), QuestionKind(kind)
         now = utcnow()
         cursor = self.conn.execute(
-            "INSERT INTO questions (task_id, topic, text, source, status, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (self.task_id, topic, text, origin, QuestionStatus.OPEN, now, now),
+            "INSERT INTO questions (task_id, topic, text, source, status, kind, catalogue_key,"
+            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (self.task_id, topic, text, origin, QuestionStatus.OPEN, form, catalogue_key, now, now),
         )
         return self.question(cursor.lastrowid)
 
     def answer(self, question_id: int, answer: str) -> Question:
-        text = _required(answer, "answer")
-        return self._set_question(question_id, QuestionStatus.ANSWERED, text, None)
+        text = required(answer, "answer")
+        return self._set_question(question_id, QuestionStatus.ANSWERED, text, None, None)
 
-    def skip(self, question_id: int, reason: str) -> Question:
-        why = _required(reason, "skip reason")
-        return self._set_question(question_id, QuestionStatus.SKIPPED, None, why)
+    def skip(
+        self, question_id: int, reason: str, source: SkipSource = SkipSource.NOT_RELEVANT
+    ) -> Question:
+        why, origin = required(reason, "skip reason"), SkipSource(source)
+        return self._set_question(question_id, QuestionStatus.SKIPPED, None, why, origin)
 
     def reopen(self, question_id: int) -> Question:
-        return self._set_question(question_id, QuestionStatus.OPEN, None, None)
+        return self._set_question(question_id, QuestionStatus.OPEN, None, None, None)
+
+    def mark_decided(self, question_id: int) -> Question:
+        """Resolve a question by a developer-approved proposal; no answer text is invented."""
+        return self._set_question(question_id, QuestionStatus.ANSWERED, None, None, None)
+
+    def mark_asked(self, question_id: int) -> Question:
+        now = utcnow()
+        cursor = self.conn.execute(
+            "UPDATE questions SET asked_at = COALESCE(asked_at, ?), updated_at = ?"
+            " WHERE id = ? AND task_id = ?",
+            (now, now, question_id, self.task_id),
+        )
+        if cursor.rowcount == 0:
+            raise RecordNotFound("question", question_id, self.task_id)
+        return self.question(question_id)
 
     def question(self, question_id: int) -> Question:
         return question_from_row(self._one("questions", "question", question_id))
@@ -96,73 +108,26 @@ class TaskWorkspace:
         return self.questions(QuestionStatus.OPEN)
 
     def _set_question(
-        self, question_id: int, status: QuestionStatus, answer: str | None, reason: str | None
+        self,
+        question_id: int,
+        status: QuestionStatus,
+        answer: str | None,
+        reason: str | None,
+        source: SkipSource | None,
     ) -> Question:
         cursor = self.conn.execute(
-            "UPDATE questions SET status = ?, answer = ?, skip_reason = ?, updated_at = ?"
-            " WHERE id = ? AND task_id = ?",
-            (status, answer, reason, utcnow(), question_id, self.task_id),
+            "UPDATE questions SET status = ?, answer = ?, skip_reason = ?, skip_source = ?,"
+            " updated_at = ? WHERE id = ? AND task_id = ?",
+            (status, answer, reason, source, utcnow(), question_id, self.task_id),
         )
         if cursor.rowcount == 0:
             raise RecordNotFound("question", question_id, self.task_id)
         return self.question(question_id)
 
-    # Proposals
-
-    def propose(
-        self, title: str, recommendation: str, rationale: str, question_id: int | None = None
-    ) -> Proposal:
-        title = _required(title, "title")
-        recommendation = _required(recommendation, "recommendation")
-        rationale = _required(rationale, "rationale")
-        if question_id is not None:
-            self.question(question_id)
-        cursor = self.conn.execute(
-            "INSERT INTO proposals (task_id, question_id, title, recommendation, rationale,"
-            " status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                self.task_id,
-                question_id,
-                title,
-                recommendation,
-                rationale,
-                ProposalStatus.PENDING,
-                utcnow(),
-            ),
-        )
-        return self.proposal(cursor.lastrowid)
-
-    def resolve(
-        self, proposal_id: int, status: ProposalStatus, response: str | None = None
-    ) -> Proposal:
-        outcome = ProposalStatus(status)
-        if outcome is ProposalStatus.PENDING:
-            raise ValueError("a proposal must be resolved as accepted, rejected or modified")
-        if outcome is ProposalStatus.MODIFIED:
-            text = _required(response, "modified proposal response")
-        else:
-            text = (response or "").strip() or None
-        cursor = self.conn.execute(
-            "UPDATE proposals SET status = ?, response = ?, resolved_at = ?"
-            " WHERE id = ? AND task_id = ? AND status = ?",
-            (outcome, text, utcnow(), proposal_id, self.task_id, ProposalStatus.PENDING),
-        )
-        if cursor.rowcount == 0:
-            current = self.proposal(proposal_id)
-            raise ValueError(f"proposal {proposal_id} is already {current.status}")
-        return self.proposal(proposal_id)
-
-    def proposal(self, proposal_id: int) -> Proposal:
-        return proposal_from_row(self._one("proposals", "proposal", proposal_id))
-
-    def proposals(self, status: ProposalStatus | None = None) -> list[Proposal]:
-        status = None if status is None else ProposalStatus(status)
-        return [proposal_from_row(row) for row in self._all("proposals", status)]
-
     # Events
 
     def record_event(self, kind: str, payload: dict[str, Any] | None = None) -> Event:
-        name = _required(kind, "event kind")
+        name = required(kind, "event kind")
         cursor = self.conn.execute(
             "INSERT INTO events (task_id, kind, payload, created_at) VALUES (?, ?, ?, ?)",
             (self.task_id, name, _payload(payload), utcnow()),
@@ -175,7 +140,7 @@ class TaskWorkspace:
     # Checkpoints
 
     def checkpoint(self, label: str, payload: dict[str, Any] | None = None) -> Checkpoint:
-        name = _required(label, "checkpoint label")
+        name = required(label, "checkpoint label")
         cursor = self.conn.execute(
             "INSERT INTO checkpoints (task_id, phase, label, payload, created_at)"
             " SELECT id, phase, ?, ?, ? FROM tasks WHERE id = ?",
@@ -185,11 +150,11 @@ class TaskWorkspace:
             raise TaskNotFound(self.task_id)
         return checkpoint_from_row(self._one("checkpoints", "checkpoint", cursor.lastrowid))
 
-    def latest_checkpoint(self) -> Checkpoint | None:
-        row = self.conn.execute(
-            "SELECT * FROM checkpoints WHERE task_id = ? ORDER BY id DESC LIMIT 1",
-            (self.task_id,),
-        ).fetchone()
+    def latest_checkpoint(self, label: str | None = None) -> Checkpoint | None:
+        sql, args = "SELECT * FROM checkpoints WHERE task_id = ?", [self.task_id]
+        if label is not None:
+            sql, args = sql + " AND label = ?", [*args, label]
+        row = self.conn.execute(sql + " ORDER BY id DESC LIMIT 1", args).fetchone()
         return None if row is None else checkpoint_from_row(row)
 
     def checkpoints(self) -> list[Checkpoint]:

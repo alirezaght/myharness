@@ -37,12 +37,12 @@
 **Done when:** on a sample repo it produces a fact/assumption/question report, and a test proves the repo is unchanged afterwards.
 
 ### P1-05 — Interview Engine
-- [ ] Adaptive questions covering business, functional, I/O, edge cases, components, contracts, schemas, config, errors, performance, security, observability and AC
-- [ ] Questions can be asked one at a time or in related groups
-- [ ] When a decision is needed, present a recommendation with its rationale. The developer accepts, rejects or modifies it (AC 5)
-- [ ] "I don't know" or an unanswered question stays **unresolved**, never filled with an assumption (AC 4)
-- [ ] Skip questions already answered by approved decisions or by the codebase
-- [ ] **Structured unresolved-decision checklist** (main quality risk, see ROADMAP Risks #1)
+- [x] Adaptive questions covering business, functional, I/O, edge cases, components, contracts, schemas, config, errors, performance, security, observability and AC
+- [x] Questions can be asked one at a time or in related groups
+- [x] When a decision is needed, present a recommendation with its rationale. The developer accepts, rejects or modifies it (AC 5)
+- [x] "I don't know" or an unanswered question stays **unresolved**, never filled with an assumption (AC 4)
+- [x] Skip questions already answered by approved decisions or by the codebase
+- [x] **Structured unresolved-decision checklist** (main quality risk, see ROADMAP Risks #1)
 
 **Done when:** a scripted interview run leaves the right items unresolved, and no requirement shows up in the spec that the developer did not provide or approve.
 

@@ -225,3 +225,40 @@ def test_unknown_task_and_record(conn, ws):
 def test_child_rows_require_an_existing_task(conn, sql):
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute(sql)
+
+
+def test_interview_question_columns(ws, conn):
+    from harness.state_models import QuestionKind, SkipSource
+
+    q = ws.ask("data_schemas", "Which schema changes?", kind="decision", catalogue_key="k.x")
+    assert (q.kind, q.catalogue_key, q.asked_at, q.skip_source) == (
+        QuestionKind.DECISION,
+        "k.x",
+        None,
+        None,
+    )
+    first = ws.mark_asked(q.id)
+    assert first.asked_at is not None
+    assert ws.mark_asked(q.id).asked_at == first.asked_at
+    skipped = ws.skip(q.id, "src/schema.sql", SkipSource.CODEBASE)
+    assert (skipped.skip_source, skipped.skip_reason) == (SkipSource.CODEBASE, "src/schema.sql")
+    reopened = ws.reopen(q.id)
+    assert (reopened.skip_source, reopened.asked_at) == (None, first.asked_at)
+    ws.skip(q.id, "n/a")
+    assert ws.question(q.id).skip_source is SkipSource.NOT_RELEVANT
+    answered = ws.answer(q.id, "none")
+    assert (answered.skip_source, answered.skip_reason) == (None, None)
+    decided = ws.mark_decided(q.id)
+    assert (decided.status, decided.answer) == (QuestionStatus.ANSWERED, None)
+    with pytest.raises(RecordNotFound):
+        ws.mark_asked(999)
+    with pytest.raises(ValueError):
+        ws.ask("scope", "Which?", kind="bogus")
+
+
+def test_latest_checkpoint_by_label(ws):
+    first = ws.checkpoint("investigation", {"n": 1})
+    later = ws.checkpoint("interview", {"n": 2})
+    assert ws.latest_checkpoint() == later
+    assert ws.latest_checkpoint("investigation") == first
+    assert ws.latest_checkpoint("missing") is None

@@ -20,6 +20,17 @@ class QuestionSource(StrEnum):
     INTERVIEW = "interview"
 
 
+class QuestionKind(StrEnum):
+    QUESTION = "question"
+    DECISION = "decision"
+
+
+class SkipSource(StrEnum):
+    DECISION = "decision"
+    CODEBASE = "codebase"
+    NOT_RELEVANT = "not_relevant"
+
+
 class ProposalStatus(StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
@@ -39,6 +50,10 @@ class Question:
     skip_reason: str | None
     created_at: str
     updated_at: str
+    kind: QuestionKind = QuestionKind.QUESTION
+    asked_at: str | None = None
+    skip_source: SkipSource | None = None
+    catalogue_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +101,10 @@ def question_from_row(row: sqlite3.Row) -> Question:
         skip_reason=row["skip_reason"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        kind=QuestionKind(row["kind"]),
+        asked_at=row["asked_at"],
+        skip_source=SkipSource(row["skip_source"]) if row["skip_source"] else None,
+        catalogue_key=row["catalogue_key"],
     )
 
 

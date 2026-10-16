@@ -106,7 +106,7 @@ def test_existing_0001_database_upgrades_keeping_rows(tmp_path):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names == ["0001_tasks.sql", "0002_workspace.sql"]
+        assert names == ["0001_tasks.sql", "0002_workspace.sql", "0003_interview.sql"]
         controller = HarnessController(conn)
         assert controller.get_task("t-old00001").request == "Old task"
         cp = controller.workspace("t-old00001").checkpoint("after upgrade")
@@ -125,7 +125,7 @@ def test_upgrade_applies_only_the_new_migration(tmp_path, monkeypatch):
     monkeypatch.undo()
     raw = sqlite3.connect(db, autocommit=True)
     try:
-        assert db_module.apply_migrations(raw) == ["0002_workspace.sql"]
+        assert db_module.apply_migrations(raw) == ["0002_workspace.sql", "0003_interview.sql"]
     finally:
         raw.close()
 
@@ -170,3 +170,30 @@ def test_state_files_are_git_ignored(name):
         ["git", "check-ignore", "-q", name], cwd=REPO_ROOT, capture_output=True, check=False
     )
     assert result.returncode == 0
+
+
+def test_0002_database_upgrades_questions_with_interview_columns(tmp_path, monkeypatch):
+    from harness import db as db_module
+
+    db = tmp_path / "old.db"
+    first_two = [m for m in db_module._migrations() if m[0] <= 2]
+    monkeypatch.setattr(db_module, "_migrations", lambda: first_two)
+    old = connect(db)
+    task = HarnessController(old).create_task("Old task")
+    question_id = old.execute(
+        "INSERT INTO questions (task_id, topic, text, source, status, created_at, updated_at)"
+        " VALUES (?, 'scope', 'Which formats?', 'interview', 'open', 'then', 'then')",
+        (task.id,),
+    ).lastrowid
+    old.close()
+    monkeypatch.undo()
+
+    conn = connect(db)
+    try:
+        names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
+        assert names == ["0001_tasks.sql", "0002_workspace.sql", "0003_interview.sql"]
+        upgraded = HarnessController(conn).workspace(task.id).question(question_id)
+        assert (upgraded.kind, upgraded.asked_at, upgraded.skip_source) == ("question", None, None)
+        assert upgraded.catalogue_key is None and upgraded.text == "Which formats?"
+    finally:
+        conn.close()

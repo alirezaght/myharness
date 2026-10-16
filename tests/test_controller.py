@@ -144,7 +144,11 @@ def test_two_connections_cannot_double_advance(db_path):
 def test_migrations_are_tracked_and_idempotent(conn):
     assert apply_migrations(conn) == []
     rows = conn.execute("SELECT version, name FROM schema_migrations").fetchall()
-    assert [tuple(r) for r in rows] == [(1, "0001_tasks.sql"), (2, "0002_workspace.sql")]
+    assert [tuple(r) for r in rows] == [
+        (1, "0001_tasks.sql"),
+        (2, "0002_workspace.sql"),
+        (3, "0003_interview.sql"),
+    ]
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
@@ -152,7 +156,11 @@ def test_migrations_are_tracked_and_idempotent(conn):
 def test_fresh_connect_reports_applied_migration(tmp_path):
     raw = sqlite3.connect(tmp_path / "raw.db", autocommit=True)
     try:
-        assert apply_migrations(raw) == ["0001_tasks.sql", "0002_workspace.sql"]
+        assert apply_migrations(raw) == [
+            "0001_tasks.sql",
+            "0002_workspace.sql",
+            "0003_interview.sql",
+        ]
         assert apply_migrations(raw) == []
     finally:
         raw.close()
