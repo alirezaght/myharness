@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from harness.classification import Complexity, classify_request
 from harness.db import transaction, utcnow
+from harness.errors import TaskNotFound
 from harness.phases import (
     PHASE_ORDER,
     InvalidTransition,
@@ -14,6 +15,9 @@ from harness.phases import (
     next_phase,
     validate_transition,
 )
+from harness.state import TaskWorkspace
+
+__all__ = ["HarnessController", "PhaseTransition", "Task", "TaskNotFound"]
 
 SOURCE_DEVELOPER = "developer"
 SOURCE_PROPOSED = "proposed"
@@ -38,12 +42,6 @@ class PhaseTransition:
     to_phase: Phase
     reason: str | None
     created_at: str
-
-
-class TaskNotFound(LookupError):
-    def __init__(self, task_id: str):
-        self.task_id = task_id
-        super().__init__(f"unknown task: {task_id}")
 
 
 def _task(row: sqlite3.Row) -> Task:
@@ -78,6 +76,9 @@ class HarnessController:
                 (task_id, text, level, source, first, now, now),
             )
             self._record(task_id, None, first, "task created", now)
+            self.workspace(task_id).record_event(
+                "task.created", {"complexity": level, "source": source}
+            )
         return self.get_task(task_id)
 
     def get_task(self, task_id: str) -> Task:
@@ -85,6 +86,9 @@ class HarnessController:
         if row is None:
             raise TaskNotFound(task_id)
         return _task(row)
+
+    def workspace(self, task_id: str) -> TaskWorkspace:
+        return TaskWorkspace(self.conn, task_id)
 
     def list_tasks(self) -> list[Task]:
         rows = self.conn.execute("SELECT * FROM tasks ORDER BY created_at, rowid").fetchall()
@@ -121,6 +125,7 @@ class HarnessController:
                 " WHERE id = ?",
                 (level, SOURCE_DEVELOPER, utcnow(), task_id),
             )
+            self.workspace(task_id).record_event("complexity.set", {"complexity": level})
         return self.get_task(task_id)
 
     def history(self, task_id: str) -> list[PhaseTransition]:
@@ -147,6 +152,9 @@ class HarnessController:
             "UPDATE tasks SET phase = ?, updated_at = ? WHERE id = ?", (target, now, task_id)
         )
         self._record(task_id, current, target, reason, now)
+        self.workspace(task_id).record_event(
+            "phase.changed", {"from": current, "to": target, "reason": reason}
+        )
 
     def _record(
         self, task_id: str, from_phase: Phase | None, to: Phase, reason: str | None, now: str

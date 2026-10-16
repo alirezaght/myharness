@@ -37,10 +37,23 @@ def _repo_root(cwd: Path) -> Path:
 def default_db_path(repo_root: Path | None = None) -> Path:
     """Per-repository state DB under $HARNESS_HOME, outside the target repo. Creates nothing."""
     root = (repo_root or _repo_root(Path.cwd())).resolve()
+    digest = hashlib.sha256(str(root).encode()).hexdigest()[:16]
+    return _projects_dir() / digest / "state.db"
+
+
+def _projects_dir() -> Path:
     home = os.environ.get("HARNESS_HOME")
     base = Path(home) if home else Path.home() / ".local" / "share" / "harness"
-    digest = hashlib.sha256(str(root).encode()).hexdigest()[:16]
-    return base / "projects" / digest / "state.db"
+    return base / "projects"
+
+
+def _restrict(path: Path, created_dir: bool) -> None:
+    """POSIX owner-only access; a pre-existing directory outside the harness home is left alone."""
+    if os.name != "posix":
+        return
+    if created_dir or path.parent.resolve().is_relative_to(_projects_dir().resolve()):
+        os.chmod(path.parent, 0o700)
+    os.chmod(path, 0o600)
 
 
 @contextmanager
@@ -98,9 +111,11 @@ def apply_migrations(conn: sqlite3.Connection) -> list[str]:
 
 def connect(path: Path) -> sqlite3.Connection:
     path = Path(path)
+    created_dir = not path.parent.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, autocommit=True)
     try:
+        _restrict(path, created_dir)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA journal_mode=WAL")

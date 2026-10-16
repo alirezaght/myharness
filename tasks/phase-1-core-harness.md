@@ -21,10 +21,10 @@
 **Done when:** a task can be created and stepped through every phase, and invalid transitions are rejected.
 
 ### P1-03 — Local State Manager (SQLite)
-- [ ] Schema for tasks, phase state, interview Q&A, open questions, proposals, events and checkpoints
-- [ ] Each task has its own isolated workspace (§7)
-- [ ] The DB lives outside Git and is private to the developer (AC 14, 27)
-- [ ] Migrations
+- [x] Schema for tasks, phase state, interview Q&A, open questions, proposals, events and checkpoints
+- [x] Each task has its own isolated workspace (§7)
+- [x] The DB lives outside Git and is private to the developer (AC 14, 27)
+- [x] Migrations
 
 **Done when:** state survives a process restart, and tests cover reading and writing every entity.
 
