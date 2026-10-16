@@ -33,6 +33,13 @@ def _controller(args: argparse.Namespace, create: bool = False) -> Iterator[Harn
         conn.close()
 
 
+def task_repo_root(controller: HarnessController, task_id: str) -> Path:
+    """The repository the task investigated; else the git top of the current directory."""
+    checkpoint = controller.workspace(task_id).latest_checkpoint("investigation")
+    root = checkpoint.payload.get("repo_root") if checkpoint else None
+    return Path(root) if root else repo_root()
+
+
 def _summary(task: Task) -> str:
     return (
         f"task {task.id} · phase {task.phase} · complexity {task.complexity}"

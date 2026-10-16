@@ -62,9 +62,9 @@
 **Done when:** superseding a decision keeps the full chain, and a fresh clone can read every approved decision.
 
 ### P1-08 — Specification Manager
-- [ ] Markdown spec template: requirements, architecture, components/interfaces, config, AC, test plan, rationale, constraints
-- [ ] States: draft → approved → superseded
-- [ ] Each approved spec is linked to its version and repo revision (AC 30)
+- [x] Markdown spec template: requirements, architecture, components/interfaces, config, AC, test plan, rationale, constraints
+- [x] States: draft → approved → superseded
+- [x] Each approved spec is linked to its version and repo revision (AC 30)
 
 **Done when:** an approved spec is an immutable file tied to a commit.
 

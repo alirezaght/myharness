@@ -115,7 +115,7 @@ def _entry_dict(entry: DesignEntry) -> dict[str, Any]:
     }
 
 
-def _line(entry: DesignEntry) -> str:
+def entry_line(entry: DesignEntry) -> str:
     if entry.kind is EntryKind.NOT_APPLICABLE:
         return f"- not applicable: {entry.text} ({entry.provenance})"
     binding = "delegated to AL" if entry.binding is Binding.DELEGATED else "fixed"
@@ -141,15 +141,18 @@ class DesignDocument:
             "coverage": self.coverage.to_dict(),
         }
 
+    def section_lines(self, section: DesignSection) -> list[str]:
+        return [entry_line(e) for e in self.section(section)] or ["- (uncovered)"]
+
+    def delegated_lines(self) -> list[str]:
+        lines = [f"- [{e.section.heading}] {e.text} ({e.provenance})" for e in self.delegated]
+        return lines or ["- (none)"]
+
     def render(self) -> str:
         lines = [TITLE]
         for section in DesignSection:
-            body = [_line(e) for e in self.section(section)] or ["- (uncovered)"]
-            lines += ["", f"### {section.heading}", *body]
-        delegated = [
-            f"- [{e.section.heading}] {e.text} ({e.provenance})" for e in self.delegated
-        ] or ["- (none)"]
-        lines += ["", "### Delegated to AL", *delegated]
+            lines += ["", f"### {section.heading}", *self.section_lines(section)]
+        lines += ["", "### Delegated to AL", *self.delegated_lines()]
         lines += ["", "### Coverage", self.coverage.render()]
         return "\n".join(lines)
 

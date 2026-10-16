@@ -113,6 +113,11 @@ uv run harness decision record <id> --title T --decision C --rationale W [--scop
 uv run harness decision change <id> <DEC-id> --decision C --rationale W --impact I [--title T] [--scope S] [--decisions PATH]   # preview a change, writes nothing
 uv run harness decision decide <id> <cid> accept|reject|modify [--response TEXT] [--decisions PATH]   # developer's verdict on a proposed change
 uv run harness decision suggest <id> --from PATH [--from PATH ...] [--json] [--decisions PATH]   # hints from other repositories' decisions (read-only)
+uv run harness spec show <id> [--specs PATH]   # preview the specification from the approved state (writes nothing)
+uv run harness spec draft <id> [--specs PATH]   # write the preview to docs/specs/<id>/draft.md
+uv run harness spec approve <id> [--specs PATH]   # seal v<N>.md tied to the commit (approval phase only)
+uv run harness spec list <id> [--json] [--specs PATH]   # every specification version (read-only)
+uv run harness spec verify <id> [--specs PATH]   # check each approved file against its content hash (read-only)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -149,6 +154,20 @@ Changing an earlier decision never edits it in place. `harness decision change` 
 
 The three commands that write into the target repository's `docs/decisions` are `interview decide` (accept or modify on a decision question), `decision record` and `decision decide` (accept or modify on a pending change). `harness decision suggest --from PATH` is read-only: it reads approved decisions from the repositories you name with `--from`, never any others, and prints relevant ones as suggestions only. Nothing is written or applied, and adopting one means proposing it in the interview for the developer to decide.
 
+### Specification
+
+`harness spec` manages the task's implementation specification (SPEC §5, AC 30): a Markdown file in the target repository's `docs/specs/<task-id>/` (by default the repository the task was investigated in, or `--specs PATH`). The template has nine sections: Requirements, Architecture, Components and interfaces, Configuration, Acceptance criteria, Test plan, Rationale, Constraints and Unresolved items. They are rendered only from state the developer already stated or approved (the interview summary and the design section), with provenance; nothing is invented. The Test plan reads `- (no approved test plan recorded)` until the Test Planner (P1-09) embeds one.
+
+A specification moves through three states: **draft**, **approved** and **superseded**.
+
+- `harness spec show <id>` prints the preview and writes nothing.
+- `harness spec draft <id>` writes the preview to `docs/specs/<id>/draft.md`. It is a working copy, not an approval.
+- `harness spec approve <id>` is allowed only once the task is in the `approval` phase (otherwise it exits 1 and points to `harness phase <id> next`). It writes the immutable `v<N>.md` with its version, the repository `Revision` (the commit hash at HEAD), the `Working tree` state and a `Content hash: sha256:...` over the body, then removes `draft.md`. `Working tree` is an honest count from `git status --porcelain`: an untracked `draft.md` or earlier `v<N>.md` counts toward "N uncommitted paths", so commit your changes first if you want a clean tie to the revision. Without a commit at HEAD the approval is refused ("cannot be tied to a commit").
+- Approving a new version marks the previous one `superseded`: only its header changes (status and a `Superseded by` line), the body and content hash are untouched. Approved files are never edited otherwise.
+- `harness spec verify <id>` re-reads every file and prints one result per version: `ok`, `MODIFIED (...)` (content hash mismatch, a difference from the local approval record, a version that does not match the file name, an unparseable or missing file) or `draft (not sealed)`. It exits 1 on any `MODIFIED`. `harness spec list <id>` (with `--json`) lists the versions. Both work without a local database, at file level only.
+
+`show`, `list` and `verify` never write. `draft` writes only `draft.md`, and `approve` writes only the new `v<N>.md` (plus the superseded header of the previous one). Task ids are validated before they are used as a path. The mandatory completeness check before approval is P1-10, and the developer-facing `harness approve` ("Approve & Implement") is P1-11. Until then `spec approve` is the only way to seal a specification.
+
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-07 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions). Next task: P1-08.
+Design spec approved for implementation; P1-01 to P1-08 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit). Next task: P1-09.

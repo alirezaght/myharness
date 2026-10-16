@@ -302,3 +302,25 @@ def test_design_entry_lifecycle_and_isolation(controller, conn, ws):
         with pytest.raises(RecordNotFound):
             op()
     assert _rows(conn, "design_entries") == snapshot
+
+
+def test_spec_versions_are_isolated_unique_and_superseded(controller, conn):
+    a = controller.workspace(controller.create_task("Task A").id)
+    b = controller.workspace(controller.create_task("Task B").id)
+    v1 = a.record_spec_version(1, "a/v1.md", "rev1", "clean", "sha256:1")
+    assert b.spec_versions() == [] and b.spec_version(1) is None
+    before = _rows(conn, "spec_versions")
+    with pytest.raises(ValueError, match="already recorded"):
+        a.record_spec_version(1, "a/v1.md", "rev2", "clean", "sha256:2")
+    with pytest.raises(ValueError, match="must not be empty"):
+        a.record_spec_version(2, "a/v2.md", " ", "clean", "sha256:2")
+    with pytest.raises(ValueError, match="not recorded"):
+        b.mark_spec_superseded(1, 2)
+    assert _rows(conn, "spec_versions") == before
+    b.record_spec_version(1, "b/v1.md", "rev1", "2 uncommitted paths", "sha256:b")
+    v2 = a.record_spec_version(2, "a/v2.md", "rev2", "clean", "sha256:2")
+    old = a.mark_spec_superseded(1, 2)
+    assert (old.status, old.superseded_by, old.content_hash) == ("superseded", 2, v1.content_hash)
+    assert a.current_spec_version() == v2
+    assert [v.version for v in a.spec_versions()] == [1, 2]
+    assert [v.path for v in b.spec_versions()] == ["b/v1.md"]

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from harness.cli_commands import _controller
+from harness.cli_commands import _controller, task_repo_root
 from harness.controller import HarnessController
 from harness.db import repo_root
 from harness.decision_suggest import render
@@ -29,10 +29,7 @@ def registry_for(
     if decisions:
         return DecisionRegistry(Path(decisions))
     if controller is not None and task_id is not None:
-        checkpoint = controller.workspace(task_id).latest_checkpoint("investigation")
-        root = checkpoint.payload.get("repo_root") if checkpoint else None
-        if root:
-            return DecisionRegistry(Path(root) / DEFAULT_DECISIONS_DIR)
+        return DecisionRegistry(task_repo_root(controller, task_id) / DEFAULT_DECISIONS_DIR)
     return DecisionRegistry(repo_root() / DEFAULT_DECISIONS_DIR)
 
 

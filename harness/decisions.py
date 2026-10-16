@@ -5,10 +5,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
+from harness.md_record import mark_superseded as mark_superseded
+from harness.md_record import scan_record
+
 DEFAULT_DECISIONS_DIR = Path("docs") / "decisions"
 HISTORY_DIR = "history"
-_FIELD = re.compile(r"^- \*\*(\w[\w ]*):\*\*\s*(.*)$")
-_TITLE_PREFIX = re.compile(r"^DEC-\d+\s*[—–-]\s*")
 _SECTIONS = ("Decision", "Rationale", "Impact")
 
 
@@ -57,32 +58,13 @@ def _optional(value: str) -> str | None:
     return None if value.lower() in ("", "none", "-") else value
 
 
-def _scan(lines: list[str]) -> tuple[str, dict[str, str], dict[str, str]]:
-    title, fields, sections, current = "", {}, {}, None
-    for line in lines:
-        if not title and line.startswith("# "):
-            title = _TITLE_PREFIX.sub("", line[2:].strip())
-            continue
-        if line.startswith("## "):
-            current = line[3:].strip()
-            sections.setdefault(current, [])
-            continue
-        if current is not None:
-            sections[current].append(line)
-            continue
-        match = _FIELD.match(line.strip())
-        if match:
-            fields[match.group(1).strip().lower()] = match.group(2).strip()
-    return title, fields, {name: "\n".join(body).strip() for name, body in sections.items()}
-
-
 def parse_decision(path: Path) -> DecisionRecord:
     path = Path(path)
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise DecisionParseError(path, f"cannot be read ({error})") from error
-    title, fields, sections = _scan(text.splitlines())
+    title, fields, sections = scan_record(text.splitlines())
     for name in ("id", "status", "version", "timestamp"):
         if not fields.get(name):
             raise DecisionParseError(path, f"missing field {name.title()}")
@@ -178,33 +160,7 @@ def render_record(
             "",
         ]
     )
-    parsed_title, _, sections = _scan(text.splitlines())
+    parsed_title, _, sections = scan_record(text.splitlines())
     if parsed_title != head or any(sections.get(k) != v for k, v in body.items()):
         raise ValueError("decision text must not contain Markdown '## ' section headings")
     return text
-
-
-def mark_superseded(text: str, by: str) -> str:
-    """Change only the Status line to superseded and add a Superseded by field line."""
-    lines = text.splitlines(keepends=True)
-    status_at = supersedes_at = last_field = None
-    for index, line in enumerate(lines):
-        if line.startswith("## "):
-            break
-        match = _FIELD.match(line.strip())
-        if match:
-            last_field = index
-            name = match.group(1).strip().lower()
-            if name == "status" and status_at is None:
-                status_at = index
-            elif name == "supersedes":
-                supersedes_at = index
-    if status_at is None or last_field is None:
-        raise ValueError("record has no Status field line")
-    ending = lines[status_at][len(lines[status_at].rstrip("\r\n")) :] or "\n"
-    lines[status_at] = f"- **Status:** {DecisionStatus.SUPERSEDED}{ending}"
-    anchor = supersedes_at if supersedes_at is not None else last_field
-    if not lines[anchor].endswith(("\n", "\r")):
-        lines[anchor] += ending
-    lines.insert(anchor + 1, f"- **Superseded by:** {by}{ending}")
-    return "".join(lines)

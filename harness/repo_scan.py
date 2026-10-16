@@ -98,20 +98,44 @@ def list_files(root: Path) -> tuple[list[PurePosixPath], str]:
     return sorted(existing), GIT_SOURCE
 
 
+@dataclass(frozen=True)
+class GitState:
+    """HEAD revision and uncommitted-path count; None where git cannot tell."""
+
+    is_repo: bool
+    revision: str | None
+    uncommitted: int | None
+
+    @property
+    def working_tree(self) -> str:
+        if self.uncommitted is None:
+            return "unknown"
+        return "clean" if self.uncommitted == 0 else f"{self.uncommitted} uncommitted paths"
+
+
+def git_state(root: Path) -> GitState:
+    if (_git(root, "rev-parse", "--is-inside-work-tree") or "").strip() != "true":
+        return GitState(False, None, None)
+    revision = (_git(root, "rev-parse", "HEAD") or "").strip() or None
+    status = _git(root, "status", "--porcelain")
+    changed = None if status is None else len([ln for ln in status.splitlines() if ln.strip()])
+    return GitState(True, revision, changed)
+
+
 def git_facts(root: Path) -> tuple[list[Fact], str | None]:
     repo = FactCategory.REPOSITORY
-    if (_git(root, "rev-parse", "--is-inside-work-tree") or "").strip() != "true":
+    state = git_state(root)
+    if not state.is_repo:
         return [Fact(repo, "not a git repository (directory walk used)", "git rev-parse")], None
-    revision = (_git(root, "rev-parse", "HEAD") or "").strip() or None
+    revision = state.revision
     if revision is None:
         return [Fact(repo, "git repository without commits", "git rev-parse HEAD")], None
     facts = [Fact(repo, f"revision {revision}", "git rev-parse HEAD")]
     branch = (_git(root, "rev-parse", "--abbrev-ref", "HEAD") or "").strip()
     if branch:
         facts.append(Fact(repo, f"branch {branch}", "git rev-parse --abbrev-ref HEAD"))
-    status = _git(root, "status", "--porcelain")
-    if status is not None:
-        changed = len([line for line in status.splitlines() if line.strip()])
+    if state.uncommitted is not None:
+        changed = state.uncommitted
         text = "working tree clean" if changed == 0 else f"{changed} uncommitted paths"
         facts.append(Fact(repo, text, "git status --porcelain"))
     return facts, revision
