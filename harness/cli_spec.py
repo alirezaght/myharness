@@ -93,6 +93,13 @@ def _read_only(args: argparse.Namespace) -> int:
     return 1 if any(result.startswith(MODIFIED) for _, result in results) else 0
 
 
+def approved_line(record: SpecRecord) -> str:
+    return (
+        f"approved v{record.version} -> {record.path}"
+        f" (revision {record.revision}, {record.working_tree})"
+    )
+
+
 def _run(manager: SpecificationManager, action: str) -> None:
     if action == "show":
         print(manager.preview(), end="")
@@ -100,10 +107,7 @@ def _run(manager: SpecificationManager, action: str) -> None:
         print(f"draft -> {manager.draft()}")
     else:
         record, previous = manager.approve()
-        print(
-            f"approved v{record.version} -> {record.path}"
-            f" (revision {record.revision}, {record.working_tree})"
-        )
+        print(approved_line(record))
         if previous is not None:
             print(f"v{previous.version} superseded")
 

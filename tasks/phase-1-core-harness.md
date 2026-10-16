@@ -82,8 +82,8 @@
 **Done when:** a spec with even one open blocking item cannot reach approval.
 
 ### P1-11 — CLI approval gate
-- [ ] Explicit approval command that produces an immutable, versioned spec snapshot
-- [ ] Block every implementation path before approval (AC 11)
+- [x] Explicit approval command that produces an immutable, versioned spec snapshot
+- [x] Block every implementation path before approval (AC 11)
 
 **Done when:** a test proves nothing can be handed off without an approval record.
 

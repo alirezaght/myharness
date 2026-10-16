@@ -5,6 +5,7 @@ import sys
 
 from harness import __version__
 from harness.classification import Complexity
+from harness.cli_approve import add_approve_parser
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
 from harness.cli_decision import add_decision_parser
 from harness.cli_design import add_design_parser
@@ -74,9 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     resume = subparsers.add_parser("resume", help="resume an existing task")
     resume.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")
-
-    approve = subparsers.add_parser("approve", help="approve the final design of a task")
-    approve.add_argument("task_id", nargs="?", help="task id (defaults to the latest task)")
+    add_approve_parser(subparsers)
 
     return parser
 

@@ -127,6 +127,7 @@ uv run harness spec draft <id> [--specs PATH]   # write the preview to docs/spec
 uv run harness spec approve <id> [--specs PATH]   # seal v<N>.md tied to the commit (approval phase only)
 uv run harness spec list <id> [--json] [--specs PATH]   # every specification version (read-only)
 uv run harness spec verify <id> [--specs PATH]   # check each approved file against its content hash (read-only)
+uv run harness approve <id> [--specs PATH]   # Approve & Implement: seal v<N>.md and record the approval that authorizes the handoff (approval phase only)
 uv run harness review <id> [--json]   # final design review: SPEC §3 step 6 completeness check (read-only, exit 1 when it blocks)
 ```
 
@@ -188,7 +189,7 @@ A specification moves through three states: **draft**, **approved** and **supers
 - Approving a new version marks the previous one `superseded`: only its header changes (status and a `Superseded by` line), the body and content hash are untouched. Approved files are never edited otherwise.
 - `harness spec verify <id>` re-reads every file and prints one result per version: `ok`, `MODIFIED (...)` (content hash mismatch, a difference from the local approval record, a version that does not match the file name, an unparseable or missing file) or `draft (not sealed)`. It exits 1 on any `MODIFIED`. `harness spec list <id>` (with `--json`) lists the versions. Both work without a local database, at file level only.
 
-`show`, `list` and `verify` never write. `draft` writes only `draft.md`, and `approve` writes only the new `v<N>.md` (plus the superseded header of the previous one). Task ids are validated before they are used as a path. `spec approve` also re-runs the final design review (see below) and refuses to seal while anything blocks. The developer-facing `harness approve` ("Approve & Implement") is P1-11. Until then `spec approve` is the only way to seal a specification.
+`show`, `list` and `verify` never write. `draft` writes only `draft.md`, and `approve` writes only the new `v<N>.md` (plus the superseded header of the previous one). Task ids are validated before they are used as a path. `spec approve` also re-runs the final design review (see below) and refuses to seal while anything blocks. `spec approve` alone authorizes nothing: a sealed specification without an approval record cannot be handed off (see Approve & Implement below).
 
 ### Final review
 
@@ -211,6 +212,22 @@ The route-back hints (`harness phase <id> back <phase> --reason "<why>"`) are ad
 
 The review is a gate in both places a specification can advance. `harness phase <id> next` from `final_review` into `approval` runs it and, while anything blocks, exits 1 with the report and writes nothing. When it passes, the transition records a `final_review.passed` event and a `final_review` checkpoint (state hash and per-item states) in the same transaction, and prints `final design review passed (checkpoint recorded)`. `harness spec approve <id>` runs the review again (a decision change proposed while in `approval`, for instance, blocks it) and seals nothing while it blocks. A specification with an open blocking item therefore cannot reach approval.
 
+## Approve & Implement
+
+`harness approve <id> [--specs PATH]` is the developer-facing "Approve & Implement" step (SPEC §3 Phase 7). It is allowed only in the `approval` phase and, in one transaction, seals a new `v<N>.md` exactly as `spec approve` does (same output, including the superseded line for the previous version) and records the approval. It also re-runs the final design review and writes nothing (no file, row, event or checkpoint) if anything blocks, the task is outside `approval`, or there is no commit at HEAD. Success also prints `approval #<n> recorded: spec v<N> <content hash> (implementation handoff authorized; AL launch is Phase 3)`. The harness does not launch AL yet: that is Phase 3.
+
+An approval binds the specification version, the path of the sealed file, the git revision, the content hash and the final-review state hash. It is an immutable row in the local database (approving again adds a new row and seals a new version; earlier rows are never changed), plus an `approval.granted` event and an `approval` checkpoint. Whether an approval is still current is never stored: it is re-derived each time, and the approval is stale (with a reason) when any of these holds:
+
+1. `no approval record; run: harness approve <id>`.
+2. `the task is in phase <phase>, not approval; run: harness approve <id> again once it is back in approval`.
+3. `the task left the approval phase after the approval was granted; run: harness approve <id> again` (re-entering `approval` does not revive it).
+4. `spec v<N> is not recorded as approved; run: harness approve <id> again`, or `spec v<N> was superseded by v<M>; run: harness approve <id> again` (for example after a later `harness spec approve`).
+5. `the sealed specification <path> cannot be read: <error>`, or `the sealed specification <path> was modified after approval (run: harness spec verify <id>)`.
+6. `the specification content changed since approval; run: harness approve <id> again`.
+7. `the final design review state changed since approval (e.g. a pending decision change); run: harness review <id>`.
+
+`harness spec approve` alone authorizes nothing: it seals a version but records no approval, and it supersedes the approved version of an earlier `harness approve`. `harness.approval.require_approval(controller, task_id, store, repo_root)` is the only handoff path Phase 3 may use: it returns the current approval (spec path, version and hash) or raises `NotApproved` with the first reason above. `harness show <id>` prints an `approval:` line: `none`, `spec v<N> <hash> (current)` or `spec v<N> <hash> (stale: <reason>)`.
+
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-10 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open). Next task: P1-11.
+Design spec approved for implementation; P1-01 to P1-11 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization). Next task: P1-12.

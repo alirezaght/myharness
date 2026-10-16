@@ -83,12 +83,19 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 
 def cmd_show(args: argparse.Namespace) -> int:
+    from harness.approval import ApprovalGate  # lazy: approval imports the engines
+    from harness.cli_spec import spec_store  # lazy: cli_spec imports this module
+
     with _controller(args) as controller:
         task = controller.get_task(args.task_id)
         history = controller.history(task.id)
+        store = spec_store(controller, task.id, None)
+        root = task_repo_root(controller, task.id)
+        approval = ApprovalGate(controller, task.id, store, root).status()
     print(_summary(task))
     print(f"request: {task.request}")
     print(f"created: {task.created_at} · updated: {task.updated_at}")
+    print(f"approval: {approval}")
     print(f"interview topics: {', '.join(interview_depth(task.complexity).topics)}")
     print("history:")
     for step in history:

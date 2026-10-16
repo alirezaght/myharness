@@ -5,7 +5,7 @@ v<N>.md, the header of the previous version, and removes draft.md. Each mutation
 transaction with an event and a `spec` checkpoint; a failed step restores every file it touched.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -17,6 +17,7 @@ from harness.interview import InterviewEngine
 from harness.phases import Phase
 from harness.repo_scan import git_state
 from harness.review import FinalReviewer
+from harness.review_report import ReviewReport
 from harness.spec_document import build_body
 from harness.spec_record import (
     SpecRecord,
@@ -35,6 +36,9 @@ OK = "ok"
 HASH_MISMATCH = "MODIFIED (content hash mismatch)"
 DB_MISMATCH = "MODIFIED (differs from the local approval record)"
 NOT_SEALED = "(not sealed)"
+
+
+OnSealed = Callable[[dict, ReviewReport], None]
 
 
 class SpecError(ValueError):
@@ -167,13 +171,17 @@ class SpecificationManager:
             raise
         return path
 
-    def approve(self) -> tuple[SpecRecord, SpecRecord | None]:
-        """Write v<N>.md sealed by its content hash and supersede v<N-1>; returns both."""
+    def approve(self, on_sealed: OnSealed | None = None) -> tuple[SpecRecord, SpecRecord | None]:
+        """Write v<N>.md sealed by its content hash and supersede v<N-1>; returns both.
+
+        `on_sealed(payload, report)` runs last inside the same transaction; if it raises,
+        every file and row of this approval is rolled back.
+        """
         created: list[Path] = []
         restores: list[tuple[Path, str]] = []
         try:
             with self._mutation():
-                previous = self._approve_in_transaction(created, restores)
+                previous = self._approve_in_transaction(created, restores, on_sealed)
         except BaseException:
             for path in created:
                 path.unlink(missing_ok=True)
@@ -183,7 +191,10 @@ class SpecificationManager:
         return parse_spec(created[0]), (parse_spec(previous.path) if previous else None)
 
     def _approve_in_transaction(
-        self, created: list[Path], restores: list[tuple[Path, str]]
+        self,
+        created: list[Path],
+        restores: list[tuple[Path, str]],
+        on_sealed: OnSealed | None = None,
     ) -> SpecRecord | None:
         task = self.controller.get_task(self.task_id)
         if task.phase is not Phase.APPROVAL:
@@ -221,6 +232,8 @@ class SpecificationManager:
         if draft.is_file():
             restores.append((draft, draft.read_bytes().decode("utf-8")))
             draft.unlink()
+        if on_sealed is not None:
+            on_sealed(dict(payload), report)
         return previous
 
     @contextmanager

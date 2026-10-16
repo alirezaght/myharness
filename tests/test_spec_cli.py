@@ -267,8 +267,8 @@ def test_failed_approval_restores_every_file_and_the_db(run, sample_repo, db_pat
     state = _db(db_path, task)
     original = SpecificationManager._approve_in_transaction
 
-    def failing(self, created, restores):
-        original(self, created, restores)
+    def failing(self, created, restores, on_sealed=None):
+        original(self, created, restores, on_sealed)
         raise OSError("disk full")
 
     monkeypatch.setattr(SpecificationManager, "_approve_in_transaction", failing)

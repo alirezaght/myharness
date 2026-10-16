@@ -9,6 +9,7 @@ from typing import Any
 
 from harness.db import utcnow
 from harness.errors import RecordNotFound, TaskNotFound
+from harness.state_approvals import ApprovalsMixin
 from harness.state_decisions import DecisionChangesMixin
 from harness.state_design import DesignMixin
 from harness.state_models import (
@@ -32,7 +33,9 @@ def _payload(payload: dict[str, Any] | None) -> str:
     return json.dumps(payload or {}, sort_keys=True)
 
 
-class TaskWorkspace(ProposalsMixin, DesignMixin, DecisionChangesMixin, SpecsMixin, TestPlanMixin):
+class TaskWorkspace(
+    ProposalsMixin, DesignMixin, DecisionChangesMixin, SpecsMixin, TestPlanMixin, ApprovalsMixin
+):
     def __init__(self, conn: sqlite3.Connection, task_id: str):
         if conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone() is None:
             raise TaskNotFound(task_id)
