@@ -1,6 +1,8 @@
 """The dashboard's read model: plain JSON-ready data from the CLI's state DB and spec files.
 
 No HTTP here. The DB is opened per call exactly like the CLI opens it and is never created.
+The only write is the Diagram Service recording a new diagram version of the selected task
+when its design changed, committed before the view's read snapshot starts.
 """
 
 import sqlite3
@@ -12,9 +14,11 @@ from typing import Any
 from harness.cli_spec import spec_store
 from harness.controller import HarnessController, Task, TaskNotFound
 from harness.dashboard.decisions_view import decisions_section
+from harness.dashboard.diagrams_view import diagrams_section
 from harness.dashboard.overview import overview, task_row
 from harness.dashboard.spec_view import spec_section
 from harness.db import connect
+from harness.diagrams import DiagramService
 
 NO_ACTIVE_TASK = "no active task"
 
@@ -40,7 +44,9 @@ def _snapshot(conn: sqlite3.Connection) -> Iterator[None]:
             conn.execute("ROLLBACK")
 
 
-def _task_view(controller: HarnessController, task: Task, specs: str | None) -> dict[str, Any]:
+def _task_view(
+    controller: HarnessController, task: Task, specs: str | None, sync_error: str | None
+) -> dict[str, Any]:
     store = spec_store(controller, task.id, specs)
     return {
         "id": task.id,
@@ -50,6 +56,7 @@ def _task_view(controller: HarnessController, task: Task, specs: str | None) -> 
         "complexity_source": task.complexity_source,
         "spec": spec_section(store),
         "decisions": decisions_section(controller, task),
+        "diagrams": diagrams_section(controller, task, sync_error),
     } | overview(controller, task, store)
 
 
@@ -63,17 +70,36 @@ def _notice(task_id: str | None) -> str:
     return str(TaskNotFound(task_id)) if task_id else NO_ACTIVE_TASK
 
 
+def _find(controller: HarnessController, task_id: str | None) -> Task | None:
+    if not task_id:
+        return None
+    try:
+        return controller.get_task(task_id)
+    except TaskNotFound:
+        return None
+
+
+def _sync(controller: HarnessController, task_id: str) -> str | None:
+    """Record a new diagram version if the design changed; a failure only marks the section."""
+    try:
+        DiagramService(controller, task_id).sync()
+    except sqlite3.Error as error:
+        return f"diagram version could not be recorded: {error}"
+    return None
+
+
 def dashboard_view(db_path: Path, task_id: str | None, specs: str | None) -> dict[str, Any]:
-    """The selected task and every task's row; no or an unknown task gives a notice instead."""
+    """The selected task and every task's row; no or an unknown task gives a notice instead.
+
+    Writes only diagram versions (DEC-0007), before the snapshot and on the same connection.
+    """
     if not Path(db_path).exists():
         return {"task": None, "notice": _notice(task_id), "tasks": []}
-    with open_state(db_path) as controller, _snapshot(controller.conn):
-        task = None
-        if task_id:
-            try:
-                task = controller.get_task(task_id)
-            except TaskNotFound:
-                pass
-        shown = None if task is None else _task_view(controller, task, specs)
-        notice = None if task is not None else _notice(task_id)
-        return {"task": shown, "notice": notice, "tasks": _rows(controller, specs)}
+    with open_state(db_path) as controller:
+        found = _find(controller, task_id)
+        sync_error = None if found is None else _sync(controller, found.id)
+        with _snapshot(controller.conn):
+            task = None if found is None else controller.get_task(found.id)
+            shown = None if task is None else _task_view(controller, task, specs, sync_error)
+            notice = None if task is not None else _notice(task_id)
+            return {"task": shown, "notice": notice, "tasks": _rows(controller, specs)}

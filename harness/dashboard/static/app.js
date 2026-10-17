@@ -321,6 +321,7 @@ function renderTask(task) {
     renderSpec(task.spec, task.phase),
     renderDecisions(task.decisions),
     renderHistory(task.id, task.spec.history),
+    renderDiagrams(task.id, task.diagrams),
   );
   return section;
 }
@@ -406,6 +407,7 @@ async function load() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  window.addEventListener("hashchange", diagramHashChanged);
   load();
   setInterval(tick, 1000);
 });

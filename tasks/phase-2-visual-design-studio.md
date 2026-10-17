@@ -23,9 +23,9 @@
 - [x] Version history for the spec (diff between versions)
 
 ### P2-04 — Diagram Service
-- [ ] Generate only the relevant diagrams: component, sequence, data-flow, state, deployment
-- [ ] Diagrams come from a structured model (stable ids for components and connections) so comments can be anchored to them
-- [ ] Version history for diagrams
+- [x] Generate only the relevant diagrams: component, sequence, data-flow, state, deployment
+- [x] Diagrams come from a structured model (stable ids for components and connections) so comments can be anchored to them
+- [x] Version history for diagrams
 
 **Done when:** a sample design renders all relevant diagram types with addressable elements.
 

@@ -198,3 +198,134 @@ pre.diff span[data-kind="hunk"] {
 summary {
   cursor: pointer;
 }
+
+#diagrams p {
+  margin: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+#diagrams ul,
+#diagram-history ol {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+#diagrams,
+figure.diagram {
+  min-width: 0;
+  max-width: 100%;
+}
+
+figure.diagram {
+  margin: 0.75rem 0;
+}
+
+figure.diagram figcaption {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.diagram-canvas {
+  max-width: 100%;
+  overflow: auto;
+  max-height: 80vh;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 0.375rem;
+}
+
+.diagram-canvas svg {
+  display: block;
+  font-size: 12px;
+}
+
+.diagram-element {
+  cursor: pointer;
+}
+
+.diagram-element rect {
+  fill: Canvas;
+  stroke: currentColor;
+  stroke-width: 1.25;
+}
+
+.diagram-element rect.frame {
+  fill: color-mix(in srgb, currentColor 4%, transparent);
+  stroke-dasharray: none;
+}
+
+.diagram-element.undeclared rect {
+  stroke-dasharray: 4 3;
+}
+
+.diagram-element text {
+  fill: currentColor;
+}
+
+.diagram-element text.label {
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+
+.diagram-element text.edge-label {
+  text-anchor: middle;
+  font-size: 11px;
+}
+
+.diagram-element text.frame-label {
+  font-weight: 600;
+}
+
+.diagram-element polyline.edge,
+.diagram-element line.lifeline {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+}
+
+.diagram-element line.lifeline {
+  stroke-dasharray: 5 4;
+}
+
+.diagram-element polyline.hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+}
+
+.diagram-canvas .arrowhead {
+  fill: currentColor;
+}
+
+.diagram-element[aria-pressed="true"] rect,
+.diagram-element[aria-pressed="true"] polyline.edge,
+.diagram-element[aria-pressed="true"] line.lifeline {
+  stroke: Highlight;
+  stroke-width: 3;
+}
+
+.diagram-element[aria-pressed="true"] text {
+  fill: Highlight;
+  font-weight: 700;
+}
+
+.diagram-element:focus {
+  outline: none;
+}
+
+.diagram-element:focus-visible rect,
+.diagram-element:focus-visible polyline.edge {
+  stroke: Highlight;
+  stroke-width: 2;
+  stroke-dasharray: 2 2;
+}
+
+#diagram-selection {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 0.375rem;
+}
+
+#diagram-selection h4 {
+  margin: 0 0 0.25rem;
+}

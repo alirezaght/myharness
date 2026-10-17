@@ -1,11 +1,14 @@
 """The dashboard's HTTP server: 127.0.0.1 only, an OS-chosen free port, a fixed set of routes.
 
 GET only. Every request is checked against the expected Host header (DNS rebinding guard),
-then answered from the read model, its live stream or the packaged static files; nothing is
-written. `?task=<id>` selects the task; without it the task the dashboard was launched for.
+then answered from the read model, its live stream, one stored diagram version or the packaged
+static files; only diagram versions are written (by the Diagram Service, when the design of
+the selected task changed). `?task=<id>` selects the task; without it the task the dashboard
+was launched for. `/api/diagrams?version=<n>` returns version n of the task's diagrams.
 """
 
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -15,11 +18,15 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from harness.dashboard.view import dashboard_view
+from harness.dashboard.diagrams_view import diagram_version_view
+from harness.dashboard.view import NO_ACTIVE_TASK, dashboard_view
 
 LOCALHOST = "127.0.0.1"
 API_PATH = "/api/dashboard"
 STREAM_PATH = "/api/stream"
+DIAGRAMS_PATH = "/api/diagrams"
+VERSION = re.compile(r"[1-9][0-9]*")
+MAX_VERSION = 2**63 - 1
 STREAM_TYPE = "text/event-stream; charset=utf-8"
 RETRY_MS = 2000
 KEEPALIVE_SECONDS = 15.0
@@ -27,6 +34,7 @@ STATIC_DIR = files("harness.dashboard") / "static"
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/static/diagrams.js": ("diagrams.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"
@@ -116,11 +124,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(200, data)
         elif url.path == STREAM_PATH:
             self._stream(self._requested_task(url.query))
+        elif url.path == DIAGRAMS_PATH:
+            self._diagrams(url.query)
         elif url.path in STATIC:
             name, content_type = STATIC[url.path]
             self._send(200, (STATIC_DIR / name).read_bytes(), content_type)
         else:
             self._text(404, "not found")
+
+    def _diagrams(self, query: str) -> None:
+        raw = parse_qs(query).get("version", [""])[0]
+        if not VERSION.fullmatch(raw):
+            self._json(400, {"error": "version must be a positive integer"})
+            return
+        task_id = self._requested_task(query)
+        if task_id is None:
+            self._json(404, {"error": NO_ACTIVE_TASK})
+            return
+        number = int(raw)
+        if number > MAX_VERSION:
+            self._json(404, {"error": f"unknown diagram version {raw} for task {task_id}"})
+            return
+        try:
+            data = diagram_version_view(self.server.db_path, task_id, number)
+        except LookupError as error:
+            self._json(404, {"error": str(error)})
+            return
+        except (sqlite3.Error, OSError, ValueError) as error:
+            self._json(500, {"error": str(error)})
+            return
+        self._json(200, data)
 
     def _frame(self, task_id: str | None) -> bytes:
         try:
