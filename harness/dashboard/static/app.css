@@ -6,19 +6,94 @@
 
 body {
   margin: 0 auto;
-  max-width: 60rem;
+  max-width: 72rem;
   padding: 1.5rem;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 1rem;
+  margin-bottom: 1rem;
 }
 
 h1 {
   font-size: 1.25rem;
-  margin: 0 0 1rem;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.75rem;
+}
+
+h3 {
+  font-size: 1rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+#live {
+  margin: 0;
+  font-size: 0.875rem;
+  color: GrayText;
+}
+
+#live[data-state="live"] {
+  color: #1b7f3b;
+}
+
+#live[data-state="stale"] {
+  color: #b00020;
+}
+
+main {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+main[data-stale] > :not(nav) {
+  opacity: 0.6;
+}
+
+@media (max-width: 48rem) {
+  main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+nav ul,
+#pending ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+nav li,
+#pending li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+}
+
+nav p,
+#pending p,
+#resume p {
+  margin: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+nav a[aria-current] {
+  font-weight: 700;
 }
 
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;
   gap: 0.25rem 1rem;
+  margin: 0;
 }
 
 dt {
@@ -27,6 +102,10 @@ dt {
 
 dd {
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+code {
   overflow-wrap: anywhere;
 }
 

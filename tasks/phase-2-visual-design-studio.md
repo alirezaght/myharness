@@ -14,8 +14,8 @@
 **Done when:** `/harness` opens the dashboard for the active task.
 
 ### P2-02 — Task overview & multi-task switching
-- [ ] Task name, description, current phase, status, elapsed time, pending approvals, latest activity (§8.1)
-- [ ] List of tasks, switching between them, resuming interrupted tasks (§8.9)
+- [x] Task name, description, current phase, status, elapsed time, pending approvals, latest activity (§8.1)
+- [x] List of tasks, switching between them, resuming interrupted tasks (§8.9)
 
 ### P2-03 — Spec & decisions view
 - [ ] Render the current spec Markdown

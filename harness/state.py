@@ -144,6 +144,12 @@ class TaskWorkspace(
     def events(self) -> list[Event]:
         return [event_from_row(row) for row in self._all("events", None)]
 
+    def latest_event(self) -> Event | None:
+        row = self.conn.execute(
+            "SELECT * FROM events WHERE task_id = ? ORDER BY id DESC LIMIT 1", (self.task_id,)
+        ).fetchone()
+        return None if row is None else event_from_row(row)
+
     # Checkpoints
 
     def checkpoint(self, label: str, payload: dict[str, Any] | None = None) -> Checkpoint:

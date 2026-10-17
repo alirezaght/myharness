@@ -1,4 +1,4 @@
-"""P2-01: the dashboard server and read model over the CLI's own state DB and spec files."""
+"""P2-01/P2-02: the dashboard server and read model over the CLI's own state DB and spec files."""
 
 import http.client
 import inspect
@@ -18,7 +18,7 @@ import pytest
 from harness.classification import Complexity
 from harness.cli import main
 from harness.controller import HarnessController
-from harness.dashboard.server import LOCALHOST, DashboardServer
+from harness.dashboard.server import LOCALHOST, SECURITY_HEADERS, DashboardServer
 from harness.dashboard.view import NO_ACTIVE_TASK, open_state
 from harness.db import connect
 from tests.complete_task import settle
@@ -57,8 +57,8 @@ def fetch(
         conn.close()
 
 
-def api(server: DashboardServer) -> dict:
-    status, _, body = fetch(server, "/api/dashboard")
+def api(server: DashboardServer, query: str = "") -> dict:
+    status, _, body = fetch(server, f"/api/dashboard{query}")
     assert status == 200, body
     return json.loads(body)
 
@@ -121,7 +121,7 @@ def test_dashboard_shows_the_active_task_from_the_cli_db(db_path):
         data = api(server)
         status, headers, page = fetch(server, "/")
         script = fetch(server, "/static/app.js")
-    assert data["notice"] is None and data["tasks"] == []
+    assert data["notice"] is None and [t["id"] for t in data["tasks"]] == [task_id]
     shown = data["task"]
     assert (shown["id"], shown["request"], shown["phase"]) == (task.id, task.request, task.phase)
     assert (shown["complexity"], shown["complexity_source"]) == ("trivial", "developer")
@@ -167,6 +167,12 @@ def test_reads_the_same_specs_as_the_cli(db_path, sample_repo, tmp_path):
     assert (empty["versions"], empty["draft"]) == ([], False)
 
 
+def _every_route(task_id: str) -> list[str]:
+    paths = ["/", "/static/app.js", "/static/app.css", "/api/dashboard", "/api/stream", "/nope"]
+    selected = [f"/?task={task_id}", f"/api/dashboard?task={task_id}"]
+    return [*paths, *selected, f"/api/stream?task={task_id}", "/api/stream?task=t-00000000"]
+
+
 @needs_git
 def test_writes_nothing_and_creates_nothing(db_path, sample_repo, isolated_home, tmp_path):
     task_id = start_task(db_path, "csv", "export")
@@ -174,7 +180,8 @@ def test_writes_nothing_and_creates_nothing(db_path, sample_repo, isolated_home,
     dump, repo, home = _db_dump(db_path), tree_snapshot(sample_repo), tree_snapshot(isolated_home)
     names = sorted(p.name for p in db_path.parent.iterdir())
     with serve(db_path, task_id) as server:
-        for path in ("/", "/static/app.js", "/static/app.css", "/api/dashboard", "/nope"):
+        server.stream_lifetime = 0.3
+        for path in _every_route(task_id):
             fetch(server, path)
         api(server)
     assert _db_dump(db_path) == dump
@@ -183,6 +190,9 @@ def test_writes_nothing_and_creates_nothing(db_path, sample_repo, isolated_home,
 
     missing = tmp_path / "absent" / "state.db"
     with serve(missing, task_id) as server:
+        server.stream_lifetime = 0.3
+        for path in _every_route(task_id):
+            fetch(server, path)
         data = api(server)
     assert (data["task"], data["tasks"]) == (None, [])
     assert not missing.exists() and not missing.parent.exists()
@@ -210,7 +220,7 @@ def test_no_or_unknown_active_task_lists_the_tasks(db_path, tmp_path):
     assert unknown["task"] is None and unknown["notice"] == "unknown task: t-00000000"
     assert [t["id"] for t in unknown["tasks"]] == [newest, *sorted(tied)]
     assert unknown["tasks"][0]["phase"] == "interview"
-    assert set(unknown["tasks"][0]) == {"id", "phase", "request", "updated_at"}
+    assert set(unknown["tasks"][0]) == {"id", "phase", "request", "updated_at", "status", "next"}
     assert none["notice"] == NO_ACTIVE_TASK and none["tasks"] == unknown["tasks"]
 
     empty_db = tmp_path / "empty" / "state.db"
@@ -236,7 +246,14 @@ def test_routing_hygiene(db_path, tmp_path):
     task_id = start_task(db_path, "csv", "export")
     specs = tmp_path / "specs"
     with serve(db_path, task_id, str(specs)) as server:
-        assert fetch(server, "/api/dashboard", method="POST")[0] == 501
+        for method in ("POST", "PUT"):
+            status, headers, _ = fetch(server, "/api/dashboard", method=method)
+            assert status == 501
+            for name, value in SECURITY_HEADERS.items():
+                assert headers[name] == value
+        for path in ("/nope", "/api/stream"):
+            headers = fetch(server, path, host="evil.example:80")[1]
+            assert headers["X-Content-Type-Options"] == "nosniff"
         assert fetch(server, "/nope")[0] == 404
         assert fetch(server, "/static/../view.py")[0] == 404
         assert fetch(server, "/static/index.html")[0] == 404

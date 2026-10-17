@@ -125,6 +125,18 @@ def test_events_round_trip_in_order(ws):
         ws.record_event("  ")
 
 
+def test_latest_event_is_the_newest_of_this_task_only(controller, ws, conn):
+    conn.execute("DELETE FROM events WHERE task_id = ?", (ws.task_id,))
+    assert ws.latest_event() is None
+    first = ws.record_event("custom.one")
+    other = controller.create_task("Another task")
+    assert ws.latest_event() == first
+    last = ws.record_event("custom.two", {"n": 2})
+    controller.workspace(other.id).record_event("custom.other")
+    assert ws.latest_event() == last == ws.events()[-1]
+    assert controller.workspace(other.id).latest_event().kind == "custom.other"
+
+
 def test_controller_records_events_with_state_changes(controller):
     task = controller.create_task("Add CSV export", Complexity.SIMPLE)
     controller.advance(task.id)
