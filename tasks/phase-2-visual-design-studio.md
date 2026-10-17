@@ -7,9 +7,9 @@
 ## Tasks
 
 ### P2-01 — Local web app skeleton
-- [ ] Lightweight local server plus frontend, launched from `/harness` (opens in the browser)
-- [ ] Reads and writes the same SQLite state and Markdown specs as the CLI
-- [ ] Binds to localhost only
+- [x] Lightweight local server plus frontend, launched from `/harness` (opens in the browser)
+- [x] Reads and writes the same SQLite state and Markdown specs as the CLI
+- [x] Binds to localhost only
 
 **Done when:** `/harness` opens the dashboard for the active task.
 

@@ -65,6 +65,7 @@ The harness **does not** replace AL and must not become a competing orchestrator
 | [`docs/specs/`](docs/specs/) | Sealed, versioned specifications; [`t-a3752edf/v1.md`](docs/specs/t-a3752edf/v1.md) is the Phase 2 spec |
 | [`docs/demo.md`](docs/demo.md) | Recorded Phase 1 demo transcript, kept in sync with `scripts/demo.py` by `tests/test_demo.py` |
 | [`docs/dogfood/`](docs/dogfood/) | Transcript of the run that produced the Phase 2 spec |
+| [`harness/dashboard/`](harness/dashboard/) | The Phase 2 local web dashboard: stdlib HTTP server, read model, launcher and static HTML/JS assets |
 | [`scripts/`](scripts/) | `demo.py`, the throwaway-state Phase 1 demo |
 | [`tasks/`](tasks/) | One task checklist per phase |
 
@@ -135,6 +136,7 @@ uv run harness spec verify <id> [--specs PATH]   # check each approved file agai
 uv run harness approve <id> [--specs PATH]   # Approve & Implement: seal v<N>.md and record the approval that authorizes the handoff (approval phase only)
 uv run harness review <id> [--json]   # final design review: SPEC §3 step 6 completeness check (read-only, exit 1 when it blocks)
 uv run harness resume [<id>] [--json] [--specs PATH]   # where an interrupted task continues; no id lists resumable tasks (read-only)
+uv run python -m harness.dashboard [<id>] [--db PATH] [--specs PATH] [--no-browser]   # local web dashboard for a task (127.0.0.1, free port; writes nothing yet)
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
@@ -250,6 +252,17 @@ The `next:` command depends on the phase:
 
 Exit codes: `0` on success (including an empty list), `1` for an unknown task id (`harness resume: unknown task: <id>`).
 
+### Dashboard
+
+`uv run python -m harness.dashboard [<id>] [--db PATH] [--specs PATH] [--no-browser]` starts the local web dashboard (Phase 2, P2-01). `/harness` starts it for the active task and opens it in the browser. It prints `dashboard: http://127.0.0.1:<port>/ · task <id> · Ctrl-C stops it` (`no active task` when no id is given), then serves until Ctrl-C or SIGTERM, which print `dashboard stopped` and exit 0. If no browser can be opened it also prints `could not open a browser; open <url> yourself`; `--no-browser` only prints the URL. If the server cannot bind, it prints `harness dashboard: <error>` on stderr and exits 1.
+
+It is a standard-library HTTP server (`http.server`) with a static HTML, CSS and vanilla JavaScript frontend: no build step and no new dependency (E9). It is not a `harness` subcommand, so the CLI and its output are unchanged (DEC-0006, DEC-0012).
+
+- **Local only**: it binds to `127.0.0.1` on a free port chosen by the OS on every run; there is no option to change the host. A request whose `Host` header is not `127.0.0.1:<port>` or `localhost:<port>` gets 403 (protection against DNS rebinding). There is no login (DEC-0016).
+- **Same state as the CLI**: the database and the specification directory are resolved exactly like the CLI (`--db` / `$HARNESS_DB` / the per-repository default, and `docs/specs/<id>/` or `--specs`). The browser never touches SQLite: the server reads through the same `harness.db` connection and controller on every request, so a change made with the CLI shows up on the next reload.
+- **What it shows**: the task id, request, phase, complexity (with its source) and the specification versions with their status (and whether a draft exists). With an unknown id it shows `unknown task: <id>` and the list of tasks; with no id it shows `no active task` and the list; with no tasks or no database it shows `no tasks`, never an error. If the data cannot be loaded it says so and offers Retry.
+- **Writes nothing yet**: P2-01 writes no database row, event, checkpoint or file, and never creates the database. DEC-0007 allows the dashboard to write only comments, diagram versions and the approval snapshot, which arrive with later tasks. Task switching, the overview, spec rendering, diagrams, comments and approval are P2-02 to P2-08.
+
 ## Approve & Implement
 
 `harness approve <id> [--specs PATH]` is the developer-facing "Approve & Implement" step (SPEC §3 Phase 7). It is allowed only in the `approval` phase and, in one transaction, seals a new `v<N>.md` exactly as `spec approve` does (same output, including the superseded line for the previous version) and records the approval. It also re-runs the final design review and writes nothing (no file, row, event or checkpoint) if anything blocks, the task is outside `approval`, or there is no commit at HEAD. Success also prints `approval #<n> recorded: spec v<N> <content hash> (implementation handoff authorized; AL launch is Phase 3)`. The harness does not launch AL yet: that is Phase 3.
@@ -268,7 +281,7 @@ An approval binds the specification version, the path of the sealed file, the gi
 
 ## Status
 
-Phase 1 done (P1-01 to P1-13); design spec approved for implementation (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list, a recorded demo, and a dogfood run that produced the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md); see the [dogfood log](docs/dogfood/phase-2-spec-run.md)). Next: Phase 2 (Visual Design Studio).
+Phase 1 done (P1-01 to P1-13); Phase 2 in progress: P2-01 local web app skeleton done; design spec approved for implementation (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list, a recorded demo, and a dogfood run that produced the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md); see the [dogfood log](docs/dogfood/phase-2-spec-run.md)). Next: P2-02 task overview and multi-task switching.
 
 ## Demo
 
