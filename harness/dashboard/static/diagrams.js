@@ -78,36 +78,46 @@ function shapeOf(item, marker) {
   return group;
 }
 
-function renderItem(item, marker, selected) {
+// options (P2-06 comparison): idAttr names the id attribute, marks maps id -> added, removed
+// or changed, onSelect replaces select(). Without options the markup is unchanged.
+function renderItem(item, marker, selected, options = {}) {
   const undeclared = item.detail && item.detail.declared === false;
+  const marks = options.marks || {};
+  const change = Object.hasOwn(marks, item.id) ? marks[item.id] : null;
+  const classes = ["diagram-element", undeclared && "undeclared", change && `change-${change}`];
   const group = svg("g", {
-    class: undeclared ? "diagram-element undeclared" : "diagram-element",
-    "data-element-id": item.id,
+    class: classes.filter(Boolean).join(" "),
+    [options.idAttr || "data-element-id"]: item.id,
     "data-kind": item.kind,
     tabindex: 0,
     role: "button",
-    "aria-label": `${item.kind} ${item.label}`,
+    "aria-label": `${item.kind} ${item.label}${change ? ` (${change})` : ""}`,
     "aria-pressed": item.id === selected ? "true" : "false",
   });
+  if (change) {
+    group.setAttribute("data-change", change);
+    group.append(svg("title", {}, `${change}: ${item.kind} ${item.label}`));
+  }
   group.append(...shapeOf(item, marker));
-  group.addEventListener("click", () => select(item.id));
+  const choose = options.onSelect || select;
+  group.addEventListener("click", () => choose(item.id));
   group.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      select(item.id);
+      choose(item.id);
     }
   });
   return group;
 }
 
-function renderScene(scene, selected) {
+function renderScene(scene, selected, options = {}) {
   const figure = el("figure");
   figure.className = "diagram";
   figure.dataset.diagram = scene.type;
   figure.append(el("figcaption", scene.title));
   const canvas = el("div");
   canvas.className = "diagram-canvas";
-  const marker = `arrow-${scene.type}`;
+  const marker = `${options.markerPrefix || ""}arrow-${scene.type}`;
   const drawing = svg("svg", {
     viewBox: `0 0 ${scene.width} ${scene.height}`,
     width: scene.width,
@@ -118,10 +128,16 @@ function renderScene(scene, selected) {
   const defs = svg("defs");
   const head = svg("marker", { id: marker, viewBox: "0 0 10 10", refX: 10, refY: 5,
     markerWidth: 8, markerHeight: 8, orient: "auto-start-reverse" });
+  if (options.marks) {
+    // Marked edges are thicker; a fixed-size head keeps arrowheads from growing with them.
+    head.setAttribute("markerUnits", "userSpaceOnUse");
+    head.setAttribute("markerWidth", 10);
+    head.setAttribute("markerHeight", 10);
+  }
   head.append(svg("path", { d: "M 0 0 L 10 5 L 0 10 z", class: "arrowhead" }));
   defs.append(head);
   drawing.append(defs);
-  for (const item of scene.items) drawing.append(renderItem(item, marker, selected));
+  for (const item of scene.items) drawing.append(renderItem(item, marker, selected, options));
   canvas.append(drawing);
   figure.append(canvas);
   return figure;

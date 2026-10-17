@@ -324,6 +324,7 @@ function renderTask(task) {
   );
   rememberComments(task);
   section.append(renderDiagrams(task.id, task.diagrams));
+  section.append(renderComparison(task.id, task.diagrams));
   section.append(renderCommentsSection(task.comments, task.diagrams));
   return section;
 }

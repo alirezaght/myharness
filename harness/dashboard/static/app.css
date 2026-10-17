@@ -413,7 +413,143 @@ figure.diagram figcaption {
   color: GrayText;
 }
 
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
+.comment-actions button,
+.compare-controls select,
+#diagram-compare button {
+  font: inherit;
+}
+
+#diagram-compare p {
+  margin: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+#diagram-compare {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.compare-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.compare-controls label {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.compare-pane {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.compare-pane h4 {
+  margin: 0.25rem 0;
+}
+
+.compare-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+  list-style: none;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 1.5rem;
+  height: 0.75rem;
+  margin-right: 0.375rem;
+  vertical-align: middle;
+  border: 3px solid currentColor;
+  box-sizing: border-box;
+}
+
+.legend-swatch.change-added {
+  border-style: solid;
+  border-color: #1b7f3b;
+}
+
+.legend-swatch.change-removed {
+  border-style: dashed;
+  border-color: #b00020;
+}
+
+.legend-swatch.change-changed {
+  border-style: dotted;
+  border-color: #b26a00;
+}
+
+.compare-changes {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+.compare-changes li {
+  overflow-wrap: anywhere;
+}
+
+.diagram-element.change-added rect,
+.diagram-element.change-added polyline.edge,
+.diagram-element.change-added line.lifeline {
+  stroke: #1b7f3b;
+  stroke-width: 3;
+}
+
+.diagram-element.change-added rect {
+  fill: color-mix(in srgb, #1b7f3b 12%, Canvas);
+}
+
+.diagram-element.change-removed rect,
+.diagram-element.change-removed polyline.edge,
+.diagram-element.change-removed line.lifeline {
+  stroke: #b00020;
+  stroke-width: 3;
+  stroke-dasharray: 6 3;
+}
+
+.diagram-element.change-removed rect {
+  fill: color-mix(in srgb, #b00020 10%, Canvas);
+}
+
+.diagram-element.change-changed rect,
+.diagram-element.change-changed polyline.edge,
+.diagram-element.change-changed line.lifeline {
+  stroke: #b26a00;
+  stroke-width: 3;
+  stroke-dasharray: 2 2;
+}
+
+.diagram-element.change-changed rect {
+  fill: color-mix(in srgb, #b26a00 12%, Canvas);
+}
+
 @media (max-width: 48rem) {
+  .compare-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   #comment-form {
     max-width: none;
   }

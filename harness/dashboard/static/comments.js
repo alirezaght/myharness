@@ -11,8 +11,10 @@ const COMMENT_ATTEMPTS = 3;
 const COMMENT_BACKOFF_MS = 500;
 const COMMENT_KINDS = ["clarification", "correction", "redesign"];
 const COMMENT_FOCUS_IDS = new Set(["comment-kind", "comment-text", "comment-submit"]);
+const FOCUS_PATTERN = /^(?:comment-[0-9]+-(?:resolve|reopen|retry|compare)|compare-(?:from|to|retry))$/;
 const commentDrafts = new Map();
-const commentState = { taskId: null, items: [], kinds: COMMENT_KINDS, current: null };
+const commentState = { taskId: null, items: [], kinds: COMMENT_KINDS, current: null,
+  comments: null };
 
 function draftKey(task, version, element) {
   return `${task} ${version} ${element}`;
@@ -72,6 +74,7 @@ function rememberComments(task) {
   }
   commentState.taskId = task.id;
   commentState.items = comments.items;
+  commentState.comments = comments;
   commentState.kinds = comments.kinds && comments.kinds.length ? comments.kinds : COMMENT_KINDS;
   commentState.current = now;
 }
@@ -201,14 +204,14 @@ function pause(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function postComment(payload) {
+async function postJson(url, payload) {
   let res = null;
   let data = {};
   let netErr = null;
   for (let attempt = 0; attempt < COMMENT_ATTEMPTS; attempt += 1) {
     if (attempt) await pause(COMMENT_BACKOFF_MS * 2 ** (attempt - 1));
     try {
-      res = await fetch(COMMENTS_API, {
+      res = await fetch(url, {
         method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -224,7 +227,7 @@ async function postComment(payload) {
 }
 
 async function submitComment(draft, payload) {
-  const { res, data, netErr } = await postComment(payload);
+  const { res, data, netErr } = await postJson(COMMENTS_API, payload);
   draft.sending = false;
   if (res && (res.status === 201 || res.status === 200)) {
     const key = keyOf(draft);
@@ -254,7 +257,7 @@ function reloadDraft(key) {
 
 function captureCommentFocus() {
   const active = document.activeElement;
-  if (!active || !COMMENT_FOCUS_IDS.has(active.id)) return null;
+  if (!active || !(COMMENT_FOCUS_IDS.has(active.id) || FOCUS_PATTERN.test(active.id))) return null;
   const text = active.id === "comment-text";
   return { id: active.id, start: text ? active.selectionStart : null,
     end: text ? active.selectionEnd : null, scroll: active.scrollTop };
@@ -306,6 +309,8 @@ function renderCommentsSection(comments, diagrams) {
     const element = `element=${encodeURIComponent(comment.element)}`;
     link.href = current === comment.version ? `#${element}` : `#version=${comment.version}&${element}`;
     item.append(text, link);
+    item.append(commentActions(commentState.taskId, comment,
+      (comments.addressed_in || {})[String(comment.id)]));
     list.append(item);
   }
   section.append(list);

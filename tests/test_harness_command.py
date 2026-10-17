@@ -50,3 +50,36 @@ def test_resume_step_opens_the_dashboard_for_the_chosen_task():
     step = _text().split("\n15. ", 1)[1].split("\n\nDo nothing", 1)[0]
     assert "Once the developer picks the task to continue, open the dashboard for it" in step
     assert step.index("do not launch AL.") < step.index("open the dashboard")
+
+
+def _redesign_paragraphs() -> list[str]:
+    return [p for p in _text().split("\n\n") if p.startswith("Redesign loop:")]
+
+
+def test_one_redesign_loop_paragraph_sits_between_steps_eight_and_nine():
+    text = _text()
+    paragraphs = _redesign_paragraphs()
+    assert len(paragraphs) == 1, "exactly one paragraph describes the redesign loop"
+    assert not paragraphs[0][0].isdigit(), "it is not a numbered step"
+    assert text.index("\n8. ") < text.index(paragraphs[0]) < text.index("\n9. ")
+    assert text.count("Redesign loop:") == 1
+
+
+def test_redesign_loop_paragraph_names_both_commands_and_keeps_the_developer_in_charge():
+    paragraph = _redesign_paragraphs()[0]
+    assert "`uv run python -m harness.redesign <id>`" in paragraph
+    assert "`uv run python -m harness.redesign address <id> <comment id>...`" in paragraph
+    assert "never address" in paragraph.lower()
+    assert "resolve or re-open" in paragraph
+    assert "developer's say-so" in paragraph
+    assert "uv run harness design propose" in paragraph
+    assert "uv run harness design withdraw" in paragraph
+    assert "the developer decides, never you" in paragraph
+    assert paragraph.index("design propose") < paragraph.index("design withdraw")
+    assert paragraph.index("design withdraw") < paragraph.index("harness.redesign address")
+
+
+def test_redesign_loop_does_not_disturb_the_numbered_steps_or_the_launch_paragraph():
+    text = _text()
+    assert [int(n) for n in STEP.findall(text)] == list(range(1, 16))
+    assert len([p for p in text.split("\n\n") if LAUNCH in p]) == 1

@@ -4,10 +4,12 @@ Every request is checked against the expected Host header (DNS rebinding guard).
 answered from the read model, its live stream, one stored diagram version or the packaged
 static files; a GET writes only diagram versions (by the Diagram Service, when the design of
 the selected task changed). `?task=<id>` selects the task; without it the task the dashboard
-was launched for. `/api/diagrams?version=<n>` returns version n of the task's diagrams.
-POST is accepted only at `/api/comments` (add a comment, P2-05) and only from the dashboard's
-own origin with a JSON body of a declared length; every header is checked before the body is
-read. Any other POST path, and every other method, is 501.
+was launched for. `/api/diagrams?version=<n>` returns version n of the task's diagrams and
+`/api/diagrams/compare?from=<n>&to=<m>` versions n < m side by side with their changes (P2-06).
+POST is accepted only at `/api/comments` (add a comment, P2-05), `/api/comments/resolve` and
+`/api/comments/reopen` (P2-06), and only from the dashboard's own origin with a JSON body of a
+declared length; every header is checked before the body is read. Any other POST path, and
+every other method, is 501.
 """
 
 import json
@@ -21,7 +23,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from harness.dashboard.comments_view import add_comment
+from harness.dashboard.comments_view import add_comment, move_comment
+from harness.dashboard.compare_view import compare_view
 from harness.dashboard.diagrams_view import diagram_version_view
 from harness.dashboard.view import NO_ACTIVE_TASK, dashboard_view
 
@@ -30,6 +33,10 @@ API_PATH = "/api/dashboard"
 STREAM_PATH = "/api/stream"
 DIAGRAMS_PATH = "/api/diagrams"
 COMMENTS_PATH = "/api/comments"
+RESOLVE_PATH = "/api/comments/resolve"
+REOPEN_PATH = "/api/comments/reopen"
+COMPARE_PATH = "/api/diagrams/compare"
+WRITES = {COMMENTS_PATH: None, RESOLVE_PATH: "resolve", REOPEN_PATH: "reopen"}
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16
 VERSION = re.compile(r"[1-9][0-9]*")
@@ -43,6 +50,8 @@ STATIC = {
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/diagrams.js": ("diagrams.js", "text/javascript; charset=utf-8"),
     "/static/comments.js": ("comments.js", "text/javascript; charset=utf-8"),
+    "/static/comment_actions.js": ("comment_actions.js", "text/javascript; charset=utf-8"),
+    "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"
@@ -134,6 +143,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._stream(self._requested_task(url.query))
         elif url.path == DIAGRAMS_PATH:
             self._diagrams(url.query)
+        elif url.path == COMPARE_PATH:
+            self._compare(url.query)
         elif url.path in STATIC:
             name, content_type = STATIC[url.path]
             self._send(200, (STATIC_DIR / name).read_bytes(), content_type)
@@ -145,7 +156,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.headers.get("Host") not in self.server.allowed_hosts():
             self._text(403, "forbidden: unexpected Host header")
             return
-        if urlsplit(self.path).path != COMMENTS_PATH:
+        path = urlsplit(self.path).path
+        if path not in WRITES:
             self.send_error(501, "Unsupported method ('POST')")
             return
         refused = self._refusal()
@@ -156,7 +168,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if body is None:
             self._json(400, {"error": "request body is incomplete"})
             return
-        self._json(*add_comment(self.server.db_path, body))
+        action, db_path = WRITES[path], self.server.db_path
+        if action is None:
+            self._json(*add_comment(db_path, body))
+        else:
+            self._json(*move_comment(db_path, body, action))
 
     def _body(self, length: int) -> bytes | None:
         """Exactly length bytes, read in chunks (no size cap); None when the client stops early."""
@@ -199,6 +215,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             data = diagram_version_view(self.server.db_path, task_id, number)
+        except LookupError as error:
+            self._json(404, {"error": str(error)})
+            return
+        except (sqlite3.Error, OSError, ValueError) as error:
+            self._json(500, {"error": str(error)})
+            return
+        self._json(200, data)
+
+    def _compare(self, query: str) -> None:
+        params = parse_qs(query)
+        raw_a, raw_b = params.get("from", [""])[0], params.get("to", [""])[0]
+        if not (VERSION.fullmatch(raw_a) and VERSION.fullmatch(raw_b)):
+            self._json(400, {"error": "from and to must be positive integers"})
+            return
+        older, newer = int(raw_a), int(raw_b)
+        if older >= newer:
+            self._json(400, {"error": "from must be an earlier version than to"})
+            return
+        task_id = self._requested_task(query)
+        if task_id is None:
+            self._json(404, {"error": NO_ACTIVE_TASK})
+            return
+        if newer > MAX_VERSION:
+            self._json(404, {"error": f"unknown diagram version {raw_b} for task {task_id}"})
+            return
+        try:
+            data = compare_view(self.server.db_path, task_id, older, newer)
         except LookupError as error:
             self._json(404, {"error": str(error)})
             return

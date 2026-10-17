@@ -35,9 +35,9 @@
 - [x] Comment states: open → addressed → resolved
 
 ### P2-06 — Redesign loop
-- [ ] The harness takes open comments, updates the design and regenerates the diagrams
-- [ ] Show revised diagrams next to the previous version, with the change highlighted
-- [ ] The developer resolves or re-opens each comment (AC 8)
+- [x] The harness takes open comments, updates the design and regenerates the diagrams
+- [x] Show revised diagrams next to the previous version, with the change highlighted
+- [x] The developer resolves or re-opens each comment (AC 8)
 
 ### P2-07 — Approval Center & "Approve & Implement" button
 - [ ] One place for every pending approval: decisions, test plan, final spec (§8.7)

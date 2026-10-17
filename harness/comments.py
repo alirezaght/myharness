@@ -4,11 +4,15 @@ A comment is tied to an element id of one diagram version and may only be added 
 task's current version while the design is unchanged since it; otherwise it is refused with a
 reload hint and nothing is written. States move open -> addressed -> resolved, and an
 addressed or resolved comment can be re-opened. Every write is one transaction holding the row
-change and its event; a request id makes a retried add safe (DEC-0014).
+change and its event; a request id makes a retried add safe (DEC-0014). address_all (P2-06)
+addresses several comments at once, all or nothing, recording the diagram version they were
+addressed in.
 """
 
 import sqlite3
 import uuid
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from harness.controller import HarnessController
 from harness.db import transaction
@@ -16,6 +20,9 @@ from harness.diagrams import DiagramService
 from harness.errors import RecordNotFound
 from harness.state_comments import Comment, CommentKind, CommentStatus
 from harness.state_proposals import required
+
+BUSY_CODES = (5, 6)  # SQLITE_BUSY, SQLITE_LOCKED (primary result codes)
+MAX_ID = 2**63 - 1
 
 
 class StaleDiagramVersion(ValueError):
@@ -49,6 +56,24 @@ VERBS = {
     CommentStatus.RESOLVED: "resolved",
     CommentStatus.OPEN: "re-opened",
 }
+
+
+def busy(error: sqlite3.OperationalError) -> bool:
+    return (getattr(error, "sqlite_errorcode", 0) & 0xFF) in BUSY_CODES
+
+
+def element_labels(
+    diagrams: DiagramService, comments: Iterable[Comment]
+) -> dict[int, tuple[str | None, str | None]]:
+    """Each comment's element (kind, label) in the comment's own diagram version."""
+    cache: dict[int, dict[str, tuple[str, str]]] = {}
+    found: dict[int, tuple[str | None, str | None]] = {}
+    for comment in comments:
+        number = comment.diagram_version
+        if number not in cache:
+            cache[number] = diagrams.elements(diagrams.version(number))
+        found[comment.id] = cache[number].get(comment.element_id, (None, None))
+    return found
 
 
 class CommentService:
@@ -105,8 +130,9 @@ class CommentService:
             self.ws.record_event("comment.added", payload | {"kind": str(kind)})
             return comment, True
 
-    def address(self, comment_id: int) -> tuple[Comment, bool]:
-        return self._move(comment_id, CommentStatus.ADDRESSED)
+    def address(self, comment_id: int, version: int | None = None) -> tuple[Comment, bool]:
+        extra = None if version is None else {"version": version}
+        return self._move(comment_id, CommentStatus.ADDRESSED, extra)
 
     def resolve(self, comment_id: int) -> tuple[Comment, bool]:
         return self._move(comment_id, CommentStatus.RESOLVED)
@@ -114,21 +140,51 @@ class CommentService:
     def reopen(self, comment_id: int) -> tuple[Comment, bool]:
         return self._move(comment_id, CommentStatus.OPEN)
 
-    def _move(self, comment_id: int, target: CommentStatus) -> tuple[Comment, bool]:
+    def address_all(self, comment_ids: Sequence[int]) -> tuple[int, list[tuple[Comment, bool]]]:
+        """Address every named comment in one transaction, all or nothing.
+
+        The diagram version recorded is the latest stored one; if the design changed since it
+        (sync first), nothing is written. Duplicate ids count once; an addressed one is a no-op.
+        """
+        ids = list(dict.fromkeys(comment_ids))
+        if not ids:
+            raise ValueError("name at least one comment id")
+        self._begin()
+        with transaction(self.conn):
+            latest = self.diagrams.latest()
+            if latest is None:
+                raise RecordNotFound("comment", ids[0], self.task_id)
+            if DiagramService.needs(self.diagrams.model(), latest):
+                raise StaleDiagramVersion("the design changed while addressing; run address again")
+            extra = {"version": latest.version}
+            results = [self._apply(i, CommentStatus.ADDRESSED, extra) for i in ids]
+            return latest.version, results
+
+    def _move(
+        self, comment_id: int, target: CommentStatus, extra: dict[str, Any] | None = None
+    ) -> tuple[Comment, bool]:
         """The comment and whether it moved; a move to its current state changes nothing."""
         self._begin()
         with transaction(self.conn):
-            comment = self.ws.comment(comment_id)
-            if comment.status == target:
-                return comment, False
-            allowed = TRANSITIONS[target]
-            if comment.status not in allowed:
-                states = " or ".join(str(s) for s in allowed)
-                raise IllegalTransition(
-                    f"comment {comment_id} is {comment.status}: only an {states} comment"
-                    f" can be {VERBS[target]}"
-                )
-            moved = self.ws.set_comment_status(comment_id, comment.status, target)
-            payload = {"id": comment_id, "from": str(comment.status), "to": str(target)}
-            self.ws.record_event(EVENTS[target], payload)
-            return moved, True
+            return self._apply(comment_id, target, extra)
+
+    def _apply(
+        self, comment_id: int, target: CommentStatus, extra: dict[str, Any] | None
+    ) -> tuple[Comment, bool]:
+        """One move inside the caller's transaction."""
+        if not 1 <= comment_id <= MAX_ID:
+            raise RecordNotFound("comment", comment_id, self.task_id)
+        comment = self.ws.comment(comment_id)
+        if comment.status == target:
+            return comment, False
+        allowed = TRANSITIONS[target]
+        if comment.status not in allowed:
+            states = " or ".join(str(s) for s in allowed)
+            raise IllegalTransition(
+                f"comment {comment_id} is {comment.status}: only an {states} comment"
+                f" can be {VERBS[target]}"
+            )
+        moved = self.ws.set_comment_status(comment_id, comment.status, target)
+        payload = {"id": comment_id, "from": str(comment.status), "to": str(target)}
+        self.ws.record_event(EVENTS[target], payload | (extra or {}))
+        return moved, True
