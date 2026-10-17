@@ -225,7 +225,7 @@ def test_unknown_task_and_this_repository_untouched(tmp_path, capsys):
         assert main(["--db", str(db), "spec", action, "t-00000000"]) == 1
     assert not db.parent.exists()
     assert main(["--db", str(db), "spec", "list", "../x", "--specs", str(tmp_path)]) == 1
-    assert not (OWN_DOCS / "specs").exists()
+    assert not (OWN_DOCS / "specs" / "t-00000000").exists()
     assert tree_snapshot(OWN_DOCS) == OWN_SNAPSHOT
 
 

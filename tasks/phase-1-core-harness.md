@@ -94,11 +94,11 @@
 **Done when:** killing the process mid-interview and resuming continues from the same question.
 
 ### P1-13 — Phase 1 acceptance & dogfooding
-- [ ] Run a real task end to end, interrupt, resume, and end with a spec that has no unresolved significant decision
-- [ ] Dogfood: use the harness to produce the spec for Phase 2
-- [ ] Update the README/docs, record a demo
+- [x] Run a real task end to end, interrupt, resume, and end with a spec that has no unresolved significant decision
+- [x] Dogfood: use the harness to produce the spec for Phase 2
+- [x] Update the README/docs, record a demo
 
 ## Phase exit checklist
-- [ ] All tasks done, all tests green
-- [ ] Demo recorded
-- [ ] Docs updated
+- [x] All tasks done, all tests green
+- [x] Demo recorded
+- [x] Docs updated

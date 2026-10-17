@@ -18,7 +18,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def test_repo_decision_records_parse_and_are_approved():
     records = load_decisions(REPO_ROOT / "docs" / "decisions")
-    assert [r.id for r in records] == ["DEC-0001", "DEC-0002", "DEC-0003", "DEC-0004"]
+    ids = [r.id for r in records]
+    assert ids[:4] == ["DEC-0001", "DEC-0002", "DEC-0003", "DEC-0004"]
+    assert len(ids) == len(set(ids))
     assert all(r.status is DecisionStatus.APPROVED and r.version == 1 for r in records)
     first = records[0]
     assert first.title == "Runtime and language"

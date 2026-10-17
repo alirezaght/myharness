@@ -61,7 +61,11 @@ The harness **does not** replace AL and must not become a competing orchestrator
 |---|---|
 | [`docs/SPEC.md`](docs/SPEC.md) | Full **Design Specification V1**: behaviour, architecture responsibilities, security, 30 acceptance criteria |
 | [`docs/ROADMAP.md`](docs/ROADMAP.md) | The 5 delivery phases, estimates, Definition of Done, risks & open questions |
-| [`docs/decisions/`](docs/decisions/) | Approved decision records for the harness itself |
+| [`docs/decisions/`](docs/decisions/) | Approved decision records: DEC-0001 to DEC-0004 for the harness itself, DEC-0005 to DEC-0018 from the Phase 2 dogfood run |
+| [`docs/specs/`](docs/specs/) | Sealed, versioned specifications; [`t-a3752edf/v1.md`](docs/specs/t-a3752edf/v1.md) is the Phase 2 spec |
+| [`docs/demo.md`](docs/demo.md) | Recorded Phase 1 demo transcript, kept in sync with `scripts/demo.py` by `tests/test_demo.py` |
+| [`docs/dogfood/`](docs/dogfood/) | Transcript of the run that produced the Phase 2 spec |
+| [`scripts/`](scripts/) | `demo.py`, the throwaway-state Phase 1 demo |
 | [`tasks/`](tasks/) | One task checklist per phase |
 
 ## Delivery phases
@@ -84,6 +88,7 @@ uv sync                    # install Python 3.13 and dependencies
 uv run pytest              # run tests
 uv run ruff check .        # lint
 uv run ruff format .       # format
+uv run python scripts/demo.py   # replay the Phase 1 demo on throwaway state (see docs/demo.md)
 uv run harness --version   # run the CLI
 uv run harness start "<request>"             # create a task (the only entry point)
 uv run harness phase <id> next               # advance one phase
@@ -263,4 +268,25 @@ An approval binds the specification version, the path of the sealed file, the gi
 
 ## Status
 
-Design spec approved for implementation; P1-01 to P1-12 done (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list). Next task: P1-13.
+Phase 1 done (P1-01 to P1-13); design spec approved for implementation (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list, a recorded demo, and a dogfood run that produced the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md); see the [dogfood log](docs/dogfood/phase-2-spec-run.md)). Next: Phase 2 (Visual Design Studio).
+
+## Demo
+
+[`docs/demo.md`](docs/demo.md) is a recorded transcript of one task going through the whole Phase 1 flow, from `harness start` to `harness approve`, mapped to the V1 acceptance criteria. Reproduce it with:
+
+```bash
+uv run python scripts/demo.py
+```
+
+The script runs in a temporary directory with its own throwaway `HARNESS_HOME` and a small temporary git repository, and deletes both afterwards, so it never touches real harness state or this repository's files. `tests/test_demo.py` keeps the transcript in `docs/demo.md` in sync with what the script prints.
+
+## Dogfooding
+
+Phase 1 was accepted by using the harness on its own repository to produce the specification for Phase 2:
+
+- The interview answers were quoted only from `docs/SPEC.md` or `tasks/phase-2-visual-design-studio.md`, with file and line, or were the developer's own words.
+- The session was interrupted with Q19 asked and no answer recorded, then continued with `harness resume`, which showed the same open question.
+- Every decision, design entry, test-plan item and approval was given by the developer.
+- 96 quoted spans in the spec were checked against their cited source lines, with no mismatches.
+
+Results: the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md), the full [dogfood log](docs/dogfood/phase-2-spec-run.md), and the decision records [DEC-0005 to DEC-0018](docs/decisions/README.md).
