@@ -17,11 +17,13 @@ import pytest
 
 from harness.classification import Complexity
 from harness.cli import main
+from harness.comments import CommentService
 from harness.controller import HarnessController
 from harness.dashboard.server import LOCALHOST, SECURITY_HEADERS, DashboardServer
 from harness.dashboard.view import NO_ACTIVE_TASK, open_state
 from harness.db import connect
 from tests.complete_task import settle
+from tests.sample_design import add_sample_design
 from tests.sample_repo import tree_snapshot
 
 TASK_ID = re.compile(r"task (t-[0-9a-f]{8}) created")
@@ -169,6 +171,7 @@ def test_reads_the_same_specs_as_the_cli(db_path, sample_repo, tmp_path):
 
 def _every_route(task_id: str) -> list[str]:
     paths = ["/", "/static/app.js", "/static/app.css", "/api/dashboard", "/api/stream", "/nope"]
+    paths.append("/static/approvals.js")
     selected = [f"/?task={task_id}", f"/api/dashboard?task={task_id}"]
     return [*paths, *selected, f"/api/stream?task={task_id}", "/api/stream?task=t-00000000"]
 
@@ -196,6 +199,37 @@ def test_writes_nothing_and_creates_nothing(db_path, sample_repo, isolated_home,
         data = api(server)
     assert (data["task"], data["tasks"]) == (None, [])
     assert not missing.exists() and not missing.parent.exists()
+
+
+@needs_git
+def test_the_approval_center_reads_write_nothing(db_path, sample_repo, isolated_home, tmp_path):
+    """P2-07: an approval-phase task with comments; the center and its preview only read."""
+    task_id = start_task(db_path, "approve", "flow")
+    cli(db_path, "investigate", task_id, "--repo", str(sample_repo))
+    conn = connect(db_path)
+    try:
+        controller = HarnessController(conn)
+        add_sample_design(controller, task_id)
+        settle(controller, task_id)
+        controller.advance(task_id)
+        service = CommentService(controller, task_id)
+        service.diagrams.sync()
+        service.add(1, "component:web-dashboard", "correction", "fixture open")
+        addressed = service.add(1, "component:local-server", "clarification", "fixture")[0]
+        service.address(addressed.id, 1)
+    finally:
+        conn.close()
+    specs = tmp_path / "specs"
+    with serve(db_path, task_id, str(specs)) as server:
+        final = api(server)["task"]["approval_center"]["final"]
+        dump, trees = _db_dump(db_path), [tree_snapshot(p) for p in (sample_repo, specs)]
+        server.stream_lifetime = 0.3
+        for path in _every_route(task_id):
+            fetch(server, path)
+        api(server)
+    assert final["comments"] == {"open": 1, "addressed": 1} and final["preview"]
+    assert _db_dump(db_path) == dump
+    assert [tree_snapshot(p) for p in (sample_repo, specs)] == trees and not specs.exists()
 
 
 def _stamp(db_path: Path, task_id: str, updated_at: str) -> None:

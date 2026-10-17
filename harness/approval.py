@@ -12,7 +12,7 @@ from harness.controller import HarnessController
 from harness.phases import Phase
 from harness.review import FinalReviewer
 from harness.review_report import ReviewReport
-from harness.spec_manager import SpecificationManager
+from harness.spec_manager import Guard, SpecificationManager
 from harness.spec_record import SpecRecord, SpecStatus, content_hash, parse_spec
 from harness.spec_store import SpecStore
 from harness.state_approvals import ApprovalRecord
@@ -41,10 +41,14 @@ class ApprovalGate:
         self.ws = self.manager.ws
         self._granted: ApprovalRecord | None = None
 
-    def approve(self) -> tuple[ApprovalRecord, SpecRecord, SpecRecord | None]:
-        """Seal v<N>.md and record the approval in one transaction; nothing is kept on failure."""
+    def approve(
+        self, guard: Guard | None = None
+    ) -> tuple[ApprovalRecord, SpecRecord, SpecRecord | None]:
+        """Seal v<N>.md and record the approval in one transaction; nothing is kept on failure.
+
+        `guard(report)` runs inside that transaction before anything is written (dashboard)."""
         self._granted = None
-        record, previous = self.manager.approve(on_sealed=self._record)
+        record, previous = self.manager.approve(on_sealed=self._record, guard=guard)
         if self._granted is None:
             raise RuntimeError("the specification was sealed without an approval record")
         return self._granted, record, previous

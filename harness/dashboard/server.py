@@ -7,9 +7,9 @@ the selected task changed). `?task=<id>` selects the task; without it the task t
 was launched for. `/api/diagrams?version=<n>` returns version n of the task's diagrams and
 `/api/diagrams/compare?from=<n>&to=<m>` versions n < m side by side with their changes (P2-06).
 POST is accepted only at `/api/comments` (add a comment, P2-05), `/api/comments/resolve` and
-`/api/comments/reopen` (P2-06), and only from the dashboard's own origin with a JSON body of a
-declared length; every header is checked before the body is read. Any other POST path, and
-every other method, is 501.
+`/api/comments/reopen` (P2-06) and `/api/approve` (Approve & Implement, P2-07), and only from the
+dashboard's own origin with a JSON body of a declared length; every header is checked before the
+body is read. Any other POST path, and every other method, is 501.
 """
 
 import json
@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from harness.dashboard.approve import approve_task
 from harness.dashboard.comments_view import add_comment, move_comment
 from harness.dashboard.compare_view import compare_view
 from harness.dashboard.diagrams_view import diagram_version_view
@@ -36,7 +37,13 @@ COMMENTS_PATH = "/api/comments"
 RESOLVE_PATH = "/api/comments/resolve"
 REOPEN_PATH = "/api/comments/reopen"
 COMPARE_PATH = "/api/diagrams/compare"
-WRITES = {COMMENTS_PATH: None, RESOLVE_PATH: "resolve", REOPEN_PATH: "reopen"}
+APPROVE_PATH = "/api/approve"
+WRITES = {
+    COMMENTS_PATH: None,
+    RESOLVE_PATH: "resolve",
+    REOPEN_PATH: "reopen",
+    APPROVE_PATH: "approve",
+}
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16
 VERSION = re.compile(r"[1-9][0-9]*")
@@ -52,6 +59,7 @@ STATIC = {
     "/static/comments.js": ("comments.js", "text/javascript; charset=utf-8"),
     "/static/comment_actions.js": ("comment_actions.js", "text/javascript; charset=utf-8"),
     "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
+    "/static/approvals.js": ("approvals.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"
@@ -171,6 +179,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         action, db_path = WRITES[path], self.server.db_path
         if action is None:
             self._json(*add_comment(db_path, body))
+        elif action == "approve":
+            self._json(*approve_task(db_path, body, self.server.specs))
         else:
             self._json(*move_comment(db_path, body, action))
 

@@ -40,9 +40,9 @@
 - [x] The developer resolves or re-opens each comment (AC 8)
 
 ### P2-07 — Approval Center & "Approve & Implement" button
-- [ ] One place for every pending approval: decisions, test plan, final spec (§8.7)
-- [ ] The button stays disabled while comments are open, blocking questions remain or the final review fails
-- [ ] Approval writes the same immutable snapshot as the Phase 1 CLI gate
+- [x] One place for every pending approval: decisions, test plan, final spec (§8.7)
+- [x] The button stays disabled while comments are open, blocking questions remain or the final review fails
+- [x] Approval writes the same immutable snapshot as the Phase 1 CLI gate
 
 ### P2-08 — Phase 2 acceptance
 - [ ] Scenario: a diagram with a wrong connection → comment → harness fixes it → approval only becomes possible once every comment is resolved

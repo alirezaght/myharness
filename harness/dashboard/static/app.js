@@ -80,25 +80,6 @@ function renderNav(tasks, selected) {
   return nav;
 }
 
-function renderPending(items) {
-  const section = el("section");
-  section.id = "pending";
-  section.append(el("h3", "Pending approvals"));
-  if (!items.length) {
-    section.append(el("p", "none"));
-    return section;
-  }
-  const list = el("ul");
-  for (const item of items) {
-    const entry = el("li");
-    entry.append(el("p", `${item.ref} · ${item.kind}: ${item.title}`));
-    entry.append(withCode("decide: ", item.command));
-    list.append(entry);
-  }
-  section.append(list);
-  return section;
-}
-
 function renderResume(resume) {
   const section = el("section");
   section.id = "resume";
@@ -316,7 +297,7 @@ function renderTask(task) {
   directory.append(el("code", task.spec.directory));
   list.append(el("dt", "Spec directory"), directory);
   list.append(el("dt", "Latest activity"), el("dd", activityText(task.latest_activity)));
-  section.append(list, renderPending(task.pending_approvals), renderResume(task.resume));
+  section.append(list, renderApprovalCenter(task), renderResume(task.resume));
   section.append(
     renderSpec(task.spec, task.phase),
     renderDecisions(task.decisions),
@@ -341,7 +322,9 @@ function render(data) {
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
   const content = data.task ? renderTask(data.task) : renderNotice(data.notice);
-  withCommentFocus(() => main.replaceChildren(renderNav(data.tasks, selected), content));
+  withApprovalFocus(() =>
+    withCommentFocus(() => main.replaceChildren(renderNav(data.tasks, selected), content)),
+  );
 }
 
 function renderError(message) {

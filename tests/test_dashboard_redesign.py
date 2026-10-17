@@ -18,7 +18,7 @@ from tests.test_dashboard_comments import DECLARED, EDGE, _diff, _json, _payload
 from tests.test_dashboard_diagrams import _state, _with
 from tests.test_dashboard_stream import frame, stream
 
-SCRIPTS = ("diagrams", "comments", "comment_actions", "compare", "app")
+SCRIPTS = ("diagrams", "comments", "comment_actions", "compare", "approvals", "app")
 MOVE_PATHS = ("/api/comments/resolve", "/api/comments/reopen")
 
 
@@ -364,7 +364,7 @@ def test_the_redesign_loop_end_to_end(db_path, capsys):
 def test_every_script_is_served_in_order_without_duplicate_globals(db_path):
     with serve(db_path, None) as server:
         page = fetch(server, "/")[2]
-        for name in ("comment_actions", "compare"):
+        for name in ("comment_actions", "compare", "approvals"):
             status, headers, script = fetch(server, f"/static/{name}.js")
             assert status == 200 and headers["Content-Type"] == "text/javascript; charset=utf-8"
     tags = [page.index(f'<script src="/static/{n}.js" defer></script>'.encode()) for n in SCRIPTS]

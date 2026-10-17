@@ -3,7 +3,8 @@
 No HTTP here. The DB is opened per call exactly like the CLI opens it and is never created.
 The only write of a read is the Diagram Service recording a new diagram version of the
 selected task when its design changed, committed before the view's read snapshot starts.
-The dashboard's other write, a comment with its event, is comments_view.add_comment.
+The dashboard's other writes are comments (comments_view.add_comment and move_comment) and the
+approval snapshot of Approve & Implement (approve.approve_task, through the CLI's ApprovalGate).
 """
 
 import sqlite3
@@ -14,6 +15,7 @@ from typing import Any
 
 from harness.cli_spec import spec_store
 from harness.controller import HarnessController, Task, TaskNotFound
+from harness.dashboard.approval_view import approval_center
 from harness.dashboard.comments_view import comments_section
 from harness.dashboard.decisions_view import decisions_section
 from harness.dashboard.diagrams_view import diagrams_section
@@ -50,17 +52,25 @@ def _task_view(
     controller: HarnessController, task: Task, specs: str | None, sync_error: str | None
 ) -> dict[str, Any]:
     store = spec_store(controller, task.id, specs)
-    return {
-        "id": task.id,
-        "request": task.request,
-        "phase": str(task.phase),
-        "complexity": str(task.complexity),
-        "complexity_source": task.complexity_source,
-        "spec": spec_section(store),
-        "decisions": decisions_section(controller, task),
-        "diagrams": diagrams_section(controller, task, sync_error),
-        "comments": comments_section(controller, task),
-    } | overview(controller, task, store)
+    shown = overview(controller, task, store)
+    center = approval_center(
+        controller, task, store, shown["pending_approvals"], shown["resume"]["approval"]
+    )
+    return (
+        {
+            "id": task.id,
+            "request": task.request,
+            "phase": str(task.phase),
+            "complexity": str(task.complexity),
+            "complexity_source": task.complexity_source,
+            "spec": spec_section(store),
+            "decisions": decisions_section(controller, task),
+            "diagrams": diagrams_section(controller, task, sync_error),
+            "comments": comments_section(controller, task),
+        }
+        | shown
+        | {"approval_center": center}
+    )
 
 
 def _rows(controller: HarnessController, specs: str | None) -> list[dict[str, Any]]:

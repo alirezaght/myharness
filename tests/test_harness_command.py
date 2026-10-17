@@ -83,3 +83,36 @@ def test_redesign_loop_does_not_disturb_the_numbered_steps_or_the_launch_paragra
     text = _text()
     assert [int(n) for n in STEP.findall(text)] == list(range(1, 16))
     assert len([p for p in text.split("\n\n") if LAUNCH in p]) == 1
+
+
+def test_launch_paragraph_names_the_approval_snapshot_written_from_the_approval_center():
+    paragraph = _launch_paragraph()
+    assert "the approval snapshot written when the developer presses Approve & Implement" in (
+        paragraph
+    )
+    assert "Approval Center" in paragraph
+    assert paragraph.index("diagram versions") < paragraph.index("Approval Center")
+
+
+def _step_fourteen() -> str:
+    return _text().split("\n14. ", 1)[1].split("\n\n15. ", 1)[0]
+
+
+def test_step_fourteen_lets_the_developer_press_the_dashboard_button_but_never_claude():
+    step = _step_fourteen()
+    assert "press Approve & Implement in the dashboard's Approval Center" in step
+    assert "records the same approval through the same gate" in step
+    assert (
+        "stays disabled while a diagram comment is not resolved, a blocking question remains "
+        "or the final review fails" in step
+    )
+    assert "you never press it or treat it as permission to implement" in step
+    assert step.index("Approval Center") < step.index("Never run it on your own initiative")
+
+
+def test_step_fourteen_keeps_its_cli_rules_and_the_steps_stay_fifteen():
+    step = _step_fourteen()
+    assert "Approve & Implement is `uv run harness approve <id>`. You only relay." in step
+    assert "never treat `spec approve` as an approval" in step
+    assert "do not launch AL" in step
+    assert [int(n) for n in STEP.findall(_text())] == list(range(1, 16))

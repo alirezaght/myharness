@@ -66,20 +66,20 @@ main[data-stale] > :not(nav) {
 }
 
 nav ul,
-#pending ul {
+#approvals ul {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
 nav li,
-#pending li {
+#approvals li {
   padding: 0.5rem 0;
   border-bottom: 1px solid color-mix(in srgb, currentColor 15%, transparent);
 }
 
 nav p,
-#pending p,
+#approvals p,
 #resume p {
   margin: 0.125rem 0;
   overflow-wrap: anywhere;
@@ -558,4 +558,98 @@ figure.diagram figcaption {
   #comment-form button[type="submit"] {
     justify-self: stretch;
   }
+}
+
+#approvals section h4 {
+  margin: 0.75rem 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+#approvals-final {
+  min-width: 0;
+}
+
+.approve-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+
+#approve-button,
+#approve-result button {
+  font: inherit;
+  max-width: 100%;
+}
+
+#approve-button {
+  font-weight: 600;
+  padding: 0.375rem 0.875rem;
+}
+
+#approve-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+#approve-blockers {
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+#approvals #approve-blockers li {
+  list-style: disc;
+  padding: 0.125rem 0;
+  border-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+#approvals #approve-output {
+  margin: 0.5rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+#approvals #approve-output li {
+  border-bottom: 0;
+  padding: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+#approve-preview {
+  margin: 0.5rem 0;
+  min-width: 0;
+}
+
+#approve-preview summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+#approve-preview-document {
+  max-height: 24rem;
+  overflow: auto;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 0.375rem;
+  overflow-wrap: anywhere;
+}
+
+#approvals #approve-preview-document ul {
+  list-style: disc;
+  margin: 0.25rem 0;
+  padding-left: 1.25rem;
+}
+
+#approvals #approve-preview-document li {
+  margin: 0.125rem 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+#approve-result p {
+  margin: 0.25rem 0;
+  overflow-wrap: anywhere;
 }

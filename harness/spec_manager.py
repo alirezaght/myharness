@@ -39,6 +39,7 @@ NOT_SEALED = "(not sealed)"
 
 
 OnSealed = Callable[[dict, ReviewReport], None]
+Guard = Callable[[ReviewReport], None]
 
 
 class SpecError(ValueError):
@@ -171,17 +172,26 @@ class SpecificationManager:
             raise
         return path
 
-    def approve(self, on_sealed: OnSealed | None = None) -> tuple[SpecRecord, SpecRecord | None]:
+    def approve(
+        self, on_sealed: OnSealed | None = None, guard: Guard | None = None
+    ) -> tuple[SpecRecord, SpecRecord | None]:
         """Write v<N>.md sealed by its content hash and supersede v<N-1>; returns both.
 
         `on_sealed(payload, report)` runs last inside the same transaction; if it raises,
-        every file and row of this approval is rolled back.
+        every file and row of this approval is rolled back. `guard(report)` runs inside the
+        transaction after the phase check and before anything is read from git or written;
+        if it raises, nothing is written.
         """
         created: list[Path] = []
         restores: list[tuple[Path, str]] = []
         try:
             with self._mutation():
-                previous = self._approve_in_transaction(created, restores, on_sealed)
+                if guard is None:
+                    previous = self._approve_in_transaction(created, restores, on_sealed)
+                else:
+                    previous = self._approve_in_transaction(
+                        created, restores, on_sealed, guard=guard
+                    )
         except BaseException:
             for path in created:
                 path.unlink(missing_ok=True)
@@ -195,6 +205,7 @@ class SpecificationManager:
         created: list[Path],
         restores: list[tuple[Path, str]],
         on_sealed: OnSealed | None = None,
+        guard: Guard | None = None,
     ) -> SpecRecord | None:
         task = self.controller.get_task(self.task_id)
         if task.phase is not Phase.APPROVAL:
@@ -202,6 +213,8 @@ class SpecificationManager:
                 f"task {task.id} is in phase {task.phase}; run: harness phase {task.id} next"
             )
         report = FinalReviewer(self.controller, self.task_id).report()
+        if guard is not None:
+            guard(report)
         if report.blocking:
             raise SpecError("final design review blocks approval:\n" + report.render())
         state = git_state(self.repo_root)

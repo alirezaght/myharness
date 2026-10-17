@@ -7,7 +7,6 @@ harness's `python -m harness.redesign address`). Each takes a strict JSON body, 
 Service in one transaction; the DB is never created.
 """
 
-import json
 import re
 import sqlite3
 from pathlib import Path
@@ -18,10 +17,10 @@ from harness.comments import (
     IllegalTransition,
     RequestConflict,
     StaleDiagramVersion,
-    busy,
     element_labels,
 )
 from harness.controller import HarnessController, Task
+from harness.dashboard.bodies import BAD_BODY, busy_failure, keys_problem, parse_body
 from harness.diagrams import DiagramService
 from harness.errors import TaskNotFound
 from harness.state_comments import Comment, CommentKind, CommentStatus
@@ -30,7 +29,6 @@ KEYS = frozenset({"task", "version", "element", "kind", "text", "request_id"})
 REQUEST_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
 MOVE_KEYS = frozenset({"task", "comment"})
 MOVES = ("resolve", "reopen")
-BAD_BODY = "body must be a UTF-8 JSON object"
 
 
 def comment_dict(comment: Comment) -> dict[str, Any]:
@@ -73,37 +71,11 @@ def _addressed_in(service: DiagramService, comments: list[Comment]) -> dict[str,
     return {str(i): v for i, v in seen.items() if i in moved}
 
 
-def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    found: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in found:
-            raise ValueError(f"duplicate key {key}")
-        found[key] = value
-    return found
-
-
-def _keys_problem(data: dict[str, Any], keys: frozenset[str]) -> str | None:
-    if set(data) == keys:
-        return None
-    missing, extra = sorted(keys - set(data)), sorted(set(data) - keys)
-    parts = [f"missing {', '.join(missing)}"] if missing else []
-    parts += [f"unknown {', '.join(extra)}"] if extra else []
-    return f"body must have exactly the keys {', '.join(sorted(keys))} ({'; '.join(parts)})"
-
-
-def _parse(body: bytes) -> Any:
-    """The JSON body (duplicate keys refused); ValueError when it is not valid UTF-8 JSON."""
-    try:
-        return json.loads(body.decode("utf-8"), object_pairs_hook=_no_duplicates)
-    except RecursionError as error:
-        raise ValueError(BAD_BODY) from error
-
-
 def _problem(data: Any) -> str | None:
     """Why the parsed body is not a valid comment request, or None."""
     if not isinstance(data, dict):
         return BAD_BODY
-    if keys := _keys_problem(data, KEYS):
+    if keys := keys_problem(data, KEYS):
         return keys
     for name in ("task", "element"):
         if not isinstance(data[name], str) or not data[name]:
@@ -124,7 +96,7 @@ def _problem(data: Any) -> str | None:
 def add_comment(db_path: Path, body: bytes) -> tuple[int, dict[str, Any]]:
     """The HTTP status and JSON body for one add-comment request."""
     try:
-        data = _parse(body)
+        data = parse_body(body)
     except ValueError:
         return 400, {"error": BAD_BODY}
     if problem := _problem(data):
@@ -148,22 +120,16 @@ def add_comment(db_path: Path, body: bytes) -> tuple[int, dict[str, Any]]:
     except ValueError as error:
         return 400, {"error": str(error)}
     except sqlite3.OperationalError as error:
-        return _failure(error)
+        return busy_failure(error)
     except (sqlite3.Error, OSError) as error:
         return 500, {"error": str(error)}
-
-
-def _failure(error: sqlite3.OperationalError) -> tuple[int, dict[str, Any]]:
-    if busy(error):
-        return 503, {"error": f"the state database is busy ({error}); retry", "retry": True}
-    return 500, {"error": str(error)}
 
 
 def _move_problem(data: Any) -> str | None:
     """Why the parsed body is not a valid resolve/re-open request, or None."""
     if not isinstance(data, dict):
         return BAD_BODY
-    if keys := _keys_problem(data, MOVE_KEYS):
+    if keys := keys_problem(data, MOVE_KEYS):
         return keys
     if not isinstance(data["task"], str) or not data["task"]:
         return "task must be a non-empty string"
@@ -180,7 +146,7 @@ def move_comment(db_path: Path, body: bytes, action: str) -> tuple[int, dict[str
     if action not in MOVES:
         raise ValueError(f"unknown comment action {action}")
     try:
-        data = _parse(body)
+        data = parse_body(body)
     except ValueError:
         return 400, {"error": BAD_BODY}
     if problem := _move_problem(data):
@@ -201,6 +167,6 @@ def move_comment(db_path: Path, body: bytes, action: str) -> tuple[int, dict[str
     except ValueError as error:
         return 400, {"error": str(error)}
     except sqlite3.OperationalError as error:
-        return _failure(error)
+        return busy_failure(error)
     except (sqlite3.Error, OSError) as error:
         return 500, {"error": str(error)}

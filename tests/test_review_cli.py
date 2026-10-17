@@ -4,10 +4,12 @@ import re
 import pytest
 
 from harness.cli import main
+from harness.comments import CommentService
 from harness.controller import HarnessController
 from harness.db import connect
 from harness.review_report import Check
 from tests.complete_task import settle
+from tests.sample_design import add_sample_design
 
 TASK_ID = re.compile(r"task (t-[0-9a-f]{8}) created")
 
@@ -94,3 +96,25 @@ def test_review_unknown_task_and_missing_db(run, db_path, tmp_path):
     missing = tmp_path / "nowhere" / "state.db"
     assert main(["--db", str(missing), "review", "t-00000000"]) == 1
     assert not missing.exists()
+
+
+def test_review_output_and_state_hash_ignore_diagram_comments(run, db_path):
+    """DEC-0006: the comment gate is the dashboard's; `harness review` stays byte-identical."""
+    task_id = _final_review(run)
+    conn = connect(db_path)
+    try:
+        controller = HarnessController(conn)
+        add_sample_design(controller, task_id)
+        settle(controller, task_id)
+        service = CommentService(controller, task_id)
+        service.diagrams.sync()
+        code, before, _ = run("review", task_id)
+        hashed = json.loads(run("review", task_id, "--json")[1])["state_hash"]
+        service.add(1, "component:web-dashboard", "correction", "fixture comment")
+    finally:
+        conn.close()
+    code, after, _ = run("review", task_id)
+    assert code == 0 and after == before
+    line = "  n/a     No unresolved diagram comments remain — diagrams and comments are Phase 2"
+    assert line in after.splitlines()
+    assert json.loads(run("review", task_id, "--json")[1])["state_hash"] == hashed

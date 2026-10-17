@@ -8,6 +8,8 @@ import pytest
 from harness.approval import GRANTED_EVENT, ApprovalGate, NotApproved, require_approval
 from harness.db import transaction
 from harness.phases import Phase
+from harness.review import FinalReviewer
+from harness.review_report import ReviewReport
 from harness.spec_manager import SpecificationManager
 from harness.spec_record import parse_spec
 from harness.spec_store import SpecStore
@@ -213,3 +215,33 @@ def test_approve_outside_approval_or_while_blocked_writes_nothing(controller, sa
         _gate(controller, sample_repo, task_id).approve()
     assert _counts(controller.conn) == before
     assert not _store(sample_repo, task_id).directory.exists()
+
+
+@needs_git
+def test_a_raising_guard_sees_the_review_and_leaves_nothing_behind(controller, sample_repo):
+    task_id = _in_approval(controller)
+    store = _store(sample_repo, task_id)
+    SpecificationManager(controller, task_id, store, sample_repo).draft()
+    expected = FinalReviewer(controller, task_id).report().state_hash
+    seen = []
+
+    def raising(report):
+        seen.append(report)
+        raise RuntimeError("guard")
+
+    def snapshot():
+        return {p.name: p.read_bytes() for p in store.directory.iterdir()}, _counts(controller.conn)
+
+    before = snapshot()
+    with pytest.raises(RuntimeError, match="guard"):
+        _gate(controller, sample_repo, task_id).approve(guard=raising)
+    assert isinstance(seen[0], ReviewReport) and seen[0].state_hash == expected
+    assert snapshot() == before and not controller.conn.in_transaction
+
+    approval, record, _ = _gate(controller, sample_repo, task_id).approve(guard=lambda r: None)
+    assert record.version == 1 and approval.spec_version == 1
+    sealed = snapshot()
+    with pytest.raises(RuntimeError, match="guard"):
+        _gate(controller, sample_repo, task_id).approve(guard=raising)
+    assert snapshot() == sealed and parse_spec(record.path).status == "approved"
+    assert _require(controller, sample_repo, task_id) == approval
