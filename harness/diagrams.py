@@ -61,3 +61,11 @@ class DiagramService:
     def scenes(self, version: DiagramVersion) -> list[dict[str, Any]]:
         """The version's diagrams, rendered fresh from its stored model (no caching)."""
         return render_scenes(version.model)
+
+    def elements(self, version: DiagramVersion) -> dict[str, tuple[str, str]]:
+        """Every addressable element id of the version: {id: (kind, label)}, first one wins."""
+        found: dict[str, tuple[str, str]] = {}
+        for scene in self.scenes(version):
+            for item in scene["items"]:
+                found.setdefault(item["id"], (item["kind"], item["label"]))
+        return found

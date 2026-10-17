@@ -321,8 +321,10 @@ function renderTask(task) {
     renderSpec(task.spec, task.phase),
     renderDecisions(task.decisions),
     renderHistory(task.id, task.spec.history),
-    renderDiagrams(task.id, task.diagrams),
   );
+  rememberComments(task);
+  section.append(renderDiagrams(task.id, task.diagrams));
+  section.append(renderCommentsSection(task.comments, task.diagrams));
   return section;
 }
 
@@ -338,7 +340,7 @@ function render(data) {
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
   const content = data.task ? renderTask(data.task) : renderNotice(data.notice);
-  main.replaceChildren(renderNav(data.tasks, selected), content);
+  withCommentFocus(() => main.replaceChildren(renderNav(data.tasks, selected), content));
 }
 
 function renderError(message) {
@@ -404,6 +406,17 @@ async function load() {
     renderError(error.message);
   }
   connect();
+}
+
+async function refreshDashboard() {
+  try {
+    const response = await fetch(API + query(), { cache: "no-store" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || response.statusText);
+    render(data);
+  } catch (error) {
+    setLive("stale", `data unavailable: ${error.message}; showing the last loaded data`);
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {

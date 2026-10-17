@@ -1,10 +1,13 @@
 """The dashboard's HTTP server: 127.0.0.1 only, an OS-chosen free port, a fixed set of routes.
 
-GET only. Every request is checked against the expected Host header (DNS rebinding guard),
-then answered from the read model, its live stream, one stored diagram version or the packaged
-static files; only diagram versions are written (by the Diagram Service, when the design of
+Every request is checked against the expected Host header (DNS rebinding guard). GET is
+answered from the read model, its live stream, one stored diagram version or the packaged
+static files; a GET writes only diagram versions (by the Diagram Service, when the design of
 the selected task changed). `?task=<id>` selects the task; without it the task the dashboard
 was launched for. `/api/diagrams?version=<n>` returns version n of the task's diagrams.
+POST is accepted only at `/api/comments` (add a comment, P2-05) and only from the dashboard's
+own origin with a JSON body of a declared length; every header is checked before the body is
+read. Any other POST path, and every other method, is 501.
 """
 
 import json
@@ -18,6 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from harness.dashboard.comments_view import add_comment
 from harness.dashboard.diagrams_view import diagram_version_view
 from harness.dashboard.view import NO_ACTIVE_TASK, dashboard_view
 
@@ -25,6 +29,9 @@ LOCALHOST = "127.0.0.1"
 API_PATH = "/api/dashboard"
 STREAM_PATH = "/api/stream"
 DIAGRAMS_PATH = "/api/diagrams"
+COMMENTS_PATH = "/api/comments"
+LENGTH = re.compile(r"[0-9]{1,18}")
+READ_CHUNK = 1 << 16
 VERSION = re.compile(r"[1-9][0-9]*")
 MAX_VERSION = 2**63 - 1
 STREAM_TYPE = "text/event-stream; charset=utf-8"
@@ -35,6 +42,7 @@ STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/diagrams.js": ("diagrams.js", "text/javascript; charset=utf-8"),
+    "/static/comments.js": ("comments.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"
@@ -131,6 +139,50 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send(200, (STATIC_DIR / name).read_bytes(), content_type)
         else:
             self._text(404, "not found")
+
+    def do_POST(self) -> None:
+        self.close_connection = True
+        if self.headers.get("Host") not in self.server.allowed_hosts():
+            self._text(403, "forbidden: unexpected Host header")
+            return
+        if urlsplit(self.path).path != COMMENTS_PATH:
+            self.send_error(501, "Unsupported method ('POST')")
+            return
+        refused = self._refusal()
+        if refused is not None:
+            self._json(*refused)
+            return
+        body = self._body(int(self.headers["Content-Length"]))
+        if body is None:
+            self._json(400, {"error": "request body is incomplete"})
+            return
+        self._json(*add_comment(self.server.db_path, body))
+
+    def _body(self, length: int) -> bytes | None:
+        """Exactly length bytes, read in chunks (no size cap); None when the client stops early."""
+        chunks, remaining = [], length
+        while remaining:
+            chunk = self.rfile.read(min(remaining, READ_CHUNK))
+            if not chunk:
+                return None
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def _refusal(self) -> tuple[int, dict[str, str]] | None:
+        """Why the POST headers are refused (before any body byte is read), or None."""
+        origins = {f"http://{host}" for host in self.server.allowed_hosts()}
+        site = self.headers.get("Sec-Fetch-Site")
+        if self.headers.get("Origin") not in origins or site not in (None, "same-origin"):
+            return 403, {"error": "forbidden: cross-origin request"}
+        if self.headers.get_content_type() != "application/json":
+            return 415, {"error": "content type must be application/json"}
+        lengths = self.headers.get_all("Content-Length") or []
+        if "Transfer-Encoding" in self.headers or not lengths:
+            return 411, {"error": "a Content-Length is required"}
+        if len(lengths) > 1 or not LENGTH.fullmatch(lengths[0]):
+            return 400, {"error": "Content-Length must be one non-negative integer"}
+        return None
 
     def _diagrams(self, query: str) -> None:
         raw = parse_qs(query).get("version", [""])[0]

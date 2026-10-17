@@ -30,9 +30,9 @@
 **Done when:** a sample design renders all relevant diagram types with addressable elements.
 
 ### P2-05 — Interactive commenting
-- [ ] Select a component or connection and add a comment (clarification / correction / redesign)
-- [ ] Comments persist in task state and are tied to the element id and the diagram version
-- [ ] Comment states: open → addressed → resolved
+- [x] Select a component or connection and add a comment (clarification / correction / redesign)
+- [x] Comments persist in task state and are tied to the element id and the diagram version
+- [x] Comment states: open → addressed → resolved
 
 ### P2-06 — Redesign loop
 - [ ] The harness takes open comments, updates the design and regenerates the diagrams

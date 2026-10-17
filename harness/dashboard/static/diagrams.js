@@ -3,7 +3,8 @@
 // P2-04: the task's diagrams as SVG, built with createElementNS and textContent only.
 // Every element is addressable by its stable id: click, Enter or Space selects it, and so does
 // the URL hash "#element=<id>" (optionally "version=<n>&" to show a stored older version).
-// Loaded before app.js; el() and alertText() come from app.js and are only called after load.
+// Loaded before comments.js and app.js; el() and alertText() come from app.js, the comment
+// panel of the selected element from comments.js; they are only called after load.
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const DIAGRAMS_API = "/api/diagrams";
@@ -150,6 +151,10 @@ function fillSelection(panel, view, element) {
   for (const [name, value] of Object.entries(item.detail || {})) rows.push([name, detailText(value)]);
   for (const [name, value] of rows) list.append(el("dt", name), el("dd", value));
   panel.append(list);
+  const cur = lastDiagrams && lastDiagrams.current;
+  const writable = !!cur && view.version === cur.version && !lastDiagrams.outdated
+    && !lastDiagrams.unavailable;
+  panel.append(renderElementComments(view, item, writable));
 }
 
 function currentView() {
@@ -185,7 +190,8 @@ async function fetchVersion(taskId, version, key) {
 
 function rerenderDiagrams() {
   const section = document.getElementById("diagrams");
-  if (section && lastDiagrams) section.replaceWith(renderDiagrams(lastTaskId, lastDiagrams));
+  if (!section || !lastDiagrams) return;
+  withCommentFocus(() => section.replaceWith(renderDiagrams(lastTaskId, lastDiagrams)));
 }
 
 function showVersion(version) {

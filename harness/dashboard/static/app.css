@@ -329,3 +329,97 @@ figure.diagram figcaption {
 #diagram-selection h4 {
   margin: 0 0 0.25rem;
 }
+
+.element-comments h5 {
+  font-size: 0.9rem;
+  margin: 0.75rem 0 0.25rem;
+}
+
+.element-comments ol,
+#comments ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.element-comments li,
+#comments li {
+  padding: 0.375rem 0 0.375rem 0.5rem;
+  border-left: 3px solid color-mix(in srgb, currentColor 25%, transparent);
+  margin-bottom: 0.375rem;
+}
+
+.element-comments p,
+#comments p {
+  margin: 0.125rem 0;
+  overflow-wrap: anywhere;
+}
+
+.comment-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.element-comments li[data-status="open"],
+#comments li[data-status="open"] {
+  border-left-color: #b26a00;
+}
+
+.element-comments li[data-status="addressed"],
+#comments li[data-status="addressed"] {
+  border-left-color: #1f5fbf;
+}
+
+.element-comments li[data-status="resolved"],
+#comments li[data-status="resolved"] {
+  border-left-color: #1b7f3b;
+}
+
+#comment-form {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  max-width: 40rem;
+}
+
+#comment-form label {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+#comment-form select,
+#comment-form textarea,
+#comment-form button {
+  font: inherit;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+#comment-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+#comment-form select,
+#comment-form button[type="submit"] {
+  justify-self: start;
+}
+
+.comment-status p {
+  margin: 0.25rem 0;
+}
+
+.comment-note {
+  color: GrayText;
+}
+
+@media (max-width: 48rem) {
+  #comment-form {
+    max-width: none;
+  }
+
+  #comment-form select,
+  #comment-form button[type="submit"] {
+    justify-self: stretch;
+  }
+}
