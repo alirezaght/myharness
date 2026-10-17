@@ -1,8 +1,9 @@
-"""P2-01/P2-02: a real headless Chrome renders the dashboard, its task list and live updates.
+"""P2-01..P2-03: a real headless Chrome renders the dashboard, task list, live updates and spec.
 
 Skipped only when no Chrome/Chromium is installed. Set HARNESS_DASHBOARD_SCREENSHOT to a PNG
 path to also save a 1280x800 screenshot of the active-task page, and
-HARNESS_DASHBOARD_SCREENSHOT_DIR to a directory for the task overview at 1280x800 and 390x844.
+HARNESS_DASHBOARD_SCREENSHOT_DIR to a directory for the task overview at 1280x800 and 390x844
+and the spec & decisions view (spec-1280w.png, spec-390w.png).
 The live stream is recycled after half a second so the page goes quiet for --dump-dom.
 """
 
@@ -18,6 +19,7 @@ from harness.dashboard.server import DashboardHandler, DashboardServer
 from harness.db import connect
 from tests.test_dashboard import cli, needs_git, serve, start_task
 from tests.test_dashboard_overview import _investigated, _propose, _resume
+from tests.test_dashboard_spec import _spec_text, _versions, _write
 
 MAC_CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 TIMEOUT = 60
@@ -176,3 +178,64 @@ def test_headless_chrome_updates_live_from_the_stream(db_path, tmp_path, monkeyp
     assert f"<h2>Task {task_id}</h2>" in dom
     assert "<dd>interview</dd>" in dom and "<dd>investigation</dd>" not in dom
     assert "<p>interview · in progress</p>" in dom
+
+
+SPEC_BODY = "## Requirements\n\n- **Rows:** keep `csv` <img src=x onerror=alert(1)>\n  wrapped\n"
+
+
+def _spec_shots(server: DashboardServer, profile: Path) -> None:
+    directory = os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR")
+    if not directory:
+        return
+    Path(directory).mkdir(parents=True, exist_ok=True)
+    for width, height in ((1280, 2400), (390, 4000)):
+        shot = Path(directory) / f"spec-{width}w.png"
+        result = _headless(
+            profile / f"{width}", f"--window-size={width},{height}", f"--screenshot={shot}",
+            server.url,
+        )  # fmt: skip
+        assert result.returncode == 0 and shot.is_file(), result.stderr
+
+
+@needs_git
+def test_headless_chrome_renders_the_spec_history_and_decisions(db_path, sample_repo, tmp_path):
+    task_id = _investigated(db_path, sample_repo)
+    _propose(db_path, task_id)
+    specs = tmp_path / "specs"
+    _versions(specs, task_id, SPEC_BODY, SPEC_BODY + "- added line\n")
+    _write(specs, task_id, "draft.md", _spec_text(task_id, "draft", None, SPEC_BODY, 3))
+    with serve(db_path, task_id, str(specs)) as server:
+        dom = _dom(server, tmp_path / "profile")
+        _spec_shots(server, tmp_path / "profile-shots")
+    assert '<section id="spec"><h3>Specification</h3><p>showing: v2 (approved)</p>' in dom
+    assert '<article id="spec-document"><h4>Specification — csv export</h4>' in dom
+    assert "<h5>Requirements</h5>" in dom and "<strong>Task:</strong>" in dom
+    assert "<strong>Rows:</strong> keep <code>csv</code> &lt;img src=x" in dom
+    assert "onerror=alert(1)&gt;<br>wrapped</li>" in dom and "<img" not in dom
+    assert "<li><p>v1 superseded (superseded by v2) · 2026-01-01T00:00:00+00:00" in dom
+    assert "<p>· first version</p>" in dom
+    assert f'<details data-key="{task_id} v2"><summary>· +1 -0 against v1</summary>' in dom
+    assert '<span data-kind="add">+- added line</span>' in dom
+    assert '<span data-kind="hunk">@@ ' in dom
+    assert f'<details data-key="{task_id} draft"><summary>· +0 -1 against v2</summary>' in dom
+    assert '<span data-kind="remove">-- added line</span>' in dom
+    assert '<section id="approved-decisions"><h4>Approved decisions (1)</h4>' in dom
+    assert "<p>DEC-0001 v1 — Storage engine</p>" in dom and "DEC-0002" not in dom
+    assert "<p>scope: Persistence · 2026-01-01</p>" in dom
+    assert '<section id="open-decisions"><h4>Open decisions (' in dom
+    assert "awaiting_decision: Who may export?</p>" in dom
+    assert "<p>recommendation: P1 Export access: Admins only</p>" in dom
+    assert f"<code>harness interview decide {task_id} 1 accept|reject|modify</code>" in dom
+
+
+def test_headless_chrome_states_a_spec_not_drafted_yet(db_path, tmp_path):
+    task_id = start_task(db_path, "csv", "export")
+    cli(db_path, "phase", task_id, "next")
+    with serve(db_path, task_id, str(tmp_path / "specs")) as server:
+        dom = _dom(server, tmp_path / "profile")
+    assert (
+        '<section id="spec"><h3>Specification</h3><p>not drafted yet</p><p>phase: interview</p>'
+        in dom
+    )
+    assert '<section id="history"><h3>Version history</h3><p>no versions yet</p>' in dom
+    assert 'id="spec-document"' not in dom

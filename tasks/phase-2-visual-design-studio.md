@@ -18,9 +18,9 @@
 - [x] List of tasks, switching between them, resuming interrupted tasks (§8.9)
 
 ### P2-03 — Spec & decisions view
-- [ ] Render the current spec Markdown
-- [ ] Show approved decisions and **open decisions** separately
-- [ ] Version history for the spec (diff between versions)
+- [x] Render the current spec Markdown
+- [x] Show approved decisions and **open decisions** separately
+- [x] Version history for the spec (diff between versions)
 
 ### P2-04 — Diagram Service
 - [ ] Generate only the relevant diagrams: component, sequence, data-flow, state, deployment

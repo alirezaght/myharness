@@ -11,7 +11,9 @@ from typing import Any
 
 from harness.cli_spec import spec_store
 from harness.controller import HarnessController, Task, TaskNotFound
+from harness.dashboard.decisions_view import decisions_section
 from harness.dashboard.overview import overview, task_row
+from harness.dashboard.spec_view import spec_section
 from harness.db import connect
 
 NO_ACTIVE_TASK = "no active task"
@@ -46,14 +48,8 @@ def _task_view(controller: HarnessController, task: Task, specs: str | None) -> 
         "phase": str(task.phase),
         "complexity": str(task.complexity),
         "complexity_source": task.complexity_source,
-        "spec": {
-            "directory": str(store.directory),
-            "versions": [
-                {"version": record.version, "status": str(record.status)}
-                for record in store.records()
-            ],
-            "draft": store.draft_path.is_file(),
-        },
+        "spec": spec_section(store),
+        "decisions": decisions_section(controller, task),
     } | overview(controller, task, store)
 
 

@@ -122,6 +122,177 @@ function renderResume(resume) {
   return section;
 }
 
+const openDiffs = new Set();
+
+function appendSpans(node, spans) {
+  for (const span of spans) {
+    if (span.style === "code" || span.style === "strong") node.append(el(span.style, span.text));
+    else node.append(document.createTextNode(span.text));
+  }
+}
+
+function appendLines(node, lines) {
+  lines.forEach((spans, index) => {
+    if (index) node.append(el("br"));
+    appendSpans(node, spans);
+  });
+  return node;
+}
+
+function renderBlocks(blocks) {
+  const article = el("article");
+  article.id = "spec-document";
+  for (const block of blocks) {
+    if (block.type === "heading") {
+      const heading = el(`h${Math.min(block.level + 3, 6)}`);
+      appendSpans(heading, block.spans);
+      article.append(heading);
+    } else if (block.type === "list") {
+      const list = el("ul");
+      for (const item of block.items) list.append(appendLines(el("li"), item.lines));
+      article.append(list);
+    } else if (block.type === "paragraph") {
+      article.append(appendLines(el("p"), block.lines));
+    }
+  }
+  return article;
+}
+
+function alertText(text) {
+  const node = el("p", text);
+  node.setAttribute("role", "alert");
+  return node;
+}
+
+function renderSpec(spec, phase) {
+  const section = el("section");
+  section.id = "spec";
+  section.append(el("h3", "Specification"));
+  if (spec.unavailable) section.append(alertText(`specification unavailable: ${spec.unavailable}`));
+  const shown = spec.shown;
+  if (shown) {
+    section.append(el("p", `showing: ${shown.label} (${shown.status})`));
+    section.append(withCode("file: ", shown.path), renderBlocks(shown.blocks));
+  } else if (!spec.unavailable) {
+    section.append(el("p", "not drafted yet"), el("p", `phase: ${phase}`));
+  }
+  return section;
+}
+
+function historySummary(entry) {
+  const superseded = entry.superseded_by ? ` (superseded by v${entry.superseded_by})` : "";
+  const revision = entry.revision ? ` · revision ${entry.revision}` : "";
+  return `${entry.label} ${entry.status}${superseded} · ${entry.timestamp}${revision}`;
+}
+
+function renderDiff(taskId, entry) {
+  const diff = entry.diff;
+  const key = `${taskId} ${entry.label}`;
+  const details = el("details");
+  details.dataset.key = key;
+  details.open = openDiffs.has(key);
+  details.addEventListener("toggle", () => {
+    if (details.open) openDiffs.add(key);
+    else openDiffs.delete(key);
+  });
+  details.append(el("summary", `· +${diff.added} -${diff.removed} against ${diff.from}`));
+  if (!diff.lines.length) {
+    details.append(el("p", "no changes to the body"));
+    return details;
+  }
+  const pre = el("pre");
+  pre.className = "diff";
+  for (const line of diff.lines) {
+    const span = el("span", line.text);
+    span.dataset.kind = line.kind;
+    pre.append(span);
+  }
+  details.append(pre);
+  return details;
+}
+
+function renderHistory(taskId, history) {
+  const section = el("section");
+  section.id = "history";
+  section.append(el("h3", "Version history"));
+  if (!history.length) {
+    section.append(el("p", "no versions yet"));
+    return section;
+  }
+  const list = el("ol");
+  for (const entry of history) {
+    const item = el("li");
+    item.append(el("p", historySummary(entry)));
+    if (entry.diff) item.append(renderDiff(taskId, entry));
+    else if (entry.version === null) item.append(el("p", "· no version to compare against"));
+    else item.append(el("p", "· first version"));
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function approvedDetail(record) {
+  const parts = [`scope: ${record.scope}`, record.timestamp];
+  if (record.supersedes) parts.push(`supersedes ${record.supersedes}`);
+  if (record.recorded_by_task) parts.push("recorded by this task");
+  return parts.join(" · ");
+}
+
+function renderApproved(decisions) {
+  const section = el("section");
+  section.id = "approved-decisions";
+  section.append(el("h4", `Approved decisions (${decisions.approved.length})`));
+  if (decisions.unavailable) {
+    section.append(alertText(`decisions unavailable: ${decisions.unavailable}`));
+  }
+  if (!decisions.approved.length) {
+    if (!decisions.unavailable) section.append(el("p", "none"));
+    return section;
+  }
+  const list = el("ul");
+  for (const record of decisions.approved) {
+    const item = el("li");
+    item.append(el("p", `${record.id} v${record.version} — ${record.title}`));
+    item.append(el("p", approvedDetail(record)));
+    const text = el("p", record.decision);
+    text.className = "decision-text";
+    item.append(text, withCode("file: ", record.path));
+    list.append(item);
+  }
+  section.append(list);
+  return section;
+}
+
+function renderOpen(items) {
+  const section = el("section");
+  section.id = "open-decisions";
+  section.append(el("h4", `Open decisions (${items.length})`));
+  if (!items.length) {
+    section.append(el("p", "none"));
+    return section;
+  }
+  const list = el("ul");
+  for (const item of items) {
+    const entry = el("li");
+    entry.append(el("p", `${item.ref} · ${item.area} · ${item.state}: ${item.text}`));
+    if (item.recommendation) entry.append(el("p", `recommendation: ${item.recommendation}`));
+    if (item.command) entry.append(withCode("decide: ", item.command));
+    list.append(entry);
+  }
+  section.append(list);
+  return section;
+}
+
+function renderDecisions(decisions) {
+  const section = el("section");
+  section.id = "decisions";
+  section.append(el("h3", "Decisions"));
+  section.append(withCode("registry: ", decisions.directory));
+  section.append(renderApproved(decisions), renderOpen(decisions.open));
+  return section;
+}
+
 function renderTask(task) {
   const section = el("section");
   section.id = "task";
@@ -146,6 +317,11 @@ function renderTask(task) {
   list.append(el("dt", "Spec directory"), directory);
   list.append(el("dt", "Latest activity"), el("dd", activityText(task.latest_activity)));
   section.append(list, renderPending(task.pending_approvals), renderResume(task.resume));
+  section.append(
+    renderSpec(task.spec, task.phase),
+    renderDecisions(task.decisions),
+    renderHistory(task.id, task.spec.history),
+  );
   return section;
 }
 
