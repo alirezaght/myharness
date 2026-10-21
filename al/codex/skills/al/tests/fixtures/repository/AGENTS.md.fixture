@@ -1,0 +1,3 @@
+# Repository policy fixture
+
+Python imports use the owning service package, and generated changes require review.

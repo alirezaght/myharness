@@ -67,3 +67,9 @@ def validate_state(st):
         for amendment in st['amendments']: read(amendment['artifact'])
     except (KeyError, OSError, ValueError) as exc:
         refuse('task artifact is corrupt: '+str(exc))
+
+    from al_events import validate
+    try:
+        validate(st)
+    except (ValueError, KeyError, TypeError) as exc:
+        refuse('invalid execution integration: ' + str(exc))

@@ -4,6 +4,10 @@
 **Estimate:** 4–7 working days · **Roadmap:** [docs/ROADMAP.md](../docs/ROADMAP.md#phase-3--al-integration--live-monitoring) · **Spec refs:** §3 (step 8), §8.2–8.5, §8.11, §9, §12
 **Depends on:** Phase 1, Phase 2
 
+**Accepted integration decision:** [DEC-0019](../docs/decisions/DEC-0019-native-cli-al-integration.md).
+**Event protocol:** [AL execution event contract v1](../docs/al-event-contract-v1.md).
+**Candidate evidence:** earlier Phase 3 EIDs predate the service-coverage amendment and later support changes; consult the guarded AL ledger for current results. E105/E106 are historical bounded native-host failures; the candidate has not demonstrated a successful live native AL run. Independent fresh and comparison reviews remain supervisor-owned, and this checklist does not imply their approval.
+
 > ⚠️ Start with P3-01. If AL cannot emit structured events, add work to AL itself and re-estimate.
 
 ## Tasks
@@ -66,3 +70,31 @@
 - [ ] All tasks done, all tests green
 - [ ] Demo recorded
 - [ ] Docs updated
+
+### Candidate evidence and remaining exit conditions
+
+Service admission also requires a coverage decision for every potentially
+affected service and its required checks. Identified dependencies select the
+affected services; uncertainty may use exhaustive coverage only when independent
+service enumeration and check discovery are complete; missing or unsupported
+coverage blocks with named gaps. Generic policy is shared across repositories,
+with Amber-specific discovery isolated in its adapter. See the shipped AL
+reference `service-coverage.md` and `schemas/service-coverage.json` in both
+platform packages. The current ledger is the authority for validation status.
+
+The deterministic acceptance uses the real harness approval, detached worker,
+AL lifecycle and decision/acknowledgement path, plus dashboard reconnect; only
+the external provider executable/model boundary is simulated. The standalone demo and browser functional/visual acceptance are recorded in
+the guarded ledger. Browser captures cover decision controls, execution
+summary/agents, and task graph at desktop 1280×800 and mobile 390×844; measured
+document widths matched the viewport widths. The graph uses an intentional
+horizontal scroller on mobile. Consult the current ledger and its artifacts for
+validation status; historical EIDs are not current evidence.
+
+Live native-host acceptance remains outstanding. E105 ended Claude execution
+as `Interrupted` with no AL run ID and event cursor 0. E106 failed in Codex
+timeout cleanup with a process-group `PermissionError` before emitting a
+structured result. See the [capability audit](../docs/phase-3-al-capability-audit.md#candidate-verification-limits)
+for details and raw ledger log paths. Do not treat CLI presence preflights as
+provider capability or either attempt as a successful native run. Final phase
+exit and review remain open.

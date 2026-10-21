@@ -22,7 +22,7 @@ from harness.testplan import TestPlanner
 
 __all__ = ["NOTHING_TO_RESUME", "ResumePoint", "resumable_tasks", "resume_point"]
 
-NOTHING_TO_RESUME = "nothing to resume: approved for implementation (handoff is Phase 3)"
+NOTHING_TO_RESUME = "execution completed; no work to resume"
 CURRENT = "(current)"
 
 
@@ -146,7 +146,23 @@ def resume_point(
         blocked = FinalReviewer(controller, tid).report().blocking
         command = f"harness review {tid}" if blocked else advance
     elif approval is not None and approval.endswith(CURRENT):
-        command, resumable = None, False
+        from harness.execution_store import latest_execution
+
+        execution = latest_execution(controller.conn, tid)
+        current = controller.workspace(tid).latest_approval()
+        if execution is None or execution["approval_id"] != current.id:
+            command = f"harness execution start {tid}"
+        elif execution["status"] == "Reserved":
+            command = f"harness execution start {tid}"
+        elif execution["status"] == "Completed":
+            command, resumable = None, False
+        else:
+            action = (
+                "status"
+                if execution["status"] in {"Running", "WorkerOwned", "Launching"}
+                else "reconnect"
+            )
+            command = f"harness execution {action} {tid} {execution['id']}"
     else:
         blocked = FinalReviewer(controller, tid).report().blocking
         command = f"harness review {tid}" if blocked else f"harness approve {tid}"

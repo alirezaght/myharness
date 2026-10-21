@@ -1,5 +1,7 @@
 """Admission/currency derive concrete sources beyond submitted manifest claims."""
 import json
+from test_service_coverage import unit
+from test_repo_adapters import amber
 from conftest import _git
 import al_artifacts as A
 import al_gate_currency as C
@@ -42,22 +44,23 @@ def test_concrete_contract_obligation_cannot_be_na(cli,repo,tmp_path,state_file)
 
 
 def test_known_transitive_shared_consumer_retains_unknown_remainder(cli,repo,tmp_path):
+    (repo/'pyproject.toml').unlink();(repo/'svc/app.py').unlink();(repo/'web/app.js').unlink()
     files={'packages/shared/src/common/context.py':'VALUE = 1\n',
            'packages/bridge/src/bridge/api.py':'from common.context import VALUE\n',
            'services/example-service/src/example/main.py':'from bridge.api import VALUE\n',
-           'Makefile':'lint-imports:\n\tcd services/$(SVC)-service && python -m check\n'}
+           }
     for path,content in files.items():
         target=repo/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_text(content)
+    for path in ('packages/shared','packages/bridge','services/example-service'):unit(repo,path,check=path!='services/example-service')
     _git(repo,'add','.');_git(repo,'commit','-qm','seed transitive consumers')
     invoke(cli,'start','--spec','Discover every known direct and transitive shared Python consumer')
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     _,m=discover(cli,tmp_path,['packages/shared/src/common/context.py'])
     gates={g['id']:g for g in m['gates']}
-    assert gates['imports-example']['applicability']=='APPLICABLE'
+    assert m['service_coverage']['assessment']['known_affected']==['services/example-service']
     assert gates['imports-unresolved']['applicability']=='UNRESOLVED'
-    assert 'services/example-service' in gates['imports-example']['scope']
-    assert 'packages/bridge/src/bridge/api.py' in gates['imports-example']['scope']
+    assert 'packages/bridge/src/bridge/api.py' in gates['imports-unresolved']['scope']
 
 
 def test_discovery_preserves_declared_environment_dependencies(cli,repo,tmp_path):
@@ -70,15 +73,17 @@ def test_discovery_preserves_declared_environment_dependencies(cli,repo,tmp_path
 
 
 def test_supported_repository_selection_includes_configured_consumers_and_inputs(cli,repo,tmp_path):
+    amber(repo)
     from pathlib import Path
-    original=Path(__file__).resolve().parents[4]/'ci/scripts/import_review/checker.py'
+    source=Path(__file__).parent/'fixtures/repository/ci/scripts/import_review/checker.py'
     selector=repo/'ci/scripts/import_review/checker.py';selector.parent.mkdir(parents=True,exist_ok=True)
-    selector.write_bytes(original.read_bytes())
-    files={'services/quiet-service/pyproject.toml':'[tool.importlinter]\nroot_packages = ["quiet"]\n',
+    selector.write_bytes(source.read_bytes())
+    files={'services/quiet-service/pyproject.toml':'[tool.setuptools.packages.find]\nwhere=["src"]\n[tool.importlinter]\nroot_packages = ["quiet"]\n',
            'services/quiet-service/src/quiet/main.py':'VALUE = 1\n',
            'packages/shared/src/shared/context.py':'VALUE = 1\n',
+           'packages/shared/pyproject.toml':'[tool.setuptools.packages.find]\nwhere=["src"]\n',
            'ci/import-review-baseline.json':'{}\n',
-           'Makefile':'lint-imports:\n\tcd services/$(SVC)-service && python -m check\n'}
+           }
     for path,content in files.items():
         target=repo/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_text(content)
     _git(repo,'add','.');_git(repo,'commit','-qm','seed supported selection contract')
@@ -86,6 +91,6 @@ def test_supported_repository_selection_includes_configured_consumers_and_inputs
     invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     _,m=discover(cli,tmp_path,['packages/shared/src/shared/context.py'])
     gates={g['id']:g for g in m['gates']}
-    assert gates['imports-quiet']['applicability']=='APPLICABLE' and 'imports-unresolved' not in gates
+    assert gates['imports-services-quiet-service']['applicability']=='APPLICABLE' and 'imports-unresolved' not in gates
     for dependency in ('ci/scripts/import_review/checker.py','ci/import-review-baseline.json','services/quiet-service/pyproject.toml'):
-        assert dependency in gates['imports-quiet']['scope']
+        assert dependency in gates['imports-services-quiet-service']['scope']

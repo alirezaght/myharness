@@ -5,7 +5,7 @@ import al_artifacts as A
 import al_ci_inventory as CI
 import al_gate_currency as C
 from hook_regression_helpers import invoke,finish_review
-from batch8_helpers import setup,executable_ci,plan,two_jobs
+from batch8_helpers import force_applicable_ci,setup,executable_ci,plan,two_jobs
 
 PATHS=['apps/web/src/app.ts','apps/admin/src/app.ts']
 
@@ -22,7 +22,7 @@ def test_one_job_cannot_claim_two_units_or_impersonate_another(cli,repo,tmp_path
 
 
 def test_multiple_jobs_for_one_unit_are_independent(cli,repo,tmp_path,state_file):
-    text='lint:\n  script: echo lint\n  rules:\n    - changes: [apps/web/**/*]\ntest:\n  script: echo test\n  rules:\n    - changes: [apps/web/**/*]\n'
+    text='lint:\n  script: python3 -m json.tool apps/web/package.json\n  rules:\n    - changes: [apps/web/**/*]\ntest:\n  script: python3 -m json.tool apps/web/package.json\n  rules:\n    - changes: [apps/web/**/*]\n'
     m=executable_ci(setup(cli,repo,tmp_path,{'.gitlab-ci.yml':text},PATHS[:1]))
     assert {g['source']['job'] for g in m['gates'] if g['category']=='ci'}=={'lint','test'}
     m['gates']=[g for g in m['gates'] if not (g['category']=='ci' and g['source']['job']=='test')]
@@ -30,7 +30,7 @@ def test_multiple_jobs_for_one_unit_are_independent(cli,repo,tmp_path,state_file
 
 
 def test_shared_job_really_covers_both_units(cli,repo,tmp_path):
-    text='shared-test:\n  script: echo test\n  rules:\n    - changes: [apps/web/**/*, apps/admin/**/*]\n'
+    text='shared-test:\n  script:\n    - python3 -m json.tool apps/web/package.json\n    - python3 -m json.tool apps/admin/package.json\n  rules:\n    - changes: [apps/web/**/*, apps/admin/**/*]\n'
     m=executable_ci(setup(cli,repo,tmp_path,{'.gitlab-ci.yml':text},PATHS))
     ci=[g for g in m['gates'] if g['category']=='ci']
     assert len(ci)==1 and ci[0]['units']==['apps/admin','apps/web']
@@ -40,7 +40,7 @@ def test_shared_job_really_covers_both_units(cli,repo,tmp_path):
 def test_local_include_anchor_template_and_reference_are_sourced(cli,repo,tmp_path):
     files={'.gitlab-ci.yml':'include:\n  - local: ci/jobs.yml\n',
            'ci/jobs.yml':'include: ci/templates.yml\nweb-test:\n  extends: .verify\n  rules:\n    - !reference [.selected, rules]\n',
-           'ci/templates.yml':'.paths: &web_paths\n  - apps/web/**/*\n.selected:\n  rules:\n    - changes: *web_paths\n.verify:\n  stage: test\n  script: echo checked\n'}
+           'ci/templates.yml':'.paths: &web_paths\n  - apps/web/**/*\n.selected:\n  rules:\n    - changes: *web_paths\n.verify:\n  stage: test\n  script: python3 -m json.tool apps/web/package.json\n'}
     m=executable_ci(setup(cli,repo,tmp_path,files,PATHS[:1]))
     job=next(g for g in m['gates'] if g['category']=='ci')
     assert job['source']['path']=='ci/jobs.yml' and job['source']['job']=='web-test'
@@ -53,7 +53,7 @@ def test_unknown_pipeline_or_expression_cannot_be_declared_applicable(cli,repo,t
     text='verify:\n  script: echo checked\n  rules:\n    - '+rule+'\n'
     m=setup(cli,repo,tmp_path,{'.gitlab-ci.yml':text},PATHS[:1])
     obligations=CI.inventory(repo,PATHS[:1])['obligations'];assert obligations[0]['applicability']=='UNRESOLVED'
-    before=state_file().read_bytes();plan(cli,tmp_path,executable_ci(m),ok=False)
+    before=state_file().read_bytes();plan(cli,tmp_path,force_applicable_ci(m),ok=False)
     assert state_file().read_bytes()==before
 
 
@@ -69,8 +69,13 @@ def test_currency_independently_checks_job_coverage(cli,repo,tmp_path):
     state=json.loads(cli('show')[1]);assert C.check(state)['current']
     m['gates']=[g for g in m['gates'] if g['category']!='ci' or g['source']['job']!='admin-test']
     state['gate_manifests'].append(A.snapshot_bytes(state['session_id'],json.dumps(m).encode(),'gate-manifest','legacy incomplete manifest'))
+    with pytest.raises(SystemExit, match='corrupt service coverage'):
+        C.check(state)
+    state['gate_manifests'].pop()
+    pipeline=repo/'.gitlab-ci.yml'
+    pipeline.write_text(pipeline.read_text()+'extra-test:\n  script: python3 -m json.tool apps/admin/package.json\n  rules:\n    - changes: [apps/admin/**/*]\n')
     currency=C.check(state)
-    assert not currency['current'] and any('admin-test' in gap for gap in currency['reasons'])
+    assert not currency['current'] and any('extra-test' in gap for gap in currency['reasons'])
 
 
 def test_changed_template_and_new_unit_invalidate_old_completeness(cli,repo,tmp_path):
@@ -89,9 +94,10 @@ def test_release_jobs_do_not_require_deployment_execution(repo):
 
 
 def test_complete_local_job_route_can_reach_approval(cli,repo,tmp_path):
-    m=executable_ci(setup(cli,repo,tmp_path,{'.gitlab-ci.yml':'verify:\n  script: echo checked\n  rules:\n    - changes: [svc/**/*]\n'},['svc/app.py']))
+    m=executable_ci(setup(cli,repo,tmp_path,{'.gitlab-ci.yml':'verify:\n  script: python3 -m compileall -q svc\n  rules:\n    - changes: [svc/**/*]\n'},['svc/app.py']))
     for g in m['gates']:
-        if g['category']!='ci':g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation exists in this disposable repository')
+        if g['category'] not in {'ci','lint-imports'} and not g.get('obligation_ids'):
+            g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation exists in this disposable repository')
     plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base')
     invoke(cli,'phase','IMPLEMENTATION');invoke(cli,'writer','start','--id','engineer','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','engineer','--outcome','success');invoke(cli,'phase','VERIFICATION')

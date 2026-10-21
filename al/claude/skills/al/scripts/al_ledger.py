@@ -142,6 +142,18 @@ def _prefixes(p):
 
 
 def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
+    from al_analysis_cache import CURRENT
+    from al_profile import span
+    context=CURRENT.get()
+    with span('scope-hashing'):
+        if context is None:return _scope_fingerprint(scope,env_names,sources,cwd)
+        from al_environment_observation import value_digest
+        environment={name:value_digest(name) for name in env_names}
+        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
+
+
+def _scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
+
     root = al_store.REPO_ROOT
     h = hashlib.sha256(json.dumps(sorted(scope)).encode())
     if not scope:
@@ -178,8 +190,8 @@ def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
 
 def _env_digest(h, env_names):
     for name in sorted(env_names or ()):
-        value = os.environ.get(name)
-        digest = hashlib.sha256(value.encode()).hexdigest() if value is not None else "unset"
+        from al_environment_observation import value_digest
+        digest = value_digest(name)
         h.update(f"\0env:{name}={digest}".encode())
     return h.hexdigest()[:16]
 
@@ -350,9 +362,21 @@ def entry_verdict(st, e, _seen=()):
     """assess() plus the prerequisites this run recorded (its plan's, when it
     matches one), checked recursively."""
     verdict, why = assess(e)
+    for invalidation in ledger(st).get('scope_invalidations', []):
+        from al_execution_tasks import _overlap
+        if e.get('started_at', 0) < invalidation['at'] and any(_overlap(a,b) for a in e['scope'] for b in invalidation['scope']):
+            return "STALE", "scoped developer amendment invalidated evidence"
     if e.get("started_at",0) < ledger(st).get("invalidated_at",0): return "STALE", "task amendment invalidated evidence"
     current = ledger(st)["plan"].get(e["area"])
     if current and not same_command(e,current): return "PLAN_CHANGED", "entry differs from current evidence plan"
+    if verdict == "VALID" and "reuse" in e:
+        import al_gate_reuse
+        gaps = al_gate_reuse.reuse_gaps(st, e)
+        if gaps:return "REUSE_INVALID", "; ".join(gaps)
+    if verdict == "VALID" and 'execution_association' in e:
+        import al_execution_receipts
+        gaps=al_execution_receipts.validate_association(st,e)
+        if gaps:return 'REUSE_INVALID', '; '.join(gaps)
     if verdict == "VALID":
         missing = unmet(st, e, _seen or (e["area"],))
         if missing:

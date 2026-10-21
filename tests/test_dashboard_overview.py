@@ -4,7 +4,7 @@ import json
 import re
 
 from harness.controller import HarnessController
-from harness.dashboard.overview import APPROVED, AWAITING_ANSWER, AWAITING_APPROVAL
+from harness.dashboard.overview import AWAITING_ANSWER, AWAITING_APPROVAL, IN_PROGRESS
 from harness.dashboard.server import STATIC_DIR
 from harness.dashboard.view import NO_ACTIVE_TASK, dashboard_view
 from harness.db import connect
@@ -161,9 +161,14 @@ def test_every_pending_approval_kind_and_phase_gating(db_path, sample_repo):
         cli(db_path, "approve", task_id)
         data = api(server)
         task, row = data["task"], data["tasks"][0]
-        assert (task["pending_approvals"], task["status"]) == ([], APPROVED)
-        assert task["resume"]["next"] is None and task["resume"]["resumable"] is False
-        assert (row["status"], row["next"]) == (APPROVED, None)
+        assert (task["pending_approvals"], task["status"]) == ([], IN_PROGRESS)
+        assert task["execution_status"] is None
+        assert task["resume"]["next"] == f"harness execution start {task_id}"
+        assert task["resume"]["resumable"] is True
+        assert (row["status"], row["next"]) == (
+            IN_PROGRESS,
+            f"harness execution start {task_id}",
+        )
 
         cli(db_path, "phase", task_id, "back", "final_review", "--reason", "recheck")
         cli(db_path, "phase", task_id, "next")

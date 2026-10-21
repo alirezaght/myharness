@@ -84,7 +84,8 @@ def test_shared_consumer_selection_cannot_read_opaque_child_code_or_config(cli,r
     assert not any(p.startswith('services/opaque-service/') for p in inventory['import_dependencies'])
     assert not any(rule['path'].startswith('services/opaque-service/') for rule in inventory['rules'])
     assert 'services/opaque-service' not in inventory['services']
-    assert inventory['unknown_imports']
+    assert inventory['service_coverage']['outcome']=='incomplete'
+    assert any(g['code']=='opaque-boundary' for g in inventory['service_coverage']['gaps'])
 
 
 def test_ci_include_into_child_stays_unresolved_without_reading_child_yaml(cli,repo,gitlink):
@@ -115,7 +116,8 @@ def test_failed_child_can_be_reported_from_initial_start_and_disjoint_check(cli,
 def test_opaque_unit_root_discovery_and_passed_candidate_gates_agree(cli,repo,tmp_path,gitlink,namespace,operation):
     import sys
     from batch13_helpers import start,finished
-    from gitlink_helpers import gate_plan
+    from hook_regression_helpers import manifest_for
+    import hashlib
     seed,_,_=gitlink;relative=namespace+'/opaque-unit';child=repo/relative
     if operation=='add':start(cli,repo)
     git(repo,'-c','protocol.file.allow=always','submodule','add','-q',str(seed),relative)
@@ -127,13 +129,17 @@ def test_opaque_unit_root_discovery_and_passed_candidate_gates_agree(cli,repo,tm
     check='import subprocess; actual=subprocess.check_output(["git","ls-files","--stage",'+repr(relative)+']); assert '
     check+='actual.decode().startswith('+repr('160000 '+expected+' ')+')' if expected else 'actual==b""'
     declarations=[{'path':relative,'capability':'parent-entry'}]
-    gate_plan(cli,tmp_path,[sys.executable,'-c',check],[namespace],declarations)
+    st=json.loads(cli('show')[1]);source={'path':'Makefile','sha256':hashlib.sha256((repo/'Makefile').read_bytes()).hexdigest()}
+    data=manifest_for(st,repo,[namespace],category='contracts',argv=[sys.executable,'-c',check],source=source)
+    gate=next(g for g in data['gates'] if g['category']=='contracts');gate.update(scope=[namespace],sources=declarations)
+    file=tmp_path/'parent-entry.json';file.write_text(json.dumps(data));invoke(cli,'gates','plan','--file',str(file))
     import al_artifacts as A
     st=json.loads(cli('show')[1]);manifest=A.read_json(st['gate_manifests'][-1])
     assert manifest['units']==['.']
-    invoke(cli,'gates','run','--stage','candidate')
+    invoke(cli,'gates','run','--stage','candidate','--id','contracts')
     finished(cli,'PASS')
-    assert json.loads(cli('gates','status')[1])['candidate']==[]
+    assert json.loads(cli('gates','status')[1])['candidate']
+    invoke(cli,'review-start',ok=False)
 
 
 @pytest.mark.parametrize('namespace',['services','apps','packages'])

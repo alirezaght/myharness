@@ -14,7 +14,7 @@ from hook_regression_helpers import invoke
 
 PROFILE='merge_request_quality'
 QUALITY='workflow:\n  rules:\n    - if: \'$CI_PIPELINE_SOURCE == "merge_request_event"\'\n      auto_cancel: {on_new_commit: interruptible}\n    - when: never\n  auto_cancel: {on_new_commit: none, on_job_failure: none}\ninclude:\n  - local: ci/quality.yml\n    rules:\n      - if: \'$BRANCH_ENV_CLEANUP != "true" && $SONAR_SCAN != "true"\'\n'
-JOBS='verify:\n  script: echo checked\n  rules:\n    - if: \'$FASTLANE == "true"\'\n      when: never\n    - if: \'$CI_MERGE_REQUEST_ID\'\n      changes: [svc/**/*]\n'
+JOBS='verify:\n  script: python3 -m compileall -q svc\n  rules:\n    - if: \'$FASTLANE == "true"\'\n      when: never\n    - if: \'$CI_MERGE_REQUEST_ID\'\n      changes: [svc/**/*]\n'
 
 
 @pytest.mark.parametrize('expression,expected',[
@@ -64,7 +64,8 @@ def test_context_replacement_requires_fresh_manifest_bound_base_evidence(cli,rep
     st,context,m=prepared(cli,repo,tmp_path,{'.gitlab-ci.yml':QUALITY,'ci/quality.yml':JOBS},['svc/app.py'])
     m=executable_ci(m)
     for g in m['gates']:
-        if g['category']!='ci':g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation in the disposable repository')
+        if g['category'] not in {'ci','lint-imports'} and not g.get('obligation_ids'):
+            g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation in the disposable repository')
     plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base')
     replacement=declaration(st,selection={'label':'A new explicit planning declaration'})
     m['ci_context']=replacement;plan(cli,tmp_path,m)

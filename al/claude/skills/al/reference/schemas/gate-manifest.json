@@ -56,11 +56,25 @@
             "description": "Optional explicit parent gitlink capability declarations. Omission is equivalent to an empty array for ordinary scopes.",
             "$ref": "evidence-sources.json"
           },
+          "obligation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "execution_signature": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "runner_resource": {
+            "type": "object",
+            "required": ["name", "version", "sha256"],
+            "properties": {
+              "name": {"const": "al_architecture_check.py"},
+              "version": {"type": "integer", "minimum": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            },
+            "additionalProperties": false
+          },
+          "verification": {"type": "object"},
           "remote": {"type": "object"}
         },
         "not": {"required": ["env"]}
       }
     },
+    "service_coverage": {"$ref": "service-coverage.json"},
     "ci_context": {
       "description": "Optional, run-bound data artifact selecting one supported CI planning profile. Unsupported profiles stay unresolved.",
       "$ref": "ci-context-artifact.json#/$defs/declaration"

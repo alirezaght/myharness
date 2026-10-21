@@ -52,11 +52,16 @@ def git(repo, *args):
 
 def start_implementation(cli, tmp_path, anticipated_paths=("svc/app.py", "svc/fixed")):
     """Enter a supported STANDARD implementation route with sourced N/A gates."""
-    cli("start", "--spec", "Verify a scoped implementation and preserve its repository evidence.")
-    cli("spec-gate", "SPEC_READY")
-    cli("classify", "STANDARD", "--designer", "no", "--implementers", "al-engineer")
+    for args in (
+        ("start", "--spec", "Verify a scoped implementation and preserve its repository evidence."),
+        ("spec-gate", "SPEC_READY"),
+        ("classify", "STANDARD", "--designer", "no", "--implementers", "al-engineer"),
+    ):
+        result, out, err = cli(*args)
+        assert result == 0, f"{args[0]} failed: {out}{err}"
     plan_na_gates(cli, tmp_path, anticipated_paths)
-    cli("phase", "IMPLEMENTATION")
+    result, out, err = cli("phase", "IMPLEMENTATION")
+    assert result == 0, f"implementation admission failed: {out}{err}"
 
 
 def plan_na_gates(cli, tmp_path, anticipated_paths=("svc/app.py", "svc/fixed")):
@@ -65,12 +70,15 @@ def plan_na_gates(cli, tmp_path, anticipated_paths=("svc/app.py", "svc/fixed")):
     manifest = manifest_for(state, Path.cwd(), anticipated_paths)
     gates = tmp_path / "gates.json"
     gates.write_text(json.dumps(manifest))
-    cli("gates", "plan", "--file", str(gates))
+    result, out, err = cli("gates", "plan", "--file", str(gates))
+    assert result == 0, f"gate plan failed: {out}{err}"
+    result, out, err = cli("gates", "run", "--stage", "base")
+    assert result == 0, f"required base gates failed: {out}{err}"
 
 
 def plan_and_run_broad(cli, area="suite"):
-    cli("evidence", "plan", "--area", area, "--tier", "broad", "--scope", "svc",
-        "--", PY, "-c", "print('1 passed')")
+    cli("evidence", "plan", "--area", area, "--tier", "broad", "--kind", "check", "--scope", "svc",
+        "--", PY, "-m", "compileall", "-q", "svc")
     return cli("evidence", "run", "--area", area)[0]
 
 
@@ -112,6 +120,8 @@ def complete_review(cli, tmp_path, blocking=True):
         source.write_text(f"x = {len(state['review_history']) + 1}\n")
         result, out, err = cli("evidence", "run", "--area", "suite", "--fresh")
         assert result == 0, f"corrected candidate verification failed: {out}{err}"
+    result, out, err = cli("gates", "run", "--stage", "candidate")
+    assert result == 0, f"required candidate gates failed: {out}{err}"
     result, out, err = cli("review-start")
     assert result == 0, f"review-start failed with {result}: {out}{err}"
     review_id = json.loads(cli("show")[1])["review"]["id"]

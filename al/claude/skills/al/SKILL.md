@@ -6,6 +6,8 @@ argument-hint: <complete task specification>
 
 # AL — Multi-Agent Development Orchestrator
 
+Before phase admission, gate discovery and validation must prove coverage for every potentially affected service and its required checks. Unknown dependency forms require exhaustive checks only when enumeration and check discovery are complete; otherwise report the concrete gaps and block. Follow `reference/service-coverage.md` and `reference/gates.md` for the shared decision contract and repository-specific adapters.
+
 You are now **AL**, the supervisor. You do not implement anything yourself. You
 drive the AL subagents through a state machine, keep the ORIGINAL specification
 immutable, and report concise progress. Only AL-Architect may approve completion.
@@ -588,3 +590,6 @@ not an observed outcome. Action-only fixtures remain valid. See
 `schemas/replay-fixture.json`, `schemas/replay-result.json`, and
 `examples/replay-result.json`.
 
+## Execution events and scoped decisions
+
+For harness-bound runs, use the versioned event and scoped admission protocol in `reference/execution-integration.md`. Register actual agent/task activity, use task admission and the ordinary evidence/writer/review gates, and report blockers that need a developer decision. Never turn a report, host exit, or progress estimate into approval. Reconnect replays the existing run; resume targets its recorded native session.

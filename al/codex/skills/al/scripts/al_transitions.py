@@ -38,10 +38,16 @@ def structural_gaps(st):
 
 def workflow_gaps(st):
     from al_gates import base_gaps
-    return structural_gaps(st)+base_gaps(st)
+    from al_execution_tasks import completion_gaps
+    from al_task_attribution import classify_changes
+    ambiguous = classify_changes(st)['ambiguous'] if 'task_attribution' in st else []
+    return structural_gaps(st)+base_gaps(st)+completion_gaps(st)+['unreconciled task attribution overlap: '+p for p in ambiguous]
 
 
 def require_transition(st, command, destination):
+    from al_new_origin import require_admitted
+    if destination in WRITING | BARRIERS or command in {'review-start', 'approved'}:
+        require_admitted(st)
     src = st['phase'];guarded=False
     if st['status'] != 'RUNNING':
         refuse('run is ' + st['status'] + '; use explicit recovery')

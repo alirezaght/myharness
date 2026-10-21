@@ -2,7 +2,6 @@
 import hashlib
 import json
 import subprocess
-import sys
 
 from al_artifacts import read_json
 from hook_regression_helpers import invoke
@@ -26,14 +25,15 @@ def test_wrapped_harmless_search_remains_allowed(cli):
 
 def _seed_two_unit_ci_repo(repo):
     pipeline = repo / ".gitlab-ci.yml"
-    pipeline.write_text("""web-test:\n  script: echo web\n  rules:\n    - changes: [apps/web/**/*]\nadmin-test:\n  script: echo admin\n  rules:\n    - changes: [apps/admin/**/*]\n""")
-    subprocess.run(["git", "add", ".gitlab-ci.yml"], cwd=repo, check=True, capture_output=True)
+    pipeline.write_text("web-test:\n  script: python3 -m json.tool apps/web/package.json\n  rules:\n    - changes: [apps/web/**/*]\nadmin-test:\n  script: python3 -m json.tool apps/admin/package.json\n  rules:\n    - changes: [apps/admin/**/*]\n")
+    for name in ("web", "admin"):
+        unit = repo / "apps" / name
+        (unit / "src").mkdir(parents=True, exist_ok=True)
+        (unit / "package.json").write_text(json.dumps({"name": name}) + "\n")
+        (unit / "src/app.ts").write_text("export const changed = true;\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid",
-                    "commit", "-m", "add sourced CI jobs"], cwd=repo, check=True, capture_output=True)
-    for path in ("apps/web/src/app.ts", "apps/admin/src/app.ts"):
-        target = repo / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("export const changed = true;\n")
+                    "commit", "-m", "add sourced CI jobs and bounded applications"], cwd=repo, check=True, capture_output=True)
 
 
 def _discovered_ci_manifest(cli, repo, tmp_path):
@@ -50,21 +50,13 @@ def _discovered_ci_manifest(cli, repo, tmp_path):
     return manifest, source
 
 
-def _ci_gate(gate_id, unit, source):
-    job = "web-test" if unit == "apps/web" else "admin-test"
-    gate_source = {**source, "job": job}
-    return {"id": gate_id, "category": "ci", "applicability": "APPLICABLE", "required": True,
-            "reason": f"Run the sourced CI job for {unit}.", "units": [unit], "argv": [sys.executable, "-c", "print('CI passed')"],
-            "scope": [".gitlab-ci.yml", unit], "source": gate_source, "execution_kind": "local", "cwd": ".", "env_names": []}
-
-
 def _replace_ci(manifest, gates):
     manifest["gates"] = [gate for gate in manifest["gates"] if gate["category"] != "ci"] + gates
 
 
 def test_ci_manifest_must_cover_each_touched_application_unit(cli, repo, tmp_path, state_file):
     manifest, source = _discovered_ci_manifest(cli, repo, tmp_path)
-    _replace_ci(manifest, [_ci_gate("ci-web", "apps/web", source)])
+    _replace_ci(manifest, [gate for gate in manifest["gates"] if gate["category"] == "ci" and "apps/web" in gate["units"]])
     plan = tmp_path / "web-only-ci.json"
     plan.write_text(json.dumps(manifest))
     before = state_file().read_bytes()
@@ -75,8 +67,7 @@ def test_ci_manifest_must_cover_each_touched_application_unit(cli, repo, tmp_pat
 
 def test_ci_manifest_accepts_explicit_coverage_for_both_touched_units(cli, repo, tmp_path):
     manifest, source = _discovered_ci_manifest(cli, repo, tmp_path)
-    _replace_ci(manifest, [_ci_gate("ci-web", "apps/web", source),
-                           _ci_gate("ci-admin", "apps/admin", source)])
+    assert all(gate.get("execution_signature") for gate in manifest["gates"] if gate["category"] == "ci")
     plan = tmp_path / "web-and-admin-ci.json"
     plan.write_text(json.dumps(manifest))
     invoke(cli, "gates", "plan", "--file", str(plan))

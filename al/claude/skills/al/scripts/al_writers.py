@@ -32,7 +32,9 @@ def canonical_paths(paths):
     if not out: refuse('writer needs owned files')
     return out
 
-def admit_check(st, spec):
+def admit_check(st, spec, *, gate_context=None):
+    from al_execution_tasks import admit_check as execution_check
+    execution_check(st, spec, gate_context=gate_context)
     if st['status'] != 'RUNNING' or st['phase'] in {'REVIEW','DONE'}: refuse('checks cannot start in this state')
     from al_scope import safe_path
     cwd=spec.get('cwd') or '.'
@@ -54,10 +56,20 @@ def admit_check(st, spec):
 def cmd_writer(a,sid):
     st=al_store.load(sid); writers=st['writers']
     if a.action == 'start':
+        from al_new_origin import require_admitted
+        require_admitted(st)
         if st['status'] != 'RUNNING' or st['phase'] not in WRITING: refuse('writer admission requires a writing phase')
         if not valid_id(a.id) or a.id in writers: refuse('duplicate/invalid writer id')
         if a.role not in {'al-engineer','al-builder'}: refuse('invalid writer role')
         files=canonical_paths(al_parallel.parse_paths(a.files))
+        if 'integration' in st:
+            from al_execution_tasks import require_task_admission
+            task = getattr(a, 'task', None)
+            agent = st['integration']['agents'].get(getattr(a, 'agent', None))
+            execution_task = require_task_admission(st, task, files=files)
+            receipt = execution_task.get('admission')
+            if execution_task['status'] != 'Running' or receipt != {'revision':execution_task['revision'],'graph_revision':st['integration']['graph_revision']}: refuse('writer requires current admitted and started task')
+            if not agent or agent['task'] != task or agent['role'] != a.role or agent['status'] != 'Running': refuse('writer requires compatible actual assigned running agent')
         from al_gate_coverage import writer_ready
         writer_ready(st,files)
         commands=json.loads(Path(a.commands_file).read_text()) if a.commands_file else []
@@ -72,13 +84,18 @@ def cmd_writer(a,sid):
                 if shared or '.' in e['scope'] or al_parallel.overlaps(files,e['scope']) or al_parallel.shared_state_hits([shlex.join(e['argv'])]): refuse('writer overlaps check '+e['id'])
         from al_gate_recovery import complete
         complete(st)
-        writers[a.id]={'id':a.id,'role':a.role,'files':files,'commands':commands,'phase':st['phase'],'started_at':time.time(),'state':'ACTIVE'}
+        from al_task_attribution import begin_contribution
+        before = begin_contribution(st, {'id':a.id,'files':files})
+        writers[a.id]={'id':a.id,'role':a.role,'files':files,'commands':commands,'phase':st['phase'],'started_at':time.time(),'state':'ACTIVE', **({'task':a.task,'agent':a.agent} if 'integration' in st else {})}
+        if before is not None: writers[a.id]['contribution_before']=before
     else:
         w=writers.get(a.id)
         if not w: refuse('unknown writer')
         if a.action=='finish':
             if w['state']!='ACTIVE': refuse('writer is not active')
             w.update(state='FINISHED' if a.outcome=='success' else 'UNRESOLVED',outcome=a.outcome,ended_at=time.time())
+            from al_task_attribution import finish_contribution
+            finish_contribution(st,w,w.get('contribution_before'))
         else:
             if w['state'] not in {'ACTIVE','UNRESOLVED'} or not a.reason: refuse('reconciliation requires unresolved writer and reason')
             w.update(state='RECONCILED',reconciliation={'reason':a.reason,'artifact':snapshot_artifact(sid,Path(a.artifact),'writer-reconciliation'),'at':time.time()})
@@ -89,6 +106,6 @@ def register(sub):
     for action in ('start','finish','reconcile'):
         p=children.add_parser(action); p.add_argument('--id',required=True); p.set_defaults(fn=cmd_writer)
         if action=='start':
-            p.add_argument('--role',required=True); p.add_argument('--files',required=True); p.add_argument('--commands-file')
+            p.add_argument('--role',required=True); p.add_argument('--files',required=True); p.add_argument('--commands-file'); p.add_argument('--task'); p.add_argument('--agent')
         elif action=='finish': p.add_argument('--outcome',required=True,choices=['success','failed','abandoned'])
         else: p.add_argument('--reason',required=True); p.add_argument('--artifact',required=True)

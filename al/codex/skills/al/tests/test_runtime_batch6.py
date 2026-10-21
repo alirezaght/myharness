@@ -57,7 +57,8 @@ def test_manifest_corrupt_metadata_is_not_ordinary_rule_drift(cli,repo,tmp_path,
 
 @pytest.mark.parametrize('defect',['log','prerequisite','execution'])
 def test_candidate_gate_requires_full_ledger_and_execution_identity(cli,repo,tmp_path,state_file,defect):
-    gated(cli,tmp_path,repo);s=state(cli);entry=s['evidence']['entries'][-1]
+    gated(cli,tmp_path,repo);s=state(cli)
+    entry=next(e for e in reversed(s['evidence']['entries']) if e['area']=='gate-candidate-loc')
     if defect=='log':Path(entry['log']).write_text('altered log')
     elif defect=='prerequisite':entry['needs']=['not-verified'];state_file().write_text(json.dumps(s))
     else:entry['gate_stage']='base';state_file().write_text(json.dumps(s))

@@ -49,7 +49,10 @@ def test_original_start_sentence_and_fifteen_steps_are_intact():
 def test_resume_step_opens_the_dashboard_for_the_chosen_task():
     step = _text().split("\n15. ", 1)[1].split("\n\nDo nothing", 1)[0]
     assert "Once the developer picks the task to continue, open the dashboard for it" in step
-    assert step.index("do not launch AL.") < step.index("open the dashboard")
+    assert (
+        "A current approval with no run can be started with the explicit execution command" in step
+    )
+    assert step.index("A current approval with no run") < step.index("open the dashboard")
 
 
 def _redesign_paragraphs() -> list[str]:
@@ -114,5 +117,6 @@ def test_step_fourteen_keeps_its_cli_rules_and_the_steps_stay_fifteen():
     step = _step_fourteen()
     assert "Approve & Implement is `uv run harness approve <id>`. You only relay." in step
     assert "never treat `spec approve` as an approval" in step
-    assert "do not launch AL" in step
+    assert "leaves launch as the separate" in step
+    assert "Never run it on your own initiative" in step
     assert [int(n) for n in STEP.findall(_text())] == list(range(1, 16))

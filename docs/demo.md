@@ -354,6 +354,6 @@ task t-xxxxxxxx · phase approval · complexity trivial (developer)
 request: [demo] Add a CSV export of items
 checkpoint: approval <timestamp> (#32)
 approval: spec v1 sha256:<hash> (current)
-nothing to resume: approved for implementation (handoff is Phase 3)
+next: harness execution start t-xxxxxxxx
 ```
 <!-- demo-transcript:end -->

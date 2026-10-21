@@ -8,6 +8,7 @@ import al_gate_discovery as D
 import al_review_history as H
 import al_shell
 from hook_regression_helpers import invoke, begin
+from test_service_coverage import unit
 from batch5_helpers import checker, comparison, second_round, state, writing
 
 
@@ -19,23 +20,34 @@ def discover(cli,paths):
 def gate(manifest,category):return next(g for g in manifest['gates'] if g['category']==category)
 
 
-def test_full_directory_make_convention_and_actual_scope(cli,repo):
-    (repo/'services/x-service/src').mkdir(parents=True)
-    (repo/'Makefile').write_text('lint-imports:\n\ttest -d services/$(SVC)/src\n')
-    (repo/'package.json').write_text('{}')
-    (repo/'ci/scripts').mkdir(parents=True)
-    (repo/'ci/scripts/fast-check-lint-imports.sh').write_text('echo checker')
-    g=gate(discover(cli,['services/x-service/src/a.py']),'lint-imports')
+def test_full_directory_service_check_and_actual_scope(cli,repo):
+    unit(repo,'services/x-service')
+    manifest=discover(cli,['services/x-service/src/app.py'])
+    g=next(g for g in manifest['gates'] if g['id']=='imports-services-x-service')
+    assert g['argv'][-2:]==['--unit','services/x-service']
+    assert {'services/x-service','services/x-service/pyproject.toml'}<=set(g['scope'])
+    binding=next(b for b in manifest['service_coverage']['assessment']['required_bindings'] if b['id']==g['id'])
+    assert binding['runner_resource']['name']=='al_architecture_check.py'
+    assert binding['execution_signature']==g['execution_signature']
     assert subprocess.run(g['argv'],cwd=repo,capture_output=True).returncode==0
-    assert {'services/x-service','Makefile','package.json','ci/scripts/fast-check-lint-imports.sh'}<=set(g['scope'])
+    (repo/'services/x-service/src/app.py').write_text('import forbidden_dependency\n')
+    result=subprocess.run(g['argv'],cwd=repo,capture_output=True)
+    assert result.returncode!=0 and b'forbidden import forbidden_dependency' in result.stdout
 
 
-@pytest.mark.parametrize('recipe',[None,'lint-imports:\n\techo unrelated checker\n','other:\n\techo services/$(SVC)-service\n'])
+@pytest.mark.parametrize('recipe',[None,'lint-imports:\n\techo unrelated checker\n','other:\n\techo services/$(SVC)-service\n','lint-imports:\n\ttest -d services/$(SVC)/src\n','lint-imports:\n\ttest -d services/$(SVC)-service/src\n'])
 def test_unknown_or_missing_service_recipe_is_unresolved(cli,repo,recipe):
+    unit(repo,'services/x-service',check=False)
     if recipe:(repo/'Makefile').write_text(recipe)
-    g=gate(discover(cli,['services/x-service/src/a.py']),'lint-imports')
+    discover_manifest=discover(cli,['services/x-service/src/app.py'])
+    g=next(g for g in discover_manifest['gates'] if g['id']=='imports-unresolved')
     assert g['applicability']=='UNRESOLVED' and not g['argv']
-    assert 'Service touched' in g['reason']
+    assert 'services/x-service' in g['reason']
+    assessment=discover_manifest['service_coverage']['assessment']
+    assert assessment['outcome']=='incomplete' and assessment['enumeration']['status']=='complete'
+    assert assessment['check_discovery']['status']=='incomplete'
+    assert any(item['code']=='missing-verification-check' and item['unit']=='services/x-service' for item in assessment['gaps'])
+    assert not any('services/x-service' in binding['units'] for binding in assessment['required_bindings'])
 
 
 def test_loc_directory_dedup_deleted_path_and_expanded_scope(cli,repo):
@@ -116,7 +128,7 @@ def test_retry_requires_writer_reconciliation_and_new_lifetime(cli,repo,tmp_path
     assert state_file().read_bytes()==before
     proof=tmp_path/'proof.txt';proof.write_text('Writer terminated and changes inspected.\n')
     invoke(cli,'writer','reconcile','--id','first','--reason','terminated','--artifact',str(proof))
-    (repo/'svc/app.py').write_text('candidate changed\n')
+    (repo/'svc/app.py').write_text('candidate = "changed"\n')
     invoke(cli,'retry','al-engineer','--reason','retry')
     s=state(cli);assert s['phase']=='IMPLEMENTATION' and s['evidence']['invalidated_at']
     assert s['writers']['first']['state']=='RECONCILED' and s['retry_history'][0]['changed']

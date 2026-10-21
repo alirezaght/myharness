@@ -4,6 +4,16 @@ This roadmap is kept **separate from the design spec** ([SPEC.md](SPEC.md)). Han
 
 **Guiding principle:** the harness should run on a real task from Phase 1 onward. Each phase adds a capability without breaking the earlier ones.
 
+## Current status — 20 October 2026
+
+[Current and future AL, Harness and interaction diagrams](https://chatgpt.com/space/page_11adcd18b4ac8191904172a708044954) are available in the private roadmap page.
+
+Phases 1 and 2 were implemented before this work. Phase 3 is in progress: the source includes AL execution and monitoring, with correctness and execution-profile checks under verification. Workflow efficiency, active-runtime version pinning and resumption improvements remain pending. The complete AL cold/warm verification target of at most 360 seconds has not been proven, and source changes are ahead of the installed global runtime.
+
+A coordinated single installation entrypoint for AL and Harness is planned and has not shipped. Final deployment must first receive terminal source approval, then install and verify the global tools, then remove only attributed repository-local AL resources while preserving the canonical source and runtime history.
+
+The rough remaining estimate is **2–4 working days for Phase 3 and the associated AL work**, subject to verification and review. Phases 4 and 5 are outside that estimate and remain future work. All phase and component estimates below are the original planning estimates, not a new remaining-work commitment.
+
 ```
  ┌────────┐   ┌────────┐   ┌────────┐   ┌──────────┐   ┌────────────┐
  │ 1 Core │ → │2 Visual│ → │  3 AL  │ → │4 Delivery│ → │5 Validation│

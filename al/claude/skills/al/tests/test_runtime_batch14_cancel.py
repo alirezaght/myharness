@@ -7,6 +7,7 @@ import al_evidence as E
 import al_gate_process as P
 import al_store
 from hook_regression_helpers import invoke
+from batch13_helpers import assert_incomplete_admission
 from batch14_helpers import state,wait_for,alive,clean_process
 from batch14_process_helpers import prepare,finalized
 
@@ -16,7 +17,7 @@ from batch14_process_helpers import prepare,finalized
 @pytest.mark.parametrize('number',[signal.SIGINT,signal.SIGTERM])
 def test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation(cli,cli_process,repo,tmp_path,monkeypatch,remote,stage,number):
     _,child,grand=prepare(cli,repo,tmp_path,monkeypatch,remote)
-    proc=cli_process('gates','run','--stage',stage);pids=[]
+    proc=cli_process('gates','run','--stage',stage,'--id','owned-boundary');pids=[]
     try:
         wait_for(lambda:child.exists() and grand.exists())
         pids=[int(child.read_text()),int(grand.read_text())]
@@ -32,8 +33,9 @@ def test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation
 @pytest.mark.parametrize('remote',[False,True])
 def test_normal_public_gate_still_passes(cli,repo,tmp_path,monkeypatch,remote,stage):
     prepare(cli,repo,tmp_path,monkeypatch,remote,'normal')
-    invoke(cli,'gates','run','--stage',stage)
+    invoke(cli,'gates','run','--stage',stage,'--id','owned-boundary')
     assert state(cli)['evidence']['entries'][-1]['status']=='PASS'
+    assert_incomplete_admission(cli)
 
 
 @pytest.mark.parametrize('remote',[False,True])
@@ -68,7 +70,7 @@ def test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass(cli,repo,tmp
             return original(sid,st)
         monkeypatch.setattr(al_store,'save',save)
     try:
-        with pytest.raises(KeyboardInterrupt):invoke(cli,'gates','run','--stage','base')
+        with pytest.raises(KeyboardInterrupt):invoke(cli,'gates','run','--stage','base','--id','owned-boundary')
         assert fired
         entry=finalized(cli)
         observed=owned+([entry['pid']] if entry.get('pid') else [])
@@ -87,7 +89,7 @@ def test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass(cli,repo,tmp
 @pytest.mark.parametrize('remote',[False,True])
 def test_repeated_cancellation_cannot_interrupt_group_cleanup(cli,cli_process,repo,tmp_path,monkeypatch,remote):
     _,child,grand=prepare(cli,repo,tmp_path,monkeypatch,remote)
-    proc=cli_process('gates','run','--stage','base');pids=[]
+    proc=cli_process('gates','run','--stage','base','--id','owned-boundary');pids=[]
     try:
         wait_for(lambda:child.exists() and grand.exists());pids=[int(child.read_text()),int(grand.read_text())]
         proc.send_signal(signal.SIGTERM)
@@ -114,7 +116,7 @@ def save(sid,st):
         fired.append(True);os.kill(os.getpid(),signal.SIGTERM)
     return original(sid,st)
 al_store.save=save
-sys.argv=['al_state.py','--session',sys.argv[2],'gates','run','--stage','base']
+sys.argv=['al_state.py','--session',sys.argv[2],'gates','run','--stage','base','--id','owned-boundary']
 al_state.main()
 """
     result=subprocess.run([sys.executable,'-c',code,str(scripts),sid],cwd=repo,capture_output=True,text=True,timeout=8)

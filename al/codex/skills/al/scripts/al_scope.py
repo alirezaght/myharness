@@ -1,27 +1,38 @@
 """Content-bound repository identity and complete candidate capture."""
 import hashlib
+import contextlib
 import json
 import os
+import re
 import subprocess
+import tempfile
 from pathlib import Path
 import al_store
 import al_gitlinks as G
+from al_profile import measured
 from al_schema import refuse
 
 def git_bytes(*args, root=None):
-    r = subprocess.run(['git', '--no-optional-locks', *args], cwd=root or al_store.REPO_ROOT, capture_output=True)
+    from al_analysis_cache import CURRENT
+    context = CURRENT.get()
+    options = ['-c', 'diff.autoRefreshIndex=false'] if context and context.readonly_git else []
+    if context and context.readonly_git and args and args[0]=='diff':args=(args[0],'--no-ext-diff','--no-textconv',*args[1:])
+    r = subprocess.run(['git', '--no-optional-locks', *options, *args], cwd=root or al_store.REPO_ROOT, capture_output=True)
     if r.returncode: refuse('git failed: ' + r.stderr.decode(errors='replace').strip())
     return r.stdout
 
 def identity(target='HEAD'):
     root = al_store.REPO_ROOT.resolve()
-    oid = git_bytes('rev-parse', '--verify', target + '^{commit}').decode().strip()
-    common = git_bytes('rev-parse', '--git-common-dir').decode().strip()
+    values = git_bytes('rev-parse', '--git-common-dir', '--git-dir', '--end-of-options', target + '^{commit}', 'HEAD^{commit}').decode().splitlines()
+    if len(values) != 5 or values[2] != '--end-of-options' or not all(values): refuse('invalid repository identity response')
+    common, git_dir, _, oid, head = values
+    if len(oid) not in {40, 64} or len(head) != len(oid) or not all(re.fullmatch(r'[0-9a-f]+', value) for value in (oid, head)):
+        refuse('invalid repository identity response')
     return {'root': str(root), 'cwd': str(Path.cwd().resolve()),
             'common_dir': str((root / common).resolve()),
-            'git_dir': str((root / git_bytes('rev-parse','--git-dir').decode().strip()).resolve()),
+            'git_dir': str((root / git_dir).resolve()),
             'target': target, 'target_oid': oid,
-            'merge_base': git_bytes('merge-base', 'HEAD', oid).decode().strip()}
+            'merge_base': oid if oid == head else git_bytes('merge-base', 'HEAD', oid).decode().strip()}
 
 def validate_identity(st):
     expected = st['identity']
@@ -37,7 +48,8 @@ def safe_path(raw):
 def source_rows(root=None, base='HEAD'):
     root=root or al_store.REPO_ROOT
     try:
-        index=G.index_entries(root);head=G.tree_entries(root,'HEAD');baseline=G.tree_entries(root,base)
+        index=G.index_entries(root);head=G.tree_entries(root,'HEAD')
+        baseline=head if base=='HEAD' else G.tree_entries(root,base)
         out=[]
         for raw in sorted(G.paths(baseline,head,index)):
             obs=G.observe(root,raw,baseline.get(raw),head.get(raw),index.get(raw))
@@ -45,6 +57,60 @@ def source_rows(root=None, base='HEAD'):
                         'worktree':obs['effective'] or {'type':'replaced'}})
         return out
     except G.GitlinkError as exc:refuse(str(exc))
+
+
+@measured('indexed-blob-hashing')
+def _blob_hashes(root, oids):
+    """Consume bounded cat-file frames; never buffer the request or blob set."""
+    result = {}
+    unique = list(dict.fromkeys(oids))
+    if not unique: return result
+    from al_git_cache import object_binding, lookup, store
+    try:
+        binding=object_binding(root)
+        misses=[]
+        for oid in unique:
+            value=lookup(binding,oid)
+            if value is None:misses.append(oid)
+            else:result[oid]=hashlib.sha256(value).hexdigest()
+    except (OSError,ValueError,subprocess.SubprocessError) as exc:refuse('indexed blob identity unavailable: '+str(exc))
+    if not misses:return result
+    from al_analysis_cache import CURRENT
+    observation = CURRENT.get()
+    errors_context = contextlib.nullcontext(subprocess.DEVNULL) if observation and observation.readonly_git else tempfile.TemporaryFile()
+    with errors_context as errors:
+        try:
+            proc = subprocess.Popen(['git', '--no-optional-locks', 'cat-file', '--batch'],
+                                    cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
+        except OSError as exc:refuse('indexed blob batch unavailable: '+str(exc))
+        try:
+            for oid in misses:
+                proc.stdin.write(oid.encode('ascii') + b'\n'); proc.stdin.flush()
+                frame = proc.stdout.readline(256)
+                header = frame.split()
+                if not frame.endswith(b'\n') or len(header) != 3 or header[0] != oid.encode('ascii') or header[1] != b'blob' or not header[2].isdigit():
+                    refuse('invalid indexed blob batch frame')
+                remaining = int(header[2]); digest = hashlib.sha256()
+                object_digest=hashlib.new(binding[2],b'blob '+header[2]+b'\0'); cached=[] if remaining<=2*1024*1024 else None
+                while remaining:
+                    chunk = proc.stdout.read(min(remaining, 1 << 20))
+                    if not chunk: refuse('truncated indexed blob batch frame')
+                    digest.update(chunk); object_digest.update(chunk); remaining -= len(chunk)
+                    if cached is not None:cached.append(chunk)
+                if proc.stdout.read(1) != b'\n': refuse('invalid indexed blob batch terminator')
+                if object_digest.hexdigest()!=oid:refuse('indexed blob object identity mismatch')
+                if cached is not None:store(binding,oid,b''.join(cached))
+                result[oid] = digest.hexdigest()
+            proc.stdin.close()
+            if proc.stdout.read(1) or proc.wait() != 0: refuse('indexed blob batch process failed')
+        except OSError as exc:refuse('indexed blob batch failed: '+str(exc))
+        finally:
+            if proc.poll() is None: proc.kill()
+            proc.wait()
+            with contextlib.suppress(OSError):
+                if not proc.stdin.closed: proc.stdin.close()
+            with contextlib.suppress(OSError): proc.stdout.close()
+    return result
 
 
 def records(base,root=None):
@@ -57,11 +123,12 @@ def records(base,root=None):
                         for raw in G.paths(base_entries, head, index)}
     except G.GitlinkError as exc:
         refuse(str(exc))
+    hashes = _blob_hashes(root, (e['oid'] for e in index.values() if e['mode'] != '160000'))
     indexed = {}
     for raw, entry in index.items():
         indexed[raw] = dict(entry)
         if entry['mode'] != '160000':
-            indexed[raw]['sha256'] = hashlib.sha256(git_bytes('cat-file', 'blob', entry['oid'], root=root)).hexdigest()
+            indexed[raw]['sha256'] = hashes[entry['oid']]
     opaque = {raw for raw, obs in observations.items() if G.opaque(obs)}
     raw_paths = set(indexed) | set(base_entries) | set(head)
     raw_paths.update(x for x in git_bytes('ls-files','--others','--exclude-standard','-z',root=root).split(b'\0') if x)
@@ -118,6 +185,7 @@ def changed_paths(base, root=None):
             changed.add(row['path'])
     return sorted(changed)
 
+@measured('candidate-hashing')
 def capture_candidate(st):
     base = st['identity']['merge_base'] if st.get('review_mode') == 'whole-mr' else st['baseline_head']
     rows = records(base)

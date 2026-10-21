@@ -1,0 +1,6 @@
+stages:
+  - verify
+checks:
+  stage: verify
+  script:
+    - make lint-imports SVC=academy

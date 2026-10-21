@@ -21,7 +21,11 @@ def check(st):
         elif hashlib.sha256(p.read_bytes()).hexdigest()!=source['sha256']:reasons.append('source rule changed: '+source['path'])
     changed=S.git_bytes('diff','--name-only','-z',st['identity']['merge_base']).split(b'\0')
     changed+=S.git_bytes('ls-files','--others','--exclude-standard','-z').split(b'\0')
-    for raw in filter(None,changed):
-        p=raw.decode();unit='/'.join(p.split('/')[:2]) if p.startswith(('services/','apps/','packages/')) else '.'
+    paths=[raw.decode() for raw in filter(None,changed)]
+    if 'task_attribution' in st and st.get('review_mode') != 'whole-mr':
+        from al_task_attribution import classify_changes
+        paths=classify_changes(st)['discovery_paths']
+    for p in paths:
+        unit=V.classify_unit(p,[],m.get('service_coverage',{}).get('semantic_requirements'))
         if unit not in m['units']:reasons.append('new touched unit requires replanning: '+unit)
     return {'current':not reasons,'reasons':sorted(set(reasons)),'superseded':ref}

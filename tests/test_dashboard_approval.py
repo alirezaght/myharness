@@ -1,7 +1,9 @@
 """P2-07: the Approval Center in the read model and POST /api/approve (Approve & Implement)."""
 
+import json
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -98,6 +100,44 @@ def _rows(db_path: Path, table: str) -> list[sqlite3.Row]:
 
 def _codes(final: dict) -> list[str]:
     return [b["code"] for b in final["blockers"]]
+
+
+def _wait_for_execution(db_path: Path, task_id: str) -> dict:
+    """Wait for the genuine worker to leave startup before comparing durable snapshots."""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is not None and row["status"] not in {
+            "Reserved",
+            "WorkerOwned",
+            "Launching",
+            "Running",
+        }:
+            return dict(row)
+        time.sleep(0.05)
+    raise AssertionError("approval-bound worker did not leave startup within ten seconds")
+
+
+def _assert_dashboard_execution_event(db_path: Path, approval_id: int | None = None) -> None:
+    events = _rows(db_path, "events")
+    [event] = [row for row in events if row["kind"] == "execution.reserved"]
+    [execution] = _rows(db_path, "executions")
+    payload = json.loads(event["payload"])
+    assert payload == {
+        "execution_id": execution["id"],
+        "approval_id": execution["approval_id"],
+        "host": "claude",
+    }
+    if approval_id is not None:
+        assert execution["approval_id"] == approval_id
 
 
 def _grouped(server, seen: list) -> dict:
@@ -246,8 +286,20 @@ def test_a_dashboard_approval_writes_the_cli_snapshot(db_path, sample_repo, tmp_
         status, data = _approve(server, tokens)
         final = _final(server)
     assert status == 201
-    assert set(data) == {"created", "approval", "spec", "superseded", "output"}
+    assert set(data) == {
+        "created",
+        "approval",
+        "spec",
+        "superseded",
+        "output",
+        "execution",
+        "launch",
+    }
     assert data["created"] is True and data["superseded"] is None
+    assert data["execution"]["approval_id"] == data["approval"]["id"]
+    assert data["launch"]["status"] == "WorkerOwned"
+    assert _wait_for_execution(db_path, task_id)["approval_id"] == data["approval"]["id"]
+    _assert_dashboard_execution_event(db_path)
     [row] = _rows(db_path, "approvals")
     assert before == {"approvals": 0, "spec_versions": 0}
     assert len(_rows(db_path, "spec_versions")) == 1
@@ -256,7 +308,7 @@ def test_a_dashboard_approval_writes_the_cli_snapshot(db_path, sample_repo, tmp_
     assert data["spec"] == {"version": 1, "path": row["path"]}
     assert data["approval"] == {k: row[k] for k in data["approval"]}
     kinds = [r["kind"] for r in _rows(db_path, "events")]
-    assert kinds[-2:] == ["spec.approved", "approval.granted"]
+    assert kinds[-3:] == ["spec.approved", "approval.granted", "execution.reserved"]
     labels = [r["label"] for r in _rows(db_path, "checkpoints")]
     assert labels[-2:] == ["spec", "approval"]
     assert not (specs / task_id / "draft.md").exists()
@@ -281,6 +333,8 @@ def _comparable(db_path: Path, old: str, new: str) -> dict:
     for table in tables:
         rows = []
         for row in _rows(db_path, table):
+            if table == "events" and row["kind"] == "execution.reserved":
+                continue
             values = {k: row[k] for k in row.keys() if k != "created_at"}
             rows.append({k: v.replace(old, new) if isinstance(v, str) else v
                          for k, v in values.items()})  # fmt: skip
@@ -312,6 +366,9 @@ def test_the_dashboard_snapshot_equals_the_cli_snapshot(db_path, sample_repo, tm
     assert status == 201 and out == "".join(f"{line}\n" for line in data["output"]).replace(
         str(b), str(a)
     )
+    assert _wait_for_execution(copies["b"], task_id)["approval_id"] == data["approval"]["id"]
+    _assert_dashboard_execution_event(copies["b"], data["approval"]["id"])
+    assert not [row for row in _rows(copies["a"], "events") if row["kind"] == "execution.reserved"]
     v1a, v1b = a / task_id / "v1.md", b / task_id / "v1.md"
     assert _sealed(v1a) == _sealed(v1b)
     assert _comparable(copies["a"], str(a), str(b)) == _comparable(copies["b"], str(a), str(b))
@@ -323,16 +380,15 @@ def test_a_replay_or_a_concurrent_approve_records_one_approval(db_path, sample_r
     with serve(db_path, task_id, str(specs)) as server:
         tokens = _tokens(server, task_id)
         first = _approve(server, tokens)
+        _wait_for_execution(db_path, task_id)
         after = _state_of(db_path, specs)
         replay = _approve(server, tokens)
         assert _state_of(db_path, specs) == after
+    _assert_dashboard_execution_event(db_path)
     assert first[0] == 201 and replay[0] == 200 and replay[1]["created"] is False
     assert replay[1]["approval"] == first[1]["approval"]
     approval = first[1]["approval"]
-    assert replay[1]["output"] == [
-        f"approval #{approval['id']} is current: spec v1 {approval['content_hash']};"
-        " nothing was written"
-    ]
+    assert replay[1]["output"] == [f"approval #{approval['id']} is current"]
     assert sorted(p.name for p in (specs / task_id).iterdir()) == ["v1.md"]
 
     other = approval_task(db_path, sample_repo)

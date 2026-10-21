@@ -2,7 +2,6 @@
 """Guarded AL workflow and evidence CLI; repository and cwd are pinned per run."""
 import argparse
 import json
-import secrets
 import sys
 import time
 from pathlib import Path
@@ -35,46 +34,7 @@ from al_store import (locked, clear_current, git, load, refresh_active,  # noqa:
                       save, session_id, set_phase, state_path, write_current)
 
 
-def cmd_start(a, sid):
-    if a.review_mode == "whole-mr" and not (a.target and a.target.strip()):
-        al_schema.refuse("whole-mr requires an explicit --target (for example main)")
-    target = a.target or "HEAD"
-    if state_path(sid).exists():
-        al_schema.refuse("run identity already exists; history cannot be overwritten")
-    package, reference = al_task.package(sid, a)
-    spec = package['accepted_spec']
-    st = {
-        "schema_version": al_schema.VERSION, "identity": al_scope.identity(target),
-        "task_package": reference, "amendments": [], "writers": {}, "phase_occurrences": [],
-        "review_mode": a.review_mode, "review": None,
-        "workflow": "AL", "session_id": sid, "status": "RUNNING", "task": spec.strip(),
-        "task_title": spec.strip().splitlines()[0][:80], "started_at": time.time(),
-        "phase": None, "agent": None, "agents": [], "model": None, "effort": None,
-        "review_iteration": 0, "correction_iteration": 0,
-        "max_correction_iterations": MAX_CORRECTION_ITERATIONS,
-        "review_status": None, "findings": dict(NO_FINDINGS),
-        "spec_status": None, "classification": None, "path": None,
-        "designer_required": None, "designer_reason": None, "classification_reason": None,
-        "skipped_phases": [], "optional_phases": [], "escalations": [],
-        "review_history": [], "oscillations": [], "approved_with_notes": 0,
-        "completed_phases": [], "pending_phases": list(MAIN_PHASES), "phase_timings": {},
-        "baseline_head": git("rev-parse", "HEAD").strip(),
-        "preexisting_changes": al_scope.parent_status(),
-        "failure": None, "stop_reason": None,
-        "exec_mode": {}, "write_ownership": {}, "snapshots": {},
-        "retries": {}, "fanout": None, "fanouts": [],
-        "run_id": secrets.token_hex(4),  # a restarted session must not accept an older run's results
-        "evidence": {"seq": 0, "entries": [], "plan": {}}, "overlaps": [], "handoffs": 0,
-        "rework": {"batch": None, "used": 0, "max": al_rework.MAX_REWORK_PER_BATCH,
-                   "total": 0, "history": []},
-        **al_models.initial_state(),
-    }
-    set_phase(st, "PLANNING")
-    save(sid, st)
-    write_current(sid)
-    print(f"AL session {sid}")
-    print(f"AL state started for session {sid}: {state_path(sid)}")
-    print(f"pre-existing working-tree changes: {len(st['preexisting_changes'])}")
+from al_start import cmd_start
 
 
 def cmd_phase(a, sid):
@@ -161,6 +121,9 @@ def cmd_model_unavailable(a, sid):
 def cmd_approved(a, sid):
     st = load(sid)
     al_transitions.require_transition(st, "approved", "DONE")
+    from al_execution_tasks import completion_gaps, authority
+    if completion_gaps(st): al_schema.refuse(str(completion_gaps(st)))
+    if "integration" in st: authority(st, "approve")
     missing = al_review.approval_gaps(st)
     if missing: al_schema.refuse("approval refused: " + str(missing))
     st['approval'] = {'review': st['review']['id'], 'fingerprint': st['review']['candidate']['fingerprint'],
@@ -214,8 +177,9 @@ def cmd_show(a, sid):
 def main():
     ap = argparse.ArgumentParser(prog="al_state.py")
     ap.add_argument("--session")
+    ap.add_argument("--recovery-file")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("start"); s.add_argument("--spec-file"); s.add_argument("--spec"); s.add_argument("--package-file"); s.add_argument("--review-mode", choices=["task","whole-mr"], default="task"); s.add_argument("--target", default=None); s.set_defaults(fn=cmd_start)
+    s = sub.add_parser("start"); s.add_argument("--spec-file"); s.add_argument("--spec"); s.add_argument("--package-file"); s.add_argument("--handoff"); s.add_argument("--review-mode", choices=["task","whole-mr"], default="task"); s.add_argument("--target", default=None); s.set_defaults(fn=cmd_start)
     s = sub.add_parser("spec-gate"); s.add_argument("verdict", choices=["SPEC_READY", "SPEC_BLOCKED"])
     s.add_argument("--reason", default=""); s.set_defaults(fn=cmd_spec_gate)
     s = sub.add_parser("classify"); s.add_argument("classification")
@@ -235,6 +199,8 @@ def main():
     s.set_defaults(fn=cmd_snapshot)
     s = sub.add_parser("retry"); s.add_argument("agent"); s.add_argument("--reason", default="")
     s.set_defaults(fn=cmd_retry)
+    import al_inspection
+    al_inspection.register(sub)
     al_review.register(sub)
     import al_retry
     al_retry.register(sub)
@@ -254,10 +220,21 @@ def main():
         s.add_argument(f"--{k}", action="store_true")
     s.add_argument("--spawn", metavar="ROLE")
     s.set_defaults(fn=cmd_show)
+    import al_execution_tasks
+    al_execution_tasks.register(sub)
     al_isolation.register(sub)
     al_writers.register(sub)
     al_gates.register(sub)
     al_task.register(sub)
+    import al_planning
+    al_planning.register(sub)
+    import al_behavior_observations
+    al_behavior_observations.register(sub)
+    import al_publication
+    al_publication.register(sub)
+    import al_recovery_guidance
+    al_recovery_guidance.register(sub)
+    al_recovery_guidance.reset()
     al_recovery.register(sub)
     al_escapes.register(sub)
     al_rework.register(sub)
@@ -270,14 +247,31 @@ def main():
         argv, command_argv = argv[:i], argv[i + 1:]
     a = ap.parse_args(argv)
     a.command_argv = command_argv
+    local_recovery=getattr(a,"operation_recovery_file",None)
+    if local_recovery and a.recovery_file:al_schema.refuse("supply one exact recovery descriptor")
+    a.recovery_file=a.recovery_file or local_recovery
+    if a.recovery_file and (a.cmd == "inspect" or a.cmd == "integration" and a.action == "capabilities"):
+        al_schema.refuse("recovery descriptor is only valid for its exact guarded operation")
+    if a.cmd == "integration" and a.action == "capabilities":
+        a.fn(a, None)
+        return
+    if a.cmd == 'inspect':
+        if not a.session:al_schema.refuse('inspect requires explicit --session')
+        a.fn(a, a.session)
+        return
+    from al_new_origin import require_dispatch
+    require_dispatch()
     sid = session_id(a.session, allow_new=(a.cmd == "start"))
+    if a.recovery_file:
+        import al_proof_json as J
+        al_recovery_guidance.activate(load(sid),J.loads(Path(a.recovery_file).read_bytes()),a)
     # `evidence run` / `preflight` can take minutes: they lock each write
     # themselves; every other command is one short locked load-modify-save.
     if a.cmd in {"preflight", "isolate"} or (a.cmd in {"evidence", "gates"} and a.action == "run"):
         a.fn(a, sid)
     else:
         with locked(sid):
-            if a.cmd not in {"start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile"}:
+            if a.cmd not in {"start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile","integration","recovery"} and not (a.cmd == "publication" and a.action in {"packet", "status"}):
                 existing = load(sid)
                 if existing["status"] != "RUNNING": al_schema.refuse("run is not running; explicit resume required")
             a.fn(a, sid)

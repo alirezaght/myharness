@@ -12,14 +12,17 @@ from al_artifacts import read_json
 from hook_regression_helpers import begin, invoke, report_data
 from test_hook_batch6 import _manifest, _source
 
-PROJECT_ROOT = Path(__file__).resolve().parents[4]
+from test_service_coverage import unit
+
+PROJECT_FIXTURES = Path(__file__).parent / "fixtures" / "repository"
 
 
 def _copy_project(repo, paths):
     for rel in paths:
-        source = PROJECT_ROOT / rel
+        source = PROJECT_FIXTURES / rel
         if not source.is_file():
-            continue
+            source = source.with_name(source.name + ".fixture")
+        assert source.is_file(), f"missing hermetic repository fixture: {rel}"
         target = repo / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -35,6 +38,21 @@ def _planning(cli):
     invoke(cli, "start", "--spec", "Verify the exact sourced repository obligations.")
     invoke(cli, "spec-gate", "SPEC_READY")
     invoke(cli, "classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
+
+
+def _package_manager_stub(tmp_path):
+    bindir = tmp_path / "package-bin"
+    bindir.mkdir()
+    command = bindir / "pnpm"
+    command.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, subprocess, sys\n"
+        "script = sys.argv[1]\n"
+        "target = json.load(open('package.json'))['scripts'][script]\n"
+        "raise SystemExit(subprocess.run(target, shell=True).returncode)\n"
+    )
+    command.chmod(0o755)
+    return bindir
 
 
 def test_declared_environment_change_invalidates_candidate_gate(cli, repo, tmp_path, monkeypatch):
@@ -93,6 +111,7 @@ def test_repository_discovery_cannot_be_erased_by_empty_rules_and_na(cli, repo, 
     app = repo / "services/academy-service/src/academy_service/app.py"
     app.parent.mkdir(parents=True, exist_ok=True)
     app.write_text("from pyshared.context import request_id_var\n\nVALUE = request_id_var\n")
+    unit(repo,"services/academy-service")
     _commit(repo, "seed sourced service gate obligation")
     _planning(cli)
     paths = tmp_path / "service-paths.json"
@@ -123,6 +142,8 @@ def test_shared_pyshared_change_selects_actual_importing_service(cli, repo, tmp_
     consumer = (repo / "services/shortlist-service/src/shortlist_service/infrastructure/upstream.py").read_text()
     assert "Shared package changes select affected service graphs." in policy
     assert "from pyshared.context import request_id_var" in consumer
+    unit(repo,"packages/pyshared")
+    unit(repo,"services/shortlist-service")
     shared = repo / "packages/pyshared/src/pyshared/context.py"
     shared.write_text(shared.read_text() + "\n# diagnostic shared-source change\n")
     _planning(cli)
@@ -131,7 +152,7 @@ def test_shared_pyshared_change_selects_actual_importing_service(cli, repo, tmp_
     invoke(cli, "gates", "discover", "--paths-file", str(paths))
     ref = json.loads(cli("show")[1])["gate_manifests"][-1]
     gates = [g for g in read_json(ref)["gates"] if g["category"] == "lint-imports"]
-    assert any(g["id"] == "imports-shortlist" and g["applicability"] == "APPLICABLE" for g in gates), (
+    assert any(g["id"] == "imports-services-shortlist-service" and g["applicability"] == "APPLICABLE" for g in gates), (
         f"shared pyshared edit omitted the known shortlist import obligation: {gates}"
     )
 
@@ -141,7 +162,7 @@ def test_shared_pyshared_change_selects_actual_importing_service(cli, repo, tmp_
     ("pnpm generate:contracts", "packages/contracts/python/acme_contracts/order_events.openapi.py"),
 ])
 def test_repository_write_scripts_are_not_parallel_owner_commands(cli, repo, tmp_path, command, peer_path):
-    _copy_project(repo, ["package.json", "packages/contracts/generate.sh"])
+    _copy_project(repo, ["package.json", "scripts/format_docs.py", "packages/contracts/generate.sh"])
     engineer_path = "services/academy-service/src/owned.py"
     engineer = repo / engineer_path
     engineer.parent.mkdir(parents=True, exist_ok=True)
@@ -157,7 +178,7 @@ def test_repository_write_scripts_are_not_parallel_owner_commands(cli, repo, tmp
     code, out, err = cli("ownership", "--engineer", engineer_path, "--builder", peer_path,
                          "--engineer-commands", command)
     if code == 0:
-        env = {**os.environ, "PATH": str(PROJECT_ROOT / "node_modules/.bin") + os.pathsep + os.environ["PATH"]}
+        env = {**os.environ, "PATH": str(_package_manager_stub(tmp_path)) + os.pathsep + os.environ["PATH"]}
         if command.endswith("generate:contracts"):
             fakebin = tmp_path / "fakebin"
             fakebin.mkdir()

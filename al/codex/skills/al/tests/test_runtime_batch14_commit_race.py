@@ -45,7 +45,7 @@ def pending(owner):
         Path(premature).write_text('yes' if Path(observed).exists() else 'no')
     return original_pending(owner)
 al_store.save=save;al_gate_process.Owner.pending=pending
-sys.argv=['al_state.py','--session',sid,'gates','run','--stage','base']
+sys.argv=['al_state.py','--session',sid,'gates','run','--stage','base','--id','owned-boundary']
 try:al_state.main()
 finally:
     for child in children:child.wait(timeout=4)

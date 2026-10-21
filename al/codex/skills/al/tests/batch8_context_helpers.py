@@ -22,7 +22,8 @@ def prepared(cli,repo,tmp,files,paths,**changes):
 def approval(cli,tmp,m):
     import sys
     for g in m['gates']:
-        if g['category']!='ci':g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation in the disposable repository')
+        if g['category'] not in {'ci','lint-imports'} and not g.get('obligation_ids'):
+            g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation in the disposable repository')
     plan(cli,tmp,executable_ci(m));invoke(cli,'gates','run','--stage','base')
     invoke(cli,'phase','IMPLEMENTATION');invoke(cli,'writer','start','--id','engineer','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','engineer','--outcome','success');invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate')

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "service-coverage declaration",
+  "type": "object",
+  "required": ["schema_version", "adapter", "policy_version", "repository", "assessment", "semantic_requirements", "semantic_sha256", "provenance", "bindings"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "adapter": {"$ref": "#/$defs/adapter"},
+    "policy_version": {"const": 1},
+    "repository": {"type": "object", "required": ["root", "base_oid"], "properties": {"root": {"type": "string"}, "base_oid": {"type": "string"}}},
+    "assessment": {"$ref": "#/$defs/assessment"},
+    "semantic_requirements": {"type": "object"},
+    "semantic_sha256": {"$ref": "#/$defs/hash"},
+    "provenance": {"type": "object", "required": ["scan_inputs", "rule_sources", "membership", "absent_paths", "digest"], "properties": {"scan_inputs": {"type": "array"}, "rule_sources": {"type": "array"}, "membership": {"type": "array"}, "absent_paths": {"type": "array"}, "digest": {"$ref": "#/$defs/hash"}}},
+    "bindings": {"type": "array", "items": {"type": "object", "required": ["obligation_id", "gate_id", "execution_signature"], "properties": {"obligation_id": {"type": "string"}, "gate_id": {"type": "string"}, "execution_signature": {"$ref": "#/$defs/hash"}}}}
+  },
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "amber", "version": 1}}]},
+    "assessment": {
+      "type": "object",
+      "required": ["schema_version", "outcome", "known_affected", "potential_services", "selected_services", "dependency_uncertainties", "enumeration", "check_discovery", "required_bindings", "gaps"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "outcome": {"enum": ["identified", "exhaustive", "incomplete"]},
+        "known_affected": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "potential_services": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "selected_services": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+        "dependency_uncertainties": {"type": "array", "items": {"type": "object"}},
+        "enumeration": {"$ref": "#/$defs/completeness"},
+        "check_discovery": {"$ref": "#/$defs/completeness"},
+        "required_bindings": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+        "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}}
+      }
+    },
+    "completeness": {"type": "object", "required": ["status", "gap_ids"], "properties": {"status": {"enum": ["complete", "incomplete"]}, "boundary_ids": {"type": "array", "items": {"type": "string"}}, "obligation_ids": {"type": "array", "items": {"type": "string"}}, "gap_ids": {"type": "array", "items": {"type": "string"}}}},
+    "gap": {"type": "object", "required": ["code", "path", "reason"], "properties": {"code": {"type": "string"}, "path": {"type": "string"}, "reason": {"type": "string"}, "unit": {"type": ["string", "null"]}, "category": {"type": "string"}}},
+    "check": {"type": "object", "required": ["id", "category", "units", "required", "argv", "cwd", "execution_kind", "env_names", "sources", "required_scope", "source_chain", "obligation_ids", "execution_signature"], "properties": {"id": {"type": "string"}, "category": {"enum": ["lint-imports", "ci"]}, "units": {"type": "array", "items": {"type": "string"}}, "required": {"const": true}, "argv": {"type": "array", "items": {"type": "string"}}, "cwd": {"type": "string"}, "execution_kind": {"enum": ["local", "remote"]}, "env_names": {"type": "array", "items": {"type": "string"}}, "sources": {"type": "array"}, "required_scope": {"type": "array", "items": {"type": "string"}}, "source_chain": {"type": "array", "items": {"type": "object", "required": ["path", "sha256", "selector", "semantics"], "properties": {"path": {"type": "string"}, "sha256": {"$ref": "#/$defs/hash"}, "selector": {"type": "string"}, "semantics": {"type": "string"}}}}, "obligation_ids": {"type": "array", "items": {"type": "string"}}, "execution_signature": {"$ref": "#/$defs/hash"}, "runner_resource": {"type": "object", "required": ["name", "version", "sha256"], "properties": {"name": {"const": "al_architecture_check.py"}, "version": {"const": 1}, "sha256": {"$ref": "#/$defs/hash"}}, "additionalProperties": false}, "verification": {"type": "object"}}}
+  }
+}

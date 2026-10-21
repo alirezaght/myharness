@@ -2,7 +2,7 @@
 import pytest
 import al_ci_inventory as CI
 from test_runtime_batch9_ci import conditional,definitions
-from batch8_helpers import setup,plan,executable_ci
+from batch8_helpers import force_applicable_ci,setup,plan,executable_ci
 from batch8_context_helpers import prepared,approval
 
 
@@ -56,9 +56,12 @@ def test_unknown_selection_precedes_proven_release_classification(repo,fields):
     assert len(actual)==1 and actual[0]['applicability']=='UNRESOLVED'
 
 
-def test_selected_prepare_remains_unknown_but_definite_deploy_is_excluded(repo):
+def test_selected_prepare_requires_supported_checks_but_definite_deploy_is_excluded(repo):
     actual=jobs(repo,'  environment: {name: production, action: prepare}\n','    - when: always\n')
     assert len(actual)==1 and actual[0]['applicability']=='UNRESOLVED'
+    assert 'unsupported environment verification command' in actual[0]['reason']
+    import al_ci_rules as Rules
+    assert Rules.release('validate',Rules.structure({'environment':{'name':'staging','action':'prepare'}})) is False
     assert jobs(repo,'  stage: deploy\n','    - when: always\n')==[]
 
 
@@ -89,7 +92,7 @@ def test_conditional_definition_and_workflow_uncertainty_precede_false_exclusion
 
 def test_public_unknown_rules_cannot_be_cleared_and_refusal_is_byte_identical(cli,repo,tmp_path,state_file):
     m=setup(cli,repo,tmp_path,{'.gitlab-ci.yml':'release:prod:\n  stage: deploy\n  script: echo release\n  rules:\n    - if: \'$OPTIONAL == "yes"\'\n    - when: never\n'},['svc/app.py'])
-    plan(cli,tmp_path,m);executable_ci(m)
+    plan(cli,tmp_path,m);force_applicable_ci(m)
     before=state_file().read_bytes();plan(cli,tmp_path,m,ok=False)
     assert state_file().read_bytes()==before
 

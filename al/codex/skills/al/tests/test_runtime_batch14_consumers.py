@@ -1,10 +1,12 @@
 """Consumer obligations change independently of implementation body fingerprints."""
 import json
+from pathlib import Path
 import pytest
 import al_gate_currency as C
 import al_ledger as L
 from hook_regression_helpers import invoke
 from batch14_helpers import consumer_setup,state,resolved,plan
+from test_service_coverage import unit
 
 
 def test_body_only_edit_keeps_rules_current_but_invalidates_candidate_evidence(cli,repo,tmp_path,state_file):
@@ -23,8 +25,11 @@ def test_body_only_edit_keeps_rules_current_but_invalidates_candidate_evidence(c
 def test_changed_obligations_allow_guarded_replacement_without_fake_interruption(cli,repo,tmp_path,state_file,change):
     m=consumer_setup(cli,repo,tmp_path);old=state(cli);completed=old['completed_phases'][:]
     if change=='consumer':
-        p=repo/'services/b/src/app.py';p.parent.mkdir(parents=True);p.write_text('import common\n')
-    elif change=='unknown':(repo/'packages/shared/src/common.py').write_text('value = __import__("unknown_module")\n')
+        assert not (repo/'services/new-consumer').exists()
+        unit(repo,'services/new-consumer','import common\n')
+    elif change=='unknown':
+        (repo/'packages/shared/src/common.py').write_text('def load(name):\n    return __import__(name)\n')
+        (repo/'services/a/src/app.py').write_text('def load(name):\n    return __import__(name)\n')
     else:(repo/'Makefile').write_text('all:\n\ttrue # changed policy\n')
     assert C.check(state(cli))['current'] is False
     before=state_file().read_bytes();invoke(cli,'phase','VERIFICATION',ok=False);assert state_file().read_bytes()==before
@@ -33,8 +38,24 @@ def test_changed_obligations_allow_guarded_replacement_without_fake_interruption
     assert st['gate_recovery']['superseded_manifest']==old['gate_manifests'][-1]['sha256']
     before=state_file().read_bytes();invoke(cli,'phase','VERIFICATION',ok=False);assert state_file().read_bytes()==before
     if change=='unknown':
-        assert any(g['id']=='imports-unresolved' and g['applicability']=='UNRESOLVED' for g in m['gates'])
+        assessment=m['service_coverage']['assessment']
+        assert assessment['outcome']=='exhaustive' and assessment['selected_services']==['services/a','services/b']
+        assert not any(g['id']=='imports-unresolved' for g in m['gates'])
+        invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','VERIFICATION')
+        invoke(cli,'gates','run','--stage','candidate',ok=False)
+        failed=[e for e in state(cli)['evidence']['entries'] if e['area']=='gate-candidate-imports-services-a']
+        assert failed[-1]['status']=='FAIL'
+        assert 'nonliteral dynamic import' in Path(failed[-1]['log']).read_text()
+        invoke(cli,'review-start',ok=False);invoke(cli,'approved',ok=False)
+    elif change=='consumer':
         invoke(cli,'gates','run','--stage','base',ok=False)
+        failed=[e for e in state(cli)['evidence']['entries'] if e['area']=='gate-base-imports-services-new-consumer']
+        assert failed[-1]['status']=='FAIL'
+        invoke(cli,'gates','decision','--id','imports-services-new-consumer','--action','fix',
+               '--source','User explicitly approved the in-scope new consumer and its absent baseline check',
+               '--reason','The new service is absent in the pinned base; retain failed base proof and verify the real candidate check.')
+        invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate')
+        assert not state(cli).get('gate_recovery')
     else:
         invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','VERIFICATION')
         assert not state(cli).get('gate_recovery')
@@ -43,10 +64,10 @@ def test_changed_obligations_allow_guarded_replacement_without_fake_interruption
 @pytest.mark.parametrize('phase',['IMPLEMENTATION','FINALIZATION'])
 @pytest.mark.parametrize('operation',['writer','check'])
 def test_active_operations_block_ordinary_replacement_atomically(cli,repo,tmp_path,state_file,operation,phase):
-    consumer_setup(cli,repo,tmp_path,['svc/app.py'] if operation=='writer' else ())
+    consumer_setup(cli,repo,tmp_path,['services/a/src/app.py'] if operation=='writer' else ())
     if phase=='FINALIZATION':invoke(cli,'phase','FINALIZATION')
     st=state(cli)
-    if operation=='writer':invoke(cli,'writer','start','--id','live','--role','al-engineer','--files','svc/app.py')
+    if operation=='writer':invoke(cli,'writer','start','--id','live','--role','al-engineer','--files','services/a/src/app.py')
     else:
         import al_evidence as E
         import sys

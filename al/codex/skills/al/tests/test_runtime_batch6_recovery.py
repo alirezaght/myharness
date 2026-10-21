@@ -38,7 +38,7 @@ def test_recovered_unfinished_phase_replaces_gates_before_advancing(cli,tmp_path
     if phase=='IMPLEMENTATION':
         invoke(cli,'writer','start','--id','blocked','--role','al-engineer','--files','svc/app.py',ok=False)
         assert state_file().read_bytes()==before
-    invoke(cli,'gates','run','--stage','base','--id','loc')
+    invoke(cli,'gates','run','--stage','base')
     invoke(cli,'phase',destination)
     s=state(cli);assert 'gate_recovery' not in s and s['gate_recovery_history'][-1]['evidence']
     if route=='retry':assert s['retries']['al-engineer']==1
@@ -52,7 +52,7 @@ def test_failed_base_blocks_writer_then_valid_replacement_allows_new_lifetime(cl
     invoke(cli,'writer','start','--id','writer','--role','al-engineer','--files','svc/app.py',ok=False)
     invoke(cli,'phase','FINALIZATION',ok=False);assert state_file().read_bytes()==before
     install_replacement(cli,tmp_path,repo,[sys.executable,'-c',"print('base passes')"])
-    invoke(cli,'gates','run','--stage','base','--id','loc')
+    invoke(cli,'gates','run','--stage','base')
     invoke(cli,'writer','start','--id','writer','--role','al-engineer','--files','svc/app.py')
     assert not state(cli).get('gate_recovery') and state(cli)['writers']['writer']['state']=='ACTIVE'
 
@@ -73,7 +73,7 @@ def test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing(cl
     else:
         invoke(cli,'phase','IMPLEMENTATION',ok=False)
     assert state_file().read_bytes()==before
-    invoke(cli,'gates','run','--stage','base','--id','loc')
+    invoke(cli,'gates','run','--stage','base')
     if phase=='IMPLEMENTATION':
         invoke(cli,'writer','start','--id','replacement','--role','al-engineer','--files','svc/app.py')
         invoke(cli,'writer','finish','--id','replacement','--outcome','success')

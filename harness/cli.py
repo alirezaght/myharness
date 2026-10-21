@@ -7,8 +7,10 @@ from harness import __version__
 from harness.classification import Complexity
 from harness.cli_approve import add_approve_parser
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
+from harness.cli_dashboard import add_dashboard_parser
 from harness.cli_decision import add_decision_parser
 from harness.cli_design import add_design_parser
+from harness.cli_execution import add_execution_parser
 from harness.cli_interview import add_interview_parser
 from harness.cli_resume import add_resume_parser
 from harness.cli_review import add_review_parser
@@ -66,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--json", action="store_true", help="print the report as JSON")
     investigate.set_defaults(handler=cmd_investigate)
 
+    add_dashboard_parser(subparsers)
     add_interview_parser(subparsers)
     add_design_parser(subparsers)
     add_decision_parser(subparsers)
@@ -75,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_resume_parser(subparsers)
     add_approve_parser(subparsers)
+    add_execution_parser(subparsers)
 
     return parser
 
@@ -83,7 +87,14 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.handler(args)
-    except (InvalidTransition, TaskNotFound, RecordNotFound, ValueError, OSError) as error:
+    except (
+        InvalidTransition,
+        TaskNotFound,
+        RecordNotFound,
+        LookupError,
+        ValueError,
+        OSError,
+    ) as error:
         print(f"harness {args.command}: {error}", file=sys.stderr)
         return ERROR_EXIT_CODE
 

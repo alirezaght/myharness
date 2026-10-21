@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "delivery_demo_1",
+  "binding": {
+    "execution_id": "exec_demo_1",
+    "task_id": "task_demo_1",
+    "approval_id": 1,
+    "spec_version": 1,
+    "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": "revision-demo-1",
+    "review_state_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "handoff_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "al_session_id": "session_demo_1",
+    "al_run_id": "run_demo_1"
+  },
+  "blocker_id": "design_choice_1",
+  "blocker_revision": 1,
+  "verdict": "alternative",
+  "text": "Choose the second documented approach for the affected task.",
+  "tasks": ["task_a"],
+  "criteria": ["AC-01"],
+  "amendment": false,
+  "registry": {"id": "DEC-0019", "path": "docs/decisions/DEC-0019.md", "sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},
+  "base_revision": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+}

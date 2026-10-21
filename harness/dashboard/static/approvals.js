@@ -92,6 +92,19 @@ function approvalResult(taskId, state) {
     for (const line of state.output) list.append(el("li", line));
     result.append(list);
   }
+  if (state.launch) {
+    const launch = state.launch;
+    const status = el("p", `Approval recorded. AL launch: ${launch.status || launch.state || "requested"}${launch.error ? ` · ${launch.error}` : ""}`);
+    status.id = "approval-launch-status";
+    status.setAttribute("role", launch.error ? "alert" : "status");
+    result.append(status);
+    if (launch.error || launch.status === "Unavailable") {
+      const retryLaunch = el("button", "Retry AL launch");
+      retryLaunch.type = "button";
+      retryLaunch.addEventListener("click", () => sendApproval(taskId, state.payload));
+      result.append(retryLaunch);
+    }
+  }
   if (state.error) result.append(alertText(state.error));
   if (state.reload) {
     const reload = el("button", "Reload");
@@ -146,7 +159,13 @@ async function sendApproval(taskId, payload) {
   try {
     const { res, data, netErr } = await postJson(APPROVE_API, payload);
     if (res && (res.status === 201 || res.status === 200)) {
-      approvalState.set(taskId, { ...idle, output: data.output || [], payload: null });
+      const launch = data.launch || null;
+      approvalState.set(taskId, {
+        ...idle,
+        output: data.output || [],
+        payload: launch && (launch.error || launch.status === "Unavailable") ? payload : null,
+        launch,
+      });
       repaintApprovals();
       await refreshDashboard();
       return;

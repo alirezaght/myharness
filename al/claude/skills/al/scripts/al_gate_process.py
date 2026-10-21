@@ -2,6 +2,8 @@
 import os
 import signal
 import subprocess
+import secrets
+import time
 
 SIGNALS={signal.SIGINT,signal.SIGTERM}
 
@@ -9,6 +11,7 @@ SIGNALS={signal.SIGINT,signal.SIGTERM}
 class Owner:
     def __init__(self,log):
         self.log=log;self.proc=None;self.reason=None;self.defer=False;self.stopped=False
+        self.token=secrets.token_hex(32);self.spawned_at=None
 
     def __enter__(self):
         self.previous={number:signal.signal(number,self.signal) for number in SIGNALS}
@@ -21,10 +24,26 @@ class Owner:
 
     def spawn(self,*args,**kwargs):
         self.defer=True
-        try:self.proc=subprocess.Popen(*args,**kwargs,start_new_session=True)
+        try:
+            self.spawned_at=time.time()
+            self.proc=subprocess.Popen(*args,**kwargs,start_new_session=True)
         finally:self.defer=False
         if self.reason:raise KeyboardInterrupt
         return self.proc
+
+    def completion(self):
+        """No reusable proof when any owned group member or inspection doubt remains."""
+        errors=[];absent=False
+        if self.proc is not None and self.proc.poll() is not None:
+            try:os.killpg(self.proc.pid,0)
+            except ProcessLookupError:absent=True
+            except OSError as exc:errors.append(type(exc).__name__)
+        return {'ownership':'live-Popen-start_new_session','token':self.token,
+                'pid':self.proc.pid if self.proc else None,'pgid':self.proc.pid if self.proc else None,
+                'owner_pid':os.getpid(),'spawned_at':self.spawned_at,'observed_at':time.time(),
+                'exit':self.proc.returncode if self.proc else None,'group_absent':absent,
+                'errors':errors,'unresolved':not absent,
+                'complete':absent and not errors and not self.reason}
 
     def cancel(self):
         self.reason=self.reason or 'KeyboardInterrupt';self.defer=True

@@ -5,7 +5,7 @@ import pytest
 import al_ledger as L
 import al_scope as S
 import al_sources as Sources
-from batch13_helpers import start, finished
+from batch13_helpers import start, finished, assert_incomplete_admission
 from evidence_helpers import entries, ok_cmd
 from gitlink_helpers import gitlink, commit_child, source_file, gate_plan
 from hook_regression_helpers import invoke
@@ -47,7 +47,7 @@ def test_parent_entry_cannot_authorize_child_scope_or_cwd(cli,repo,tmp_path,gitl
     start(cli,repo)
     marker=tmp_path/'never'
     gate_plan(cli,tmp_path,ok_cmd('1 passed',marker),scope,PARENT,cwd)
-    invoke(cli,'gates','run','--stage','candidate',ok=False)
+    invoke(cli,'gates','run','--stage','candidate','--id','boundary',ok=False)
     entry,_=finished(cli,'INFRA',materialized=False)
     assert not marker.exists() and entry['sources']==PARENT
 
@@ -57,7 +57,7 @@ def test_parent_entry_cannot_authorize_child_scope_or_cwd(cli,repo,tmp_path,gitl
 def test_reserved_gate_capability_failure_finalizes_infra(cli,repo,tmp_path,gitlink,stage,sources):
     start(cli,repo);marker=tmp_path/'never'
     gate_plan(cli,tmp_path,ok_cmd('1 passed',marker),['svc'],sources)
-    invoke(cli,'gates','run','--stage',stage,ok=False)
+    invoke(cli,'gates','run','--stage',stage,'--id','boundary',ok=False)
     _,log=finished(cli,'INFRA',materialized=False)
     assert not marker.exists() and b'capability' in log
 
@@ -69,9 +69,10 @@ def test_disjoint_gate_can_run_with_dirty_child(cli,repo,tmp_path,gitlink,stage)
     (path/'file').write_text('uncaptured dirty work')
     marker=tmp_path/'ran'
     gate_plan(cli,tmp_path,ok_cmd('1 passed',marker),['svc/app.py'])
-    invoke(cli,'gates','run','--stage',stage)
+    invoke(cli,'gates','run','--stage',stage,'--id','boundary')
     finished(cli,'PASS')
     assert marker.read_text()=='x'
+    assert_incomplete_admission(cli)
 
 
 def test_gate_materializes_effective_pointer_and_records_capabilities(cli,repo,tmp_path,gitlink,state_file):
@@ -83,7 +84,7 @@ def test_gate_materializes_effective_pointer_and_records_capabilities(cli,repo,t
     c=commit_child(path,'C')
     command=[sys.executable,'-c','import subprocess; assert subprocess.check_output(["git","ls-files","--stage","svc/vendor"]).decode().startswith("160000 '+c+' ")']
     gate_plan(cli,tmp_path,command,['svc'],PARENT)
-    invoke(cli,'gates','run','--stage','candidate')
+    invoke(cli,'gates','run','--stage','candidate','--id','boundary')
     finished(cli,'PASS')
     st=json.loads(state_file().read_text())
     assert st['gate_runs'][-1]['sources']==PARENT
@@ -126,7 +127,7 @@ def test_gate_detects_source_change_outside_its_declared_scope(cli,repo,tmp_path
     source=repo/'web/app.js'
     command=[sys.executable,'-c','from pathlib import Path; Path('+repr(str(source))+').write_text("source moved")']
     gate_plan(cli,tmp_path,command,['svc/app.py'])
-    invoke(cli,'gates','run','--stage','candidate',ok=False)
+    invoke(cli,'gates','run','--stage','candidate','--id','boundary',ok=False)
     finished(cli,'TORN')
     assert source.read_text()=='source moved'
 
@@ -160,7 +161,7 @@ def test_removed_gitlink_gate_uses_each_stage_parent_state(cli,repo,tmp_path,git
     expected='True' if stage=='base' else 'False'
     command=[sys.executable,'-c','import subprocess; assert bool(subprocess.check_output(["git","ls-files","--stage","svc/vendor"])) is '+expected]
     gate_plan(cli,tmp_path,command,['svc'],PARENT)
-    invoke(cli,'gates','run','--stage',stage)
+    invoke(cli,'gates','run','--stage',stage,'--id','boundary')
     finished(cli,'PASS')
 
 

@@ -11,7 +11,7 @@ from test_hook_batch6 import _manifest,_source
 def plan(cli,repo,tmp_path,names):
     state=json.loads(cli('show')[1])
     m=_manifest(state,source=_source(repo,'svc/app.py'),active='loc',argv=[sys.executable,'-c','print("checked")'])
-    m['gates'][1]['env_names']=names
+    next(g for g in m['gates'] if g['id']=='loc')['env_names']=names
     path=tmp_path/'manifest.json';path.write_text(json.dumps(m))
     return path
 
@@ -26,7 +26,7 @@ def test_invalid_environment_declarations_preserve_state(cli,repo,tmp_path,state
 
 def test_env_alias_is_rejected(cli,repo,tmp_path,state_file):
     begin(cli,tmp_path,repo);path=plan(cli,repo,tmp_path,[])
-    m=json.loads(path.read_text());m['gates'][1]['env']=['VAR'];path.write_text(json.dumps(m))
+    m=json.loads(path.read_text());next(g for g in m['gates'] if g['id']=='loc')['env']=['VAR'];path.write_text(json.dumps(m))
     before=state_file().read_bytes();invoke(cli,'gates','plan','--file',str(path),ok=False)
     assert state_file().read_bytes()==before
 
@@ -34,11 +34,11 @@ def test_env_alias_is_rejected(cli,repo,tmp_path,state_file):
 def test_unset_empty_and_changed_environment_invalidate_both_stages(cli,repo,tmp_path,monkeypatch):
     begin(cli,tmp_path,repo);monkeypatch.delenv('AL_VARIANT',raising=False)
     invoke(cli,'gates','plan','--file',str(plan(cli,repo,tmp_path,['AL_VARIANT'])))
-    for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage,'--id','loc')
+    for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)
     assert json.loads(cli('gates','status')[1])=={'base':[],'candidate':[]}
     monkeypatch.setenv('AL_VARIANT','')
     assert all(json.loads(cli('gates','status')[1]).values())
-    for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage,'--id','loc')
+    for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)
     monkeypatch.setenv('AL_VARIANT','private-test-environment-value')
     assert all(json.loads(cli('gates','status')[1]).values())
     assert 'private-test-environment-value' not in cli('show')[1]
@@ -47,8 +47,10 @@ def test_unset_empty_and_changed_environment_invalidate_both_stages(cli,repo,tmp
 def test_environment_change_cannot_authorize_failed_baseline(cli,repo,tmp_path,monkeypatch,state_file):
     begin(cli,tmp_path,repo);monkeypatch.setenv('AL_VARIANT','before')
     path=plan(cli,repo,tmp_path,['AL_VARIANT']);m=json.loads(path.read_text())
-    m['gates'][1]['argv']=[sys.executable,'-c','raise SystemExit(1)'];path.write_text(json.dumps(m))
-    invoke(cli,'gates','plan','--file',str(path));invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
+    next(g for g in m['gates'] if g['id']=='loc')['argv']=[sys.executable,'-c','raise SystemExit(1)'];path.write_text(json.dumps(m))
+    invoke(cli,'gates','plan','--file',str(path))
+    invoke(cli,'gates','run','--stage','base','--id','imports-root')
+    invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
     invoke(cli,'gates','decision','--id','loc','--action','fix','--source','user','--reason','Fix this baseline')
     assert not json.loads(cli('gates','status')[1])['base']
     monkeypatch.setenv('AL_VARIANT','after')

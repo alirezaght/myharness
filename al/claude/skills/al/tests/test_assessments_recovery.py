@@ -47,16 +47,21 @@ def test_waiting_checkpoint_resumes_unchanged_candidate(cli, state_file, tmp_pat
     assert resumed["resumes"][-1]["changed"] is False
 
 
-def test_changed_candidate_resume_invalidates_review_and_returns_to_verification(cli, state_file, tmp_path, repo):
+@pytest.mark.parametrize(('body', 'expected'), [
+    ('x = "changed while stopped"\n', 'VERIFICATION'),
+    ('changed while stopped\n', 'PLANNING'),
+    ('import unknown_new_dependency\nx = 2\n', 'PLANNING'),
+])
+def test_changed_candidate_resume_invalidates_review_and_returns_to_verification(cli, state_file, tmp_path, repo, body, expected):
     begin(cli, tmp_path, repo, "Resume into verification if the reviewed candidate changes while stopped.")
     finish_review(cli, tmp_path, invocation="recovery")
     invoke(cli, "phase", "FINAL_VERIFICATION")
     payload = tmp_path / "wait.json"
     payload.write_text(json.dumps({"reason": "Awaiting a review input.", "resume_instructions": "Reverify the changed candidate."}))
     _, out, _ = invoke(cli, "interrupt", "--file", str(payload))
-    (repo / "svc" / "app.py").write_text("changed while stopped\n")
+    (repo / "svc" / "app.py").write_text(body)
     invoke(cli, "resume", "--checkpoint", out.strip())
     resumed = json.loads(state_file().read_text())
-    assert resumed["phase"] == "VERIFICATION"
+    assert resumed["phase"] == expected
     assert resumed["review"] is None
     assert resumed["resumes"][-1]["changed"] is True

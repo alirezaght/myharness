@@ -7,10 +7,12 @@ from test_hook_batch6 import _manifest
 
 
 def checker(repo):
+    real=Path(__file__).parent/'fixtures/repository/scripts'
+    names=('check-loc.py','check-loc.allowlist')
+    for name in names:
+        if not (real/name).is_file():raise FileNotFoundError('package LOC fixture missing: '+str(real/name))
     scripts=repo/'scripts';scripts.mkdir(exist_ok=True)
-    real=Path(__file__).resolve().parents[4]/'scripts'
-    for name in ('check-loc.py','check-loc.allowlist'):
-        if (real/name).exists():shutil.copy2(real/name,scripts/name)
+    for name in names:shutil.copy2(real/name,scripts/name)
 
 
 def state(cli):return json.loads(cli('show')[1])
@@ -21,7 +23,7 @@ def writing(cli,tmp):
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     file=tmp/'gates.json';file.write_text(json.dumps(_manifest(state(cli))))
-    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
 
 
 def comparison(cli,tmp,invocation,resolutions=None):
@@ -39,8 +41,8 @@ def second_round(cli,tmp,repo):
     first=comparison(cli,tmp,'compare-one',[unresolved]);data=json.loads(first.read_text());data['status']='CHANGES_REQUIRED';first.write_text(json.dumps(data))
     invoke(cli,'review-result','--file',str(first));invoke(cli,'correction','--route','al-engineer');invoke(cli,'phase','FINALIZATION')
     invoke(cli,'writer','start','--id','correction','--role','al-engineer','--files','svc/app.py')
-    (repo/'svc/app.py').write_text('verified fix\n');invoke(cli,'writer','finish','--id','correction','--outcome','success')
-    invoke(cli,'phase','VERIFICATION');invoke(cli,'evidence','run','--area','unit','--fresh')
+    (repo/'svc/app.py').write_text('verified_fix = True\n');invoke(cli,'writer','finish','--id','correction','--outcome','success')
+    invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate');invoke(cli,'evidence','run','--area','unit','--fresh')
     invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     fresh=save_report(cli,tmp,'fresh','fresh-two');invoke(cli,'review-fresh','--file',str(fresh))
     return {'id':'F-fresh','source':'AC-01','status':'fixed','rationale':'Verified source correction.',

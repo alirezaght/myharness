@@ -93,9 +93,13 @@ def latest_activity(controller: HarnessController, task: Task) -> dict[str, str]
 def overview(controller: HarnessController, task: Task, store: SpecStore) -> dict[str, Any]:
     point = resume_for(controller, task, store)
     pending = pending_approvals(controller, task, point)
+    from harness.execution_store import latest_execution
+
+    execution = latest_execution(controller.conn, task.id)
     return {
+        "execution_status": execution["status"] if execution else None,
         "created_at": task.created_at,
-        "status": task_status(point, pending),
+        "status": execution["status"] if execution else task_status(point, pending),
         "pending_approvals": pending,
         "latest_activity": latest_activity(controller, task),
         "resume": point.to_dict(),
@@ -112,7 +116,14 @@ def task_row(controller: HarnessController, task: Task, specs: str | None) -> di
     }
     try:
         point = resume_for(controller, task, spec_store(controller, task.id, specs))
-        status = task_status(point, pending_approvals(controller, task, point))
+        from harness.execution_store import latest_execution
+
+        execution = latest_execution(controller.conn, task.id)
+        status = (
+            execution["status"]
+            if execution
+            else task_status(point, pending_approvals(controller, task, point))
+        )
     except ROW_ERRORS as error:
         return row | {"status": f"{UNAVAILABLE}: {error}", "next": None}
     return row | {"status": status, "next": point.next_command}

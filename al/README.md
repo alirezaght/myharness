@@ -1,39 +1,43 @@
-# AL orchestrator
+# AL source and release model
 
-This directory keeps the AL multi-agent development orchestrator in version control, for both
-Claude Code and Codex. The harness in this repository hands implementation to AL (see
-`docs/SPEC.md` §9), so AL is maintained alongside it.
+This directory is the canonical, version-controlled AL source package in this
+repository. The same layout can be moved to a standalone repository later.
+`al/release-layout.json` lists the runtime files that are shipped for Codex and
+Claude; tests, caches, and build output are excluded.
 
-| Path | Installed to | Contents |
-|---|---|---|
-| `claude/skills/al/` | `~/.claude/skills/al/` | Skill (`SKILL.md`), references, runtime scripts, tests |
-| `claude/agents/` | `~/.claude/agents/al/` | Role agents (`al-architect`, `al-designer`, `al-engineer`, `al-builder`, `al-scout`, fallbacks) |
-| `codex/skills/al/` | `~/.codex/skills/al/` | Codex variant of the skill |
-| `codex/agents/` | `~/.codex/agents/` | Codex role agents (`al-*.toml`) |
+`alctl` resolves numeric `vMAJOR.MINOR.PATCH` Git tags to immutable commits,
+checks the selected source tree, creates a content-addressed release cache, and
+then installs through AL's existing distribution ownership and transaction
+engine. An enrolled installation keeps its source repository and subdirectory;
+updates cannot silently switch either one. Project installations keep an
+`al.lock.json` recording their selected release and update policy.
 
-The two variants differ on purpose (for example, the Claude package ships the read-only guard
-and status line scripts). Change both when a fix applies to both.
+The default ownership registry is `~/.local/state/al-distribution/registry`;
+installer metadata lives in its `installer/` child. `AL_DISTRIBUTION_STATE`
+and `--state-root PATH` each select the ownership registry root directly.
+`--home` selects only the global installation target. Legacy records remain
+visible without automatic enrollment or migration.
 
-## Syncing
+For a clean release, commit the reviewed source and create a numeric version tag
+such as `v1.2.0`. The AL release workflow runs installer tests, both platform
+runtime suites, and a runtime-layout audit for version tags or manual dispatch.
+Tagged verification binds the tested clean checkout to the exact tag and CI
+commit. Development verification reports its dirty state without a release
+claim. The workflow verifies; it does not publish files or create a tag.
+Installers may use a local repository or a credential-free HTTPS Git URL.
 
-Install or update the global copies with AL's own distribution tool, which plans, backs up,
-applies and verifies the change (see `claude/skills/al/reference/distribution.md`):
+The checkout's CLI can be bootstrapped into an independent local snapshot with
+`python3 al/alctl.py bootstrap`. This records development provenance and does
+not install or replace the AL runtime. See [INSTALL.md](INSTALL.md) for
+installation, updates, review/adoption, diagnostics, and recovery.
 
-```sh
-python3 al/claude/skills/al/scripts/al_distribution.py plan --source al/claude/skills/al \
-  --inventory "$INVENTORY" --reviews "$REVIEWS" --platform claude \
-  --registry "$EXTERNAL_REGISTRY" --output "$PLAN"
-```
-
-Use `--source al/codex/skills/al --platform codex` for Codex. To refresh this directory from the
-global installs instead, copy them back without caches (`__pycache__`, `.pytest_cache`,
-`.DS_Store`).
-
-## Tests and lint
-
-AL keeps its own style, so the harness's ruff config excludes `al/` and the harness test suite
-does not collect it. Run AL's tests from its package directory:
-
-```sh
-cd al/claude/skills/al && python3 -m pytest -q
-```
+Phase 3 adds the shared `al-execution-v1` semantic event contract and guarded
+task/blocker commands to both packages. A harness execution requires the
+installed package to expose this protocol and its role resources; an older
+installation reports an explicit compatibility failure. Read-only capabilities
+and event replay are available with `al_state.py integration capabilities` and
+`integration events --after N --limit N`. See each package's
+[`reference/execution-integration.md`](codex/skills/al/reference/execution-integration.md)
+for task admission, agent reports, scoped decisions and recovery. Source edits
+do not replace an active global or project installation; install a reviewed
+candidate through the existing ownership-aware `alctl` workflow.

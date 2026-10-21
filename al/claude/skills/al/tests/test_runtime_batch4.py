@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 import pytest
 import al_artifacts as A
+from supported_fixture_helpers import seed_ui
 import al_assessments
 import al_gates
 import al_traceability as T
@@ -52,21 +53,25 @@ def test_changed_postimplementation_resume_returns_to_verification(cli,repo,tmp_
     begin(cli,tmp_path,repo);fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
     p,_=comparison(cli,tmp_path);invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION')
     stop=tmp_path/'stop.json';stop.write_text(json.dumps({'reason':'Checkpoint final work','resume_instructions':'Recheck the candidate.'}))
-    _,out,_=invoke(cli,'interrupt','--file',str(stop));(repo/'svc/app.py').write_text('new candidate')
+    _,out,_=invoke(cli,'interrupt','--file',str(stop));(repo/'svc/app.py').write_text('new_candidate = True\n')
     invoke(cli,'resume','--checkpoint',out.strip());st=json.loads(cli('show')[1])
     assert st['phase']=='VERIFICATION' and st['review'] is None
 
 
 @pytest.mark.parametrize('path',['apps/web/src/domains/listing-wizard/ui/alpine/listingWizard.ts','apps/web/src/client/navigation.js'])
 def test_browser_scripts_require_rendered_evidence(cli,repo,tmp_path,path):
+    seed_ui(repo,path)
     begin(cli,tmp_path,repo,anticipated_paths=(path,));file=repo/path;file.parent.mkdir(parents=True,exist_ok=True);file.write_text('export const changed = true;')
+    invoke(cli,'gates','run','--stage','candidate')
     fresh_review(cli,tmp_path);compare_start(cli,tmp_path);p,_=comparison(cli,tmp_path)
     invoke(cli,'review-result','--file',str(p),ok=False)
 
 
 @pytest.mark.parametrize('filename',['apps/web/src/server/listings.ts','apps/web/src/components/listing.server.ts'])
 def test_server_only_typescript_does_not_require_a_browser(cli,repo,tmp_path,filename):
-    begin(cli,tmp_path,repo,anticipated_paths=(filename,));path=repo/filename;path.parent.mkdir(parents=True);path.write_text('export const serverValue = true;')
+    seed_ui(repo,filename)
+    begin(cli,tmp_path,repo,anticipated_paths=(filename,));path=repo/filename;path.parent.mkdir(parents=True,exist_ok=True);path.write_text('export const serverValue = true;')
+    invoke(cli,'gates','run','--stage','candidate')
     fresh_review(cli,tmp_path);compare_start(cli,tmp_path);p,_=comparison(cli,tmp_path)
     invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
 
@@ -76,7 +81,7 @@ def test_correction_fresh_is_independent_and_comparison_requires_fixed_prior_res
     finding={'id':'F-1','source':'AC-01','severity':'BLOCKING','description':'A source defect must be corrected.'}
     p,_=comparison(cli,tmp_path,findings=[finding]);invoke(cli,'review-result','--file',str(p))
     invoke(cli,'correction','--route','al-engineer');invoke(cli,'phase','FINALIZATION')
-    (repo/'svc/app.py').write_text('fixed source');invoke(cli,'phase','VERIFICATION');invoke(cli,'evidence','run','--area','unit','--fresh')
+    (repo/'svc/app.py').write_text('fixed_source = True\n');invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate');invoke(cli,'evidence','run','--area','unit','--fresh')
     fresh_review(cli,tmp_path,'second-fresh');compare_start(cli,tmp_path)
     p,data=comparison(cli,tmp_path,'second-comparison');invoke(cli,'review-result','--file',str(p),ok=False)
     eid=json.loads(cli('show')[1])['evidence']['entries'][-1]['id']

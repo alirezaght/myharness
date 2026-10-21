@@ -134,21 +134,39 @@ def approve_task(db_path: Path, body: bytes, specs: str | None) -> tuple[int, di
             task_id = controller.get_task(data["task"]).id
             store = spec_store(controller, task_id, specs)
             gate = ApprovalGate(controller, task_id, store, task_repo_root(controller, task_id))
-            approval, record, previous = gate.approve(guard=_guard(controller, gate, data))
-            return 201, {
-                "created": True,
-                "approval": approval_dict(approval),
-                "spec": {"version": record.version, "path": str(record.path)},
-                "superseded": previous.version if previous else None,
-                "output": approval_lines(approval, record, previous),
-            }
-    except AlreadyApproved as error:
-        current = error.record
-        line = (
-            f"approval #{current.id} is current: spec v{current.spec_version}"
-            f" {current.content_hash}; nothing was written"
-        )
-        return 200, {"created": False, "approval": approval_dict(current), "output": [line]}
+            try:
+                approval, record, previous = gate.approve(guard=_guard(controller, gate, data))
+                created = True
+                result = {
+                    "created": True,
+                    "approval": approval_dict(approval),
+                    "spec": {"version": record.version, "path": str(record.path)},
+                    "superseded": previous.version if previous else None,
+                    "output": approval_lines(approval, record, previous),
+                }
+            except AlreadyApproved as error:
+                approval, created = error.record, False
+                result = {
+                    "created": False,
+                    "approval": approval_dict(approval),
+                    "output": [f"approval #{approval.id} is current"],
+                }
+            # Sealing has committed (or was already current). A launch failure is separate.
+            from harness.execution import start_execution
+            from harness.execution_store import latest_execution
+
+            try:
+                existing = latest_execution(controller.conn, task_id)
+                host = (
+                    existing["host"]
+                    if existing and existing["approval_id"] == approval.id
+                    else "claude"
+                )
+                launch = start_execution(controller, task_id, host=host, specs=specs)
+                result.update(execution=launch["execution"], launch=launch["launch"])
+            except (OSError, ValueError) as error:
+                result.update(execution=None, launch={"status": "Unavailable", "error": str(error)})
+            return (201 if created else 200), result
     except StaleApproval as error:
         return 409, {"error": str(error), "reload": True}
     except UnresolvedComments as error:

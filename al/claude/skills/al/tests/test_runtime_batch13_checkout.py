@@ -7,7 +7,7 @@ import pytest
 import al_checkout_paths as P
 import al_checkouts as C
 from hook_regression_helpers import invoke
-from batch13_helpers import start,manifest,finished,stub,body
+from batch13_helpers import start,manifest,finished,stub,body,assert_incomplete_admission
 
 
 def command(marker,target='link'):
@@ -35,7 +35,7 @@ def links(repo,tmp,kind):
 @pytest.mark.parametrize('kind',['absolute','relative','chain','directory','intermediate','dangling','cycle','git'])
 def test_unsafe_initial_links_finalize_setup_infra_without_execution(cli,repo,tmp_path,stage,kind):
     outside=links(repo,tmp_path,kind);start(cli,repo);marker=tmp_path/'launched'
-    manifest(cli,tmp_path,command(marker));invoke(cli,'gates','run','--stage',stage,ok=False)
+    manifest(cli,tmp_path,command(marker));invoke(cli,'gates','run','--stage',stage,'--id','boundary',ok=False)
     entry,log=finished(cli,'INFRA',materialized=False)
     assert entry['exit']==126 and b'materialization rejected' in log and not marker.exists()
     assert outside.read_text()=='preserve' and (repo/'svc/app.py').read_text()=='x = 1\n'
@@ -43,7 +43,7 @@ def test_unsafe_initial_links_finalize_setup_infra_without_execution(cli,repo,tm
 
 def test_unsafe_base_is_rejected_even_when_candidate_overlay_deletes_link(cli,repo,tmp_path):
     outside=links(repo,tmp_path,'absolute');start(cli,repo);(repo/'link').unlink();marker=tmp_path/'launched'
-    manifest(cli,tmp_path,command(marker,'svc/app.py'));invoke(cli,'gates','run','--stage','candidate',ok=False)
+    manifest(cli,tmp_path,command(marker,'svc/app.py'));invoke(cli,'gates','run','--stage','candidate','--id','boundary',ok=False)
     finished(cli,'INFRA',materialized=False);assert not marker.exists() and outside.read_text()=='preserve'
 
 
@@ -54,7 +54,7 @@ def test_new_unsafe_candidate_link_is_rejected_before_staging_or_execution(cli,r
         if args and args[0]=='add':staged.append(root)
         return original(root,*args)
     monkeypatch.setattr(C,'run',observe)
-    invoke(cli,'gates','run','--stage','candidate',ok=False);finished(cli,'INFRA',materialized=False)
+    invoke(cli,'gates','run','--stage','candidate','--id','boundary',ok=False);finished(cli,'INFRA',materialized=False)
     assert staged==[] and not marker.exists() and outside.read_text()=='preserve'
 
 
@@ -67,7 +67,7 @@ def test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch(cli,repo
     argv=['glab','api','projects/42/jobs/9'] if remote else command(marker,'svc/app.py')
     manifest(cli,tmp_path,argv,category='ci' if remote else 'contracts',remote=remote,cwd=cwd)
     before=state_file().read_bytes()
-    code,out,err=invoke(cli,'gates','run','--stage',stage,ok=False)
+    code,out,err=invoke(cli,'gates','run','--stage',stage,'--id','boundary',ok=False)
     if cwd=='.git':finished(cli,'INFRA',materialized=False)
     else:
         assert 'check cwd does not exist' in str(code)+out+err
@@ -92,8 +92,9 @@ def test_contained_links_are_supported_and_generated_changes_still_fail(cli,repo
     expression='write_text("changed")' if generate else 'read_text()=="original"'
     code='from pathlib import Path; '+('' if generate else 'assert ')+'Path('+repr(target)+').'+expression
     manifest(cli,tmp_path,[sys.executable,'-c',code],cwd=cwd)
-    invoke(cli,'gates','run','--stage',stage,ok=not generate);finished(cli,'FAIL' if generate else 'PASS')
+    invoke(cli,'gates','run','--stage',stage,'--id','boundary',ok=not generate);finished(cli,'FAIL' if generate else 'PASS')
     assert (repo/'safe/target').read_text()=='original'
+    if shape=='directory':assert_incomplete_admission(cli)
 
 
 @pytest.mark.parametrize('kind',['absolute','relative','chain'])
@@ -118,7 +119,7 @@ def test_resolution_rejects_unsupported_targets_and_excessive_chains(tmp_path):
 def test_admitted_source_directory_absent_from_base_finalizes_infra(cli,repo,tmp_path):
     start(cli,repo);(repo/'newdir').mkdir();(repo/'newdir/file').write_text('new')
     marker=tmp_path/'launched';manifest(cli,tmp_path,command(marker),cwd='newdir')
-    invoke(cli,'gates','run','--stage','base',ok=False);finished(cli,'INFRA',materialized=False)
+    invoke(cli,'gates','run','--stage','base','--id','boundary',ok=False);finished(cli,'INFRA',materialized=False)
     assert not marker.exists()
 
 
@@ -130,5 +131,5 @@ def test_final_boundary_revalidates_links_after_representation_inspection(cli,re
         if root is not None:(root/'late-link').symlink_to(outside)
         return rows
     monkeypatch.setattr(C.S,'records',inspect)
-    invoke(cli,'gates','run','--stage','candidate',ok=False);finished(cli,'INFRA',materialized=False)
+    invoke(cli,'gates','run','--stage','candidate','--id','boundary',ok=False);finished(cli,'INFRA',materialized=False)
     assert not marker.exists() and outside.read_text()=='preserve'

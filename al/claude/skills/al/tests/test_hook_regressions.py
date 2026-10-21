@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import al_shell
+from supported_fixture_helpers import seed_ui
 import al_scope
 import al_store
 import al_traceability
@@ -53,9 +54,11 @@ def test_h166_2_identical_unmanaged_distribution_file_is_not_claimed_or_deleted(
 
 def test_h166_3_listing_wizard_alpine_script_cannot_claim_ui_is_not_applicable(cli, repo, tmp_path):
     relative = "apps/web/src/domains/listing-wizard/ui/alpine/listingWizard.ts"
+    seed_ui(repo,relative)
     begin(cli, tmp_path, repo, anticipated_paths=(relative,))
     path = repo / relative
-    path.parent.mkdir(parents=True); path.write_text("export const changed = true;\n")
+    path.parent.mkdir(parents=True,exist_ok=True); path.write_text("export const changed = true;\n")
+    invoke(cli,"gates","run","--stage","candidate")
     fresh_review(cli, tmp_path, "ui-fresh")
     plan = tmp_path / "approved-plan.md"; plan.write_text("Check rendered listing wizard behavior.\n")
     invoke(cli, "review-compare-start", "--plan", str(plan))
@@ -112,8 +115,9 @@ def test_h166_6_fresh_correction_report_does_not_need_historical_resolution(cli,
     finish_review(cli, tmp_path, findings=blocking_finding(), invocation="first-round")
     invoke(cli, "correction", "--route", "al-engineer")
     invoke(cli, "phase", "FINALIZATION")
-    (repo / "svc/app.py").write_text("fixed implementation\n")
+    (repo / "svc/app.py").write_text("fixed_implementation = True\n")
     invoke(cli, "phase", "VERIFICATION")
+    invoke(cli, "gates", "run", "--stage", "candidate")
     invoke(cli, "evidence", "run", "--area", "unit", "--fresh")
     invoke(cli, "review-start")
     invoke(cli, "review-packet", "--stage", "fresh")

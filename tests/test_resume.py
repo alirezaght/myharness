@@ -8,7 +8,7 @@ from harness.design import ArchitectureDesigner
 from harness.design_models import DesignSection
 from harness.interview import InterviewEngine
 from harness.phases import Phase
-from harness.resume import NOTHING_TO_RESUME, resumable_tasks, resume_point
+from harness.resume import resumable_tasks, resume_point
 from harness.spec_manager import SpecificationManager
 from harness.spec_store import SpecStore
 from tests.complete_task import FIXTURE, settle
@@ -116,10 +116,12 @@ def test_approval_current_stale_and_blocked(controller, sample_repo):
 
     ApprovalGate(controller, task_id, _store(sample_repo, task_id), sample_repo).approve()
     point = _point(controller, sample_repo, task_id)
-    assert point.approval.endswith("(current)") and not point.resumable
-    assert point.next_command is None and point.render().endswith(NOTHING_TO_RESUME)
+    assert point.approval.endswith("(current)") and point.resumable
+    assert point.next_command == f"harness execution start {task_id}"
+    assert point.render().endswith(f"next: harness execution start {task_id}")
     assert point.checkpoint.label == "approval"
-    assert point.to_dict()["next"] is None and point.to_dict()["resumable"] is False
+    assert point.to_dict()["next"] == f"harness execution start {task_id}"
+    assert point.to_dict()["resumable"] is True
 
     controller.go_back(task_id, Phase.FINAL_REVIEW, FIXTURE)
     controller.advance(task_id)
@@ -133,7 +135,9 @@ def test_approval_current_stale_and_blocked(controller, sample_repo):
 
 
 @needs_git
-def test_resumable_tasks_skip_approved_and_list_newest_first(controller, sample_repo):
+def test_resumable_tasks_include_approved_work_not_started_and_list_newest_first(
+    controller, sample_repo
+):
     done = _in_approval(controller)
     ApprovalGate(controller, done, _store(sample_repo, done), sample_repo).approve()
     older, newer = _investigated(controller, "older"), _investigated(controller, "newer")
@@ -146,7 +150,8 @@ def test_resumable_tasks_skip_approved_and_list_newest_first(controller, sample_
             )
     before = _counts(controller.conn)
     points = resumable_tasks(controller, lambda t: _store(sample_repo, t), lambda _t: sample_repo)
-    assert [p.task.id for p in points] == [newer, older]
+    assert [p.task.id for p in points] == [done, newer, older]
+    assert points[0].next_command == f"harness execution start {done}"
     assert _counts(controller.conn) == before
 
 

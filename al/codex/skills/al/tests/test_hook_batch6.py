@@ -33,10 +33,12 @@ def _start(cli, tmp_path, repo, classification="SMALL", designer="no", manifest=
     path = tmp_path / "gates.json"
     path.write_text(json.dumps(manifest or _manifest(state)))
     invoke(cli, "gates", "plan", "--file", str(path))
+    invoke(cli, "gates", "run", "--stage", "base")
     return state
 
 
 def _to_verification(cli, tmp_path):
+    invoke(cli, "gates", "run", "--stage", "base")
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "engineer", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "engineer", "--outcome", "success")
@@ -75,6 +77,7 @@ def test_changed_sourced_rule_can_resume_and_replan(cli, repo, tmp_path, state_f
     replacement_path = tmp_path / "replacement-gates.json"; replacement_path.write_text(json.dumps(replacement))
     invoke(cli, "gates", "plan", "--file", str(replacement_path))
     invoke(cli, "spec-gate", "SPEC_READY")
+    invoke(cli, "gates", "run", "--stage", "base")
     invoke(cli, "phase", "IMPLEMENTATION")
 
 
@@ -87,7 +90,7 @@ def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path,
     command = [sys.executable, "-c", "print('candidate gate passed')"]
     path = tmp_path / "gates.json"; path.write_text(json.dumps(_manifest(state, source=source, active="loc", argv=command)))
     invoke(cli, "gates", "plan", "--file", str(path))
-    invoke(cli, "gates", "run", "--stage", "base", "--id", "loc")
+    invoke(cli, "gates", "run", "--stage", "base")
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "writer-one", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "writer-one", "--outcome", "success")
@@ -95,21 +98,23 @@ def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path,
     invoke(cli, "evidence", "plan", "--area", "unit", "--tier", "broad", "--kind", "check",
            "--scope", "svc/app.py", "--", sys.executable, "-c", "print('verified')")
     invoke(cli, "evidence", "run", "--area", "unit")
-    invoke(cli, "gates", "run", "--stage", "candidate", "--id", "loc")
+    invoke(cli, "gates", "run", "--stage", "candidate")
     amendment = tmp_path / "amendment.json"
     amendment.write_text(json.dumps({"id": "AM-1", "text": "User adds a substantive verification requirement.",
                                      "source": "user", "affected_criteria": ["AC-01"]}))
     invoke(cli, "task", "amend", "--file", str(amendment))
     invoke(cli, "spec-gate", "SPEC_READY")
-    invoke(cli, "gates", "run", "--stage", "base", "--id", "loc")
+    invoke(cli, "gates", "run", "--stage", "base")
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "writer-two", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "writer-two", "--outcome", "success")
     invoke(cli, "phase", "VERIFICATION")
     invoke(cli, "evidence", "run", "--area", "unit", "--fresh")
+    invoke(cli, "gates", "run", "--stage", "candidate", "--id", "imports-root")
     before = state_file().read_bytes()
     code, out, err = cli("review-start")
     assert code != 0, f"amendment-invalidated candidate gate was reused: {out}{err}"
+    assert "candidate gate loc requires passing evidence" in str(code) + out + err
     assert state_file().read_bytes() == before
     invoke(cli, "gates", "run", "--stage", "candidate", "--id", "loc")
     invoke(cli, "review-start")

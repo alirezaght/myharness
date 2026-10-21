@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 AL = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(AL / "tests"))
+from test_resources import role_dir
 SKILL = (AL / "SKILL.md").read_text()
 REVIEW = (AL / "reference" / "review.md").read_text()
 HANDOFFS = (AL / "reference" / "handoffs.md").read_text()
@@ -22,7 +24,7 @@ def test_review_docs_require_clean_fresh_context_and_separate_comparison():
 
 
 def test_comparison_protocol_names_typed_inputs_and_inspection_hashes():
-    roles = Path(__file__).resolve().parents[4] / ".claude" / "agents" / "al"
+    roles = role_dir(__file__)
     architect = (roles / "al-architect.md").read_text()
     for text in (SKILL, REVIEW, HANDOFFS, architect):
         assert "review-compare-start --plan" in text
@@ -108,8 +110,8 @@ def test_ci_context_contract_is_run_bound_and_non_executing():
     context_schema = json.loads((AL / "reference/schemas/ci-context-artifact.json").read_text())
     example = json.loads((AL / "reference/examples/ci-context-artifact.json").read_text())
     docs = (AL / "reference/gates.md").read_text()
-    repo = Path(__file__).resolve().parents[4]
-    roles = [repo / ".claude/agents/al/al-architect.md", repo / ".claude/agents/al/al-architect-fallback.md"]
+    roles = [role_dir(__file__) / "al-architect.md",
+             role_dir(__file__) / "al-architect-fallback.md"]
     assert all("CI profile selection" in role.read_text() for role in roles)
     declaration = gate_schema["properties"]["ci_context"]
     assert declaration["$ref"] == "ci-context-artifact.json#/$defs/declaration"
@@ -151,3 +153,41 @@ def test_migration_script_guard_documentation_names_exact_exception():
                      "exact `migration:verify`", "`--dry-run`", "do not inherit"):
         assert required in parallelism, required
 
+
+
+def test_service_coverage_policy_and_schemas_match_admission_contract():
+    import json
+    coverage = (AL / "reference" / "service-coverage.md").read_text()
+    assessment = json.loads((AL / "reference/schemas/service-coverage.json").read_text())
+    facts = json.loads((AL / "reference/schemas/repository-facts.json").read_text())
+    manifest = json.loads((AL / "reference/schemas/gate-manifest.json").read_text())
+    example = json.loads((AL / "reference/examples/service-coverage.json").read_text())
+    for outcome in ("identified", "exhaustive", "incomplete"):
+        assert f"`{outcome}`" in coverage
+        assert outcome in str(assessment["$defs"]["assessment"]["properties"]["outcome"]["enum"])
+    for term in ("dynamic import", "service enumeration", "check discovery", "opaque", "architecture_check.py",
+                 "real tool", "execution_signature", "current evidence ledger"):
+        assert term in coverage
+    assert {"dependencies", "enumeration", "checks", "scan_inputs", "unsupported_boundaries"} <= set(facts["required"])
+    assert "service_coverage" in manifest["properties"]
+    assert {"obligation_ids", "execution_signature"} <= set(manifest["properties"]["gates"]["items"]["properties"])
+    assert example["assessment"]["outcome"] == "exhaustive"
+    assert example["assessment"]["enumeration"]["status"] == "complete"
+    assert example["assessment"]["check_discovery"]["status"] == "complete"
+    checks = example["assessment"]["required_bindings"]
+    assert {tuple(check["units"]) for check in checks} == {
+        ("services/a",),
+        ("services/b",),
+    }
+    assert set(example["assessment"]["check_discovery"]["obligation_ids"]) == {
+        check["id"] for check in checks
+    }
+    for check in checks:
+        assert check["runner_resource"]["name"] == "al_architecture_check.py"
+        assert check["runner_resource"]["version"] == 1
+        assert check["argv"][1] == "-I"
+        assert check["argv"][2].endswith("/scripts/al_architecture_check.py")
+        assert check["argv"][3:] == ["--unit", check["units"][0]]
+    assert {row["obligation_id"] for row in example["bindings"]} == {
+        check["id"] for check in checks
+    }

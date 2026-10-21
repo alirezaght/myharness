@@ -21,8 +21,23 @@ from tests.test_comments import A, B, _everything, _in, _state, _task
 from tests.test_dashboard import _db_dump
 
 OPEN, ADDRESSED, RESOLVED = CommentStatus.OPEN, CommentStatus.ADDRESSED, CommentStatus.RESOLVED
-BASE_COMMANDS = ["approve", "classify", "decision", "design", "interview", "investigate", "phase",
-                 "resume", "review", "show", "spec", "start", "testplan"]  # fmt: skip
+BASE_COMMANDS = [
+    "approve",
+    "classify",
+    "dashboard",
+    "decision",
+    "design",
+    "execution",
+    "interview",
+    "investigate",
+    "phase",
+    "resume",
+    "review",
+    "show",
+    "spec",
+    "start",
+    "testplan",
+]
 
 
 def _events(conn: sqlite3.Connection, kind: str) -> list[dict]:

@@ -1,10 +1,11 @@
 """Guard the separate copies with an exhaustive shared-file parity manifest."""
 import json
 from pathlib import Path
+from test_resources import package_root, peer_package_root
+import json
 
-CODEX = Path(__file__).resolve().parents[1]
-REPO = Path(__file__).resolve().parents[4]
-CLAUDE = REPO / ("." + "claude") / "skills" / "al"
+CODEX = package_root(__file__)
+CLAUDE = peer_package_root(__file__)
 
 def test_manifest_is_exhaustive_and_only_names_platform_adapters():
     manifest = json.loads((CODEX / "reference" / "parity-manifest.json").read_text())
@@ -16,6 +17,14 @@ def test_manifest_is_exhaustive_and_only_names_platform_adapters():
                    for adapter in adapters["claude_only"]}
     different = set(adapters["different_content"])
     shared = set(manifest["shared_files"])
+    coverage_resources = {
+        "al_architecture_check.py", "al_ci_verification.py", "al_python_imports.py",
+        "al_repo_adapters.py", "al_repo_amber.py", "al_repo_python.py",
+        "al_repository_facts.py", "al_service_coverage.py",
+    }
+    assert coverage_resources <= shared
+    assert {"schemas/service-coverage.json", "schemas/repository-facts.json",
+            "examples/service-coverage.json", "service-coverage.md"} <= set(manifest["shared_reference_files"])
     assert len(shared) == len(manifest["shared_files"])
     assert codex_files - claude_files == codex_only
     assert claude_files - codex_files == claude_only
@@ -51,7 +60,15 @@ def test_manifest_is_exhaustive_and_only_names_platform_adapters():
         for requirement in ("review-compare-start --plan", "--pseudocode", "inspected_artifacts"):
             assert requirement in handoffs
         assert "write ownership must be settled" in parallelism
-    assert different == {"al_models.py", "al_state.py", "al_store.py"}
+        coverage = json.loads((package / "reference" / "schemas" / "service-coverage.json").read_text())
+        assert set(coverage["$defs"]["assessment"]["required"]) >= {
+            "outcome", "enumeration", "check_discovery", "required_bindings", "gaps"
+        }
+        gate_schema = json.loads((package / "reference" / "schemas" / "gate-manifest.json").read_text())
+        gate_properties = gate_schema["properties"]["gates"]["items"]["properties"]
+        assert {"obligation_ids", "execution_signature"} <= set(gate_properties)
+        assert "service_coverage" in gate_schema["properties"]
+    assert different == {"al_models.py", "al_start.py", "al_state.py", "al_store.py"}
     def adapter_name(stem):
         return "_".join(("al", stem)) + ".py"
     assert claude_only == {

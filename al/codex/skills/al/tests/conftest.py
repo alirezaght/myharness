@@ -30,18 +30,28 @@ def _git(repo, *args):
                         "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
 
 
-@pytest.fixture
-def repo(tmp_path):
-    """A throw-away repository, so `start` and the evidence fingerprints never
-    read the real working tree."""
-    root = tmp_path / "repo"
+@pytest.fixture(scope="session")
+def seed_repo(tmp_path_factory):
+    """Commit the standard repository once; tests copy its isolated Git data."""
+    root = tmp_path_factory.mktemp("al-git-seed") / "repo"
     for rel, text in {"svc/app.py": "x = 1\n", "svc/tests/fixtures/rows.json": "[]\n",
                       "web/app.js": "let a = 1\n", "docs/readme.md": "hi\n"}.items():
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text)
+    (root/"pyproject.toml").write_text('[project]\nname="al-fixture"\ndependencies=[]\n[tool.setuptools.packages.find]\nwhere=["svc"]\n[tool.al.architecture]\nforbidden=["forbidden_dependency"]\n')
+    (root / ".gitignore").write_text("__pycache__/\n")
     _git(root, "init", "-q")
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "init")
+    return root
+
+
+@pytest.fixture
+def repo(tmp_path, seed_repo):
+    """Give each test an independent worktree without repeating Git setup."""
+    root = tmp_path / "repo"
+    import shutil
+    shutil.copytree(seed_repo, root, symlinks=True)
     return root
 
 
@@ -88,6 +98,8 @@ def cli(monkeypatch, capsys):
     `sys.exit(<int>)`, or the string passed to an argument-error
     `sys.exit(<message>)` (Python does not stringify/print that for us inside
     a try/except — the caller compares against the message directly)."""
+    from fixture_state import StateObserver
+    observer = StateObserver(None)
     def _run(*args):
         monkeypatch.setattr(sys, "argv", ["al_state.py", *args])
         try:
@@ -96,5 +108,10 @@ def cli(monkeypatch, capsys):
         except SystemExit as exc:
             result = exc.code
         captured = capsys.readouterr()
+        command = args[2:] if args[:1] == ('--session',) else args
+        if result == 0 and command[:1] == ('start',):
+            observer.bind_started(captured.out)
         return result, captured.out, captured.err
+    _run.state = observer.read
+    _run.fixed_session = observer.default_session
     return _run

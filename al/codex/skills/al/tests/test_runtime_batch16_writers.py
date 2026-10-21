@@ -1,7 +1,6 @@
 """Every public writer must satisfy active and prospective gate coverage."""
 import json
-import shutil
-from pathlib import Path
+from test_service_coverage import unit,put
 import pytest
 import al_gate_inventory as V
 from hook_regression_helpers import invoke
@@ -43,11 +42,18 @@ def test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer(cl
     elif change=='path':target='docs/existing.md'
     else:target='apps/new/app.ts'
     unchanged_refusal(cli,state_file,target)
+    if change=='unit':
+        put(repo,'apps/new/package.json','{"name":"new"}')
+        put(repo,'.gitlab-ci.yml','new-verify:\n  script: python3 -m json.tool apps/new/package.json\n  rules:\n    - changes: [apps/new/**/*]\n')
     replacement=manifest(cli,repo,[target]);plan(cli,tmp_path,replacement);st=state(cli)
     assert st['phase']==phase and st['completed_phases']==prior['completed_phases']
     assert st['gate_recovery']['replacement_manifest']==st['gate_manifests'][-1]['sha256']
     unchanged_refusal(cli,state_file,target)
-    invoke(cli,'gates','run','--stage','base');writer(cli,target)
+    invoke(cli,'gates','run','--stage','base',ok=change!='unit')
+    if change=='unit':
+        failed=state(cli)['gate_runs'][-1]['gate']
+        invoke(cli,'gates','decision','--id',failed,'--action','fix','--source','Explicit fixture developer instruction','--reason','Implement the new manifest absent from the pinned baseline after recording its real failed check.')
+    writer(cli,target)
     assert state(cli)['writers']['writer']['state']=='ACTIVE' and state(cli)['gate_recovery_history']
 
 
@@ -63,7 +69,8 @@ def test_current_manifest_cannot_request_replacement_privilege_or_replan_active_
 
 def test_directory_inventory_discovers_units_and_sourced_ci_then_missing_job_refuses(cli,repo,tmp_path,state_file):
     p=repo/'apps/web/a.ts';p.parent.mkdir(parents=True);p.write_text('export const a=1\n')
-    (repo/'.gitlab-ci.yml').write_text('web-verify:\n  script: echo verify\n  rules:\n    - changes: [apps/web/**/*]\n')
+    (repo/'.gitlab-ci.yml').write_text('web-verify:\n  script: python3 -m json.tool apps/web/package.json\n  rules:\n    - changes: [apps/web/**/*]\n')
+    put(repo,'apps/web/package.json','{"name":"web"}')
     setup(cli,repo,tmp_path);inv=V.inventory(state(cli),['apps'])
     assert 'apps/web' in inv['units'] and {j['job'] for j in inv['ci']['obligations']}=={'web-verify'}
     unchanged_refusal(cli,state_file,'apps')
@@ -75,23 +82,28 @@ def test_directory_inventory_discovers_units_and_sourced_ci_then_missing_job_ref
 
 
 def test_unknown_prospective_ci_remains_unresolved(cli,repo,tmp_path,state_file):
-    (repo/'.gitlab-ci.yml').write_text('verify:\n  script: echo verify\n  rules:\n    - changes: [apps/web/**/*]\n')
+    (repo/'.gitlab-ci.yml').write_text('verify:\n  script: python3 -m json.tool apps/web/package.json\n  rules:\n    - changes: [apps/web/**/*]\n')
     (repo/'apps/web').mkdir(parents=True)
+    put(repo,'apps/web/package.json','{"name":"web"}')
     setup(cli,repo,tmp_path);unchanged_refusal(cli,state_file,'apps/web')
     m=manifest(cli,repo,['apps/web']);assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED' for g in m['gates'])
     plan(cli,tmp_path,m);unchanged_refusal(cli,state_file,'apps/web/a.ts')
 
 
 def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(cli,repo,tmp_path,state_file):
-    root=Path(__file__).resolve().parents[4]
-    shutil.copytree(root/'ci/scripts/import_review',repo/'ci/scripts/import_review',ignore=shutil.ignore_patterns('__pycache__'))
+    (repo/'pyproject.toml').unlink();(repo/'svc/app.py').unlink();(repo/'web/app.js').unlink()
     for name,text in [('packages/shared/src/common.py','VALUE=1\n'),('services/a/src/app.py','import common\n')]:
         p=repo/name;p.parent.mkdir(parents=True);p.write_text(text)
+    for path in ('packages/shared','services/a'):unit(repo,path)
     setup(cli,repo,tmp_path,['packages/shared/src/common.py'])
     p=repo/'services/b/src/app.py';p.parent.mkdir(parents=True);p.write_text('import common\n')
+    unit(repo,'services/b')
     unchanged_refusal(cli,state_file,'packages/shared/src/common.py')
     m=manifest(cli,repo,['packages/shared/src/common.py']);assert any('services/b' in g['units'] for g in m['gates'] if g['category']=='lint-imports')
-    plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base');writer(cli,'packages/shared/src/common.py')
+    plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base',ok=False)
+    failed=state(cli)['gate_runs'][-1]['gate']
+    invoke(cli,'gates','decision','--id',failed,'--action','fix','--source','Explicit fixture developer instruction','--reason','Implement this newly admitted service, absent in the pinned baseline.')
+    writer(cli,'packages/shared/src/common.py')
     invoke(cli,'writer','finish','--id','writer','--outcome','success')
     (repo/'packages/shared/src/common.py').write_text('VALUE=__import__("unknown")\n')
     unchanged_refusal(cli,state_file,'packages/shared/src/common.py')
@@ -99,8 +111,15 @@ def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(
 
 def test_covered_parent_still_requires_prospective_new_unit_obligations(cli,repo,tmp_path,state_file):
     p=repo/'apps/web/a.ts';p.parent.mkdir(parents=True);p.write_text('export const a=1\n')
+    put(repo,'apps/web/package.json','{"name":"web"}')
+    put(repo,'.gitlab-ci.yml','web-verify:\n  script: python3 -m json.tool apps/web/package.json\n')
     setup(cli,repo,tmp_path,['apps'])
     unchanged_refusal(cli,state_file,'apps/new/app.ts')
+    put(repo,'apps/new/package.json','{"name":"new"}')
+    put(repo,'.gitlab-ci.yml','web-verify:\n  script:\n    - python3 -m json.tool apps/web/package.json\n    - python3 -m json.tool apps/new/package.json\n')
     plan(cli,tmp_path,manifest(cli,repo,['apps/new/app.ts']))
     unchanged_refusal(cli,state_file,'apps/new/app.ts')
-    invoke(cli,'gates','run','--stage','base');writer(cli,'apps/new/app.ts')
+    invoke(cli,'gates','run','--stage','base',ok=False)
+    failed=state(cli)['gate_runs'][-1]['gate']
+    invoke(cli,'gates','decision','--id',failed,'--action','fix','--source','Explicit fixture developer instruction','--reason','Implement the newly admitted manifest absent from the pinned baseline; retain its failed baseline evidence.')
+    writer(cli,'apps/new/app.ts')

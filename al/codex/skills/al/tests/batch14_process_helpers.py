@@ -32,7 +32,8 @@ def prepare(cli,repo,tmp,monkeypatch,remote,mode='wait'):
         monkeypatch.setenv('PATH',str(bin)+os.pathsep+os.environ['PATH']);argv=['glab','api','projects/42/jobs/9']
     else:argv=[sys.executable,'scripts/owned_gate.py']
     m=manifest_for(st,repo,anticipated_paths=['svc/app.py','scripts/owned_gate.py'],category='ci' if remote else 'contracts',argv=argv)
-    g=next(g for g in m['gates'] if g['applicability']=='APPLICABLE')
+    g=next(g for g in m['gates'] if g['id']==('ci' if remote else 'contracts'))
+    g['id']='owned-boundary'
     if remote:
         g.update(execution_kind='remote',remote={'provider':'gitlab','project_id':42,'job_name':'verify'},source=next(r for r in m['rules'] if r['path']=='.gitlab-ci.yml')|{'job':'verify'})
     plan(cli,tmp,m)

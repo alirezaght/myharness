@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "kind": "user-factual-activity-acknowledgements",
+  "source": "Exact user replies to request_user_input_async in active root conversation",
+  "recorded_at": "2026-10-19T21:15:35.037133+00:00",
+  "current_run_excluded": "al-20261019T112752Z-d843eb",
+  "acknowledgements": [
+    {
+      "question": "Are any AL sessions in the other repositories still actively working? The inventory found 27 records outside myharness that are not approved, including records marked RUNNING. AL\u2019s existing installer guard blocks changes while a run may be active; I can continue implementation while you clarify.",
+      "answer": "All other AL sessions are inactive or abandoned"
+    },
+    {
+      "question": "Are the older AL sessions inside myharness also inactive or abandoned? There are seven older Claude records, some still marked RUNNING; this current Codex run is excluded. The existing installer guard treats potentially resumable runs as blockers.",
+      "answer": "All older myharness sessions are inactive or abandoned"
+    }
+  ],
+  "limits": [
+    "Historical records remain unchanged.",
+    "Does not attest a future changed runtime inventory.",
+    "No permission to ignore a live process, active writer or lease, source drift or unknown identity.",
+    "Existing tagged installation guard remains unchanged.",
+    "Current AL run must become terminal through guarded source approval."
+  ]
+}

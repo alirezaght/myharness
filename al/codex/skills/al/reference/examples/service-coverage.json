@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "adapter": {
+    "id": "python",
+    "version": 1
+  },
+  "policy_version": 1,
+  "repository": {
+    "root": "/repo",
+    "base_oid": "<pinned-base-oid>"
+  },
+  "assessment": {
+    "schema_version": 1,
+    "outcome": "exhaustive",
+    "known_affected": [
+      "services/a"
+    ],
+    "potential_services": [
+      "services/a",
+      "services/b"
+    ],
+    "selected_services": [
+      "services/a",
+      "services/b"
+    ],
+    "dependency_uncertainties": [
+      {
+        "code": "uncertain-import",
+        "unit": "packages/shared",
+        "path": "packages/shared/src/common.py",
+        "location": 12,
+        "target": null,
+        "reason": "nonliteral dynamic target"
+      }
+    ],
+    "enumeration": {
+      "status": "complete",
+      "boundary_ids": [
+        ".",
+        "services/*",
+        "packages/*"
+      ],
+      "gap_ids": []
+    },
+    "check_discovery": {
+      "status": "complete",
+      "obligation_ids": [
+        "imports-services-a",
+        "imports-services-b"
+      ],
+      "gap_ids": []
+    },
+    "required_bindings": [
+      {
+        "id": "imports-services-a",
+        "category": "lint-imports",
+        "units": [
+          "services/a"
+        ],
+        "required": true,
+        "argv": [
+          "<sys.executable>",
+          "-I",
+          "<selected AL package>/scripts/al_architecture_check.py",
+          "--unit",
+          "services/a"
+        ],
+        "cwd": ".",
+        "execution_kind": "local",
+        "env_names": [],
+        "sources": [],
+        "required_scope": [
+          "services/a",
+          "services/a/pyproject.toml"
+        ],
+        "source_chain": [
+          {
+            "path": "services/a/pyproject.toml",
+            "sha256": "<sha256>",
+            "selector": "tool.al.architecture",
+            "semantics": "required architecture verification"
+          }
+        ],
+        "obligation_ids": [
+          "imports-services-a"
+        ],
+        "execution_signature": "<sha256>",
+        "runner_resource": {
+          "name": "al_architecture_check.py",
+          "version": 1,
+          "sha256": "<sha256>"
+        }
+      },
+      {
+        "id": "imports-services-b",
+        "category": "lint-imports",
+        "units": [
+          "services/b"
+        ],
+        "required": true,
+        "argv": [
+          "<sys.executable>",
+          "-I",
+          "<selected AL package>/scripts/al_architecture_check.py",
+          "--unit",
+          "services/b"
+        ],
+        "cwd": ".",
+        "execution_kind": "local",
+        "env_names": [],
+        "sources": [],
+        "required_scope": [
+          "services/b",
+          "services/b/pyproject.toml"
+        ],
+        "source_chain": [
+          {
+            "path": "services/b/pyproject.toml",
+            "sha256": "<sha256>",
+            "selector": "tool.al.architecture",
+            "semantics": "required architecture verification"
+          }
+        ],
+        "obligation_ids": [
+          "imports-services-b"
+        ],
+        "execution_signature": "<sha256>",
+        "runner_resource": {
+          "name": "al_architecture_check.py",
+          "version": 1,
+          "sha256": "<sha256>"
+        }
+      }
+    ],
+    "gaps": []
+  },
+  "semantic_requirements": {
+    "schema_version": 1,
+    "repository": {
+      "root": "/repo",
+      "base_oid": "<pinned-base-oid>"
+    },
+    "adapter": {
+      "id": "python",
+      "version": 1
+    },
+    "policy_version": 1,
+    "units": [
+      {
+        "id": "packages/shared",
+        "path": "packages/shared",
+        "languages": [
+          "python"
+        ],
+        "source_roots": [
+          "packages/shared/src"
+        ],
+        "module_contexts": [
+          {
+            "source_root": "packages/shared/src",
+            "local_dependencies": []
+          }
+        ],
+        "provenance": [
+          "packages/shared/pyproject.toml"
+        ],
+        "roles": [],
+        "external_distributions": [],
+        "python_requirement": null
+      },
+      {
+        "id": "services/a",
+        "path": "services/a",
+        "languages": [
+          "python"
+        ],
+        "source_roots": [
+          "services/a/src"
+        ],
+        "module_contexts": [
+          {
+            "source_root": "services/a/src",
+            "local_dependencies": []
+          }
+        ],
+        "provenance": [
+          "services/a/pyproject.toml"
+        ],
+        "roles": [],
+        "external_distributions": [],
+        "python_requirement": null
+      },
+      {
+        "id": "services/b",
+        "path": "services/b",
+        "languages": [
+          "python"
+        ],
+        "source_roots": [
+          "services/b/src"
+        ],
+        "module_contexts": [
+          {
+            "source_root": "services/b/src",
+            "local_dependencies": []
+          }
+        ],
+        "provenance": [
+          "services/b/pyproject.toml"
+        ],
+        "roles": [],
+        "external_distributions": [],
+        "python_requirement": null
+      }
+    ],
+    "enumeration": {
+      "boundaries": [
+        ".",
+        "services/*",
+        "packages/*"
+      ],
+      "declarations": [
+        "packages/shared/pyproject.toml",
+        "services/a/pyproject.toml",
+        "services/b/pyproject.toml"
+      ],
+      "observed_members": [
+        "packages/shared",
+        "services/a",
+        "services/b"
+      ],
+      "exclusions": [],
+      "gaps": []
+    },
+    "dependencies": {
+      "edges": [
+        [
+          "services/a/src/app.py",
+          "packages/shared/src/common.py"
+        ]
+      ],
+      "known_affected": [
+        "services/a"
+      ],
+      "potential_services": [
+        "services/a",
+        "services/b"
+      ],
+      "uncertainties": [
+        {
+          "code": "uncertain-import",
+          "unit": "packages/shared",
+          "path": "packages/shared/src/common.py",
+          "target": null,
+          "reason": "nonliteral dynamic target"
+        }
+      ],
+      "resolved_dynamic": [],
+      "policy_selection": [],
+      "import_targets": [
+        [
+          "base",
+          "services/a/src/app.py",
+          "common",
+          "static"
+        ]
+      ],
+      "source_membership": [
+        [
+          "base",
+          "packages/shared/src/common.py",
+          "packages/shared",
+          "common"
+        ],
+        [
+          "base",
+          "services/a/src/app.py",
+          "services/a",
+          "app"
+        ],
+        [
+          "base",
+          "services/b/src/app.py",
+          "services/b",
+          "app"
+        ],
+        [
+          "current",
+          "packages/shared/src/common.py",
+          "packages/shared",
+          "common"
+        ],
+        [
+          "current",
+          "services/a/src/app.py",
+          "services/a",
+          "app"
+        ],
+        [
+          "current",
+          "services/b/src/app.py",
+          "services/b",
+          "app"
+        ]
+      ]
+    },
+    "checks": {
+      "obligations": [
+        {
+          "id": "imports-services-a",
+          "category": "lint-imports",
+          "units": [
+            "services/a"
+          ]
+        },
+        {
+          "id": "imports-services-b",
+          "category": "lint-imports",
+          "units": [
+            "services/b"
+          ]
+        }
+      ],
+      "bindings": [
+        {
+          "id": "imports-services-a",
+          "category": "lint-imports",
+          "units": [
+            "services/a"
+          ],
+          "required": true,
+          "argv": [
+            "<sys.executable>",
+            "-I",
+            "<selected AL package>/scripts/al_architecture_check.py",
+            "--unit",
+            "services/a"
+          ],
+          "cwd": ".",
+          "execution_kind": "local",
+          "env_names": [],
+          "sources": [],
+          "required_scope": [
+            "services/a",
+            "services/a/pyproject.toml"
+          ],
+          "source_chain": [
+            {
+              "path": "services/a/pyproject.toml",
+              "sha256": "<sha256>",
+              "selector": "tool.al.architecture",
+              "semantics": "required architecture verification"
+            }
+          ],
+          "obligation_ids": [
+            "imports-services-a"
+          ],
+          "execution_signature": "<sha256>",
+          "runner_resource": {
+            "name": "al_architecture_check.py",
+            "version": 1,
+            "sha256": "<sha256>"
+          }
+        },
+        {
+          "id": "imports-services-b",
+          "category": "lint-imports",
+          "units": [
+            "services/b"
+          ],
+          "required": true,
+          "argv": [
+            "<sys.executable>",
+            "-I",
+            "<selected AL package>/scripts/al_architecture_check.py",
+            "--unit",
+            "services/b"
+          ],
+          "cwd": ".",
+          "execution_kind": "local",
+          "env_names": [],
+          "sources": [],
+          "required_scope": [
+            "services/b",
+            "services/b/pyproject.toml"
+          ],
+          "source_chain": [
+            {
+              "path": "services/b/pyproject.toml",
+              "sha256": "<sha256>",
+              "selector": "tool.al.architecture",
+              "semantics": "required architecture verification"
+            }
+          ],
+          "obligation_ids": [
+            "imports-services-b"
+          ],
+          "execution_signature": "<sha256>",
+          "runner_resource": {
+            "name": "al_architecture_check.py",
+            "version": 1,
+            "sha256": "<sha256>"
+          }
+        }
+      ],
+      "gaps": []
+    },
+    "unsupported_boundaries": [],
+    "stable": true
+  },
+  "semantic_sha256": "<recomputed-semantic-sha256>",
+  "provenance": {
+    "scan_inputs": [],
+    "rule_sources": [
+      {
+        "path": "services/a/pyproject.toml",
+        "sha256": "<sha256>"
+      },
+      {
+        "path": "services/b/pyproject.toml",
+        "sha256": "<sha256>"
+      }
+    ],
+    "membership": [
+      "packages/shared",
+      "services/a",
+      "services/b"
+    ],
+    "absent_paths": [],
+    "digest": "<recomputed-provenance-sha256>"
+  },
+  "bindings": [
+    {
+      "obligation_id": "imports-services-a",
+      "gate_id": "imports-services-a",
+      "execution_signature": "<sha256>"
+    },
+    {
+      "obligation_id": "imports-services-b",
+      "gate_id": "imports-services-b",
+      "execution_signature": "<sha256>"
+    }
+  ]
+}

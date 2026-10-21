@@ -4,7 +4,7 @@ const API = "/api/dashboard";
 const STREAM = "/api/stream";
 const RETRY_MS = 2000;
 const MAX_RETRY_MS = 30000;
-const NOTHING_TO_RESUME = "nothing to resume: approved for implementation (handoff is Phase 3)";
+const NOTHING_TO_RESUME = "execution completed; no work to resume";
 
 let rendered = false;
 let source = null;
@@ -297,7 +297,9 @@ function renderTask(task) {
   directory.append(el("code", task.spec.directory));
   list.append(el("dt", "Spec directory"), directory);
   list.append(el("dt", "Latest activity"), el("dd", activityText(task.latest_activity)));
-  section.append(list, renderApprovalCenter(task), renderResume(task.resume));
+  section.append(list, renderApprovalCenter(task));
+  if (task.execution) section.append(renderExecution(task.id, task.execution));
+  section.append(renderResume(task.resume));
   section.append(
     renderSpec(task.spec, task.phase),
     renderDecisions(task.decisions),
@@ -322,9 +324,9 @@ function render(data) {
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
   const content = data.task ? renderTask(data.task) : renderNotice(data.notice);
-  withApprovalFocus(() =>
-    withCommentFocus(() => main.replaceChildren(renderNav(data.tasks, selected), content)),
-  );
+  withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() =>
+    main.replaceChildren(renderNav(data.tasks, selected), content),
+  )));
 }
 
 function renderError(message) {

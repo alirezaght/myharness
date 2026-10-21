@@ -47,6 +47,10 @@ def obligations(prior,current,fresh=False):
 
 def validate(st,report,prior=()):
     package=A.read_json(st['task_package'])
+    if 'proof_admission' in st:
+        from al_verification_authority import authority_binding
+        authority=authority_binding(st)['value']
+        package=dict(package,criteria=[entry['id'] for entry in authority['criteria']],invariants=[entry['id'] for entry in authority['invariants']])
     criteria=report.get('criteria'); findings=report.get('findings')
     if not isinstance(criteria,list) or not isinstance(findings,list): refuse('report requires criteria and findings arrays')
     ids=[c.get('id') for c in criteria]

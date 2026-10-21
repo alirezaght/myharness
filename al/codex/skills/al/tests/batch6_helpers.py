@@ -22,9 +22,10 @@ def replanned_approval(cli,tmp,repo):
     assert state(cli)['phase']=='PLANNING' and state(cli)['spec_status'] is None
     invoke(cli,'review-start',ok=False);invoke(cli,'phase','IMPLEMENTATION',ok=False)
     file=tmp/'replacement.json';file.write_text(json.dumps(_manifest(state(cli),rule=_source(repo,'Makefile'))))
-    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base');invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','replacement','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','replacement','--outcome','success');invoke(cli,'phase','VERIFICATION')
+    invoke(cli,'gates','run','--stage','candidate')
     invoke(cli,'evidence','run','--area','unit','--fresh');finish_review(cli,tmp)
     invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
 
@@ -33,8 +34,8 @@ def gated(cli,tmp,repo):
     begin(cli,tmp,repo)
     file=tmp/'active.json';argv=[sys.executable,'-c',"print('gate passed')"]
     file.write_text(json.dumps(_manifest(state(cli),source=_source(repo,'svc/app.py'),active='loc',argv=argv)))
-    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base','--id','loc')
-    invoke(cli,'gates','run','--stage','candidate','--id','loc')
+    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base')
+    invoke(cli,'gates','run','--stage','candidate')
 
 
 def conflict(cli,tmp,repo):
@@ -49,6 +50,7 @@ def unfinished(cli,tmp,repo,phase):
     _start(cli,tmp,repo,classification='COMPLEX' if phase=='PSEUDOCODE' else 'SMALL',designer='yes' if phase=='PSEUDOCODE' else 'no')
     (repo/'Makefile').write_text('lint-imports:\n\ttrue\n')
     install_replacement(cli,tmp,repo)
+    invoke(cli,'gates','run','--stage','base')
     invoke(cli,'phase',phase)
 
 

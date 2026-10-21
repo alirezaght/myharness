@@ -20,17 +20,6 @@ def manifest(cli,repo,paths):
     st=state(cli);inv=V.inventory(st,paths)
     source={'path':'Makefile','sha256':hashlib.sha256((repo/'Makefile').read_bytes()).hexdigest()}
     m=manifest_for(st,repo,anticipated_paths=paths,category='loc',argv=[sys.executable,'-c',"print('gate passed')"],source=source)
-    m['gates']=[g for g in m['gates'] if g['category'] not in {'ci','lint-imports'}]
-    for category,items in [('ci',inv['ci']['obligations']),('lint-imports',inv['services'])]:
-        if not items:
-            m['gates'].append({'id':category+'-na','category':category,'applicability':'NOT_APPLICABLE','required':False,'reason':'No selected sourced obligation','units':inv['units'],'argv':[],'scope':inv['paths'],'cwd':'.','source':source,'execution_kind':'local'})
-        for index,item in enumerate(items):
-            unresolved=category=='ci' and item['applicability']=='UNRESOLVED'
-            src={'path':item['source_path'],'sha256':item['source_sha256'],'job':item['job']} if category=='ci' else source
-            scope=sorted(set(item['inputs']+[d['path'] for d in item['dependencies']])) if category=='ci' else sorted(set(inv['import_dependencies']+[item]))
-            m['gates'].append({'id':category+'-'+str(index),'category':category,'applicability':'UNRESOLVED' if unresolved else 'APPLICABLE','required':True,'reason':'Owned fixture verification','units':item['units'] if category=='ci' else [item],'argv':[] if unresolved else [sys.executable,'-c',"print('gate passed')"],'scope':scope,'cwd':'.','source':src,'execution_kind':'local'})
-    if inv['unknown_imports']:
-        m['gates'].append({'id':'unknown-imports','category':'lint-imports','applicability':'UNRESOLVED','required':True,'reason':'Unknown consumers remain unresolved','units':inv['units'],'argv':[],'scope':inv['paths']+inv['import_dependencies'],'cwd':'.','source':source,'execution_kind':'local'})
     return m
 
 

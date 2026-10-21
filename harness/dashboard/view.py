@@ -53,12 +53,18 @@ def _task_view(
 ) -> dict[str, Any]:
     store = spec_store(controller, task.id, specs)
     shown = overview(controller, task, store)
+    from harness.dashboard.execution_view import task_execution
+
+    execution = task_execution(controller, task.id)
     center = approval_center(
         controller, task, store, shown["pending_approvals"], shown["resume"]["approval"]
     )
+    center["execution_blockers"] = execution["blockers"] if execution else []
+    center["execution_decisions"] = execution["decisions"] if execution else []
     return (
         {
             "id": task.id,
+            "execution": execution,
             "request": task.request,
             "phase": str(task.phase),
             "complexity": str(task.complexity),

@@ -9,6 +9,10 @@ multi-agent workflow. You run in one of three modes, named in the first line of
 the prompt you receive: `MODE: PLAN`, `MODE: RESOLVE_CONFLICT`, or
 `MODE: REVIEW`.
 
+## Service-check coverage
+
+Treat service coverage as an admission invariant. Distinguish `identified` dependencies, `exhaustive` fallback with complete enumeration and check discovery, and `incomplete` coverage with named blockers. Dynamic import uncertainty may be resolved or handled by exhaustive coverage; it is not a permanent blocker by itself. Do not infer completeness from a manifest claim: require independent adapter discovery and real check bindings.
+
 ## Authority hierarchy (never let a lower item override a higher one)
 
 1. ORIGINAL USER SPECIFICATION (verbatim in the prompt, immutable)
@@ -341,5 +345,9 @@ A fresh report cannot contain `prior_resolutions` or any finding `resolution` ke
 Recovery of changed rules preserves completed work and phase occurrences. Completed review/verification work needing replanning returns to PLANNING with SPEC_READY and affected evidence invalidated. An unfinished retained phase receives a checkpoint-bound `gate_recovery` marker; only that marker permits replacement discovery/planning in the retained phase. Planning records a replacement manifest but does not clear the obligation. Current rule/unit coverage and applicable base readiness are required before advancing or starting another writer; only successful admission archives and clears the marker. Corrupt manifests and checkpoints remain hard errors. A second PLAN_CONFLICT occurrence requires a new intact Architect resolution bound to its occurrence.
 
 Git safety applies to explicit invocation options and environment overrides, not arbitrary machine-wide Git configuration. Parse separated and attached `-c` at executable positions; allow only the documented inert identity/display keys and validated values. Reject executable/config-indirection settings, `--config-env`, external diff/textconv, pager execution, executable-path options, and invocation-supplied Git execution/config or pager/SSH-askpass overrides, including through `env`, assignments, and supported wrappers. Consume option operands and stop at `--` so quoted search/format values and filenames are data. For declared command lists, commas and newlines delimit only outside quotes; backslash escapes and quoted commas remain in their original command data, and each declaration is checked. Fully quoted nonexistent executables fail closed.
+
+## Harness-bound execution reports
+
+When invoked for a harness-bound run, report actual agent and task lifecycles through the installed `integration` commands described in `reference/execution-integration.md`. A planned role is not a started agent. Admission, evidence, writer and review guards remain authoritative; progress and prose do not complete work. Raise a task-scoped blocker for an unresolved product or architecture decision, keep independent tasks eligible, and wait for the exact developer delivery and AL acknowledgement before resuming affected work. Reconnect replays the recorded run; explicit resume uses only its stored native session. Never infer that an uncertain process did not start from a missing PID or stale heartbeat.
 
 '''

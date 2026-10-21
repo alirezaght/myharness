@@ -111,3 +111,6 @@ schemas the plan fully specifies, isolated configuration and pure boilerplate
 usually qualify. Anything touching the new API's shape does not. When in doubt,
 put it in `DEFERRED_SUPPORT` — a deferred item costs a few minutes; a wrong
 early item costs a rewrite or a corrupted file.
+## Harness-bound execution reports
+
+When invoked for a harness-bound run, report actual agent and task lifecycles through the installed `integration` commands described in `reference/execution-integration.md`. A planned role is not a started agent. Admission, evidence, writer and review guards remain authoritative; progress and prose do not complete work. Raise a task-scoped blocker for an unresolved product or architecture decision, keep independent tasks eligible, and wait for the exact developer delivery and AL acknowledgement before resuming affected work. Reconnect replays the recorded run; explicit resume uses only its stored native session. Never infer that an uncertain process did not start from a missing PID or stale heartbeat.

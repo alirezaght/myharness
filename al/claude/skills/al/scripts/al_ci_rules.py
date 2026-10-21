@@ -137,7 +137,7 @@ def release(name,semantics):
         name_value,action=environment
         if '$' in name_value:return None
         if action in {'start','stop'}:return True
-        if action=='verify':return False
+        if action in {'verify','prepare','access'}:return False
         return None
     if stage in {'test','verify','validate','lint','quality','coverage','security','acceptance'}:return False
     return None if any(p.lower() in RELEASE for p in name.split(':')) else False

@@ -76,7 +76,7 @@ def test_milestones(demo_run):
     assert "(revision <rev>, clean)" in out and "approval #1 recorded" in out
     assert out.count("sha256:<hash> (current)") == 2
     assert "\nv1 ok\n" in out
-    assert out.endswith("nothing to resume: approved for implementation (handoff is Phase 3)\n")
+    assert out.endswith("next: harness execution start t-xxxxxxxx\n")
     for line in re.findall(r"^- [QES]\d+ .*$", out, re.M):
         assert "[demo]" in line, line
     for value in re.findall(r"--(?:title|recommendation|rationale|impact|reason) '([^']*)'", out):

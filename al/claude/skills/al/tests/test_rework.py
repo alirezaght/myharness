@@ -9,7 +9,7 @@ from evidence_helpers import complete_review, plan_and_run_broad, start_implemen
 
 FAST = ["--cause-demonstrated", "yes", "--local", "yes", "--contract-change", "no",
         "--scope-ambiguous", "no", "--safety-decision", "no", "--spec-conflict", "no",
-        "--repro", "E1"]
+        ]
 # Red until svc/fixed exists: the loop that demonstrates the defect, then proves the fix.
 REPRO = [sys.executable, "-c", "import os, sys; ok = os.path.exists('svc/fixed'); "
          "print('1 passed' if ok else '1 failed'); sys.exit(0 if ok else 1)"]
@@ -21,8 +21,14 @@ def record_red(cli):
     assert code == 1  # the run itself failed, as a repro must
 
 
-def flags(**overrides):
-    out = list(FAST)
+def fast(cli):
+    state = json.loads(cli("show")[1])
+    red = next(e for e in reversed(state["evidence"]["entries"]) if e["area"] == "repro" and e["status"] == "FAIL")
+    return [*FAST, "--repro", red["id"]]
+
+
+def flags(cli, **overrides):
+    out = fast(cli)
     for key, value in overrides.items():
         out[out.index("--" + key.replace("_", "-")) + 1] = value
     return out
@@ -40,7 +46,7 @@ def started(cli, tmp_path):
 
 def test_confirmed_local_core_defect_goes_straight_to_the_engineer(cli, state_file, tmp_path):
     started(cli, tmp_path)
-    code, out, _ = cli("rework", "--source", "finalization", "--findings", "2", *FAST)
+    code, out, _ = cli("rework", "--source", "finalization", "--findings", "2", *fast(cli))
     assert code == 0
     assert "→ AL-Engineer · fast path" in out
     assert "AL-Architect" not in out
@@ -56,7 +62,7 @@ def test_confirmed_local_core_defect_goes_straight_to_the_engineer(cli, state_fi
 ])
 def test_a_real_decision_still_reaches_the_architect(cli, state_file, trigger, tmp_path):
     started(cli, tmp_path)
-    code, out, _ = cli("rework", "--source", "core-flaw", *flags(**trigger))
+    code, out, _ = cli("rework", "--source", "core-flaw", *flags(cli, **trigger))
     assert code == 12
     assert "AL-Architect first" in out
     assert load(state_file)["agents"] == ["al-architect", "al-engineer"]
@@ -64,12 +70,12 @@ def test_a_real_decision_still_reaches_the_architect(cli, state_file, trigger, t
 
 def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path):
     started(cli, tmp_path)
-    assert cli("rework", "--source", "finalization", *FAST)[0] == 0
+    assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     cli("phase", "FINALIZATION")
-    assert cli("rework", "--source", "finalization", *FAST)[0] == 0
+    assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     cli("phase", "FINALIZATION")
     before = state_file().read_bytes()
-    code, _, err = cli("rework", "--source", "finalization", *FAST)
+    code, _, err = cli("rework", "--source", "finalization", *fast(cli))
     assert code == 10 and "rework budget exhausted" in err
     assert state_file().read_bytes() == before
     st = load(state_file)
@@ -80,9 +86,9 @@ def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path):
 
 def test_a_new_correction_batch_opens_a_new_budget_and_says_so(cli, state_file, tmp_path, repo):
     started(cli, tmp_path)
-    assert cli("rework", "--source", "finalization", *FAST)[0] == 0
+    assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     assert cli("phase", "FINALIZATION")[0] == 0
-    assert cli("rework", "--source", "finalization", *FAST)[0] == 0
+    assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     assert cli("phase", "FINALIZATION")[0] == 0
     (repo / "svc" / "fixed").write_text("fixed\n")
     assert cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc", "--", *REPRO)[0] == 0
@@ -95,7 +101,7 @@ def test_a_new_correction_batch_opens_a_new_budget_and_says_so(cli, state_file, 
     code, *_ = cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc", "--", *REPRO)
     assert code == 1
     fresh_repro = load(state_file)["evidence"]["entries"][-1]["id"]
-    code, out, _ = cli("rework", "--source", "finalization", *flags(repro=fresh_repro))
+    code, out, _ = cli("rework", "--source", "finalization", *flags(cli, repro=fresh_repro))
     assert code == 0
     assert "new batch (correction 1) — previous batch used 2/2" in out
     assert load(state_file)["rework"]["total"] == 3
@@ -103,14 +109,14 @@ def test_a_new_correction_batch_opens_a_new_budget_and_says_so(cli, state_file, 
 
 def test_status_line_shows_the_rework_counter(cli, tmp_path):
     started(cli, tmp_path)
-    cli("rework", "--source", "finalization", *FAST)
+    cli("rework", "--source", "finalization", *fast(cli))
     _, out, _ = cli("show", "--line")
     assert "Rework 1/2" in out
 
 
 def test_zero_findings_is_refused(cli, tmp_path):
     started(cli, tmp_path)
-    code, *_ = cli("rework", "--source", "finalization", "--findings", "0", *FAST)
+    code, *_ = cli("rework", "--source", "finalization", "--findings", "0", *fast(cli))
     assert isinstance(code, str) and "--findings" in code
 
 
@@ -137,7 +143,7 @@ def test_a_state_file_from_an_older_al_fails_closed_without_losing_history(cli, 
     code, *_ = cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc",
                    "--", *REPRO)
     assert isinstance(code, str) and "unknown/legacy state schema" in code
-    code, *_ = cli("rework", "--source", "finalization", *FAST)
+    code, *_ = cli("rework", "--source", "finalization", *without_repro())
     assert isinstance(code, str) and "unknown/legacy state schema" in code
     code, *_ = cli("--session", "al-supported", "start", "--spec",
                    "Start a new supported run while retaining the legacy state file.")
@@ -147,7 +153,7 @@ def test_a_state_file_from_an_older_al_fails_closed_without_losing_history(cli, 
 
 
 def without_repro():
-    return FAST[:FAST.index("--repro")]
+    return list(FAST)
 
 
 def test_a_demonstrated_cause_without_a_recorded_repro_is_refused(cli, state_file, tmp_path):
@@ -157,22 +163,24 @@ def test_a_demonstrated_cause_without_a_recorded_repro_is_refused(cli, state_fil
     assert load(state_file)["rework"]["used"] == 0  # no budget spent on a refused claim
 
 
-@pytest.mark.parametrize("repro, reason", [("E9", "no such ledger entry"),
-                                           ("E2", "not FAIL")])
+@pytest.mark.parametrize("repro, reason", [("missing", "no such ledger entry"),
+                                           ("green", "not FAIL")])
 def test_a_repro_must_be_a_recorded_red_run(cli, repo, repro, reason, tmp_path):
     started(cli, tmp_path)
     (repo / "svc" / "fixed").write_text("")
     cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc", "--", *REPRO)
-    code, _, err = cli("rework", "--source", "core-flaw", *without_repro(), "--repro", repro)
+    state = json.loads(cli("show")[1])
+    selected = state["evidence"]["entries"][-1]["id"] if repro == "green" else "E999999"
+    code, _, err = cli("rework", "--source", "core-flaw", *without_repro(), "--repro", selected)
     assert code == 14 and reason in err
 
 
 def test_a_repro_with_an_edited_log_is_refused(cli, state_file, tmp_path):
     started(cli, tmp_path)
-    log = load(state_file)["evidence"]["entries"][0]["log"]
+    log = next(e["log"] for e in reversed(load(state_file)["evidence"]["entries"]) if e["area"] == "repro")
     with open(log, "a") as f:
         f.write("tampered\n")
-    code, _, err = cli("rework", "--source", "core-flaw", *FAST)
+    code, _, err = cli("rework", "--source", "core-flaw", *fast(cli))
     assert code == 14 and "LOG_ALTERED" in err
 
 
@@ -185,18 +193,20 @@ def test_an_undemonstrated_cause_needs_no_repro_and_goes_to_the_architect(cli, t
 
 def test_review_waits_until_the_repro_command_goes_green(cli, repo, tmp_path):
     started(cli, tmp_path)
-    assert cli("rework", "--source", "finalization", *FAST)[0] == 0
+    assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     assert cli("phase", "VERIFICATION")[0] == 0
     assert plan_and_run_broad(cli) == 0
     code, out, _ = cli("evidence", "require")
-    assert code == 13 and "repro E1" in out and "STILL_RED" in out
+    repro = fast(cli)[-1]
+    assert code == 13 and "repro " + repro in out and "STILL_RED" in out
     refusal, _, _ = cli("review-start")
-    assert isinstance(refusal, str) and "repro E1" in refusal and "STILL_RED" in refusal
+    assert isinstance(refusal, str) and "repro " + repro in refusal and "STILL_RED" in refusal
     (repo / "svc" / "fixed").write_text("")
     assert cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc",
                "--", *REPRO)[0] == 0
     assert cli("evidence", "run", "--area", "suite")[0] == 0
     assert cli("evidence", "require")[0] == 0
+    assert cli("gates", "run", "--stage", "candidate")[0] == 0
     assert cli("review-start")[0] == 0
 
 
@@ -204,11 +214,12 @@ def test_a_green_repro_whose_prerequisite_went_stale_still_blocks_review(cli, re
     started(cli, tmp_path)
     cli("evidence", "plan", "--area", "unit", "--tier", "focused", "--scope", "web",
         "--", sys.executable, "-c", "print('1 passed')")
-    assert cli("evidence", "run", "--area", "unit")[0] == 0  # E2
+    assert cli("evidence", "run", "--area", "unit")[0] == 0
     gated = ["evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc",
              "--needs", "unit", "--", *REPRO]
-    assert cli(*gated)[0] == 1  # E3: the red repro, gated on the focused check
-    assert cli("rework", "--source", "finalization", *without_repro(), "--repro", "E3")[0] == 0
+    assert cli(*gated)[0] == 1
+    red = json.loads(cli("show")[1])["evidence"]["entries"][-1]["id"]
+    assert cli("rework", "--source", "finalization", *without_repro(), "--repro", red)[0] == 0
     (repo / "svc" / "fixed").write_text("")
     assert cli(*gated)[0] == 0
     assert plan_and_run_broad(cli) == 0

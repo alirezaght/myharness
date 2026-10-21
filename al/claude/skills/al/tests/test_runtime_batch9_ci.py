@@ -4,7 +4,7 @@ import pytest
 import al_artifacts as A
 import al_ci_inventory as CI
 import al_gate_currency as C
-from batch8_helpers import setup,plan,executable_ci
+from batch8_helpers import force_applicable_ci,setup,plan,executable_ci
 
 PATHS=['apps/web/app.ts','apps/admin/app.ts']
 
@@ -107,7 +107,7 @@ def test_manifest_and_currency_cannot_clear_definition_uncertainty(cli,repo,tmp_
     for g in m['gates']:
         if g['category']=='ci':
             if erasure=='NOT_APPLICABLE':g.update(applicability='NOT_APPLICABLE',required=False,argv=[],reason='Attempted false N/A')
-            else:executable_ci(m)
+            else:force_applicable_ci(m)
     if erasure=='omit':m['gates']=[g for g in m['gates'] if g['category']!='ci']
     before=state_file().read_bytes();plan(cli,tmp_path,m,ok=False);assert state_file().read_bytes()==before
     state=json.loads(cli('show')[1]);state['gate_manifests'].append(A.snapshot_bytes(state['session_id'],json.dumps(m).encode(),'gate-manifest','legacy conditional omission'))
@@ -149,5 +149,5 @@ def test_public_discovery_retains_verify_and_unknown_environment_but_excludes_de
     text='deploy-default:\n  environment: staging\n  script: echo deploy\ndeploy-test:\n  stage: test\n  environment: {name: staging, action: stop}\n  script: echo deploy\nverify:\n  environment: {name: staging, action: verify}\n  script: echo checked\nunknown:\n  stage: test\n  environment: "$ENV"\n  script: echo unknown\n'
     m=setup(cli,repo,tmp_path,{'.gitlab-ci.yml':text},['svc/app.py'])
     assert {g['source']['job'] for g in m['gates'] if g['category']=='ci'}=={'verify','unknown'}
-    plan(cli,tmp_path,m);executable_ci(m)
+    plan(cli,tmp_path,m);force_applicable_ci(m)
     before=state_file().read_bytes();plan(cli,tmp_path,m,ok=False);assert state_file().read_bytes()==before

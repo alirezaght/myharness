@@ -25,7 +25,7 @@ def spec_store(controller: HarnessController | None, task_id: str, specs: str | 
     if not _SAFE_ID.match(task_id):
         raise ValueError(f"invalid task id {task_id!r}")
     if specs:
-        root = Path(specs)
+        root = Path(specs).resolve()
     elif controller is not None:
         root = task_repo_root(controller, task_id) / DEFAULT_SPECS_DIR
     else:

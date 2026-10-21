@@ -163,7 +163,8 @@ def test_independent_fix_may_overlap_a_running_check(cli, cli_process, repo, tmp
     (repo / "web/app.js").write_text("let a = 3\n")
     release.write_text("go")
     proc.wait(timeout=20)
-    assert [e["status"] for e in entries(state_file)] == ["PASS"]
+    assert [e["status"] for e in entries(state_file) if e["area"] == "svc"] == ["PASS"]
+    assert all(e["status"] == "PASS" for e in entries(state_file))
 
 
 def test_coupled_fix_stays_sequential_and_a_moved_scope_tears_the_run(cli, cli_process, repo, tmp_path,
@@ -172,8 +173,9 @@ def test_coupled_fix_stays_sequential_and_a_moved_scope_tears_the_run(cli, cli_p
     release = tmp_path / "release"
     proc = cli_process("evidence", "run", "--area", "svc", "--scope", "svc", "--", *slow_check(release))
     wait_running(state_file, "svc", process=proc)
+    running = next(e for e in entries(state_file) if e["area"] == "svc" and e["status"] == "RUNNING")
     code, _, err = cli("overlap", "--area", "svc", "--fix-files", "svc/tests/fixtures/rows.json")
-    assert code == 5 and "lies in running check E1 (svc)" in err
+    assert code == 5 and f"lies in running check {running['id']} (svc)" in err
     code, _, err = cli("overlap", "--area", "svc", "--fix-files", "web/app.js", "--fix-commands", "pnpm install")
     assert code == 5 and "dependency/generation mutation" in err
     (repo / "svc/app.py").write_text("x = 2\n")  # someone ignored the refusal

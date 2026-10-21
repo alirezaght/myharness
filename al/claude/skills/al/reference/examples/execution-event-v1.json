@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "event_id": "evt_run_started_1",
+  "sequence": 1,
+  "timestamp": 1792400000.0,
+  "binding": {
+    "execution_id": "exec_demo_1",
+    "task_id": "task_demo_1",
+    "approval_id": 1,
+    "spec_version": 1,
+    "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": "revision-demo-1",
+    "review_state_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "handoff_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "al_session_id": "session_demo_1",
+    "al_run_id": "run_demo_1"
+  },
+  "kind": "run.started",
+  "payload": {"status": "RUNNING"}
+}

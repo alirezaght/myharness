@@ -16,6 +16,10 @@ def capture(st,sid,a):
         inputs[name]=(path,raw)
     result={'task_hash':al_task.task_hash(st),'provenance':{'actor':'supervisor','source':a.approval_source or 'CLI approved input designation',
                                                         'review_id':st['review']['id']}}
+    if 'proof_admission' in st:
+        from al_verification_authority import authority_binding
+        authority=authority_binding(st)
+        result.update(schema_version=2,kind='comparison-inputs-v2',verification_authority={'hash':authority['hash'],'artifact':authority['artifact']},document_hash=result['task_hash'])
     for name,(path,raw) in inputs.items():
         result[name]=A.snapshot_bytes(sid,raw,'approved-'+name,path)
         result['provenance'][name]={'source':str(path),'sha256':result[name]['sha256']}
@@ -24,7 +28,14 @@ def capture(st,sid,a):
 
 def required(st):
     data=st['review'].get('comparison_inputs')
-    if not data or data.get('task_hash')!=al_task.task_hash(st):refuse('comparison approved inputs missing/stale for task')
+    if not data:refuse('comparison approved inputs missing for task')
+    if 'proof_admission' in st:
+        from al_verification_authority import authority_binding,document_binding
+        from al_task_editorial import editorial_bridge
+        authority=authority_binding(st)
+        if data.get('schema_version')!=2 or data.get('kind')!='comparison-inputs-v2' or data.get('verification_authority')!={'hash':authority['hash'],'artifact':authority['artifact']} or data.get('task_hash')!=data.get('document_hash'):refuse('comparison input authority/provenance differs')
+        editorial_bridge(st,data['document_hash'],document_binding(st)['hash'],authority['hash'])
+    elif data.get('task_hash')!=al_task.task_hash(st):refuse('comparison approved inputs missing/stale for task')
     provenance=data.get('provenance') or {}
     if provenance.get('actor')!='supervisor' or not provenance.get('source') or provenance.get('review_id')!=st['review']['id']:refuse('approved input supervisor provenance missing')
     hashes=[]

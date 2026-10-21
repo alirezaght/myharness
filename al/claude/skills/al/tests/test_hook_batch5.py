@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 import al_gate_discovery
+from test_service_coverage import unit
+from test_repo_adapters import amber
 import al_shell
 from hook_regression_helpers import begin, invoke, report_data, save_report
 
@@ -17,25 +19,33 @@ def _start_discovery_run(cli):
     return json.loads(cli("show")[1])
 
 
-def test_discovery_uses_the_makefile_service_name(repo, cli):
-    service = repo / "services/user-listing-service/src/settings.py"
-    service.parent.mkdir(parents=True)
-    service.write_text("SETTING = True\n")
-    (repo / "Makefile").write_text(
-        "lint-imports:\n"
-        "\ttest -d services/$(SVC)-service/src\n"
-    )
+def test_discovery_uses_the_full_service_name_with_real_architecture_check(repo, cli):
+    unit(repo,'services/user-listing-service','SETTING = True\n')
     state = _start_discovery_run(cli)
+    manifest = al_gate_discovery.discover(state, ['services/user-listing-service/src/app.py'])
+    gate = next(g for g in manifest['gates'] if g['id']=='imports-services-user-listing-service')
+    assert gate['argv'][-2:]==['--unit','services/user-listing-service']
+    assert {'services/user-listing-service','services/user-listing-service/pyproject.toml'}<=set(gate['scope'])
+    assert subprocess.run(gate['argv'],cwd=repo,capture_output=True).returncode==0
+    (repo/'services/user-listing-service/src/app.py').write_text('import forbidden_dependency\n')
+    assert subprocess.run(gate['argv'],cwd=repo,capture_output=True).returncode!=0
 
-    manifest = al_gate_discovery.discover(
-        state, ["services/user-listing-service/src/settings.py"]
-    )
-    gate = next(g for g in manifest["gates"] if g["category"] == "lint-imports")
-    result = subprocess.run(gate["argv"], cwd=repo, capture_output=True, text=True)
-    assert result.returncode == 0, (
-        f"discovered gate must target the existing service directory: {gate['argv']!r}\n"
-        f"{result.stdout}{result.stderr}"
-    )
+
+def test_amber_discovery_binds_full_service_to_exact_make_chain_without_execution(repo, cli):
+    amber(repo)
+    unit(repo,'services/user-listing-service',extra='[tool.importlinter]\nroot_packages=["app"]\n')
+    policy=repo/'ci/manifest.yml'
+    policy.write_text(policy.read_text().replace('services:\n','services:\n  user_listing:\n    slug: user-listing\n',1))
+    state = _start_discovery_run(cli)
+    manifest = al_gate_discovery.discover(state, ['services/user-listing-service/src/app.py'])
+    gate = next(g for g in manifest['gates'] if g['id']=='imports-services-user-listing-service')
+    assert gate['argv']==['make','lint-imports','SVC=user-listing']
+    chain={'Makefile','package.json','pnpm-workspace.yaml','ci/scripts/fast-check-lint-imports.sh',
+           'ci/manifest.yml','services/user-listing-service/pyproject.toml','packages/tooling/ruff/architecture.toml'}
+    assert chain<=set(gate['scope'])
+    expected=next(b for b in manifest['service_coverage']['assessment']['required_bindings'] if b['id']==gate['id'])
+    assert chain<={row['path'] for row in expected['source_chain']}
+    assert gate['execution_signature']==expected['execution_signature']
 
 
 def test_discovery_passes_supported_directories_to_loc_checker(repo, cli):
@@ -44,11 +54,9 @@ def test_discovery_passes_supported_directories_to_loc_checker(repo, cli):
     source.write_text("SETTING = True\n")
     scripts = repo / "scripts"
     scripts.mkdir()
-    real_scripts = Path(__file__).resolve().parents[4] / "scripts"
-    shutil.copy2(real_scripts / "check-loc.py", scripts / "check-loc.py")
-    allowlist = real_scripts / "check-loc.allowlist"
-    if allowlist.exists():
-        shutil.copy2(allowlist, scripts / allowlist.name)
+    fixture = Path(__file__).parent / "fixtures" / "repository" / "scripts"
+    shutil.copy2(fixture / "check-loc.py", scripts / "check-loc.py")
+    shutil.copy2(fixture / "check-loc.allowlist", scripts / "check-loc.allowlist")
     state = _start_discovery_run(cli)
 
     manifest = al_gate_discovery.discover(
@@ -114,9 +122,10 @@ def test_fresh_blocker_survives_comparison_only_unresolved_resolution(
     invoke(cli, "phase", "FINALIZATION")
     invoke(cli, "writer", "start", "--id", "fresh-blocker-fix", "--role", "al-engineer",
            "--files", "svc/app.py")
-    (repo / "svc/app.py").write_text("fixed source\n")
+    (repo / "svc/app.py").write_text("fixed_source = True\n")
     invoke(cli, "writer", "finish", "--id", "fresh-blocker-fix", "--outcome", "success")
     invoke(cli, "phase", "VERIFICATION")
+    invoke(cli, "gates", "run", "--stage", "candidate")
     invoke(cli, "evidence", "run", "--area", "unit", "--fresh")
 
     invoke(cli, "review-start")

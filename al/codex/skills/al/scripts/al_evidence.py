@@ -54,18 +54,26 @@ def _commit(sid, entry):
         al_store.save(sid, st)
 
 
-def _create(sid, expected_run, **fields):
+def _create(sid, expected_run, *, gate_context=None, **fields):
     """Allocate the entry id and record it as RUNNING, atomically — refused when
     the session was restarted since the caller read the state."""
     with al_store.locked(sid):
         st = al_store.load(sid)
+        guidance = sys.modules.get("al_recovery_guidance")
+        if guidance is not None:
+            guidance.check_active(st)
         if st.get("run_id") != expected_run:
             sys.exit("al_state: the AL run was restarted meanwhile — nothing recorded; re-issue the command")
         spec = dict(fields, env=fields.get("env_names", []))
         planned = L.ledger(st)["plan"].get(spec["area"])
         if planned and not L.same_command(spec, planned): sys.exit("al_state: evidence plan changed before reservation")
-        al_writers.admit_check(st, spec)
+        destination = None
+        if gate_context:
+            from al_gate_continuation import admit_destination
+            destination = admit_destination(st, gate_context)
+        al_writers.admit_check(st, spec, gate_context=destination)
         entry = L.new_entry(st, **fields)
+        if destination is not None: entry['gate_reservation'] = destination
         entry["reservation"] = secrets.token_hex(16)
         entry["fp_before"] = _fingerprint(entry)
         al_store.save(sid, st)
@@ -85,84 +93,105 @@ def _raise_interrupt(signum, frame):
 
 
 def _stop(proc):
-    """SIGTERM the run's process group, give it 10 s, then SIGKILL whatever is
-    left of the group — descendants that ignore SIGTERM included."""
-    try:
-        os.killpg(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    return proc.wait()
+    """Stop only the process group created by this live child handle."""
+    errors = []
+    for number, grace in ((signal.SIGTERM, 1), (signal.SIGKILL, 2)):
+        try:
+            os.killpg(proc.pid, number)
+        except ProcessLookupError:
+            pass
+        except OSError as exc:
+            errors.append(type(exc).__name__ + ': ' + str(exc))
+        try:
+            proc.wait(timeout=grace)
+        except subprocess.TimeoutExpired:
+            continue
+        # Escalation also reaps descendants that ignored the first group signal.
+    unresolved = proc.poll() is None
+    return {'exit': proc.poll(), 'errors': errors, 'unresolved': unresolved}
 
 
 def _execute(sid, entry, timeout, commit=True):
-    """Run entry['argv'] in entry['cwd'], streaming everything into the log."""
+    """Finalize every handled outcome before publishing its reservation receipt."""
     name = f"{entry.get('run') or 'run'}-{entry['id']}-{entry['area']}-{entry['kind']}.log"
-    log = L.log_dir(sid) / name.replace("/", "_")
-    entry["log"] = str(log)
-    timed_out, code = False, None
-    with open(log, "w") as out:
-        out.write(f"$ {' '.join(entry['argv'])}\n# cwd: {entry['cwd']}\n# started: {time.ctime()}\n\n")
-        out.flush()
-        start = out.tell()
-        try:
+    log = L.log_dir(sid) / name.replace('/', '_')
+    entry['log'] = str(log)
+    code, timed_out, interrupted, failure = None, False, None, None
+    cleanup, proc, previous = None, None, {}
+    start = end = 0
+    try:
+        with log.open('w') as out:
+            out.write(f"$ {' '.join(entry['argv'])}\n# cwd: {entry['cwd']}\n# started: {time.ctime()}\n\n")
+            out.flush(); start = out.tell()
             try:
-                relative=Sources.canonical_cwd(al_store.REPO_ROOT,entry['cwd'])
-                gaps=L.check_scope(entry['scope'],entry.get('sources',[]),relative) if entry['scope'] else []
-                cwd=al_store.REPO_ROOT.resolve()/relative
-            except (L.FingerprintError,Sources.SourceError) as exc:raise PermissionError(str(exc)) from exc
-            if entry.get('fingerprint_error') or gaps:
-                raise PermissionError(entry.get('fingerprint_error') or '; '.join(gaps))
-            proc = subprocess.Popen(entry["argv"], cwd=cwd, stdout=out, stderr=subprocess.STDOUT,
-                                    start_new_session=True)
-        except FileNotFoundError:
-            code = 127
-        except (PermissionError, NotADirectoryError) as exc:
-            code = 126
-            out.write(f"AL: cannot start: {exc}\n")
-        else:
-            entry["pid"] = proc.pid
-            _commit(sid, entry)
-            previous = signal.signal(signal.SIGTERM, _raise_interrupt)
-            try:
-                code = proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                code = _stop(proc)
-            except KeyboardInterrupt:  # Ctrl-C or a killed background command
-                entry.update(exit=_stop(proc), status="INFRA", note="cancelled — the run was interrupted", interrupted=True,
-                             ended_at=time.time(), log_sha256=None)
-                out.write("\n# cancelled\n")
-                out.flush()
-                _commit(sid, entry)
-                raise
+                relative = Sources.canonical_cwd(al_store.REPO_ROOT, entry['cwd'])
+                gaps = L.check_scope(entry['scope'], entry.get('sources', []), relative) if entry['scope'] else []
+                if entry.get('fingerprint_error') or gaps:
+                    raise PermissionError(entry.get('fingerprint_error') or '; '.join(gaps))
+                for number in (signal.SIGINT, signal.SIGTERM):
+                    previous[number] = signal.signal(number, _raise_interrupt)
+                proc = subprocess.Popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
+                                        stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+                entry['pid'] = proc.pid
+                entry['process'] = {'pid': proc.pid, 'pgid': proc.pid, 'ownership': 'live-Popen-start_new_session'}
+                if commit:
+                    _commit(sid, entry)
+                try:
+                    code = proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    cleanup = _stop(proc); code = cleanup['exit']
+            except KeyboardInterrupt as exc:
+                interrupted = exc
+                if proc is not None:
+                    cleanup = _stop(proc); code = cleanup['exit']
+            except FileNotFoundError as exc:
+                code = 127; failure = str(exc)
+            except (OSError, Sources.SourceError, L.FingerprintError) as exc:
+                code = 126; failure = str(exc)
+                if proc is not None and proc.poll() is None:
+                    cleanup = _stop(proc)
             finally:
-                signal.signal(signal.SIGTERM, previous)
-        out.seek(0, os.SEEK_END)
-        end = out.tell()
-        out.write(f"\n# exit: {code}{' (timeout)' if timed_out else ''}\n")
-    raw = log.read_bytes()
-    text = raw.decode(errors="replace")
-    child_output = raw[start:end].decode(errors="replace")  # never AL's own header/footer
-    entry["exit"] = code
-    entry["counts"] = L.parse_counts(child_output) if entry["kind"] == "test" else {}
-    entry["fp_after"] = _fingerprint(entry)
-    entry["status"], entry["note"] = L.classify(entry["kind"], code, entry["counts"], timed_out,
-                                                entry["fp_before"], entry["fp_after"])
-    if entry.get("fingerprint_error"):
-        entry["status"], entry["note"] = "INFRA", "cannot fingerprint the scope: " + entry["fingerprint_error"]
-    entry["ended_at"] = time.time()
-    entry["log_sha256"] = L.file_sha(log)
-    if commit: _commit(sid, entry)
-    if entry.get("rejected"):
+                for number, handler in previous.items():
+                    signal.signal(number, handler)
+                out.flush(); out.seek(0, os.SEEK_END); end = out.tell()
+                footer = {'exit': code, 'timeout': timed_out, 'interrupted': interrupted is not None,
+                          'cleanup': cleanup, 'error': failure}
+                out.write('\n# termination: ' + json.dumps(footer, sort_keys=True) + '\n')
+                out.flush()
+    except OSError as exc:
+        failure = 'log finalization failed: ' + str(exc)
+    entry['counts'] = {}
+    try:
+        raw = log.read_bytes()
+        text = raw.decode(errors='replace')
+        if entry['kind'] == 'test':
+            entry['counts'] = L.parse_counts(raw[start:end].decode(errors='replace'))
+        entry['log_sha256'] = L.file_sha(log)
+    except OSError as exc:
+        text = ''
+        entry['log_sha256'] = None
+        failure = 'log provenance unavailable: ' + str(exc)
+    entry['fp_after'] = _fingerprint(entry)
+    status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'])
+    if interrupted is not None:
+        status, note = 'INFRA', 'cancelled — the run was interrupted'
+        entry['interrupted'] = True
+    if cleanup:
+        entry['cleanup'] = cleanup
+        if cleanup['unresolved'] or cleanup['errors']:
+            status = 'INFRA'
+            note = (note + '; ' if note else '') + 'owned-process cleanup uncertain'
+    if failure or entry.get('fingerprint_error'):
+        status = 'INFRA'
+        note = (note + '; ' if note else '') + str(failure or entry['fingerprint_error'])
+    entry.update(exit=code, status=status, note=note, ended_at=time.time())
+    if commit:
+        _commit(sid, entry)
+    if entry.get('rejected'):
         sys.exit(f"al_state: {entry['id']} not recorded — {entry['rejected']}; re-run it in the current run")
+    if interrupted is not None:
+        raise interrupted
     return text
 
 
@@ -202,6 +231,9 @@ def cmd_evidence_plan(a, sid):
 
 def cmd_evidence_run(a, sid):
     st = al_store.load(sid)
+    guidance = sys.modules.get("al_recovery_guidance")
+    if guidance is not None:
+        guidance.check_active(st)
     planned = L.ledger(st)["plan"].get(a.area)
     if a.command_argv:
         scope = L.norm_scope(a.scope)
@@ -227,6 +259,8 @@ def cmd_evidence_run(a, sid):
         sys.exit(15)
     prev = L.latest(st, spec["area"], spec)
     if prev and not a.fresh and L.entry_verdict(st, prev)[0] == "VALID":
+        from al_execution_tasks import admit_check as execution_check
+        execution_check(st, spec)
         print(f"AL · evidence {prev['id']} reused · {spec['area']} · PASS · {L.counts_text(prev)} · "
               f"scope fingerprint unchanged ({prev['fp_after']}) · log {prev['log']}")
         return
@@ -317,6 +351,7 @@ def register(sub):
     p = ev.add_parser("plan"); common(p); p.set_defaults(fn=cmd_evidence_plan, tier="broad")
     p = ev.add_parser("run"); common(p); p.add_argument("--fresh", action="store_true")
     p.add_argument("--timeout", type=float); p.add_argument("--tail", type=int, default=40)
+    p.add_argument("--recovery-file",dest="operation_recovery_file")
     p.set_defaults(fn=cmd_evidence_run)
     ev.add_parser("status").set_defaults(fn=cmd_evidence_status)
     p = ev.add_parser("require"); p.add_argument("--tier", choices=["focused", "broad"])

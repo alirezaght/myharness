@@ -43,6 +43,10 @@ WRITES = {
     RESOLVE_PATH: "resolve",
     REOPEN_PATH: "reopen",
     APPROVE_PATH: "approve",
+    "/api/execution/reconnect": "reconnect",
+    "/api/execution/resume": "resume",
+    "/api/execution/reconcile": "reconcile",
+    "/api/execution/decision": "decision",
 }
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16
@@ -60,6 +64,7 @@ STATIC = {
     "/static/comment_actions.js": ("comment_actions.js", "text/javascript; charset=utf-8"),
     "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
     "/static/approvals.js": ("approvals.js", "text/javascript; charset=utf-8"),
+    "/static/execution.js": ("execution.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"
@@ -153,6 +158,39 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._diagrams(url.query)
         elif url.path == COMPARE_PATH:
             self._compare(url.query)
+        elif url.path in {"/api/execution", "/api/execution/events", "/api/execution/logs"}:
+            from harness.dashboard.execution_view import read_execution
+
+            try:
+                query = parse_qs(url.query, keep_blank_values=True)
+                allowed = {"task", "execution", "after", "limit", "log"}
+                if not set(query) <= allowed or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("invalid execution query fields")
+                task = self._requested_task(url.query)
+                execution = query.get("execution", [""])[0]
+                if not execution or not task:
+                    raise ValueError("explicit task and execution required")
+                action = (
+                    "events"
+                    if url.path.endswith("/events")
+                    else ("logs" if url.path.endswith("/logs") else "status")
+                )
+                data = read_execution(
+                    self.server.db_path,
+                    task,
+                    execution,
+                    action=action,
+                    after=int(query.get("after", ["0"])[0]),
+                    limit=int(query.get("limit", ["100"])[0]),
+                    log_id=query.get("log", [None])[0],
+                )
+                self._json(200, data)
+            except LookupError as error:
+                self._json(404, {"error": str(error)})
+            except ValueError as error:
+                self._json(400, {"error": str(error)})
+            except (sqlite3.Error, OSError) as error:
+                self._json(503, {"error": str(error)})
         elif url.path in STATIC:
             name, content_type = STATIC[url.path]
             self._send(200, (STATIC_DIR / name).read_bytes(), content_type)
@@ -172,6 +210,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if refused is not None:
             self._json(*refused)
             return
+        if path.startswith("/api/execution/") and int(self.headers["Content-Length"]) > 65536:
+            self._json(413, {"error": "execution request exceeds 65536 bytes"})
+            return
         body = self._body(int(self.headers["Content-Length"]))
         if body is None:
             self._json(400, {"error": "request body is incomplete"})
@@ -181,6 +222,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(*add_comment(db_path, body))
         elif action == "approve":
             self._json(*approve_task(db_path, body, self.server.specs))
+        elif path.startswith("/api/execution/"):
+            from harness.dashboard.execution_view import execution_action
+
+            self._json(*execution_action(db_path, body, action))
         else:
             self._json(*move_comment(db_path, body, action))
 

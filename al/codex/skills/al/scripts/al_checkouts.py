@@ -4,7 +4,9 @@ import hashlib
 import os
 import shutil
 import subprocess
+from al_profile import record
 import tempfile
+import time
 from pathlib import Path
 import al_gitlinks as G
 import al_scope as S
@@ -55,14 +57,23 @@ def overlay_candidate(root, capture, *, stage_files=True):
 
 @contextlib.contextmanager
 def materialize(st,stage,base=None):
+    started=time.monotonic()
     capture=S.capture_candidate(st)
     with tempfile.TemporaryDirectory(prefix='al-gate-') as tmp:
         root=Path(tmp).resolve()/'checkout';root.mkdir()
         revision=capture['base'] if stage=='candidate' else (base or st['identity']['merge_base'])
-        run(root,'init','-q');run(root,'fetch','-q',str(al_store.REPO_ROOT),revision)
-        run(root,'checkout','-q','--detach','FETCH_HEAD');validate(root)
+        objects=run(al_store.REPO_ROOT,'rev-parse','--path-format=absolute','--git-path','objects').decode().rstrip('\n')
+        object_path=Path(objects)
+        if not object_path.is_absolute() or not object_path.is_dir() or any(c in objects for c in '\n\r\0'):
+            raise MaterializationError('unrepresentable source object directory')
+        fmt=run(al_store.REPO_ROOT,'rev-parse','--show-object-format').decode().strip()
+        if fmt not in {'sha1','sha256'}:raise MaterializationError('unsupported source object format')
+        run(root,'init','-q','--object-format='+fmt)
+        (root/'.git/objects/info/alternates').write_text(objects+'\n')
+        run(root,'checkout','-q','--detach',revision);validate(root)
         if stage=='candidate':
             overlay_candidate(root,capture)
             if S.capture_candidate(st)['fingerprint']!=capture['fingerprint']:raise MaterializationError('candidate changed during materialization')
         validate(root)
+        record('checkout-materialization',time.monotonic()-started)
         yield {'root':root,'capture':capture,'stage':stage}

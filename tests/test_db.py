@@ -117,6 +117,7 @@ def test_existing_0001_database_upgrades_keeping_rows(tmp_path):
             "0008_approvals.sql",
             "0009_diagram_versions.sql",
             "0010_comments.sql",
+            "0011_executions.sql",
         ]
         controller = HarnessController(conn)
         assert controller.get_task("t-old00001").request == "Old task"
@@ -146,6 +147,7 @@ def test_upgrade_applies_only_the_new_migration(tmp_path, monkeypatch):
             "0008_approvals.sql",
             "0009_diagram_versions.sql",
             "0010_comments.sql",
+            "0011_executions.sql",
         ]
     finally:
         raw.close()
@@ -223,6 +225,7 @@ def test_0002_database_upgrades_questions_with_interview_columns(tmp_path, monke
             "0008_approvals.sql",
             "0009_diagram_versions.sql",
             "0010_comments.sql",
+            "0011_executions.sql",
         ]
         upgraded = HarnessController(conn).workspace(task.id).question(question_id)
         assert (upgraded.kind, upgraded.asked_at, upgraded.skip_source) == ("question", None, None)
@@ -251,7 +254,7 @@ def test_0003_database_upgrades_with_design_entries(tmp_path, monkeypatch):
     try:
         assert db_module.apply_migrations(conn) == []
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0010_comments.sql"
+        assert names[-1] == "0011_executions.sql"
         ws = HarnessController(conn).workspace(task.id)
         assert ws.question(question.id).text == "Which formats?"
         assert ws.design_entries() == []
@@ -318,7 +321,7 @@ def test_0005_database_upgrades_with_spec_versions(tmp_path, monkeypatch):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0010_comments.sql"
+        assert names[-1] == "0011_executions.sql"
         ws = HarnessController(conn).workspace(task.id)
         assert ws.decision_change(change.id) == change
         assert ws.spec_versions() == [] and ws.current_spec_version() is None
@@ -349,7 +352,7 @@ def test_0006_database_upgrades_with_test_plan(tmp_path, monkeypatch):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0010_comments.sql"
+        assert names[-1] == "0011_executions.sql"
         ws = HarnessController(conn).workspace(task.id)
         assert HarnessController(conn).get_task(task.id).request == "Old task"
         assert ws.current_spec_version() == row
@@ -378,7 +381,7 @@ def test_0007_database_upgrades_with_approvals(tmp_path, monkeypatch):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0010_comments.sql"
+        assert names[-1] == "0011_executions.sql"
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         ws = HarnessController(conn).workspace(task.id)
         assert ws.current_spec_version() == row
@@ -415,7 +418,7 @@ def test_0008_database_upgrades_with_diagram_versions(tmp_path, monkeypatch):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0010_comments.sql"
+        assert names[-1] == "0011_executions.sql"
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
         ws = HarnessController(conn).workspace(task.id)
         assert ws.design_entries() == [entry]
@@ -452,7 +455,7 @@ def test_0009_database_upgrades_with_comments(tmp_path, monkeypatch):
     conn = connect(db)
     try:
         names = [r[0] for r in conn.execute("SELECT name FROM schema_migrations ORDER BY version")]
-        assert names[-1] == "0010_comments.sql"
+        assert names[-1] == "0011_executions.sql"
         ws = HarnessController(conn).workspace(task.id)
         assert ws.diagram_versions() == [version] and ws.comments() == []
         comment = ws.insert_comment(1, "component:a", "correction", "wrong", "req-00000001")

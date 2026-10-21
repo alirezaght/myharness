@@ -40,15 +40,21 @@ def revision_hashes(st):
     for amendment in st['amendments']:
         data=A.read_json(amendment['artifact'])
         if not isinstance(data,dict) or any(data.get(k)!=amendment.get(k) for k in ('id','text','source','affected_criteria')):refuse('amendment artifact provenance mismatch')
+        if amendment.get('scoped') and any(data.get(k) != amendment.get(k) for k in ('scoped','affected_tasks','base_revision','delivery_hash','registry')): refuse('scoped amendment provenance mismatch')
         amendments.append(amendment['artifact']['sha256']);hashes.append(current())
     return hashes
 
 
-def task_hash(st):return revision_hashes(st)[-1]
+def task_hash(st):
+    if "proof_admission" in st:
+        from al_verification_authority import document_binding
+        return document_binding(st)["hash"]
+    return revision_hashes(st)[-1]
 
 def cmd_amend(a,sid):
     st=al_store.load(sid)
     if st['status']!='RUNNING': refuse('resume before amendment')
+    if 'integration' in st: refuse('harness-bound amendments require an acknowledged scoped developer decision')
     data=json.loads(Path(a.file).read_bytes())
     if not valid_id(data.get('id')) or any(x['id']==data['id'] for x in st['amendments']): refuse('invalid/duplicate amendment ID')
     if not substantive(data.get('text')) or not data.get('source'): refuse('amendment needs substantive user text and source')
@@ -72,6 +78,11 @@ def cmd_conflict(a,sid):
     al_store.save(sid,st)
 
 def register(sub):
-    p=sub.add_parser('task').add_subparsers(dest='action',required=True).add_parser('amend')
+    children=sub.add_parser('task').add_subparsers(dest='action',required=True)
+    p=children.add_parser('amend')
     p.add_argument('--file',required=True); p.set_defaults(fn=cmd_amend)
+    from al_task_editorial import cmd_editorial
+    p=children.add_parser('editorial'); p.add_argument('--file',required=True); p.set_defaults(fn=cmd_editorial)
+    from al_task_reconciliation import cmd_reconcile
+    p=children.add_parser('reconcile-attribution'); p.add_argument('--file',required=True); p.set_defaults(fn=cmd_reconcile)
     p=sub.add_parser('conflict-resolved'); p.add_argument('--file',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_conflict)

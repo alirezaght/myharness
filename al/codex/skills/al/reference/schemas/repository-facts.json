@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "bounded repository facts",
+  "type": "object",
+  "required": ["schema_version", "repository", "adapter", "policy_version", "units", "enumeration", "dependencies", "checks", "unsupported_boundaries", "rule_sources", "scan_inputs", "scan"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "repository": {"type": "object", "required": ["root", "base_oid"], "properties": {"root": {"type": "string", "minLength": 1}, "base_oid": {"type": "string", "minLength": 1}}},
+    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "amber", "version": 1}}]},
+    "policy_version": {"const": 1},
+    "units": {"type": "array", "items": {"type": "object", "required": ["id", "path", "languages", "source_roots", "module_contexts", "provenance", "roles", "external_distributions", "python_requirement"], "properties": {"id": {"type": "string"}, "path": {"type": "string"}, "languages": {"type": "array", "items": {"type": "string"}}, "source_roots": {"type": "array", "items": {"type": "string"}}, "module_contexts": {"type": "array", "items": {"type": "object"}}, "provenance": {"type": "array"}, "roles": {"type": "array"}, "external_distributions": {"type": "array"}, "python_requirement": {"type": ["string", "null"]}}}},
+    "enumeration": {"type": "object", "required": ["boundaries", "declarations", "observed_members", "absent_paths", "exclusions", "gaps"], "properties": {"boundaries": {"type": "array"}, "declarations": {"type": "array"}, "observed_members": {"type": "array"}, "absent_paths": {"type": "array"}, "exclusions": {"type": "array"}, "gaps": {"type": "array"}}},
+    "dependencies": {"type": "object", "required": ["edges", "known_affected", "potential_services", "uncertainties", "resolved_dynamic", "policy_selection", "import_targets", "source_membership"], "properties": {"edges": {"type": "array"}, "known_affected": {"type": "array", "items": {"type": "string"}}, "potential_services": {"type": "array", "items": {"type": "string"}}, "uncertainties": {"type": "array"}, "resolved_dynamic": {"type": "array"}, "policy_selection": {"type": "array"}, "import_targets": {"type": "array"}, "source_membership": {"type": "array"}}},
+    "checks": {"type": "object", "required": ["obligations", "bindings", "gaps"], "properties": {"obligations": {"type": "array", "items": {"type": "object", "required": ["id", "category", "units"]}}, "bindings": {"type": "array", "items": {"$ref": "service-coverage.json#/$defs/check"}}, "gaps": {"type": "array", "items": {"$ref": "service-coverage.json#/$defs/gap"}}}},
+    "unsupported_boundaries": {"type": "array"},
+    "rule_sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
+    "scan_inputs": {"type": "array", "items": {"$ref": "#/$defs/scanInput"}},
+    "scan": {"type": "object", "required": ["stable", "limits", "membership_digest", "provenance_digest"], "properties": {"stable": {"type": "boolean"}, "limits": {"type": "object"}, "membership_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "provenance_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  },
+  "$defs": {
+    "source": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "scanInput": {"allOf": [{"$ref": "#/$defs/source"}, {"type": "object", "required": ["snapshot"], "properties": {"snapshot": {"enum": ["base", "current"]}}}]}
+  }
+}

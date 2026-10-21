@@ -47,12 +47,16 @@ def ready(st):
     from al_gate_currency import check
     from al_gates import base_gaps
     currency=check(st)
-    if not currency['current']:refuse('current gate obligations require replanning: '+str(currency['reasons']))
+    if not currency['current']:
+        from al_recovery_guidance import refuse_guided
+        refuse_guided(st,'current gate obligations require replanning: '+str(currency['reasons']))
     if st.get('gate_recovery'):
         obligation=marker(st)
         if obligation.get('replacement_manifest')!=st['gate_manifests'][-1]['sha256']:refuse('active manifest is not the recovery replacement')
     gaps=base_gaps(st)
-    if gaps:refuse('base gates not ready: '+str(gaps))
+    if gaps:
+        from al_recovery_guidance import refuse_guided
+        refuse_guided(st,'base gates not ready: '+str(gaps))
 
 
 def complete(st):

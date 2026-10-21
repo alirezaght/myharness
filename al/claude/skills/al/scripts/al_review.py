@@ -18,15 +18,19 @@ import al_comparison
 import al_review_history
 import al_review_attempts as B
 from al_render import render_line
+from al_behavior_observations import behavior_gaps
+import al_review_behavior as Behavior
 
 NO_FINDINGS={'blocking':0,'nonblocking':0,'core':0,'tests':0,'both':0}
 
 def review_gaps(st):
     r=st.get('review')
     if not r or r.get('stage')!='comparison-saved': return ['latest Architect fresh/comparison review incomplete']
-    if r['candidate']['fingerprint']!=S.capture_candidate(st)['fingerprint'] or r['task_hash']!=al_task.task_hash(st): return ['review candidate/task changed']
+    if r['candidate']['fingerprint']!=S.capture_candidate(st)['fingerprint']: return ['review candidate changed']
     try:
+        Behavior.validate_review_lineage(st,r)
         fresh=A.read_json(r['fresh']); comparison=A.read_json(r['comparison'])
+        if Behavior.enabled(st) and any(row['result']=='blocked' for row in fresh['counterexample_search']):return ['independent fresh counterexample assessment remains blocked']
         validate_report(st,fresh,'fresh'); validate_report(st,comparison,'compare')
         blocking,_=T.validate(st,comparison,T.obligations(prior_findings(st),fresh['findings'],fresh=True))
         al_assessments.validate(comparison,r['candidate'])
@@ -35,7 +39,7 @@ def review_gaps(st):
     return []
 
 def approval_gaps(st):
-    return S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+review_gaps(st)
+    return S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)+review_gaps(st)
 
 def prior_findings(st):
     return al_review_history.findings(st)
@@ -43,12 +47,13 @@ def prior_findings(st):
 
 def cmd_review_start(a,sid):
     st=al_store.load(sid); require_transition(st,'review-start','REVIEW')
-    missing=S.child_content_gaps(S.capture_candidate(st))+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)
+    missing=S.child_content_gaps(S.capture_candidate(st))+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)
     if missing: refuse('review evidence incomplete: '+str(missing))
     st['review_iteration']+=1
     candidate=S.capture_candidate(st)
     candidate['changed_paths']=S.changed_paths(candidate['base'])
     st['review']={'id':'R'+str(st['review_iteration']),'stage':'fresh','candidate':candidate,'task_hash':al_task.task_hash(st),'packets':{},'correction_consumed':False}
+    Behavior.initialize(st,st['review'])
     st['findings']=dict(NO_FINDINGS); st['review_status']='checking'
     al_store.set_phase(st,'REVIEW'); al_store.save(sid,st); print(render_line(st))
 
@@ -68,7 +73,8 @@ def cmd_packet(a,sid):
     if a.stage=='compare':
         data.update(fresh=A.read_json(r['fresh']),prior_findings=prior_findings(st),comparison_artifacts=st.get('comparison_artifacts',[]),approved_inputs=al_comparison.packet(st))
         data['comparison_contents'] = [{'artifact':ref,'content':A.read(ref).decode(errors='replace')} for ref in data['comparison_artifacts']]
-    raw=json.dumps(data,sort_keys=True).encode(); ref=A.snapshot_bytes(sid,raw,'review-packet-'+a.stage,'runtime')
+    data=Behavior.packet(st,data)
+    raw=json.dumps(data,sort_keys=True).encode(); ref=A.snapshot_bytes(sid,raw,'review-packet-'+a.stage+('-v2' if Behavior.enabled(st) else ''),'runtime')
     r['packets'][a.stage]=ref; al_store.save(sid,st)
     if a.output: Path(a.output).write_bytes(raw)
     print(json.dumps({'packet':ref,'content':data},indent=2))
@@ -77,8 +83,10 @@ def validate_report(st,report,stage):
     r=st['review']; packet=r['packets'].get(stage)
     if not packet: refuse('review packet must be captured before report')
     A.read(packet)
-    if report.get('schema_version')!=1 or report.get('stage')!=stage or report.get('review_id')!=r['id'] or report.get('reviewer_role')!='al-architect': refuse('review report schema/identity/role mismatch')
-    if report.get('candidate_hash')!=r['candidate']['fingerprint'] or report.get('task_hash')!=r['task_hash'] or report.get('packet_hash')!=packet['sha256']: refuse('report hashes do not match packet')
+    packet_value=A.read_json(packet)
+    Behavior.validate_report(st,report,stage,packet_value)
+    if report.get('schema_version')!=(2 if Behavior.enabled(st) else 1) or report.get('stage')!=stage or report.get('review_id')!=r['id'] or report.get('reviewer_role')!='al-architect': refuse('review report schema/identity/role mismatch')
+    if report.get('candidate_hash')!=r['candidate']['fingerprint'] or report.get('task_hash')!=(packet_value['task_hash'] if Behavior.enabled(st) else r['task_hash']) or report.get('packet_hash')!=packet['sha256']: refuse('report hashes do not match packet')
     B.validate(st,report,stage,packet)
     if not report.get('invocation_id') or not report.get('model') or packet['sha256'] not in report.get('inspected_artifacts',[]): refuse('report requires invocation/model and inspected packet provenance')
     if stage=='compare':
@@ -95,12 +103,17 @@ def cmd_report(a,sid):
     if not a.file: refuse('count-only review results cannot approve; provide structured --file')
     if not r or st['phase']!='REVIEW' or r['stage']!=('fresh' if stage=='fresh' else 'comparison'): refuse('report is not allowed at this review stage')
     if r['candidate']['fingerprint']!=S.capture_candidate(st)['fingerprint']: refuse('candidate changed during review')
-    raw=Path(a.file).read_bytes(); data=json.loads(raw)
+    raw=Path(a.file).read_bytes()
+    if Behavior.enabled(st):
+        import al_proof_json as J
+        data=J.loads(raw)
+    else:data=json.loads(raw)
     blocking,notes=validate_report(st,data,stage)
     binding=B.validate(st,data,stage,r['packets'][stage])
     if binding['model'] in st.get('unavailable_models',[]):refuse('issued attempt unavailable; replace the unsaved stage explicitly')
     if stage=='compare': al_assessments.validate(data,r['candidate'])
-    ref=A.snapshot_bytes(sid,raw,'architect-'+stage,a.file)
+    ref=A.snapshot_bytes(sid,raw,'architect-'+stage+('-v2' if Behavior.enabled(st) else ''),a.file)
+    if Behavior.enabled(st):Behavior.retain_lineage(st,sid,ref,stage)
     r['fresh' if stage=='fresh' else 'comparison']=ref; r['stage']='fresh-saved' if stage=='fresh' else 'comparison-saved'
     if stage=='compare':
         st['review_status']=data['status']; st['findings']=dict(NO_FINDINGS,blocking=blocking,nonblocking=notes)
@@ -112,6 +125,7 @@ def cmd_compare(a,sid):
     if not r or r['stage']!='fresh-saved': refuse('save independent fresh review first')
     if r['candidate']['fingerprint']!=S.capture_candidate(st)['fingerprint']: refuse('candidate changed')
     A.read(r['fresh'])
+    Behavior.validate_review_lineage(st,r,A.read_json(r['packets']['fresh']))
     inputs=al_comparison.capture(st,sid,a)
     supplemental=[A.snapshot_artifact(sid,Path(f),'comparison-input') for f in (a.artifact or [])]
     r['comparison_inputs']=inputs; r['stage']='comparison'; st['comparison_artifacts']=supplemental
@@ -145,7 +159,7 @@ def cmd_oscillation(a,sid):
 
 def register(sub):
     sub.add_parser('review-start').set_defaults(fn=cmd_review_start)
-    p=sub.add_parser('review-packet'); p.add_argument('--stage',choices=['fresh','compare'],required=True); p.add_argument('--output'); p.add_argument('--replace-unavailable-attempt',action='store_true'); p.set_defaults(fn=cmd_packet)
+    p=sub.add_parser('review-packet'); p.add_argument('--stage',choices=['fresh','compare'],required=True); p.add_argument('--output'); p.add_argument('--replace-unavailable-attempt',action='store_true'); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_packet)
     p=sub.add_parser('review-compare-start'); p.add_argument('--plan'); p.add_argument('--pseudocode'); p.add_argument('--approval-source'); p.add_argument('--artifact',action='append'); p.set_defaults(fn=cmd_compare)
     for name in ('review-fresh','review-result'):
         p=sub.add_parser(name); p.add_argument('--file'); p.add_argument('result',nargs='?',choices=['APPROVED','CHANGES_REQUIRED'])

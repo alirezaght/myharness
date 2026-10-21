@@ -101,6 +101,14 @@ def load(sid):
         st = json.loads(p.read_text())
         from al_schema import validate_state
         validate_state(st)
+        from al_new_origin import validate as validate_origin
+        validate_origin(st)
+        if "editorial_history" in st:
+            from al_task_editorial import document_binding
+            document_binding(st)
+        if "publication_authorizations" in st or "publication_records" in st:
+            from al_publication import history
+            history(st)
         from al_scope import validate_identity
         validate_identity(st)
         return st
@@ -110,13 +118,36 @@ def load(sid):
 
 def save(sid, st):
     from al_schema import validate_state
-    validate_state(st)
+    from al_events import prepare_commit
     _ensure_runtime_dir()
+    path = state_path(sid)
+    previous = json.loads(path.read_bytes()) if path.exists() else None
+    guidance = sys.modules.get("al_recovery_guidance")
+    if guidance is not None:
+        guidance.verify_commit(previous)
+    if any(key in st or key in (previous or {}) for key in ("publication_authorizations", "publication_records")):
+        from al_publication import prepare_save as prepare_publication
+        prepare_publication(st, previous)
+    prepare_commit(previous, st)
+    from al_new_origin import prepare_save
+    prepare_save(st, previous)
+    validate_state(st)
     st["updated_at"] = time.time()
     fd, tmp = tempfile.mkstemp(dir=RUNTIME_DIR, prefix=f".{sid}.", suffix=".tmp")
-    with os.fdopen(fd, "w") as f:
-        f.write(json.dumps(st, indent=2))
-    os.replace(tmp, state_path(sid))
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(st, indent=2, allow_nan=False))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        directory = os.open(RUNTIME_DIR, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 @contextlib.contextmanager

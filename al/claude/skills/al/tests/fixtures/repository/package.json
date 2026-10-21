@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "format": "python3 scripts/format_docs.py",
+    "generate:contracts": "sh packages/contracts/generate.sh"
+  }
+}

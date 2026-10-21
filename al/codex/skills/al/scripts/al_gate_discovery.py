@@ -7,6 +7,7 @@ import al_gate_inventory as V
 import al_discovery_inputs as I
 import al_scope as S
 import al_sources as Sources
+import al_service_coverage as Coverage
 from al_schema import refuse
 
 CATEGORIES=('lint-imports','loc','contracts','pre-commit','ci')
@@ -23,17 +24,21 @@ def discover(st,paths,ci_context=None):
     def gate(id,category,argv,scope,src,unit='.',reason=None):
         gates.append({'id':id,'category':category,'applicability':'APPLICABLE' if argv else 'UNRESOLVED',
                       'env_names':previous.get(id,{}).get('env_names',[]),'sources':previous.get(id,{}).get('sources',[]),'reason':reason,'required':True,'units':[unit],'argv':argv,'cwd':'.','scope':scope,'source':src,'execution_kind':'local'})
-    services=inventory['services']
-    for unit in services:
-        argv=I.import_command(al_store.REPO_ROOT,unit)
-        scope=sorted(set(I.import_scope(al_store.REPO_ROOT,unit)+inventory['import_dependencies']))
-        src=source('Makefile') if (al_store.REPO_ROOT/'Makefile').is_file() else None
-        gate('imports-'+unit.split('/')[-1].removesuffix('-service'),'lint-imports',argv,scope,src,unit,
-             reason=None if argv else 'Service touched but import-check recipe is unsupported or missing')
-    if inventory['unknown_imports']:
-        gate('imports-unresolved','lint-imports',[],paths+inventory['import_dependencies'],rules[0] if rules else None,reason='Shared Python transitive applicability cannot be established by the supported repository selector')
-    if not services and not inventory['unknown_imports']:
-        gates.append({'id':'imports-na','category':'lint-imports','applicability':'NOT_APPLICABLE','required':False,'reason':'No Python service unit is touched','units':units,'argv':[],'scope':paths,'cwd':'.','source':rules[0] if rules else None,'execution_kind':'local'})
+    assessment=inventory['service_coverage']
+    for binding in assessment['required_bindings']:
+        chain=binding['source_chain'];src={k:chain[0][k] for k in ('path','sha256')} if chain else None
+        if binding['category']=='ci':src['job']=chain[0]['selector']
+        gate(binding['id'],binding['category'],binding['argv'],binding['required_scope'],src)
+        gates[-1].update(units=binding['units'],cwd=binding['cwd'],execution_kind=binding['execution_kind'],
+                         obligation_ids=binding['obligation_ids'],execution_signature=binding['execution_signature'])
+        gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+binding['env_names']))
+        gates[-1]['sources']=sorted(gates[-1]['sources']+[v for v in binding['sources'] if v not in gates[-1]['sources']],key=str)
+    if assessment['outcome']=='incomplete':
+        gate('imports-unresolved','lint-imports',[],sorted(set(paths+inventory['import_dependencies'])),rules[0] if rules else None,
+             reason='; '.join(g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason'] for g in assessment['gaps']))
+        gates[-1]['units']=units
+    if not any(g['category']=='lint-imports' for g in gates):
+        gates.append({'id':'imports-na','category':'lint-imports','applicability':'NOT_APPLICABLE','required':False,'reason':'Independently enumerated no affected Python architecture service','units':units,'argv':[],'scope':paths,'cwd':'.','source':rules[0] if rules else None,'execution_kind':'local'})
     checker=al_store.REPO_ROOT/'scripts/check-loc.py'
     if checker.is_file() and I.loc_supported(checker):
         directories=I.loc_directories(al_store.REPO_ROOT,paths)
@@ -43,10 +48,13 @@ def discover(st,paths,ci_context=None):
     if (al_store.REPO_ROOT/'.husky/pre-commit').is_file(): gate('hook','pre-commit',['sh','.husky/pre-commit'],['.'],source('.husky/pre-commit'))
     else: gate('hook','pre-commit',[],paths,None,reason='Resolve repository pre-commit obligation')
     for job in inventory['ci']['obligations']:
+        if any(g.get('source',{}).get('job')==job['job'] and g['source'].get('path')==job['source_path'] and g['category']=='ci' for g in gates if g.get('source')):continue
         src={'path':job['source_path'],'sha256':job['source_sha256'],'job':job['job']}
         scope=sorted(set(job['inputs']+[d['path'] for d in job['dependencies']]))
-        gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',[],scope,src,reason=job['reason']+'; map the sourced job to explicit local/remote verification')
+        execution=job.get('execution') if job['applicability']=='APPLICABLE' else None
+        gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',execution['argv'] if execution else [],scope,src,reason=job['reason']+'; map the sourced job to explicit local/remote verification')
         gates[-1]['units']=job['units']
+        if execution:gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
     for category in ('contracts',) if inventory['ci']['obligations'] else ('contracts','ci'):
         gate(category,category,[],paths,rules[-1] if rules else None,reason='Resolve exact generation/drift or touched-unit CI job applicability from sourced rules')
     rows=S.source_rows()
@@ -56,6 +64,7 @@ def discover(st,paths,ci_context=None):
         if gaps:
             item.update(applicability='UNRESOLVED',reason='; '.join(gaps))
     manifest={'schema_version':1,'id':'G1','revision':1,'base_oid':st['identity']['merge_base'],'units':units,'paths':paths,'rules':rules,'gates':gates}
+    manifest['service_coverage']=Coverage.declaration(inventory['repository_facts'],assessment,gates)
     if ci_context is not None:manifest['ci_context']=ci_context
     return manifest
 
@@ -100,4 +109,7 @@ def validate_manifest(st,m,check_sources=True):
             if check_sources and (not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=src.get('sha256')): refuse('gate source rule changed: '+src['path'])
     if len(ids)!=len(set(ids)) or any(not i for i in ids): refuse('duplicate/missing gate IDs')
     if set(CATEGORIES)-{g['category'] for g in gates}: refuse('manifest omits repository gate categories')
+    if 'service_coverage' in m:
+        try:Coverage.validate_declaration(m['service_coverage'],gates)
+        except (ValueError,TypeError,KeyError) as exc:refuse('corrupt service coverage: '+str(exc))
     if check_sources:V.validate(st,m)

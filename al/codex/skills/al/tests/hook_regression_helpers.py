@@ -4,6 +4,8 @@ import hashlib
 import sys
 from pathlib import Path
 import al_gate_inventory as gate_inventory
+import al_service_coverage as Coverage
+import al_gate_discovery as Discovery
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -15,11 +17,11 @@ def manifest_for(state, repo, anticipated_paths=(), category=None, argv=None, so
     paths, units, rules = inventory["paths"], inventory["units"], inventory["rules"]
     root = Path(repo)
     known = {
-        "lint-imports": bool(inventory["services"]) or bool(inventory["unknown_imports"]),
+        "lint-imports": bool(inventory["services"]) or inventory["service_coverage"]["outcome"]=="incomplete",
         "loc": (root / "scripts/check-loc.py").is_file(),
         "pre-commit": (root / ".husky/pre-commit").is_file() or (root / ".githooks/pre-commit").is_file(),
         "contracts": False,
-        "ci": (root / ".gitlab-ci.yml").is_file() or bool(list(root.glob("ci/**/*.yml"))),
+        "ci": bool(inventory["ci"]["obligations"]),
     }
     for package in [root / "package.json", *(root / unit / "package.json" for unit in units)]:
         if not package.is_file():
@@ -47,7 +49,13 @@ def manifest_for(state, repo, anticipated_paths=(), category=None, argv=None, so
             "source": source if active and source else fallback_source,
             "execution_kind": "local", "cwd": ".",
         })
-    return {"schema_version": 1, "base_oid": state["identity"]["merge_base"],
+    discovered=Discovery.discover(state,list(anticipated_paths))
+    if category!='lint-imports':
+        gates=[g for g in gates if g['category']!='lint-imports']+[g for g in discovered['gates'] if g['category']=='lint-imports']
+    if category!='ci' and inventory['ci']['obligations']:
+        gates=[g for g in gates if g['category']!='ci']+[g for g in discovered['gates'] if g['category']=='ci']
+    coverage=Coverage.declaration(inventory['repository_facts'],inventory['service_coverage'],gates)
+    return {"service_coverage":coverage,"schema_version": 1, "base_oid": state["identity"]["merge_base"],
             "units": units, "paths": paths, "rules": rules, "gates": gates}
 
 
@@ -73,9 +81,11 @@ def begin(cli, tmp_path, repo, spec="Verify the guarded candidate before approva
     path = tmp_path / "gates.json"
     path.write_text(json.dumps(manifest))
     invoke(cli, "gates", "plan", "--file", str(path))
+    invoke(cli, "gates", "run", "--stage", "base")
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "engineer", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "engineer", "--outcome", "success")
+    invoke(cli, "gates", "run", "--stage", "candidate")
     invoke(cli, "phase", "VERIFICATION")
     invoke(cli, "evidence", "plan", "--area", "unit", "--tier", "broad", "--kind", "check",
            "--scope", "svc/app.py", "--", sys.executable, "-c", "print('verified')")
