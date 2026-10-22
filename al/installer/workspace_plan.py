@@ -112,7 +112,7 @@ def plan_workspace(source, options, state_root):
     state_root = R.safe_absolute(state_root)
     target = resolve_target(home=inputs["home"], platforms=("codex", "claude"))
     validate_target(target, state_root, source)
-    with coordination(state_root):
+    with coordination(state_root) as held:
         source, contents = capture_source(
             source, session=inputs["session"], run=inputs["run"], platform=inputs["platform"]
         )
@@ -157,6 +157,7 @@ def plan_workspace(source, options, state_root):
                     state_root,
                     directory / "cli",
                     adoption=inputs["adoption"]["value"],
+                    held=held,
                 )
                 resources = global_resources(contents, inputs["home"], environment["directory"])
                 from .workspace_record import check as check_workspace, load as load_workspace

@@ -30,14 +30,14 @@ def gap(code,path,reason,unit=None,category=None):
 class Snapshot:
     def __init__(self,root,base_oid,paths,opaque,required_adapter=None):
         self.required_adapter=required_adapter;self.root=Path(root).resolve();self.base_oid=base_oid;self.paths=sorted(set(map(safe,paths)));self.opaque=sorted(opaque)
-        self.gaps=[];self.files={};self.base={};self.rules=set();self.absent=set();self.total=0
+        self.gaps=[];self.files={};self.base={};self.modes={};self.base_modes={};self.rules=set();self.absent=set();self.total=0
         self.members=self.listing()
         for p in self.members:
             if not p.endswith('/') and self.relevant(p):
                 try:
                     data=(self.root/p).read_bytes();self.total+=len(data)
                     if len(data)>LIMITS['file_bytes'] or self.total>LIMITS['bytes']:raise ValueError('coverage byte limit')
-                    self.files[p]=data
+                    self.files[p]=data;self.modes[p]=(self.root/p).stat().st_mode&0o7777
                 except (OSError,ValueError) as exc:self.gaps.append(gap('unreadable-input',p,str(exc)))
         self.read_base()
 
@@ -83,7 +83,7 @@ class Snapshot:
                     total+=int(size)
                     if int(size)>LIMITS['file_bytes'] or total>LIMITS['bytes']:raise ValueError('base byte limit')
                     if mode==b'120000':self.gaps.append(gap('base-symlink',p,'base source is a symlink'));continue
-                    rows.append((p,oid))
+                    rows.append((p,oid));self.base_modes[p]=mode.decode()
             if len(rows)>LIMITS['files']:raise ValueError('base membership limit')
             from al_git_cache import blobs
             values=blobs(self.root,[oid.decode() for _,oid in rows],max_bytes=LIMITS['bytes'],file_bytes=LIMITS['file_bytes'])

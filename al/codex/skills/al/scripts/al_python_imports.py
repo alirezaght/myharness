@@ -2,7 +2,7 @@
 import ast
 import copy
 import hashlib
-from al_analysis_cache import CACHE, parse_python
+from al_analysis_cache import AnalysisCache, parse_python
 from al_profile import measured
 from collections import defaultdict
 from pathlib import PurePosixPath
@@ -54,8 +54,9 @@ def _analyze(facts,scan):
         # Cross-unit imports remain conservative when a local dependency declaration
         # is absent; shared roots are possible, isolated service roots are not.
         return {key for key in candidates if not records[key]['unit'].startswith('services/')}
+    trees={}
     for (snapshot,path),record in records.items():
-        try:tree=parse_python(record['data'])
+        try:tree=parse_python(record['data'],trees)
         except (SyntaxError,UnicodeError,ValueError,RecursionError):
             issue(record,path,ast.Pass(),None,'source AST unavailable');continue
         if sum(1 for _ in ast.walk(tree))>100000:
@@ -202,6 +203,9 @@ def _analyze(facts,scan):
 
 from al_runtime_resources import implementation_digest,binding_identity
 IMPLEMENTATION = implementation_digest()
+# Whole-repository graphs get their own small process-local cache so per-file
+# entries elsewhere cannot evict them between identical gate inventory calls.
+GRAPHS = AnalysisCache(max_entries=4)
 
 
 @measured('import-analysis')
@@ -210,14 +214,15 @@ def analyze(facts, scan):
            'repository': str(scan.root), 'base': scan.base_oid, 'paths': scan.paths,
            'opaque': scan.opaque, 'required_adapter': scan.required_adapter,
            'files': {p: hashlib.sha256(v).hexdigest() for p, v in scan.files.items()},
-           'base_files': {p: hashlib.sha256(v).hexdigest() for p, v in scan.base.items()}}
+           'base_files': {p: hashlib.sha256(v).hexdigest() for p, v in scan.base.items()},
+           'modes': scan.modes, 'base_modes': scan.base_modes}
     def compute():
         fresh = copy.deepcopy(facts)
         count = len(fresh['enumeration']['gaps'])
         dependencies = _analyze(fresh, scan)
         return {'dependencies': dependencies, 'enumeration_gap_delta': fresh['enumeration']['gaps'][count:],
                 'consumed_policy_selection': 'policy_selection' in facts and 'policy_selection' not in fresh}
-    result = CACHE.get_or_compute('import-graph', key, compute)
+    result = GRAPHS.get_or_compute('import-graph', key, compute)
     facts['enumeration']['gaps'].extend(result['enumeration_gap_delta'])
     if result['consumed_policy_selection']:
         facts.pop('policy_selection', None)

@@ -16,7 +16,7 @@ def _verify(path, expected):
     except ValueError as exc:raise ValueError('CLI snapshot corrupt: '+str(exc)) from exc
 
 
-def bootstrap_cli(source_root, destination, state_root):
+def bootstrap_cli(source_root, destination, state_root, *, held=None):
     root = R.safe_absolute(source_root)
     if not (root / 'alctl.py').is_file():
         root = R.safe_absolute(root / 'al')
@@ -54,7 +54,7 @@ def bootstrap_cli(source_root, destination, state_root):
     expected = {'snapshot_identity': content_digest, 'origin_digest': origin['origin_digest'],
                 'origin_sha256': digest(canonical(origin) + b'\n'),
                 'receipt_sha256': digest(canonical(receipt) + b'\n')}
-    with coordination(state_root):
+    with coordination(state_root, held=held):
         owner_path = namespace(state_root) / 'cli' / ('launcher-' + digest(str(destination).encode()) + '.json')
         previous = read_json(owner_path) if owner_path.exists() else None
         actual = T.state(destination)

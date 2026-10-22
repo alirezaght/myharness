@@ -6,7 +6,6 @@ import copy
 import hashlib
 import json
 import os
-import sys
 
 
 def content_key(value):
@@ -14,8 +13,6 @@ def content_key(value):
 
 
 def _encoding(value):
-    if isinstance(value, ast.AST):
-        return ast.dump(value, include_attributes=True).encode()
     if isinstance(value, bytes):
         return value
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
@@ -63,7 +60,8 @@ class AnalysisCache:
             self.evictions += 1
 
     def put(self, namespace, key, value):
-        if not self._enabled():
+        # Syntax trees are never shared: copying and re-encoding them costs more than parsing.
+        if not self._enabled() or isinstance(value, ast.AST):
             return
         try:
             data = _encoding(value)
@@ -114,6 +112,11 @@ class ObservationContext:
         return copy.deepcopy(self.local[identity])
 
 
-def parse_python(data):
-    key = [hashlib.sha256(data).hexdigest(), list(sys.version_info[:3]), 'ast-parse-v1']
-    return CACHE.get_or_compute('python-ast', key, lambda: ast.parse(data))
+def parse_python(data, memo=None):
+    """Parse once per caller-owned memo; callers must treat a memoized tree as read-only."""
+    if memo is None:
+        return ast.parse(data)
+    key = hashlib.sha256(data).hexdigest()
+    if key not in memo:
+        memo[key] = ast.parse(data)
+    return memo[key]

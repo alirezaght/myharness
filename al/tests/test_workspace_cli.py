@@ -162,3 +162,91 @@ def test_global_harness_guidance_preserves_approval_text_and_requires_collision_
     planned = H.prepare_resources(resources, target, {}, adoption)
     assert planned[str(collision)]["before"] == T.state(collision)
     assert collision.read_bytes() == before
+
+
+def _in_thread(function):
+    import threading
+
+    box = {}
+
+    def run():
+        try:
+            box["value"] = function()
+        except BaseException as exc:  # surfaced to the test thread
+            box["error"] = exc
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout=120)
+    assert not thread.is_alive(), "nested coordination deadlocked"
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
+def test_planner_cli_preparation_runs_under_the_held_coordination_lock(old_cli, tmp_path):
+    from al.installer.registry import coordination
+
+    source, home, state, _destination, _owner = old_cli
+
+    def plan_path():
+        # workspace_plan.plan_workspace holds the lock while preparing the CLI.
+        with coordination(state) as held:
+            return C.prepare_cli(source, home, state, tmp_path / "preparation", held=held)
+
+    assert _in_thread(plan_path)["kind"] == "workspace-cli-preparation-v1"
+
+
+PROBE = """
+import sys
+sys.path.insert(0, sys.argv[1])
+from al.installer.registry import coordination
+with coordination(sys.argv[2]):
+    print("acquired", flush=True)
+"""
+
+
+def test_held_coordination_still_excludes_a_second_process(tmp_path):
+    from al.installer.registry import coordination
+
+    state = tmp_path / "state"
+    probe = tmp_path / "probe.py"
+    probe.write_text(PROBE)
+    argv = [os.sys.executable, "-I", str(probe), str(Path(__file__).resolve().parents[2]), str(state)]
+    with coordination(state):
+        with pytest.raises(subprocess.TimeoutExpired):
+            subprocess.run(argv, capture_output=True, text=True, timeout=3)
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0 and result.stdout.strip() == "acquired", result.stderr
+
+
+def test_coordination_tokens_are_bound_and_standalone_bootstrap_acquires(tmp_path, monkeypatch):
+    from al.installer import bootstrap
+    from al.installer.registry import coordination
+
+    state, other = tmp_path / "state", tmp_path / "other"
+    with coordination(state) as held:
+        with pytest.raises(ValueError, match="does not hold"):
+            with coordination(other, held=held):
+                pass
+        with pytest.raises(ValueError, match="does not hold"):
+            _in_thread(lambda: coordination(state, held=held).__enter__())
+        with coordination(state, held=held) as nested:
+            assert nested is held
+    with pytest.raises(ValueError, match="does not hold"):
+        with coordination(state, held=held):
+            pass
+    with pytest.raises(ValueError, match="does not hold"):
+        with coordination(state, held=object()):
+            pass
+    seen = []
+    real = bootstrap.coordination
+
+    def recording(root, **kwargs):
+        seen.append(kwargs.get("held"))
+        return real(root, **kwargs)
+
+    monkeypatch.setattr(bootstrap, "coordination", recording)
+    source = copy_al_source(tmp_path / "source/al")
+    bootstrap.bootstrap_cli(source, tmp_path / "bin/alctl", state)
+    assert seen == [None]

@@ -121,7 +121,7 @@ def existing_owner(destination, state_root, adoption=None):
     return {"launcher": actual, "owner": owner_state, "profile": profile}
 
 
-def prepare_cli(source_root, home, state_root, directory, *, adoption=None):
+def prepare_cli(source_root, home, state_root, directory, *, adoption=None, held=None):
     """Owned staging only; the workspace operation separately admits source/activity."""
     home = R.safe_absolute(home)
     destination = home / ".local/bin/alctl"
@@ -129,7 +129,7 @@ def prepare_cli(source_root, home, state_root, directory, *, adoption=None):
     if directory.exists():
         raise ValueError("CLI preparation directory already exists")
     before = existing_owner(destination, state_root, adoption)
-    prepared = bootstrap_cli(source_root, directory / "bin/alctl", state_root)
+    prepared = bootstrap_cli(source_root, directory / "bin/alctl", state_root, held=held)
     raw = Path(prepared["destination"]).read_bytes()
     desired = dict(
         prepared, destination=str(destination), state={"sha256": digest(raw), "mode": 0o755}

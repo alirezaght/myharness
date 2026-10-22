@@ -3,7 +3,9 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import os
 from pathlib import Path
+import threading
 from .engine import D, R, T
 
 
@@ -102,15 +104,35 @@ def legacy_records(state_root):
     return result
 
 
+class Held:
+    """Proof that this thread currently holds one state root's coordination lock."""
+    __slots__ = ('root', 'pid', 'thread', 'active')
+
+    def __init__(self, root):
+        self.root, self.pid, self.thread, self.active = root, os.getpid(), threading.get_ident(), True
+
+
 @contextlib.contextmanager
-def coordination(state_root):
+def coordination(state_root, *, held=None):
     root = namespace(state_root)
     R.safe_absolute(root)
+    # flock locks belong to the open file description, so re-acquiring through a
+    # second handle in the same process deadlocks; nested callers pass the token.
+    if held is not None:
+        if not (isinstance(held, Held) and held.active and held.root == root
+                and held.pid == os.getpid() and held.thread == threading.get_ident()):
+            raise ValueError('coordination token does not hold this state root')
+        yield held
+        return
     root.mkdir(parents=True, exist_ok=True)
     lock = R.safe_absolute(root / 'coordination.lock')
     with lock.open('a+') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
-        yield
+        token = Held(root)
+        try:
+            yield token
+        finally:
+            token.active = False
 
 
 def completed(snapshot):
