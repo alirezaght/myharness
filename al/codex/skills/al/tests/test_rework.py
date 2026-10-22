@@ -139,14 +139,19 @@ def test_a_state_file_from_an_older_al_fails_closed_without_losing_history(cli, 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({**OLD_STATE, "session_id": path.stem}))
     code, *_ = cli("show", "--line")
-    assert isinstance(code, str) and "unknown/legacy state schema" in code
+    assert isinstance(code, str) and legacy_refusal(code)
     code, *_ = cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc",
                    "--", *REPRO)
-    assert isinstance(code, str) and "unknown/legacy state schema" in code
+    assert isinstance(code, str) and legacy_refusal(code)
     code, *_ = cli("rework", "--source", "finalization", *without_repro())
-    assert isinstance(code, str) and "unknown/legacy state schema" in code
+    assert isinstance(code, str) and legacy_refusal(code)
     cli("start", "--spec", "Start a new supported run while retaining the legacy state file.")
     assert path.exists() and state_file().name != path.name
+
+
+def legacy_refusal(code):
+    # The protected launcher refuses unbound legacy runs before al_state's schema check.
+    return "unknown/legacy state schema" in code or "use the original issuer for legacy runs" in code
 
 
 def without_repro():

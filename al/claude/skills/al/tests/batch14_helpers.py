@@ -10,6 +10,7 @@ import al_task as T
 from hook_regression_helpers import invoke
 from test_service_coverage import seed, start as start_coverage
 from batch13_helpers import start as start_public
+from launcher_context import admit_planning
 
 
 def state(cli):return json.loads(cli('show')[1])
@@ -61,7 +62,7 @@ def prepare_context(cli,repo,tmp):
 def consumer_setup(cli,repo,tmp,additional_paths=()):
     seed(repo)
     start_coverage(cli)
-    m=resolved(state(cli),['packages/shared/src/common.py',*additional_paths]);plan(cli,tmp,m);invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    m=resolved(state(cli),['packages/shared/src/common.py',*additional_paths]);plan(cli,tmp,m);invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     return m
 
 

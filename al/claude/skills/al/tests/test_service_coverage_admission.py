@@ -7,6 +7,7 @@ from al_repository_facts import digest
 from conftest import _git
 from hook_regression_helpers import invoke
 from test_service_coverage import seed,start,discover,plan,put,unit
+from launcher_context import admit_planning
 
 
 @pytest.mark.parametrize('mutation',['argv','selector','cwd','required','scope','env','source','selected','potential','complete','adapter','signature'])
@@ -34,7 +35,7 @@ def test_incomplete_missing_check_blocks_phase_and_writer(cli,repo,tmp_path):
     seed(repo);unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py']);a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete' and a['check_discovery']['status']=='incomplete'
-    plan(cli,repo,tmp_path,['packages/shared/src/common.py']);invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    plan(cli,repo,tmp_path,['packages/shared/src/common.py']);admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False)
     invoke(cli,'writer','start','--id','forbidden','--role','al-engineer','--files','packages/shared/src/common.py',ok=False)
 
 
@@ -43,7 +44,7 @@ def test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence(
     # Unknown imports in a service select every potential service. The module-ban
     # runner fails nonliteral imports, so this test runs known unaffected base.
     m=plan(cli,repo,tmp_path,['packages/shared/src/common.py']);assert m['service_coverage']['assessment']['outcome']=='exhaustive'
-    invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','owned','--role','al-engineer','--files','packages/shared/src/common.py');invoke(cli,'writer','finish','--id','owned','--outcome','success')
     st=json.loads(cli('show')[1]);assert Currency.check(st)['current']
     put(repo,'packages/shared/src/common.py','VALUE=2\n');assert Currency.check(st)['current']
@@ -52,7 +53,7 @@ def test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence(
 
 
 def test_real_architecture_failure_remains_fail_and_prevents_review_and_approval(cli,repo,tmp_path,state_file):
-    seed(repo);start(cli);m=plan(cli,repo,tmp_path,['services/a/src/app.py']);invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    seed(repo);start(cli);m=plan(cli,repo,tmp_path,['services/a/src/app.py']);invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','owned','--role','al-engineer','--files','services/a/src/app.py')
     put(repo,'services/a/src/app.py','import forbidden_dependency\n');invoke(cli,'writer','finish','--id','owned','--outcome','success')
     # New import changes semantic requirements, requiring replacement planning.
@@ -122,7 +123,7 @@ def test_unknown_import_can_use_exhaustive_generic_ci_checks_through_admission(c
     assert assessment['check_discovery']['status']=='complete'
     assert assessment['selected_services']==['services/a','services/b']
     assert {gate['source']['job'] for gate in manifest['gates'] if gate.get('obligation_ids')}=={'verify-a','verify-b'}
-    invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','shared','--role','al-engineer','--files','packages/shared/src/common.py')
     invoke(cli,'writer','finish','--id','shared','--outcome','success');invoke(cli,'phase','VERIFICATION')
     invoke(cli,'gates','run','--stage','candidate')
@@ -132,6 +133,7 @@ def test_current_source_import_change_and_new_module_stale_admission(cli,repo,tm
     seed(repo);start(cli);plan(cli,repo,tmp_path,['services/a/src'])
     st=json.loads(cli('show')[1]);assert Currency.check(st)['current']
     put(repo,'services/a/src/new_leaf.py','VALUE=1\n');assert not Currency.check(st)['current']
+    admit_planning(cli)
     invoke(cli,'phase','IMPLEMENTATION',ok=False)
 
 

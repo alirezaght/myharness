@@ -103,7 +103,7 @@ guarded replacement-planning route when new obligations are not covered.
 1. Inspect your resulting diff (`git diff`, `git status --porcelain`).
 2. Run targeted verification for what you touched (the VERIFICATION_COMMANDS
    from the plan that apply, or narrower) **through the AL ledger** —
-   `al_state.py --session <id> evidence run --tier focused --area <a> --scope
+   `<the run's $STATE launcher prefix> evidence run --tier focused --area <a> --scope
    <what it depends on> -- <argv>` (the exact command is in your prompt's
    EVIDENCE block). Report the ledger's id, status and counts; never retype them.
    A rework or correction round runs focused checks only; AL runs the broad

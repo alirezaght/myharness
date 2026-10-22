@@ -29,7 +29,7 @@ def test_global_amendment_cannot_bypass_developer_delivery(cli, tmp_path, repo, 
     controller.conn.close()
 
 
-def test_real_registry_rejection_amendment_ack_and_scoped_revalidation(cli, tmp_path, repo, monkeypatch):
+def test_real_registry_rejection_amendment_ack_and_scoped_revalidation(cli, tmp_path, repo, monkeypatch, launcher):
     from harness.execution_decisions import record_execution_decision
     from harness.execution_projection import ingest_event
     from harness.execution_store import get_execution
@@ -48,7 +48,8 @@ def test_real_registry_rejection_amendment_ack_and_scoped_revalidation(cli, tmp_
     delivery = json.loads(rejected['delivery'])
     from pathlib import Path
     from harness.execution_worker import dispatch_pending
-    dispatch_pending(controller, eid, {'script': str(Path(al_store.__file__).parent / 'al_state.py')})
+    dispatch_pending(controller, eid, {'script': str(Path(al_store.__file__).parent / 'al_state.py'),
+                                       'launcher': launcher.alctl_double(tmp_path)})
     sync()
     assert al_store.load(sid)['integration']['blockers']['design']['state'] == 'Open'
     # Lost acknowledgement: retry exact immutable delivery, with no new Registry ID.

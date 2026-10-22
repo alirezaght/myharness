@@ -14,6 +14,46 @@ def package_fingerprint(package):
     return digest({str(path.relative_to(directory)): digest(path.read_bytes()) for path in files})
 
 
+def al_runtime(host, repository):
+    """AL keeps pinned run state in the repository's own git-ignored runtime.
+
+    Workspace activity inventory discovers active runs there, so a global update
+    can never miss a Harness-driven run."""
+    if host not in {"claude", "codex"}:
+        raise ValueError("unsupported native host")
+    return Path(repository).resolve() / ("." + host) / "al-runtime"
+
+
+def al_source(execution, envelope):
+    return al_runtime(execution["host"], envelope["repository"]) / (
+        execution["al_session_id"] + ".json"
+    )
+
+
+def managed_launcher():
+    """The protected `alctl` launcher that admits every new AL run command."""
+    found = shutil.which("alctl")
+    candidate = Path(found) if found else Path.home() / ".local" / "bin" / "alctl"
+    if not candidate.is_file() or not os.access(candidate, os.X_OK):
+        raise ValueError("managed alctl launcher unavailable; install AL globally first")
+    return str(candidate)
+
+
+def al_argv(launcher, host, repository, session, *arguments):
+    return [
+        launcher,
+        "run",
+        "--repository",
+        str(repository),
+        "--platform",
+        host,
+        "--session",
+        session,
+        "--",
+        *arguments,
+    ]
+
+
 def installed_package(host, repository):
     # Native per-project installation wins over the user's selected platform skill.
     if host == "claude":
@@ -82,6 +122,7 @@ def installed_package(host, repository):
         "executable": executable,
         "package": str(package.resolve()),
         "script": str(script.resolve()),
+        "launcher": managed_launcher(),
         "sha256": package_fingerprint(package),
     }
 

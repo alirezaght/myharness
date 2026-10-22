@@ -219,11 +219,10 @@ def deliver_decision(controller, delivery_id):
         raise ExecutionConflict("AL run identity is not bound yet")
     request = json.loads(intent["request"])
     # Base revision comes from the bound canonical AL source, never host prose.
-    source = (
-        Path(execution["handoff_path"]).parent
-        / "al-runtime"
-        / (execution["al_session_id"] + ".json")
-    )
+    from harness.execution_handoff import read_handoff
+    from harness.execution_hosts import al_source
+
+    source = al_source(execution, read_handoff(execution["handoff_path"]))
     state = json.loads(source.read_bytes())
     if (
         state.get("run_id") != execution["al_run_id"]

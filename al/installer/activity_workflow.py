@@ -43,6 +43,11 @@ dependency_closure setup_recipe
 executable_identities prerequisite_receipts environment_policy isolation_policy cache_policy
 expected_evidence_destinations limitations blockers""".split()
 )
+PREPARATIONS = {
+    "verification-preparation-v1": PREPARATION,
+    "verification-preparation-v2": PREPARATION - {"task_hash"}
+    | {"document_hash", "verification_authority", "invalidation_epoch"},
+}
 EXECUTION = {
     "execution-receipt-v1": set(
         """schema_version kind projection projection_digest original_evidence_id
@@ -52,6 +57,17 @@ counts log_path log_sha256 generated_output_disposition measured_durations""".sp
     "execution-association-v1": set(
         """schema_version kind receipt_ref repository_identity run_id
 task_hash destination reservation current_observation""".split()
+    ),
+    # Version two records are written once planning authority is admitted
+    # (al_execution_versions.V2_FIELDS); their field sets are closed as well.
+    "execution-receipt-v2": set(
+        """schema_version kind projection projection_digest original_evidence_id
+original_reservation before_observation after_observation process_ownership cleanup status exit_code
+counts log_path log_sha256 generated_output_disposition measured_durations execution_identity_digest""".split()
+    ),
+    "execution-association-v2": set(
+        """schema_version kind receipt_ref repository_identity run_id destination reservation
+current_observation document_hash verification_authority editorial_lineage""".split()
     ),
 }
 
@@ -86,22 +102,18 @@ def validate(value, provenance):
         mode = Path(ref["stored_path"]).lstat().st_mode
         if row["mode"] != 0o600 or not stat.S_ISREG(mode) or stat.S_IMODE(mode) != 0o600:
             raise ValueError("workflow artifact privacy mode changed")
-        if ref["kind"] in {"task-source-content-v1", "gate-manifest"}:
+        # Integrity-checked terminals: the runtime owns and reconstructs these
+        # (the authority chain is revalidated by al_verification_authority on load).
+        if ref["kind"] in {"task-source-content-v1", "gate-manifest", "verification-authority-v1"}:
             return
-        if (
-            ref["kind"] not in KINDS
-            and ref["kind"] not in EXECUTION
-            and ref["kind"] != "verification-preparation-v1"
-        ):
+        if ref["kind"] not in KINDS and ref["kind"] not in EXECUTION and ref["kind"] not in PREPARATIONS:
             raise ValueError("unsupported workflow artifact kind")
         raw = Path(ref["stored_path"]).read_bytes()
         if len(raw) > 64 * 1024 * 1024 or hashlib.sha256(raw).hexdigest() != ref["sha256"]:
             raise ValueError("workflow artifact bytes changed")
         data = P.decode(raw)
-        fields = EXECUTION.get(ref["kind"]) or (
-            PREPARATION
-            if ref["kind"] == "verification-preparation-v1"
-            else KINDS[ref["kind"]] | {"schema_version", "kind", "binding"}
+        fields = EXECUTION.get(ref["kind"]) or PREPARATIONS.get(ref["kind"]) or (
+            KINDS[ref["kind"]] | {"schema_version", "kind", "binding"}
         )
         binding = (
             {
@@ -109,7 +121,7 @@ def validate(value, provenance):
                 "session_id": data.get("session_id"),
                 "run_id": data.get("run_id"),
             }
-            if ref["kind"] == "verification-preparation-v1" and isinstance(data, dict)
+            if ref["kind"] in PREPARATIONS and isinstance(data, dict)
             else data.get("binding")
             if isinstance(data, dict)
             else None
@@ -117,7 +129,7 @@ def validate(value, provenance):
         if ref["kind"] in EXECUTION and isinstance(data, dict):
             projection = (
                 data.get("projection")
-                if ref["kind"] == "execution-receipt-v1"
+                if ref["kind"].startswith("execution-receipt-v")
                 else data.get("current_observation", {}).get("projection")
             )
             if not isinstance(projection, dict):
@@ -130,7 +142,7 @@ def validate(value, provenance):
         if (
             not isinstance(data, dict)
             or set(data) != fields
-            or data["schema_version"] != 1
+            or data["schema_version"] != int(ref["kind"].rsplit("-v", 1)[1])
             or data["kind"] != ref["kind"]
             or binding != expected
         ):
@@ -154,7 +166,9 @@ def validate(value, provenance):
         if not isinstance(value["verification_preparations"], list):
             raise ValueError("unknown verification preparations")
         for ref in value["verification_preparations"]:
-            reference(ref, "verification-preparation-v1")
+            if not isinstance(ref, dict) or ref.get("kind") not in PREPARATIONS:
+                raise ValueError("unknown verification preparation kind")
+            reference(ref, ref["kind"])
     if "task_attribution" in value:
         if (
             not isinstance(attribution, dict)
@@ -176,11 +190,11 @@ def validate(value, provenance):
         reference(writer["contribution_before"], "task-contribution-admission-v1")
     manifests = {ref["sha256"] for ref in value.get("gate_manifests", [])}
     for entry in value.get("evidence", {}).get("entries", []):
-        for field, kind in [
-            ("execution_receipt", "execution-receipt-v1"),
-            ("execution_association", "execution-association-v1"),
-        ]:
+        for field, stem in [("execution_receipt", "execution-receipt"), ("execution_association", "execution-association")]:
             if field in entry:
+                kind = entry[field].get("kind") if isinstance(entry[field], dict) else None
+                if kind not in {stem + "-v1", stem + "-v2"}:
+                    raise ValueError("unknown execution record kind")
                 reference(entry[field], kind)
         if "gate_reservation" not in entry:
             continue

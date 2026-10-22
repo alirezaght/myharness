@@ -4,6 +4,7 @@ import pytest
 
 import al_store
 from execution_helpers import bound, report
+from launcher_context import admit_planning
 
 
 def test_capabilities_without_run_and_atomic_outbox(cli, tmp_path, repo, monkeypatch):
@@ -55,7 +56,8 @@ def _planning_gate(cli, tmp_path, sid):
     from hook_regression_helpers import manifest_for
     assert cli('spec-gate', 'SPEC_READY')[0] == 0
     assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
-    manifest = manifest_for(al_store.load(sid), al_store.REPO_ROOT, ['svc/app.py'])
+    # The approved spec store lives under docs/; anticipating it keeps the authority check observable.
+    manifest = manifest_for(al_store.load(sid), al_store.REPO_ROOT, ['svc/app.py', 'docs'])
     path = tmp_path / 'bootstrap-gates.json'
     path.write_text(json.dumps(manifest))
     result = cli('gates', 'plan', '--file', str(path))
@@ -87,6 +89,7 @@ def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cl
     # A cached real gate result cannot be reused through a label-only public call.
     assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
     assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+    admit_planning(cli)
     assert cli('phase', 'IMPLEMENTATION')[0] == 0
     before = al_store.state_path(sid).read_bytes()
     assert cli('gates', 'run', '--stage', 'base')[0] != 0

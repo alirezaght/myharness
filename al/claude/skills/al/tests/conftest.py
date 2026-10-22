@@ -52,7 +52,8 @@ def repo(tmp_path, seed_repo):
 
 @pytest.fixture(autouse=True)
 def isolated_runtime(tmp_path, monkeypatch, repo):
-    runtime = tmp_path / "runtime"
+    # Protected run bindings require state in the repository's own runtime layout.
+    runtime = repo / ".claude" / "al-runtime"
     monkeypatch.chdir(repo)
     monkeypatch.setattr(al_store, "RUNTIME_DIR", runtime)
     monkeypatch.setattr(al_store, "CURRENT", runtime / "current")
@@ -62,25 +63,34 @@ def isolated_runtime(tmp_path, monkeypatch, repo):
     yield runtime
 
 
+@pytest.fixture(scope="session")
+def launcher(tmp_path_factory):
+    """Managed-launcher admission for in-process commands (one pin per test session)."""
+    from launcher_context import Launcher, pinned_storage
+    root = tmp_path_factory.mktemp("al-launcher")
+    root.chmod(0o700)
+    return Launcher(*pinned_storage(root, "claude"), "claude")
+
+
 @pytest.fixture
 def state_file(isolated_runtime):
     return lambda session=None: isolated_runtime / f"{session or SESSION}.json"
 
 
 @pytest.fixture
-def cli_process(repo):
-    """Start `al_state.py` as a real child process (for runs that must overlap)."""
+def cli_process(repo, launcher):
+    """Start one admitted al_state command as a real child process (for runs that must overlap)."""
     def _start(*args):
         session = SESSION
         if len(args) >= 2 and args[0] == "--session":
             session, args = args[1], args[2:]
-        return subprocess.Popen([sys.executable, str(SCRIPTS / "al_state.py"), "--session", session, *args],
-                                cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        argv = launcher.child_argv(repo, session, args[:1] == ("start",), args)
+        return subprocess.Popen(argv, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return _start
 
 
 @pytest.fixture
-def cli(monkeypatch, capsys):
+def cli(monkeypatch, capsys, launcher, repo):
     """Invoke `al_state.main()` in-process. Returns (result, stdout, stderr).
 
     `result` is `0` on a normal return, the int passed to a guard's
@@ -95,10 +105,15 @@ def cli(monkeypatch, capsys):
             session, args = args[1], args[2:]
         monkeypatch.setattr(sys, "argv", ["al_state.py", "--session", session, *args])
         try:
-            al_state.main()
+            if args[:1] == ('inspect',) or args[:2] == ('integration', 'capabilities'):
+                al_state.main()
+            else:
+                launcher.run(Path.cwd(), session, args[:1] == ('start',), al_state.main)
             result = 0
         except SystemExit as exc:
             result = exc.code
+        except ValueError as exc:
+            result = "al_run: " + str(exc)
         captured = capsys.readouterr()
         command = args[2:] if args[:1] == ('--session',) else args
         if result == 0 and command[:1] == ('start',):
@@ -106,4 +121,6 @@ def cli(monkeypatch, capsys):
         return result, captured.out, captured.err
     _run.state = observer.read
     _run.fixed_session = observer.default_session
-    return _run
+    from launcher_context import current_protocol
+    yield current_protocol(_run)
+    launcher.leave()

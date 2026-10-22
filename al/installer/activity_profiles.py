@@ -25,7 +25,9 @@ LEDGER_KEYS = {'evidence', 'handoffs', 'overlaps', 'rework', 'run_id'}
 MODERN_KEYS = LEGACY_KEYS | LEDGER_KEYS | set('''schema_version identity task_package amendments
 phase_occurrences writers gate_manifests gate_runs gate_decisions review review_mode approval
 checkpoints stopping_checkpoint comparison_artifacts gate_recovery gate_recovery_history escapes
-recovery_replans resumes retry_history native_conversation_id integration gate_recovery_supersessions task_attribution verification_preparations'''.split())
+recovery_replans resumes retry_history native_conversation_id integration gate_recovery_supersessions task_attribution verification_preparations
+runtime_origin proof_admission planning_authorship planning_history behavior_observations editorial_history
+conflict_resolution conflict_resolution_history notes_triage publication_authorizations publication_records'''.split())
 
 
 def decode(raw):
@@ -128,6 +130,20 @@ WRITER_KEYS = {'id', 'role', 'files', 'commands', 'phase', 'started_at', 'ended_
                'outcome', 'reconciliation', 'task', 'agent', 'contribution_before'}
 
 
+def _pin_initialization(reference, admitted):
+    """The one state reference outside the runtime: the launcher-protected initialization record."""
+    if (not isinstance(reference, dict) or set(reference) - {'id', 'kind', 'sha256', 'stored_path', 'source', 'captured_at'}
+            or reference != admitted or not SHA.fullmatch(str(reference.get('sha256')))):
+        raise ValueError('invalid pinned run initialization reference')
+    path = Path(reference.get('stored_path', ''))
+    if (not path.is_absolute() or path.name != reference['sha256'] or path.parent.name != 'initializations'
+            or path.parent.parent.name != 'al-run-pins' or path.is_symlink() or not path.is_file()):
+        raise ValueError('pinned run initialization outside protected pin storage')
+    if hashlib.sha256(path.read_bytes()).hexdigest() != reference['sha256']:
+        raise ValueError('pinned run initialization bytes changed')
+    return [reference, admitted]
+
+
 def _ledger(value, *, modern):
     evidence = value.get('evidence')
     if not isinstance(evidence, dict) or set(evidence) - {'seq', 'entries', 'plan', 'invalidated_at', 'invalidation_reason'}:
@@ -173,6 +189,19 @@ def _modern(value, path, provenance):
     for wid, writer in writers.items():
         if not isinstance(writer, dict) or set(writer) - WRITER_KEYS or writer.get('id') != wid or writer.get('state') not in {'ACTIVE', 'UNRESOLVED', 'FINISHED', 'RECONCILED'}:
             raise ValueError('malformed modern writer')
+    # New pinned runs bind their state to an independently protected launcher transaction.
+    origin = value.get('runtime_origin')
+    if origin is not None:
+        if (not isinstance(origin, dict) or origin.get('kind') != 'run-pin-binding-v1' or origin.get('schema_version') != 1
+                or origin.get('run_id') != value['run_id'] or not isinstance(origin.get('pin'), dict)
+                or not re.fullmatch(r'[0-9a-f]{64}', str(origin.get('publication_transaction')))):
+            raise ValueError('invalid pinned runtime origin')
+        admission = value.get('proof_admission')
+        if not isinstance(admission, dict) or admission.get('status') not in {'pending', 'admitted'}:
+            raise ValueError('pinned run lacks a valid proof admission')
+        pinned_initialization = _pin_initialization(origin.get('initialization'), admission.get('initialization'))
+    elif 'proof_admission' in value:
+        raise ValueError('proof admission without pinned runtime origin')
     integration = value.get('integration')
     if integration is not None:
         if not isinstance(integration, dict) or integration.get('schema_version') != 1:
@@ -182,7 +211,7 @@ def _modern(value, path, provenance):
             raise ValueError('foreign execution integration')
         if type(integration.get('sequence')) is not int or not isinstance(integration.get('outbox'), list) or integration['sequence'] != len(integration['outbox']):
             raise ValueError('invalid integration outbox')
-    external = []
+    external = [] if origin is None else pinned_initialization
     for amendment in value['amendments']:
         if not isinstance(amendment, dict):raise ValueError('invalid modern amendment')
         if 'supporting_source_artifact' not in amendment:continue

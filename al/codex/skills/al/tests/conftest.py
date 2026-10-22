@@ -57,12 +57,23 @@ def repo(tmp_path, seed_repo):
 
 @pytest.fixture(autouse=True)
 def isolated_runtime(tmp_path, monkeypatch, repo):
+    # Protected run bindings require state in the repository's own runtime layout.
+    runtime = repo / ".codex" / "al-runtime"
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(al_store, "RUNTIME_DIR", tmp_path)
-    monkeypatch.setattr(al_store, "CURRENT", tmp_path / "current")
+    monkeypatch.setattr(al_store, "RUNTIME_DIR", runtime)
+    monkeypatch.setattr(al_store, "CURRENT", runtime / "current")
     monkeypatch.setattr(al_store, "REPO_ROOT", repo)
-    monkeypatch.setenv("AL_RUNTIME_DIR", str(tmp_path))
-    yield tmp_path
+    monkeypatch.setenv("AL_RUNTIME_DIR", str(runtime))
+    yield runtime
+
+
+@pytest.fixture(scope="session")
+def launcher(tmp_path_factory):
+    """Managed-launcher admission for in-process commands (one pin per test session)."""
+    from launcher_context import Launcher, pinned_storage
+    root = tmp_path_factory.mktemp("al-launcher")
+    root.chmod(0o700)
+    return Launcher(*pinned_storage(root, "codex"), "codex")
 
 
 @pytest.fixture
@@ -72,6 +83,7 @@ def state_file(isolated_runtime):
         if session is not None:
             return isolated_runtime / f"{session}.json"
         current = isolated_runtime / "current"
+        isolated_runtime.mkdir(parents=True, exist_ok=True)
         if not current.is_file():
             current.write_text("al-test\n")
         return isolated_runtime / f"{current.read_text().strip()}.json"
@@ -79,19 +91,22 @@ def state_file(isolated_runtime):
 
 
 @pytest.fixture
-def cli_process(repo):
-    """Start `al_state.py` as a real child process (for runs that must overlap)."""
+def cli_process(repo, launcher):
+    """Start one admitted al_state command as a real child process (for runs that must overlap)."""
     def _start(*args):
-        if "--session" not in args and al_store.CURRENT.is_file():
+        if args[:1] == ("--session",):
+            session, args = args[1], args[2:]
+        elif args[:1] == ("start",):
+            session = al_store.new_session_id()
+        else:
             session = al_store.CURRENT.read_text().strip()
-            args = ("--session", session, *args)
-        return subprocess.Popen([sys.executable, str(SCRIPTS / "al_state.py"), *args],
-                                cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        argv = launcher.child_argv(repo, session, args[:1] == ("start",), args)
+        return subprocess.Popen(argv, cwd=repo, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return _start
 
 
 @pytest.fixture
-def cli(monkeypatch, capsys):
+def cli(monkeypatch, capsys, launcher, repo):
     """Invoke `al_state.main()` in-process. Returns (result, stdout, stderr).
 
     `result` is `0` on a normal return, the int passed to a guard's
@@ -101,12 +116,28 @@ def cli(monkeypatch, capsys):
     from fixture_state import StateObserver
     observer = StateObserver(None)
     def _run(*args):
-        monkeypatch.setattr(sys, "argv", ["al_state.py", *args])
+        command = args[2:] if args[:1] == ('--session',) else args
+        start = command[:1] == ('start',)
+        if args[:1] == ('--session',):
+            session = args[1]
+        elif start:
+            session = al_store.new_session_id()
+        elif al_store.CURRENT.is_file():
+            session = al_store.CURRENT.read_text().strip()
+        else:
+            session = None
+        argv = ["al_state.py", *args] if args[:1] == ('--session',) or session is None else ["al_state.py", "--session", session, *args]
+        monkeypatch.setattr(sys, "argv", argv)
         try:
-            al_state.main()
+            if session is None or command[:1] == ('inspect',) or command[:2] == ('integration', 'capabilities'):
+                al_state.main()
+            else:
+                launcher.run(Path.cwd(), session, start, al_state.main)
             result = 0
         except SystemExit as exc:
             result = exc.code
+        except ValueError as exc:
+            result = "al_run: " + str(exc)
         captured = capsys.readouterr()
         command = args[2:] if args[:1] == ('--session',) else args
         if result == 0 and command[:1] == ('start',):
@@ -114,4 +145,6 @@ def cli(monkeypatch, capsys):
         return result, captured.out, captured.err
     _run.state = observer.read
     _run.fixed_session = observer.default_session
-    return _run
+    from launcher_context import current_protocol
+    yield current_protocol(_run)
+    launcher.leave()

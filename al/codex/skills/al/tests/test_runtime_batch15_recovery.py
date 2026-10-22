@@ -4,6 +4,7 @@ import time
 import pytest
 import al_store
 from hook_regression_helpers import begin,approve_route,invoke,manifest_for
+from launcher_context import admit_planning
 
 
 def state(cli):return json.loads(cli('show')[1])
@@ -59,7 +60,7 @@ def test_failed_agent_can_terminalize_without_reconciliation_or_timing_rewrite(c
     invoke(cli,'start','--spec','Preserve an unfinished writer when terminalizing failed work.')
     invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     p=tmp_path/'gates.json';p.write_text(json.dumps(manifest_for(state(cli),repo,anticipated_paths=['svc/app.py'])))
-    invoke(cli,'gates','plan','--file',str(p));invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','plan','--file',str(p));invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','pending','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'agent-failed','al-engineer','--reason','Cannot complete writer','--retry-safe','yes');st=state(cli)
     invoke(cli,'stopped','--reason','Stop this run');after=state(cli)
@@ -83,7 +84,7 @@ def test_set_phase_cannot_complete_an_already_closed_occurrence(cli,repo,tmp_pat
     invoke(cli,'start','--spec','Only open occurrences may complete when the phase advances.')
     invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     p=tmp_path/'gates.json';p.write_text(json.dumps(manifest_for(state(cli),repo,anticipated_paths=['svc/app.py'])))
-    invoke(cli,'gates','plan','--file',str(p));invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','plan','--file',str(p));invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     p=tmp_path/'stop.json';p.write_text(json.dumps({'reason':'Pause unfinished work','resume_instructions':'Resume safely'}))
     invoke(cli,'interrupt','--file',str(p));st=state(cli);closed=st['phase_occurrences'][-1].copy()
     al_store.set_phase(st,'VERIFICATION')

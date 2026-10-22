@@ -117,8 +117,12 @@ def test_turbo_prefixed_suite_summaries_are_not_test_counts(cli, state_file):
     assert code == 1 and entries(state_file)[-1]["status"] == "EMPTY"
 
 
-def test_review_start_is_refused_from_planning_before_it_can_skip_gates(cli):
+def test_review_start_is_refused_from_planning_before_it_can_skip_gates(cli, tmp_path):
+    from launcher_context import admit_planning
     cli("start", "--spec", "A complete task package must have sourced repository gates before review.")
+    cli("spec-gate", "SPEC_READY")
+    cli("classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
+    admit_planning(cli, tmp_path)  # isolate the phase gate from proof admission
     cli("evidence", "plan", "--area", "focused", "--tier", "focused", "--scope", "web", "--", *ok_cmd("1 passed"))
     cli("evidence", "run", "--area", "focused")
     code, out, err = cli("review-start")

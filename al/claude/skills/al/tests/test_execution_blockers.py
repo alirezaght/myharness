@@ -3,6 +3,7 @@ import al_store
 import pytest
 
 from execution_helpers import bound, register_task, report
+from launcher_context import admit_planning
 
 
 def test_blocked_task_and_dependents_but_independent_admission(cli, tmp_path, repo, monkeypatch):
@@ -29,6 +30,7 @@ def test_blocked_task_and_dependents_but_independent_admission(cli, tmp_path, re
     assert cli('spec-gate', 'SPEC_READY')[0] == 0
     assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
     plan_na_gates(cli, tmp_path, ('docs/readme.md',))
+    admit_planning(cli)
     assert cli('phase', 'IMPLEMENTATION')[0] == 0
     assert report(cli, tmp_path, 'agent-register', {'id':'worker-B','name':'B engineer','role':'al-engineer','task':'B'})[0] == 0
     assert report(cli, tmp_path, 'agent-update', {'id':'worker-B','status':'Running'})[0] == 0

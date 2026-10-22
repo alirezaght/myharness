@@ -10,6 +10,7 @@ import al_assessments
 import al_gates
 import al_traceability as T
 from hook_regression_helpers import CATEGORIES,begin,fresh_review,invoke,manifest_for,report_data,save_report
+from launcher_context import admit_planning
 
 
 def gate_plan(cli,tmp_path,repo,required=False,failure=True):
@@ -133,7 +134,7 @@ def test_wrappers_normalize_paths_and_refuse_unknown_options():
 def test_designer_comparison_requires_pseudocode_and_inspected_typed_hashes(cli,repo,tmp_path,state_file):
     invoke(cli,'start','--spec','Complete Designer work and inspect its approved pseudocode before comparison.')
     invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','COMPLEX','--designer','yes','--implementers','al-engineer,al-builder')
-    gate_plan(cli,tmp_path,repo);invoke(cli,'phase','PSEUDOCODE');invoke(cli,'phase','IMPLEMENTATION')
+    gate_plan(cli,tmp_path,repo);invoke(cli,'phase','PSEUDOCODE');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'phase','FINALIZATION');invoke(cli,'phase','VERIFICATION')
     invoke(cli,'evidence','plan','--area','unit','--tier','broad','--kind','check','--scope','svc/app.py','--',sys.executable,'-c',"print('verified')")
     invoke(cli,'evidence','run','--area','unit');fresh_review(cli,tmp_path)

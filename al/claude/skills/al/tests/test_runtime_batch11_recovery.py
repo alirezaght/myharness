@@ -8,6 +8,7 @@ from hook_regression_helpers import invoke
 from batch5_helpers import state
 from batch6_helpers import install_replacement
 from test_runtime_batch6_recovery import changed_recovery
+from launcher_context import admit_planning
 
 
 def amend(cli,tmp,identifier='AM-1',ok=True):
@@ -33,6 +34,7 @@ def test_repeated_amendments_rebind_checkpoints_preserve_provenance_and_require_
         assert set(refs)<={r['id'] for r in st['checkpoints']}
         for previous in st['checkpoints']:
             if previous['id'] in refs:assert A.read(previous)==refs[previous['id']]
+        admit_planning(cli)
         invoke(cli,'spec-gate','SPEC_READY');before=state_file().read_bytes()
         invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
         if number==1:
@@ -41,8 +43,8 @@ def test_repeated_amendments_rebind_checkpoints_preserve_provenance_and_require_
             assert state(cli)['gate_recovery']['replacement_manifest']
     import sys
     install_replacement(cli,tmp_path,repo,[sys.executable,'-c',"print('base verified')"])
-    before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
-    invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    admit_planning(cli);before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
+    invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     st=state(cli);assert 'gate_recovery' not in st and len(st['gate_recovery_supersessions'])==2
     assert st['gate_recovery_history'][-1]['evidence']
 

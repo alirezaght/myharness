@@ -11,8 +11,9 @@ from evidence_helpers import complete_review, plan_and_run_broad, plan_na_gates,
 
 
 def load_state(tmp_path):
-    sid = (tmp_path / "current").read_text().strip()
-    return json.loads((tmp_path / f"{sid}.json").read_text())
+    import al_store  # pinned runs keep state in the repository's own runtime
+    sid = (al_store.RUNTIME_DIR / "current").read_text().strip()
+    return json.loads((al_store.RUNTIME_DIR / f"{sid}.json").read_text())
 
 
 def test_full_walk_to_the_correction_limit(cli, tmp_path, state_file):

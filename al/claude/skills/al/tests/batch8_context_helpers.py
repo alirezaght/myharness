@@ -5,6 +5,7 @@ import al_task as T
 import al_gate_discovery as D
 from batch8_helpers import setup,executable_ci,plan
 from hook_regression_helpers import invoke,finish_review
+from launcher_context import admit_planning
 
 
 def declaration(st,**changes):
@@ -25,6 +26,7 @@ def approval(cli,tmp,m):
         if g['category'] not in {'ci','lint-imports'} and not g.get('obligation_ids'):
             g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation in the disposable repository')
     plan(cli,tmp,executable_ci(m));invoke(cli,'gates','run','--stage','base')
+    admit_planning(cli)
     invoke(cli,'phase','IMPLEMENTATION');invoke(cli,'writer','start','--id','engineer','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','engineer','--outcome','success');invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate')
     invoke(cli,'evidence','plan','--area','unit','--tier','broad','--kind','check','--scope','svc/app.py','--',sys.executable,'-c','print("verified")')

@@ -2,6 +2,7 @@
 import pytest
 import al_ci_rules as Rules
 from test_service_coverage import start,discover,put
+from launcher_context import admit_planning
 
 
 @pytest.mark.parametrize('action',['prepare','access'])
@@ -30,6 +31,7 @@ def test_real_base_candidate_and_admission(cli,repo,tmp_path,action,script):
     gate=required_ci(manifest);assert gate['required'] and gate['applicability']=='APPLICABLE'
     assert run(cli,'base')[0]==0
     assert entries(cli,gate['id']) and all(e['status']=='PASS' for e in entries(cli,gate['id']))
+    admit_planning(cli)
     invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','body','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','body','--outcome','success')
@@ -48,7 +50,7 @@ def test_invalid_inputs_fail_real_required_check(cli,repo,tmp_path,script,body,p
     gate=required_ci(manifest)
     cli('gates','run','--stage','base','--id',gate['id'])
     assert any(e['status']=='FAIL' for e in entries(cli,gate['id']))
-    before=state(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state(cli)==before
+    admit_planning(cli);before=state(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state(cli)==before
 
 
 def test_architecture_failure_remains_blocking(cli,repo,tmp_path):
@@ -60,7 +62,7 @@ def test_architecture_failure_remains_blocking(cli,repo,tmp_path):
     assert entries(cli,gate['id']) and all(e['status']=='PASS' for e in entries(cli,gate['id']))
     run(cli,'base')
     assert any(e['status']=='FAIL' for e in state(cli)['evidence']['entries'] if e['area'].startswith('gate-base-imports'))
-    before=state(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state(cli)==before
+    admit_planning(cli);before=state(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state(cli)==before
 
 
 @pytest.mark.parametrize('script',[

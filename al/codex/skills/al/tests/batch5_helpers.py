@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from hook_regression_helpers import begin, invoke, report_data, save_report, CATEGORIES
 from test_hook_batch6 import _manifest
+from launcher_context import admit_planning
 
 
 def checker(repo):
@@ -23,7 +24,7 @@ def writing(cli,tmp):
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     file=tmp/'gates.json';file.write_text(json.dumps(_manifest(state(cli))))
-    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
 
 
 def comparison(cli,tmp,invocation,resolutions=None):

@@ -7,6 +7,7 @@ import sys
 import al_gate_inventory as V
 import al_store
 from hook_regression_helpers import invoke,manifest_for
+from launcher_context import admit_planning
 
 
 def git(repo,*args):
@@ -32,7 +33,7 @@ def setup(cli,repo,tmp,paths=('docs/readme.md',)):
     (repo/'docs/existing.md').write_text('tracked sibling\n');git(repo,'add','.');git(repo,'commit','-qm','fixture rules')
     invoke(cli,'start','--spec','Require current and prospective repository gates before admitting each writer.')
     invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
-    m=manifest(cli,repo,paths);plan(cli,tmp,m);invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    m=manifest(cli,repo,paths);plan(cli,tmp,m);invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     return m
 
 

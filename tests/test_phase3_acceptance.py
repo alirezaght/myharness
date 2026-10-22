@@ -58,10 +58,49 @@ def test_native_smoke_cleanup_denial_is_reported_without_losing_the_timeout(monk
     )
 
 
+def _al(env, repo, session, *args):
+    """Every AL command goes through the protected managed launcher, as a real host's would."""
+    return [
+        env["PHASE3_PROVIDER_ALCTL"],
+        "run",
+        "--repository",
+        str(repo),
+        "--platform",
+        "claude",
+        "--session",
+        session,
+        "--",
+        *args,
+    ]
+
+
+def _bootstrap_alctl(tmp_path: Path, destination: Path, env: dict) -> Path:
+    from tests.al_launcher import bootstrap_alctl
+
+    return bootstrap_alctl(tmp_path, destination, env)
+
+
+def _admit_planning(repo, env, session, directory):
+    from al.tests.planning_reports import report_for
+
+    packet = json.loads(_run(repo, env, session, "planning", "packet"))
+    report = directory / "architect-planning-report.json"
+    report.write_text(json.dumps(report_for(packet)), encoding="utf-8")
+    saved = json.loads(_run(repo, env, session, "planning", "report", "--file", str(report)))
+    _run(
+        repo,
+        env,
+        session,
+        "planning",
+        "admit",
+        "--file",
+        saved["materialized_obligations"]["stored_path"],
+    )
+
+
 def _run(repo, env, session, *args, expected=0):
-    candidate_state = repo / ".claude/skills/al/scripts/al_state.py"
     result = subprocess.run(
-        [sys.executable, str(candidate_state), "--session", session, *args],
+        _al(env, repo, session, *args),
         cwd=repo,
         env=env,
         capture_output=True,
@@ -129,10 +168,17 @@ def _plan_scenario_gates(repo, tmp_path, env, session):
         raise AssertionError("public candidate discovery omitted the real architecture check")
     if not architecture[0].get("obligation_ids") or not architecture[0].get("execution_signature"):
         raise AssertionError("public candidate discovery omitted architecture binding provenance")
-    if not any(".claude/skills/al/scripts" in part for part in architecture[0]["argv"]):
-        raise AssertionError(
-            "architecture runner was not resolved from the installed Claude package"
-        )
+    # Pinned runs resolve the runner from the launcher's immutable pin, never the target repo.
+    runner = next(
+        (Path(p) for p in architecture[0]["argv"] if p.endswith("al_architecture_check.py")), None
+    )
+    if (
+        runner is None
+        or "al-run-pins" not in runner.parts
+        or runner.parts[-5:-1] != ("claude", "skills", "al", "scripts")
+        or repo.resolve() in runner.resolve().parents
+    ):
+        raise AssertionError("architecture runner was not resolved from the pinned Claude runtime")
 
     # This fixture has no LOC checker, hooks, contract-generation scripts or CI jobs.
     # Resolve only those independently absent obligations; the discovered architecture
@@ -142,7 +188,7 @@ def _plan_scenario_gates(repo, tmp_path, env, session):
         "pre-commit": not (repo / ".husky/pre-commit").exists()
         and not (repo / ".githooks/pre-commit").exists(),
         "contracts": not (repo / "package.json").exists(),
-        "ci": (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8") == "on: push\n",
+        "ci": not (repo / ".github/workflows").exists(),
     }
     source = manifest["rules"][0] if manifest["rules"] else None
     for gate in manifest["gates"]:
@@ -173,6 +219,8 @@ def _plan_scenario_gates(repo, tmp_path, env, session):
 
 
 def run_phase3_scenario(tmp_path: Path) -> dict:
+    # Protected AL paths refuse symlinked ancestors (e.g. macOS /var -> /private/var).
+    tmp_path = tmp_path.resolve()
     repo = make_sample_repo(tmp_path / "target")
     # The sample project must declare a real architecture check. Coverage
     # admission no longer treats a Python service without any discoverable
@@ -185,6 +233,11 @@ def run_phase3_scenario(tmp_path: Path) -> dict:
         encoding="utf-8",
     )
     subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True, capture_output=True)
+    # The shared sample's jobless placeholder workflow is not a CI definition; AL
+    # correctly refuses to resolve it, so this scenario declares only real checks.
+    subprocess.run(
+        ["git", "rm", "-q", ".github/workflows/ci.yml"], cwd=repo, check=True, capture_output=True
+    )
     subprocess.run(
         [
             "git",
@@ -246,13 +299,14 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
         HARNESS_AUTHORITY_ROOT=str(ROOT),
         PYTHONPATH=str(ROOT) + os.pathsep + env.get("PYTHONPATH", ""),
         PHASE3_PROVIDER_REPO=str(repo),
-        PHASE3_PROVIDER_AL_STATE=str(repo / ".claude/skills/al/scripts/al_state.py"),
         PHASE3_PROVIDER_INVOCATIONS=str(invocation_file),
         PHASE3_PROVIDER_READY=str(ready_file),
         PHASE3_PROVIDER_FINISHED=str(finished_file),
         PHASE3_PROVIDER_ERROR=str(error_file),
     )
     env["PATH"] = str(provider_bin) + os.pathsep + env.get("PATH", "")
+    env.pop("AL_RUNTIME_DIR", None)
+    env["PHASE3_PROVIDER_ALCTL"] = str(_bootstrap_alctl(tmp_path, provider_bin / "alctl", env))
     launcher = provider_bin / "claude"
     launcher.write_text(
         f'#!/bin/sh\nexec {sys.executable} -m tests.phase3_fake_provider "$@"\n', encoding="utf-8"
@@ -276,9 +330,7 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
     saved = get_execution(conn, execution_id)
     handoff = Path(saved["handoff_path"])
     package_file = handoff.parent / "task-package.json"
-    runtime = handoff.parent / "al-runtime"
-    os.environ["AL_RUNTIME_DIR"] = str(runtime)
-    env["AL_RUNTIME_DIR"] = str(runtime)
+    os.environ.pop("AL_RUNTIME_DIR", None)
     session = saved["al_session_id"]
     os.environ["AL_SESSION_ID"] = session
     env["AL_SESSION_ID"] = session
@@ -298,6 +350,7 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
         "--implementers",
         "al-engineer",
     )
+    _admit_planning(repo, env, session, tmp_path)
     _plan_scenario_gates(repo, tmp_path, env, session)
     _run(repo, env, session, "phase", "IMPLEMENTATION")
 
@@ -333,7 +386,7 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
         diagnostic_summary = [
             {"channel": row["channel"], "text": redact(row["text"])} for row in logs
         ]
-        source_path = runtime / f"{session}.json"
+        source_path = repo / ".claude/al-runtime" / f"{session}.json"
         source_identity = {}
         if source_path.is_file():
             source_state = json.loads(source_path.read_text(encoding="utf-8"))

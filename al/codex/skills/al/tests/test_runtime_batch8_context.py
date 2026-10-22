@@ -11,6 +11,7 @@ import al_gate_discovery as D
 from batch8_helpers import setup,plan,executable_ci,two_jobs
 from batch8_context_helpers import prepared,declaration,approval
 from hook_regression_helpers import invoke
+from launcher_context import admit_planning
 
 PROFILE='merge_request_quality'
 QUALITY='workflow:\n  rules:\n    - if: \'$CI_PIPELINE_SOURCE == "merge_request_event"\'\n      auto_cancel: {on_new_commit: interruptible}\n    - when: never\n  auto_cancel: {on_new_commit: none, on_job_failure: none}\ninclude:\n  - local: ci/quality.yml\n    rules:\n      - if: \'$BRANCH_ENV_CLEANUP != "true" && $SONAR_SCAN != "true"\'\n'
@@ -69,8 +70,8 @@ def test_context_replacement_requires_fresh_manifest_bound_base_evidence(cli,rep
     plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base')
     replacement=declaration(st,selection={'label':'A new explicit planning declaration'})
     m['ci_context']=replacement;plan(cli,tmp_path,m)
-    before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
-    invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    admit_planning(cli);before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
+    invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
 
 
 def test_fixed_profile_cannot_be_extended_with_caller_variables(cli,repo,tmp_path,state_file):

@@ -9,6 +9,7 @@ import al_ci_verification as Verification
 from conftest import _git
 from hook_regression_helpers import invoke, manifest_for
 from test_service_coverage import put, start, discover
+from launcher_context import admit_planning
 
 WORKFLOW='''name: Quality
 on: [push, pull_request]
@@ -85,7 +86,7 @@ def test_unsupported_chain_stays_incomplete_and_blocks_admission(cli,repo,tmp_pa
     assert any(g['code']=='missing-verification-check' for g in a['gaps'])
     file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
     invoke(cli,'gates','plan','--file',str(file))
-    before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    admit_planning(cli);before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
     assert json.loads(cli('show')[1])==before
 
 
@@ -165,7 +166,7 @@ def test_pytest_ambient_execution_controls_cannot_be_unbound(cli,repo,tmp_path,m
     assert after['service_coverage']['assessment']['outcome']=='incomplete'
     m=manifest_for(json.loads(cli('show')[1]),repo,['ordinary_project/__init__.py'])
     file=tmp_path/'ambient-control.json';file.write_text(json.dumps(m));invoke(cli,'gates','plan','--file',str(file))
-    before_state=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    admit_planning(cli);before_state=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
     assert json.loads(cli('show')[1])==before_state
 
 

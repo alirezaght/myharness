@@ -6,6 +6,7 @@ import pytest
 from hook_regression_helpers import invoke
 from batch5_helpers import state
 from batch6_helpers import unfinished,replacement,install_replacement,pause
+from launcher_context import admit_planning
 
 
 def changed_recovery(cli,tmp,repo,phase,route='resume'):
@@ -71,6 +72,7 @@ def test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing(cl
     if phase=='IMPLEMENTATION':
         invoke(cli,'writer','start','--id','replacement','--role','al-engineer','--files','svc/app.py',ok=False)
     else:
+        admit_planning(cli)
         invoke(cli,'phase','IMPLEMENTATION',ok=False)
     assert state_file().read_bytes()==before
     invoke(cli,'gates','run','--stage','base')
@@ -79,6 +81,7 @@ def test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing(cl
         invoke(cli,'writer','finish','--id','replacement','--outcome','success')
         invoke(cli,'phase','VERIFICATION')
     else:
+        admit_planning(cli)
         invoke(cli,'phase','IMPLEMENTATION')
     finished=state(cli)
     assert finished['phase']==('IMPLEMENTATION' if phase=='PSEUDOCODE' else 'VERIFICATION')

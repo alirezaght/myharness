@@ -7,6 +7,7 @@ import al_gate_currency as C
 import al_task as T
 from hook_regression_helpers import invoke
 from batch14_helpers import prepare_context,context,state,plan,resolved,amendment
+from launcher_context import admit_planning
 
 
 def test_amend_interrupt_resume_requires_new_context_and_base_evidence(cli,repo,tmp_path,state_file):
@@ -22,9 +23,10 @@ def test_amend_interrupt_resume_requires_new_context_and_base_evidence(cli,repo,
     file=tmp_path/'old.json';file.write_text(json.dumps(old))
     invoke(cli,'gates','plan','--file',str(file),ok=False);assert state_file().read_bytes()==before
     invoke(cli,'spec-gate','SPEC_READY');replacement=resolved(state(cli),['svc/app.py'],context(state(cli)))
+    admit_planning(cli)
     plan(cli,tmp_path,replacement);before=state_file().read_bytes()
     invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
-    invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     st=state(cli);assert not st.get('gate_recovery') and st['gate_recovery_history'][-1]['evidence']
 
 

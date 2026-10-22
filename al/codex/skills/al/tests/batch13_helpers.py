@@ -6,6 +6,7 @@ import subprocess
 import sys
 import al_ledger as L
 from hook_regression_helpers import invoke
+from launcher_context import admit_planning
 
 
 def commit(repo):
@@ -80,6 +81,7 @@ def assert_incomplete_admission(cli):
     assert manifest['service_coverage']['assessment']['outcome']=='incomplete'
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
+    admit_planning(cli)
     before=al_store.state_path(state['session_id']).read_bytes()
     code,out,err=invoke(cli,'phase','IMPLEMENTATION',ok=False)
     assert 'gate' in str(code)+out+err

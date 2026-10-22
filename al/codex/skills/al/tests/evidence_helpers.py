@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 from hook_regression_helpers import manifest_for
+from launcher_context import admit_planning, observe_behavior
 
 PY = sys.executable
 SAME_SESSION = "al-test"
@@ -58,10 +59,11 @@ def start_implementation(cli, tmp_path, anticipated_paths=("svc/app.py", "svc/fi
         ("classify", "STANDARD", "--designer", "no", "--implementers", "al-engineer"),
     ):
         result, out, err = cli(*args)
-        assert result == 0, f"{args[0]} failed: {out}{err}"
+        assert result == 0, f"{args[0]} failed: {result} {out}{err}"
     plan_na_gates(cli, tmp_path, anticipated_paths)
+    admit_planning(cli)
     result, out, err = cli("phase", "IMPLEMENTATION")
-    assert result == 0, f"implementation admission failed: {out}{err}"
+    assert result == 0, f"implementation admission failed: {result} {out}{err}"
 
 
 def plan_na_gates(cli, tmp_path, anticipated_paths=("svc/app.py", "svc/fixed")):
@@ -71,9 +73,9 @@ def plan_na_gates(cli, tmp_path, anticipated_paths=("svc/app.py", "svc/fixed")):
     gates = tmp_path / "gates.json"
     gates.write_text(json.dumps(manifest))
     result, out, err = cli("gates", "plan", "--file", str(gates))
-    assert result == 0, f"gate plan failed: {out}{err}"
+    assert result == 0, f"gate plan failed: {result} {out}{err}"
     result, out, err = cli("gates", "run", "--stage", "base")
-    assert result == 0, f"required base gates failed: {out}{err}"
+    assert result == 0, f"required base gates failed: {result} {out}{err}"
 
 
 def plan_and_run_broad(cli, area="suite"):
@@ -98,6 +100,8 @@ def _review_report(cli, stage, invocation, blocking):
     if stage == "compare":
         inputs = review["comparison_inputs"]
         inspected.extend(inputs[name]["sha256"] for name in ("plan", "pseudocode") if name in inputs)
+    if "proof_admission" in state:
+        return _review_report_v2(state, stage, invocation, findings, prior_resolutions, inspected, evidence_id)
     return {
         "schema_version": 1, "review_id": review["id"], "stage": stage,
         "reviewer_role": "al-architect", "model": state["model"],
@@ -113,24 +117,60 @@ def _review_report(cli, stage, invocation, blocking):
     }
 
 
+def _review_report_v2(state, stage, invocation, findings, prior_resolutions, inspected, evidence_id):
+    """Closed version-two report bound to the issued packet of a new-origin run."""
+    issued = json.loads(Path(state["review"]["packets"][stage]["stored_path"]).read_bytes())
+    value = issued.get("content", issued)
+    attempt = value["attempt"]
+    criteria = [c["id"] for c in value["behavior"]["obligations"]["content"]["criteria_registry"]]
+    for finding in findings:
+        finding["source"] = criteria[0]
+    for resolution in prior_resolutions:
+        resolution["source"] = criteria[0]
+    report = {
+        "schema_version": 2, "kind": "architect-review-report-v2", "review_id": value["review_id"],
+        "stage": stage, "reviewer_role": "al-architect", "model": attempt["model"],
+        "invocation_id": invocation, "attempt_id": attempt["attempt_id"], "effort": attempt["effort"],
+        "policy_digest": attempt["policy_digest"], "candidate_hash": value["candidate_hash"],
+        "task_hash": value["task_hash"], "document_hash": value["document_hash"],
+        "verification_authority_hash": value["verification_authority"]["hash"],
+        "packet_hash": state["review"]["packets"][stage]["sha256"], "inspected_artifacts": inspected,
+        "criteria": [{"id": c, "status": "SATISFIED", "rationale": "The public workflow was exercised.",
+                      "locations": ["svc/app.py:1"], "evidence": [evidence_id]} for c in criteria],
+        "findings": findings, "status": "CHANGES_REQUIRED" if findings else "APPROVED",
+    }
+    if stage == "fresh":
+        report["counterexample_search"] = [{
+            "obligation_ids": [g["id"] for g in value["behavior"]["obligations"]["content"]["obligations"]],
+            "scenario": "A candidate that skipped the exercised workflow would contradict the declared outcome.",
+            "inspected_locations": ["svc/app.py:1"], "evidence": [evidence_id], "result": "none_found",
+            "rationale": "The linked verification exercised the cited source in the frozen candidate."}]
+    else:
+        report.update(prior_resolutions=prior_resolutions, plan_defects=[], assessments={
+            "rollout": {"applicable": False, "reason": "No deployment surface."},
+            "ui": {"applicable": False, "reason": "No rendered interface."}})
+    return report
+
+
 def complete_review(cli, tmp_path, blocking=True):
     state = json.loads(cli("show")[1])
     if any(item.get("blocking", 0) for item in state["review_history"]):
         source = Path.cwd() / "svc/app.py"
         source.write_text(f"x = {len(state['review_history']) + 1}\n")
         result, out, err = cli("evidence", "run", "--area", "suite", "--fresh")
-        assert result == 0, f"corrected candidate verification failed: {out}{err}"
+        assert result == 0, f"corrected candidate verification failed: {result} {out}{err}"
     result, out, err = cli("gates", "run", "--stage", "candidate")
-    assert result == 0, f"required candidate gates failed: {out}{err}"
+    assert result == 0, f"required candidate gates failed: {result} {out}{err}"
+    observe_behavior(cli, directory=tmp_path)
     result, out, err = cli("review-start")
     assert result == 0, f"review-start failed with {result}: {out}{err}"
     review_id = json.loads(cli("show")[1])["review"]["id"]
     result, out, err = cli("review-packet", "--stage", "fresh")
-    assert result == 0, f"fresh packet failed: {out}{err}"
+    assert result == 0, f"fresh packet failed: {result} {out}{err}"
     fresh = tmp_path / "fresh-review.json"
     fresh.write_text(json.dumps(_review_report(cli, "fresh", f"{review_id}-fresh", False)))
     result, out, err = cli("review-fresh", "--file", str(fresh))
-    assert result == 0, f"fresh report failed: {out}{err}"
+    assert result == 0, f"fresh report failed: {result} {out}{err}"
     plan = tmp_path / "approved-plan.md"
     plan.write_text("The reviewed plan covers the accepted criterion and required failure paths.\n")
     args = ["review-compare-start", "--plan", str(plan)]
@@ -141,8 +181,8 @@ def complete_review(cli, tmp_path, blocking=True):
     result, out, err = cli(*args)
     assert result == 0, f"comparison start failed ({result!r}): {out}{err}"
     result, out, err = cli("review-packet", "--stage", "compare")
-    assert result == 0, f"comparison packet failed: {out}{err}"
+    assert result == 0, f"comparison packet failed: {result} {out}{err}"
     comparison = tmp_path / "comparison-review.json"
     comparison.write_text(json.dumps(_review_report(cli, "compare", f"{review_id}-compare", blocking)))
     result, out, err = cli("review-result", "--file", str(comparison))
-    assert result == 0, f"comparison report failed: {out}{err}"
+    assert result == 0, f"comparison report failed: {result} {out}{err}"

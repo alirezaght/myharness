@@ -171,13 +171,11 @@ def test_replay_accepts_legacy_path_aliases_but_refuses_other_targets(
 ):
     import json
     import subprocess
-    import sys
     from pathlib import Path
 
     from harness.execution_bootstrap import execution_environment
     from harness.execution_worker import replay_source
 
-    root = Path(__file__).resolve().parents[1]
     _, eid = approved_execution(controller, sample_repo, monkeypatch)
     execution = get_execution(controller.conn, eid)
     handoff = Path(execution["handoff_path"]).resolve()
@@ -191,21 +189,24 @@ def test_replay_accepts_legacy_path_aliases_but_refuses_other_targets(
         "UPDATE executions SET handoff_path=?,worker_token='alias-owner' WHERE id=?",
         (str(alias / "handoff.json"), eid),
     )
-    runtime = handoff.parent / "al-runtime"
+    from tests.al_launcher import al_command, bootstrap_alctl
+
+    alctl = bootstrap_alctl(tmp_path)
+    runtime = Path(sample_repo).resolve() / ("." + execution["host"]) / "al-runtime"
     result = subprocess.run(
-        [
-            sys.executable,
-            str(root / "al/codex/skills/al/scripts/al_state.py"),
-            "--session",
+        al_command(
+            alctl,
+            execution["host"],
+            sample_repo,
             execution["al_session_id"],
             "start",
             "--package-file",
             str(handoff.parent / "task-package.json"),
             "--handoff",
             str(handoff),
-        ],
+        ),
         cwd=sample_repo,
-        env=dict(execution_environment(), AL_RUNTIME_DIR=str(runtime)),
+        env=execution_environment(),
         capture_output=True,
         text=True,
         timeout=10,

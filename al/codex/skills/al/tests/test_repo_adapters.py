@@ -3,6 +3,7 @@ import json
 import pytest
 from test_service_coverage import seed,start,discover,put,unit
 from al_repository_facts import Snapshot,LIMITS
+from launcher_context import admit_planning
 
 
 @pytest.mark.parametrize('defect,code',[
@@ -93,6 +94,7 @@ def test_unmanifested_foreign_source_root_blocks_empty_universe(cli,repo,tmp_pat
     _,m=discover(cli,tmp_path,['backend/src/mod.py'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
     from hook_regression_helpers import invoke
+    admit_planning(cli)
     invoke(cli,'phase','IMPLEMENTATION',ok=False)
 
 

@@ -128,11 +128,9 @@ def main():
             delivery=args.delivery,
         )
         if args.task:
-            source = (
-                Path(execution["handoff_path"]).parent
-                / "al-runtime"
-                / (execution["al_session_id"] + ".json")
-            )
+            from harness.execution_hosts import al_source
+
+            source = al_source(execution, read_handoff(execution["handoff_path"]))
             if source.stat().st_size > 32 * 1024 * 1024:
                 raise ExecutionConflict("authority source exceeds limit")
             import json

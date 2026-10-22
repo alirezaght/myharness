@@ -29,7 +29,7 @@ PRE-EXISTING WORKING-TREE CHANGES (user's, not AL's — do not touch or revert):
 
 EVIDENCE (writers only — omit for read-only agents):
 Run every check you report through the AL ledger, never bare:
-  python3 <AL scripts dir>/al_state.py --session <id> evidence run --area <a> [--tier focused --scope <paths> -- <argv>]
+  <the run's $STATE launcher prefix> evidence run --area <a> [--tier focused --scope <paths> -- <argv>]
 Planned checks: <`$STATE evidence status` table, or "none yet">
 Report each check as `E<n> · <area> → PASS | FAIL | EMPTY | INFRA` (the ledger's
 status and counts, verbatim) or `<check> → NOT RUN — <why>`. Never retype a count,
@@ -37,10 +37,9 @@ never cite a log the ledger did not write, never present a focused run as the
 broad suite. A VALID PASS is reused automatically — do not re-run it by hand.
 ```
 
-The ID in an EVIDENCE block is the immutable AL run ID printed by `$STATE
-start`. Native harness or conversation IDs are attribution only and must never
-be passed as `--session`; Claude maps its native conversation to the separately
-minted AL run ID.
+The ID in an EVIDENCE block is the immutable AL run ID the supervisor chose for
+`$STATE start` and passes to the launcher on every call. Native harness or
+conversation IDs are attribution only and must never be passed as `--session`.
 
 Claude's native `start` inspects an existing run only to validate its pointer,
 schema, attribution and repository identity; it never resumes that run. A new

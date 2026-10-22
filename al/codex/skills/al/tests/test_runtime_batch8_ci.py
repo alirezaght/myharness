@@ -6,6 +6,7 @@ import al_ci_inventory as CI
 import al_gate_currency as C
 from hook_regression_helpers import invoke,finish_review
 from batch8_helpers import force_applicable_ci,setup,executable_ci,plan,two_jobs
+from launcher_context import admit_planning
 
 PATHS=['apps/web/src/app.ts','apps/admin/src/app.ts']
 
@@ -99,6 +100,7 @@ def test_complete_local_job_route_can_reach_approval(cli,repo,tmp_path):
         if g['category'] not in {'ci','lint-imports'} and not g.get('obligation_ids'):
             g.update(applicability='NOT_APPLICABLE',required=False,source=m['rules'][0],reason='No such obligation exists in this disposable repository')
     plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base')
+    admit_planning(cli)
     invoke(cli,'phase','IMPLEMENTATION');invoke(cli,'writer','start','--id','engineer','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','engineer','--outcome','success');invoke(cli,'phase','VERIFICATION')
     invoke(cli,'gates','run','--stage','candidate')

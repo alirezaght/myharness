@@ -4,6 +4,7 @@ import al_task_attribution as T
 from evidence_helpers import plan_na_gates, plan_and_run_broad, complete_review
 from test_task_attribution import run, state, contribution
 from test_service_coverage import seed, put
+from launcher_context import admit_planning
 
 
 def test_task_seed_still_discovers_unchanged_preexisting_shared_consumers(cli, repo, state_file):
@@ -45,6 +46,7 @@ def test_small_route_one_writer_retains_independent_fresh_and_comparison_reviews
     run(cli, 'spec-gate', 'SPEC_READY')
     run(cli, 'classify', 'SMALL', '--designer', 'no', '--implementers', 'al-engineer')
     plan_na_gates(cli, tmp_path, ('svc', 'web'))
+    admit_planning(cli)
     run(cli, 'phase', 'IMPLEMENTATION')
     run(cli, 'writer', 'start', '--id', 'repair', '--role', 'al-engineer', '--files', 'svc')
     before = state_file().read_bytes()
@@ -80,6 +82,7 @@ def test_unrelated_preexisting_unit_is_not_a_new_task_unit_blocker(cli, repo, tm
     start(cli)
     plan(cli, repo, tmp_path, ['packages/shared'])
     run(cli, 'gates', 'run', '--stage', 'base')
+    admit_planning(cli)
     run(cli, 'phase', 'IMPLEMENTATION')
     run(cli, 'writer', 'start', '--id', 'shared', '--role', 'al-engineer', '--files', 'packages/shared')
     put(repo, 'packages/shared/src/common.py', 'VALUE=2\n')

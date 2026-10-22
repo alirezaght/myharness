@@ -5,6 +5,7 @@ from pathlib import Path
 from hook_regression_helpers import begin,invoke,finish_review
 from test_hook_batch6 import _manifest,_source,_start
 from batch5_helpers import state,comparison,second_round
+from launcher_context import admit_planning
 
 
 def pause(cli,tmp,kind='interrupt'):
@@ -20,9 +21,9 @@ def ruled(cli,tmp,repo):
 
 def replanned_approval(cli,tmp,repo):
     assert state(cli)['phase']=='PLANNING' and state(cli)['spec_status'] is None
-    invoke(cli,'review-start',ok=False);invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    invoke(cli,'review-start',ok=False);admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False)
     file=tmp/'replacement.json';file.write_text(json.dumps(_manifest(state(cli),rule=_source(repo,'Makefile'))))
-    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base');invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'gates','plan','--file',str(file));invoke(cli,'gates','run','--stage','base');invoke(cli,'spec-gate','SPEC_READY');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','replacement','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','replacement','--outcome','success');invoke(cli,'phase','VERIFICATION')
     invoke(cli,'gates','run','--stage','candidate')
@@ -51,7 +52,7 @@ def unfinished(cli,tmp,repo,phase):
     (repo/'Makefile').write_text('lint-imports:\n\ttrue\n')
     install_replacement(cli,tmp,repo)
     invoke(cli,'gates','run','--stage','base')
-    invoke(cli,'phase',phase)
+    admit_planning(cli);invoke(cli,'phase',phase)
 
 
 def replacement(cli,tmp,repo,command=None):

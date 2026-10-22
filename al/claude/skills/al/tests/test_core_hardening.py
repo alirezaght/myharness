@@ -10,22 +10,32 @@ import al_store
 
 SCRIPTS=Path(__file__).resolve().parents[1]/'scripts'
 from hook_regression_helpers import manifest_for
+from launcher_context import admit_planning
 
 @pytest.fixture
-def cli(tmp_path):
-    repo=tmp_path/'core-repo'; repo.mkdir(); runtime=tmp_path/'runtime'
+def cli(tmp_path, launcher):
+    repo=tmp_path/'core-repo'; repo.mkdir(); runtime=repo/'.claude'/'al-runtime'
     for argv in (['git','init','-q'],['git','config','user.email','test@example.invalid'],['git','config','user.name','test']):
         subprocess.run(argv,cwd=repo,check=True)
     (repo/'code.txt').write_text('implementation\n')
     subprocess.run(['git','add','.'],cwd=repo,check=True)
     subprocess.run(['git','commit','-qm','base'],cwd=repo,check=True)
+    environment=dict(os.environ,AL_RUNTIME_DIR=str(runtime), **{"CL"+"AUDE_PROJECT_DIR":str(repo)})
+    def raw(*argv):
+        # Each command is a real child admitted like the managed launcher child.
+        p=subprocess.run(launcher.child_argv(repo,'case',argv[:1]==('start',),argv),cwd=repo,env=environment,capture_output=True,text=True)
+        return (0 if p.returncode==0 else p.stderr.strip() or p.returncode), p.stdout, p.stderr
+    from launcher_context import current_protocol
+    protocol=current_protocol(raw)
     def call(*argv,ok=True):
-        p=subprocess.run([sys.executable,str(SCRIPTS/'al_state.py'),'--session','case',*argv],cwd=repo,env=dict(os.environ,AL_RUNTIME_DIR=str(runtime), **{"CL"+"AUDE_PROJECT_DIR":str(repo)}),capture_output=True,text=True)
-        if ok: assert p.returncode==0,p.stdout+p.stderr
-        else: assert p.returncode!=0,p.stdout+p.stderr
+        code,out,err=protocol(*argv)
+        p=subprocess.CompletedProcess(list(argv),0 if code==0 else 1,out,err)
+        if ok is True: assert p.returncode==0,p.stdout+p.stderr
+        elif ok is False: assert p.returncode!=0,p.stdout+p.stderr
         return p
     call.repo=repo; call.runtime=runtime
     call.state=lambda:json.loads((runtime/'case.json').read_text())
+    call.plain=protocol
     return call
 
 def _manifest_for_cli(cli,state,anticipated_paths):
@@ -43,6 +53,7 @@ def begin(cli, start=True, anticipated_paths=()):
     st=cli.state()
     manifest=_manifest_for_cli(cli,st,('code.txt',*anticipated_paths))
     f=cli.runtime/'manifest.json';f.write_text(json.dumps(manifest));cli('gates','plan','--file',str(f))
+    admit_planning(cli.plain)
     cli('phase','IMPLEMENTATION');cli('writer','start','--id','engineer','--role','al-engineer','--files','code.txt')
     cli('writer','finish','--id','engineer','--outcome','success');cli('phase','VERIFICATION')
     cli('evidence','plan','--area','unit','--tier','broad','--kind','check','--scope','code.txt','--',sys.executable,'-c','print("verified")')

@@ -8,6 +8,7 @@ import al_shell
 from hook_regression_helpers import (
     CATEGORIES, begin, invoke, manifest_for, report_data, save_report,
 )
+from launcher_context import admit_planning
 
 
 def _source(repo, path):
@@ -39,6 +40,7 @@ def _start(cli, tmp_path, repo, classification="SMALL", designer="no", manifest=
 
 def _to_verification(cli, tmp_path):
     invoke(cli, "gates", "run", "--stage", "base")
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "engineer", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "engineer", "--outcome", "success")
@@ -78,6 +80,7 @@ def test_changed_sourced_rule_can_resume_and_replan(cli, repo, tmp_path, state_f
     invoke(cli, "gates", "plan", "--file", str(replacement_path))
     invoke(cli, "spec-gate", "SPEC_READY")
     invoke(cli, "gates", "run", "--stage", "base")
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
 
 
@@ -91,6 +94,7 @@ def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path,
     path = tmp_path / "gates.json"; path.write_text(json.dumps(_manifest(state, source=source, active="loc", argv=command)))
     invoke(cli, "gates", "plan", "--file", str(path))
     invoke(cli, "gates", "run", "--stage", "base")
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "writer-one", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "writer-one", "--outcome", "success")
@@ -105,6 +109,7 @@ def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path,
     invoke(cli, "task", "amend", "--file", str(amendment))
     invoke(cli, "spec-gate", "SPEC_READY")
     invoke(cli, "gates", "run", "--stage", "base")
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "writer-two", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "writer-two", "--outcome", "success")

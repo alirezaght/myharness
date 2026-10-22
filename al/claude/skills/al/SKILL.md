@@ -40,17 +40,20 @@ If the block above is empty: print `AL · no task given — usage: /al <task spe
   helper: `al-scout` Sonnet/MEDIUM — an optional accelerator with no authority,
   never a substitute for a role. The single source of truth is
   `scripts/al_models.py`; `$STATE show --models` prints it.
-- State script: `STATE="python3 ${CLAUDE_SKILL_DIR}/scripts/al_state.py --session <id>"`.
-  The same files run from `~/.claude/skills/al` (the canonical install) and from a
-  repository copy: the script locates the repository from `$CLAUDE_PROJECT_DIR` or
-  the cwd via `git rev-parse --show-toplevel`, and keeps run state in that
-  repository's `.claude/al-runtime/`, which it git-ignores itself. Use the
-  immutable AL run ID printed by `$STATE start` and pass that same `--session`
-  in every `$STATE` call — including the ones you hand to agents. Native
+- State script: every new run goes through the protected managed launcher that the
+  AL installation provides:
+  `STATE="$HOME/.local/bin/alctl run --repository <repo-root> --platform claude --session <id> --"`.
+  `<repo-root>` is `git rev-parse --show-toplevel` (it must equal
+  `$CLAUDE_PROJECT_DIR` when that is set); run every command from that directory.
+  Choose one fresh AL run id before `start` (for example
+  `al-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)`) and pass exactly that
+  `--session` in every `$STATE` call — including the ones you hand to agents. Native
   `$CLAUDE_SESSION_ID` and `$CLAUDE_CODE_SESSION_ID` values are conversation
-  attribution, not AL run IDs; the runtime maps them to separately minted run
-  IDs. Each implicit start creates a new run and preserves prior history. It
-  never edits code, tests, or git; `evidence run` and
+  attribution, not AL run IDs. The launcher pins the run to its immutable runtime
+  and verifier policy: never invoke `al_state.py` directly (new runs refuse it) and
+  never set `AL_RUNTIME_DIR` (refused). Runs started before pinning keep their
+  original issuer. Run state lives in the repository's `.claude/al-runtime/`, which
+  AL git-ignores itself. It never edits code, tests, or git; `evidence run` and
   `preflight` execute exactly the argv they are given.
 - References — read all five at step 0:
   `${CLAUDE_SKILL_DIR}/reference/routing.md` (spec gate, classification, paths),

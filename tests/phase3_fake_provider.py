@@ -11,9 +11,25 @@ import uuid
 from pathlib import Path
 
 
+def _al(session, *args):
+    # The fake native host follows the launch prompt: AL runs only through alctl.
+    return [
+        os.environ["PHASE3_PROVIDER_ALCTL"],
+        "run",
+        "--repository",
+        os.environ["PHASE3_PROVIDER_REPO"],
+        "--platform",
+        "claude",
+        "--session",
+        session,
+        "--",
+        *args,
+    ]
+
+
 def _run(session, *args, expected=0):
     result = subprocess.run(
-        [sys.executable, os.environ["PHASE3_PROVIDER_AL_STATE"], "--session", session, *args],
+        _al(session, *args),
         cwd=os.environ["PHASE3_PROVIDER_REPO"],
         env=os.environ.copy(),
         capture_output=True,
@@ -85,16 +101,7 @@ def run() -> int:
         },
     )
     blocked = subprocess.run(
-        [
-            sys.executable,
-            os.environ["PHASE3_PROVIDER_AL_STATE"],
-            "--session",
-            session,
-            "integration",
-            "task-admit",
-            "--task",
-            "A",
-        ],
+        _al(session, "integration", "task-admit", "--task", "A"),
         cwd=repo,
         env=os.environ.copy(),
         capture_output=True,
@@ -175,7 +182,7 @@ def run() -> int:
         "B completed with real pytest evidence", encoding="utf-8"
     )
 
-    source = Path(os.environ["AL_RUNTIME_DIR"]) / f"{session}.json"
+    source = repo / ".claude/al-runtime" / f"{session}.json"
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         state = json.loads(source.read_text(encoding="utf-8"))

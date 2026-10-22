@@ -21,7 +21,7 @@ def prepare(tmp_path,platform):
     for argv in [('init','-q'),('add','.'),('commit','-qm','fixture')]:
         subprocess.run(['git',*argv],cwd=repo,env=environment,check=True,capture_output=True,timeout=10)
     helper=Path(__file__).with_name('terminal_fixture.py')
-    result=subprocess.run([sys.executable,'-I','-S','-B',str(helper),str(source),platform,str(repo),str(tmp_path/'artifacts')],
+    result=subprocess.run([sys.executable,'-I','-S','-B',str(helper),str(source),platform,str(repo),str(tmp_path/'artifacts'),str(tmp_path/'installer-state')],
                            cwd=repo,env=environment,capture_output=True,text=True,timeout=90)
     assert result.returncode==0,result.stderr[-4000:]+result.stdout[-1000:]
     state=json.loads(result.stdout)

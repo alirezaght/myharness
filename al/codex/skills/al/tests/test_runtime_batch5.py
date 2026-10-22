@@ -54,7 +54,8 @@ def test_loc_directory_dedup_deleted_path_and_expanded_scope(cli,repo):
     checker(repo);(repo/'services/x/src').mkdir(parents=True)
     (repo/'services/x/src/a.py').write_text('x=1\n')
     g=gate(discover(cli,['services/x/src','services/x/src/a.py','services/x/gone/nested/deleted.py']),'loc')
-    assert g['argv']==['python3','scripts/check-loc.py','scripts','services/x']
+    # The checker predates the run, so attribution keeps it out of the task's scanned changes.
+    assert g['argv']==['python3','scripts/check-loc.py','services/x']
     assert {'services/x','scripts/check-loc.py','scripts/check-loc.allowlist'}<=set(g['scope'])
     assert subprocess.run(g['argv'],cwd=repo,capture_output=True).returncode==0
 

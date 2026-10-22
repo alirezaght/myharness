@@ -45,18 +45,19 @@ If there is no text after `$al`: print `AL · no task given — usage: $al <task
   `$STATE show --spawn <role>` prints the exact `spawn_agent` arguments of the
   role's effective slot.
 - AL roles never spawn agents themselves (`agents.max_depth = 1`).
-- State script: `STATE="python3 $HOME/.codex/skills/al/scripts/al_state.py"`. It resolves
-  the invoking repository with `git rev-parse --show-toplevel` from the current
-  directory, falling back to the current directory outside Git. It is observational
-  only: it never edits code, tests, or git. Run state lives in the invoking
-  repository's `.codex/al-runtime/` and creates a wildcard `.gitignore` there
-  automatically. `$STATE start` mints the
-  run id and records it in `.codex/al-runtime/current`; every later `$STATE`
-  command resolves it from there. If another AL run may share this clone, pass
-  the id `start` printed as `--session <id>` on every command. Agents you hand
-  `$STATE` commands to (the EVIDENCE block) always get the explicit
-  `--session <id>`. `evidence run` and `preflight` execute exactly the argv they
-  are given.
+- State script: every new run goes through the protected managed launcher that the
+  AL installation provides:
+  `STATE="$HOME/.local/bin/alctl run --repository <repo-root> --platform codex --session <id> --"`.
+  `<repo-root>` is `git rev-parse --show-toplevel`; run every command from that
+  directory. Choose one fresh run id before `start` (for example
+  `al-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)`) and use exactly that
+  `--session` for every `$STATE` call of the run, including the ones you hand to
+  agents (the EVIDENCE block). The launcher pins the run to its immutable runtime and
+  verifier policy: never invoke `al_state.py` directly (new runs refuse it) and never
+  set `AL_RUNTIME_DIR` (refused). Runs started before pinning keep their original
+  issuer. Run state lives in the repository's `.codex/al-runtime/`, which AL
+  git-ignores itself. It is observational only: it never edits code, tests, or git.
+  `evidence run` and `preflight` execute exactly the argv they are given.
 - References — read all five at step 0:
   `$HOME/.codex/skills/al/reference/routing.md` (spec gate, classification, paths),
   `$HOME/.codex/skills/al/reference/review.md` (fresh review, severity, churn limits),

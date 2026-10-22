@@ -10,6 +10,7 @@ import al_gates as Gates
 from batch13_helpers import start, manifest
 from hook_regression_helpers import invoke
 from evidence_helpers import wait_running
+from launcher_context import admit_planning
 
 
 def prepare(cli, repo, tmp_path, slow=False):
@@ -179,6 +180,7 @@ def test_resume_other_checks_never_approves_around_actual_architecture_failure(c
     invoke(cli, 'gates', 'run', '--stage', 'base', '--resume')
     invoke(cli, 'spec-gate', 'SPEC_READY')
     invoke(cli, 'classify', 'SMALL', '--designer', 'no', '--implementers', 'al-engineer')
+    admit_planning(cli)
     invoke(cli, 'phase', 'IMPLEMENTATION')
     invoke(cli, 'phase', 'VERIFICATION')
     from evidence_helpers import plan_and_run_broad

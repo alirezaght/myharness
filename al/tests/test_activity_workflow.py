@@ -8,6 +8,8 @@ import sys
 import pytest
 from al.installer.activity_inventory import inventory_activity
 from al.tests.activity_helpers import git_repo
+from al.tests.conftest import copy_al_source
+from al.tests.planning_reports import report_for
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -22,19 +24,31 @@ def workflow_case(tmp_path_factory, request):
     (root / 'pyproject.toml').write_text('[project]\nname="workflow-fixture"\ndependencies=[]\n[tool.setuptools.packages.find]\nwhere=["src"]\n[tool.al.architecture]\nforbidden=["forbidden_dependency"]\n')
     for args in (('add', '.'), ('-c', 'user.name=test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', 'source')):
         subprocess.run(['git', *args], cwd=root, check=True, capture_output=True)
-    script = REPO / 'al' / platform / 'skills/al/scripts/al_state.py'
     runtime = root / ('.' + platform) / 'al-runtime'
-    environment = {k: v for k, v in os.environ.items() if not k.startswith(('AL_', 'CLAUDE_', 'CODEX_'))}
-    environment.update(AL_RUNTIME_DIR=str(runtime), PYTHONDONTWRITEBYTECODE='1')
+    # New runs are admitted only through the protected managed launcher.
+    home = root.parent / 'home';home.mkdir()
+    source = copy_al_source(root.parent / 'source/al')
+    environment = {k: v for k, v in os.environ.items() if not k.startswith(('AL_', 'CLAUDE_', 'CODEX_', 'PYTHON'))}
+    environment.update(HOME=str(home), PYTHONDONTWRITEBYTECODE='1')
     if platform == 'claude':environment['CLAUDE_PROJECT_DIR'] = str(root)
+    launcher = home / 'bin/alctl'
+    boot = subprocess.run([sys.executable, '-I', '-S', '-B', str(source / 'alctl.py'), 'bootstrap', '--source-root', str(source),
+                           '--destination', str(launcher), '--state-root', str(home / 'installer')],
+                          cwd=root, env=environment, capture_output=True, text=True, timeout=60)
+    assert boot.returncode == 0, boot.stdout[-2000:] + boot.stderr[-2000:]
     def cli(*args):
-        process = subprocess.run([sys.executable, '-B', str(script), '--session', 'workflow-format', *args], cwd=root,
+        process = subprocess.run([str(launcher), 'run', '--repository', str(root), '--platform', platform,
+                                  '--session', 'workflow-format', '--', *args], cwd=root,
                                  env=environment, capture_output=True, text=True, timeout=60)
         assert process.returncode == 0, process.stdout[-2000:] + process.stderr[-2000:]
         return process.stdout
     cli('start', '--spec', 'Verify actual content attribution and reserved gate workflow metadata.')
     cli('spec-gate', 'SPEC_READY')
     cli('classify', 'SMALL', '--designer', 'no', '--implementers', 'al-engineer')
+    report = root.parent / 'architect-planning-report.json'
+    report.write_text(json.dumps(report_for(json.loads(cli('planning', 'packet')))))
+    saved = json.loads(cli('planning', 'report', '--file', str(report)))
+    cli('planning', 'admit', '--file', saved['materialized_obligations']['stored_path'])
     paths = root.parent / 'paths.json';paths.write_text('["src"]')
     manifest = json.loads(cli('gates', 'discover', '--paths-file', str(paths)))
     for gate in manifest['gates']:
@@ -108,3 +122,55 @@ def test_new_workflow_metadata_drift_stays_unknown(workflow_case, damage):
         path.write_bytes(raw);path.chmod(mode)
         if restore:
             blob, before, before_mode = restore;blob.write_bytes(before);blob.chmod(before_mode)
+
+
+PINNED_DAMAGE = ['origin-run', 'origin-kind', 'initialization-outside-pins', 'initialization-bytes',
+                 'initialization-mismatch', 'admission-without-origin', 'admission-status']
+
+
+@pytest.mark.parametrize('damage', PINNED_DAMAGE)
+def test_pinned_run_origin_and_initialization_drift_stays_unknown(workflow_case, damage, tmp_path):
+    """Pinned runs are recognized only through their exact protected launcher binding."""
+    path = workflow_case['state_path'];raw = path.read_bytes();mode = path.stat().st_mode & 0o777
+    state = json.loads(raw);restore = None
+    origin, admission = state['runtime_origin'], state['proof_admission']
+    initialization = Path(origin['initialization']['stored_path'])
+    try:
+        if damage == 'origin-run':origin['run_id'] = 'f' * 8
+        elif damage == 'origin-kind':origin['kind'] = 'run-pin-binding-v2'
+        elif damage == 'initialization-outside-pins':
+            moved = tmp_path / 'initializations' / initialization.name
+            moved.parent.mkdir();moved.write_bytes(initialization.read_bytes())
+            origin['initialization']['stored_path'] = admission['initialization']['stored_path'] = str(moved)
+        elif damage == 'initialization-bytes':
+            restore = (initialization, initialization.read_bytes(), initialization.stat().st_mode & 0o777)
+            initialization.chmod(0o600);initialization.write_bytes(initialization.read_bytes() + b' ')
+        elif damage == 'initialization-mismatch':admission['initialization'] = dict(admission['initialization'], sha256='0' * 64)
+        elif damage == 'admission-without-origin':del state['runtime_origin']
+        else:admission['status'] = 'forged'
+        if damage != 'initialization-bytes':path.write_text(json.dumps(state))
+        result = inventory(workflow_case)
+        assert not result['stable']
+        assert result['roots'][0]['records'][0]['classification'] == 'unknown'
+    finally:
+        path.write_bytes(raw);path.chmod(mode)
+        if restore:
+            target, before, before_mode = restore;target.write_bytes(before);target.chmod(before_mode)
+
+
+def test_installer_v2_record_profiles_match_both_runtime_distributions():
+    import importlib.util
+    from al.installer.activity_workflow import EXECUTION, PREPARATIONS
+    for platform in ('codex', 'claude'):
+        spec = importlib.util.spec_from_file_location(
+            'versions_' + platform, REPO / 'al' / platform / 'skills/al/scripts/al_execution_versions.py',
+            submodule_search_locations=None)
+        sys.path.insert(0, str(REPO / 'al' / platform / 'skills/al/scripts'))
+        try:
+            module = importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        finally:
+            sys.path.pop(0);sys.modules.pop('al_verification_inputs', None)
+        fields = module.V2_FIELDS
+        assert PREPARATIONS['verification-preparation-v2'] == fields['verification-preparation']
+        assert EXECUTION['execution-receipt-v2'] == fields['execution-receipt']
+        assert EXECUTION['execution-association-v2'] == fields['execution-association']

@@ -193,6 +193,8 @@ def test_no_overlap_at_a_barrier(cli, tmp_path):
 
 def test_review_start_is_only_available_after_verification(cli, repo):
     cli("start", "--spec", "Review requires a complete verification route for the frozen candidate.")
+    cli("spec-gate", "SPEC_READY")  # admitted planning isolates the phase gate under test
+    cli("classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
     plan_both(cli)
     before = cli("show")[1]
     code, out, err = cli("review-start")
@@ -202,5 +204,7 @@ def test_review_start_is_only_available_after_verification(cli, repo):
 
 def test_review_without_a_plan_is_refused_from_planning(cli):
     cli("start", "--spec", "Review cannot bypass the planned verification and gate route.")
+    cli("spec-gate", "SPEC_READY")  # admitted planning isolates the phase gate under test
+    cli("classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
     code, out, err = cli("review-start")
     assert code != 0 and "PLANNING" in str(code)

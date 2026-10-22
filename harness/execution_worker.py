@@ -6,7 +6,6 @@ import os
 import queue
 import secrets
 import subprocess
-import sys
 import threading
 import time
 import uuid
@@ -21,6 +20,9 @@ from harness.execution_bootstrap import execution_environment, module_argv
 from harness.execution_contract import MAX_RECORD, canonical, loads
 from harness.execution_handoff import read_handoff, same_path
 from harness.execution_hosts import (
+    al_argv,
+    al_runtime,
+    al_source,
     installed_package,
     native_diagnostic,
     native_identity,
@@ -135,12 +137,8 @@ def _drain(stream, channel, output):
 def replay_source(conn, execution_id, token):
     execution = get_execution(conn, execution_id)
     envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
-    # The runtime directory is fixed by our launch environment, never an event path.
-    source = (
-        Path(execution["handoff_path"]).parent
-        / "al-runtime"
-        / (execution["al_session_id"] + ".json")
-    )
+    # The runtime directory is fixed by the repository and host, never an event path.
+    source = al_source(execution, envelope)
     if not source.is_file():
         return False
     if source.stat().st_size > 32 * 1024 * 1024:
@@ -181,10 +179,7 @@ def dispatch_pending(controller, execution_id, package):
 
     execution = get_execution(controller.conn, execution_id)
     envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
-    environment = dict(
-        execution_environment(),
-        AL_RUNTIME_DIR=str(Path(execution["handoff_path"]).parent / "al-runtime"),
-    )
+    environment = dict(execution_environment())
     environment["PYTHONPATH"] = (
         str(Path(__file__).resolve().parent.parent) + os.pathsep + environment.get("PYTHONPATH", "")
     )
@@ -200,16 +195,16 @@ def dispatch_pending(controller, execution_id, package):
             require_execution_authority(
                 controller, execution_id, operation="decision", delivery=row["id"]
             )
-            command = [
-                sys.executable,
-                package["script"],
-                "--session",
+            command = al_argv(
+                package["launcher"],
+                execution["host"],
+                envelope["repository"],
                 execution["al_session_id"],
                 "integration",
                 "decision",
                 "--file",
                 str(path),
-            ]
+            )
             result = subprocess.run(
                 command,
                 cwd=envelope["repository"],
@@ -229,7 +224,15 @@ def dispatch_pending(controller, execution_id, package):
 
 
 def _prompt(execution, package, envelope, mode):
-    runtime = str(Path(execution["handoff_path"]).parent / "al-runtime")
+    runtime = str(al_runtime(execution["host"], envelope["repository"]))
+    launcher = " ".join(
+        al_argv(
+            package["launcher"],
+            execution["host"],
+            envelope["repository"],
+            execution["al_session_id"],
+        )
+    )
     return (
         "Use the installed $al skill and its pinned role/permission policies to "
         "implement the exact "
@@ -254,9 +257,9 @@ def _prompt(execution, package, envelope, mode):
             else " and start --package-file <that task-package.json> --handoff "
             "<that handoff.json>. "
         )
-        + "The fixed installed runtime is "
-        + package["script"]
-        + "; AL_RUNTIME_DIR is "
+        + "Run every AL state command through the protected launcher as `"
+        + launcher
+        + " <command>`; never invoke al_state.py directly. Its run state is in "
         + runtime
         + ". "
         + (
@@ -374,10 +377,7 @@ def supervise(conn, execution_id, token, mode="start"):
             )
             if native_id:
                 bind_host(conn, execution_id, native_id, token)
-        env = dict(
-            execution_environment(),
-            AL_RUNTIME_DIR=str(Path(execution["handoff_path"]).parent / "al-runtime"),
-        )
+        env = dict(execution_environment())
         env["PYTHONPATH"] = (
             str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
         )

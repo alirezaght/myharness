@@ -9,6 +9,7 @@ import al_shell
 from hook_regression_helpers import (
     CATEGORIES, begin, invoke, manifest_for, report_data,
 )
+from launcher_context import admit_planning
 
 GUARD = Path(__file__).resolve().parents[1] / "scripts" / "al_readonly_guard.py"
 
@@ -40,6 +41,7 @@ def _start(cli, tmp_path, repo, classification="SMALL", designer="no", manifest=
 
 
 def _to_verification(cli):
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "engineer", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "engineer", "--outcome", "success")
@@ -81,6 +83,7 @@ def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path,
                          argv=[sys.executable, "-c", "print('candidate gate passed')"])
     path = tmp_path / "gates.json"; path.write_text(json.dumps(manifest)); invoke(cli, "gates", "plan", "--file", str(path))
     invoke(cli, "gates", "run", "--stage", "base")
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "writer-one", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "writer-one", "--outcome", "success"); invoke(cli, "phase", "VERIFICATION")
@@ -91,7 +94,7 @@ def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path,
     amendment.write_text(json.dumps({"id": "AM-1", "text": "User adds a substantive verification requirement.",
                                      "source": "user", "affected_criteria": ["AC-01"]}))
     invoke(cli, "task", "amend", "--file", str(amendment)); invoke(cli, "spec-gate", "SPEC_READY")
-    invoke(cli, "gates", "run", "--stage", "base"); invoke(cli, "phase", "IMPLEMENTATION")
+    invoke(cli, "gates", "run", "--stage", "base"); admit_planning(cli);invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "writer-two", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "writer-two", "--outcome", "success"); invoke(cli, "phase", "VERIFICATION")
     invoke(cli, "evidence", "run", "--area", "unit", "--fresh")

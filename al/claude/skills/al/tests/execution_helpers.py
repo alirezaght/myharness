@@ -27,15 +27,13 @@ def bound(cli, tmp_path, repo, monkeypatch, *, bind_source=True):
     task = controller.create_task('Implement task-scoped execution with observable verification', 'trivial')
     module.settle(controller, task.id); controller.advance(task.id)
     ApprovalGate(controller, task.id, SpecStore(repo / 'docs/specs' / task.id), repo).approve()
-    launch = start_execution(controller, task.id, launch=False)
+    import al_store
+    # The host must match the distribution under test: its AL state lives in <repo>/.<host>/al-runtime.
+    launch = start_execution(controller, task.id, host=al_store.RUNTIME_DIR.parent.name[1:], launch=False)
     eid = launch['execution']['id']; saved = get_execution(conn, eid)
     handoff = Path(saved['handoff_path'])
     package = handoff.parent / 'task-package.json'
-    import al_store
-    runtime = handoff.parent / 'al-runtime'
-    monkeypatch.setattr(al_store, 'RUNTIME_DIR', runtime)
-    monkeypatch.setattr(al_store, 'CURRENT', runtime / 'current')
-    monkeypatch.setenv('AL_RUNTIME_DIR', str(runtime))
+    import al_store  # pinned runs keep state in the repository's own runtime layout
     code, out, err = cli('--session', saved['al_session_id'], 'start', '--package-file', str(package), '--handoff', str(handoff))
     assert code == 0, (code, out, err)
     # Harness ingestion binds exactly the actual AL start event, as the worker does.

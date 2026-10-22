@@ -10,6 +10,7 @@ import al_pytest_profile as Profile
 from hook_regression_helpers import invoke,manifest_for
 from test_ci_conventional import project,WORKFLOW
 from test_service_coverage import start,discover,put
+from launcher_context import admit_planning
 
 
 def configured(repo):
@@ -58,7 +59,7 @@ def test_unsupported_addopts_is_incomplete_and_atomic(cli,repo,tmp_path,monkeypa
     configured(repo);monkeypatch.setenv('PYTEST_ADDOPTS',value);start(cli)
     st,m=discover(cli,tmp_path,['ordinary_project/__init__.py']);assert m['service_coverage']['assessment']['outcome']=='incomplete'
     file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
-    invoke(cli,'gates','plan','--file',str(file));before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    invoke(cli,'gates','plan','--file',str(file));admit_planning(cli);before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
     assert json.loads(cli('show')[1])==before
 
 

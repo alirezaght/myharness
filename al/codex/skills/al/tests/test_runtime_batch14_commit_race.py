@@ -9,13 +9,18 @@ from batch14_process_helpers import prepare,finalized
 
 
 @pytest.mark.parametrize('remote',[False,True])
-def test_locked_observer_cannot_see_transient_pass_before_cancelled_finalization(cli,repo,tmp_path,monkeypatch,remote):
+def test_locked_observer_cannot_see_transient_pass_before_cancelled_finalization(cli,repo,tmp_path,monkeypatch,remote,launcher):
     prepare(cli,repo,tmp_path,monkeypatch,remote,'normal')
+    monkeypatch.setenv('AL_TEST_LAUNCHER',launcher.request())
     scripts=Path(__file__).resolve().parents[1]/'scripts';sid=state(cli)['session_id']
     ready=tmp_path/'observer-ready';observed=tmp_path/'observer-result';premature=tmp_path/'premature'
     watcher="""import sys
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
+import json,os
+sys.path.insert(0,json.loads(os.environ['AL_TEST_LAUNCHER'])['tests'])
+from launcher_context import Launcher
+Launcher.enter_from(os.environ['AL_TEST_LAUNCHER'],Path.cwd(),sys.argv[2])
 import al_store
 Path(sys.argv[3]).write_text('ready')
 with al_store.locked(sys.argv[2]):
@@ -25,6 +30,10 @@ with al_store.locked(sys.argv[2]):
     code="""import json,os,signal,subprocess,sys,time
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
+import json,os
+sys.path.insert(0,json.loads(os.environ['AL_TEST_LAUNCHER'])['tests'])
+from launcher_context import Launcher
+Launcher.enter_from(os.environ['AL_TEST_LAUNCHER'],Path.cwd(),sys.argv[2])
 import al_store,al_state,al_gate_process
 scripts,sid,ready,observed,premature,watcher=sys.argv[1:]
 original_save=al_store.save

@@ -6,6 +6,7 @@ from pathlib import Path
 import al_gate_inventory as gate_inventory
 import al_service_coverage as Coverage
 import al_gate_discovery as Discovery
+from launcher_context import admit_planning
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -82,6 +83,7 @@ def begin(cli, tmp_path, repo, spec="Verify the guarded candidate before approva
     path.write_text(json.dumps(manifest))
     invoke(cli, "gates", "plan", "--file", str(path))
     invoke(cli, "gates", "run", "--stage", "base")
+    admit_planning(cli)
     invoke(cli, "phase", "IMPLEMENTATION")
     invoke(cli, "writer", "start", "--id", "engineer", "--role", "al-engineer", "--files", "svc/app.py")
     invoke(cli, "writer", "finish", "--id", "engineer", "--outcome", "success")
