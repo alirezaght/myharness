@@ -70,6 +70,5 @@ def current_gaps(st, projection):
     if projection['invalidation_epoch'] != epoch(st):gaps.append('execution invalidation epoch differs')
     expected = {'implementation': Resources.implementation_digest(), 'origin': Resources.execution_origin()}
     if projection['runtime_binding'] != expected:gaps.append('execution runtime/policy differs')
-    if projection['environment']['inputs'] != Inputs.ambient_environment():
-        gaps.append('execution ambient inputs differ')
+    gaps += Inputs.environment_gaps(projection['environment'])
     return gaps

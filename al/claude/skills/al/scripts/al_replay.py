@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,28 @@ import al_replay_policy as P
 
 def invoke(root, argv, env):
     return subprocess.run(argv, cwd=root, env=env, capture_output=True, text=True, timeout=120)
+
+
+DISTRIBUTION = Path(__file__).resolve().parents[4]
+PLATFORM = Path(__file__).resolve().parents[3].name
+
+
+def pinned_launcher(package, work, env):
+    """A disposable managed launcher whose pinned runtime carries the candidate's scripts.
+
+    New runs are admitted only through the protected launcher, so actions replay through
+    it; a candidate that cannot be pinned reports its actions as unsupported."""
+    distribution = work / 'distribution' / 'al'
+    ignore = shutil.ignore_patterns('__pycache__', '*.pyc', '.pytest_cache')
+    shutil.copytree(DISTRIBUTION, distribution, ignore=ignore)
+    scripts = distribution / PLATFORM / 'skills' / 'al' / 'scripts'
+    shutil.rmtree(scripts)
+    shutil.copytree(package / 'scripts', scripts, ignore=ignore)
+    launcher = work / 'bin' / 'alctl'
+    result = invoke(work, [sys.executable, '-I', '-S', '-B', str(distribution / 'alctl.py'), 'bootstrap',
+                           '--source-root', str(distribution), '--destination', str(launcher),
+                           '--state-root', str(work / 'installer')], env)
+    return (launcher, None) if result.returncode == 0 else (None, (result.stdout + result.stderr)[-2000:])
 
 
 def resolve(value, state):
@@ -36,9 +59,11 @@ def write_fixture(root,path,value):
 
 def run_case(package, case):
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix='al-replay-') as tmp:
-        root = Path(tmp).resolve(); runtime = root / 'runtime'
-        env = dict(os.environ, AL_RUNTIME_DIR=str(runtime), **{"CL"+"AUDE_PROJECT_DIR":str(root)})
+    with tempfile.TemporaryDirectory(prefix='al-replay-') as tmp, tempfile.TemporaryDirectory(prefix='al-replay-launcher-') as tools:
+        root = Path(tmp).resolve(); runtime = root / ('.' + PLATFORM) / 'al-runtime'
+        env = {k: v for k, v in os.environ.items() if k != 'AL_RUNTIME_DIR'}
+        env["CL"+"AUDE_PROJECT_DIR"] = str(root)
+        launcher, launch_error = pinned_launcher(package, Path(tools).resolve(), env)
         for argv in (['git','init','-q'], ['git','config','user.email','replay@example.invalid'],
                      ['git','config','user.name','AL Replay']):
             invoke(root, argv, env).check_returncode()
@@ -63,7 +88,11 @@ def run_case(package, case):
                 outcomes.append({'kind':'action','argv':[],'matched':False,'unsupported':True,'reason':'action argv must resolve to a list of strings: '+repr(action.get('argv'))})
                 continue
             arguments=[str(root/x[6:]) if x.startswith('$file:') else x for x in arguments]
-            argv=[sys.executable,str(package/'scripts/al_state.py'),'--session','replay',*arguments]
+            if launcher is None:
+                unavailable=True
+                outcomes.append({'kind':'action','argv':arguments,'matched':False,'unsupported':True,'reason':'candidate runtime cannot be pinned: '+launch_error})
+                continue
+            argv=[str(launcher),'run','--repository',str(root),'--platform',PLATFORM,'--session','replay','--',*arguments]
             try:result=invoke(root,argv,env)
             except (OSError,subprocess.TimeoutExpired) as exc:
                 unavailable=True

@@ -22,10 +22,12 @@ def prepare(tmp_path,platform):
         subprocess.run(['git',*argv],cwd=repo,env=environment,check=True,capture_output=True,timeout=10)
     helper=Path(__file__).with_name('terminal_fixture.py')
     result=subprocess.run([sys.executable,'-I','-S','-B',str(helper),str(source),platform,str(repo),str(tmp_path/'artifacts'),str(tmp_path/'installer-state')],
-                           cwd=repo,env=environment,capture_output=True,text=True,timeout=90)
+                           cwd=repo,env=environment,capture_output=True,text=True,timeout=300)  # ~40 real launcher commands
     assert result.returncode==0,result.stderr[-4000:]+result.stdout[-1000:]
     state=json.loads(result.stdout)
     launcher=tmp_path/'bin/alctl';bootstrap=bootstrap_cli(source,launcher,tmp_path/'installer-state')
+    # Queries run from the same execution environment that produced the approval.
+    state['environment']=environment
     return source,repo,state,bootstrap
 
 
@@ -71,7 +73,7 @@ else:raise AssertionError('moving terminal query returned approval proof')
 '''
         try:
             result=subprocess.run([sys.executable,'-I','-S','-B','-c',driver,json.dumps(request),str(repo),state['session'],state['run'],platform,str(path),str(artifact)],
-                                   cwd=repo,capture_output=True,text=True,timeout=120)
+                                   cwd=repo,env=state['environment'],capture_output=True,text=True,timeout=120)
             assert result.returncode==0,kind+': '+result.stderr[-2500:]+result.stdout[-1000:]
             assert json.loads(result.stdout)['refused']
             proof=json.loads(artifact.read_bytes())

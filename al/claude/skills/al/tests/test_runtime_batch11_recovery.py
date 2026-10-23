@@ -34,8 +34,7 @@ def test_repeated_amendments_rebind_checkpoints_preserve_provenance_and_require_
         assert set(refs)<={r['id'] for r in st['checkpoints']}
         for previous in st['checkpoints']:
             if previous['id'] in refs:assert A.read(previous)==refs[previous['id']]
-        admit_planning(cli)
-        invoke(cli,'spec-gate','SPEC_READY');before=state_file().read_bytes()
+        invoke(cli,'spec-gate','SPEC_READY');admit_planning(cli);before=state_file().read_bytes()
         invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
         if number==1:
             import sys

@@ -42,14 +42,15 @@ If the block above is empty: print `AL · no task given — usage: /al <task spe
   `scripts/al_models.py`; `$STATE show --models` prints it.
 - State script: every new run goes through the protected managed launcher that the
   AL installation provides:
-  `STATE="$HOME/.local/bin/alctl run --repository <repo-root> --platform claude --session <id> --"`.
+  `STATE="$HOME/.local/bin/alctl run --repository <repo-root> --platform claude --"`.
   `<repo-root>` is `git rev-parse --show-toplevel` (it must equal
   `$CLAUDE_PROJECT_DIR` when that is set); run every command from that directory.
-  Choose one fresh AL run id before `start` (for example
-  `al-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)`) and pass exactly that
-  `--session` in every `$STATE` call — including the ones you hand to agents. Native
+  Inside this Claude conversation the launcher mints the AL run id at `start` and
+  every later `$STATE` call follows the conversation's active run. `start` prints the
+  run id: hand agents that exact id as `--session <id>` (insert it before `--`), and
+  pass it yourself whenever you must address a specific run. Native
   `$CLAUDE_SESSION_ID` and `$CLAUDE_CODE_SESSION_ID` values are conversation
-  attribution, not AL run IDs. The launcher pins the run to its immutable runtime
+  attribution, never AL run IDs. The launcher pins the run to its immutable runtime
   and verifier policy: never invoke `al_state.py` directly (new runs refuse it) and
   never set `AL_RUNTIME_DIR` (refused). Runs started before pinning keep their
   original issuer. Run state lives in the repository's `.claude/al-runtime/`, which

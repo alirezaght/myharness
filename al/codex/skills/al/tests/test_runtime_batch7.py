@@ -35,7 +35,7 @@ def test_unset_empty_and_changed_environment_invalidate_both_stages(cli,repo,tmp
     begin(cli,tmp_path,repo);monkeypatch.delenv('AL_VARIANT',raising=False)
     invoke(cli,'gates','plan','--file',str(plan(cli,repo,tmp_path,['AL_VARIANT'])))
     for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)
-    assert json.loads(cli('gates','status')[1])=={'base':[],'candidate':[]}
+    assert json.loads(cli('gates','status')[1])=={'base':[],'candidate':[],'recovery':[]}
     monkeypatch.setenv('AL_VARIANT','')
     assert all(json.loads(cli('gates','status')[1]).values())
     for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)

@@ -70,10 +70,14 @@ def session_id(explicit, allow_new=False):
         return explicit
     from al_native_sessions import active,conversation
     current=active(conversation())
+    # Under the managed launcher the run id was minted or resolved for this conversation.
+    pinned=sys.modules.get('_al_run_pin_context')
+    reserved=pinned.transaction['session_id'] if pinned is not None and pinned.transaction else None
     if current and not allow_new:
+        if reserved is not None and current!=reserved:sys.exit('al_state: native conversation pointer differs from the protected run binding')
         return current
     if allow_new:
-        return new_session_id()
+        return reserved or new_session_id()
     sys.exit("al_state: no session id — pass --session ID, or run `start` first "
              "(.claude/al-runtime/current is missing)")
 

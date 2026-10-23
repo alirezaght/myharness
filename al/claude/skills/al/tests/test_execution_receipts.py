@@ -153,3 +153,105 @@ def test_module_ban_selector_observes_added_and_deleted_python_members(cli, repo
     added = Scope.source_binding(st, profile)
     assert added != first and 'svc/new_module.py' in added['membership']
     new.unlink();assert Scope.source_binding(st, profile) == first
+
+
+def state_after_interrupt(cli):
+    import al_store
+    code, out, err = cli('show')
+    assert code == 0, (code, out, err)
+    return al_store.load(al_store.CURRENT.read_text().strip())
+
+
+def associated(st, stage='candidate'):
+    rows = evidence_for_gates(st, {'boundary', 'duplicate'}, stage)
+    return rows['boundary'][1], rows['duplicate'][1]
+
+
+@pytest.mark.parametrize('stage', ['base', 'candidate'])
+def test_equivalent_reader_gates_share_checkout_and_one_real_execution(cli, repo, tmp_path, monkeypatch, stage):
+    from test_gate_reuse import counted_checkout
+    reader_gates(cli, repo, tmp_path);roots = counted_checkout(monkeypatch)
+    invoke(cli, 'gates', 'run', '--stage', stage)
+    st = json.loads(cli('show')[1]);original, target = associated(st, stage)
+    assert len(set(roots)) == 1 and original['pid'] and target['pid'] is None
+    assert target['execution_association'] and L.entry_verdict(st, target)[0] == 'VALID'
+
+
+@pytest.mark.parametrize('seam', ['before-save', 'after-save', 'signal-save'])
+def test_association_finalization_cancellation_cannot_leave_pass(cli, repo, tmp_path, monkeypatch, seam):
+    import os
+    import signal
+    import al_store
+    from test_gate_reuse import boundary_runs
+    reader_gates(cli, repo, tmp_path)
+    original = al_store.save;fired = []
+    def save(sid, st):
+        entry = st['evidence']['entries'][-1]
+        if entry.get('execution_association') and entry['status'] == 'PASS' and not fired:
+            fired.append(True)
+            if seam == 'signal-save':os.kill(os.getpid(), signal.SIGTERM)
+            else:
+                if seam == 'after-save':original(sid, st)
+                raise KeyboardInterrupt
+        return original(sid, st)
+    monkeypatch.setattr(al_store, 'save', save)
+    with pytest.raises(KeyboardInterrupt):invoke(cli, 'gates', 'run', '--stage', 'candidate')
+    st = state_after_interrupt(cli);entries = st['evidence']['entries'][-2:]
+    assert fired and entries[0]['status'] == 'PASS' and entries[1]['status'] == 'INFRA'
+    assert entries[1]['exit'] == 130 and entries[1]['pid'] is None and entries[1]['interrupted']
+    assert len(boundary_runs(st)) == 2 and all(e['status'] != 'RUNNING' for e in entries)
+
+
+def test_cancellation_while_writing_association_log_finalizes_without_child(cli, repo, tmp_path, monkeypatch):
+    from test_gate_reuse import boundary_runs
+    reader_gates(cli, repo, tmp_path)
+    real = Path.write_text;fired = []
+    def write(path, text, *args, **kwargs):
+        result = real(path, text, *args, **kwargs)
+        if text.startswith('Associated immutable execution receipt') and not fired:
+            fired.append(True);raise KeyboardInterrupt
+        return result
+    monkeypatch.setattr(Path, 'write_text', write)
+    with pytest.raises(KeyboardInterrupt):invoke(cli, 'gates', 'run', '--stage', 'candidate')
+    st = state_after_interrupt(cli);entry = st['evidence']['entries'][-1]
+    assert fired and entry['status'] == 'INFRA' and entry['exit'] == 130 and entry['pid'] is None
+    assert len(boundary_runs(st)) == 2
+
+
+@pytest.mark.parametrize('signal_cancel', [False, True])
+def test_cancellation_keeps_exit_130_when_manifest_changes_during_association_save(cli, repo, tmp_path, monkeypatch, signal_cancel):
+    import os
+    import signal
+    import al_store
+    from test_gate_reuse import boundary_runs
+    reader_gates(cli, repo, tmp_path)
+    real = al_store.save;fired = []
+    def save(sid, st):
+        entry = st['evidence']['entries'][-1]
+        if entry.get('execution_association') and entry['status'] == 'PASS' and not fired:
+            fired.append(True);st['gate_manifests'][-1]['sha256'] = 'replacement'
+            real(sid, st)
+            if signal_cancel:os.kill(os.getpid(), signal.SIGTERM)
+            else:raise KeyboardInterrupt
+            return
+        return real(sid, st)
+    monkeypatch.setattr(al_store, 'save', save)
+    with pytest.raises(KeyboardInterrupt):invoke(cli, 'gates', 'run', '--stage', 'candidate')
+    st = state_after_interrupt(cli);entry = st['evidence']['entries'][-1]
+    assert fired and entry['status'] == 'INFRA' and entry['exit'] == 130 and entry['interrupted']
+    assert 'cancelled' in entry['note'] and len(boundary_runs(st)) == 2
+
+
+@pytest.mark.parametrize('stage', ['base', 'candidate'])
+def test_source_edit_keeps_pinned_base_association_but_stales_candidate(cli, repo, tmp_path, stage):
+    reader_gates(cli, repo, tmp_path)
+    invoke(cli, 'gates', 'run', '--stage', stage)
+    st = json.loads(cli('show')[1]);assert not G.gate_gaps(st, stage)
+    (repo/'svc/app.py').write_text('candidate_implementation_edit = True\n')
+    assert bool(G.gate_gaps(st, stage)) == (stage == 'candidate')
+    original, target = associated(st, stage)
+    if stage == 'base':
+        Path(original['log']).write_text('tampered base log')
+        assert R.validate_association(st, target) and G.gate_gaps(st, 'base')
+    else:
+        assert L.entry_verdict(st, target)[0] != 'VALID'

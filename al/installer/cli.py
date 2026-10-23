@@ -20,7 +20,7 @@ def parser():
     pinned = sub.add_parser('run', help='run AL through its protected immutable runtime')
     pinned.add_argument('--repository', required=True)
     pinned.add_argument('--platform', choices=('codex', 'claude'), required=True)
-    pinned.add_argument('--session', required=True)
+    pinned.add_argument('--session', help='AL run id; inside a Claude conversation it may be omitted')
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
     for name in ('source-proof','replan-proof','compatibility-readiness'):
         proof = sub.add_parser(name, help='read-only protected source policy validation')

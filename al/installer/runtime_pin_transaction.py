@@ -147,11 +147,29 @@ def commit_run_binding(transaction):
         if state is None:
             raise ValueError("reserved runtime did not publish matching state")
         if current["status"] == "RESERVED":
-            pointer = state_path(transaction).parent / "current"
-            raw, _ = capture(pointer)
-            if raw != (transaction["session_id"] + "\n").encode():
+            if not _published(transaction):
                 raise ValueError("runtime start pointer publication is incomplete")
             write_json(path, dict(current, status="ACTIVE"))
+
+
+def _published(transaction):
+    """The start published its active pointer: `current`, or a Claude conversation's pointer."""
+    runtime = state_path(transaction).parent
+    session = transaction["session_id"]
+    pointer = runtime / "current"
+    if pointer.exists():
+        raw, _ = capture(pointer)
+        if raw == (session + "\n").encode():
+            return True
+    native = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if transaction["platform"] != "claude" or not native:
+        return False
+    import hashlib
+    conversation = runtime / "conversations" / (hashlib.sha256(native.encode()).hexdigest() + ".json")
+    if not conversation.exists():
+        return False
+    raw, _ = capture(conversation)
+    return decode(raw) == {"conversation_id": native, "session_id": session}
 
 
 def read_state(transaction):

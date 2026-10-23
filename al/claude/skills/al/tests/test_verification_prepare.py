@@ -80,10 +80,12 @@ def test_preparation_currency_refuses_each_actual_dependency(cli, repo, monkeypa
         (repo / "verification-input.json").chmod(0o600)
     elif change == "membership":
         (repo / "verification-input.json").rename(repo / "replacement-input.json")
+    # Execution-relevant variables bind preparation; unrelated session variables do not
+    # (see test_reuse_environment_binds_declared_and_execution_variables_only).
     elif change == "environment":
-        monkeypatch.setenv("AL_PREPARATION_NEW_INPUT", "secret-not-recorded")
+        monkeypatch.setenv("PYTHONWARNINGS", "error")
     elif change == "empty-environment":
-        monkeypatch.setenv("AL_PREPARATION_NEW_INPUT", "")
+        monkeypatch.setenv("PYTHONWARNINGS", "")
     elif change == "plan":
         st["evidence"]["plan"]["manifest-read"]["argv"][-1] = "other.json"
     elif change == "run":
@@ -117,7 +119,7 @@ def test_preparation_currency_refuses_each_actual_dependency(cli, repo, monkeypa
 
 def test_unknown_identifier_and_shell_text_cannot_be_preparation_authority(cli, repo):
     planned(cli, repo)
-    path = al_store.state_path(al_store.session_id(None))
+    path = al_store.state_path(json.loads(cli("show")[1])["session_id"])
     before = path.read_bytes()
     invoke(cli, "verification", "prepare", "--area", "unknown", ok=False)
     assert path.read_bytes() == before
@@ -209,3 +211,25 @@ def test_plain_available_tool_does_not_prove_locked_setup_or_correct_configurati
     result = P.prepare(st, area="manifest-read")
     assert any("setup chain" in gap or "unavailable" in gap for gap in result["blockers"])
     assert not result["setup_recipe"]
+
+
+def test_reuse_environment_binds_declared_and_execution_variables_only(monkeypatch):
+    import al_verification_inputs as I
+    monkeypatch.delenv('SERVICE_TOKEN', raising=False)
+    policy = {'kind': 'declared-execution-v1', 'declared_names': ['SERVICE_TOKEN'],
+              'inputs': I.execution_environment(['SERVICE_TOKEN'])}
+    # Unrelated session markers (agent, terminal) never invalidate approved evidence.
+    monkeypatch.setenv('CLAUDECODE', '1');monkeypatch.setenv('TERM_SESSION_ID', 'other')
+    assert I.environment_gaps(policy) == []
+    monkeypatch.setenv('SERVICE_TOKEN', 'declared')
+    assert I.environment_gaps(policy) == ['execution environment inputs differ']
+    monkeypatch.delenv('SERVICE_TOKEN')
+    monkeypatch.setenv('PYTHONSAFEPATH', '1')
+    assert I.environment_gaps(policy) == ['execution environment inputs differ']
+    monkeypatch.delenv('PYTHONSAFEPATH')
+    monkeypatch.setenv('PATH', '/nonexistent:' + I.os.environ['PATH'])
+    assert I.environment_gaps(policy) == ['execution environment inputs differ']
+    legacy = {'kind': 'exact-ambient-v1', 'declared_names': [], 'inputs': I.ambient_environment()}
+    monkeypatch.setenv('UNRELATED_SESSION_MARKER', 'x')
+    assert I.environment_gaps(legacy) == ['execution ambient inputs differ']
+    assert I.environment_gaps({'kind': 'future-v9'}) == ['unsupported execution environment policy']

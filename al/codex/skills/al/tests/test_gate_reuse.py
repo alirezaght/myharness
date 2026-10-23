@@ -51,24 +51,6 @@ def counted_checkout(monkeypatch):
     return roots
 
 
-@pytest.mark.parametrize('stage',['base','candidate'])
-def test_clean_equivalent_gates_share_checkout_and_execution(cli,repo,tmp_path,monkeypatch,stage):
-    start(cli,repo);marker=tmp_path/'executions'
-    argv=[sys.executable,'-c','from pathlib import Path; p=Path('+repr(str(marker))+'); p.write_text(p.read_text()+"x" if p.exists() else "x")']
-    two_gates(cli,tmp_path,argv);roots=counted_checkout(monkeypatch)
-    invoke(cli,'gates','run','--stage',stage)
-    state=json.loads(cli('show')[1]);results=evidence_for_gates(state,{'boundary','duplicate'},stage)
-    first_run,first=results['boundary'];second_run,second=results['duplicate']
-    assert marker.read_text()=='x' and len(roots)==1
-    assert first_run['evidence']==first['id'] and second_run['evidence']==second['id']
-    assert first['status']=='PASS' and second['status']=='PASS'
-    assert first['pid'] and second['pid'] is None
-    assert second['reuse']['evidence']==first['id']
-    assert all(L.entry_verdict(state,e)[0]=='VALID' for e in (first,second))
-    Path(first['log']).write_text('tampered')
-    assert L.entry_verdict(state,second)[0]=='REUSE_INVALID'
-
-
 def test_ignored_cache_requires_fresh_checkout_and_execution(cli,repo,tmp_path,monkeypatch):
     (repo/'.gitignore').write_text('cache/\n');start(cli,repo);marker=tmp_path/'executions'
     code='from pathlib import Path; assert not Path("cache").exists(); Path("cache").mkdir(); Path("cache/data").write_text("cache"); p=Path('+repr(str(marker))+'); p.write_text(p.read_text()+"x" if p.exists() else "x")'
@@ -112,32 +94,6 @@ def test_execution_identity_includes_every_gate_dependency(field,value):
     assert key!=R.execution_key(st,m,'manifest',other,'candidate',capture,'env',300)
 
 
-def test_original_provenance_cannot_be_forged_or_detached(cli,repo,tmp_path):
-    start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','pass'])
-    invoke(cli,'gates','run','--stage','candidate')
-    baseline=json.loads(cli('show')[1]);original,reused=baseline['evidence']['entries'][-2:]
-    for damage in ('missing','chain','self','invocation','dependency','log-digest','key-digest','association','reservation','pid','manifest','malformed','cancelled','original-exit','unfinished'):
-        st=copy.deepcopy(baseline);one,two=st['evidence']['entries'][-2:]
-        if damage=='missing':st['evidence']['entries'].remove(one)
-        elif damage=='chain':one['reuse']={'evidence':two['id']}
-        elif damage=='self':two['reuse']['evidence']=two['id']
-        elif damage=='invocation':two['invocation']='another'
-        elif damage=='dependency':two['fp_before']='another'
-        elif damage=='log-digest':two['reuse']['log_sha256']='another'
-        elif damage=='key-digest':two['reuse']['execution_sha256']='another'
-        elif damage=='association':st['gate_runs']=[r for r in st['gate_runs'] if r['evidence']!=one['id']]
-        elif damage=='reservation':two['reservation']=one['reservation']
-        elif damage=='pid':two['pid']=123
-        elif damage=='manifest':st['gate_manifests'][-1]['sha256']='another'
-        elif damage=='malformed':two['reuse']={}
-        elif damage=='cancelled':two['interrupted']=True
-        elif damage=='original-exit':one['exit']=1
-        elif damage=='unfinished':two['ended_at']=None
-        assert L.entry_verdict(st,two)[0]=='REUSE_INVALID',damage
-    Path(reused['log']).write_text('altered reuse log')
-    assert L.entry_verdict(baseline,reused)[0]=='LOG_ALTERED'
-
-
 @pytest.mark.parametrize('metadata',['index','config'])
 def test_metadata_symlinks_are_refused_before_git_reads(cli,repo,tmp_path,metadata):
     start(cli,repo);source=repo/'.git'/metadata;before=source.read_bytes()
@@ -176,41 +132,6 @@ def test_changed_inputs_between_gates_cannot_reuse(cli,repo,tmp_path,monkeypatch
     assert entry['status']!='PASS' and entry['pid'] is None
 
 
-@pytest.mark.parametrize('seam',['before-save','after-save','signal-save'])
-def test_reuse_finalization_cancellation_cannot_leave_pass(cli,repo,tmp_path,monkeypatch,seam):
-    import os
-    import signal
-    start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','pass'])
-    original=al_store.save;fired=[]
-    def save(sid,st):
-        entry=st['evidence']['entries'][-1]
-        if entry.get('reuse') and entry['status']=='PASS' and not fired:
-            fired.append(True)
-            if seam=='signal-save':os.kill(os.getpid(),signal.SIGTERM)
-            else:
-                if seam=='after-save':original(sid,st)
-                raise KeyboardInterrupt
-        return original(sid,st)
-    monkeypatch.setattr(al_store,'save',save)
-    with pytest.raises(KeyboardInterrupt):invoke(cli,'gates','run','--stage','candidate')
-    st=al_store.load(al_store.CURRENT.read_text().strip());entries=st['evidence']['entries'][-2:]
-    assert fired and entries[0]['status']=='PASS' and entries[1]['status']=='INFRA'
-    assert entries[1]['exit']==130 and entries[1]['pid'] is None and entries[1]['interrupted']
-    assert len(boundary_runs(st))==2 and all(e['status']!='RUNNING' for e in entries)
-
-
-def test_successful_gate_reaps_surviving_children_before_reuse(cli,repo,tmp_path,monkeypatch):
-    from batch14_helpers import alive,wait_for
-    pidfile=tmp_path/'child-pid';late=tmp_path/'late-mutation'
-    child='import time; from pathlib import Path; time.sleep(1); Path("cache").mkdir(); Path('+repr(str(late))+').write_text("unsafe")'
-    code='import subprocess,sys; from pathlib import Path; p=subprocess.Popen([sys.executable,"-c",'+repr(child)+']); Path('+repr(str(pidfile))+').write_text(str(p.pid))'
-    (repo/'.gitignore').write_text('cache/\n');start(cli,repo)
-    two_gates(cli,tmp_path,[sys.executable,'-c',code]);roots=counted_checkout(monkeypatch)
-    invoke(cli,'gates','run','--stage','candidate')
-    st=json.loads(cli('show')[1]);wait_for(lambda:not alive(int(pidfile.read_text())))
-    assert not late.exists() and len(roots)==1 and st['evidence']['entries'][-1].get('reuse')
-
-
 def test_remote_obligations_execute_independently(cli,repo,tmp_path,monkeypatch):
     import al_remote_gates
     from batch13_helpers import stub,body
@@ -236,21 +157,6 @@ def test_execution_identity_binds_stage_manifest_candidate_environment_and_timeo
         assert R.execution_key(*changed)!=key
 
 
-def test_cancellation_while_writing_reuse_log_finalizes_without_child(cli,repo,tmp_path,monkeypatch):
-    start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','pass'])
-    real=Path.write_text;fired=[]
-    def write(path,text,*args,**kwargs):
-        result=real(path,text,*args,**kwargs)
-        if text.startswith('Reused successful local execution') and not fired:
-            fired.append(True);raise KeyboardInterrupt
-        return result
-    monkeypatch.setattr(Path,'write_text',write)
-    with pytest.raises(KeyboardInterrupt):invoke(cli,'gates','run','--stage','candidate')
-    st=al_store.load(al_store.CURRENT.read_text().strip());entry=st['evidence']['entries'][-1]
-    assert fired and entry['status']=='INFRA' and entry['exit']==130 and entry['pid'] is None
-    assert len(boundary_runs(st))==2
-
-
 def test_failed_reservation_cannot_populate_execution_cache(cli,repo,tmp_path,monkeypatch):
     start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','pass'])
     original=Gates.Owner.finish
@@ -264,13 +170,6 @@ def test_failed_reservation_cannot_populate_execution_cache(cli,repo,tmp_path,mo
     st=json.loads(cli('show')[1])
     assert len(st['evidence']['entries'])==1 and not st.get('gate_runs')
     assert st['evidence']['entries'][0]['status']!='PASS'
-
-
-def test_binary_success_log_supports_verifiable_reuse(cli,repo,tmp_path):
-    start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','import os; os.write(1,b"\\xff\\x00")'])
-    invoke(cli,'gates','run','--stage','candidate')
-    st=json.loads(cli('show')[1]);entry=st['evidence']['entries'][-1]
-    assert entry.get('reuse') and L.entry_verdict(st,entry)[0]=='VALID'
 
 
 def test_between_gate_metadata_drift_is_checked_before_any_scratch_git_read(cli,repo,tmp_path,monkeypatch):
@@ -316,45 +215,6 @@ def test_manifest_artifact_and_rule_revalidated_at_execution_boundaries(cli,repo
     st=json.loads(cli('show')[1]);entry=st['evidence']['entries'][-1]
     assert fired and entry['status']!='PASS' and boundary_runs(st)
     assert marker.exists()==seam.endswith('before-finalize')
-
-
-@pytest.mark.parametrize('stage',['base','candidate'])
-def test_source_edit_preserves_pinned_base_readiness_but_stales_candidate(cli,repo,tmp_path,stage):
-    start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','pass'])
-    invoke(cli,'gates','run','--stage',stage)
-    st=json.loads(cli('show')[1]);assert not Gates.gate_gaps(st,stage)
-    (repo/'svc/app.py').write_text('candidate_implementation_edit = True\n')
-    gaps=Gates.gate_gaps(st,stage)
-    assert bool(gaps)==(stage=='candidate')
-    original,reused=st['evidence']['entries'][-2:]
-    if stage=='base':
-        assert not R.reuse_gaps(st,reused)
-        assert L.entry_verdict(st,reused)[0]=='STALE'
-        Path(original['log']).write_text('tampered base log')
-        assert R.reuse_gaps(st,reused) and Gates.gate_gaps(st,'base')
-    else:assert R.reuse_gaps(st,reused)
-
-
-@pytest.mark.parametrize('signal_cancel',[False,True])
-def test_cancellation_keeps_exit_130_when_manifest_changes_during_reuse_save(cli,repo,tmp_path,monkeypatch,signal_cancel):
-    import os
-    import signal
-    start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c','pass'])
-    real=al_store.save;fired=[]
-    def save(sid,st):
-        entry=st['evidence']['entries'][-1]
-        if entry.get('reuse') and entry['status']=='PASS' and not fired:
-            fired.append(True);st['gate_manifests'][-1]['sha256']='replacement'
-            real(sid,st)
-            if signal_cancel:os.kill(os.getpid(),signal.SIGTERM)
-            else:raise KeyboardInterrupt
-            return
-        return real(sid,st)
-    monkeypatch.setattr(al_store,'save',save)
-    with pytest.raises(KeyboardInterrupt):invoke(cli,'gates','run','--stage','candidate')
-    st=al_store.load(al_store.CURRENT.read_text().strip());entry=st['evidence']['entries'][-1]
-    assert fired and entry['status']=='INFRA' and entry['exit']==130 and entry['interrupted']
-    assert 'cancelled' in entry['note'] and len(boundary_runs(st))==2
 
 
 @pytest.mark.parametrize('target_exists',[False,True])

@@ -52,7 +52,7 @@ class Launcher:
 
     def run(self, repository, session, start, main):
         """Run `main()` exactly as the launcher child would for one public command."""
-        sys.modules.pop(NAME, None)
+        previous = sys.modules.pop(NAME, None)
         try:
             module = self._install(None)
             value = subject(repository, self.platform, session)
@@ -81,7 +81,9 @@ class Launcher:
                 commit_run_binding(transaction)
         finally:
             sys.modules.pop(NAME, None)
-            self.enter(repository, session)
+            # Keep the last valid binding for direct library calls when this session has none.
+            if not self.enter(repository, session) and previous is not None:
+                sys.modules[NAME] = previous
 
     def enter(self, repository, session):
         """Keep the session's current protected binding installed for direct library calls."""
@@ -94,8 +96,9 @@ class Launcher:
             transaction = None
         if transaction is None:
             sys.modules.pop(NAME, None)
-        else:
-            module.transaction = transaction
+            return False
+        module.transaction = transaction
+        return True
 
     @staticmethod
     def leave():
@@ -137,10 +140,14 @@ class Launcher:
         path.chmod(0o755)
         return str(path)
 
-    def child_argv(self, repository, session, start, args):
-        """argv for a real child process that admits one command like the launcher child."""
+    def child_argv(self, repository, session, start, args, implicit=False):
+        """argv for a real child process that admits one command like the launcher child.
+
+        implicit: a Claude conversation's command without --session (the launcher mints or
+        resolves the run id and al_state keeps its native selection)."""
         request = json.dumps({"storage": str(self.storage), "pin": self.pin, "platform": self.platform,
-                              "repository": str(repository), "session": session, "start": start})
+                              "repository": str(repository), "session": session, "start": start,
+                              "implicit": implicit})
         return [sys.executable, str(Path(__file__).with_name("launcher_child.py")), request, *args]
 
 
@@ -304,15 +311,20 @@ def upgrade_report(state, report):
         for item in result.get(key, []) if isinstance(result.get(key), list) else []:
             if isinstance(item, dict) and "source" in item:
                 item["source"] = criterion(item["source"])
-    result.update(schema_version=2, kind="architect-review-report-v2",
-                  attempt_id=attempt["attempt_id"], effort=attempt["effort"], policy_digest=attempt["policy_digest"],
-                  document_hash=value["document_hash"],
-                  verification_authority_hash=value["verification_authority"]["hash"])
+    result.update(schema_version=2, kind="architect-review-report-v2")
+    # Fill only what v1 cannot express; fields a test wrote (possibly forged) stay as written.
+    for key, genuine in (("attempt_id", attempt["attempt_id"]), ("effort", attempt["effort"]),
+                         ("policy_digest", attempt["policy_digest"]), ("document_hash", value["document_hash"]),
+                         ("verification_authority_hash", value["verification_authority"]["hash"])):
+        result.setdefault(key, genuine)
     if report.get("model") == state.get("model"):
         result["model"] = attempt["model"]
     if stage == "fresh":
         if not result.get("plan_defects"):
             result.pop("plan_defects", None)
+        if report.get("prior_resolutions"):
+            # A fresh report carrying resolutions is invalid; keep it so the runtime refuses it.
+            result["prior_resolutions"] = copy.deepcopy(report["prior_resolutions"])
         evidence = next((e["id"] for e in reversed(state["evidence"]["entries"]) if e["status"] == "PASS"), None)
         locations = [l for c in result.get("criteria", []) if isinstance(c, dict) for l in c.get("locations", [])][:4]
         result["counterexample_search"] = [{

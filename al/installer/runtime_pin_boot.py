@@ -62,7 +62,9 @@ for logical,name in manifest['resource_map'].items():
     resources[key]=captured[name];identities[key]=str(payload/name)
 al_runtime_resources._bind_verified_context({'identities':identities,'bytes':resources,'platform':platform,'closure_digest':manifest['closure_digest'],'origin_digest':manifest['pin_identity']})
 import al_state
-sys.argv=[str(payload/prefix/'al_state.py'),'--session',transaction['session_id'],*request['argv']]
+# A Claude conversation's implicit command keeps al_state's native selection and pointer path.
+explicit=[] if request.get('native_implicit') else ['--session',transaction['session_id']]
+sys.argv=[str(payload/prefix/'al_state.py'),*explicit,*request['argv']]
 al_state.main()
 transaction=run_context.transaction
 if read_state(transaction) is not None:commit_run_binding(transaction)

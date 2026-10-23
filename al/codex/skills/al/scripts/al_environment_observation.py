@@ -44,6 +44,21 @@ def observed():
     return {name: dict(item) for name, item in values.items()}
 
 
+# Variables that change what a verification command executes, beyond its declared names.
+EXECUTION_NAMES = frozenset({"PATH", "HOME", "LANG", "TZ"})
+EXECUTION_PREFIXES = ("PYTHON", "LC_")
+
+
+def execution_environment(declared):
+    """Declared names plus execution-relevant variables, by exact digest.
+
+    Unrelated session variables (agent or terminal markers) never bind evidence."""
+    snapshot = observed()
+    present = set(snapshot) if snapshot is not None else set(os.environ)
+    names = set(declared) | EXECUTION_NAMES | {n for n in present if n.startswith(EXECUTION_PREFIXES)}
+    return environment(names)
+
+
 def environment(names):
     snapshot = observed()
     if snapshot is not None:

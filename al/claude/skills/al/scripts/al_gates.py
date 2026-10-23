@@ -115,7 +115,7 @@ def cmd_run(a,sid):
         if not selected and not resume: refuse('unknown gate ID')
         if any(g['applicability']=='UNRESOLVED' for g in selected): refuse('resolve gate semantics before execution')
         ref=st['gate_manifests'][-1]['sha256']
-    invocation=uuid.uuid4().hex;cache={};checkout=None;pinned=None
+    invocation=uuid.uuid4().hex;checkout=None;pinned=None
     selected_ids=[g['id'] for g in selected];results=[]
     def report():
         current=al_store.load(sid)
@@ -176,15 +176,10 @@ def cmd_run(a,sid):
                             entry['execution_projection_digest']=Receipts.execution_identity(projection)
                             E._commit(sid,entry)
                             receipt=Receipts.reuse_candidate(al_store.load(sid),projection,exclude_reservation=entry['reservation'])
-                    original=cache.get(R.key_digest(key)) if g['execution_kind']=='local' and 'task_attribution' not in current else None
+                    # Every new run captures task attribution, so reuse is only through
+                    # verified execution receipts; legacy key-cache reuse no longer exists.
                     if receipt:
                         log.write_text('Associated immutable execution receipt '+json.dumps(receipt,sort_keys=True)+'\n')
-                        status='PASS';code=0
-                    elif original:
-                        if L.entry_verdict(al_store.load(sid),original)[0]!='VALID':
-                            raise al_checkouts.MaterializationError('original execution evidence invalid')
-                        entry['reuse']={'evidence':original['id'],'log_sha256':original['log_sha256'],'execution_sha256':R.key_digest(key)}
-                        log.write_text('Reused successful local execution '+json.dumps(entry['reuse'],sort_keys=True)+'\n')
                         status='PASS';code=0
                     elif g['execution_kind']=='remote':
                         from al_remote_gates import execute_remote
@@ -265,9 +260,7 @@ def cmd_run(a,sid):
                     owner.finish(persist)
             status=entry['status']
             if dirty=='REBUILD':
-                cache.clear();stack.close();checkout=None
-            elif status=='PASS' and g['execution_kind']=='local' and not entry.get('reuse'):
-                cache[R.key_digest(entry['execution_key'])]=entry
+                stack.close();checkout=None
             print(L.row(entry,status))
             results.append({'gate':g['id'],'evidence':entry['id'],'status':status})
             if status!='PASS':

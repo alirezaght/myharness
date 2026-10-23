@@ -12,6 +12,11 @@ PACKAGE=Path(__file__).resolve().parents[1]
 def case(actions):return {'id':'typed-argv','provenance':'Owned workflow simulation','actions':actions}
 
 
+def action(argv):
+    # Replayed actions go through the pinned launcher: `alctl run ... -- <arguments>`.
+    return len(argv)>2 and argv[1]=='run' and '--' in argv
+
+
 def report(result):
     data={'schema_version':1,'simulation':True,'cases':[{'candidate':result,'baseline':None,'baseline_comparison':'unavailable','expected_baseline_failure':False,'safety_regression':not result['matched']}],'safety_regressions':int(not result['matched'])}
     jsonschema.validate(data,json.loads((PACKAGE/'reference/schemas/replay-result.json').read_text()))
@@ -21,7 +26,7 @@ def report(result):
 def test_executed_outcomes_store_resolved_checkpoint_python_and_file_arguments(monkeypatch):
     calls=[];original=R.invoke
     def capture(root,argv,env):
-        if len(argv)>1 and argv[1]==str(PACKAGE/'scripts/al_state.py'):calls.append(argv[4:])
+        if action(argv):calls.append(argv[argv.index('--')+1:])
         return original(root,argv,env)
     monkeypatch.setattr(R,'invoke',capture)
     fixture={'id':'resolved','provenance':'Owned reference simulation','files':{'wait.json':{'reason':'Await input','resume_instructions':'Continue after validation'}},'actions':[
@@ -53,7 +58,7 @@ def test_nonstring_arguments_are_not_stringified_or_invoked(value):
 def test_invocation_error_keeps_resolved_strings(monkeypatch):
     original=R.invoke
     def fail(root,argv,env):
-        if len(argv)>1 and argv[1]==str(PACKAGE/'scripts/al_state.py'):raise OSError('Owned invocation unavailable')
+        if action(argv):raise OSError('Owned invocation unavailable')
         return original(root,argv,env)
     monkeypatch.setattr(R,'invoke',fail)
     result=R.run_case(PACKAGE,case([{'argv':['show','$python','$file:note.txt']}]));report(result);out=result['outcomes'][0]

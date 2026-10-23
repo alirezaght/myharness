@@ -1,8 +1,12 @@
 """Forward public AL commands through a protected immutable runtime pin."""
 
+import hashlib
+import json
 import os
 from pathlib import Path
+import secrets
 import sys
+import time
 
 from .interpreter_execution import validate_live
 from .execution_process import observe
@@ -10,6 +14,29 @@ from .runtime_pin import _directory, prepare_pin, verify_pin
 from .runtime_pin_boot import program
 from .runtime_pin_transaction import coordinated, read, reserve, storage, subject, validate
 from .validator_origin import verify_snapshot
+
+
+def native_session(repository, platform, argv):
+    """Inside a Claude conversation, mint (start) or resolve (otherwise) the conversation's run id.
+
+    The conversation pointer only selects which existing protected binding is used;
+    the binding itself is still validated against repository, platform and session."""
+    native = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if platform != "claude" or not native or len(native) > 1024:
+        raise ValueError("run requires --session outside a Claude conversation")
+    if argv[0] == "start":
+        return "al-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + secrets.token_hex(3)
+    root = Path(repository).resolve(strict=True)
+    path = root / ".claude" / "al-runtime" / "conversations" / (hashlib.sha256(native.encode()).hexdigest() + ".json")
+    try:
+        if path.is_symlink() or not path.is_file():
+            raise ValueError("no active AL run for this Claude conversation; start one or pass --session")
+        data = json.loads(path.read_bytes())
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("corrupt native conversation pointer") from exc
+    if not isinstance(data, dict) or set(data) != {"conversation_id", "session_id"} or data["conversation_id"] != native:
+        raise ValueError("corrupt native conversation pointer")
+    return data["session_id"]
 
 
 def run(repository, platform, session, argv):
@@ -22,6 +49,9 @@ def run(repository, platform, session, argv):
             raise ValueError("session is supplied only by the trusted run launcher")
     if "AL_RUNTIME_DIR" in os.environ:
         raise ValueError("new pinned runs do not accept an alternate runtime directory")
+    implicit = session is None
+    if implicit:
+        session = native_session(repository, platform, argv)
     value = subject(repository, platform, session)
     native_root = os.environ.get("CLAUDE_PROJECT_DIR")
     if native_root and Path(native_root).resolve() != Path(value["repository_identity"]["root"]):
@@ -51,6 +81,7 @@ def run(repository, platform, session, argv):
     validate_live(
         manifest["interpreter_execution_identity"], manifest["interpreter"], observe(os.getpid())
     )
-    request = {"transaction": transaction, "argv": list(argv), "storage": str(storage())}
+    request = {"transaction": transaction, "argv": list(argv), "storage": str(storage()),
+               "native_implicit": implicit}
     executable = manifest["interpreter"]["executable"]
     os.execv(executable, [executable, "-I", "-S", "-B", "-c", program(request)])

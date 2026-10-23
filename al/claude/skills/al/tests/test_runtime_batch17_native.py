@@ -15,9 +15,22 @@ from test_runtime_batch17_shell import BAD,GOOD
 SCRIPTS=Path(__file__).resolve().parents[1]/'scripts'
 SPEC='Verify a separate native run with immutable task history.'
 
+LAUNCHER=[]
+
+
+@pytest.fixture(autouse=True)
+def _launcher(launcher):
+    LAUNCHER[:]=[launcher];yield;LAUNCHER.clear()
+
+
 def process(repo,native,*args):
+    """A native host command through the protected launcher: explicit run id, repository root cwd."""
     env={**os.environ,'CLAUDE_SESSION_ID':native,'AL_RUNTIME_DIR':str(al_store.RUNTIME_DIR)}
-    return subprocess.run([sys.executable,str(SCRIPTS/'al_state.py'),*args],cwd=repo,env=env,capture_output=True,text=True)
+    implicit=args[:1]!=('--session',)
+    session=None if implicit else args[1]
+    if not implicit:args=args[2:]
+    argv=LAUNCHER[0].child_argv(Path(repo),session,args[:1]==('start',),args,implicit=implicit)
+    return subprocess.run(argv,cwd=repo,env=env,capture_output=True,text=True)
 
 def begin(repo,native):
     result=process(repo,native,'start','--spec',SPEC)
@@ -40,7 +53,8 @@ def test_new_cwd_publication_preserves_history_and_execution_binding(repo,nested
     assert current['native_conversation_id']=='conversation'
     wrong=repo if nested else repo/'svc'
     rejected=process(wrong,'conversation','show')
-    assert rejected.returncode!=0 and 'cwd mismatch' in rejected.stderr
+    # The launcher resolves a conversation's run per repository location, so another cwd is refused.
+    assert rejected.returncode!=0 and ('cwd mismatch' in rejected.stderr or 'no active AL run for this Claude conversation' in rejected.stderr)
     assert process(repo,'conversation','--session',first,'show').returncode==0
     if nested:assert process(destination,'conversation','--session',first,'show').returncode!=0
     assert 'AL' in al_statusline.al_segment('conversation')

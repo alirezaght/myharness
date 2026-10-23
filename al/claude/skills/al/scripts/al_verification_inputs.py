@@ -29,6 +29,21 @@ def ambient_environment():
     return current()
 
 
+def execution_environment(declared):
+    from al_environment_observation import execution_environment as current
+    return current(declared)
+
+
+def environment_gaps(policy):
+    """Current-environment check for a recorded preparation/projection policy."""
+    if policy.get("kind") == "declared-execution-v1":
+        return [] if policy["inputs"] == execution_environment(policy["declared_names"]) else [
+            "execution environment inputs differ"]
+    if policy.get("kind") == "exact-ambient-v1":
+        return [] if policy["inputs"] == ambient_environment() else ["execution ambient inputs differ"]
+    return ["unsupported execution environment policy"]
+
+
 def executable(value):
     selected = value if os.path.isabs(value) else shutil.which(value)
     if not selected:
@@ -235,9 +250,9 @@ def reconstruct(st, target, spec, *, no_cache=False):
         "executable_identities": [profile["executable_identity"]] if profile else [],
         "prerequisite_receipts": prerequisites,
         "environment_policy": {
-            "kind": "exact-ambient-v1",
+            "kind": "declared-execution-v1",
             "declared_names": sorted(set(spec.get("env", []))),
-            "inputs": ambient_environment(),
+            "inputs": execution_environment(spec.get("env", [])),
         },
         "isolation_policy": {"kind": "owned-disposable-checkout-v1", "foreign_services": "forbid"},
         "cache_policy": {"enabled": not no_cache, "scope": "exact-execution-projection"},

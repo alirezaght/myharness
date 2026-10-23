@@ -6,6 +6,7 @@ import shlex
 from pathlib import Path
 import subprocess
 import sys
+import pytest
 import al_native_sessions as N
 import al_statusline
 import al_store
@@ -13,10 +14,22 @@ import al_store
 SCRIPTS=Path(__file__).resolve().parents[1]/'scripts'
 
 
+LAUNCHER=[]
+
+
+@pytest.fixture(autouse=True)
+def _launcher(launcher):
+    LAUNCHER[:]=[launcher];yield;LAUNCHER.clear()
+
+
 def command(repo,native,*args):
+    """A native host command through the protected launcher (implicit unless --session is given)."""
     env={**os.environ,'CLAUDE_SESSION_ID':native,'CLAUDE_PROJECT_DIR':str(repo),'AL_RUNTIME_DIR':str(al_store.RUNTIME_DIR)}
-    result=subprocess.run([sys.executable,str(SCRIPTS/'al_state.py'),*args],cwd=repo,env=env,text=True,capture_output=True,timeout=20)
-    return result
+    implicit=args[:1]!=('--session',)
+    session=None if implicit else args[1]
+    if not implicit:args=args[2:]
+    argv=LAUNCHER[0].child_argv(Path(repo),session,args[:1]==('start',),args,implicit=implicit)
+    return subprocess.run(argv,cwd=repo,env=env,text=True,capture_output=True,timeout=20)
 
 
 def start(repo,native,text):

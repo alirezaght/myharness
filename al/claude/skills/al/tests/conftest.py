@@ -99,8 +99,10 @@ def cli(monkeypatch, capsys, launcher, repo):
     a try/except — the caller compares against the message directly)."""
     from fixture_state import StateObserver
     observer = StateObserver(SESSION)
+    # Like a native conversation, implicit commands follow the latest run it started.
+    latest = [SESSION]
     def _run(*args):
-        session = SESSION
+        session = latest[0]
         if len(args) >= 2 and args[0] == "--session":
             session, args = args[1], args[2:]
         monkeypatch.setattr(sys, "argv", ["al_state.py", "--session", session, *args])
@@ -116,6 +118,8 @@ def cli(monkeypatch, capsys, launcher, repo):
             result = "al_run: " + str(exc)
         captured = capsys.readouterr()
         command = args[2:] if args[:1] == ('--session',) else args
+        if result == 0 and args[:1] == ('start',):
+            latest[0] = session
         if result == 0 and command[:1] == ('start',):
             observer.bind_started(captured.out)
         return result, captured.out, captured.err

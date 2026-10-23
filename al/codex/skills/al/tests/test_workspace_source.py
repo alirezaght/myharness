@@ -143,7 +143,13 @@ def test_installed_snapshot_validates_original_architecture_binding_without_rewr
     (bin_dir/'python3').write_text('#!/bin/sh\n: > '+shlex.quote(str(marker))+'\n');(bin_dir/'python3').chmod(0o755)
     environment = dict(os.environ,PYTHONPATH=str(repo),PYTHONHOME=str(repo),AL_RUNTIME_DIR=str(tmp_path/'foreign'),
                        AL_VALIDATOR_ORIGIN=str(tmp_path/'foreign-origin'),PATH=str(bin_dir)+os.pathsep+os.environ['PATH'])
-    assert source_proof(launcher, repo, state, env=environment)['source']==proof['source'] and not marker.exists()
+    # Planted .py files change pinned service coverage (ignored files can still be
+    # imported), so the validator may refuse; it must never execute any of them.
+    try:
+        assert source_proof(launcher, repo, state, env=environment)['source']==proof['source']
+    except ValueError as exc:
+        assert 'coverage' in str(exc) or 'inventory' in str(exc), str(exc)[-2000:]
+    assert not marker.exists()
     (bin_dir/'git').write_text('#!/bin/sh\n: > '+shlex.quote(str(marker))+'\n');(bin_dir/'git').chmod(0o755)
     with pytest.raises(ValueError):
         source_proof(launcher, repo, state, env=environment)
