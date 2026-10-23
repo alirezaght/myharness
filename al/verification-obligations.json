@@ -101,7 +101,8 @@
         "tests/test_workspace_source.py",
         "tests/test_artifact_consumers.py",
         "tests/test_review_state.py",
-        "tests/test_baseline_exceptions.py"
+        "tests/test_baseline_exceptions.py",
+        "tests/test_unverified_policy.py"
       ],
       "claude": [
         "tests/test_git_observation.py",
@@ -120,7 +121,8 @@
         "tests/test_artifact_consumers.py",
         "tests/test_review_state.py",
         "tests/test_baseline_exceptions.py",
-        "tests/test_model_slots.py"
+        "tests/test_model_slots.py",
+        "tests/test_unverified_policy.py"
       ]
     },
     "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23). Claude test_model_slots.py uses only the per-test repository copy and runtime (2026-10-23)."
@@ -162,7 +164,7 @@
       }
     },
     "claude:tests/test_ci_conventional.py": {
-      "test": "063574765245c6fde64ef4b3f197dd8f84fa5cbc9e1ab29adaec101acb301a20",
+      "test": "763fb651fd7b375f606961fc738929b63e9317505024f531e2d54eb53035a56c",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -665,6 +667,13 @@
         "mode": 420
       }
     },
+    "claude:tests/test_unverified_policy.py": {
+      "test": "ebc70cfcafbdd5274c12905277e9a5ac152225e77344561197e167fd84c4277d",
+      "fixtures": {
+        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
+        "mode": 420
+      }
+    },
     "claude:tests/test_verification_prepare.py": {
       "test": "de97830c2138a65c6498cfa740c2448725666fe48ae25b143a7b5fe62ff7660a",
       "fixtures": {
@@ -722,7 +731,7 @@
       }
     },
     "codex:tests/test_ci_conventional.py": {
-      "test": "063574765245c6fde64ef4b3f197dd8f84fa5cbc9e1ab29adaec101acb301a20",
+      "test": "763fb651fd7b375f606961fc738929b63e9317505024f531e2d54eb53035a56c",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -883,7 +892,7 @@
       }
     },
     "codex:tests/test_gitlink_capabilities.py": {
-      "test": "0c3aa2535be6164a823c44e158e044001dfef318e6439fcabd55023740f2a0aa",
+      "test": "5cdb508c5348bcee75c1ef44c0132e869a743dab682680e858861eff30cb63aa",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -897,7 +906,7 @@
       }
     },
     "codex:tests/test_gitlink_review.py": {
-      "test": "ff0fdc760bcf6ea64ebb6453eefce0097c8f37d5e7b019529c8343bb8c8e288a",
+      "test": "1619e92f700b05dee0eb3159710a4f0977d80e33491cd6b9696cdcbb4400e7a3",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1276,6 +1285,13 @@
     },
     "codex:tests/test_task_attribution.py": {
       "test": "cc700c95128b6b9b84519183397575ed4cf4feb2723825c16600fd1449e6a149",
+      "fixtures": {
+        "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
+        "mode": 420
+      }
+    },
+    "codex:tests/test_unverified_policy.py": {
+      "test": "ebc70cfcafbdd5274c12905277e9a5ac152225e77344561197e167fd84c4277d",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -3350,7 +3366,6 @@
     "codex:tests/test_gitlink_capabilities.py::test_canonical_cwd_ordinary_relative_and_contained_alias_execute[svc]",
     "codex:tests/test_gitlink_capabilities.py::test_canonical_cwd_planned_alias_retarget_cannot_reuse_or_launch[False]",
     "codex:tests/test_gitlink_capabilities.py::test_canonical_cwd_planned_alias_retarget_cannot_reuse_or_launch[True]",
-    "codex:tests/test_gitlink_capabilities.py::test_discovery_requires_capability_and_preserves_reviewed_declarations",
     "codex:tests/test_gitlink_capabilities.py::test_disjoint_gate_can_run_with_dirty_child[base]",
     "codex:tests/test_gitlink_capabilities.py::test_disjoint_gate_can_run_with_dirty_child[candidate]",
     "codex:tests/test_gitlink_capabilities.py::test_explicit_gitlink_scope_and_irrelevant_declarations",
@@ -4983,8 +4998,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 999,
-    "digest": "0bece1b9564a0bb807e019149dd1054b1ac379d87ad4079c58cb7b846b3f4bb9"
+    "members": 1001,
+    "digest": "318eafbc99e0ba75220c1e2a07700293f030c2f1b3c1dc7b9c45358648b83d03"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
