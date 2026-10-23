@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import signal
+import sys
 import subprocess
 import tempfile
 import time
@@ -47,7 +48,20 @@ def _worker_diagnostics(handoff_root: Path) -> list[dict]:
     return rows
 
 
-def _install_candidate(repo: Path, host: str) -> None:
+def _candidate_launcher(root: Path) -> Path:
+    """Bootstrap the candidate managed launcher inside the disposable root (never ~/.local/bin)."""
+    launcher = root / "candidate-bin" / "alctl"
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", str(ROOT / "al/alctl.py"), "bootstrap", "--source-root", str(ROOT / "al"),
+         "--destination", str(launcher), "--state-root", str(root / "candidate-state")],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    if result.returncode or not launcher.is_file():
+        raise RuntimeError("candidate launcher bootstrap failed: " + _redact(result.stderr[-2000:]))
+    return launcher
+
+
+def _install_candidate(repo: Path, host: str, launcher: Path) -> None:
     if host == "claude":
         skill = repo / ".claude/skills/al"
         role_dir = repo / ".claude/agents/al"
@@ -62,6 +76,12 @@ def _install_candidate(repo: Path, host: str) -> None:
         suffix = ".toml"
     skill.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source, skill)
+    # The disposable project's skill copy names the candidate launcher instead of the global one.
+    instructions = skill / "SKILL.md"
+    text = instructions.read_text(encoding="utf-8")
+    if "$HOME/.local/bin/alctl" not in text:
+        raise RuntimeError("candidate skill does not name the managed launcher")
+    instructions.write_text(text.replace("$HOME/.local/bin/alctl", str(launcher)), encoding="utf-8")
     role_dir.mkdir(parents=True, exist_ok=True)
     role_names = (
         "al-architect",
@@ -182,14 +202,16 @@ def _stop_process_group(pid: int | None, expected_identity: dict | None = None) 
 def _run(host: str, timeout: int) -> tuple[int, dict]:
     previous_environment = os.environ.copy()
     with tempfile.TemporaryDirectory(prefix=f"harness-phase3-{host}-") as temporary:
-        root = Path(temporary)
+        root = Path(temporary).resolve()
         repo = make_sample_repo(root / "project")
-        _install_candidate(repo, host)
+        launcher = _candidate_launcher(root)
+        _install_candidate(repo, host, launcher)
         database = root / "harness.db"
         os.environ.update(
             HARNESS_DB=str(database),
             HARNESS_HOME=str(root / "harness-home"),
             HARNESS_AUTHORITY_ROOT=str(ROOT),
+            PATH=str(launcher.parent) + os.pathsep + os.environ.get("PATH", ""),
         )
         previous = Path.cwd()
         os.chdir(repo)
@@ -283,6 +305,7 @@ def _run(host: str, timeout: int) -> tuple[int, dict]:
                 "cleanup_errors": cleanup_errors,
                 "project_is_disposable": True,
                 "candidate_installed_only_in_project": True,
+                "candidate_launcher": str(launcher),
             }
             print(json.dumps(report, sort_keys=True))
             return (
