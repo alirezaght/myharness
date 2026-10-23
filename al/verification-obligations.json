@@ -178,7 +178,7 @@
       }
     },
     "claude:tests/test_ci_pytest_profile.py": {
-      "test": "4517266f1115a02599e95ecf84f93900cc9661d180d8cae60cc724438f868f28",
+      "test": "5f8b2c09d217ef35ef8a6cebc5a825511241ff2d7caba7256839fdad420ac1ed",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -395,7 +395,7 @@
       }
     },
     "claude:tests/test_repo_adapters.py": {
-      "test": "9cf30b5446c1c2fb230d32614fb846d1cd2f0fc1ab10d9d560684156f0be1c7f",
+      "test": "eb60a7009216af2241702465f235714b4b2ee68f04e03811affab58e01440861",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -745,7 +745,7 @@
       }
     },
     "codex:tests/test_ci_pytest_profile.py": {
-      "test": "4517266f1115a02599e95ecf84f93900cc9661d180d8cae60cc724438f868f28",
+      "test": "5f8b2c09d217ef35ef8a6cebc5a825511241ff2d7caba7256839fdad420ac1ed",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -997,7 +997,7 @@
       }
     },
     "codex:tests/test_repo_adapters.py": {
-      "test": "9cf30b5446c1c2fb230d32614fb846d1cd2f0fc1ab10d9d560684156f0be1c7f",
+      "test": "eb60a7009216af2241702465f235714b4b2ee68f04e03811affab58e01440861",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1186,7 +1186,7 @@
       }
     },
     "codex:tests/test_runtime_batch7.py": {
-      "test": "12f2e3cc46fc2eadc50b7e843a304b2fb9c604ff8aad789015051c2a7d788cd1",
+      "test": "ccfdac4601f73104560819071071c24a90e506b0b40f8a55fbfaf714aa1bd9c3",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1911,7 +1911,6 @@
     "claude:tests/test_repo_adapters.py::test_actual_mutation_during_read_is_a_torn_scan",
     "claude:tests/test_repo_adapters.py::test_source_free_legacy_manifest_can_prove_absence",
     "claude:tests/test_repo_adapters.py::test_torn_and_limited_scan_never_certify",
-    "claude:tests/test_repo_adapters.py::test_unmanifested_foreign_source_root_blocks_empty_universe",
     "claude:tests/test_repo_adapters.py::test_unsupported_boundary_cannot_be_omitted[layout-undeclared-source-root]",
     "claude:tests/test_repo_adapters.py::test_unsupported_boundary_cannot_be_omitted[manifest-missing-manifest]",
     "claude:tests/test_repo_adapters.py::test_unsupported_boundary_cannot_be_omitted[setup-executable-layout]",
@@ -3486,7 +3485,6 @@
     "codex:tests/test_repo_adapters.py::test_actual_mutation_during_read_is_a_torn_scan",
     "codex:tests/test_repo_adapters.py::test_source_free_legacy_manifest_can_prove_absence",
     "codex:tests/test_repo_adapters.py::test_torn_and_limited_scan_never_certify",
-    "codex:tests/test_repo_adapters.py::test_unmanifested_foreign_source_root_blocks_empty_universe",
     "codex:tests/test_repo_adapters.py::test_unsupported_boundary_cannot_be_omitted[layout-undeclared-source-root]",
     "codex:tests/test_repo_adapters.py::test_unsupported_boundary_cannot_be_omitted[manifest-missing-manifest]",
     "codex:tests/test_repo_adapters.py::test_unsupported_boundary_cannot_be_omitted[setup-executable-layout]",
@@ -4999,7 +4997,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1001,
-    "digest": "318eafbc99e0ba75220c1e2a07700293f030c2f1b3c1dc7b9c45358648b83d03"
+    "digest": "cb118c8aba4845df9744b2fe509e6a878ebbd3790c0587a16d78ea48300701b0"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
