@@ -1,5 +1,6 @@
 """Closed runtime resource identities, separate from physical module origin."""
 import hashlib
+import os
 from pathlib import Path
 from types import MappingProxyType
 
@@ -65,10 +66,12 @@ def implementation_digest():
         names = _CONTEXT['bytes']
     else:
         root = Path(__file__).resolve().parent
-        names = {path.name: path for path in root.glob('al_*.py')}
+        with os.scandir(root) as listing:
+            found = sorted(entry.name for entry in listing if entry.name.startswith('al_') and entry.name.endswith('.py'))
+        names = {name: root / name for name in found}
         stats = []
-        for name in sorted(n for n in names if n.startswith('al_') and n.endswith('.py') and '/' not in n):
-            state = names[name].stat()
+        for name in found:
+            state = os.stat(os.path.join(root, name))
             stats.append((name, state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, state.st_ctime_ns))
         key = ('ordinary', tuple(stats))
     if _DIGEST is not None and _DIGEST[0] == key:

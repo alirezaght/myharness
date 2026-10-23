@@ -53,6 +53,7 @@ class Launcher:
     def run(self, repository, session, start, main):
         """Run `main()` exactly as the launcher child would for one public command."""
         previous = sys.modules.pop(NAME, None)
+        value = None
         try:
             module = self._install(None)
             value = subject(repository, self.platform, session)
@@ -82,14 +83,15 @@ class Launcher:
         finally:
             sys.modules.pop(NAME, None)
             # Keep the last valid binding for direct library calls when this session has none.
-            if not self.enter(repository, session) and previous is not None:
+            if not self.enter(repository, session, value) and previous is not None:
                 sys.modules[NAME] = previous
 
-    def enter(self, repository, session):
+    def enter(self, repository, session, value=None):
         """Keep the session's current protected binding installed for direct library calls."""
         module = self._install(None)
         try:
-            value = subject(repository, self.platform, session)
+            # The command just computed this subject in the same process and directory.
+            value = value or subject(repository, self.platform, session)
             with coordinated(value) as path:
                 transaction = read(path) if path.exists() else None
         except (OSError, ValueError):

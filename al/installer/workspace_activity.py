@@ -128,7 +128,7 @@ def plan_activity(
     return seal(value)
 
 
-def _fresh(binding, source, state_root):
+def _fresh(binding, source, state_root, *, revalidate=True):
     if (
         not isinstance(binding, dict)
         or binding.get("kind") != "workspace-activity-binding-v2"
@@ -148,7 +148,8 @@ def _fresh(binding, source, state_root):
         or binding["source_digest"] != source["digest"]
     ):
         raise ValueError("unknown or foreign workspace activity profile")
-    revalidate_source(source)
+    if revalidate:
+        revalidate_source(source)
     revalidate_scope(binding["scope"], state_root)
     stored = validate_seal(read_reference(binding["inventory"]), "workspace-activity-inventory")
     if stored["invoking_run"] != invoking(source):
@@ -172,7 +173,10 @@ def activity_context(binding, source, state_root):
     with locked_activity(inventory) as (locks, limitations):
 
         def check():
-            current = _fresh(binding, source, state_root)
+            # The ordinary assessment re-captures the approved source after observing activity,
+            # which subsumes a capture taken before the observation.
+            ordinary = binding["profile"] == "ordinary-terminal-v1"
+            current = _fresh(binding, source, state_root, revalidate=not ordinary)
             observation = observe_activity(current, locks=locks, limitations=limitations)
             if binding["profile"] == "ordinary-terminal-v1":
                 from .workspace_ordinary import assess

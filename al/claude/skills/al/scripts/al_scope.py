@@ -21,18 +21,41 @@ def git_bytes(*args, root=None):
     if r.returncode: refuse('git failed: ' + r.stderr.decode(errors='replace').strip())
     return r.stdout
 
+_IDENTITIES = {}
+
+
+def _identity_key(root, target):
+    """Identity answers for an exact target and HEAD object id are fixed while metadata and replacement refs are."""
+    metadata = G.plain_metadata(root)
+    if metadata is None or not G.HEX.fullmatch(target.encode()):
+        return None
+    head = G._head(metadata)
+    if head is None:
+        return None
+    state = metadata.lstat()
+    return str(root), str(metadata), (state.st_dev, state.st_ino), target, head, G.replacement_state(metadata)
+
+
 def identity(target='HEAD'):
     root = al_store.REPO_ROOT.resolve()
-    values = git_bytes('rev-parse', '--git-common-dir', '--git-dir', '--end-of-options', target + '^{commit}', 'HEAD^{commit}').decode().splitlines()
-    if len(values) != 5 or values[2] != '--end-of-options' or not all(values): refuse('invalid repository identity response')
-    common, git_dir, _, oid, head = values
-    if len(oid) not in {40, 64} or len(head) != len(oid) or not all(re.fullmatch(r'[0-9a-f]+', value) for value in (oid, head)):
-        refuse('invalid repository identity response')
+    key = _identity_key(root, target)
+    if key is not None and key in _IDENTITIES:
+        common, git_dir, oid, merge_base = _IDENTITIES[key]
+    else:
+        values = git_bytes('rev-parse', '--git-common-dir', '--git-dir', '--end-of-options', target + '^{commit}', 'HEAD^{commit}').decode().splitlines()
+        if len(values) != 5 or values[2] != '--end-of-options' or not all(values): refuse('invalid repository identity response')
+        common, git_dir, _, oid, head = values
+        if len(oid) not in {40, 64} or len(head) != len(oid) or not all(re.fullmatch(r'[0-9a-f]+', value) for value in (oid, head)):
+            refuse('invalid repository identity response')
+        merge_base = oid if oid == head else git_bytes('merge-base', 'HEAD', oid).decode().strip()
+        if key is not None and key[4] == head and _identity_key(root, target) == key:
+            if len(_IDENTITIES) >= 8:_IDENTITIES.clear()
+            _IDENTITIES[key] = (common, git_dir, oid, merge_base)
     return {'root': str(root), 'cwd': str(Path.cwd().resolve()),
             'common_dir': str((root / common).resolve()),
             'git_dir': str((root / git_dir).resolve()),
             'target': target, 'target_oid': oid,
-            'merge_base': oid if oid == head else git_bytes('merge-base', 'HEAD', oid).decode().strip()}
+            'merge_base': merge_base}
 
 def validate_identity(st):
     expected = st['identity']

@@ -109,6 +109,11 @@ def _tree_key(root, revision):
         revision = _head(metadata)
     if revision is None or not HEX.fullmatch(revision.encode()):
         return None
+    return str(metadata), revision, replacement_state(metadata)
+
+
+def replacement_state(metadata):
+    """File identity of everything that can hold replacement refs in a plain repository."""
     state = []
     for path in (metadata / 'packed-refs', metadata / 'refs' / 'replace'):
         try:
@@ -117,7 +122,18 @@ def _tree_key(root, revision):
             state.append(None)
         else:
             state.append((value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns))
-    return str(metadata), revision, tuple(state)
+    return tuple(state)
+
+
+def plain_metadata(root):
+    """The `.git` directory of a plain (non-linked, non-reftable) repository, else None."""
+    metadata = Path(root).resolve() / '.git'
+    try:
+        if metadata.is_symlink() or not metadata.is_dir() or (metadata / 'commondir').exists() or (metadata / 'reftable').exists():
+            return None
+    except OSError:
+        return None
+    return metadata
 
 
 def tree_entries(root, revision):
