@@ -60,7 +60,13 @@ def installed(repo, tmp_path):
     return launcher, json.loads(boot.stdout)
 
 
+def approval_environment():
+    """The environment terminal_fixture approved the run in; evidence is bound to it."""
+    return {k: v for k, v in os.environ.items() if k not in {'AL_RUNTIME_DIR', 'PYTHONPATH', 'PYTHONHOME'}}
+
+
 def source_proof(launcher, repository, state, run=None, env=None):
+    env = approval_environment() if env is None else env
     result = subprocess.run([str(launcher), 'source-proof', '--repository', str(repository),
                              '--session', state['session_id'], '--run', run or state['run_id'], '--platform', PLATFORM],
                             cwd=repository, capture_output=True, text=True, timeout=120, env=env)
@@ -141,7 +147,7 @@ def test_installed_snapshot_validates_original_architecture_binding_without_rewr
     (repo/'sitecustomize.py').write_text('open('+repr(str(marker))+',"w").write("startup")\n')
     bin_dir = repo/'hostile-bin';bin_dir.mkdir()
     (bin_dir/'python3').write_text('#!/bin/sh\n: > '+shlex.quote(str(marker))+'\n');(bin_dir/'python3').chmod(0o755)
-    environment = dict(os.environ,PYTHONPATH=str(repo),PYTHONHOME=str(repo),AL_RUNTIME_DIR=str(tmp_path/'foreign'),
+    environment = dict(approval_environment(),PYTHONPATH=str(repo),PYTHONHOME=str(repo),AL_RUNTIME_DIR=str(tmp_path/'foreign'),
                        AL_VALIDATOR_ORIGIN=str(tmp_path/'foreign-origin'),PATH=str(bin_dir)+os.pathsep+os.environ['PATH'])
     # Planted .py files change pinned service coverage (ignored files can still be
     # imported), so the validator may refuse; it must never execute any of them.

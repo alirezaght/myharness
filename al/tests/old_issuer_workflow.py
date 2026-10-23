@@ -22,8 +22,10 @@ def setup_tools(directory):
     if not uv or not Path(ruff).is_file():raise RuntimeError('compatibility test requires real uv and Ruff tools')
     shutil.copy2(ruff,tools/'ruff')
     (tools/'pytest').write_text('#!/bin/sh\nexec '+shlex.quote(sys.executable)+' -I -m pytest "$@"\n');(tools/'pytest').chmod(0o755)
-    installed=Path.home()/'.local/share/uv/python'
-    versions=sorted(p for p in installed.glob('cpython-3.12.*') if p.is_dir() and not p.is_symlink())
+    # Isolated verification workers replace HOME; the installed toolchain is only copied (read-only).
+    import pwd
+    homes=dict.fromkeys([Path.home(),Path(pwd.getpwuid(os.getuid()).pw_dir)])
+    versions=sorted(p for home in homes for p in (home/'.local/share/uv/python').glob('cpython-3.12.*') if p.is_dir() and not p.is_symlink())
     if not versions:raise RuntimeError('offline compatibility test requires already installed managed CPython 3.12')
     python=directory/'managed-python';python.mkdir();shutil.copytree(versions[-1],python/versions[-1].name,symlinks=True)
     env={k:v for k,v in os.environ.items() if not k.startswith(('AL_','PYTHON','UV_','GIT_'))}

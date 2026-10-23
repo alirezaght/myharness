@@ -64,3 +64,16 @@ def test_missing_and_forged_child_reports_fail_accounting():
               'reports': {'test_a': {'call': {'outcome': 'passed'}}}}
     checked = validate_child_report(assignment, report, {'returncode': 0})
     assert checked['outcomes']['codex:test_a'] == 'error' and checked['errors']
+
+
+def test_regrouped_assigned_nodes_are_not_drift_but_changed_content_is():
+    nodes = [{'nodeid': 'test_a[x]', 'source': 's'}, {'nodeid': 'test_b', 'source': 's'}, {'nodeid': 'test_a[y]', 'source': 's'}]
+    assignment = {'schema_version': 1, 'run_id': 'one', 'shard_id': 'two', 'suite': 'codex',
+                  'assignment_digest': 'bound', 'source_digest': 'source', 'nodes': nodes}
+    passed = {'call': {'outcome': 'passed'}, 'setup': {'outcome': 'passed'}, 'teardown': {'outcome': 'passed'}}
+    report = {**assignment, 'finalized': True, 'exitstatus': 0, 'nodes': [nodes[0], nodes[2], nodes[1]],
+              'reports': {n['nodeid']: passed for n in nodes}}
+    assert 'assigned collection/source/fixture drift' not in validate_child_report(assignment, report, {'returncode': 0})['errors']
+    for changed in ([nodes[0], dict(nodes[2], source='other'), nodes[1]], [nodes[0], nodes[1]], [nodes[0], nodes[0], nodes[1]]):
+        errors = validate_child_report(assignment, dict(report, nodes=changed), {'returncode': 0})['errors']
+        assert 'assigned collection/source/fixture drift' in errors

@@ -38,7 +38,10 @@ def validate_child_report(assignment, report, process):
     if process.get('ownership') and report.get('launch_token')!=process['ownership']['token']:errors.append('child launch token mismatch')
     if report.get('finalized') is not True:errors.append('child report not finalized')
     if report.get('exitstatus') != process['returncode']:errors.append('process/report exit mismatch')
-    if report.get('nodes') != assignment['nodes']:errors.append('assigned collection/source/fixture drift')
+    # pytest may regroup parametrized items of an assigned subset; identity and content must match exactly.
+    nodes = report.get('nodes')
+    if not isinstance(nodes, list) or len(nodes) != len(assignment['nodes']) or {n.get('nodeid'): n for n in nodes if isinstance(n, dict)} != {n['nodeid']: n for n in assignment['nodes']}:
+        errors.append('assigned collection/source/fixture drift')
     if report.get('deselected') or report.get('errors'):errors.append('child collection errors/deselection')
     expected = {n['nodeid'] for n in assignment['nodes']}
     stages = report.get('reports', {})

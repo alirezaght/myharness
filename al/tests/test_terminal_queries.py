@@ -27,7 +27,8 @@ def prepare(tmp_path,platform):
     state=json.loads(result.stdout)
     launcher=tmp_path/'bin/alctl';bootstrap=bootstrap_cli(source,launcher,tmp_path/'installer-state')
     # Queries run from the same execution environment that produced the approval.
-    state['environment']=environment
+    # terminal_fixture drives its launcher without AL_RUNTIME_DIR/PYTHONPATH/PYTHONHOME.
+    state['environment']={k:v for k,v in environment.items() if k not in {'AL_RUNTIME_DIR','PYTHONPATH','PYTHONHOME'}}
     return source,repo,state,bootstrap
 
 
