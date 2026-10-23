@@ -119,10 +119,11 @@
         "tests/test_workspace_source.py",
         "tests/test_artifact_consumers.py",
         "tests/test_review_state.py",
-        "tests/test_baseline_exceptions.py"
+        "tests/test_baseline_exceptions.py",
+        "tests/test_model_slots.py"
       ]
     },
-    "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23)."
+    "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23). Claude test_model_slots.py uses only the per-test repository copy and runtime (2026-10-23)."
   },
   "isolated_files": {
     "claude:tests/test_analysis_cache.py": {
@@ -133,7 +134,7 @@
       }
     },
     "claude:tests/test_artifact_consumers.py": {
-      "test": "3ef1dc3534271b1d505046837477c82b6cc22a876d5eeecdff4d2221133b6de6",
+      "test": "0593c4c47c43f83f8b87eede840ab9076b1ebdd0223b0aa59648a7d22a26ebd8",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -147,7 +148,7 @@
       }
     },
     "claude:tests/test_baseline_exceptions.py": {
-      "test": "7eb823eb511a9bd7d79cd96d51a6de0aea15d2a061ff73c388bffaa2485126ec",
+      "test": "e6e5d5a51a237d64e8c1b589f69ba185bde903e6825c174ef4a55816a84ae3fa",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -287,7 +288,7 @@
       }
     },
     "claude:tests/test_git_memo.py": {
-      "test": "c473d36b9748e2f8b560e459fdd890dabfcda94c4ec0f94aab8cac98ff8ca7a1",
+      "test": "528f8038f327ce7b6852ab3d7e01f846d52fb19049f9bc10eab0076944664ff7",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -356,6 +357,13 @@
         "mode": 420
       }
     },
+    "claude:tests/test_model_slots.py": {
+      "test": "f344e0e5d90608295fa98893a88b21d21d9a5e5d69d41a52c96a85702b91c4d6",
+      "fixtures": {
+        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
+        "mode": 420
+      }
+    },
     "claude:tests/test_readonly_guard.py": {
       "test": "8a96eafebff13cb2c623f9fd379cbd5cba04feb278071ffa319d7105b9ae5259",
       "fixtures": {
@@ -385,7 +393,7 @@
       }
     },
     "claude:tests/test_repo_adapters.py": {
-      "test": "f6b9031f611c89847e85937311166e361bf8ab5798419589009d3798195ee7ed",
+      "test": "9cf30b5446c1c2fb230d32614fb846d1cd2f0fc1ab10d9d560684156f0be1c7f",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -399,7 +407,7 @@
       }
     },
     "claude:tests/test_review_state.py": {
-      "test": "f0c3e2177d6a326c0f1303af50c8080a349121d8a33160c2957ec8818f6e155a",
+      "test": "9c4813372bbbae7d6a83a5cf7dd3df7c2c59250a8eee9843cae412f64ddf2682",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -686,7 +694,7 @@
       }
     },
     "codex:tests/test_artifact_consumers.py": {
-      "test": "3ef1dc3534271b1d505046837477c82b6cc22a876d5eeecdff4d2221133b6de6",
+      "test": "0593c4c47c43f83f8b87eede840ab9076b1ebdd0223b0aa59648a7d22a26ebd8",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -700,7 +708,7 @@
       }
     },
     "codex:tests/test_baseline_exceptions.py": {
-      "test": "7eb823eb511a9bd7d79cd96d51a6de0aea15d2a061ff73c388bffaa2485126ec",
+      "test": "e6e5d5a51a237d64e8c1b589f69ba185bde903e6825c174ef4a55816a84ae3fa",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -861,7 +869,7 @@
       }
     },
     "codex:tests/test_git_memo.py": {
-      "test": "c473d36b9748e2f8b560e459fdd890dabfcda94c4ec0f94aab8cac98ff8ca7a1",
+      "test": "528f8038f327ce7b6852ab3d7e01f846d52fb19049f9bc10eab0076944664ff7",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -980,7 +988,7 @@
       }
     },
     "codex:tests/test_repo_adapters.py": {
-      "test": "f6b9031f611c89847e85937311166e361bf8ab5798419589009d3798195ee7ed",
+      "test": "9cf30b5446c1c2fb230d32614fb846d1cd2f0fc1ab10d9d560684156f0be1c7f",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -994,7 +1002,7 @@
       }
     },
     "codex:tests/test_review_state.py": {
-      "test": "f0c3e2177d6a326c0f1303af50c8080a349121d8a33160c2957ec8818f6e155a",
+      "test": "9c4813372bbbae7d6a83a5cf7dd3df7c2c59250a8eee9843cae412f64ddf2682",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -4975,7 +4983,7 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 996,
-    "digest": "abc53c3d2a3e8fa29ba679c07b87def35b1928084dfdea6dd25bff3665200a12"
+    "members": 997,
+    "digest": "a6d7407ab3caca55aeab6baf77ad36fc1bfd46dfec5bddd746f32ea26108ea7f"
   }
 }
