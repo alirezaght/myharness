@@ -39,7 +39,7 @@ def gate_gaps(st,stage):
     fp=S.capture_candidate(st)['fingerprint'] if stage=='candidate' else m['base_oid']
     for g in m['gates']:
         if g['applicability']=='NOT_APPLICABLE': continue
-        if g['applicability']=='UNRESOLVED': out.append('unresolved gate '+g['id']); continue
+        if g['applicability']=='UNRESOLVED': continue  # unverified: reported by unverified(), never blocking
         runs=[r for r in st.get('gate_runs',[]) if r['gate']==g['id'] and r['stage']==stage and r['manifest']==st['gate_manifests'][-1]['sha256']]
         r=runs[-1] if runs else None
         e=L.find(st,r['evidence']) if r else None
@@ -63,6 +63,14 @@ def gate_gaps(st,stage):
             if stage=='base' and e and e['status']=='FAIL' and Exceptions.current(st,m,g):continue
             out.append(stage+' gate '+g['id']+' requires passing evidence')
     return out
+
+def unverified(st):
+    """Checks AL could not model or run locally: reported to the reviewer and the user, never blocking."""
+    m=manifest(st)
+    if not m:return []
+    return [{'gate':g['id'],'category':g['category'],'reason':g.get('reason',''),
+             'verified_by':'pipeline' if g['category']=='ci' else 'not verified'}
+            for g in m['gates'] if g['applicability']=='UNRESOLVED']
 
 def base_gaps(st): return gate_gaps(st,'base')
 @S.decision
@@ -113,7 +121,7 @@ def cmd_gates(a,sid):
     if a.action=='status':
         from al_recovery_guidance import descriptors
         print(json.dumps({'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),
-                          'baseline_exceptions':Exceptions.view(st,manifest(st))},indent=2)); return
+                          'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st)},indent=2)); return
     refuse('gate run must use unlocked dispatcher')
 
 def cmd_run(a,sid):
@@ -125,7 +133,8 @@ def cmd_run(a,sid):
         if retry_failed and not resume: refuse('--retry-failed requires --resume')
         selected = Continuation.select_continuation(st,m,a.stage,a.id,retry_failed) if resume else [g for g in m['gates'] if not a.id or g['id']==a.id]
         if not selected and not resume: refuse('unknown gate ID')
-        if any(g['applicability']=='UNRESOLVED' for g in selected): refuse('resolve gate semantics before execution')
+        if a.id and all(g['applicability']=='UNRESOLVED' for g in selected): refuse('gate '+a.id+' is unverified: AL cannot execute it locally')
+        selected=[g for g in selected if g['applicability']!='UNRESOLVED']
         ref=st['gate_manifests'][-1]['sha256']
     invocation=uuid.uuid4().hex;checkout=None;pinned=None
     selected_ids=[g['id'] for g in selected];results=[]

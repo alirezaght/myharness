@@ -63,6 +63,7 @@ def discover(st,paths,ci_context=None):
     rows=S.source_rows()
     for item in gates:
         if item['applicability']=='NOT_APPLICABLE':continue
+        item['sources']=sorted(item.get('sources',[])+Sources.default_parent_entries(item['scope'],item.get('sources',[]),rows),key=str)
         gaps=Sources.capability_gaps(item['scope'],item.get('sources',[]),rows,item['cwd'],root=al_store.REPO_ROOT)
         if gaps:
             item.update(applicability='UNRESOLVED',reason='; '.join(gaps))

@@ -102,6 +102,8 @@ def inventory(st,anticipated=(),ci_context=None):
         binding['execution_signature']=digest({k:v for k,v in binding.items() if k!='execution_signature'})
     rows=S.source_rows();runnable=[]
     for binding in facts['checks']['bindings']:
+        binding['sources']=sorted(binding['sources']+Sources.default_parent_entries(binding['required_scope'],binding['sources'],rows),key=str)
+        binding['execution_signature']=digest({k:v for k,v in binding.items() if k!='execution_signature'})
         unavailable=Sources.capability_gaps(binding['required_scope'],binding['sources'],rows,binding['cwd'],root=al_store.REPO_ROOT)
         if unavailable:facts['checks']['gaps'].append(gap('unavailable-check-input','.', '; '.join(unavailable),unit=binding['units'][0],category=binding['category']))
         else:runnable.append(binding)

@@ -66,6 +66,13 @@ def capability_gaps(scope,sources,rows,cwd='.',*,root):
     return sorted(set(out))
 
 
+def default_parent_entries(scope,sources,rows):
+    """A check that only sees a submodule's gitlink depends on its pointer: declare that, not child content."""
+    declared={item['path'] for item in validate_sources(sources)}
+    return [{'path':path,'capability':'parent-entry'} for path in sorted(boundaries(rows))
+            if path not in declared and intersects(scope,path) and not any(p!=path and contains(path,p) for p in scope)]
+
+
 def pointer_dependencies(scope,sources,rows):
     declared=validate_sources(sources)
     indexed={row['path']:row for row in rows}

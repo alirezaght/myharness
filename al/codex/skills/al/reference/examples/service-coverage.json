@@ -257,14 +257,6 @@
       ],
       "resolved_dynamic": [],
       "policy_selection": [],
-      "import_targets": [
-        [
-          "base",
-          "services/a/src/app.py",
-          "common",
-          "static"
-        ]
-      ],
       "source_membership": [
         [
           "base",
@@ -302,7 +294,9 @@
           "services/b",
           "app"
         ]
-      ]
+      ],
+      "import_targets_digest": "a12fc2c2a158ef6fe2a84c3e036e7ad55f3fed31d871c4f3b5ea99314e5f0af9",
+      "import_targets_count": 1
     },
     "checks": {
       "obligations": [

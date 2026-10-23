@@ -30,7 +30,8 @@ def _attempt(st, stage, gate):
 
 def _state(st, manifest, stage, gate, gaps, fingerprint):
     if gate['applicability'] == 'NOT_APPLICABLE':return 'not-required'
-    if gate['applicability'] != 'APPLICABLE':return 'unresolved'
+    # A check AL cannot model locally is reported as unverified; it never blocks work.
+    if gate['applicability'] != 'APPLICABLE':return 'unverified'
     entry, run = _attempt(st, stage, gate)
     if entry is None:return 'missing'
     if _uncertain(entry) or entry['status'] == 'RUNNING' or (entry.get('interrupted') and not entry.get('reconciliation')):
@@ -64,7 +65,7 @@ def select_continuation(st, manifest, stage, requested_id=None, retry_failed=Fal
     for gate in manifest['gates']:
         name = gate['id']; status = states[name]
         if requested_id and name != requested_id:continue
-        if status in {'not-required', 'unresolved'}:continue
+        if status in {'not-required', 'unresolved', 'unverified'}:continue
         if requested_id or status in {'missing', 'stale'} or (retry_failed and status == 'failed'):
             selected.append(gate)
     return selected
@@ -88,6 +89,7 @@ def stage_report(st, stage, selected_results=(), selected=()):
             'retained_valid': [g for g, s in states.items() if s == 'valid' and g not in selected],
             'retained_failed': [g for g, s in states.items() if s == 'failed'],
             'unresolved': [g for g, s in states.items() if s == 'unresolved']+uncertain,
+            'unverified': [g for g, s in states.items() if s == 'unverified'],
             'unexecuted': [g for g, s in states.items() if s in {'missing', 'stale'}],
             'base_decisions': decisions, 'stage_ready': not gaps and not uncertain and not any(s == 'unresolved' for s in states.values())}
 

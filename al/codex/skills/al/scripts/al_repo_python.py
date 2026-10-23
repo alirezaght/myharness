@@ -31,6 +31,26 @@ def candidates(scan,nested=False):
     return {name for name in names if not any(within(o,name) for o in scan.opaque)}
 
 
+WORKSPACE_MANIFESTS=('package.json','pyproject.toml','go.mod')
+
+
+def expand_members(pattern,files):
+    """Expand a workspace glob (`dir/*` or `dir/**`) to the directories in the tree that hold a manifest."""
+    parts=PurePosixPath(pattern).parts
+    if any(part not in {'*','**'} and '*' in part for part in parts) or '**' in parts[:-1]:
+        raise ValueError('unsupported workspace member '+pattern)
+    found=set()
+    for path in files:
+        if PurePosixPath(path).name not in WORKSPACE_MANIFESTS:continue
+        directory=PurePosixPath(path).parent.parts
+        if parts[-1]=='**':
+            matched=len(directory)>len(parts)-1 and directory[:len(parts)-1]==parts[:-1]
+        else:
+            matched=len(directory)==len(parts) and all(p=='*' or p==d for p,d in zip(parts,directory))
+        if matched and 'node_modules' not in directory:found.add('/'.join(directory))
+    return found
+
+
 def compatible(requirement,name,version):
     match=re.fullmatch(re.escape(name)+r'(?:\[[A-Za-z0-9_,.-]+\])?\s*(.*)',requirement,re.I)
     if not match or not re.fullmatch(r'\d+(?:\.\d+)*',str(version)):return False
@@ -173,14 +193,18 @@ def workspace_members(scan,facts):
             if not isinstance(members,list):raise ValueError('literal workspace list required')
             patterns.extend(members)
         except (ValueError,AttributeError) as exc:facts['enumeration']['gaps'].append(gap('unsupported-workspace','package.json',str(exc)))
-    explicit=set()
+    explicit=set();excluded=set()
     for pattern in patterns:
         if pattern in {'services/*','packages/*'}:continue
         try:
-            safe(pattern)
-            if '*' in pattern or not pattern.startswith(('services/','packages/')):raise ValueError('unsupported workspace member '+str(pattern))
-            explicit.add(pattern)
+            negated=isinstance(pattern,str) and pattern.startswith('!')
+            literal=pattern[1:] if negated else pattern
+            safe(literal.replace('**','x').replace('*','x'))
+            if not literal.startswith(('services/','packages/','apps/')):raise ValueError('unsupported workspace member '+str(pattern))
+            members=expand_members(literal,scan.files) if '*' in literal else {literal}
+            (excluded if negated else explicit).update(members)
         except (TypeError,ValueError) as exc:facts['enumeration']['gaps'].append(gap('unsupported-workspace','.',str(exc)))
+    explicit-=excluded
     if patterns:facts['enumeration']['declarations'].append({'workspace_members':sorted(map(str,patterns))})
     return root,explicit
 

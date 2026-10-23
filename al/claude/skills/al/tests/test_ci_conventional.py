@@ -78,7 +78,7 @@ def test_complete_conventional_ci_is_independently_bound(cli,repo,tmp_path):
     lambda s:s.replace('- run: uv build','- if: success()\n        run: uv build'),
     lambda s:s.replace('on: [push, pull_request]','on: {pull_request: {paths: [src/**]}}'),
 ])
-def test_unsupported_chain_stays_incomplete_and_blocks_admission(cli,repo,tmp_path,change):
+def test_unsupported_chain_stays_incomplete_and_is_reported_unverified(cli,repo,tmp_path,change):
     project(repo);put(repo,'.github/workflows/quality.yml',change(WORKFLOW));start(cli)
     st,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     a=m['service_coverage']['assessment']
@@ -86,8 +86,10 @@ def test_unsupported_chain_stays_incomplete_and_blocks_admission(cli,repo,tmp_pa
     assert any(g['code']=='missing-verification-check' for g in a['gaps'])
     file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
     invoke(cli,'gates','plan','--file',str(file))
-    admit_planning(cli);before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
-    assert json.loads(cli('show')[1])==before
+    # Incomplete coverage is an unverified check reported to the user, not a blocker.
+    unverified=json.loads(cli('gates','status')[1])['unverified']
+    assert any(u['category']=='lint-imports' for u in unverified)
+    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
 
 
 @pytest.mark.parametrize('line',['uv run ruff check .','uv run ruff format --check .','uv run pytest','uv build'])
@@ -166,8 +168,9 @@ def test_pytest_ambient_execution_controls_cannot_be_unbound(cli,repo,tmp_path,m
     assert after['service_coverage']['assessment']['outcome']=='incomplete'
     m=manifest_for(json.loads(cli('show')[1]),repo,['ordinary_project/__init__.py'])
     file=tmp_path/'ambient-control.json';file.write_text(json.dumps(m));invoke(cli,'gates','plan','--file',str(file))
-    admit_planning(cli);before_state=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
-    assert json.loads(cli('show')[1])==before_state
+    # The masked check is never claimed as verification: it is reported as unverified.
+    unverified=json.loads(cli('gates','status')[1])['unverified']
+    assert any(u['category']=='lint-imports' for u in unverified)
 
 
 def test_collection_only_pytest_configuration_is_not_verification(cli,repo,tmp_path):

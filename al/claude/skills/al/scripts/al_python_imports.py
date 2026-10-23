@@ -15,6 +15,11 @@ STDLIB=frozenset({'json','os','sys','pathlib','collections','re','math','importl
 TARGETS={None,'>=3.11','>=3.12','>=3.13','>=3.14','==3.11.*','==3.12.*','==3.13.*','==3.14.*'}
 
 
+def _targets_digest(targets):
+    """Every import of both snapshots, bound by digest: a changed import changes the facts without listing them."""
+    return hashlib.sha256('\n'.join('\0'.join(row) for row in sorted(targets)).encode()).hexdigest()
+
+
 def _analyze(facts,scan):
     units={u['id']:u for u in facts['units']};potential=sorted(u['id'] for u in facts['units'] if ('python' in u['languages'] or facts['adapter']['id']=='python') and (u['roles'] or u['id']=='.' or u['id'].startswith(('services/','apps/'))))
     records={};owners=defaultdict(set);edges=set();uncertainties=[];resolved=set();import_targets=set()
@@ -227,7 +232,7 @@ def _analyze(facts,scan):
     uncertainties=[u for u in uncertainties if u not in deferred]
     order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
-            'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets':[list(r) for r in sorted(import_targets)],'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[])}
+            'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[])}
 
 
 DATA_SUFFIXES=('.json','.yaml','.yml')

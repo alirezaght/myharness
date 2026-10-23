@@ -42,7 +42,7 @@ def gates(st):
         states, _ = _states(st, manifest, stage)
         for gate in manifest["gates"]:
             state = states[gate["id"]]
-            if state in {"valid", "not-required", "accepted-base-decision"}:
+            if state in {"valid", "not-required", "accepted-base-decision", "unverified"}:
                 continue
             subject = stage + ":" + gate["id"]
             attempt, association = _attempt(st, stage, gate)

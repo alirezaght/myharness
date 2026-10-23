@@ -139,14 +139,14 @@ def test_explicit_gitlink_scope_and_irrelevant_declarations(repo,gitlink):
     assert any('not a submodule' in gap for gap in Sources.capability_gaps(['svc'],irrelevant,[{'path':'svc/app.py','worktree':{'type':'file'}}],root=repo))
 
 
-def test_discovery_requires_capability_and_preserves_reviewed_declarations(cli,repo,tmp_path,gitlink):
+def test_discovery_declares_parent_entry_and_preserves_reviewed_declarations(cli,repo,tmp_path,gitlink):
     import al_gate_discovery as D
     path,_,_=gitlink
     start(cli,repo);commit_child(path,'B')
     st=json.loads(cli('show')[1]);manifest=D.discover(st,['svc'])
     gate=next(g for g in manifest['gates'] if g['id']=='contracts')
-    assert gate['applicability']=='UNRESOLVED' and 'explicit source capability' in gate['reason']
-    gate['sources']=PARENT
+    # A gate covering a gitlink sees only its pointer, so discovery declares parent-entry itself.
+    assert gate['sources']==PARENT and 'explicit source capability' not in (gate['reason'] or '')
     file=tmp_path/'preserved.json';file.write_text(json.dumps(manifest))
     invoke(cli,'gates','plan','--file',str(file))
     updated=D.discover(json.loads(cli('show')[1]),['svc'])

@@ -132,7 +132,7 @@ def validate_facts(facts):
     def bounded(value,depth=0):
         nonlocal count
         count+=1
-        if count>500000 or depth>32:raise ValueError('coverage fact complexity limit')
+        if count>2000000 or depth>32:raise ValueError('coverage fact complexity limit')
         if isinstance(value,str) and len(value)>65536:raise ValueError('coverage string limit')
         if isinstance(value,list):
             if len(value)>100000:raise ValueError('coverage collection limit')

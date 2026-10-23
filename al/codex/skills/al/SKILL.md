@@ -332,7 +332,11 @@ record exact sourced rules, arguments, working directory, scope and applicabilit
 `gates discover --paths-file <json> --base pinned-base`, then `gates plan
 --file <manifest>`. Every category—lint-imports, LOC, contract generation/drift,
 pre-commit and touched-unit CI—needs an executable obligation or a sourced,
-reasoned NOT_APPLICABLE. Unclear semantics remain unresolved. Run base gates in a
+reasoned NOT_APPLICABLE. Unclear semantics remain UNRESOLVED: an UNRESOLVED gate
+is an unverified check, not a blocker. Never mark it NOT_APPLICABLE to get past
+it; record the discovered manifest as is and continue. `gates status` lists every
+unverified check (CI jobs as `verified_by: pipeline`); name them in the final
+report so the user knows what AL did not verify locally. Run base gates in a
 disposable checkout; record each result and source. A failed base gate requires
 a recorded `gates decision --id <id> --action fix|stop|defer --source <ref>
 --reason <text>` before implementation. Candidate gates run against a materialized
