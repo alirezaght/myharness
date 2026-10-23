@@ -98,7 +98,10 @@
         "tests/test_task_attribution.py",
         "tests/test_verification_prepare.py",
         "tests/test_workflow_routing.py",
-        "tests/test_workspace_source.py"
+        "tests/test_workspace_source.py",
+        "tests/test_artifact_consumers.py",
+        "tests/test_review_state.py",
+        "tests/test_baseline_exceptions.py"
       ],
       "claude": [
         "tests/test_git_observation.py",
@@ -113,10 +116,13 @@
         "tests/test_task_attribution.py",
         "tests/test_verification_prepare.py",
         "tests/test_workflow_routing.py",
-        "tests/test_workspace_source.py"
+        "tests/test_workspace_source.py",
+        "tests/test_artifact_consumers.py",
+        "tests/test_review_state.py",
+        "tests/test_baseline_exceptions.py"
       ]
     },
-    "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals)."
+    "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23)."
   },
   "isolated_files": {
     "claude:tests/test_analysis_cache.py": {
@@ -126,8 +132,22 @@
         "mode": 420
       }
     },
+    "claude:tests/test_artifact_consumers.py": {
+      "test": "3ef1dc3534271b1d505046837477c82b6cc22a876d5eeecdff4d2221133b6de6",
+      "fixtures": {
+        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
+        "mode": 420
+      }
+    },
     "claude:tests/test_assessments_recovery.py": {
       "test": "f10e98bbd08d567e75f799e2823e1c4771e2fdc1eaf70fbbb82efbb5cb1230d3",
+      "fixtures": {
+        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
+        "mode": 420
+      }
+    },
+    "claude:tests/test_baseline_exceptions.py": {
+      "test": "7eb823eb511a9bd7d79cd96d51a6de0aea15d2a061ff73c388bffaa2485126ec",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -252,13 +272,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_execution_receipts.py": {
-      "test": "b92cdb23d6f7fde571990f7b0a1e93484d91087cfa622c564e17e2d84d666328",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
     "claude:tests/test_fixture_observation.py": {
       "test": "f75352fe072cad7be14524a0351d466739e545824ad001c9f74d4861ab4c857b",
       "fixtures": {
@@ -268,13 +281,6 @@
     },
     "claude:tests/test_gate_resume.py": {
       "test": "4291c3696d3e043ec7b447222674a3a9dbccbed57c766b0190094bcec09d4519",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_gate_reuse.py": {
-      "test": "e3a3554171d4bca442aef60f99eaf58a6ee9fb4f584d4e07d22c8db2f181fdc5",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -294,22 +300,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_gitlink_capabilities.py": {
-      "test": "0c3aa2535be6164a823c44e158e044001dfef318e6439fcabd55023740f2a0aa",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
     "claude:tests/test_gitlink_isolation.py": {
       "test": "6d9e1f6c31d086a84a420849d6f75c9534d9751d1d4331637670094e92cd105a",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_gitlink_review.py": {
-      "test": "ff0fdc760bcf6ea64ebb6453eefce0097c8f37d5e7b019529c8343bb8c8e288a",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -406,6 +398,13 @@
         "mode": 420
       }
     },
+    "claude:tests/test_review_state.py": {
+      "test": "f0c3e2177d6a326c0f1303af50c8080a349121d8a33160c2957ec8818f6e155a",
+      "fixtures": {
+        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
+        "mode": 420
+      }
+    },
     "claude:tests/test_rework.py": {
       "test": "3363b819e2084c601f37b53a863a007c2c4b985001640a40a661722d83aa69ab",
       "fixtures": {
@@ -428,7 +427,7 @@
       }
     },
     "claude:tests/test_runtime_batch11_recovery.py": {
-      "test": "a5efbcf1effe8c5e862f5f4adb53a5c629378beffd6a68dce1fee0e5dfb51816",
+      "test": "dfc4fa2485b0daa91f9032176ad57599e19c467cdb6dd279684a3b2e59f1e7c7",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -448,29 +447,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_runtime_batch12_replay.py": {
-      "test": "d9e62e0df084f3336974466db208d23c66f05755758d039c863368fa90df7349",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
     "claude:tests/test_runtime_batch12_scripts.py": {
       "test": "0b22ea69cca70c5a09b18818399459852d3c2a8c7d5a2fe720e492d28f513287",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch13_checkout.py": {
-      "test": "3ce9fbd385c8d2b2694a8db9618779f598bfa9a07e22985108df374bc0a3a46b",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch13_remote.py": {
-      "test": "6c416bbcedfd20c5bd598790ff704ae171a35170fff1bc7b9b2d47f967069e54",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -485,13 +463,6 @@
     },
     "claude:tests/test_runtime_batch14_commit_race.py": {
       "test": "a1777710ac3abb7907bed67464c08b6b298f421652e842b1e0acefb4f01d4511",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch14_consumers.py": {
-      "test": "f8ad8d5fc88aa97b789c7e977ab70f407eab92a12751f412ba54fc71f41128e8",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -560,13 +531,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_runtime_batch16_writers.py": {
-      "test": "5984f4aa5d5cf53fda01ff0fbf4ee0d5fbb0179254f86b0de5330f6ba84b3934",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
     "claude:tests/test_runtime_batch17_native.py": {
       "test": "2b47435524b7892ecab0f4f97af90b9f07c148a5ba913a27eef910f687095304",
       "fixtures": {
@@ -581,36 +545,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_runtime_batch4.py": {
-      "test": "9b5df79e1ae3b885f5ca16240b1ce1446be3f5ec04a81b528df6148a4c6030fd",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch5.py": {
-      "test": "af0268eddf0fed2aa4fbb4bab862896522df32952ab7dabbbebe6827a12ef594",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
     "claude:tests/test_runtime_batch6.py": {
       "test": "cdff5df6649114c5dfc9500a5e7cbc9d241935d7ae968ae6f8035d337a1d691a",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch6_recovery.py": {
-      "test": "70995eb380aa15455474063b9917a3e5576609c787b44876f2a326a3606f7cf6",
-      "fixtures": {
-        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch7.py": {
-      "test": "b13a8f248cfd720d8ff75270bae863f1ed3f49c3c90593570ad59b6b3ea0f7de",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -749,8 +685,22 @@
         "mode": 420
       }
     },
+    "codex:tests/test_artifact_consumers.py": {
+      "test": "3ef1dc3534271b1d505046837477c82b6cc22a876d5eeecdff4d2221133b6de6",
+      "fixtures": {
+        "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
+        "mode": 420
+      }
+    },
     "codex:tests/test_assessments_recovery.py": {
       "test": "f10e98bbd08d567e75f799e2823e1c4771e2fdc1eaf70fbbb82efbb5cb1230d3",
+      "fixtures": {
+        "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
+        "mode": 420
+      }
+    },
+    "codex:tests/test_baseline_exceptions.py": {
+      "test": "7eb823eb511a9bd7d79cd96d51a6de0aea15d2a061ff73c388bffaa2485126ec",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1043,6 +993,13 @@
         "mode": 420
       }
     },
+    "codex:tests/test_review_state.py": {
+      "test": "f0c3e2177d6a326c0f1303af50c8080a349121d8a33160c2957ec8818f6e155a",
+      "fixtures": {
+        "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
+        "mode": 420
+      }
+    },
     "codex:tests/test_rework.py": {
       "test": "4a59d7c7b620b193d28d2ece18899e375de830d3f64f414527eb28bac4a8219d",
       "fixtures": {
@@ -1065,7 +1022,7 @@
       }
     },
     "codex:tests/test_runtime_batch11_recovery.py": {
-      "test": "a5efbcf1effe8c5e862f5f4adb53a5c629378beffd6a68dce1fee0e5dfb51816",
+      "test": "dfc4fa2485b0daa91f9032176ad57599e19c467cdb6dd279684a3b2e59f1e7c7",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1100,7 +1057,7 @@
       }
     },
     "codex:tests/test_runtime_batch13_remote.py": {
-      "test": "6c416bbcedfd20c5bd598790ff704ae171a35170fff1bc7b9b2d47f967069e54",
+      "test": "a0d22c0984c394cebd2ac5f2cee2dc2d4cb8d64e804202826fa85fdf1c8f579c",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1184,7 +1141,7 @@
       }
     },
     "codex:tests/test_runtime_batch4.py": {
-      "test": "9b5df79e1ae3b885f5ca16240b1ce1446be3f5ec04a81b528df6148a4c6030fd",
+      "test": "ac2d7bd94eea9f4f34c50d2fabfe3cb85f36c1d0b557caaf30d00977cc6f252c",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1205,14 +1162,14 @@
       }
     },
     "codex:tests/test_runtime_batch6_recovery.py": {
-      "test": "70995eb380aa15455474063b9917a3e5576609c787b44876f2a326a3606f7cf6",
+      "test": "8fd207ea38812e76dffc7e04e5b14cdcac3625a7746a9720ae024bea7b10475e",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
       }
     },
     "codex:tests/test_runtime_batch7.py": {
-      "test": "b13a8f248cfd720d8ff75270bae863f1ed3f49c3c90593570ad59b6b3ea0f7de",
+      "test": "12f2e3cc46fc2eadc50b7e843a304b2fb9c604ff8aad789015051c2a7d788cd1",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1862,98 +1819,9 @@
     "claude:tests/test_execution_events.py::test_pre_worker_bootstrap_rejects_foreign_binding_and_dispatch_spec",
     "claude:tests/test_execution_events.py::test_reporting_cannot_manufacture_approval",
     "claude:tests/test_execution_events.py::test_target_harness_package_cannot_shadow_authority_bridge",
-    "claude:tests/test_gate_reuse.py::test_between_gate_metadata_drift_is_checked_before_any_scratch_git_read",
-    "claude:tests/test_gate_reuse.py::test_changed_inputs_between_gates_cannot_reuse[environment]",
-    "claude:tests/test_gate_reuse.py::test_changed_inputs_between_gates_cannot_reuse[manifest]",
-    "claude:tests/test_gate_reuse.py::test_changed_inputs_between_gates_cannot_reuse[source]",
-    "claude:tests/test_gate_reuse.py::test_contaminated_execution_never_reused[from pathlib import Path; Path(\"new\").write_text(\"changed\")]",
-    "claude:tests/test_gate_reuse.py::test_contaminated_execution_never_reused[from pathlib import Path; Path(\"ordinary-empty-directory\").mkdir()]",
-    "claude:tests/test_gate_reuse.py::test_contaminated_execution_never_reused[from pathlib import Path; Path(\"svc/app.py\").write_text(\"changed\")]",
-    "claude:tests/test_gate_reuse.py::test_contaminated_execution_never_reused[import subprocess; subprocess.run([\"git\",\"config\",\"evil.setting\",\"yes\"],check=True)]",
-    "claude:tests/test_gate_reuse.py::test_contaminated_execution_never_reused[import subprocess; subprocess.run([\"git\",\"update-index\",\"--assume-unchanged\",\"svc/app.py\"],check=True)]",
-    "claude:tests/test_gate_reuse.py::test_contaminated_execution_never_reused[import subprocess; subprocess.run([\"git\",\"update-index\",\"--force-remove\",\"svc/app.py\"],check=True)]",
-    "claude:tests/test_gate_reuse.py::test_different_declared_environment_prevents_execution_reuse",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_binds_stage_manifest_candidate_environment_and_timeout",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_includes_every_gate_dependency[argv-value0]",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_includes_every_gate_dependency[cwd-svc]",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_includes_every_gate_dependency[env_names-value4]",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_includes_every_gate_dependency[execution_kind-remote]",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_includes_every_gate_dependency[scope-value2]",
-    "claude:tests/test_gate_reuse.py::test_execution_identity_includes_every_gate_dependency[sources-value3]",
-    "claude:tests/test_gate_reuse.py::test_failed_reservation_cannot_populate_execution_cache",
-    "claude:tests/test_gate_reuse.py::test_ignored_cache_requires_fresh_checkout_and_execution",
-    "claude:tests/test_gate_reuse.py::test_ignored_virtualenv_symlinks_discard_checkout_without_following_targets[False]",
-    "claude:tests/test_gate_reuse.py::test_ignored_virtualenv_symlinks_discard_checkout_without_following_targets[True]",
-    "claude:tests/test_gate_reuse.py::test_manifest_artifact_and_rule_revalidated_at_execution_boundaries[artifact-before-finalize]",
-    "claude:tests/test_gate_reuse.py::test_manifest_artifact_and_rule_revalidated_at_execution_boundaries[artifact-before-launch]",
-    "claude:tests/test_gate_reuse.py::test_manifest_artifact_and_rule_revalidated_at_execution_boundaries[rule-before-launch]",
-    "claude:tests/test_gate_reuse.py::test_metadata_symlinks_are_refused_before_git_reads[config]",
-    "claude:tests/test_gate_reuse.py::test_metadata_symlinks_are_refused_before_git_reads[index]",
-    "claude:tests/test_gate_reuse.py::test_post_execution_generated_directory_symlink_never_runs_worktree_git",
-    "claude:tests/test_gate_reuse.py::test_post_execution_generated_symlink_is_discarded_only_when_ignored[False]",
-    "claude:tests/test_gate_reuse.py::test_post_execution_generated_symlink_is_discarded_only_when_ignored[True]",
-    "claude:tests/test_gate_reuse.py::test_remote_obligations_execute_independently",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_child_and_outside_forms_never_launch[absolute]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_child_and_outside_forms_never_launch[alias]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_child_and_outside_forms_never_launch[dotdot]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_child_and_outside_forms_never_launch[outside-absolute]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_child_and_outside_forms_never_launch[outside-alias]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_ordinary_relative_and_contained_alias_execute[.]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_ordinary_relative_and_contained_alias_execute[safe-alias]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_ordinary_relative_and_contained_alias_execute[svc]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_planned_alias_retarget_cannot_reuse_or_launch[False]",
-    "claude:tests/test_gitlink_capabilities.py::test_canonical_cwd_planned_alias_retarget_cannot_reuse_or_launch[True]",
-    "claude:tests/test_gitlink_capabilities.py::test_discovery_requires_capability_and_preserves_reviewed_declarations",
-    "claude:tests/test_gitlink_capabilities.py::test_disjoint_gate_can_run_with_dirty_child[base]",
-    "claude:tests/test_gitlink_capabilities.py::test_disjoint_gate_can_run_with_dirty_child[candidate]",
-    "claude:tests/test_gitlink_capabilities.py::test_explicit_gitlink_scope_and_irrelevant_declarations",
-    "claude:tests/test_gitlink_capabilities.py::test_gate_detects_source_change_outside_its_declared_scope",
-    "claude:tests/test_gitlink_capabilities.py::test_gate_materializes_effective_pointer_and_records_capabilities",
-    "claude:tests/test_gitlink_capabilities.py::test_invalid_source_arrays_are_refused_without_execution[bad0]",
-    "claude:tests/test_gitlink_capabilities.py::test_invalid_source_arrays_are_refused_without_execution[bad1]",
-    "claude:tests/test_gitlink_capabilities.py::test_invalid_source_arrays_are_refused_without_execution[bad2]",
-    "claude:tests/test_gitlink_capabilities.py::test_invalid_source_arrays_are_refused_without_execution[bad3]",
-    "claude:tests/test_gitlink_capabilities.py::test_invalid_source_arrays_are_refused_without_execution[bad4]",
-    "claude:tests/test_gitlink_capabilities.py::test_invalid_source_arrays_are_refused_without_execution[bad5]",
-    "claude:tests/test_gitlink_capabilities.py::test_legacy_ordinary_evidence_remains_valid_but_overlapping_legacy_is_unverifiable",
-    "claude:tests/test_gitlink_capabilities.py::test_parent_entry_cannot_authorize_child_scope_or_cwd[scope0-.]",
-    "claude:tests/test_gitlink_capabilities.py::test_parent_entry_cannot_authorize_child_scope_or_cwd[scope1-svc/vendor]",
-    "claude:tests/test_gitlink_capabilities.py::test_parent_pointer_fingerprint_does_not_hash_child_availability",
-    "claude:tests/test_gitlink_capabilities.py::test_public_evidence_refuses_undeclared_or_child_content_before_launch[None]",
-    "claude:tests/test_gitlink_capabilities.py::test_public_evidence_refuses_undeclared_or_child_content_before_launch[child-content]",
-    "claude:tests/test_gitlink_capabilities.py::test_public_parent_pointer_evidence_binds_staging_and_effective_head",
-    "claude:tests/test_gitlink_capabilities.py::test_removed_gitlink_gate_uses_each_stage_parent_state[base]",
-    "claude:tests/test_gitlink_capabilities.py::test_removed_gitlink_gate_uses_each_stage_parent_state[candidate]",
-    "claude:tests/test_gitlink_capabilities.py::test_reserved_gate_capability_failure_finalizes_infra[sources0-base]",
-    "claude:tests/test_gitlink_capabilities.py::test_reserved_gate_capability_failure_finalizes_infra[sources0-candidate]",
-    "claude:tests/test_gitlink_capabilities.py::test_reserved_gate_capability_failure_finalizes_infra[sources1-base]",
-    "claude:tests/test_gitlink_capabilities.py::test_reserved_gate_capability_failure_finalizes_infra[sources1-candidate]",
     "claude:tests/test_gitlink_isolation.py::test_isolation_uses_effective_pointer_without_copying_child_and_preserves_ordinary_index",
     "claude:tests/test_gitlink_isolation.py::test_uncaptured_child_isolation_refuses_before_destination_creation[dirty]",
     "claude:tests/test_gitlink_isolation.py::test_uncaptured_child_isolation_refuses_before_destination_creation[inspection-failed]",
-    "claude:tests/test_gitlink_review.py::test_ci_include_into_child_stays_unresolved_without_reading_child_yaml",
-    "claude:tests/test_gitlink_review.py::test_failed_child_can_be_reported_from_initial_start_and_disjoint_check",
-    "claude:tests/test_gitlink_review.py::test_failed_inspection_is_visible_and_never_materializes",
-    "claude:tests/test_gitlink_review.py::test_ignore_submodules_cannot_hide_pointer_or_dirty_attribution",
-    "claude:tests/test_gitlink_review.py::test_nested_dirt_and_residual_removed_dirt_are_visible",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[add-apps]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[add-packages]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[add-services]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[remove-apps]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[remove-packages]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[remove-services]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[update-apps]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[update-packages]",
-    "claude:tests/test_gitlink_review.py::test_opaque_unit_root_discovery_and_passed_candidate_gates_agree[update-services]",
-    "claude:tests/test_gitlink_review.py::test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks[False-apps]",
-    "claude:tests/test_gitlink_review.py::test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks[False-packages]",
-    "claude:tests/test_gitlink_review.py::test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks[False-services]",
-    "claude:tests/test_gitlink_review.py::test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks[True-apps]",
-    "claude:tests/test_gitlink_review.py::test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks[True-packages]",
-    "claude:tests/test_gitlink_review.py::test_ordinary_units_keep_discovered_obligations_with_nested_gitlinks[True-services]",
-    "claude:tests/test_gitlink_review.py::test_rule_inventory_does_not_enter_opaque_children",
-    "claude:tests/test_gitlink_review.py::test_shared_consumer_selection_cannot_read_opaque_child_code_or_config",
-    "claude:tests/test_gitlink_review.py::test_staged_pointer_is_attributed_when_child_returns_to_base",
     "claude:tests/test_gitlinks.py::test_base_index_and_effective_pointer_are_distinct",
     "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[added]",
     "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[committed]",
@@ -2243,28 +2111,6 @@
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[pnpm run format:check-0]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[poetry run pnpm migration:db-2]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[rg 'pnpm migrate:wissen --check' .-0]",
-    "claude:tests/test_runtime_batch12_replay.py::test_command_text_is_never_executed_and_action_only_fixture_still_works",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[None]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands1]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands2]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands3]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands4]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands5]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands6]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands7]",
-    "claude:tests/test_runtime_batch12_replay.py::test_malformed_declarations_produce_explicit_unmatched_policy_outcomes[commands8]",
-    "claude:tests/test_runtime_batch12_replay.py::test_missing_baseline_interface_is_unavailable_never_candidate_fallback",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_candidate_and_baseline_are_independent_of_imported_runner_guard",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[__file__='/wrong/al_shell.py'-origin mismatch]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[def check(*args,**kwargs):\\n import os\\n os.write(1,b'invalid report')\\n return []-Expecting value]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[def check(*args,**kwargs):raise RuntimeError('selected exception')-selected exception]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[def check(*args,**kwargs):return 'not a list'-malformed]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[def check(*args,**kwargs):return None-malformed]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[def check(*args,**kwargs):return [3]-malformed]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_policy_errors_and_invalid_reports_never_match[del check-interface missing]",
-    "claude:tests/test_runtime_batch12_replay.py::test_selected_regression_causes_specific_policy_failure_nonzero_and_safety_regression",
-    "claude:tests/test_runtime_batch12_replay.py::test_timeout_is_unmatched_and_unavailable_with_actual_policy_process",
-    "claude:tests/test_runtime_batch12_replay.py::test_unchanged_harmless_fixture_accounts_for_fourteen_policies_and_two_actions",
     "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --check-readonly]",
     "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --check-shared]",
     "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --dry-run-readonly]",
@@ -2408,200 +2254,6 @@
     "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations:db-readonly]",
     "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations:db-shared]",
     "claude:tests/test_runtime_batch12_scripts.py::test_public_ownership_records_denial_without_admitting_work",
-    "claude:tests/test_runtime_batch13_checkout.py::test_admitted_source_directory_absent_from_base_finalizes_infra",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-chain-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-chain-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-directory-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-directory-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-file-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-file-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-parent-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[False-parent-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-chain-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-chain-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-directory-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-directory-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-file-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-file-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-parent-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_contained_links_are_supported_and_generated_changes_still_fail[True-parent-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_final_boundary_revalidates_links_after_representation_inspection",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[.git-False-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[.git-False-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[.git-True-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[.git-True-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[missing-False-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[missing-False-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[missing-True-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[missing-True-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[svc/app.py-False-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[svc/app.py-False-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[svc/app.py-True-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_gate_cwd_rejects_metadata_missing_or_file_before_either_branch[svc/app.py-True-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_new_unsafe_candidate_link_is_rejected_before_staging_or_execution",
-    "claude:tests/test_runtime_batch13_checkout.py::test_overlay_parent_guard_prevents_following_links_for_writes[absolute]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_overlay_parent_guard_prevents_following_links_for_writes[chain]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_overlay_parent_guard_prevents_following_links_for_writes[relative]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_resolution_rejects_unsupported_targets_and_excessive_chains",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_base_is_rejected_even_when_candidate_overlay_deletes_link",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[absolute-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[absolute-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[chain-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[chain-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[cycle-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[cycle-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[dangling-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[dangling-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[directory-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[directory-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[git-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[git-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[intermediate-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[intermediate-candidate]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[relative-base]",
-    "claude:tests/test_runtime_batch13_checkout.py::test_unsafe_initial_links_finalize_setup_infra_without_execution[relative-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_encoding_and_json_finalize_infra[\\xff\\xfe\\x80-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_encoding_and_json_finalize_infra[\\xff\\xfe\\x80-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_encoding_and_json_finalize_infra[not json-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_encoding_and_json_finalize_infra[not json-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_encoding_and_json_finalize_infra[{-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_encoding_and_json_finalize_infra[{-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_utf8_inside_otherwise_valid_job_is_not_lossily_accepted[base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_invalid_utf8_inside_otherwise_valid_job_is_not_lossily_accepted[candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path0-None-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path0-None-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path1-value1-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path1-value1-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path10-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path10-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path11-True-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path11-True-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path12-0-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path12-0-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path13--1-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path13--1-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path14-9-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path14-9-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path15-1.5-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path15-1.5-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path16-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path16-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path17-False-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path17-False-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path18-0-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path18-0-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path19-11-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path19-11-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path2-False-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path2-False-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path20-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path20-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path21-value21-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path21-value21-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path22--base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path22--candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path23-   -base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path23-   -candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path24-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path24-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path25-value25-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path25-value25-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path26--base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path26--candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path27-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path27-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path28-False-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path28-False-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path29--base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path29--candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path3-3-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path3-3-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path30-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path30-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path31-value31-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path31-value31-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path32-value32-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path32-value32-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path33-True-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path33-True-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path34-0-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path34-0-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path35--base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path35--candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path36-value36-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path36-value36-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path37-False-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path37-False-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path4-text-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path4-text-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path5-None-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path5-None-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path6-value6-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path6-value6-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path7-missing-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path7-missing-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path8-None-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path8-None-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path9-value9-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path9-value9-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path0-None]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path1-value1]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path10-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path11-True]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path12-0]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path13--1]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path14-9]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path15-1.5]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path16-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path17-False]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path18-0]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path19-11]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path2-False]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path20-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path21-value21]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path22-]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path23-   ]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path24-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path25-value25]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path26-]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path27-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path28-False]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path29-]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path3-3]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path30-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path31-value31]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path32-value32]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path33-True]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path34-0]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path35-]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path36-value36]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path37-False]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path4-text]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path5-None]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path6-value6]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path7-missing]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path8-None]",
-    "claude:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path9-value9]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change0-PASS-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change0-PASS-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change1-FAIL-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change1-FAIL-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change2-FAIL-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change2-FAIL-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change3-INFRA-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change3-INFRA-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change4-INFRA-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change4-INFRA-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change5-INFRA-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change5-INFRA-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change6-PASS-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change6-PASS-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change7-PASS-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change7-PASS-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change8-INFRA-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change8-INFRA-candidate]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change9-PASS-base]",
-    "claude:tests/test_runtime_batch13_remote.py::test_valid_remote_success_failure_and_provenance_controls[change9-PASS-candidate]",
     "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[after-commit-False]",
     "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[after-commit-True]",
     "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[before-commit-False]",
@@ -2630,22 +2282,6 @@
     "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[2-True-candidate]",
     "claude:tests/test_runtime_batch14_commit_race.py::test_locked_observer_cannot_see_transient_pass_before_cancelled_finalization[False]",
     "claude:tests/test_runtime_batch14_commit_race.py::test_locked_observer_cannot_see_transient_pass_before_cancelled_finalization[True]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_active_operations_block_ordinary_replacement_atomically[check-FINALIZATION]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_active_operations_block_ordinary_replacement_atomically[check-IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_active_operations_block_ordinary_replacement_atomically[writer-FINALIZATION]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_active_operations_block_ordinary_replacement_atomically[writer-IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_body_only_edit_keeps_rules_current_but_invalidates_candidate_evidence",
-    "claude:tests/test_runtime_batch14_consumers.py::test_changed_obligations_allow_guarded_replacement_without_fake_interruption[consumer]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_changed_obligations_allow_guarded_replacement_without_fake_interruption[rule]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_changed_obligations_allow_guarded_replacement_without_fake_interruption[unknown]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_manifest_cannot_drop_scanned_consumer_inputs_from_gate_scope",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[False]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[None]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[corrupt0]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[corrupt3]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[corrupt5]",
-    "claude:tests/test_runtime_batch14_consumers.py::test_present_corrupt_recovery_marker_is_never_replaced[corrupt]",
     "claude:tests/test_runtime_batch14_context.py::test_amend_interrupt_resume_requires_new_context_and_base_evidence",
     "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[amendment-tamper]",
     "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[arbitrary-task]",
@@ -2954,22 +2590,6 @@
     "claude:tests/test_runtime_batch16_shell.py::test_unsafe_positional_forms_refuse_policies_and_public_ownership[until false; do cp owned peer; done]",
     "claude:tests/test_runtime_batch16_shell.py::test_unsafe_positional_forms_refuse_policies_and_public_ownership[while true; do rm peer; done]",
     "claude:tests/test_runtime_batch16_shell.py::test_unsafe_positional_forms_refuse_policies_and_public_ownership[{ cp owned peer; }]",
-    "claude:tests/test_runtime_batch16_writers.py::test_component_boundary_and_nonexistent_path_do_not_grant_directory_coverage",
-    "claude:tests/test_runtime_batch16_writers.py::test_covered_directory_child_and_body_edit_need_no_replanning[.]",
-    "claude:tests/test_runtime_batch16_writers.py::test_covered_directory_child_and_body_edit_need_no_replanning[docs]",
-    "claude:tests/test_runtime_batch16_writers.py::test_covered_parent_still_requires_prospective_new_unit_obligations",
-    "claude:tests/test_runtime_batch16_writers.py::test_current_manifest_cannot_request_replacement_privilege_or_replan_active_writer[FINALIZATION]",
-    "claude:tests/test_runtime_batch16_writers.py::test_current_manifest_cannot_request_replacement_privilege_or_replan_active_writer[IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch16_writers.py::test_directory_inventory_discovers_units_and_sourced_ci_then_missing_job_refuses",
-    "claude:tests/test_runtime_batch16_writers.py::test_in_manifest_control_then_sibling_and_new_unit_refuse_atomically",
-    "claude:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[FINALIZATION-path]",
-    "claude:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[FINALIZATION-rule]",
-    "claude:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[FINALIZATION-unit]",
-    "claude:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[IMPLEMENTATION-path]",
-    "claude:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[IMPLEMENTATION-rule]",
-    "claude:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[IMPLEMENTATION-unit]",
-    "claude:tests/test_runtime_batch16_writers.py::test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path",
-    "claude:tests/test_runtime_batch16_writers.py::test_unknown_prospective_ci_remains_unresolved",
     "claude:tests/test_runtime_batch17_native.py::test_actual_native_hook_uses_the_same_bounded_selector[bash -- -c 'git status']",
     "claude:tests/test_runtime_batch17_native.py::test_actual_native_hook_uses_the_same_bounded_selector[bash --noprofile --norc -c 'rg -- -c README.md']",
     "claude:tests/test_runtime_batch17_native.py::test_actual_native_hook_uses_the_same_bounded_selector[bash --noprofile --norc -ic 'rm victim' -c 'git status']",
@@ -3049,63 +2669,6 @@
     "claude:tests/test_runtime_batch17_shell.py::test_startup_selector_refuses_unsupported_or_mutating_program[find . -exec sh -c '{}' \\\\;]",
     "claude:tests/test_runtime_batch17_shell.py::test_startup_selector_refuses_unsupported_or_mutating_program[sh -ic 'rm victim' -c 'git status']",
     "claude:tests/test_runtime_batch17_shell.py::test_startup_selector_refuses_unsupported_or_mutating_program[zsh --norc -c 'git status']",
-    "claude:tests/test_runtime_batch4.py::test_approval_rechecks_actual_completion_proof_instead_of_completed_labels",
-    "claude:tests/test_runtime_batch4.py::test_baseline_fix_decision_is_bound_to_manifest_and_failed_evidence",
-    "claude:tests/test_runtime_batch4.py::test_browser_scripts_require_rendered_evidence[apps/web/src/client/navigation.js]",
-    "claude:tests/test_runtime_batch4.py::test_browser_scripts_require_rendered_evidence[apps/web/src/domains/listing-wizard/ui/alpine/listingWizard.ts]",
-    "claude:tests/test_runtime_batch4.py::test_changed_postimplementation_resume_returns_to_verification",
-    "claude:tests/test_runtime_batch4.py::test_changed_resume_preserves_each_unfinished_preverification_phase[IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch4.py::test_changed_resume_preserves_each_unfinished_preverification_phase[PLANNING]",
-    "claude:tests/test_runtime_batch4.py::test_changed_resume_preserves_each_unfinished_preverification_phase[PSEUDOCODE]",
-    "claude:tests/test_runtime_batch4.py::test_correction_fresh_is_independent_and_comparison_requires_fixed_prior_resolution",
-    "claude:tests/test_runtime_batch4.py::test_designer_comparison_requires_pseudocode_and_inspected_typed_hashes",
-    "claude:tests/test_runtime_batch4.py::test_new_manifest_needs_base_obligations_at_review_and_approval",
-    "claude:tests/test_runtime_batch4.py::test_server_only_typescript_does_not_require_a_browser[apps/web/src/components/listing.server.ts]",
-    "claude:tests/test_runtime_batch4.py::test_server_only_typescript_does_not_require_a_browser[apps/web/src/server/listings.ts]",
-    "claude:tests/test_runtime_batch4.py::test_uninspected_plan_hash_refuses_comparison_without_state_write",
-    "claude:tests/test_runtime_batch4.py::test_wrappers_normalize_paths_and_refuse_unknown_options",
-    "claude:tests/test_runtime_batch5.py::test_changed_planning_retry_preserves_unfinished_work",
-    "claude:tests/test_runtime_batch5.py::test_git_option_values_and_separator_are_harmless[git diff -- --output=file]",
-    "claude:tests/test_runtime_batch5.py::test_git_option_values_and_separator_are_harmless[git diff --color -- svc/app.py]",
-    "claude:tests/test_runtime_batch5.py::test_git_option_values_and_separator_are_harmless[git log --author --output=file]",
-    "claude:tests/test_runtime_batch5.py::test_git_option_values_and_separator_are_harmless[git log --grep '--output']",
-    "claude:tests/test_runtime_batch5.py::test_git_option_values_and_separator_are_harmless[git log --grep='--output=file']",
-    "claude:tests/test_runtime_batch5.py::test_git_option_values_and_separator_are_harmless[git log --grep=--output=file]",
-    "claude:tests/test_runtime_batch5.py::test_git_output_and_missing_value_fail_closed[git diff --color --output written]",
-    "claude:tests/test_runtime_batch5.py::test_git_output_and_missing_value_fail_closed[git diff --output]",
-    "claude:tests/test_runtime_batch5.py::test_git_output_and_missing_value_fail_closed[git log --grep needle --output=written]",
-    "claude:tests/test_runtime_batch5.py::test_git_output_and_missing_value_fail_closed[git log --grep]",
-    "claude:tests/test_runtime_batch5.py::test_git_output_and_missing_value_fail_closed[git show --output=written]",
-    "claude:tests/test_runtime_batch5.py::test_invalid_retry_preserves_failure_and_budget[no-al-engineer-retry]",
-    "claude:tests/test_runtime_batch5.py::test_invalid_retry_preserves_failure_and_budget[undetermined-al-engineer-retry]",
-    "claude:tests/test_runtime_batch5.py::test_invalid_retry_preserves_failure_and_budget[yes-al-builder-retry]",
-    "claude:tests/test_runtime_batch5.py::test_invalid_retry_preserves_failure_and_budget[yes-al-engineer-]",
-    "claude:tests/test_runtime_batch5.py::test_loc_directory_dedup_deleted_path_and_expanded_scope",
-    "claude:tests/test_runtime_batch5.py::test_loc_escape_refuses[../outside.py]",
-    "claude:tests/test_runtime_batch5.py::test_loc_escape_refuses[/tmp/outside.py]",
-    "claude:tests/test_runtime_batch5.py::test_loc_escape_refuses[escape/file.py]",
-    "claude:tests/test_runtime_batch5.py::test_loc_root_directory_and_missing_allowlist_scope",
-    "claude:tests/test_runtime_batch5.py::test_peer_labels_do_not_prove_safe_retry[completed]",
-    "claude:tests/test_runtime_batch5.py::test_peer_labels_do_not_prove_safe_retry[running]",
-    "claude:tests/test_runtime_batch5.py::test_peer_labels_do_not_prove_safe_retry[unknown]",
-    "claude:tests/test_runtime_batch5.py::test_peer_reconciliation_cannot_hide_active_writer",
-    "claude:tests/test_runtime_batch5.py::test_peer_reconciliation_cannot_hide_crashed_check",
-    "claude:tests/test_runtime_batch5.py::test_retry_checkpoint_identity_mismatch_is_unchanged[identity]",
-    "claude:tests/test_runtime_batch5.py::test_retry_checkpoint_identity_mismatch_is_unchanged[task_hash]",
-    "claude:tests/test_runtime_batch5.py::test_retry_does_not_resurrect_a_finished_writer",
-    "claude:tests/test_runtime_batch5.py::test_retry_requires_crashed_check_reconciliation",
-    "claude:tests/test_runtime_batch5.py::test_retry_requires_writer_reconciliation_and_new_lifetime",
-    "claude:tests/test_runtime_batch5.py::test_retry_without_failure_and_resume_bypass_refuse",
-    "claude:tests/test_runtime_batch5.py::test_second_round_explicit_evidenced_fix_approves_with_history_provenance",
-    "claude:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[duplicate]",
-    "claude:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[missing]",
-    "claude:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[source]",
-    "claude:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[stale]",
-    "claude:tests/test_runtime_batch5.py::test_unknown_loc_interface_stays_unresolved",
-    "claude:tests/test_runtime_batch5.py::test_unknown_or_missing_service_recipe_is_unresolved[None]",
-    "claude:tests/test_runtime_batch5.py::test_unknown_or_missing_service_recipe_is_unresolved[lint-imports:\\n\\techo unrelated checker\\n]",
-    "claude:tests/test_runtime_batch5.py::test_unknown_or_missing_service_recipe_is_unresolved[other:\\n\\techo services/$(SVC)-service\\n]",
-    "claude:tests/test_runtime_batch5.py::test_unvalidated_historical_fixed_dictionary_cannot_clear_blocker",
     "claude:tests/test_runtime_batch6.py::test_candidate_gate_requires_full_ledger_and_execution_identity[execution]",
     "claude:tests/test_runtime_batch6.py::test_candidate_gate_requires_full_ledger_and_execution_identity[log]",
     "claude:tests/test_runtime_batch6.py::test_candidate_gate_requires_full_ledger_and_execution_identity[prerequisite]",
@@ -3170,33 +2733,6 @@
     "claude:tests/test_runtime_batch6.py::test_unsatisfied_criterion_requires_unfixed_stable_finding[fixed]",
     "claude:tests/test_runtime_batch6.py::test_whole_quoted_nonexistent_executable_is_not_unquoted_into_commands[\"]",
     "claude:tests/test_runtime_batch6.py::test_whole_quoted_nonexistent_executable_is_not_unquoted_into_commands[']",
-    "claude:tests/test_runtime_batch6_recovery.py::test_actual_running_check_blocks_recovery_replacement",
-    "claude:tests/test_runtime_batch6_recovery.py::test_failed_base_blocks_writer_then_valid_replacement_allows_new_lifetime",
-    "claude:tests/test_runtime_batch6_recovery.py::test_mismatched_recovery_marker_cannot_admit_replacement[checkpoint]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_mismatched_recovery_marker_cannot_admit_replacement[corrupt-checkpoint]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_mismatched_recovery_marker_cannot_admit_replacement[phase]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing[IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing[PSEUDOCODE]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[resume-IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[resume-PSEUDOCODE]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[retry-IMPLEMENTATION]",
-    "claude:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[retry-PSEUDOCODE]",
-    "claude:tests/test_runtime_batch7.py::test_env_alias_is_rejected",
-    "claude:tests/test_runtime_batch7.py::test_environment_change_cannot_authorize_failed_baseline",
-    "claude:tests/test_runtime_batch7.py::test_fallback_before_packet_binds_current_approved_policy",
-    "claude:tests/test_runtime_batch7.py::test_invalid_environment_declarations_preserve_state[VAR]",
-    "claude:tests/test_runtime_batch7.py::test_invalid_environment_declarations_preserve_state[names1]",
-    "claude:tests/test_runtime_batch7.py::test_invalid_environment_declarations_preserve_state[names2]",
-    "claude:tests/test_runtime_batch7.py::test_invalid_environment_declarations_preserve_state[names3]",
-    "claude:tests/test_runtime_batch7.py::test_invalid_environment_declarations_preserve_state[names4]",
-    "claude:tests/test_runtime_batch7.py::test_invalid_environment_declarations_preserve_state[names5]",
-    "claude:tests/test_runtime_batch7.py::test_packet_replacement_archives_abandoned_attempt_and_cannot_replace_saved",
-    "claude:tests/test_runtime_batch7.py::test_replacement_without_unavailability_refuses_without_state_write",
-    "claude:tests/test_runtime_batch7.py::test_report_cannot_forge_attempt_provenance[change0]",
-    "claude:tests/test_runtime_batch7.py::test_report_cannot_forge_attempt_provenance[change1]",
-    "claude:tests/test_runtime_batch7.py::test_report_cannot_forge_attempt_provenance[change2]",
-    "claude:tests/test_runtime_batch7.py::test_report_cannot_forge_attempt_provenance[change3]",
-    "claude:tests/test_runtime_batch7.py::test_unset_empty_and_changed_environment_invalidate_both_stages",
     "claude:tests/test_runtime_batch7_inventory.py::test_concrete_contract_obligation_cannot_be_na",
     "claude:tests/test_runtime_batch7_inventory.py::test_discovery_preserves_declared_environment_dependencies",
     "claude:tests/test_runtime_batch7_inventory.py::test_known_transitive_shared_consumer_retains_unknown_remainder",
@@ -4370,80 +3906,6 @@
     "codex:tests/test_runtime_batch13_remote.py::test_invalid_utf8_inside_otherwise_valid_job_is_not_lossily_accepted[candidate]",
     "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path0-None-base]",
     "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path0-None-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path1-value1-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path1-value1-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path10-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path10-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path11-True-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path11-True-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path12-0-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path12-0-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path13--1-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path13--1-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path14-9-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path14-9-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path15-1.5-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path15-1.5-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path16-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path16-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path17-False-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path17-False-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path18-0-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path18-0-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path19-11-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path19-11-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path2-False-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path2-False-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path20-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path20-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path21-value21-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path21-value21-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path22--base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path22--candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path23-   -base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path23-   -candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path24-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path24-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path25-value25-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path25-value25-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path26--base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path26--candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path27-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path27-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path28-False-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path28-False-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path29--base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path29--candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path3-3-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path3-3-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path30-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path30-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path31-value31-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path31-value31-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path32-value32-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path32-value32-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path33-True-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path33-True-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path34-0-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path34-0-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path35--base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path35--candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path36-value36-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path36-value36-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path37-False-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path37-False-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path4-text-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path4-text-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path5-None-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path5-None-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path6-value6-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path6-value6-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path7-missing-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path7-missing-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path8-None-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path8-None-candidate]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path9-value9-base]",
-    "codex:tests/test_runtime_batch13_remote.py::test_malformed_shapes_finalize_infra_with_intact_raw_log[path9-value9-candidate]",
     "codex:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path0-None]",
     "codex:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path1-value1]",
     "codex:tests/test_runtime_batch13_remote.py::test_schema_rejects_malformed_fields[path10-missing]",
@@ -5505,18 +4967,6 @@
       "max_nodes": 16,
       "reason": "Complete node groups reviewed in Phase3 node-grouping design; separate interpreters, fresh session fixtures, full source closure and actual subprocess isolation proofs required."
     },
-    "claude:tests/test_gate_reuse.py": {
-      "max_nodes": 16,
-      "reason": "Complete node groups reviewed in Phase3 node-grouping design; separate interpreters, fresh session fixtures, full source closure and actual subprocess isolation proofs required."
-    },
-    "claude:tests/test_runtime_batch13_checkout.py": {
-      "max_nodes": 16,
-      "reason": "Complete node groups reviewed in Phase3 node-grouping design; separate interpreters, fresh session fixtures, full source closure and actual subprocess isolation proofs required."
-    },
-    "claude:tests/test_runtime_batch13_remote.py": {
-      "max_nodes": 16,
-      "reason": "Complete node groups reviewed in Phase3 node-grouping design; separate interpreters, fresh session fixtures, full source closure and actual subprocess isolation proofs required."
-    },
     "claude:tests/test_runtime_batch6.py": {
       "max_nodes": 16,
       "reason": "Complete node groups reviewed in Phase3 node-grouping design; separate interpreters, fresh session fixtures, full source closure and actual subprocess isolation proofs required."
@@ -5525,7 +4975,7 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1008,
-    "digest": "33fe72250f917f80e1f6a44ec29b952c50b1faff6c4ac298f2872a06d53e9bee"
+    "members": 996,
+    "digest": "abc53c3d2a3e8fa29ba679c07b87def35b1928084dfdea6dd25bff3665200a12"
   }
 }
