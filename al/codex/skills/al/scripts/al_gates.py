@@ -133,7 +133,7 @@ def cmd_run(a,sid):
         if retry_failed and not resume: refuse('--retry-failed requires --resume')
         selected = Continuation.select_continuation(st,m,a.stage,a.id,retry_failed) if resume else [g for g in m['gates'] if not a.id or g['id']==a.id]
         if not selected and not resume: refuse('unknown gate ID')
-        if a.id and all(g['applicability']=='UNRESOLVED' for g in selected): refuse('gate '+a.id+' is unverified: AL cannot execute it locally')
+        if a.id and selected and all(g['applicability']=='UNRESOLVED' for g in selected): refuse('gate '+a.id+' is unverified: AL cannot execute it locally')
         selected=[g for g in selected if g['applicability']!='UNRESOLVED']
         ref=st['gate_manifests'][-1]['sha256']
     invocation=uuid.uuid4().hex;checkout=None;pinned=None

@@ -113,14 +113,14 @@ def test_uv_workspace_container_and_unsupported_members(cli,repo,tmp_path):
     _,m=discover(cli,tmp_path,['services/a/src/app.py']);assert m['service_coverage']['assessment']['outcome']=='incomplete'
 
 
-def test_unmanifested_foreign_source_root_blocks_empty_universe(cli,repo,tmp_path):
+def test_unmanifested_foreign_source_root_is_reported_unverified(cli,repo,tmp_path):
     (repo/'pyproject.toml').unlink();(repo/'svc/app.py').unlink();(repo/'web/app.js').unlink()
     put(repo,'backend/src/mod.py','VALUE=1\n');start(cli)
     _,m=discover(cli,tmp_path,['backend/src/mod.py'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
     from hook_regression_helpers import invoke
     admit_planning(cli)
-    invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    assert any(u['category']=='lint-imports' for u in json.loads(cli('gates','status')[1])['unverified'])
 
 
 def test_source_free_legacy_manifest_can_prove_absence(cli,repo,tmp_path):

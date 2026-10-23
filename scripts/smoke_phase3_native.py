@@ -378,8 +378,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     # A complete native AL lifecycle with real agents takes minutes, not seconds.
-    if not 10 <= args.timeout <= 1800:
-        parser.error("--timeout must be between 10 and 1800 seconds")
+    if not 10 <= args.timeout <= 3600:
+        parser.error("--timeout must be between 10 and 3600 seconds")
     status, _ = _run(args.host, args.timeout)
     return status
 

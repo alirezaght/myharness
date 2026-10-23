@@ -55,12 +55,13 @@ def test_mandated_collection_is_distinct_from_application_scope(cli,repo,tmp_pat
 
 
 @pytest.mark.parametrize('value',['--co','--collect-only','-k selected','-m selected','--lf','--ff','--ignore tests','--deselect tests/test_case.py','-p plugin','-c elsewhere','--rootdir ..','"unterminated','tests'])
-def test_unsupported_addopts_is_incomplete_and_atomic(cli,repo,tmp_path,monkeypatch,value):
+def test_unsupported_addopts_is_incomplete_and_reported_unverified(cli,repo,tmp_path,monkeypatch,value):
     configured(repo);monkeypatch.setenv('PYTEST_ADDOPTS',value);start(cli)
     st,m=discover(cli,tmp_path,['ordinary_project/__init__.py']);assert m['service_coverage']['assessment']['outcome']=='incomplete'
     file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
-    invoke(cli,'gates','plan','--file',str(file));admit_planning(cli);before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
-    assert json.loads(cli('show')[1])==before
+    invoke(cli,'gates','plan','--file',str(file))
+    # A masked pytest profile is never claimed as verification: it is reported as unverified, not blocking.
+    assert any(u['category']=='lint-imports' for u in json.loads(cli('gates','status')[1])['unverified'])
 
 
 @pytest.mark.parametrize('name,body',[('pytest.ini','[pytest]\n'),('.pytest.ini','[pytest]\n'),('pytest.toml',''),('.pytest.toml',''),('setup.cfg','[tool:pytest]\n'),('tox.ini','[pytest]\n')])
