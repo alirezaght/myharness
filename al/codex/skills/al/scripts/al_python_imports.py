@@ -187,10 +187,7 @@ def _analyze(facts,scan):
                 self.generic_visit(node)
         Visitor().visit(tree)
     affected={p for _,p in records if any(within(changed,p) or within(p,changed) for changed in scan.paths)}
-    # Import-analysis uncertainty concerns who may import a module; it is relevant only when the
-    # change touches an importable module. Otherwise it is retained as deferred, never as a blocker.
-    importable=bool(affected)
-    artifacts=artifact_consumers(scan,records,units)
+    artifacts,unclassified=artifact_consumers(scan,records,units)
     for row in artifacts:
         # An artifact owned by a service with no literal reference elsewhere is that service's input.
         if not row['consumers'] and row['kind']!='generated-code' and row['owner'] not in potential:
@@ -213,8 +210,20 @@ def _analyze(facts,scan):
         if any((u!='.' and (within(u,p) or within(p,u))) or (u=='.' and (p in {'.','pyproject.toml','uv.lock'} or any(within(r,p) or within(p,r) for r in roots))) for p in scan.paths):known.add(u)
     # Deduplicate base/current diagnostics without source bytes or incidental order.
     uncertainties=list({(u['unit'],u['path'],u['location'],u['target'],u['reason']):u for u in uncertainties}.values())
-    IMPORT_CODES={'uncertain-import'}
-    deferred=[] if importable else [u for u in uncertainties if u['code'] in IMPORT_CODES]
+    # Import-analysis uncertainty describes who may import a module. It is deferred (kept for
+    # audit, never a blocker) only when it provably cannot reach the affected modules: nothing
+    # importable is affected, or its literal target cannot name an affected module. Unknown
+    # targets, uncertainty inside affected files, unclassified data changes and every other
+    # uncertainty class keep blocking.
+    affected_modules={records[key]['module'] for key in records if key[1] in affected}
+    def reaches(target):
+        return any(m==target or m.startswith(target+'.') or target.startswith(m+'.') for m in affected_modules if m)
+    def deferrable(u):
+        # Uncertainty inside an affected file concerns the changed code itself and always counts.
+        if u['code']!='uncertain-import' or unclassified or u['path'] in affected:return False
+        if not affected:return True
+        return isinstance(u['target'],str) and bool(u['target']) and not reaches(u['target'])
+    deferred=[u for u in uncertainties if deferrable(u)]
     uncertainties=[u for u in uncertainties if u not in deferred]
     order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
@@ -241,10 +250,14 @@ def artifact_kind(path,data):
     return 'data-fixture'
 
 
-def _referencing(scan,name,exclude):
-    token=name.encode()
+def _referencing(scan,path,exclude):
+    """Source files naming the artifact or its directory (directory loads and globs over-select)."""
+    pure=PurePosixPath(path);tokens=[pure.name.encode()]
+    if pure.parent.name:
+        directory=pure.parent.name.encode()
+        tokens+=[directory+b'/',b'"'+directory,b"'"+directory]
     return sorted({p for files in (scan.files,scan.base) for p,data in files.items()
-                   if p!=exclude and p.endswith(SOURCE_SUFFIXES) and token in data})
+                   if p!=exclude and p.endswith(SOURCE_SUFFIXES) and any(token in data for token in tokens)})
 
 
 MANIFESTS=frozenset({'package.json','package-lock.json','tsconfig.json','composer.json','pnpm-lock.yaml','pnpm-workspace.yaml'})
@@ -255,7 +268,7 @@ def artifact_consumers(scan,records,units):
 
     A literal path or file-name reference identifies a consumer (over-approximating on
     shared names); generated code records the schema files that produced it."""
-    rows=[]
+    rows=[];unclassified=False
     changed=sorted({p for files in (scan.files,scan.base) for p in files if any(within(c,p) for c in scan.paths)})
     for path in changed:
         # Configuration, manifests and rule sources keep their existing unit/rule handling.
@@ -264,15 +277,23 @@ def artifact_consumers(scan,records,units):
         if not owners:continue
         data=scan.files.get(path,scan.base.get(path,b''))
         kind=artifact_kind(path,data)
-        if kind is None:continue
+        if kind is None:
+            # A changed non-module file of no supported artifact class keeps the exhaustive fallback.
+            unclassified=unclassified or not path.endswith(SOURCE_SUFFIXES)
+            continue
         if kind=='generated-code':
             header=b'\n'.join(data.splitlines()[:8])
             producers=sorted(p for p in set(scan.files)|set(scan.base) if p.endswith(DATA_SUFFIXES) and PurePosixPath(p).name.encode() in header)
             rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':producers,'consumers':[]})
             continue
         rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':[],
-                     'consumers':_referencing(scan,PurePosixPath(path).name,path)})
-    return rows
+                     'consumers':_referencing(scan,path,path)})
+    # Changed paths of kinds the snapshot never reads (e.g. .csv, .sql, templates) are unclassified too.
+    for path in scan.paths:
+        parts=PurePosixPath(path).parts
+        if path=='.' or any(within(path,p) for files in (scan.files,scan.base) for p in files) or any(part.startswith('.') for part in parts):continue
+        if any(within(u['path'],path) for u in units.values()) and not path.endswith(SOURCE_SUFFIXES):unclassified=True
+    return rows,unclassified
 
 
 from al_runtime_resources import implementation_digest,binding_identity

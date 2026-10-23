@@ -40,8 +40,8 @@ _INDEXES = {}
 
 
 def _index_key(root):
-    metadata = Path(root).resolve() / '.git'
-    if 'GIT_INDEX_FILE' in os.environ or metadata.is_symlink() or not metadata.is_dir() or (metadata / 'commondir').exists():
+    metadata = plain_metadata(root)
+    if metadata is None:
         return None
     try:
         return str(metadata), hashlib.sha256((metadata / 'index').read_bytes()).hexdigest()
@@ -102,8 +102,8 @@ def _head(metadata):
 
 def _tree_key(root, revision):
     """Listings of an exact object id are immutable unless replacement refs change."""
-    metadata = Path(root).resolve() / '.git'
-    if metadata.is_symlink() or not metadata.is_dir():
+    metadata = plain_metadata(root)
+    if metadata is None:
         return None
     if revision == 'HEAD':
         revision = _head(metadata)
@@ -113,9 +113,11 @@ def _tree_key(root, revision):
 
 
 def replacement_state(metadata):
-    """File identity of everything that can hold replacement refs in a plain repository."""
+    """File identity of everything that can redirect object history in a plain repository:
+    replacement refs (and `core.useReplaceRefs` in config), shallow boundaries and grafts."""
     state = []
-    for path in (metadata / 'packed-refs', metadata / 'refs' / 'replace'):
+    for path in (metadata / 'packed-refs', metadata / 'refs' / 'replace', metadata / 'config',
+                 metadata / 'shallow', metadata / 'info' / 'grafts'):
         try:
             value = path.lstat()
         except FileNotFoundError:
@@ -125,8 +127,16 @@ def replacement_state(metadata):
     return tuple(state)
 
 
+REPOSITORY_ENV = ('GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE', 'GIT_NO_REPLACE_OBJECTS', 'GIT_REPLACE_REF_BASE',
+                  'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_GRAFT_FILE')
+
+
 def plain_metadata(root):
-    """The `.git` directory of a plain (non-linked, non-reftable) repository, else None."""
+    """The `.git` directory of a plain (non-linked, non-reftable) repository, else None.
+
+    Repository-selecting Git environment disables reuse: Git would not read this metadata."""
+    if any(name in os.environ for name in REPOSITORY_ENV):
+        return None
     metadata = Path(root).resolve() / '.git'
     try:
         if metadata.is_symlink() or not metadata.is_dir() or (metadata / 'commondir').exists() or (metadata / 'reftable').exists():
@@ -143,7 +153,7 @@ def long_tree(root, revision):
     """Raw `ls-tree -rlz --full-tree` bytes, reused for an unchanged exact object id."""
     key = _tree_key(root, revision)
     if key is None or key not in _LISTINGS:
-        value = subprocess.run(['git', 'ls-tree', '-rlz', '--full-tree', revision], cwd=root,
+        value = subprocess.run(['git', 'ls-tree', '-rlz', '--full-tree', key[1] if key else revision], cwd=root,
                                capture_output=True, check=True).stdout
         if key is None:
             return value
@@ -156,8 +166,9 @@ def long_tree(root, revision):
 def tree_entries(root, revision):
     key = _tree_key(root, revision)
     if key is None or key not in _TREES:
-        value = entries(git(root, 'ls-tree', '-r', '-z', revision))
-        if key is None:
+        # Read the exact object the key names, never a moving symbolic revision.
+        value = entries(git(root, 'ls-tree', '-r', '-z', key[1] if key else revision))
+        if key is None or _tree_key(root, revision) != key:
             return value
         if len(_TREES) >= 8:
             _TREES.clear()

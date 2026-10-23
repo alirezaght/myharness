@@ -4,7 +4,11 @@ from test_service_coverage import seed, start, discover, put
 
 
 def unrelated_dynamic_import(repo):
-    # services/b dynamically imports an unknown module; this is unrelated to data artifacts.
+    # services/b dynamically imports a literal module no affected module can be; it stays deferred.
+    put(repo, 'services/b/src/loader.py', 'import importlib\nimportlib.import_module("vendor_plugin")\n')
+
+
+def unknown_dynamic_import(repo):
     put(repo, 'services/b/src/loader.py', 'def load(name):\n    return __import__(name)\n')
 
 
@@ -39,7 +43,7 @@ def test_unreferenced_shared_fixture_is_an_explicit_exhaustive_requirement(cli, 
 
 
 def test_changed_importable_module_keeps_exhaustive_dynamic_import_fallback(cli, repo, tmp_path):
-    seed(repo);unrelated_dynamic_import(repo);commit(repo, 'dynamic import');start(cli)
+    seed(repo);unknown_dynamic_import(repo);commit(repo, 'dynamic import');start(cli)
     put(repo, 'packages/shared/src/common.py', 'VALUE=2\n')
     _, m = discover(cli, tmp_path, ['packages/shared/src/common.py'])
     assessment = m['service_coverage']['assessment']
@@ -75,3 +79,45 @@ def test_generated_module_change_records_its_producing_schema(cli, repo, tmp_pat
     assert rows['packages/shared/src/orders_client.py'] == {'path': 'packages/shared/src/orders_client.py', 'kind': 'generated-code', 'owner': 'packages/shared',
                                                          'producers': ['packages/shared/api/orders.yaml'], 'consumers': []}
     assert 'services/a' in m['service_coverage']['assessment']['selected_services']
+
+
+def test_unknown_dynamic_import_can_reach_a_fixture_consumer_module(cli, repo, tmp_path):
+    seed(repo);unknown_dynamic_import(repo)
+    put(repo, 'packages/shared/fixtures/orders.json', '{}\n')
+    put(repo, 'packages/shared/src/orders_reader.py', 'FIXTURE = "orders.json"\n')
+    commit(repo, 'reader module');start(cli)
+    put(repo, 'packages/shared/fixtures/orders.json', '{"changed": true}\n')
+    _, m = discover(cli, tmp_path, ['packages/shared/fixtures/orders.json'])
+    assessment = m['service_coverage']['assessment']
+    assert assessment['outcome'] == 'exhaustive'
+    assert any(u['path'] == 'services/b/src/loader.py' for u in assessment['dependency_uncertainties'])
+
+
+def test_unclassified_data_change_keeps_the_exhaustive_fallback(cli, repo, tmp_path):
+    seed(repo);unknown_dynamic_import(repo)
+    put(repo, 'packages/shared/fixtures/orders.csv', 'id\n')
+    put(repo, 'services/a/src/report.py', 'SOURCE = "orders.csv"\n')
+    commit(repo, 'csv fixture');start(cli)
+    put(repo, 'packages/shared/fixtures/orders.csv', 'id\n1\n')
+    _, m = discover(cli, tmp_path, ['packages/shared/fixtures/orders.csv'])
+    assert m['service_coverage']['assessment']['outcome'] == 'exhaustive'
+
+
+def test_directory_reference_counts_as_a_consumer(cli, repo, tmp_path):
+    seed(repo);unrelated_dynamic_import(repo)
+    put(repo, 'packages/shared/fixtures/orders.json', '{}\n')
+    put(repo, 'services/a/src/orders.py', 'FIXTURE = "orders.json"\n')
+    put(repo, 'services/b/src/globber.py', 'import glob\nFILES = glob.glob("fixtures/*.json")\n')
+    commit(repo, 'glob consumer');start(cli)
+    put(repo, 'packages/shared/fixtures/orders.json', '{"changed": true}\n')
+    _, m = discover(cli, tmp_path, ['packages/shared/fixtures/orders.json'])
+    assert set(m['service_coverage']['assessment']['selected_services']) == {'services/a', 'services/b'}
+
+
+def test_unrelated_literal_dynamic_import_does_not_block_a_module_change(cli, repo, tmp_path):
+    seed(repo);unrelated_dynamic_import(repo);commit(repo, 'literal dynamic import');start(cli)
+    put(repo, 'packages/shared/src/common.py', 'VALUE=2\n')
+    _, m = discover(cli, tmp_path, ['packages/shared/src/common.py'])
+    assessment = m['service_coverage']['assessment']
+    assert assessment['outcome'] == 'identified', assessment
+    assert any(u['target'] == 'vendor_plugin' for u in m['service_coverage']['semantic_requirements']['dependencies']['deferred_uncertainties'])

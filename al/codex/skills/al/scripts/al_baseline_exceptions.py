@@ -47,6 +47,7 @@ def binding(st, manifest, gate):
 def record(st, sid, manifest, gate, source, reason):
     if not isinstance(source, str) or not source.strip() or not isinstance(reason, str) or not reason.strip():
         refuse('baseline exception requires an explicit authorization source and reason')
+    if st.get('status') != 'RUNNING':refuse('baseline exception requires a running run')
     if gate['applicability'] != 'APPLICABLE':refuse('baseline exception requires an applicable gate')
     bound = binding(st, manifest, gate)
     if bound is None:refuse('baseline exception requires the current exact failed base evidence of this gate')

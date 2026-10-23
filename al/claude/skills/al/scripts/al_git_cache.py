@@ -13,9 +13,10 @@ _BINDINGS = {}
 
 def _binding_key(root):
     """Repository object binding inputs for a plain repository: its metadata and config identity."""
-    root = Path(root).resolve();metadata = root / '.git'
+    from al_gitlinks import plain_metadata
+    root = Path(root).resolve();metadata = plain_metadata(root)
     try:
-        if metadata.is_symlink() or not metadata.is_dir() or (metadata / 'commondir').exists():
+        if metadata is None:
             return None
         state = [metadata.lstat(), (metadata / 'config').lstat()]
     except OSError:

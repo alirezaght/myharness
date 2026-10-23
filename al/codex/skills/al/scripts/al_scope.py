@@ -158,7 +158,8 @@ def decision(fn):
 
     The worktree is read once before and once after; inside, repeated reads reuse the first
     observation. If the worktree moved (or cannot be observed) the decision is evaluated again
-    exactly as without memoization, so a stable decision is identical to a fresh one."""
+    exactly as without memoization, so a stable decision is identical to a fresh one. Decorated
+    functions must be read-only: an unstable window runs their body twice."""
     import functools
 
     @functools.wraps(fn)
@@ -169,7 +170,7 @@ def decision(fn):
         base = _decision_base(st)
         try:
             before = _records(base, al_store.REPO_ROOT)
-        except SystemExit:
+        except (OSError, ValueError, SystemExit):
             return fn(st, *args, **kwargs)
         failure = None
         with ObservationContext({'decision': [str(al_store.REPO_ROOT), base, json.dumps(before, sort_keys=True)]}) as context:
@@ -180,7 +181,7 @@ def decision(fn):
                 failure = exc
         try:
             stable = _records(base, al_store.REPO_ROOT) == before
-        except SystemExit:
+        except (OSError, ValueError, SystemExit):
             stable = False
         if not stable:
             return fn(st, *args, **kwargs)

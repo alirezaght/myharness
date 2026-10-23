@@ -18,9 +18,13 @@ from al_checkout_paths import MaterializationError
 
 SEGMENT = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z')
 # Git's own metadata is never a review-state location.
-RESERVED = frozenset({'objects', 'refs', 'hooks', 'index', 'HEAD', 'config', 'info', 'logs', 'modules',
-                      'worktrees', 'packed-refs', 'lfs', 'description', 'FETCH_HEAD', 'ORIG_HEAD', 'MERGE_HEAD',
-                      'COMMIT_EDITMSG', 'shallow', 'commondir', 'gitdir', 'sequencer', 'rebase-merge', 'rebase-apply'})
+RESERVED = frozenset(name.casefold() for name in (
+    'objects', 'refs', 'hooks', 'index', 'HEAD', 'config', 'info', 'logs', 'modules', 'worktrees', 'packed-refs',
+    'lfs', 'description', 'FETCH_HEAD', 'ORIG_HEAD', 'MERGE_HEAD', 'COMMIT_EDITMSG', 'shallow', 'commondir',
+    'gitdir', 'sequencer', 'rebase-merge', 'rebase-apply', 'remotes', 'branches', 'rr-cache', 'REBASE_HEAD',
+    'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'BISECT_LOG', 'AUTO_MERGE', 'MERGE_MSG', 'MERGE_MODE', 'reftable',
+    'sharedindex', 'fsmonitor--daemon', 'gc.pid', 'gc.log'))
+MAX_DEPTH = 32
 MAX_FILES = 4096
 MAX_BYTES = 16 * 1024 * 1024
 KIND = 'review-hook-state-v1'
@@ -30,7 +34,8 @@ def validate_declaration(value):
     if not isinstance(value, dict) or set(value) != {'path'} or not isinstance(value['path'], str):
         raise ValueError('review state declaration must be {"path": ".git/<name>"}')
     parts = value['path'].split('/')
-    if not 2 <= len(parts) <= 4 or parts[0] != '.git' or parts[1] in RESERVED or not all(SEGMENT.match(p) for p in parts[1:]):
+    if (not 2 <= len(parts) <= 4 or parts[0] != '.git' or parts[1].casefold() in RESERVED
+            or parts[1].casefold().startswith('sharedindex.') or not all(SEGMENT.match(p) for p in parts[1:])):
         raise ValueError('review state must be an isolated .git/<name> location outside Git metadata')
     return {'path': value['path']}
 
@@ -43,36 +48,56 @@ def prepare(root, declaration):
     return top
 
 
+def _identity(info):
+    # Access time changes when a file is read; it is not part of a member's identity.
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
 def capture(root, declaration):
     """Files (bytes, mode) and directories (mode) of the declared location; None when absent."""
-    target = Path(root) / declaration['path']
-    top = Path(root) / '/'.join(declaration['path'].split('/')[:2])
-    for path in (top, target):
+    try:
+        return _capture(root, declaration)
+    except MaterializationError:
+        raise
+    except (OSError, RecursionError, ValueError) as exc:
+        raise MaterializationError('review state capture failed: ' + type(exc).__name__) from exc
+
+
+def _capture(root, declaration):
+    parts = declaration['path'].split('/')
+    # Every component below the checkout's .git must be a real directory, never a link.
+    for index in range(2, len(parts) + 1):
+        path = Path(root).joinpath(*parts[:index])
         if path.is_symlink() or (path.exists() and not path.is_dir()):
             raise MaterializationError('declared review state location is not a directory')
-    if not target.exists():
-        return None
+        if not path.exists():
+            return None
+    target = Path(root) / declaration['path']
     files, directories, total = {}, {'.': stat.S_IMODE(target.lstat().st_mode)}, 0
 
-    def visit(directory):
+    def visit(directory, depth):
         nonlocal total
+        if depth > MAX_DEPTH:
+            raise MaterializationError('review state exceeds bounded depth')
         for path in sorted(directory.iterdir()):
             info = path.lstat()
             relative = path.relative_to(target).as_posix()
+            if len(files) + len(directories) >= MAX_FILES:
+                raise MaterializationError('review state exceeds bounded capture')
             if stat.S_ISDIR(info.st_mode):
                 directories[relative] = stat.S_IMODE(info.st_mode)
-                visit(path)
+                visit(path, depth + 1)
             elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
                 raw = path.read_bytes()
                 total += len(raw)
-                if len(files) + len(directories) > MAX_FILES or total > MAX_BYTES:
+                if total > MAX_BYTES:
                     raise MaterializationError('review state exceeds bounded capture')
-                if path.lstat() != info:
+                if _identity(path.lstat()) != _identity(info) or len(raw) != info.st_size:
                     raise MaterializationError('review state changed during capture: ' + relative)
                 files[relative] = (raw, stat.S_IMODE(info.st_mode))
             else:
                 raise MaterializationError('unsupported review state member (link or special file): ' + relative)
-    visit(target)
+    visit(target, 0)
     return {'files': files, 'directories': directories}
 
 

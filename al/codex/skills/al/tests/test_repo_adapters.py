@@ -185,3 +185,36 @@ def test_persisted_amber_adapter_is_refused():
         validate_declaration({'schema_version':1,'policy_version':1,'adapter':{'id':'amber','version':1}},[])
     with pytest.raises(ValueError,match='unsupported repository adapter'):
         validate_facts({'schema_version':1,'policy_version':1,'adapter':{'id':'amber','version':1}})
+
+
+def test_worktree_contract_edit_cannot_weaken_coverage(cli,repo,tmp_path):
+    contract(repo);start(cli)
+    weaker=json.loads(json.dumps(CONTRACT));weaker['containers'].append('services/b-service');weaker['architecture_check']['argv']=['true']
+    put(repo,'.al/repository.json',json.dumps(weaker))
+    _,m=discover(cli,tmp_path,['services/a-service/src/app.py'])
+    assessment=m['service_coverage']['assessment']
+    assert assessment['outcome']=='incomplete' and any(g['code']=='contract-changed' for g in assessment['gaps'])
+
+
+def test_container_with_sources_and_option_like_unit_names_are_gaps(cli,repo,tmp_path):
+    data=json.loads(json.dumps(CONTRACT));data['containers'].append('services/b-service')
+    contract(repo,data);start(cli)
+    _,m=discover(cli,tmp_path,['services/a-service/src/app.py'])
+    assert any(g['code']=='contract-container-has-source' for g in m['service_coverage']['assessment']['gaps'])
+
+
+def test_service_roots_scope_the_architecture_check():
+    from al_repo_contract import validate
+    assert validate({**CONTRACT,'service_roots':['apps']})==[]
+    assert validate({**CONTRACT,'service_roots':['../x']}) and validate({**CONTRACT,'service_roots':[]})
+    assert validate({**CONTRACT,'units':[{'path':'services/a','language':['go']}]})
+
+
+def test_option_like_unit_name_is_never_bound_into_argv(cli,repo,tmp_path):
+    contract(repo)
+    unit(repo,'services/-x-service',extra='[tool.importlinter]\nroot_packages=["app"]\n')
+    from conftest import _git
+    _git(repo,'add','.');_git(repo,'commit','-qm','option-like unit')
+    start(cli);_,m=discover(cli,tmp_path,['services/-x-service/src/app.py'])
+    assert not any(g.get('argv') and any(a.startswith('SVC=-') for a in g['argv']) for g in m['gates'])
+    assert m['service_coverage']['assessment']['outcome']=='incomplete'

@@ -212,7 +212,9 @@ def cmd_run(a,sid):
                                     stop(proc)  # Reap surviving group members before inspecting reusable state.
                         except OSError as exc: log.write_text(str(exc)); status='INFRA'
                         if state_top is not None:
-                            captured=ReviewState.capture(root,g['review_state']);ReviewState.remove(state_top)
+                            # The declared location is removed even when its capture is refused.
+                            try:captured=ReviewState.capture(root,g['review_state'])
+                            finally:ReviewState.remove(state_top)
                             entry['review_state']=ReviewState.seal(st,sid,g,a.stage,fp,invocation,captured,entry,ref)
                     dirty=R.drift(before_state,R.scratch_state(root,before_state,post_execution=True),root)
                     if dirty=='FAIL' and status=='PASS':

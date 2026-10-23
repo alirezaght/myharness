@@ -74,7 +74,14 @@ def stage_report(st, stage, selected_results=(), selected=()):
     from al_gates import manifest
     current = manifest(st)
     states, gaps = _states(st, current, stage)
-    decisions = {g: st.get('gate_decisions', {}).get(g) for g, s in states.items() if s == 'accepted-base-decision'}
+    import al_baseline_exceptions as Exceptions
+    decisions = {}
+    for g, s in states.items():
+        if s != 'accepted-base-decision':continue
+        gate = next(item for item in current['gates'] if item['id'] == g)
+        exception = Exceptions.current(st, current, gate)
+        decisions[g] = ({'action': 'exception', 'source': exception['source'], 'reason': exception['reason'],
+                         'evidence': exception['binding']['evidence']} if exception else st.get('gate_decisions', {}).get(g))
     uncertain = ['operation:'+e['id'] for e in st['evidence']['entries'] if _uncertain(e)]
     return {'schema_version': 1, 'kind': 'continuation-report-v1',
             'selected': list(selected), 'completed': [r for r in selected_results if r['status'] == 'PASS'],

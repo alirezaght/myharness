@@ -18,7 +18,7 @@ import al_gate_coverage as C
 from al_schema import refuse
 
 PATTERNS=('AGENTS.md','CLAUDE.md','.husky/pre-commit','.githooks/pre-commit','Makefile','package.json','.gitlab-ci.yml',
-          'ci/**/*.yml','ci/import-review-baseline.json','ci/scripts/import_review/*.py','scripts/check-loc.py','scripts/check-loc.allowlist')
+          'ci/**/*.yml','.al/repository.json','scripts/check-loc.py','scripts/check-loc.allowlist')
 
 
 def source(path,job=None):

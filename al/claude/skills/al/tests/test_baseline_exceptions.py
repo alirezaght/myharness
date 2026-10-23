@@ -58,6 +58,7 @@ def test_exception_admits_implementation_keeps_fail_and_shows_separately(cli, re
     _, out, _ = invoke(cli, 'gates', 'run', '--stage', 'base', '--resume')
     report = json.loads(next(line for line in reversed(out.strip().splitlines()) if line.startswith("{")))
     assert report['stage_ready'] and 'loc' not in report['selected'] and report['selected']
+    assert report['base_decisions']['loc']['action'] == 'exception'
     assert loc_entry(cli)[1]['id'] == entry['id']
     admit_planning(cli)
     invoke(cli, 'phase', 'IMPLEMENTATION')
@@ -125,3 +126,18 @@ def test_forged_exception_artifact_is_refused(cli, repo, tmp_path):
     value = json.loads(stored.read_bytes());value['binding']['evidence'] = 'E999'
     stored.write_text(json.dumps(value, sort_keys=True))
     assert any('loc' in g for g in status(cli)['base'])
+
+
+def test_rerunning_the_base_gate_makes_the_exception_stale(cli, repo, tmp_path):
+    failing_base(cli, repo, tmp_path)
+    except_loc(cli)
+    assert not any('loc' in g for g in status(cli)['base'])
+    invoke(cli, 'gates', 'run', '--stage', 'base', '--id', 'loc', ok=False)
+    assert any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'stale'
+
+
+def test_exception_cannot_be_recorded_after_the_run_stopped(cli, repo, tmp_path):
+    failing_base(cli, repo, tmp_path)
+    invoke(cli, 'gates', 'decision', '--id', 'loc', '--action', 'stop', '--source', 'user', '--reason', 'stop the run')
+    except_loc(cli, ok=False)

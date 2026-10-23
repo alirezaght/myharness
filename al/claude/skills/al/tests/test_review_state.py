@@ -104,3 +104,25 @@ def test_absent_output_is_recorded_and_links_are_refused(cli, repo, tmp_path):
     from al_checkout_paths import MaterializationError
     with pytest.raises(MaterializationError):
         ReviewState.capture(root, {'path': '.git/codex-review'})
+
+
+def test_capture_ignores_access_time_and_refuses_intermediate_links(tmp_path):
+    import os
+    import time
+    root = tmp_path / 'scratch';state = root / '.git/codex-review/nested'
+    state.mkdir(parents=True);(state / 'verdict.json').write_text('{}')
+    old = time.time() - 3600
+    os.utime(state / 'verdict.json', (old - 100, old))  # an access-time update on read must not refuse
+    captured = ReviewState.capture(root, {'path': '.git/codex-review'})
+    assert captured['files']['nested/verdict.json'][0] == b'{}'
+    elsewhere = tmp_path / 'elsewhere';elsewhere.mkdir()
+    (root / '.git/linked').mkdir();(root / '.git/linked/a').symlink_to(elsewhere, target_is_directory=True)
+    from al_checkout_paths import MaterializationError
+    with pytest.raises(MaterializationError):
+        ReviewState.capture(root, {'path': '.git/linked/a'})
+
+
+@pytest.mark.parametrize('name', ['REMOTES', 'rr-cache', 'Refs', 'sharedindex.abc'])
+def test_git_metadata_names_are_reserved_case_insensitively(name):
+    with pytest.raises(ValueError):
+        ReviewState.validate_declaration({'path': '.git/' + name})

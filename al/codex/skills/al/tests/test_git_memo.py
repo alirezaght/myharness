@@ -92,3 +92,26 @@ def test_repository_identity_follows_head_and_target(repo):
         assert 'merge-base' in str(exc) or 'git failed' in str(exc)
     else:
         raise AssertionError('identity reused an answer for a different HEAD')
+
+
+def test_concurrent_commit_cannot_poison_an_exact_tree_listing(repo, monkeypatch):
+    first = _git(repo, 'rev-parse', 'HEAD').decode().strip()
+    real = G.git
+    moved = []
+
+    def racing(root, *args):
+        if args[:1] == ('ls-tree',) and not moved:
+            moved.append(True)
+            _commit(repo, 'memo-race.txt', 'race\n')  # HEAD moves between key resolution and the read
+        return real(root, *args)
+    monkeypatch.setattr(G, 'git', racing)
+    G._TREES.clear()
+    assert G.tree_entries(repo, 'HEAD') == G.entries(_git(repo, 'ls-tree', '-r', '-z', first))
+    monkeypatch.setattr(G, 'git', real)
+    assert G.tree_entries(repo, first) == G.entries(_git(repo, 'ls-tree', '-r', '-z', first))
+    assert b'memo-race.txt' in G.tree_entries(repo, 'HEAD')
+
+
+def test_repository_selecting_git_environment_disables_reuse(repo, monkeypatch):
+    monkeypatch.setenv('GIT_DIR', str(repo / '.git'))
+    assert G.plain_metadata(repo) is None and G._index_key(repo) is None
