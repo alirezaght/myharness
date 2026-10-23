@@ -23,9 +23,9 @@ def _analyze(facts,scan):
         owners_for_path=[u for u in units.values() if within(u['path'],path)]
         if not owners_for_path:continue  # enumeration reports the unsupported root
         unit=max(owners_for_path,key=lambda u:len(u['path']))
-        if facts['adapter']['id']=='amber':
-            if unit['languages']==['go'] and unit['roles'] and not path.startswith('packages/'):continue
-            facts['enumeration']['gaps'].append(gap('unsupported-shared-language',path,'Amber adapter cannot prove impact for this non-Python source class',unit['id']))
+        if facts['adapter']['id']=='contract':
+            if unit.get('independent'):continue
+            facts['enumeration']['gaps'].append(gap('unsupported-shared-language',path,'the repository contract cannot prove impact for this non-Python source class',unit['id']))
         else:
             uncertainties.append({'code':'uncertain-language-impact','unit':unit['id'],'path':path,'location':None,'target':None,'reason':'non-Python dependency analysis is unsupported; all enumerated services require verification'})
     def owner(path):

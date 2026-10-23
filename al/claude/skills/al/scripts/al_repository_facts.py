@@ -126,7 +126,7 @@ def collect(root,*,base_oid,paths,opaque,required_adapter=None):
 
 def validate_facts(facts):
     if facts.get('schema_version')!=1 or facts.get('policy_version')!=1:raise ValueError('unsupported repository fact version')
-    if facts.get('adapter') not in ({'id':'python','version':1},{'id':'amber','version':1}):raise ValueError('unsupported repository adapter')
+    if facts.get('adapter') not in ({'id':'python','version':1},{'id':'contract','version':1}):raise ValueError('unsupported repository adapter')
     if not isinstance(facts.get('repository'),dict) or not isinstance(facts['repository'].get('root'),str) or not Path(facts['repository']['root']).is_absolute():raise ValueError('invalid repository identity')
     count=0
     def bounded(value,depth=0):

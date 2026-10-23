@@ -1,7 +1,7 @@
 """Admission/currency derive concrete sources beyond submitted manifest claims."""
 import json
 from test_service_coverage import unit
-from test_repo_adapters import amber
+from test_repo_adapters import contract
 from conftest import _git
 import al_artifacts as A
 import al_gate_currency as C
@@ -73,16 +73,11 @@ def test_discovery_preserves_declared_environment_dependencies(cli,repo,tmp_path
 
 
 def test_supported_repository_selection_includes_configured_consumers_and_inputs(cli,repo,tmp_path):
-    amber(repo)
-    from pathlib import Path
-    source=Path(__file__).parent/'fixtures/repository/ci/scripts/import_review/checker.py'
-    selector=repo/'ci/scripts/import_review/checker.py';selector.parent.mkdir(parents=True,exist_ok=True)
-    selector.write_bytes(source.read_bytes())
+    contract(repo)
     files={'services/quiet-service/pyproject.toml':'[tool.setuptools.packages.find]\nwhere=["src"]\n[tool.importlinter]\nroot_packages = ["quiet"]\n',
            'services/quiet-service/src/quiet/main.py':'VALUE = 1\n',
            'packages/shared/src/shared/context.py':'VALUE = 1\n',
            'packages/shared/pyproject.toml':'[tool.setuptools.packages.find]\nwhere=["src"]\n',
-           'ci/import-review-baseline.json':'{}\n',
            }
     for path,content in files.items():
         target=repo/path;target.parent.mkdir(parents=True,exist_ok=True);target.write_text(content)
@@ -92,5 +87,5 @@ def test_supported_repository_selection_includes_configured_consumers_and_inputs
     _,m=discover(cli,tmp_path,['packages/shared/src/shared/context.py'])
     gates={g['id']:g for g in m['gates']}
     assert gates['imports-services-quiet-service']['applicability']=='APPLICABLE' and 'imports-unresolved' not in gates
-    for dependency in ('ci/scripts/import_review/checker.py','ci/import-review-baseline.json','services/quiet-service/pyproject.toml'):
+    for dependency in ('.al/repository.json','ci/scripts/check-architecture.sh','services/quiet-service/pyproject.toml'):
         assert dependency in gates['imports-services-quiet-service']['scope']

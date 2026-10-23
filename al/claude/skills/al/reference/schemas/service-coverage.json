@@ -16,7 +16,7 @@
   },
   "$defs": {
     "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "amber", "version": 1}}]},
+    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "contract", "version": 1}}]},
     "assessment": {
       "type": "object",
       "required": ["schema_version", "outcome", "known_affected", "potential_services", "selected_services", "dependency_uncertainties", "enumeration", "check_discovery", "required_bindings", "gaps"],

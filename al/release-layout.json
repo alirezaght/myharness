@@ -64,7 +64,7 @@
     "al_recovery_subjects.py",
     "al_recovery_types.py",
     "al_repo_adapters.py",
-    "al_repo_amber.py",
+    "al_repo_contract.py",
     "al_repo_python.py",
     "al_repository_facts.py",
     "al_requirement_bindings.py",

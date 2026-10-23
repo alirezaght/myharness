@@ -78,7 +78,8 @@ affected service and its required checks. Identified dependencies select the
 affected services; uncertainty may use exhaustive coverage only when independent
 service enumeration and check discovery are complete; missing or unsupported
 coverage blocks with named gaps. Generic policy is shared across repositories,
-with Amber-specific discovery isolated in its adapter. See the shipped AL
+with repository-specific discovery expressed only through a repository's own
+declared `.al/repository.json` contract. See the shipped AL
 reference `service-coverage.md` and `schemas/service-coverage.json` in both
 platform packages. The current ledger is the authority for validation status.
 

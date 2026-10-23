@@ -39,7 +39,7 @@ def inventory(st,anticipated=(),ci_context=None):
     required_adapter=None
     for ref in st.get('gate_manifests',[]):
         prior=A.read_json(ref);paths.update(prior.get('paths',[]))
-        if prior.get('service_coverage',{}).get('adapter',{}).get('id')=='amber':required_adapter='amber'
+        if prior.get('service_coverage',{}).get('adapter',{}).get('id')=='contract':required_adapter='contract'
     from al_task_attribution import classify_changes
     attributed = classify_changes(st) if st.get('review_mode') != 'whole-mr' else None
     paths.update(attributed['discovery_paths'] if attributed else S.changed_paths(st['identity']['merge_base']))

@@ -6,7 +6,7 @@
   "properties": {
     "schema_version": {"const": 1},
     "repository": {"type": "object", "required": ["root", "base_oid"], "properties": {"root": {"type": "string", "minLength": 1}, "base_oid": {"type": "string", "minLength": 1}}},
-    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "amber", "version": 1}}]},
+    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "contract", "version": 1}}]},
     "policy_version": {"const": 1},
     "units": {"type": "array", "items": {"type": "object", "required": ["id", "path", "languages", "source_roots", "module_contexts", "provenance", "roles", "external_distributions", "python_requirement"], "properties": {"id": {"type": "string"}, "path": {"type": "string"}, "languages": {"type": "array", "items": {"type": "string"}}, "source_roots": {"type": "array", "items": {"type": "string"}}, "module_contexts": {"type": "array", "items": {"type": "object"}}, "provenance": {"type": "array"}, "roles": {"type": "array"}, "external_distributions": {"type": "array"}, "python_requirement": {"type": ["string", "null"]}}}},
     "enumeration": {"type": "object", "required": ["boundaries", "declarations", "observed_members", "absent_paths", "exclusions", "gaps"], "properties": {"boundaries": {"type": "array"}, "declarations": {"type": "array"}, "observed_members": {"type": "array"}, "absent_paths": {"type": "array"}, "exclusions": {"type": "array"}, "gaps": {"type": "array"}}},

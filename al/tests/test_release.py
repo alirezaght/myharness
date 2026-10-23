@@ -33,7 +33,7 @@ def test_selected_release_resources_do_not_include_installer_tests_or_caches():
         assert selected(path, layout) is None
     coverage_resources = {
         'al_architecture_check.py', 'al_ci_verification.py', 'al_python_imports.py',
-        'al_repo_adapters.py', 'al_repo_amber.py', 'al_repo_python.py',
+        'al_repo_adapters.py', 'al_repo_contract.py', 'al_repo_python.py',
         'al_repository_facts.py', 'al_service_coverage.py',
     }
     assert coverage_resources <= set(layout['required_scripts'])

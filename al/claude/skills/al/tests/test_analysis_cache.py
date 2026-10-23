@@ -62,7 +62,7 @@ def test_graph_cache_replays_gap_and_consumed_policy_deltas(repo):
     base = facts(repo)
     scan = F.Snapshot(repo, base['repository']['base_oid'], ['svc/new.js'], set())
     original = {k: copy.deepcopy(v) for k, v in base.items() if k not in {'dependencies', 'scan', 'rule_sources', 'scan_inputs'}}
-    original['adapter'] = {'id': 'amber', 'version': 1}
+    original['adapter'] = {'id': 'contract', 'version': 1}
     original['policy_selection'] = ['.']
     original['enumeration']['gaps'] = []
     scan.files['svc/new.js'] = b'const a = 1\n'

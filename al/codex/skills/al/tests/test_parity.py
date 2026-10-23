@@ -19,7 +19,7 @@ def test_manifest_is_exhaustive_and_only_names_platform_adapters():
     shared = set(manifest["shared_files"])
     coverage_resources = {
         "al_architecture_check.py", "al_ci_verification.py", "al_python_imports.py",
-        "al_repo_adapters.py", "al_repo_amber.py", "al_repo_python.py",
+        "al_repo_adapters.py", "al_repo_contract.py", "al_repo_python.py",
         "al_repository_facts.py", "al_service_coverage.py",
     }
     assert coverage_resources <= shared

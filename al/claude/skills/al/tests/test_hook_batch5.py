@@ -7,7 +7,7 @@ from pathlib import Path
 
 import al_gate_discovery
 from test_service_coverage import unit
-from test_repo_adapters import amber
+from test_repo_adapters import contract
 import al_shell
 from hook_regression_helpers import begin, invoke, report_data, save_report
 
@@ -31,21 +31,23 @@ def test_discovery_uses_the_full_service_name_with_real_architecture_check(repo,
     assert subprocess.run(gate['argv'],cwd=repo,capture_output=True).returncode!=0
 
 
-def test_amber_discovery_binds_full_service_to_exact_make_chain_without_execution(repo, cli):
-    amber(repo)
+def test_contract_discovery_binds_full_service_to_declared_chain_without_execution(repo, cli):
+    contract(repo)
     unit(repo,'services/user-listing-service',extra='[tool.importlinter]\nroot_packages=["app"]\n')
-    policy=repo/'ci/manifest.yml'
-    policy.write_text(policy.read_text().replace('services:\n','services:\n  user_listing:\n    slug: user-listing\n',1))
     state = _start_discovery_run(cli)
     manifest = al_gate_discovery.discover(state, ['services/user-listing-service/src/app.py'])
     gate = next(g for g in manifest['gates'] if g['id']=='imports-services-user-listing-service')
     assert gate['argv']==['make','lint-imports','SVC=user-listing']
-    chain={'Makefile','package.json','pnpm-workspace.yaml','ci/scripts/fast-check-lint-imports.sh',
-           'ci/manifest.yml','services/user-listing-service/pyproject.toml','packages/tooling/ruff/architecture.toml'}
+    chain={'.al/repository.json','Makefile','ci/scripts/check-architecture.sh','services/user-listing-service/pyproject.toml'}
     assert chain<=set(gate['scope'])
     expected=next(b for b in manifest['service_coverage']['assessment']['required_bindings'] if b['id']==gate['id'])
     assert chain<={row['path'] for row in expected['source_chain']}
     assert gate['execution_signature']==expected['execution_signature']
+    # The declared chain is hash-bound: editing a chain file changes the execution signature.
+    (repo/'ci/scripts/check-architecture.sh').write_text('#!/bin/bash\ntrue\n')
+    again = al_gate_discovery.discover(state, ['services/user-listing-service/src/app.py'])
+    changed = next(g for g in again['gates'] if g['id']==gate['id'])
+    assert changed['execution_signature']!=gate['execution_signature']
 
 
 def test_discovery_passes_supported_directories_to_loc_checker(repo, cli):

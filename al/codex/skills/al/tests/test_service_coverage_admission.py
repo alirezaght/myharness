@@ -85,9 +85,9 @@ def test_body_only_currency_and_byte_sensitive_candidate_evidence(cli,repo,tmp_p
     assert json.loads(cli('gates','status')[1])['candidate']
 
 
-def test_required_amber_environment_cannot_be_removed(cli,repo,tmp_path,state_file):
-    from test_repo_adapters import amber
-    amber(repo);start(cli);_,m=discover(cli,tmp_path,['services/a-service/src/app.py'])
+def test_required_contract_environment_cannot_be_removed(cli,repo,tmp_path,state_file):
+    from test_repo_adapters import contract
+    contract(repo);start(cli);_,m=discover(cli,tmp_path,['services/a-service/src/app.py'])
     gate=next(g for g in m['gates'] if g.get('obligation_ids'));assert 'PATH' in gate['env_names']
     gate['env_names']=[];file=tmp_path/'narrow-env.json';file.write_text(json.dumps(m));before=state_file().read_bytes()
     invoke(cli,'gates','plan','--file',str(file),ok=False);assert state_file().read_bytes()==before

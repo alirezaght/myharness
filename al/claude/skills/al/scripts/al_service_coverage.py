@@ -57,7 +57,7 @@ def declaration(facts,assessment,gates):
 
 
 def validate_declaration(value,gates):
-    if not isinstance(value,dict) or value.get('schema_version')!=1 or value.get('policy_version')!=1 or value.get('adapter') not in ({'id':'python','version':1},{'id':'amber','version':1}):raise ValueError('unsupported coverage declaration')
+    if not isinstance(value,dict) or value.get('schema_version')!=1 or value.get('policy_version')!=1 or value.get('adapter') not in ({'id':'python','version':1},{'id':'contract','version':1}):raise ValueError('unsupported coverage declaration')
     validate_assessment(value['assessment']);semantics=value['semantic_requirements']
     if digest(semantics)!=value['semantic_sha256']:raise ValueError('corrupt coverage semantic hash')
     for key in ('adapter','policy_version','repository'):
