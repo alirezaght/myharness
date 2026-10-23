@@ -72,3 +72,23 @@ def test_implementation_digest_follows_module_changes(tmp_path, monkeypatch):
     assert second != first
     (scripts / 'al_two.py').write_text('VALUE = 3\n')
     assert R.implementation_digest() not in {first, second}
+
+
+def test_repository_identity_follows_head_and_target(repo):
+    import al_scope
+    head = _git(repo, 'rev-parse', 'HEAD').decode().strip()
+    first = al_scope.identity(head)
+    assert al_scope.identity(head) == first and first['merge_base'] == head
+    _commit(repo, 'memo-identity.txt', 'x\n')
+    moved = al_scope.identity(head)
+    assert moved['merge_base'] == head and moved['target_oid'] == head
+    new_head = _git(repo, 'rev-parse', 'HEAD').decode().strip()
+    _git(repo, 'checkout', '-q', '--orphan', 'memo-unrelated')
+    _git(repo, 'rm', '-rq', '--cached', '.')
+    _commit(repo, 'memo-orphan.txt', 'y\n')
+    try:
+        al_scope.identity(new_head)
+    except SystemExit as exc:  # unrelated histories have no merge base; never a reused answer
+        assert 'merge-base' in str(exc) or 'git failed' in str(exc)
+    else:
+        raise AssertionError('identity reused an answer for a different HEAD')
