@@ -9,11 +9,27 @@ from .registry import canonical, digest, records
 from .validator_origin import safe
 
 LIMITS = {"directories": 200000, "depth": 64, "repositories": 10000}
+# Dependency, build and cache trees are recorded but never descended: they hold no AL runs.
+PRUNED = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".tox", ".mypy_cache", ".pytest_cache",
+                    ".ruff_cache", ".gradle", ".next", ".turbo", ".cache", ".pnpm-store", "site-packages",
+                    ".terraform", ".uv-cache"})
+
+
+def _symlink(entry, roots):
+    """An unfollowed symlink leaf; one to a repository outside the scan roots is refused."""
+    try:
+        target = Path(entry.path).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return "symlink"
+    if target.is_dir() and (target / ".git").exists() and not any(target.is_relative_to(root) for root in roots):
+        raise ValueError("workspace repository enumeration symlink boundary: repository outside scan roots")
+    return "symlink"
 
 
 def enumerate_repositories(roots):
     repositories, observations = {}, []
     count = 0
+    resolved_roots = [Path(r).absolute().resolve() for r in roots]
     for requested in roots:
         root = safe(Path(requested).absolute())
         if not root.exists():
@@ -32,8 +48,10 @@ def enumerate_repositories(roots):
                 for entry in sorted(entries, key=lambda item: item.name):
                     mode = entry.stat(follow_symlinks=False).st_mode
                     if stat.S_ISLNK(mode):
-                        raise ValueError("workspace repository enumeration symlink boundary")
-                    if stat.S_ISDIR(mode):
+                        kind = _symlink(entry, resolved_roots)
+                    elif stat.S_ISDIR(mode) and entry.name in PRUNED:
+                        kind = "pruned-directory"
+                    elif stat.S_ISDIR(mode):
                         kind = "directory"
                     elif stat.S_ISREG(mode):
                         kind = "file"
@@ -61,6 +79,7 @@ def enumerate_repositories(roots):
         "repositories": [repositories[key] for key in sorted(repositories)],
         "observations": observations,
         "limits": dict(LIMITS),
+        "pruned": sorted(PRUNED),
     }
 
 

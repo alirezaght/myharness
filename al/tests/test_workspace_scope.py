@@ -117,10 +117,18 @@ def test_new_repository_symlink_or_unavailable_boundary_cannot_be_empty(scope_ca
     git_repo(home / "Documents/new")
     with pytest.raises(ValueError, match="changed or incomplete"):
         S.revalidate_scope(value, state)
+    # A symlink inside the scan roots is an unfollowed leaf: its target is scanned at its real path.
     (home / "Documents/link").symlink_to(home / "Documents/new", target_is_directory=True)
-    with pytest.raises(ValueError, match="symlink"):
-        S.derive_scope(source["root"], home, state)
+    linked = S.enumerate_repositories([home / "Documents"])
+    assert [r["root"] for r in linked["repositories"]] == [str((home / "Documents/new").resolve())]
+    assert ["link", "symlink"] in next(d for d in linked["observations"][0]["directories"] if d["path"] == str(home / "Documents"))["children"]
     (home / "Documents/link").unlink()
+    # A symlink to a repository outside the scan roots would hide its runs: refused.
+    git_repo(home / "elsewhere")
+    (home / "Documents/outside").symlink_to(home / "elsewhere", target_is_directory=True)
+    with pytest.raises(ValueError, match="outside scan roots"):
+        S.derive_scope(source["root"], home, state)
+    (home / "Documents/outside").unlink()
     real = S.os.scandir
 
     def denied(path):
@@ -143,3 +151,15 @@ def test_scope_limit_or_unknown_global_runtime_blocks(scope_case, monkeypatch):
     (home / ".codex/al-runtime").mkdir(parents=True)
     with pytest.raises(ValueError, match="unsupported non-repository"):
         S.derive_scope(source["root"], home, state)
+
+
+def test_dependency_and_cache_trees_are_recorded_but_not_descended(scope_case):
+    home, source, state = scope_case
+    (home / "personal/app/node_modules/pkg").mkdir(parents=True)
+    git_repo(home / "personal/app/node_modules/pkg/inner")
+    (home / "personal/app/.uv-cache/sdists").mkdir(parents=True)
+    (home / "personal/app/.uv-cache/sdists/.git").write_text("not a repository\n")
+    value = S.enumerate_repositories([home / "personal"])
+    assert value["repositories"] == []
+    app = next(d for d in value["observations"][0]["directories"] if d["path"] == str(home / "personal/app"))
+    assert ["node_modules", "pruned-directory"] in app["children"] and [".uv-cache", "pruned-directory"] in app["children"]
