@@ -7,8 +7,8 @@ import os
 import re
 import shutil
 import signal
-import sys
 import subprocess
+import sys
 import tempfile
 import time
 import tomllib
@@ -52,9 +52,23 @@ def _candidate_launcher(root: Path) -> Path:
     """Bootstrap the candidate managed launcher inside the disposable root (never ~/.local/bin)."""
     launcher = root / "candidate-bin" / "alctl"
     result = subprocess.run(
-        [sys.executable, "-I", "-B", str(ROOT / "al/alctl.py"), "bootstrap", "--source-root", str(ROOT / "al"),
-         "--destination", str(launcher), "--state-root", str(root / "candidate-state")],
-        capture_output=True, text=True, timeout=120, check=False,
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            str(ROOT / "al/alctl.py"),
+            "bootstrap",
+            "--source-root",
+            str(ROOT / "al"),
+            "--destination",
+            str(launcher),
+            "--state-root",
+            str(root / "candidate-state"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
     )
     if result.returncode or not launcher.is_file():
         raise RuntimeError("candidate launcher bootstrap failed: " + _redact(result.stderr[-2000:]))
