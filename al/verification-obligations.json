@@ -176,7 +176,7 @@
       }
     },
     "claude:tests/test_ci_pytest_profile.py": {
-      "test": "a392e4f82723ffde96c02e140f68f03770ce269999b5d37b19601b8a0edaefb0",
+      "test": "4517266f1115a02599e95ecf84f93900cc9661d180d8cae60cc724438f868f28",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -736,7 +736,7 @@
       }
     },
     "codex:tests/test_ci_pytest_profile.py": {
-      "test": "a392e4f82723ffde96c02e140f68f03770ce269999b5d37b19601b8a0edaefb0",
+      "test": "4517266f1115a02599e95ecf84f93900cc9661d180d8cae60cc724438f868f28",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1331,7 +1331,7 @@
       }
     },
     "installer:al/tests/test_activity_retirement.py": {
-      "test": "9e010dce7c383d49ba24f43606c673788988699147c9f3ad554b2ff9b066d65e",
+      "test": "ed7938fb0c9b5f2639177824e6e6537e9d357ce45bfdcdebbffa8c7eae4c15e6",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1345,7 +1345,7 @@
       }
     },
     "installer:al/tests/test_behavior_observations.py": {
-      "test": "fa25bbe0f2effe02f82ac2f9907e5e7a0421af29c0bc0e8a18b4ad8db77c7885",
+      "test": "9e7e39b8c16d826bf7adc6e1e4742b0c1fe8f167f4b20f63d9f1ffb28f402c7d",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1387,7 +1387,7 @@
       }
     },
     "installer:al/tests/test_editorial_execution_receipts.py": {
-      "test": "d549d8ae06f6f543ef796e86c3e43f1333b036545072d6004f66f08442640f70",
+      "test": "a16232efa4263c81158fb36385c32c7d802abd0b3da48619d3d59b8fd8442902",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1436,7 +1436,7 @@
       }
     },
     "installer:al/tests/test_planning_admission.py": {
-      "test": "58528c0fb9cb2a2bee88e1ba8e91071df8ba035890a5f5411b187b91467e0314",
+      "test": "601c7131ad0bd22d6cc643b8c13a4e0398ba32704b5b1303eab9c7fe26b7de73",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1464,7 +1464,7 @@
       }
     },
     "installer:al/tests/test_publication_readiness.py": {
-      "test": "a3dd642b876962928461b93fbd3d9c43f9e2c3c3a50147d583da13790fdd5f6a",
+      "test": "a3924bd741083757c8f8b098f48080836f26e5b985ed21e29e701ab5259b9a36",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1492,7 +1492,7 @@
       }
     },
     "installer:al/tests/test_recovery_guidance.py": {
-      "test": "73ba36194db6f691e6981a86a86063a642bc94603cbb30132b489c52e9f5c900",
+      "test": "4a86654d4eea476a7aaf087aef4bd9ef5c7a6a4685a41bbaa65962329d788b20",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1506,7 +1506,7 @@
       }
     },
     "installer:al/tests/test_review_behavior_proof.py": {
-      "test": "3fd612b24832e57e89c25aee040f5c57de6bca4f3d2b31c0bc65afec148182a2",
+      "test": "6964cff36e61ecec4b9d14c26b55a0ae6072d64ec40490075086eb08188c6b1e",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1534,7 +1534,7 @@
       }
     },
     "installer:al/tests/test_task_editorial_revision.py": {
-      "test": "12a60420223baf8416a569dec45dce374dd762826b12ecb6206070816c4b750a",
+      "test": "859e0308406fb8fd012c914417076beff46de0d39bddc9a03f2c7646ae810805",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1583,7 +1583,7 @@
       }
     },
     "installer:al/tests/test_verification_plan.py": {
-      "test": "97ea8f7f64fb2895a72dae7832a67df77fd31f1361e7ab0cb5d6de126da8512a",
+      "test": "1a6d17bc3869112554346dbfaa1f34b43bb327312c6c5505ab5bf977e446ad25",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -1688,7 +1688,7 @@
       }
     },
     "installer:al/tests/test_workspace_scope.py": {
-      "test": "800d0e325a827c705f92f23462c4960832874657860e6031e17d6a7d9c36a1e4",
+      "test": "28aad42658163bc05e3c15524f3c13decec45e35eaa82dd4135958d8b363bca7",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -4983,8 +4983,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 997,
-    "digest": "a6d7407ab3caca55aeab6baf77ad36fc1bfd46dfec5bddd746f32ea26108ea7f"
+    "members": 999,
+    "digest": "0bece1b9564a0bb807e019149dd1054b1ac379d87ad4079c58cb7b846b3f4bb9"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
