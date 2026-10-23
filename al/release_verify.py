@@ -84,7 +84,7 @@ def full(*, tier='full', workers=8, cache_mode='cold', report_path=None, changed
     write_json(directory/'plan.json',plan)
     if plan_only:return {'plan':plan,'plan_path':str(directory/'plan.json'),'report_path':str(report_path)}
     # Earlier node durations only order shards (longest first); they never select or skip work.
-    history=artifact_root/'durations.json'
+    history=report_path.parent/(report_path.stem+'-durations.json')
     try:
         durations=read_json(history)
         if not isinstance(durations,dict) or not all(isinstance(k,str) and type(v) in (int,float) and 0<=v<86400 for k,v in durations.items()):durations={}
