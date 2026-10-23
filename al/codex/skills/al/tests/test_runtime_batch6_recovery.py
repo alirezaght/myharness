@@ -5,21 +5,8 @@ import time
 import pytest
 from hook_regression_helpers import invoke
 from batch5_helpers import state
-from batch6_helpers import unfinished,replacement,install_replacement,pause
+from batch6_helpers import unfinished,replacement,install_replacement,pause,changed_recovery
 from launcher_context import admit_planning
-
-
-def changed_recovery(cli,tmp,repo,phase,route='resume'):
-    unfinished(cli,tmp,repo,phase)
-    old=state(cli)['completed_phases'][:]
-    if route=='resume':checkpoint=pause(cli,tmp)
-    else:invoke(cli,'agent-failed','al-engineer','--reason','transient','--retry-safe','yes')
-    (repo/'Makefile').write_text('lint-imports:\n\ttrue # changed obligations\n')
-    if route=='resume':invoke(cli,'resume','--checkpoint',checkpoint)
-    else:invoke(cli,'retry','al-engineer','--reason','recover unfinished rules')
-    assert state(cli)['phase']==phase and state(cli)['completed_phases']==old
-    assert state(cli)['gate_recovery']['phase']==phase
-    return old
 
 
 @pytest.mark.parametrize('phase',['PSEUDOCODE','IMPLEMENTATION'])

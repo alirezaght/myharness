@@ -7,7 +7,7 @@ import al_task as T
 from hook_regression_helpers import invoke
 from batch5_helpers import state
 from batch6_helpers import install_replacement
-from test_runtime_batch6_recovery import changed_recovery
+from batch6_helpers import changed_recovery
 from launcher_context import admit_planning
 
 

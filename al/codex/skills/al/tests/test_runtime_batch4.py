@@ -10,6 +10,7 @@ import al_assessments
 import al_gates
 import al_traceability as T
 from hook_regression_helpers import CATEGORIES,begin,fresh_review,invoke,manifest_for,report_data,save_report
+from batch9_helpers import compare_start
 from launcher_context import admit_planning
 
 
@@ -20,15 +21,6 @@ def gate_plan(cli,tmp_path,repo,required=False,failure=True):
                           source=source)
     p=tmp_path/'gates-proof.json';p.write_text(json.dumps(manifest))
     invoke(cli,'gates','plan','--file',str(p));return p
-
-
-def compare_start(cli,tmp_path,designer=False):
-    plan=tmp_path/'typed-plan.md';plan.write_text('Architect approved the complete criterion and failure-path verification plan.')
-    args=['review-compare-start','--plan',str(plan),'--approval-source','Architect test-plan approval']
-    if designer:
-        pseudocode=tmp_path/'typed-pseudocode.md';pseudocode.write_text('Designer specified immutable packets and validation before locked state writes.')
-        args+=['--pseudocode',str(pseudocode)]
-    invoke(cli,*args);invoke(cli,'review-packet','--stage','compare')
 
 
 def comparison(cli,tmp_path,invocation='compare',**kwargs):

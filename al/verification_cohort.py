@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run complete reviewed templates on both platforms; never a full-suite claim."""
+"""Run complete reviewed templates in every suite that collects them; never a full-suite claim."""
 import argparse
 import hashlib
 from pathlib import Path
@@ -26,8 +26,8 @@ def execute(root, files, report, workers=8):
     plan = build_plan(collections, read_json(root / 'al/verification-obligations.json'),
                       tier='full', changed_paths=[], binding=binding)
     assignments = [row for row in plan['execution_assignments'] if row['suite'] in {'codex', 'claude'} and row['node']['source']['path'] in files]
-    if any(not any(a['suite'] == suite and a['node']['source']['path'] == file for a in assignments)
-           for suite in ('codex', 'claude') for file in files):
+    # Shared-flow templates may live only in the codex suite (byte-identical shared scripts).
+    if any(not any(a['node']['source']['path'] == file for a in assignments) for file in files):
         raise ValueError('reviewed template absent from complete collection')
     if not plan['isolation_closure_current'] or any(a['serialization_group'] for a in assignments):
         raise ValueError('reviewed template isolation proof is not current')

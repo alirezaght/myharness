@@ -18,8 +18,9 @@ BAD=[
 ]
 
 
+# Representative end-to-end shapes; test_schema_rejects_malformed_fields covers every BAD shape.
 @pytest.mark.parametrize('stage',['base','candidate'])
-@pytest.mark.parametrize('path,value',BAD)
+@pytest.mark.parametrize('path,value',[((),None),(('pipeline',),'missing'),(('id',),'9'),(('status',),'missing')])
 def test_malformed_shapes_finalize_infra_with_intact_raw_log(cli,repo,tmp_path,monkeypatch,stage,path,value):
     data=body(start(cli,repo))
     if not path:data=value

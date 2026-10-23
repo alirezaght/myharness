@@ -4,8 +4,16 @@ import sys
 import al_store
 from batch8_helpers import setup,plan
 from hook_regression_helpers import invoke,report_data,save_report,manifest_for
-from test_runtime_batch4 import compare_start
 from launcher_context import admit_planning
+
+def compare_start(cli,tmp_path,designer=False):
+    plan=tmp_path/'typed-plan.md';plan.write_text('Architect approved the complete criterion and failure-path verification plan.')
+    args=['review-compare-start','--plan',str(plan),'--approval-source','Architect test-plan approval']
+    if designer:
+        pseudocode=tmp_path/'typed-pseudocode.md';pseudocode.write_text('Designer specified immutable packets and validation before locked state writes.')
+        args+=['--pseudocode',str(pseudocode)]
+    invoke(cli,*args);invoke(cli,'review-packet','--stage','compare')
+
 
 PATH='services/bid-service/alembic/versions/002_bid_duration.py'
 DIMENSIONS=('expand_contract','deployment_order','aggregator_environment','consumer_deployment','dlq_redrive')
