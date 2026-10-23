@@ -1,6 +1,7 @@
 """Closed root pytest selection/configuration, independent of application coverage."""
 import configparser
 import os
+import re
 from pathlib import Path,PurePosixPath
 import shlex
 import tomllib
@@ -11,15 +12,38 @@ OPTIONS={'-q','-qq','-v','-vv','-x','--exitfirst','--strict-markers','--strict-c
 CONFIGS=('pytest.ini','.pytest.ini','pytest.toml','.pytest.toml','setup.cfg','tox.ini','pyproject.toml')
 
 
-def options(value,*,targets=False):
+MARKER=re.compile(r'(?:\(|\)|not|and|or|[A-Za-z_][A-Za-z0-9_]*)')
+
+
+def marker_expression(text):
+    """A literal marker expression: identifiers combined with not/and/or and parentheses."""
+    tokens=re.findall(r'\(|\)|[^\s()]+',text) if isinstance(text,str) and len(text)<=200 else []
+    if not tokens or any(not MARKER.fullmatch(token) for token in tokens):
+        raise Unsupported('unsupported pytest marker expression')
+    return text
+
+
+def split(value):
+    """Literal pytest arguments as (options, positional, marker expression)."""
     if isinstance(value,str):value=shlex.split(value)
     if not isinstance(value,list) or any(not isinstance(v,str) for v in value):raise Unsupported('literal pytest options required')
-    positional=[]
-    for item in value:
-        if item.startswith('-'):
+    flags,positional,marker=[],[],None
+    items=iter(value)
+    for item in items:
+        if item=='-m':
+            if marker is not None:raise Unsupported('one pytest marker expression at most')
+            marker=marker_expression(next(items,None));flags+=['-m',marker]
+        elif item.startswith('-'):
             if item not in OPTIONS:raise Unsupported('unsupported pytest option '+item)
-        elif not targets:raise Unsupported('pytest addopts cannot supply collection targets')
+            flags.append(item)
         else:positional.append(item)
+    return flags,positional,marker
+
+
+def options(value,*,targets=False):
+    _,positional,marker=split(value)
+    if positional and not targets:raise Unsupported('pytest addopts cannot supply collection targets')
+    if marker is not None and not targets:raise Unsupported('pytest addopts cannot select markers')
     return positional
 
 
@@ -46,7 +70,9 @@ def configuration(root,read):
             parser=configparser.ConfigParser(interpolation=None);parser.read_string(raw.decode())
             if parser.has_section('tool:pytest') or parser.has_section('pytest'):raise Unsupported('alternate pytest INI configuration')
         else:raise Unsupported('alternate/competing pytest configuration')
-    if not isinstance(table,dict) or set(table)-{'testpaths','addopts'}:raise Unsupported('unsupported pytest configuration keys')
+    if not isinstance(table,dict) or set(table)-{'testpaths','addopts','markers'}:raise Unsupported('unsupported pytest configuration keys')
+    if 'markers' in table and (not isinstance(table['markers'],list) or any(not isinstance(m,str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*(?::.*)?',m) for m in table['markers'])):
+        raise Unsupported('literal pytest marker declarations required')
     roots=table.get('testpaths',[])
     if not isinstance(roots,list) or any(not isinstance(p,str) for p in roots):raise Unsupported('literal pytest testpaths required')
     for path in roots:literal_root(root,path)
@@ -68,7 +94,7 @@ def profile(root,args,read):
     sources=fixture_sources(root,roots,read)
     return {'schema_version':1,'kind':'root-pytest-execution-profile','configuration':config,'collection_roots':roots,
             'application_scope':{'kind':'repository-mandated-ci-suite','roots':['.'],'claim':'required suite execution, not per-source test coverage'},
-            'options':list(args),'environment_names':ENV,'plugin_mode':'disabled' if mode=='1' else 'locked-empty-entrypoints',
+            'options':list(args),'marker_expression':split(args)[2],'environment_names':ENV,'plugin_mode':'disabled' if mode=='1' else 'locked-empty-entrypoints',
             'conftest':sources,'execution_guard':'required-after-locked-sync','source_dependencies':sorted(set(config['files']+sources['dependencies']+['uv.lock','pyproject.toml']))}
 
 

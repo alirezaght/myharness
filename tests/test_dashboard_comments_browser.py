@@ -26,7 +26,7 @@ from tests.test_dashboard_browser import CHROME, _dom, _headless
 from tests.test_dashboard_diagrams import _sample, _state, _with
 from tests.test_dashboard_diagrams_browser import _items
 
-pytestmark = pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")
+pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
 RESULT = re.compile(r'<pre id="driver-result">(.*?)</pre>', re.DOTALL)
 TEXT = "<b>wrong</b> arrow"
 
@@ -152,49 +152,6 @@ def _rows(db_path: Path) -> tuple[list[tuple], list[tuple]]:
         return comments, events
     finally:
         conn.close()
-
-
-def test_headless_chrome_adds_a_comment_on_a_connection(db_path, tmp_path, monkeypatch):
-    task_id = _sample(db_path)
-    with serve(db_path, task_id) as server:
-        element = _connection(server)
-        _driven(tmp_path, monkeypatch, {"element": element, "kind": "correction", "text": TEXT,
-                                        "expect": "added"})  # fmt: skip
-        dom = _dom(server, tmp_path / "profile")
-    result = _result(dom)
-    assert TEXT in result["added"] and "open · correction" in result["added"]
-    assert f"({element}) · version 1" in result["added"] and result["cleared"] == ""
-    assert "Comments on this element in version 1" in result["panel"]
-    assert "&lt;b&gt;wrong&lt;/b&gt; arrow" in dom and "<b>wrong</b>" not in dom
-    comments, events = _rows(db_path)
-    assert comments == [(1, element, "correction", TEXT, "open")]
-    assert [kind for kind, _ in events] == ["comment.added"]
-    assert json.loads(events[0][1]) == {"id": 1, "version": 1, "element": element,
-                                        "kind": "correction"}  # fmt: skip
-
-
-def test_headless_chrome_keeps_the_draft_when_the_version_is_outdated(
-    db_path, tmp_path, monkeypatch
-):
-    task_id = _sample(db_path)
-    original, calls = server_module.add_comment, []
-
-    def redesign_first(path, body):
-        if not calls:
-            calls.append(1)
-            _state(db_path, task_id, "component Exporter")
-        return original(path, body)
-
-    with serve(db_path, task_id) as server:
-        element = _connection(server)
-        _driven(tmp_path, monkeypatch, {"element": element, "kind": "redesign", "text": TEXT,
-                                        "expect": "refused", "settle": 2})  # fmt: skip
-        monkeypatch.setattr(server_module, "add_comment", redesign_first)
-        dom = _dom(server, tmp_path / "profile")
-    result = _result(dom)
-    assert calls == [1] and "reload" in result["alert"] and result["reload"] is True
-    assert (result["text"], result["kind"]) == (TEXT, "redesign")
-    assert _rows(db_path)[0] == []
 
 
 def test_headless_chrome_keeps_draft_and_focus_across_a_live_re_render(

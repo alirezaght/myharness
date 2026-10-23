@@ -197,7 +197,8 @@ def main(argv=None) -> int:
     parser.add_argument('--source', help='existing local Git source for --check-release')
     parser.add_argument('--version', help='exact stable release version; never latest')
     parser.add_argument('--source-subdir', default=None)
-    group.add_argument('--tier', choices=['fast', 'affected'], help='focused tier; never complete verification')
+    group.add_argument('--tier', choices=['fast', 'affected', 'acceptance'],
+                       help='focused tier (never complete verification) or the separate pre-release acceptance tier')
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--cache-mode', choices=['cold', 'warm', 'disabled'], default='cold')
     parser.add_argument('--report')

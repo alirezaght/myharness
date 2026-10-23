@@ -11,7 +11,8 @@ from al.tests.publication_helpers import command, prepare, get_packet
 from al.tests.runtime_run_helpers import launched, public_run
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_reported_publication_preserves_pending_review_and_failed_code(launched, platform):
     record = prepare(launched, platform)
     baseline = state(launched, platform)

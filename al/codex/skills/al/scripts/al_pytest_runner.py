@@ -46,7 +46,9 @@ def builtin_plugin(plugin):
 
 
 class Outcomes:
-    def __init__(self,root,conftests):self.collected=[];self.outcomes=[];self.plugins=None;self.errors=[];self.allowed={str(root/name) for name in conftests}
+    def __init__(self,root,conftests,marker=None):
+        self.collected=[];self.outcomes=[];self.plugins=None;self.errors=[];self.allowed={str(root/name) for name in conftests}
+        self.marker=marker;self.deselected=[]
     def pytest_collection_finish(self,session):
         self.collected=[item.nodeid for item in session.items]
         if len(set(self.collected))!=len(self.collected):self.errors.append('duplicate collected test identity')
@@ -61,7 +63,9 @@ class Outcomes:
     def pytest_plugin_registered(self,plugin,plugin_name,manager):
         if self.plugins is not None:self.errors.append('pytest plugin registered during execution: '+plugin_name)
     def pytest_deselected(self,items):
-        if items:self.errors.append('pytest required selection was deselected')
+        # Only the repository's own declared marker expression may deselect; it is recorded.
+        if items and self.marker is None:self.errors.append('pytest required selection was deselected')
+        self.deselected.extend(item.nodeid for item in items)
     def pytest_runtest_logreport(self,report):
         if report.when=='call' or report.failed or report.skipped:
             self.outcomes.append({'nodeid':report.nodeid,'when':report.when,'outcome':report.outcome,'xfail':hasattr(report,'wasxfail')})
@@ -77,7 +81,8 @@ class Outcomes:
         failed=[r for r in self.outcomes if r['outcome']=='failed'];skipped=[r for r in self.outcomes if r['outcome']=='skipped']
         if any(r['xfail'] for r in self.outcomes):self.errors.append('pytest expected-failure outcome is not successful verification')
         return {'collected':len(self.collected),'passed':len(passed),'failed':len(failed),'skipped':len(skipped),
-                'missing':sorted(set(self.collected)-set(passed)),'errors':self.errors}
+                'missing':sorted(set(self.collected)-set(passed)),'errors':self.errors,
+                **({'marker_expression':self.marker,'deselected':sorted(self.deselected)} if self.marker is not None else {})}
 
 
 def main(argv=None):
@@ -102,7 +107,7 @@ def main(argv=None):
     before=profile(root,selected,read);read('uv.lock');actual=packages(root,before['plugin_mode'])
     controls={name:os.environ.get(name) for name in before['environment_names']}
     import pytest
-    recorder=Outcomes(root,before['conftest']['files'])
+    recorder=Outcomes(root,before['conftest']['files'],before['marker_expression'])
     # A private exact config plus explicit root/cutoff prevents any external
     # ancestor configuration or conftest from selecting or changing this run.
     with tempfile.TemporaryDirectory(prefix='al-pytest-profile-') as directory:
@@ -110,8 +115,8 @@ def main(argv=None):
         if config:config=str(root/config)
         else:
             path=Path(directory)/'pytest.ini';path.write_text('[pytest]\n');config=str(path)
-        explicit=[p for p in selected if not p.startswith('-')]
-        options=[p for p in selected if p.startswith('-')]
+        from al_pytest_profile import split
+        options,explicit,_=split(selected)
         result=pytest.main(['-c',config,'--rootdir',str(root),'--confcutdir',str(root),*options,*(explicit or before['collection_roots'])],plugins=[recorder])
     previous=dict(inputs);after=profile(root,selected,read);read('uv.lock')
     if after!=before or inputs!=previous or controls!={name:os.environ.get(name) for name in controls}:

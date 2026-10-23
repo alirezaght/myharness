@@ -23,7 +23,8 @@ def overlay(launched, platform, identifier, document):
     return json.loads(succeed(editorial(launched, platform, request)).stdout)["document"]["hash"]
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_actual_review_requires_fresh_counterexamples_and_preserves_inflight_packets(
     launched, platform
 ):

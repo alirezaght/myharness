@@ -94,8 +94,9 @@ def test_nonmasking_options_share_one_grammar(repo,monkeypatch):
 def test_actual_root_configuration_uses_the_generic_profile():
     import al_ci_inventory as CI
     root=Path(__file__).resolve().parents[5]
-    value=Profile.profile(root,[],lambda p:(root/p).read_bytes())
-    assert value['collection_roots']==['tests']
+    # The repository's CI runs its non-browser suite through a literal marker expression.
+    value=Profile.profile(root,['-m','not browser'],lambda p:(root/p).read_bytes())
+    assert value['collection_roots']==['tests'] and value['marker_expression']=='not browser'
     assert value['conftest']['files']==['tests/conftest.py']
     assert value['conftest']['dependencies']==['tests/conftest.py']
     observed=CI.inventory(root,['tests/conftest.py'],'merge_request_quality')
@@ -116,3 +117,29 @@ def test_executable_annotation_is_not_a_fixture_declaration(repo,declaration):
     configured(repo);put(repo,'tests/conftest.py',declaration)
     with pytest.raises(ValueError,match='nonliteral pytest helper declaration'):
         Profile.profile(repo,[],lambda p:(repo/p).read_bytes())
+
+
+@pytest.mark.parametrize('expression',['not browser','(slow or browser) and not flaky','browser'])
+def test_literal_marker_expressions_are_profiled(repo,expression):
+    configured(repo)
+    value=Profile.profile(Path(repo),['-q','-m',expression],lambda p:(repo/p).read_bytes())
+    assert value['marker_expression']==expression and value['collection_roots']==['tests']
+
+
+@pytest.mark.parametrize('arguments',[['-m'],['-m','a.b'],['-m','x;y'],['-m','$(rm)'],['-m','a','-m','b'],['-k','a']])
+def test_unsupported_marker_arguments_refuse(repo,arguments):
+    configured(repo)
+    with pytest.raises(ValueError):Profile.profile(Path(repo),arguments,lambda p:(repo/p).read_bytes())
+
+
+def test_runner_deselection_requires_the_declared_marker_expression(repo):
+    import al_pytest_runner as Runner
+    class Item:
+        def __init__(self,nodeid):self.nodeid=nodeid
+    plain=Runner.Outcomes(Path(repo),[])
+    plain.pytest_deselected([Item('tests/test_case.py::test_browser')])
+    assert plain.errors==['pytest required selection was deselected']
+    marked=Runner.Outcomes(Path(repo),[],'not browser')
+    marked.pytest_deselected([Item('tests/test_case.py::test_browser')])
+    assert not marked.errors
+    assert marked.summary()['deselected']==['tests/test_case.py::test_browser'] and marked.summary()['marker_expression']=='not browser'

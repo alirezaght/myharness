@@ -4985,5 +4985,12 @@
     "scope": "complete-source-except-obligations-v1",
     "members": 997,
     "digest": "a6d7407ab3caca55aeab6baf77ad36fc1bfd46dfec5bddd746f32ea26108ea7f"
-  }
+  },
+  "acceptance": [
+    "installer:al/tests/test_workspace_journey.py::*",
+    "installer:al/tests/test_issuing_runtime.py::*",
+    "installer:al/tests/test_terminal_queries.py::*",
+    "codex:tests/test_workspace_source.py::*",
+    "claude:tests/test_workspace_source.py::*"
+  ]
 }

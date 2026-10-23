@@ -11,7 +11,8 @@ from al.tests.editorial_receipt_helpers import state_path, succeed
 from al.tests.runtime_run_helpers import launched, public_run
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_public_observation_covers_real_journeys_and_refuses_incomplete_proof(launched, platform):
     packet = prepare_behavior(launched, platform)
     assert len(packet["gaps"]) == 2

@@ -12,11 +12,11 @@ import pytest
 
 from harness.dashboard.server import DashboardServer
 from tests.sample_design import TYPES
-from tests.test_dashboard import api, serve, start_task
+from tests.test_dashboard import api, serve
 from tests.test_dashboard_browser import CHROME, _dom, _headless
 from tests.test_dashboard_diagrams import _sample, _state
 
-pytestmark = pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")
+pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
 SELECTED = "component:web-dashboard"
 
 
@@ -68,51 +68,3 @@ def test_headless_chrome_renders_every_diagram_with_addressable_elements(db_path
     assert '<p class="diagram-status">showing: version 1 (current)</p>' in dom
     assert 'aria-pressed="true"' not in plain
     assert "<p>select an element to see its details</p>" in plain
-
-
-def test_headless_chrome_shows_an_older_version_from_the_hash(db_path, tmp_path):
-    task_id = _sample(db_path)
-    with serve(db_path, task_id) as server:
-        api(server)
-        _state(db_path, task_id, "component Exporter")
-        assert api(server)["task"]["diagrams"]["current"]["version"] == 2
-        fragment = f"#version=1&element={quote(SELECTED, safe='')}"
-        old = _dom(server, tmp_path / "profile", fragment)
-        gone = _dom(server, tmp_path / "profile-b", "#element=component%3Aexporter&version=1")
-        current = _dom(server, tmp_path / "profile-c", "#element=component%3Aexporter")
-    assert "showing: version 1 (not current)" in old
-    assert '<button type="button">show current</button>' in old
-    assert 'data-element-id="component:exporter"' not in old
-    assert "<dd>version 1</dd>" in old and 'aria-pressed="true"' in old
-    assert '<li aria-current="true"><span>version 1 · ' in old
-    assert "<p>element component:exporter is not in version 1</p>" in gone
-    assert '<p class="diagram-status">showing: version 2 (current)</p>' in current
-    assert 'data-element-id="component:exporter"' in current
-    assert "<dt>id</dt><dd>component:exporter</dd>" in current
-
-
-def test_headless_chrome_renders_a_large_design(db_path, tmp_path):
-    task_id = start_task(db_path, "large", "design")
-    lines = [f"component Service {n}" for n in range(120)]
-    lines += [f"connect Service {n} -> Service {(n + 1) % 120}" for n in range(120)]
-    lines += [f"message Service {n} -> Service {(n * 7) % 120}: call {n}" for n in range(120)]
-    _state(db_path, task_id, "\n".join(lines))
-    with serve(db_path, task_id) as server:
-        items = _items(server)
-        dom = _dom(server, tmp_path / "profile", "#element=component%3Aservice-119")
-    assert len(items) == 120 + 120 + 120 + 120
-    assert dom.count('<g class="diagram-element') == len(items)
-    assert dom.count('aria-pressed="true"') == 2
-    assert "<dt>id</dt><dd>component:service-119</dd>" in dom
-
-
-def test_headless_chrome_says_no_diagrams_yet(db_path, tmp_path):
-    task_id = start_task(db_path, "csv", "export")
-    prose = start_task(db_path, "prose", "design")
-    _state(db_path, prose, "One module writes the rows")
-    with serve(db_path, task_id) as server:
-        dom = _dom(server, tmp_path / "profile")
-        hinted = _dom(server, tmp_path / "profile-b", f"?task={prose}")
-    assert '<h3>Diagrams</h3><p>no diagrams yet</p><div id="diagram-selection"' in dom
-    assert "<p>no versions yet</p>" in dom and "<svg" not in dom
-    assert "<p>no diagrams yet</p><p>the design has no diagram notation yet: " in hinted

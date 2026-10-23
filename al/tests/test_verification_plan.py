@@ -65,3 +65,16 @@ def test_source_binding_detects_same_size_same_mtime_dirty_movement(tmp_path):
     path = root / 'al/codex/skills/al/scripts/pure.py';stat = path.stat()
     path.write_text('VALUE = 3\n');os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
     assert capture_source_binding(root)['content_digest'] != before['content_digest']
+
+
+def test_acceptance_tier_is_excluded_from_full_and_runs_only_its_declared_proofs(tmp_path):
+    root = source(tmp_path);collections, binding = collected(root, tmp_path)
+    declared = dict(declarations(root), acceptance=['codex:tests/test_a.py::*'])
+    full = build_plan(collections, declared, tier='full', changed_paths=[], binding=binding)
+    ids = {a['id'] for a in full['execution_assignments']}
+    assert 'codex:tests/test_a.py::test_a' not in ids and len(ids) == 2 and full['complete_required']
+    assert full['acceptance_obligations'] == ['codex:tests/test_a.py::test_a']
+    assert 'codex:tests/test_a.py::test_a' in full['intentionally_unselected']
+    acceptance = build_plan(collections, declared, tier='acceptance', changed_paths=[], binding=binding)
+    assert [a['id'] for a in acceptance['execution_assignments']] == ['codex:tests/test_a.py::test_a']
+    assert not acceptance['complete_required']

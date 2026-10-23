@@ -93,7 +93,7 @@ def validate_equivalence(declaration, collections, binding):
 
 
 def build_plan(collections, declarations, *, tier, changed_paths, binding):
-    if tier not in {'full', 'fast', 'affected'} or declarations.get('schema_version') != 1:
+    if tier not in {'full', 'fast', 'affected', 'acceptance'} or declarations.get('schema_version') != 1:
         raise ValueError('invalid verification tier/declarations')
     all_nodes = {}
     for suite, collection in collections.items():
@@ -101,8 +101,12 @@ def build_plan(collections, declarations, *, tier, changed_paths, binding):
         for node in collection['nodes']:
             all_nodes[qualified(suite, node['nodeid'])] = {'suite': suite, **node}
     if set(collections) != set(SUITES) or not all_nodes:raise ValueError('all three complete collections required')
-    selection = set(all_nodes)
-    if tier == 'fast':
+    # Long end-to-end proofs form a separate, required pre-release acceptance tier.
+    acceptance = {q for q in all_nodes if any(fnmatch.fnmatchcase(q, p) for p in declarations.get('acceptance', []))}
+    selection = set(all_nodes) - acceptance
+    if tier == 'acceptance':
+        selection = set(acceptance)
+    elif tier == 'fast':
         patterns = declarations.get('fast', [])
         selection = {q for q in all_nodes if any(fnmatch.fnmatchcase(q, p) for p in patterns)}
         selection.update(q for q in all_nodes if all_nodes[q]['suite'] == 'installer' and any(name in q for name in ('test_verification', 'test_release')))
@@ -115,7 +119,8 @@ def build_plan(collections, declarations, *, tier, changed_paths, binding):
         # Unknown/empty change information broadens to all; no absent-mapping exemption.
     # Classification is explicit: newly collected nodes never inherit an omission.
     classified = set(declarations.get('classified_nodes', []))
-    selection.update(set(all_nodes) - classified)
+    if tier != 'acceptance':
+        selection.update(set(all_nodes) - classified - acceptance)
     if not selection:raise ValueError('empty verification selection')
     equivalents, rejected, omitted = [], [], set()
     for declaration in declarations.get('shared', []):
@@ -148,7 +153,8 @@ def build_plan(collections, declarations, *, tier, changed_paths, binding):
             'collected_obligations': sorted(all_nodes), 'execution_assignments': assignments, 'shared_equivalents': equivalents,
             'rejected_equivalences': rejected, 'intentionally_unselected': sorted(set(all_nodes) - selection),
             'serialization_groups': sorted({a['serialization_group'] for a in assignments if a['serialization_group']}),
-            'complete_required': tier == 'full' and selection == set(all_nodes),
+            'acceptance_obligations': sorted(acceptance),
+            'complete_required': tier == 'full' and selection == set(all_nodes) - acceptance,
             'collections': {s: {k: v for k, v in c.items() if k not in {'nodes', 'nodes_by_id'}} for s, c in collections.items()}}
 
 

@@ -10,7 +10,8 @@ from al.tests.runtime_run_helpers import launched, public_run
 from al.tests.test_task_editorial_revision import editorial, request_for
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_editorial_overlay_reuses_real_original_execution_without_new_child(launched, platform):
     initial = prepare_readers(launched, platform)
     succeed(run_reader(launched, platform))

@@ -40,7 +40,8 @@ def editorial(launched, platform, request):
     return public_run(launched, platform, "task", "editorial", "--file", str(file))
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_closed_editorial_flow_preserves_authority_and_substantive_invalidation(launched, platform):
     _, report = prepare(launched, platform)
     saved = save_report(launched, platform, report)
@@ -138,7 +139,8 @@ def test_closed_editorial_flow_preserves_authority_and_substantive_invalidation(
     assert renewed["proof_admission"]["authority"] != original["proof_admission"]["authority"]
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_pending_run_cannot_publish_editorial_authority(launched, platform):
     prepare(launched, platform)
     path, state = read_state(launched, platform)

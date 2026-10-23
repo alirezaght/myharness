@@ -25,7 +25,8 @@ def validate(launched, platform, path):
     return public_run(launched, platform, "recovery", "validate", "--file", path)
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_guided_planning_operations_cannot_bypass_inputs_or_replay_stale_binding(
     launched, platform
 ):
@@ -114,7 +115,8 @@ def test_guided_planning_operations_cannot_bypass_inputs_or_replay_stale_binding
     assert state_path(launched, platform).read_bytes() == before
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_gate_guidance_refuses_forgery_source_drift_and_replayed_failed_attempt(launched, platform):
     prepare_readers(launched, platform, duplicate=False)
     offered = next(

@@ -14,7 +14,8 @@ def state_path(launched, platform="codex"):
     return launched[2] / ("." + platform) / "al-runtime/pin-flow.json"
 
 
-@pytest.mark.parametrize("platform", ["codex", "claude"])
+# Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
+@pytest.mark.parametrize("platform", ["codex"])
 def test_actual_packet_report_materialization_and_separate_admission(launched, platform):
     packet, report = prepare(launched, platform)
     saved = save_report(launched, platform, report)

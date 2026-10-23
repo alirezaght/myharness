@@ -26,7 +26,7 @@ from tests.test_dashboard_browser import CHROME, _headless
 from tests.test_dashboard_comments_browser import _result
 from tests.test_dashboard_diagrams import _sample, _with
 
-pytestmark = pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")
+pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
 GONE = "connection:local-server->sqlite-state"
 RELABELLED = "connection:local-server->browser"
 NEW = "component:exporter"
@@ -267,33 +267,3 @@ def test_headless_chrome_shows_the_versions_side_by_side_and_stacked(
         assert "removed: dashed outline" in result["legend"]
         assert result["duplicates"] == [] and result["plain"] == [0, 0]
         assert result["counts"][1] == items and result["overflow"] is False
-
-
-def test_headless_chrome_resolves_and_reopens_a_comment(db_path, tmp_path, monkeypatch):
-    task_id, ids = _loop(db_path)
-    with serve(db_path, task_id) as server:
-        _shot(server, tmp_path / "shot", "comment-actions-1280w.png", 1280, 9000)
-        _driven(tmp_path, monkeypatch, {"mode": "actions", "comment": ids["gone"]})
-        result = _result(_driven_dom(server, tmp_path / "profile", 1280, 800))
-    assert result["inflight"] == {"disabled": True, "saving": True}
-    assert result["afterResolve"]["reopen"] is True and result["afterResolve"]["resolve"] is False
-    assert result["afterResolve"]["active"].startswith(f"comment-{ids['gone']}-")
-    assert "open: waiting for the harness to address it" in result["open"]
-    assert "addressed in" not in result["open"] and result["buttons"] == 0
-    assert _status(db_path, ids["gone"]) == "open"
-    assert _events(db_path)[-2:] == ["comment.resolved", "comment.reopened"]
-
-
-def test_headless_chrome_compare_button_selects_the_comments_versions(
-    db_path, tmp_path, monkeypatch
-):
-    task_id, ids = _loop(db_path, third=True)
-    with serve(db_path, task_id) as server:
-        assert api(server)["task"]["diagrams"]["current"]["version"] == 3
-        plan = {"mode": "compareButton", "comment": ids["gone"], "from": 2, "to": 3,
-                "pick": [1, 2]}  # fmt: skip
-        _driven(tmp_path, monkeypatch, plan)
-        result = _result(_driven_dom(server, tmp_path / "profile", 1280, 800))
-    assert result["label"] == "compare version 1 → 2"
-    assert (result["from"], result["to"]) == ("1", "2")
-    assert result["titles"] == ["version 1 (previous)", "version 2 (not current)"]

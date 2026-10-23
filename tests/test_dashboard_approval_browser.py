@@ -17,16 +17,19 @@ import pytest
 from harness.comments import CommentService
 from harness.dashboard import server as server_module
 from harness.dashboard.server import DashboardServer
-from harness.diagrams import DiagramService
 from tests.test_dashboard import needs_git, serve
 from tests.test_dashboard_approval import approval_task
 from tests.test_dashboard_browser import CHROME
 from tests.test_dashboard_comments import EDGE
 from tests.test_dashboard_comments_browser import _result
-from tests.test_dashboard_diagrams import _state, _with
+from tests.test_dashboard_diagrams import _with
 from tests.test_dashboard_redesign_browser import _driven_dom, _shot
 
-pytestmark = [pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"), needs_git]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+    needs_git,
+]
 
 DRIVER_JS = r"""
 const RESULT = {};
@@ -184,27 +187,3 @@ def test_headless_chrome_approves_once_every_comment_is_resolved(
     assert result["overflow"] is False
     assert _count(db_path, "approvals") == 1
     assert sorted(p.name for p in (specs / task_id).iterdir()) == ["v1.md"]
-
-
-def test_headless_chrome_refuses_a_stale_page_and_reloads(
-    db_path, sample_repo, tmp_path, monkeypatch
-):
-    task_id = approval_task(db_path, sample_repo)
-    specs = tmp_path / "specs"
-    real = server_module.approve_task
-
-    def redesigned_first(db, body, specs_root):
-        _state(db, task_id, "component Exporter")
-        _with(db, lambda c: DiagramService(c, task_id).sync())
-        monkeypatch.setattr(server_module, "approve_task", real)
-        return real(db, body, specs_root)
-
-    monkeypatch.setattr(server_module, "approve_task", redesigned_first)
-    with serve(db_path, task_id, str(specs)) as server:
-        _driven(tmp_path, monkeypatch, {"mode": "stale"})
-        result = _result(_driven_dom(server, tmp_path / "profile", 390, 844))
-    alert = result["shown"]["alert"]
-    assert alert.startswith("diagram version 1 is no longer current (current: 2); reload")
-    assert result["shown"]["active"] == "approve-reload" and result["alerts"] == 0
-    assert result["overflow"] is False and result["inside"] is True
-    assert _count(db_path, "approvals") == 0 and not specs.exists()

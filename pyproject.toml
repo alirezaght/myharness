@@ -30,3 +30,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["browser: headless-Chrome end-to-end checks, run by the browser workflow"]

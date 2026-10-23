@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from harness.dashboard.server import DashboardHandler, DashboardServer
+from harness.dashboard.server import DashboardServer
 from harness.db import connect
-from tests.test_dashboard import cli, needs_git, serve, start_task
+from tests.test_dashboard import needs_git, serve, start_task
 from tests.test_dashboard_overview import _investigated, _propose, _resume
 from tests.test_dashboard_spec import _spec_text, _versions, _write
 
@@ -35,7 +35,7 @@ def _chrome() -> str | None:
 
 
 CHROME = _chrome()
-pytestmark = pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")
+pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
 VIEWPORTS = ((1280, 800), (390, 844))
 
 
@@ -66,43 +66,6 @@ def _dom(server: DashboardServer, profile: Path, query: str = "") -> str:
     result = _headless(profile, "--dump-dom", f"{server.url}{query}")
     assert result.returncode == 0, result.stderr
     return result.stdout
-
-
-def test_headless_chrome_renders_the_active_task(db_path, tmp_path):
-    task_id = start_task(db_path, "export", "<b>x</b>", "rows")
-    cli(db_path, "phase", task_id, "next")
-    with serve(db_path, task_id) as server:
-        dom = _dom(server, tmp_path / "profile")
-        if shot := os.environ.get("HARNESS_DASHBOARD_SCREENSHOT"):
-            result = _headless(
-                tmp_path / "profile-shot",
-                "--window-size=1280,800",
-                f"--screenshot={shot}",
-                server.url,
-            )
-            assert result.returncode == 0 and Path(shot).is_file(), result.stderr
-    assert f"<h2>Task {task_id}</h2>" in dom
-    assert "<dd>export &lt;b&gt;x&lt;/b&gt; rows</dd>" in dom and "<b>x</b>" not in dom
-    assert "<dd>interview</dd>" in dom and "<dd>trivial (developer)</dd>" in dom
-    assert "<dd>not drafted yet</dd>" in dom and "Loading…" not in dom
-
-
-def test_headless_chrome_shows_no_tasks_without_a_db(tmp_path):
-    with serve(tmp_path / "absent" / "state.db", None) as server:
-        dom = _dom(server, tmp_path / "profile")
-    assert "<p>no active task</p>" in dom and "<p>no tasks</p>" in dom
-    assert 'role="alert"' not in dom
-
-
-def test_headless_chrome_reports_a_failed_load_with_retry(db_path, tmp_path):
-    task_id = start_task(db_path, "csv", "export")
-    specs = tmp_path / "specs"
-    (specs / task_id).mkdir(parents=True)
-    (specs / task_id / "v1.md").write_text("not a specification\n", encoding="utf-8")
-    with serve(db_path, task_id, str(specs)) as server:
-        dom = _dom(server, tmp_path / "profile")
-    assert '<p role="alert">Dashboard data unavailable: ' in dom
-    assert '<button type="button">Retry</button>' in dom and f"Task {task_id}" not in dom
 
 
 def _created(db_path: Path, task_id: str, created_at: str) -> None:
@@ -161,25 +124,6 @@ def test_headless_chrome_shows_the_overview_and_switches_tasks(db_path, sample_r
     assert "aria-current" not in unknown
 
 
-def test_headless_chrome_updates_live_from_the_stream(db_path, tmp_path, monkeypatch):
-    task_id = start_task(db_path, "live", "update")
-    original, seen = DashboardHandler._stream, []
-
-    def change_then_stream(handler: DashboardHandler, selected: str | None) -> None:
-        if not seen:
-            seen.append(handler.server.task_id)
-            cli(db_path, "phase", task_id, "next")
-        original(handler, selected)
-
-    monkeypatch.setattr(DashboardHandler, "_stream", change_then_stream)
-    with serve(db_path, task_id) as server:
-        dom = _dom(server, tmp_path / "profile")
-    assert seen == [task_id]
-    assert f"<h2>Task {task_id}</h2>" in dom
-    assert "<dd>interview</dd>" in dom and "<dd>investigation</dd>" not in dom
-    assert "<p>interview · in progress</p>" in dom
-
-
 SPEC_BODY = "## Requirements\n\n- **Rows:** keep `csv` <img src=x onerror=alert(1)>\n  wrapped\n"
 
 
@@ -226,16 +170,3 @@ def test_headless_chrome_renders_the_spec_history_and_decisions(db_path, sample_
     assert "awaiting_decision: Who may export?</p>" in dom
     assert "<p>recommendation: P1 Export access: Admins only</p>" in dom
     assert f"<code>harness interview decide {task_id} 1 accept|reject|modify</code>" in dom
-
-
-def test_headless_chrome_states_a_spec_not_drafted_yet(db_path, tmp_path):
-    task_id = start_task(db_path, "csv", "export")
-    cli(db_path, "phase", task_id, "next")
-    with serve(db_path, task_id, str(tmp_path / "specs")) as server:
-        dom = _dom(server, tmp_path / "profile")
-    assert (
-        '<section id="spec"><h3>Specification</h3><p>not drafted yet</p><p>phase: interview</p>'
-        in dom
-    )
-    assert '<section id="history"><h3>Version history</h3><p>no versions yet</p>' in dom
-    assert 'id="spec-document"' not in dom

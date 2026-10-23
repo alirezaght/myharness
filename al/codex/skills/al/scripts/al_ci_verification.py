@@ -30,10 +30,15 @@ def observed(tokens,pytest_profile=None):
         # sourced, but cannot establish service-verification completeness.
         allowed={'-q','-qq','-x','--strict-markers','--strict-config','--disable-warnings','--no-incremental'}
         if tool=='pytest' and pytest_profile is not None:
-            from al_pytest_profile import OPTIONS
-            allowed=OPTIONS
-        if any(a.startswith('-') and a not in allowed for a in rest):return []
-        classes=['python'];targets=[a.split('::',1)[0] for a in rest if not a.startswith('-')] or ['.']
+            # The guarded profile accepts the repository's own literal marker expression.
+            from al_pytest_profile import split
+            from al_ci_yaml import Unsupported
+            try:_,positional,_=split(rest)
+            except Unsupported:return []
+            classes=['python'];targets=[a.split('::',1)[0] for a in positional] or ['.']
+        else:
+            if any(a.startswith('-') and a not in allowed for a in rest):return []
+            classes=['python'];targets=[a.split('::',1)[0] for a in rest if not a.startswith('-')] or ['.']
     elif tool=='ruff' and rest[:1]==['check']:
         if any(a.startswith('-') and a not in {'-q','--quiet','--no-cache'} for a in rest[1:]):return []
         classes=['python'];targets=[a for a in rest[1:] if not a.startswith('-')] or ['.']
