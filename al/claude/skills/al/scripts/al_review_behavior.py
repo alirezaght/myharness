@@ -29,6 +29,7 @@ def initialize(st, review):
     )
 
 
+@S.decision
 def validate_review_lineage(st, review, packet=None):
     from al_verification_authority import authority_binding, document_binding
     from al_task_editorial import editorial_bridge
@@ -65,6 +66,7 @@ def validate_review_lineage(st, review, packet=None):
     return editorial_bridge(st, document, document_binding(st)["hash"], authority["hash"])
 
 
+@S.decision
 def factual_evidence(st):
     import al_ledger as L
 

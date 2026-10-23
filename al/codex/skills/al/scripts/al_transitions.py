@@ -1,5 +1,6 @@
 """Command-specific workflow edges, checked before any state write."""
 from al_schema import refuse
+import al_scope as S
 
 WRITING = {'IMPLEMENTATION', 'FINALIZATION', 'REWORK', 'CORRECTION'}
 BARRIERS = {'VERIFICATION', 'REVIEW', 'FINAL_VERIFICATION', 'DONE'}
@@ -36,6 +37,7 @@ def structural_gaps(st):
     return out
 
 
+@S.decision
 def workflow_gaps(st):
     from al_gates import base_gaps
     from al_execution_tasks import completion_gaps

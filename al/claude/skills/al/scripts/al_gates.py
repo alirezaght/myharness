@@ -23,11 +23,13 @@ from al_schema import refuse
 
 class CandidateChanged(al_checkouts.MaterializationError):pass
 
+@S.decision
 def manifest(st):
     refs=st.get('gate_manifests',[])
     if not refs: return None
     m=A.read_json(refs[-1]); D.validate_manifest(st,m); return m
 
+@S.decision
 def gate_gaps(st,stage):
     m=manifest(st)
     if not m: return ['repository gate manifest missing']
@@ -58,6 +60,7 @@ def gate_gaps(st,stage):
     return out
 
 def base_gaps(st): return gate_gaps(st,'base')
+@S.decision
 def candidate_gaps(st):
     m=manifest(st)
     if m:

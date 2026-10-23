@@ -152,6 +152,7 @@ def _snapshot(st):
     return snapshot
 
 
+@S.decision
 def classify_changes(st, current_capture=None):
     if 'task_attribution' not in st:
         return {'attributed': False, 'task_owned': [], 'unchanged_preexisting': [],

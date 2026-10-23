@@ -136,6 +136,23 @@ def plain_metadata(root):
     return metadata
 
 
+_LISTINGS = {}
+
+
+def long_tree(root, revision):
+    """Raw `ls-tree -rlz --full-tree` bytes, reused for an unchanged exact object id."""
+    key = _tree_key(root, revision)
+    if key is None or key not in _LISTINGS:
+        value = subprocess.run(['git', 'ls-tree', '-rlz', '--full-tree', revision], cwd=root,
+                               capture_output=True, check=True).stdout
+        if key is None:
+            return value
+        if len(_LISTINGS) >= 8:
+            _LISTINGS.clear()
+        _LISTINGS[key] = value
+    return _LISTINGS[key]
+
+
 def tree_entries(root, revision):
     key = _tree_key(root, revision)
     if key is None or key not in _TREES:

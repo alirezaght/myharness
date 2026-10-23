@@ -166,6 +166,7 @@ def validate(st, observation, obligations=None):
     return observation
 
 
+@S.decision
 def validate_observation(st, observation, obligations=None):
     try:
         validate(st, observation, obligations)
@@ -174,6 +175,7 @@ def validate_observation(st, observation, obligations=None):
     return []
 
 
+@S.decision
 def behavior_gaps(st):
     if "proof_admission" not in st:
         return []

@@ -3,6 +3,7 @@ from pathlib import Path
 import al_artifacts as A
 import al_ledger as L
 import al_store
+import al_scope as S
 from al_schema import refuse
 
 def locations(items):
@@ -45,6 +46,7 @@ def obligations(prior,current,fresh=False):
     return consolidate(prior+incoming)
 
 
+@S.decision
 def validate(st,report,prior=()):
     package=A.read_json(st['task_package'])
     if 'proof_admission' in st:

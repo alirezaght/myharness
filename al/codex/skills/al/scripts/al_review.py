@@ -38,6 +38,7 @@ def review_gaps(st):
     except (OSError,ValueError,KeyError,SystemExit) as exc: return ['review artifact invalid: '+str(exc)]
     return []
 
+@S.decision
 def approval_gaps(st):
     return S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)+review_gaps(st)
 

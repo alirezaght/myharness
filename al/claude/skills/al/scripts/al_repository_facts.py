@@ -75,9 +75,9 @@ class Snapshot:
     def read_base(self):
         if not self.base_oid:return
         try:
-            result=subprocess.run(['git','ls-tree','-rlz','--full-tree',self.base_oid],cwd=self.root,capture_output=True,check=True)
+            from al_gitlinks import long_tree
             rows=[];total=0
-            for row in filter(None,result.stdout.split(b'\0')):
+            for row in filter(None,long_tree(self.root,self.base_oid).split(b'\0')):
                 meta,path=row.split(b'\t',1);mode,kind,oid,size=meta.split();p=path.decode()
                 if kind==b'blob' and self.relevant(p) and not any(part in EXCLUDED for part in Path(p).parts) and not any(within(o,p) for o in self.opaque):
                     total+=int(size)

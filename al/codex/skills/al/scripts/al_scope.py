@@ -69,6 +69,10 @@ def safe_path(raw):
     return p
 
 def source_rows(root=None, base='HEAD'):
+    return _observed('source-rows', base, lambda: _source_rows(root, base), root)
+
+
+def _source_rows(root=None, base='HEAD'):
     root=root or al_store.REPO_ROOT
     try:
         index=G.index_entries(root);head=G.tree_entries(root,'HEAD')
@@ -136,7 +140,61 @@ def _blob_hashes(root, oids):
     return result
 
 
+def _observed(namespace, key, compute, root=None):
+    """Within a decision/inspection window, reuse one read of the worktree; elsewhere read fresh."""
+    from al_analysis_cache import CURRENT
+    context = CURRENT.get()
+    if context is None or (root is not None and Path(root) != al_store.REPO_ROOT):
+        return compute()
+    return context.get_or_compute(namespace, [str(al_store.REPO_ROOT), key], compute)
+
+
+def _decision_base(st):
+    return st['identity']['merge_base'] if st.get('review_mode') == 'whole-mr' else st['baseline_head']
+
+
+def decision(fn):
+    """Evaluate a read-only decision against one worktree observation.
+
+    The worktree is read once before and once after; inside, repeated reads reuse the first
+    observation. If the worktree moved (or cannot be observed) the decision is evaluated again
+    exactly as without memoization, so a stable decision is identical to a fresh one."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(st, *args, **kwargs):
+        from al_analysis_cache import CURRENT, ObservationContext
+        if CURRENT.get() is not None:
+            return fn(st, *args, **kwargs)
+        base = _decision_base(st)
+        try:
+            before = _records(base, al_store.REPO_ROOT)
+        except SystemExit:
+            return fn(st, *args, **kwargs)
+        failure = None
+        with ObservationContext({'decision': [str(al_store.REPO_ROOT), base, json.dumps(before, sort_keys=True)]}) as context:
+            context.get_or_compute('records', [str(al_store.REPO_ROOT), base], lambda: before)
+            try:
+                result = fn(st, *args, **kwargs)
+            except (Exception, SystemExit) as exc:
+                failure = exc
+        try:
+            stable = _records(base, al_store.REPO_ROOT) == before
+        except SystemExit:
+            stable = False
+        if not stable:
+            return fn(st, *args, **kwargs)
+        if failure is not None:
+            raise failure
+        return result
+    return wrapper
+
+
 def records(base,root=None):
+    return _observed('records', base, lambda: _records(base, root), root)
+
+
+def _records(base,root=None):
     root = root or al_store.REPO_ROOT
     try:
         index = G.index_entries(root)
@@ -210,7 +268,12 @@ def changed_paths(base, root=None):
 
 @measured('candidate-hashing')
 def capture_candidate(st):
-    base = st['identity']['merge_base'] if st.get('review_mode') == 'whole-mr' else st['baseline_head']
+    key = [_decision_base(st), st['identity']['target_oid'], st.get('preexisting_changes', [])]
+    return _observed('candidate', key, lambda: _capture_candidate(st))
+
+
+def _capture_candidate(st):
+    base = _decision_base(st)
     rows = records(base)
     content = {'base':base,'target':st['identity']['target_oid'],'files':rows}
     sha = hashlib.sha256(json.dumps(content,sort_keys=True).encode()).hexdigest()
