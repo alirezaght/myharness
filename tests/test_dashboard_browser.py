@@ -35,7 +35,10 @@ def _chrome() -> str | None:
 
 
 CHROME = _chrome()
-pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+]
 VIEWPORTS = ((1280, 800), (390, 844))
 
 

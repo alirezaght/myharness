@@ -21,7 +21,10 @@ from tests.test_dashboard import serve
 from tests.test_dashboard_browser import CHROME
 from tests.test_dashboard_redesign_browser import _driven_dom
 
-pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+]
 
 DRIVER = r"""
 const RESULT = {};

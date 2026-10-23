@@ -16,7 +16,10 @@ from tests.test_dashboard import api, serve
 from tests.test_dashboard_browser import CHROME, _dom, _headless
 from tests.test_dashboard_diagrams import _sample, _state
 
-pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+]
 SELECTED = "component:web-dashboard"
 
 

@@ -26,7 +26,10 @@ from tests.test_dashboard_browser import CHROME, _headless
 from tests.test_dashboard_comments_browser import _result
 from tests.test_dashboard_diagrams import _sample, _with
 
-pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+]
 GONE = "connection:local-server->sqlite-state"
 RELABELLED = "connection:local-server->browser"
 NEW = "component:exporter"

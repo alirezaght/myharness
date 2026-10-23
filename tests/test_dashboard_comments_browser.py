@@ -26,7 +26,10 @@ from tests.test_dashboard_browser import CHROME, _dom, _headless
 from tests.test_dashboard_diagrams import _sample, _state, _with
 from tests.test_dashboard_diagrams_browser import _items
 
-pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed")]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+]
 RESULT = re.compile(r'<pre id="driver-result">(.*?)</pre>', re.DOTALL)
 TEXT = "<b>wrong</b> arrow"
 
