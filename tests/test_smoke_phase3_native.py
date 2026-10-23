@@ -119,6 +119,7 @@ def test_verifiable_project_commits_one_real_ci_check(tmp_path):
     assert (repo / ".github/workflows/ci.yml").read_text() == smoke.VERIFIABLE_CI
     assert 'requires-python = ">=3.11"' in (repo / "pyproject.toml").read_text()
     assert (repo / "uv.lock").is_file()
+    assert 'build-backend = "uv_build"' in (repo / "pyproject.toml").read_text()
     status = subprocess.run(
         ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True
     )

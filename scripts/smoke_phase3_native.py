@@ -62,16 +62,29 @@ jobs:
 """
 
 
+INSTALLABLE = """
+[build-system]
+requires = ["uv_build>=0.8,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "demo"
+module-root = ""
+"""
+
+
 def _make_verifiable(repo: Path) -> None:
     """Give the disposable project one CI check AL can execute locally, so its gates resolve."""
     pyproject = repo / "pyproject.toml"
     text = pyproject.read_text()
+    if "build-system" not in text:
+        # Installed by `uv sync`, so tests import `demo` in AL's isolated pytest run too.
+        text += INSTALLABLE
     if "requires-python" not in text:
-        pyproject.write_text(
-            text.replace(
-                'version = "0.1.0"\n', 'version = "0.1.0"\nrequires-python = ">=3.11"\n', 1
-            )
+        text = text.replace(
+            'version = "0.1.0"\n', 'version = "0.1.0"\nrequires-python = ">=3.11"\n', 1
         )
+    pyproject.write_text(text)
     (repo / ".github/workflows/ci.yml").write_text(VERIFIABLE_CI)
     subprocess.run(["uv", "lock", "-q"], cwd=repo, check=True, capture_output=True)
     for argv in (

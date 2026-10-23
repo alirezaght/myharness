@@ -85,6 +85,26 @@ def _check_repro(st, a):
     return a.repro
 
 
+def _reopen_tasks(st, files):
+    """A defect found after a task completed reopens that task (new revision), so it can be admitted again."""
+    tasks = st.get("integration", {}).get("tasks", {})
+    if not tasks:
+        return []
+    import al_events as E
+    from al_execution_tasks import _overlap
+    reopened = []
+    for task_id, row in sorted(tasks.items()):
+        if row["status"] != "Completed" or (files and not any(_overlap(f, p) for f in files for p in row["files"])):
+            continue
+        row.update(status="Waiting", revision=row.get("revision", 0) + 1,
+                   progress={"completed": 0, "total": 1, "unit": "task"})
+        row.pop("admission", None)
+        row.pop("completed_at", None)
+        E.queue(st, "task.updated", row)
+        reopened.append(task_id)
+    return reopened
+
+
 def cmd_rework(a, sid):
     st = load(sid)
     from al_transitions import require_transition
@@ -112,12 +132,15 @@ def cmd_rework(a, sid):
         "label": a.label, "phase": st.get("phase"), "at": time.time(),
     })
     st["status"] = "RUNNING"
+    reopened = _reopen_tasks(st, rw["history"][-1]["files"])
     set_phase(st, "REWORK", ["al-architect", "al-engineer"] if reasons else ["al-engineer"])
     save(sid, st)
     head = f"AL · Rework {rw['used']}/{rw['max']} · {a.findings} defect(s) from {a.source}"
     if a.label:
         head += f" · {a.label}"
     print(head)
+    if reopened:
+        print("AL · reopened execution task(s) for rework: " + ", ".join(reopened))
     if reasons:
         print("→ AL-Architect first (MODE: RESOLVE_CONFLICT) — " + "; ".join(reasons))
         print("→ then AL-Engineer with the resolution · Builder resumes only the affected support work")
