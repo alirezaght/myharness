@@ -83,7 +83,15 @@ def full(*, tier='full', workers=8, cache_mode='cold', report_path=None, changed
     plan=build_plan(collections,declarations,tier=tier,changed_paths=list(changed_paths),binding=binding)
     write_json(directory/'plan.json',plan)
     if plan_only:return {'plan':plan,'plan_path':str(directory/'plan.json'),'report_path':str(report_path)}
-    result=run(plan,workers=workers,artifact_root=directory/'execution',cache_mode=cache_mode,profile=profile)
+    # Earlier node durations only order shards (longest first); they never select or skip work.
+    history=artifact_root/'durations.json'
+    try:
+        durations=read_json(history)
+        if not isinstance(durations,dict) or not all(isinstance(k,str) and type(v) in (int,float) and 0<=v<86400 for k,v in durations.items()):durations={}
+    except (OSError,ValueError):durations={}
+    result=run(plan,workers=workers,artifact_root=directory/'execution',cache_mode=cache_mode,durations=durations,profile=profile)
+    observed={node:seconds for shard in result.get('shards',[]) for node,seconds in shard.get('durations',{}).items() if type(seconds) in (int,float)}
+    if observed:write_json(history,{**durations,**observed})
     result.update(plan_path=str(directory/'plan.json'),plan_sha256=hashlib.sha256((directory/'plan.json').read_bytes()).hexdigest(),
                   collection_seconds=sum(c['collection_seconds'] for c in collections.values()),
                   selected_obligations=len(plan['execution_assignments']),collected_obligations=len(plan['collected_obligations']),
