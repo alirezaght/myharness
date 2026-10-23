@@ -91,7 +91,8 @@ def test_runner_restores_exact_parent_environment_after_setup_error(tmp_path, mo
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setattr(smoke, "make_sample_repo", lambda path: project)
-    monkeypatch.setattr(smoke, "_install_candidate", lambda repo, host: None)
+    monkeypatch.setattr(smoke, "_install_candidate", lambda repo, host, launcher: None)
+    monkeypatch.setattr(smoke, "_candidate_launcher", lambda root: root / "alctl")
 
     def fail_connection(database):
         raise RuntimeError("fixture setup failure")

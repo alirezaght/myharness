@@ -406,6 +406,11 @@ def _result(dom: str) -> dict:
 def test_execution_panel_keeps_decision_draft_and_fits_desktop_and_mobile(
     controller, sample_repo, monkeypatch, db_path, tmp_path
 ):
+    # Screenshots go to the supervised directory when one is set, else to this test.
+    monkeypatch.setenv(
+        "HARNESS_DASHBOARD_SCREENSHOT_DIR",
+        os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR") or str(tmp_path / "screenshots"),
+    )
     task_id, execution_id = approved_execution(controller, sample_repo, monkeypatch)
     started(controller.conn, execution_id)
     tasks = [

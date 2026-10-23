@@ -8,7 +8,7 @@ This roadmap is kept **separate from the design spec** ([SPEC.md](SPEC.md)). Han
 
 [Current and future AL, Harness and interaction diagrams](https://chatgpt.com/space/page_11adcd18b4ac8191904172a708044954) are available in the private roadmap page.
 
-Phases 1 and 2 were implemented before this work. Phase 3 is in progress: the source includes AL execution and monitoring, with correctness and execution-profile checks under verification. Workflow efficiency, active-runtime version pinning and resumption improvements remain pending. The complete AL cold/warm verification target of at most 360 seconds has not been proven, and source changes are ahead of the installed global runtime.
+Phases 1 and 2 were implemented before this work. Phase 3 is implemented and verified: AL execution and monitoring, the mandatory managed launcher with active-runtime pinning, artifact consumer routing, declared review-hook state and baseline exceptions are complete, and complete AL verification passes every collected test (see docs/handoffs/2026-10-23-phase3-status.md). The 360-second complete-suite target remains unmet by decision: the suite is work-bound at about 14 minutes with every end-to-end proof retained.
 
 A coordinated single installation entrypoint for AL and Harness is planned and has not shipped. Final deployment must first receive terminal source approval, then install and verify the global tools, then remove only attributed repository-local AL resources while preserving the canonical source and runtime history.
 
