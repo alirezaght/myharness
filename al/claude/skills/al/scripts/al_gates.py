@@ -17,6 +17,8 @@ import al_gate_inventory as V
 import al_gitlinks as G
 import al_ledger as L
 import al_scope as S
+import al_review_state as ReviewState
+import al_baseline_exceptions as Exceptions
 import al_store
 import al_sources as Sources
 from al_schema import refuse
@@ -48,6 +50,7 @@ def gate_gaps(st,stage):
         if valid and 'execution_association' in e:
             import al_execution_receipts as Receipts
             valid=not Receipts.validate_association(st,e)
+        if valid:valid=not ReviewState.gaps(st,g,e,fp)
         if valid and stage=='candidate':
             valid=(e.get('kind')=='check' and e.get('gate_stage')=='candidate' and e.get('gate_manifest')==r['manifest']
                    and e['argv']==g['argv'] and e['cwd']==g['cwd'] and e['scope']==g['scope']
@@ -56,6 +59,8 @@ def gate_gaps(st,stage):
         if not valid:
             decision=st.get('gate_decisions',{}).get(g['id'])
             if stage=='base' and environment_current and e and e['status']=='FAIL' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and decision and decision['action']=='fix' and decision.get('manifest')==st['gate_manifests'][-1]['sha256'] and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id']: continue
+            # An authorized exception accepts only this exact unchanged-base failure; the evidence stays FAIL.
+            if stage=='base' and e and e['status']=='FAIL' and Exceptions.current(st,m,g):continue
             out.append(stage+' gate '+g['id']+' requires passing evidence')
     return out
 
@@ -93,6 +98,9 @@ def cmd_gates(a,sid):
         m=manifest(st)
         if not m or a.id not in [g['id'] for g in m['gates']]: refuse('unknown gate ID')
         if not a.reason or not a.source: refuse('decision requires explicit user source and reason')
+        if a.decision=='exception':
+            row=Exceptions.record(st,sid,m,next(g for g in m['gates'] if g['id']==a.id),a.source,a.reason)
+            al_store.save(sid,st);print(json.dumps({'baseline_exception':row,'evidence_status':'FAIL'},indent=2));return
         runs=[r for r in st.get('gate_runs',[]) if r['gate']==a.id and r['stage']=='base' and r['manifest']==st['gate_manifests'][-1]['sha256']]
         failed=L.find(st,runs[-1]['evidence']) if runs else None
         gate=next(g for g in m['gates'] if g['id']==a.id)
@@ -104,7 +112,8 @@ def cmd_gates(a,sid):
         al_store.save(sid,st); return
     if a.action=='status':
         from al_recovery_guidance import descriptors
-        print(json.dumps({'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st)},indent=2)); return
+        print(json.dumps({'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),
+                          'baseline_exceptions':Exceptions.view(st,manifest(st))},indent=2)); return
     refuse('gate run must use unlocked dispatcher')
 
 def cmd_run(a,sid):
@@ -167,7 +176,8 @@ def cmd_run(a,sid):
                     fp=checkout['capture']['fingerprint'] if a.stage=='candidate' else m['base_oid']
                     key=R.execution_key(st,m,ref,g,a.stage,checkout['capture'],env_fingerprint,a.timeout)
                     entry['execution_key']=key
-                    if 'task_attribution' in current and g['execution_kind']=='local':
+                    # Declared review-hook state is produced fresh by each execution, never by a receipt.
+                    if 'task_attribution' in current and g['execution_kind']=='local' and not g.get('review_state'):
                         import al_execution_receipts as Receipts
                         import al_verification_prepare as Preparation
                         try:
@@ -189,6 +199,7 @@ def cmd_run(a,sid):
                         status,code,provenance=execute_remote(st,g,a.stage,log,a.timeout,sid,entry,owner)
                         entry['remote_provenance']=provenance
                     else:
+                        state_top=ReviewState.prepare(root,g['review_state']) if g.get('review_state') else None
                         try:
                             with log.open('wb') as out:
                                 out.write(('argv: '+json.dumps(g['argv'])+'\ncwd: '+str(cwd)+'\nexecution_sha256: '+R.key_digest(key)+'\ninvocation: '+invocation+'\n').encode()); out.flush()
@@ -200,6 +211,9 @@ def cmd_run(a,sid):
                                     status='PASS' if code==0 else ('INFRA' if code in {126,127} else 'FAIL')
                                     stop(proc)  # Reap surviving group members before inspecting reusable state.
                         except OSError as exc: log.write_text(str(exc)); status='INFRA'
+                        if state_top is not None:
+                            captured=ReviewState.capture(root,g['review_state']);ReviewState.remove(state_top)
+                            entry['review_state']=ReviewState.seal(st,sid,g,a.stage,fp,invocation,captured,entry,ref)
                     dirty=R.drift(before_state,R.scratch_state(root,before_state,post_execution=True),root)
                     if dirty=='FAIL' and status=='PASS':
                         status='FAIL';log.write_bytes(log.read_bytes()+b'\nGenerated/checkout metadata drift detected\n')
@@ -276,5 +290,5 @@ def register(sub):
     p=children.add_parser('discover'); p.add_argument('--paths-file',required=True); p.add_argument('--base'); p.set_defaults(fn=cmd_gates)
     p=children.add_parser('plan'); p.add_argument('--file',required=True); p.set_defaults(fn=cmd_gates)
     p=children.add_parser('run'); p.add_argument('--stage',choices=['base','candidate'],required=True); p.add_argument('--id'); p.add_argument('--resume',action='store_true'); p.add_argument('--retry-failed',action='store_true'); p.add_argument('--timeout',type=float,default=300); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_run)
-    p=children.add_parser('decision'); p.add_argument('--id',required=True); p.add_argument('--action',dest='decision',choices=['fix','stop','defer'],required=True); p.add_argument('--source',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_gates)
+    p=children.add_parser('decision'); p.add_argument('--id',required=True); p.add_argument('--action',dest='decision',choices=['fix','stop','defer','exception'],required=True); p.add_argument('--source',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_gates)
     children.add_parser('status').set_defaults(fn=cmd_gates)

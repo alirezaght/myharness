@@ -187,18 +187,92 @@ def _analyze(facts,scan):
                 self.generic_visit(node)
         Visitor().visit(tree)
     affected={p for _,p in records if any(within(changed,p) or within(p,changed) for changed in scan.paths)}
+    # Import-analysis uncertainty concerns who may import a module; it is relevant only when the
+    # change touches an importable module. Otherwise it is retained as deferred, never as a blocker.
+    importable=bool(affected)
+    artifacts=artifact_consumers(scan,records,units)
+    for row in artifacts:
+        # An artifact owned by a service with no literal reference elsewhere is that service's input.
+        if not row['consumers'] and row['kind']!='generated-code' and row['owner'] not in potential:
+            uncertainties.append({'code':'uncertain-artifact-consumer','unit':None,'path':row['path'],'location':None,'target':None,
+                                  'reason':row['kind']+' has no literal consumer reference; all enumerated services require verification'})
+        affected.update(c for c in row['consumers'] if c.endswith('.py'))
     while True:
         consumers={a for a,b in edges if b in affected}
         if consumers<=affected:break
         affected|=consumers
     known={record['unit'] for (_,p),record in records.items() if p in affected and record['unit'] in potential}
+    for row in artifacts:
+        for consumer in row['consumers']:
+            owners_for_path=[u for u in units.values() if within(u['path'],consumer)]
+            if owners_for_path:
+                unit=max(owners_for_path,key=lambda u:len(u['path']))['id']
+                if unit in potential:known.add(unit)
     for u in potential:
         roots=units[u]['source_roots']
         if any((u!='.' and (within(u,p) or within(p,u))) or (u=='.' and (p in {'.','pyproject.toml','uv.lock'} or any(within(r,p) or within(p,r) for r in roots))) for p in scan.paths):known.add(u)
     # Deduplicate base/current diagnostics without source bytes or incidental order.
     uncertainties=list({(u['unit'],u['path'],u['location'],u['target'],u['reason']):u for u in uncertainties}.values())
+    IMPORT_CODES={'uncertain-import'}
+    deferred=[] if importable else [u for u in uncertainties if u['code'] in IMPORT_CODES]
+    uncertainties=[u for u in uncertainties if u not in deferred]
+    order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
-            'uncertainties':sorted(uncertainties,key=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])), 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets':[list(r) for r in sorted(import_targets)],'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[])}
+            'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets':[list(r) for r in sorted(import_targets)],'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[])}
+
+
+DATA_SUFFIXES=('.json','.yaml','.yml')
+GENERATED_MARKERS=(b'@generated',b'do not edit',b'code generated')
+
+
+def artifact_kind(path,data):
+    """Closed artifact classes: OpenAPI schemas, other data fixtures, generated Python code."""
+    if path.endswith('.py'):
+        header=b'\n'.join(data.splitlines()[:8]).lower()
+        return 'generated-code' if any(marker in header for marker in GENERATED_MARKERS) else None
+    if not path.endswith(DATA_SUFFIXES):return None
+    head=data[:65536]
+    if path.endswith('.json'):
+        import json
+        try:value=json.loads(data)
+        except (ValueError,UnicodeError,RecursionError):value=None
+        if isinstance(value,dict) and ('openapi' in value or 'swagger' in value):return 'openapi-schema'
+    elif any(line.startswith((b'openapi:',b'swagger:')) for line in head.splitlines()):return 'openapi-schema'
+    return 'data-fixture'
+
+
+def _referencing(scan,name,exclude):
+    token=name.encode()
+    return sorted({p for files in (scan.files,scan.base) for p,data in files.items()
+                   if p!=exclude and p.endswith(SOURCE_SUFFIXES) and token in data})
+
+
+MANIFESTS=frozenset({'package.json','package-lock.json','tsconfig.json','composer.json','pnpm-lock.yaml','pnpm-workspace.yaml'})
+
+
+def artifact_consumers(scan,records,units):
+    """Changed data artifacts and the source files that literally reference them.
+
+    A literal path or file-name reference identifies a consumer (over-approximating on
+    shared names); generated code records the schema files that produced it."""
+    rows=[]
+    changed=sorted({p for files in (scan.files,scan.base) for p in files if any(within(c,p) for c in scan.paths)})
+    for path in changed:
+        # Configuration, manifests and rule sources keep their existing unit/rule handling.
+        if path in scan.rules or PurePosixPath(path).name in MANIFESTS or any(part.startswith('.') for part in PurePosixPath(path).parts):continue
+        owners=[u for u in units.values() if within(u['path'],path)]
+        if not owners:continue
+        data=scan.files.get(path,scan.base.get(path,b''))
+        kind=artifact_kind(path,data)
+        if kind is None:continue
+        if kind=='generated-code':
+            header=b'\n'.join(data.splitlines()[:8])
+            producers=sorted(p for p in set(scan.files)|set(scan.base) if p.endswith(DATA_SUFFIXES) and PurePosixPath(p).name.encode() in header)
+            rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':producers,'consumers':[]})
+            continue
+        rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':[],
+                     'consumers':_referencing(scan,PurePosixPath(path).name,path)})
+    return rows
 
 
 from al_runtime_resources import implementation_digest,binding_identity

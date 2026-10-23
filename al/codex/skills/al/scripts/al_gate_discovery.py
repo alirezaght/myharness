@@ -8,6 +8,7 @@ import al_discovery_inputs as I
 import al_scope as S
 import al_sources as Sources
 import al_service_coverage as Coverage
+import al_review_state as ReviewState
 from al_schema import refuse
 
 CATEGORIES=('lint-imports','loc','contracts','pre-commit','ci')
@@ -19,11 +20,13 @@ def discover(st,paths,ci_context=None):
     paths=inventory['paths'];units=inventory['units'];rules=inventory['rules']
     previous={}
     for ref in st.get('gate_manifests',[]):
-        for g in A.read_json(ref)['gates']:previous[g['id']]={'env_names':g.get('env_names',[]),'sources':g.get('sources',[])}
+        for g in A.read_json(ref)['gates']:previous[g['id']]={'env_names':g.get('env_names',[]),'sources':g.get('sources',[]),'review_state':g.get('review_state')}
     gates=[]
     def gate(id,category,argv,scope,src,unit='.',reason=None):
         gates.append({'id':id,'category':category,'applicability':'APPLICABLE' if argv else 'UNRESOLVED',
                       'env_names':previous.get(id,{}).get('env_names',[]),'sources':previous.get(id,{}).get('sources',[]),'reason':reason,'required':True,'units':[unit],'argv':argv,'cwd':'.','scope':scope,'source':src,'execution_kind':'local'})
+        # A planner-declared review-hook state location stays with its gate across rediscovery.
+        if previous.get(id,{}).get('review_state'):gates[-1]['review_state']=previous[id]['review_state']
     assessment=inventory['service_coverage']
     for binding in assessment['required_bindings']:
         chain=binding['source_chain'];src={k:chain[0][k] for k in ('path','sha256')} if chain else None
@@ -88,6 +91,10 @@ def validate_manifest(st,m,check_sources=True):
         names=g.setdefault('env_names',[])
         if not isinstance(names,list) or any(not isinstance(n,str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',n) for n in names) or len(names)!=len(set(names)):refuse('invalid gate env_names')
         if 'env' in g:refuse('gate environment dependencies use env_names')
+        if 'review_state' in g:
+            try:g['review_state']=ReviewState.validate_declaration(g['review_state'])
+            except ValueError as exc:refuse('invalid gate review_state: '+str(exc))
+            if g.get('applicability')!='APPLICABLE' or g.get('execution_kind')!='local':refuse('review_state requires an applicable local gate')
         if not isinstance(g.get('scope'),list) or not isinstance(g.get('units'),list): refuse('gate scope/units arrays required')
         for path in g['scope']:
             if path!='.': S.safe_path(path)

@@ -35,12 +35,12 @@ def test_unset_empty_and_changed_environment_invalidate_both_stages(cli,repo,tmp
     begin(cli,tmp_path,repo);monkeypatch.delenv('AL_VARIANT',raising=False)
     invoke(cli,'gates','plan','--file',str(plan(cli,repo,tmp_path,['AL_VARIANT'])))
     for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)
-    assert json.loads(cli('gates','status')[1])=={'base':[],'candidate':[],'recovery':[]}
+    assert json.loads(cli('gates','status')[1])=={'base':[],'candidate':[],'recovery':[],'baseline_exceptions':[]}
     monkeypatch.setenv('AL_VARIANT','')
-    assert all(json.loads(cli('gates','status')[1]).values())
+    assert all(json.loads(cli('gates','status')[1])[k] for k in ('base','candidate','recovery'))
     for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)
     monkeypatch.setenv('AL_VARIANT','private-test-environment-value')
-    assert all(json.loads(cli('gates','status')[1]).values())
+    assert all(json.loads(cli('gates','status')[1])[k] for k in ('base','candidate','recovery'))
     assert 'private-test-environment-value' not in cli('show')[1]
 
 

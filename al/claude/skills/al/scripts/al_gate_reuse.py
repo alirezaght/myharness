@@ -15,7 +15,8 @@ def execution_key(st, manifest, manifest_sha, gate, stage, capture, env_fingerpr
             'stage':stage, 'base':manifest['base_oid'], 'candidate':capture['fingerprint'],
             'argv':gate['argv'], 'cwd':gate['cwd'], 'execution_kind':gate['execution_kind'],
             'scope':gate['scope'], 'sources':gate.get('sources',[]),
-            'env':sorted(gate['env_names']), 'env_fingerprint':env_fingerprint, 'timeout':timeout}
+            'env':sorted(gate['env_names']), 'env_fingerprint':env_fingerprint, 'timeout':timeout,
+            **({'review_state':gate['review_state']} if gate.get('review_state') else {})}
 
 
 def key_digest(key):
