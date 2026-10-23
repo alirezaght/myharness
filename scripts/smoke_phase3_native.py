@@ -48,6 +48,44 @@ def _worker_diagnostics(handoff_root: Path) -> list[dict]:
     return rows
 
 
+VERIFIABLE_CI = """on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: |
+          uv python install
+          uv sync --locked
+          uv run pytest -q
+"""
+
+
+def _make_verifiable(repo: Path) -> None:
+    """Give the disposable project one CI check AL can execute locally, so its gates resolve."""
+    pyproject = repo / "pyproject.toml"
+    text = pyproject.read_text()
+    if "requires-python" not in text:
+        pyproject.write_text(
+            text.replace(
+                'version = "0.1.0"\n', 'version = "0.1.0"\nrequires-python = ">=3.11"\n', 1
+            )
+        )
+    (repo / ".github/workflows/ci.yml").write_text(VERIFIABLE_CI)
+    subprocess.run(["uv", "lock", "-q"], cwd=repo, check=True, capture_output=True)
+    for argv in (
+        ["add", "pyproject.toml", "uv.lock", ".github/workflows/ci.yml"],
+        ["commit", "-q", "-m", "ci: run pytest"],
+    ):
+        subprocess.run(
+            ["git", "-c", "user.name=smoke", "-c", "user.email=smoke@invalid", *argv],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+
 def _candidate_launcher(root: Path) -> Path:
     """Bootstrap the candidate managed launcher inside the disposable root (never ~/.local/bin)."""
     launcher = root / "candidate-bin" / "alctl"
@@ -218,6 +256,7 @@ def _run(host: str, timeout: int) -> tuple[int, dict]:
     with tempfile.TemporaryDirectory(prefix=f"harness-phase3-{host}-") as temporary:
         root = Path(temporary).resolve()
         repo = make_sample_repo(root / "project")
+        _make_verifiable(repo)
         launcher = _candidate_launcher(root)
         _install_candidate(repo, host, launcher)
         database = root / "harness.db"
@@ -338,8 +377,9 @@ def main() -> int:
     parser.add_argument("--host", choices=("claude", "codex"), required=True)
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
-    if not 10 <= args.timeout <= 180:
-        parser.error("--timeout must be between 10 and 180 seconds")
+    # A complete native AL lifecycle with real agents takes minutes, not seconds.
+    if not 10 <= args.timeout <= 1800:
+        parser.error("--timeout must be between 10 and 1800 seconds")
     status, _ = _run(args.host, args.timeout)
     return status
 

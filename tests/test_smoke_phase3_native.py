@@ -1,11 +1,13 @@
 """Native smoke diagnostics remain useful when cleanup is denied."""
 
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
 import scripts.smoke_phase3_native as smoke
+from tests.sample_repo import make_sample_repo
 
 
 def test_owned_process_cleanup_permission_denial_is_reportable(monkeypatch):
@@ -91,6 +93,7 @@ def test_runner_restores_exact_parent_environment_after_setup_error(tmp_path, mo
     project = tmp_path / "project"
     project.mkdir()
     monkeypatch.setattr(smoke, "make_sample_repo", lambda path: project)
+    monkeypatch.setattr(smoke, "_make_verifiable", lambda repo: None)
     monkeypatch.setattr(smoke, "_install_candidate", lambda repo, host, launcher: None)
     monkeypatch.setattr(smoke, "_candidate_launcher", lambda root: root / "alctl")
 
@@ -106,3 +109,17 @@ def test_runner_restores_exact_parent_environment_after_setup_error(tmp_path, mo
 
     assert os.environ == before
     assert Path.cwd() == cwd
+
+
+def test_verifiable_project_commits_one_real_ci_check(tmp_path):
+    repo = make_sample_repo(tmp_path / "project")
+
+    smoke._make_verifiable(repo)
+
+    assert (repo / ".github/workflows/ci.yml").read_text() == smoke.VERIFIABLE_CI
+    assert 'requires-python = ">=3.11"' in (repo / "pyproject.toml").read_text()
+    assert (repo / "uv.lock").is_file()
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True
+    )
+    assert status.stdout == ""

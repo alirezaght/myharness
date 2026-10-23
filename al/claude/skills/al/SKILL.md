@@ -355,6 +355,9 @@ Register writer lifetimes with `writer start --id <id> --role al-engineer|al-bui
 --files <paths> [--commands-file <json>]`; finish with `writer finish --id <id>
 --outcome success|failed|abandoned`. Failed or abandoned writers remain
 unresolved until `writer reconcile --id <id> --reason <text> --artifact <path>`.
+Start the writer lifetime before invoking the writing agent and finish it only
+after that agent returns: an edit made outside an open writer lifetime cannot be
+attributed and blocks the task.
 Checks are reserved before execution. A failed/interrupted operation is never
 recorded as PASS. No writer or check may be active or unresolved at review or
 approval barriers.
