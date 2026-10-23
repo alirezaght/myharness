@@ -28,7 +28,7 @@ checkpoints stopping_checkpoint comparison_artifacts gate_recovery gate_recovery
 recovery_replans resumes retry_history native_conversation_id integration gate_recovery_supersessions task_attribution verification_preparations
 runtime_origin proof_admission planning_authorship planning_history behavior_observations editorial_history
 conflict_resolution conflict_resolution_history notes_triage publication_authorizations publication_records
-baseline_exceptions'''.split())
+baseline_exceptions gate_retentions'''.split())
 
 
 def decode(raw):
@@ -126,7 +126,7 @@ ENTRY_KEYS = set('''id area kind tier argv cwd scope sources env preflight needs
 started_at ended_at pid owner_pid log log_sha256 fp_before fp_after phase correction_iteration run
 execution_key gate_manifest gate_stage interrupted invocation reconciliation reservation rejected
 fingerprint_error process owner_identity cleanup aggregate_report complete_verification gate_reservation
-execution_projection_digest execution_completion execution_receipt execution_association review_state'''.split())
+execution_projection_digest execution_completion execution_receipt execution_association review_state audit_receipt'''.split())
 WRITER_KEYS = {'id', 'role', 'files', 'commands', 'phase', 'started_at', 'ended_at', 'state',
                'outcome', 'reconciliation', 'task', 'agent', 'contribution_before'}
 

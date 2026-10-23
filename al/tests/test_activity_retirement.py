@@ -333,3 +333,45 @@ def test_only_explicit_hash_bound_supporting_source_may_be_external(tmp_path, mo
         assert record['historical_status'] == 'APPROVED' and not record['operation_facts']['writers']
         source.write_text('{"changed after initial observation":true}')
         assert not inventory_activity(case['roots'], invoking_run=case['invoking'])['stable']
+
+
+def dated_request(case, tmp_path, statement='I just want al removed from all other repos; they will restart al'):
+    path = tmp_path / 'dated-statement.json'
+    path.write_bytes(canonical({'schema_version': 1, 'kind': A.DATED_KIND, 'source': 'exact user message in the installing conversation',
+                                'recorded_at': '2026-10-23T18:00:00+00:00', 'question': 'Acknowledge the unfinished runs?',
+                                'statement': statement, 'scope': A.DATED_SCOPE, 'limits': ['installation-time inactivity only']}))
+    return dict(case['request'], source_artifact={'path': str(path), 'sha256': digest(path.read_bytes())}, history=None)
+
+
+def test_dated_user_statement_acknowledges_every_other_session_exactly(tmp_path, monkeypatch):
+    case = scenario(tmp_path, monkeypatch)
+    request = dated_request(case, tmp_path)
+    references = A.plan_acknowledgements(case['inventory'], request, excluded_run=case['invoking'])
+    acknowledgement = A.read_reference(references['artifacts'][0])
+    assert acknowledgement['scope'] == A.DATED_SCOPE and len(acknowledgement['covered_records']) == 1
+    assert acknowledgement['covered_records'][0]['identity']['session_id'] == 'historical'
+    plan = {'source': request['source_binding'],
+            'activity': {'inventory': A.publish_once(tmp_path / 'inventory.json', case['inventory']),
+                         'reviewed_history': references['reviewed_history'], 'acknowledgements': references['artifacts'],
+                         'deployment_intent_digest': request['deployment_intent_digest']}}
+    with quiescence_context(plan) as check:
+        result = check()['assessment']
+        assert result['eligible'] and {r['assessment'] for r in result['records']} == {'ordinary-terminal', 'acknowledged-inactive-history'}
+    # The statement file is bound by exact bytes: editing it refuses.
+    Path(request['source_artifact']['path']).write_text('{}')
+    with pytest.raises(ValueError, match='dated user statement changed'):
+        with quiescence_context(plan) as check:check()
+
+
+def test_dated_statement_never_covers_a_changed_inventory(tmp_path, monkeypatch):
+    case = scenario(tmp_path, monkeypatch)
+    request = dated_request(case, tmp_path)
+    references = A.plan_acknowledgements(case['inventory'], request, excluded_run=case['invoking'])
+    write_state(Path(case['roots'][1]['runtime_root']), legacy(session='later-run'))
+    fresh = inventory_activity(case['roots'], invoking_run=case['invoking'])
+    plan = {'source': request['source_binding'],
+            'activity': {'inventory': A.publish_once(tmp_path / 'fresh-inventory.json', fresh),
+                         'reviewed_history': references['reviewed_history'], 'acknowledgements': references['artifacts'],
+                         'deployment_intent_digest': request['deployment_intent_digest']}}
+    with pytest.raises(ValueError):
+        with quiescence_context(plan) as check:check()

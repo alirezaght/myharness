@@ -13,6 +13,25 @@ FACTS = (
     ('other-repositories', 'All other AL sessions are inactive or abandoned'),
     ('older-myharness-sessions', 'All older myharness sessions are inactive or abandoned'),
 )
+# A later, dated user statement covering every other session in the exact current inventory.
+DATED_SCOPE = 'all-other-sessions'
+DATED_KIND = 'user-installation-restart-statement'
+DATED_FIELDS = {'schema_version', 'kind', 'source', 'recorded_at', 'question', 'statement', 'scope', 'limits'}
+
+
+def _dated_statement(source):
+    """The exact dated statement file the acknowledgement cites; any change refuses."""
+    if not isinstance(source, dict) or set(source) != {'path', 'sha256'} or not SHA.fullmatch(str(source.get('sha256', ''))):
+        raise ValueError('invalid dated user statement reference')
+    raw = R.safe_absolute(source['path']).read_bytes()
+    if digest(raw) != source['sha256']:raise ValueError('dated user statement changed')
+    value = decode(raw)
+    if (not isinstance(value, dict) or set(value) != DATED_FIELDS or value['schema_version'] != 1 or value['kind'] != DATED_KIND
+            or value['scope'] != DATED_SCOPE or any(not isinstance(value[k], str) or not value[k].strip()
+                                                     for k in ('source', 'recorded_at', 'question', 'statement'))
+            or not isinstance(value['limits'], list)):
+        raise ValueError('unsupported dated user statement')
+    return value
 
 
 def seal(value):
@@ -80,6 +99,8 @@ def plan_acknowledgements(inventory, statements, *, excluded_run):
         raise ValueError('myharness acknowledgement identity mismatch')
     if not SHA.fullmatch(statements['deployment_intent_digest']):raise ValueError('missing deployment intent')
     source = statements['source_artifact']
+    if isinstance(source, dict) and source.get('sha256') != FACTS_SOURCE_SHA:
+        return _plan_dated(inventory, statements, excluded_run)
     if set(source) != {'path', 'sha256'} or source['sha256'] != FACTS_SOURCE_SHA:raise ValueError('unsupported original factual artifact')
     path = R.safe_absolute(source['path']);raw = path.read_bytes()
     if digest(raw) != source['sha256']:raise ValueError('original factual acknowledgements changed')
@@ -127,6 +148,39 @@ def plan_acknowledgements(inventory, statements, *, excluded_run):
     return {'schema_version': 1, 'kind': 'workspace-acknowledgement-references', 'inventory_digest': inventory['digest'], 'reviewed_history': history, 'artifacts': result}
 
 
+def _dated_records(inventory):
+    return [_covered(root, record) for root, record in _records(inventory)
+            if record['classification'] not in {'unknown', 'nonstate-artifact'} and record['identity'] != inventory['invoking_run']]
+
+
+def _plan_dated(inventory, statements, excluded_run):
+    source = statements['source_artifact']
+    value = _dated_statement(source)
+    directory = R.safe_absolute(statements['directory'])
+    for root in inventory['roots']:
+        repo = Path(root['repository']['root'])
+        if directory == repo or repo in directory.parents:raise ValueError('acknowledgements must be outside repositories')
+    for root, record in _records(inventory):
+        if record['classification'] == 'unknown' or record['errors']:raise ValueError('unknown activity cannot be acknowledged')
+    from .activity_history import bind_reviewed_history
+    history = bind_reviewed_history(inventory, {'kind': 'dated-user-statement', 'statement': source},
+                                    directory=directory, publish=publish_once)
+    body = {'schema_version': 1, 'kind': 'installation-inactivity-acknowledgement',
+            'statement': {'source_artifact': source, 'item_index': 0, 'question': value['question'], 'answer': value['statement'],
+                          'conversation_provenance': {'source': value['source'], 'recorded_at': value['recorded_at']}},
+            'scope': DATED_SCOPE, 'reviewed_history': history, 'myharness_identity': statements['myharness_identity'],
+            'excluded_run': excluded_run, 'source_binding': statements['source_binding'],
+            'deployment_intent_digest': statements['deployment_intent_digest'], 'inventory_digest': inventory['digest'],
+            'covered_records': _dated_records(inventory), 'meaning': 'installation-time inactivity only',
+            'does_not_authorize': ['approval', 'completion', 'evidence-repair', 'resume']}
+    acknowledgement = seal(body)
+    key = digest(canonical({'statement': source, 'scope': DATED_SCOPE, 'source_binding': statements['source_binding'],
+                            'deployment_intent_digest': statements['deployment_intent_digest']}))
+    result = [publish_once(directory / (key + '.json'), acknowledgement)]
+    return {'schema_version': 1, 'kind': 'workspace-acknowledgement-references', 'inventory_digest': inventory['digest'],
+            'reviewed_history': history, 'artifacts': result}
+
+
 def require_workspace_quiescent(plan, acknowledgements, *, observation):
     activity = plan['activity']
     if not {'inventory', 'reviewed_history', 'acknowledgements', 'deployment_intent_digest'} <= set(activity) or acknowledgements != activity['acknowledgements']:
@@ -156,7 +210,27 @@ def require_workspace_quiescent(plan, acknowledgements, *, observation):
             raise ValueError('acknowledgement deployment binding mismatch')
         scopes = [scope for scope, _ in FACTS]
         scope = acknowledgement.get('scope')
-        if scope not in scopes or acknowledgement.get('myharness_identity') != inventory['invoking_run']['repository']:
+        if acknowledgement.get('myharness_identity') != inventory['invoking_run']['repository']:
+            raise ValueError('foreign acknowledgement factual scope')
+        if scope == DATED_SCOPE:
+            statement = acknowledgement.get('statement', {})
+            value = _dated_statement(statement.get('source_artifact'))
+            if (statement.get('item_index') != 0 or statement.get('question') != value['question']
+                    or statement.get('answer') != value['statement']):
+                raise ValueError('unsupported acknowledgement factual provenance')
+            if acknowledgement['covered_records'] != _dated_records(inventory):
+                raise ValueError('acknowledgement widens or omits exact factual scope')
+            if (acknowledgement.get('meaning') != 'installation-time inactivity only'
+                    or acknowledgement.get('does_not_authorize') != ['approval', 'completion', 'evidence-repair', 'resume']):
+                raise ValueError('acknowledgement authority changed')
+            if acknowledgement['reviewed_history'] != activity['reviewed_history']:
+                raise ValueError('acknowledgement historical coverage anchor changed')
+            for record in acknowledgement['covered_records']:
+                key = canonical(record['identity'])
+                if key in allowed:raise ValueError('overlapping historical acknowledgements')
+                allowed[key] = (acknowledgement, record)
+            continue
+        if scope not in scopes:
             raise ValueError('foreign acknowledgement factual scope')
         index = scopes.index(scope)
         statement = acknowledgement.get('statement', {})

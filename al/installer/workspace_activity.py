@@ -120,9 +120,16 @@ def plan_activity(
             "reviewed_history",
             "acknowledgements",
         }:
+            # Publish what an acknowledgement must bind, so it can be prepared for this exact plan.
+            source_reference = publish_once(directory / ("source-" + source["digest"] + ".json"), source)
             raise ValueError(
                 "workspace requires exact historical acknowledgements for inventory: "
                 + reference["path"]
+                + " (deployment intent "
+                + deployment_intent_digest
+                + "; source "
+                + source_reference["path"]
+                + ")"
             )
         value["historical"] = historical
     return seal(value)

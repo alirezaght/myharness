@@ -20,8 +20,31 @@ def _read(kind, reference):
     return decode(raw)
 
 
+def current_history(inventory, statement):
+    """The exact current inventory, anchored to a dated user statement instead of a past preparation."""
+    invoking = inventory['invoking_run']
+    reviewed, memberships = [], []
+    for root in inventory['roots']:
+        for record in root['records']:
+            if record['identity'] == invoking:continue
+            if record['errors'] or record['classification'] == 'unknown':
+                raise ValueError('unknown or corrupt runtime cannot be acknowledged')
+            reviewed.append({'identity': record['identity'], 'sha256': record['sha256'], 'mode': record['mode'],
+                             'profile': record['profile'],
+                             'pointers': [p for p in root['pointers'] if p['session_id'] == record['identity']['session_id']]})
+        memberships.append({'runtime_root': root['runtime_root'], 'members': root['members']})
+    body = {'schema_version': 1, 'kind': 'reviewed-historical-activity-anchor',
+            'original_preparation': {'kind': 'dated-user-statement', 'statement': statement},
+            'invoking_run': invoking, 'records': reviewed, 'runtime_membership': memberships}
+    body['digest'] = digest(canonical(body))
+    return body
+
+
 def reviewed_history(inventory, references):
     """Preparation is only an upper bound; live profiles/references must validate first."""
+    if isinstance(references, dict) and references.get('kind') == 'dated-user-statement':
+        if set(references) != {'kind', 'statement'}:raise ValueError('invalid dated statement history anchor')
+        return current_history(inventory, references['statement'])
     if set(references) != set(ANCHORS):raise ValueError('missing original historical scope/bytes anchors')
     scope = _read('scope', references['scope'])
     states = _read('states', references['states'])

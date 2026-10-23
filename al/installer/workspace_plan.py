@@ -123,7 +123,8 @@ def plan_workspace(source, options, state_root):
                 "source": source["digest"],
                 "target": target,
                 "state_root": str(state_root),
-                "inputs": inputs,
+                # Historical acknowledgements bind this intent, so they cannot be part of it.
+                "inputs": {k: v for k, v in inputs.items() if k != "historical"},
             }
         )
         # Complete scope and source authority are required before any expensive build.
