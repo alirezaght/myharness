@@ -52,12 +52,31 @@ def resource_bytes(name):
     return value if _CONTEXT else value.read_bytes()
 
 
+_DIGEST = None
+
+
 def implementation_digest():
-    global _USED
+    """Digest of the runtime's al_*.py modules; recomputed whenever any module's file identity changes."""
+    global _USED, _DIGEST
     _USED = True
-    names = _CONTEXT['bytes'] if _CONTEXT else _ordinary()
-    return hashlib.sha256(b''.join((names[name] if _CONTEXT else names[name].read_bytes()) for name in sorted(names)
-                                  if name.startswith('al_') and name.endswith('.py') and '/' not in name)).hexdigest()
+    if _CONTEXT:
+        # Verified context bytes are immutable for the life of the process.
+        key = ('context', id(_CONTEXT['bytes']))
+        names = _CONTEXT['bytes']
+    else:
+        root = Path(__file__).resolve().parent
+        names = {path.name: path for path in root.glob('al_*.py')}
+        stats = []
+        for name in sorted(n for n in names if n.startswith('al_') and n.endswith('.py') and '/' not in n):
+            state = names[name].stat()
+            stats.append((name, state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, state.st_ctime_ns))
+        key = ('ordinary', tuple(stats))
+    if _DIGEST is not None and _DIGEST[0] == key:
+        return _DIGEST[1]
+    value = hashlib.sha256(b''.join((names[name] if _CONTEXT else names[name].read_bytes()) for name in sorted(names)
+                                    if name.startswith('al_') and name.endswith('.py') and '/' not in name)).hexdigest()
+    _DIGEST = (key, value)
+    return value
 
 
 def binding_identity():

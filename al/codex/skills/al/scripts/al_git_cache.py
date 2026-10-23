@@ -8,7 +8,34 @@ from al_analysis_cache import CACHE
 from al_profile import measured
 
 
+_BINDINGS = {}
+
+
+def _binding_key(root):
+    """Repository object binding inputs for a plain repository: its metadata and config identity."""
+    root = Path(root).resolve();metadata = root / '.git'
+    try:
+        if metadata.is_symlink() or not metadata.is_dir() or (metadata / 'commondir').exists():
+            return None
+        state = [metadata.lstat(), (metadata / 'config').lstat()]
+    except OSError:
+        return None
+    return str(root), tuple((s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns) for s in state)
+
+
 def object_binding(root):
+    key = _binding_key(root)
+    if key is not None and key in _BINDINGS:
+        return list(_BINDINGS[key])
+    value = _object_binding(root)
+    if key is not None and _binding_key(root) == key:
+        if len(_BINDINGS) >= 8:
+            _BINDINGS.clear()
+        _BINDINGS[key] = tuple(value)
+    return value
+
+
+def _object_binding(root):
     result = subprocess.run(['git', '--no-optional-locks', 'rev-parse', '--git-common-dir', '--show-object-format'], cwd=root, capture_output=True, check=True)
     common, algorithm = result.stdout.decode().strip().splitlines()
     if algorithm not in {'sha1', 'sha256'}:

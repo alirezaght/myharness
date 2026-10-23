@@ -109,7 +109,7 @@ def packet(st):
     if not historical:
         from al_task_attribution import observe
 
-        if observed != observe(st):
+        if observed != observe(st, expected=observed):
             refuse("planning source observation changed; issue a new bound packet")
     occurrence = value["binding"]["planning_occurrence"] if historical else N.occurrence(st)
     expected = binding(st, J.digest(observed), occurrence,
@@ -209,7 +209,7 @@ def cmd_packet(a, sid):
         st.setdefault("planning_history", []).append(previous)
     st["planning_authorship"] = {"attempt": attempt_ref, "packet": reference}
     st["proof_admission"]["planning_occurrence"] = N.occurrence(st)
-    if observe(st) != observed:
+    if observe(st, expected=observed) != observed:
         refuse("planning source moved before packet publication")
     al_store.save(sid, st)
     print(J.raw({"packet": reference, "content": value}).decode())

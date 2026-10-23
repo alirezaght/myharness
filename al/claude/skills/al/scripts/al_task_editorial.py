@@ -240,7 +240,7 @@ def cmd_editorial(a, sid):
     overlay = validate_editorial(st, request)
     reference = J.snapshot(sid, overlay, "task-editorial-overlay-v1", a.file)
     validate_editorial(st, request)
-    if observe(st) != before:
+    if observe(st, expected=before) != before:
         refuse("candidate moved during editorial publication")
     st.setdefault("editorial_history", []).append(reference)
     document = document_binding(st)

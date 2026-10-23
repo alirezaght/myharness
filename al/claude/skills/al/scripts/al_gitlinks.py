@@ -1,6 +1,7 @@
 """Read-only identity and worktree validation for opaque Git submodules."""
 import os
 import hashlib
+import re
 from pathlib import Path
 import subprocess
 
@@ -35,12 +36,100 @@ def entries(raw, index=False):
     return out
 
 
+_INDEXES = {}
+
+
+def _index_key(root):
+    metadata = Path(root).resolve() / '.git'
+    if 'GIT_INDEX_FILE' in os.environ or metadata.is_symlink() or not metadata.is_dir() or (metadata / 'commondir').exists():
+        return None
+    try:
+        return str(metadata), hashlib.sha256((metadata / 'index').read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
 def index_entries(root):
-    return entries(git(root, 'ls-files', '--stage', '-z'), index=True)
+    """Index entries, reused only for byte-identical index content of a plain repository."""
+    key = _index_key(root)
+    if key is None or key not in _INDEXES:
+        value = entries(git(root, 'ls-files', '--stage', '-z'), index=True)
+        # Only a listing whose index bytes did not change around the read may be reused.
+        if key is None or _index_key(root) != key:
+            return value
+        if len(_INDEXES) >= 8:
+            _INDEXES.clear()
+        _INDEXES[key] = value
+    return {path: dict(entry) for path, entry in _INDEXES[key].items()}
+
+
+_TREES = {}
+
+
+HEX = re.compile(rb'[0-9a-f]{40}|[0-9a-f]{64}')
+
+
+def _head(metadata):
+    """HEAD's object id from plain files-backend metadata, or None to let Git resolve it."""
+    try:
+        if (metadata / 'reftable').exists() or (metadata / 'commondir').exists():
+            return None
+        head = (metadata / 'HEAD').read_bytes().strip()
+        if HEX.fullmatch(head):
+            return head.decode()
+        if not head.startswith(b'ref: refs/heads/'):
+            return None
+        name = head[5:]
+        if b'..' in name.split(b'/'):
+            return None
+        reference = metadata / os.fsdecode(name)
+        if reference.is_file() and not reference.is_symlink():
+            value = reference.read_bytes().strip()
+            return value.decode() if HEX.fullmatch(value) else None
+        if reference.exists() or reference.is_symlink():
+            return None
+        packed = metadata / 'packed-refs'
+        if not packed.is_file():
+            return None
+        for line in packed.read_bytes().splitlines():
+            parts = line.split(b' ')
+            if len(parts) == 2 and parts[1] == name and HEX.fullmatch(parts[0]):
+                return parts[0].decode()
+    except OSError:
+        return None
+    return None
+
+
+def _tree_key(root, revision):
+    """Listings of an exact object id are immutable unless replacement refs change."""
+    metadata = Path(root).resolve() / '.git'
+    if metadata.is_symlink() or not metadata.is_dir():
+        return None
+    if revision == 'HEAD':
+        revision = _head(metadata)
+    if revision is None or not HEX.fullmatch(revision.encode()):
+        return None
+    state = []
+    for path in (metadata / 'packed-refs', metadata / 'refs' / 'replace'):
+        try:
+            value = path.lstat()
+        except FileNotFoundError:
+            state.append(None)
+        else:
+            state.append((value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns))
+    return str(metadata), revision, tuple(state)
 
 
 def tree_entries(root, revision):
-    return entries(git(root, 'ls-tree', '-r', '-z', revision))
+    key = _tree_key(root, revision)
+    if key is None or key not in _TREES:
+        value = entries(git(root, 'ls-tree', '-r', '-z', revision))
+        if key is None:
+            return value
+        if len(_TREES) >= 8:
+            _TREES.clear()
+        _TREES[key] = value
+    return {path: dict(entry) for path, entry in _TREES[key].items()}
 
 
 def paths(*maps):

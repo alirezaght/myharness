@@ -28,12 +28,19 @@ def _rows(st):
     return rows
 
 
-def observe(st, *, retain_content=False):
-    """Double observation includes non-executable mode changes and new membership."""
+def observe(st, *, retain_content=False, expected=None):
+    """Double observation includes non-executable mode changes and new membership.
+
+    A re-observation compared against an `expected` capture that was itself stable needs one
+    read: equality with a stable observation is the stability proof, and any difference is
+    refused by the caller's comparison."""
     first = _rows(st)
-    second = _rows(st)
-    if first != second:
-        refuse('unstable task attribution observation')
+    if expected is None or retain_content or first != expected.get('files'):
+        second = _rows(st)
+        if first != second:
+            refuse('unstable task attribution observation')
+    else:
+        second = first
     capture = {'schema_version': 1, 'kind': 'task-content-capture-v1',
                'binding': _binding(st), 'files': second}
     if retain_content:

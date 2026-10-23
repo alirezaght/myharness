@@ -125,7 +125,7 @@ def cmd_publication(a, sid):
     before = observe(st)
     if a.action in {"packet", "status"}:
         value = packet(st) if a.action == "packet" else publication_readiness(st)
-        if before != observe(st):
+        if before != observe(st, expected=before):
             refuse("source moved during publication observation")
         print(J.raw(value).decode())
         return
@@ -161,7 +161,7 @@ def cmd_publication(a, sid):
         output = {"record_ref": reference}
     if any(item["sha256"] == reference["sha256"] for item in st.get(registry, [])):
         refuse("duplicate publication fact")
-    if before != observe(st):
+    if before != observe(st, expected=before):
         refuse("source moved before publication fact admission")
     st.setdefault(registry, []).append(reference)
     history(st)
