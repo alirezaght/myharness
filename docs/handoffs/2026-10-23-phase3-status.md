@@ -1,6 +1,6 @@
 # Phase 3 status: 2026-10-23
 
-This supersedes the "work still required" list in `2026-10-21-al-harness-checkpoint.md`. All work is committed locally on `codex/al-harness-checkpoint-2026-10-21` from `b6156a9` through the commits listed below; nothing was pushed. The uncommitted Phase 2 files and the untracked selector fixtures were left untouched.
+This supersedes the "work still required" list in `2026-10-21-al-harness-checkpoint.md`. All work is on `main` (the `codex/al-harness-checkpoint-2026-10-21` history from `b6156a9`, merged by fast-forward). The uncommitted Phase 2 files and the untracked selector fixtures were left untouched.
 
 ## Done
 
@@ -25,22 +25,26 @@ The supplied baseline-continuation/hook-audit references were verified (`/privat
 - Public workspace journey (plan/apply/verify for both platforms): 358 s → 241 s, passing.
 - `test_readiness_reservation` fails only when pytest's parent process is a shell; it passes under `release_verify` and a Python parent.
 
-## Native acceptance (one bounded run per host, 180 s cap)
+## Native acceptance (2026-10-24)
 
-`scripts/smoke_phase3_native.py` now bootstraps the candidate launcher in a disposable root, because the shipped skill names `$HOME/.local/bin/alctl`, and the global launcher there is an older snapshot.
+`scripts/smoke_phase3_native.py` runs one real host session in a disposable project (now with an installable package and one CI job AL can run locally) through the candidate launcher, bounded at up to an hour.
 
-- Claude 2.1.309: the Harness worker started the native host; AL run `67f5d419` was admitted through the candidate launcher and the native session id was recorded; the run hit the 180 s cap (interrupted) before an AL result.
-- Codex 0.163.0: AL run `681f3a11` was admitted through the candidate launcher and the native id was recorded; Codex ended its turn (exit 0) without a guarded AL result within the cap.
+- Claude: AL run `761897ab` went from harness approval through planning, implementation, gates, fresh and comparison reviews to an approved result in 23 minutes; the harness recorded the execution `Completed`.
+- Codex: AL run `fdfdc1a5` did the same in 13 minutes.
 
-Launch, run admission and native identity work on both hosts with the candidate. A complete native AL lifecycle was not demonstrated inside the bounded window.
+The attempts before these found and fixed: writer lifetimes opened after the writing agent started (skill rule), rework unable to reopen a completed execution task, and a scopeless preflight refused in a harness-bound run.
 
-## Waiting for the user
+## AL policy change (2026-10-24)
 
-1. **Global install.** `scripts/install_global.py plan|apply|verify` requires a terminal-approved AL run whose candidate is this source tree. Producing that approval means one AL run on this repository through guarded approval (the public journey test exercises the same path on a disposable copy). Nothing global was installed.
-2. **Local AL cleanup.** A read-only inventory found 35 installed AL skill/agent copies outside this repository (amber worktrees, `amber-*` checkouts, `menu-platform`, `new-company-service`, `match-orchestrator`, `ai-profile`, ...). Run histories (`.claude/al-runtime`, `.codex/al-runtime`, 20 directories) should be preserved. The `al-shared-import-gate` and `financing-launch-features` amber worktrees may hold active pinned runs and need care. Nothing was removed.
+AL no longer fails closed on checks it cannot model. An `UNRESOLVED` gate (unparsed CI rules, unsupported workspace layouts, incomplete service coverage) is an unverified check: `gates status` lists it (CI jobs as verified by the pipeline), reviewers see it in the manifest, and the final report names it, but it does not block admission, review or approval. Failed, running or interrupted checks and writer/attribution safety still block. Discovery also expands pnpm-style workspace globs, declares `parent-entry` for gitlinks a gate covers, binds import targets by digest, and allows four times larger fact sets.
+
+## Installation and cleanup (done 2026-10-23)
+
+The guarded `install_global.py` flow was abandoned at the user's request after repeated refusals on leftovers. AL was installed globally by copying both packages and role files and bootstrapping `alctl`; every repository-local AL copy under `~/personal` and `~/Documents` outside myharness was deleted (deletions left uncommitted in those repositories; run histories kept). The old global copies are backed up in `~/.local/state/al-distribution/manual-backup-20261023/`. The installer registry does not know about this install, so `alctl doctor`/`update` report drift; updates are a manual copy and bootstrap.
 
 ## Residual items
 
+- The installer registry could adopt the manual global install, or updates stay manual.
 - The generic `loc` gate category still discovers the conventional `scripts/check-loc.py` checker; it could move into the repository contract.
 - Claude-adapter changes now run against the remaining Claude suites only (accepted with the pruning).
-- Real-home planning enumerates about 506k directories under `~/personal` and `~/Documents`; the installer's 200,000-directory limit has not been redesigned.
+- The 360-second complete-suite target remains unmet by decision (`release_verify --full` takes about 12 minutes).

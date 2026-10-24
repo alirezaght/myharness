@@ -10,7 +10,7 @@ This roadmap is kept **separate from the design spec** ([SPEC.md](SPEC.md)). Han
 
 Phases 1 and 2 were implemented before this work. Phase 3 is implemented and verified: AL execution and monitoring, the mandatory managed launcher with active-runtime pinning, artifact consumer routing, declared review-hook state and baseline exceptions are complete, and complete AL verification passes every collected test (see docs/handoffs/2026-10-23-phase3-status.md). The 360-second complete-suite target remains unmet by decision: `release_verify --full` takes about 12 minutes, and the 13 slowest end-to-end proofs run as a separate acceptance tier (`--tier acceptance`) at release time.
 
-A coordinated single installation entrypoint for AL and Harness is planned and has not shipped. Final deployment must first receive terminal source approval, then install and verify the global tools, then remove only attributed repository-local AL resources while preserving the canonical source and runtime history.
+Live native runs on Claude and Codex reach an approved AL result. AL is installed globally and repository-local AL copies were removed; the guarded single installation entrypoint exists but was bypassed for this install, so global updates are currently a manual copy.
 
 Phase 3 needs no further implementation estimate; Phases 4 and 5 remain future work. All phase and component estimates below are the original planning estimates, not a new remaining-work commitment.
 

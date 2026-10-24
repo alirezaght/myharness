@@ -12,7 +12,9 @@ The external Claude executable/model boundary is simulated by a disposable
 test shim. The real harness worker, installed candidate AL package, guarded AL
 CLI, task admission, decision dispatch/acknowledgement and event projection
 run normally. The scenario verifies one provider-shim launch; it does not
-establish native provider authentication or delegation.
+establish native provider authentication or delegation. For a real host run,
+use `scripts/smoke_phase3_native.py --host claude|codex --timeout 3000`; it
+reaches an approved AL result on both hosts in 13–25 minutes.
 
 The output below is pinned by `tests/test_demo_phase3.py`:
 
