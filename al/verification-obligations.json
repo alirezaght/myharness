@@ -668,7 +668,7 @@
       }
     },
     "claude:tests/test_unverified_policy.py": {
-      "test": "ebc70cfcafbdd5274c12905277e9a5ac152225e77344561197e167fd84c4277d",
+      "test": "b7814d8b6bf526316c4ce438bcce4869c96671e6785cca7048930918f6d2f17a",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -1291,7 +1291,7 @@
       }
     },
     "codex:tests/test_unverified_policy.py": {
-      "test": "ebc70cfcafbdd5274c12905277e9a5ac152225e77344561197e167fd84c4277d",
+      "test": "b7814d8b6bf526316c4ce438bcce4869c96671e6785cca7048930918f6d2f17a",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -4997,7 +4997,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1001,
-    "digest": "cb118c8aba4845df9744b2fe509e6a878ebbd3790c0587a16d78ea48300701b0"
+    "digest": "67ce432acbdb822eabc20707e96f8d3c29764b985a23ee48eac3d70806d73040"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
