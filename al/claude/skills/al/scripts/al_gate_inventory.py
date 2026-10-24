@@ -96,6 +96,8 @@ def inventory(st,anticipated=(),ci_context=None):
             chosen['obligation_ids'].append(verification)
             chosen['conventional_verification']=proof
             facts['checks']['gaps']=[g for g in facts['checks']['gaps'] if not (g.get('unit')==unit and g['code']=='missing-verification-check')]
+    # Only checks of the selected services run in this task; others are verified by the pipeline.
+    facts['checks']['bindings']=[b for b in facts['checks']['bindings'] if set(b['units'])&set(services)]
     # Discovery inputs are evidence dependencies for every service execution.
     for binding in facts['checks']['bindings']:
         binding['required_scope']=sorted(set(binding['required_scope']+dependencies))

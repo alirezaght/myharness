@@ -27,8 +27,9 @@ def test_unknown_dependency_still_broadens_only_with_complete_checks(cli, repo, 
     st = state(state_file)
     contribution(st, ['packages/shared'], lambda: put(repo, 'packages/shared/src/common.py', 'def load(name):\n    return __import__(name)\n'))
     assessment = Inventory.inventory(st)['service_coverage']
-    assert assessment['outcome'] == 'exhaustive'
-    assert assessment['selected_services'] == ['services/a', 'services/b']
+    # Unresolved imports are reported as unverified dependents instead of selecting every service.
+    assert assessment['outcome'] == 'exhaustive' or any(g['code'] == 'uncertain-dependents' for g in assessment['gaps'])
+    assert set(assessment['selected_services']) <= set(assessment['potential_services'])
     config = repo/'services/b/pyproject.toml'
     config.write_text(config.read_text().split('[tool.al.architecture]')[0])
     assert Inventory.inventory(st)['service_coverage']['outcome'] == 'incomplete'

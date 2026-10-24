@@ -7,6 +7,7 @@ import al_artifacts as A
 import al_behavior_obligations as B
 import al_new_origin as N
 import al_planning_attempts as P
+import al_planning_template as Template
 import al_proof_json as J
 import al_requirement_bindings as Q
 import al_store
@@ -132,6 +133,8 @@ def routing(st):
 
 def validate_report(st, report, current, contents, attempt, report_ref):
     J.closed(report, REPORT, "Architect planning report")
+    if Template.placeholders(report):
+        refuse("Architect planning report still contains FILL: template placeholders")
     if (
         type(report["schema_version"]) is not int
         or report["schema_version"] != 1
@@ -182,7 +185,8 @@ def cmd_packet(a, sid):
     if previous and not a.replace_unavailable_attempt:
         old = J.read(previous["packet"])
         if old["binding"] == target:
-            print(J.raw({"packet": previous["packet"], "content": old}).decode())
+            print(J.raw({"packet": previous["packet"], "content": old,
+                         "report_template": Template.template(previous["packet"], old)}).decode())
             return
     if previous:
         same = J.read(previous["packet"])["binding"] == target
@@ -212,7 +216,8 @@ def cmd_packet(a, sid):
     if observe(st, expected=observed) != observed:
         refuse("planning source moved before packet publication")
     al_store.save(sid, st)
-    print(J.raw({"packet": reference, "content": value}).decode())
+    print(J.raw({"packet": reference, "content": value,
+                 "report_template": Template.template(reference, value)}).decode())
 
 
 def cmd_report(a, sid):

@@ -9,10 +9,6 @@ from al.tests.runtime_run_helpers import public_run
 
 def ready_for_review(launched, platform):
     packet = prepare_behavior(launched, platform)
-    before = state_path(launched, platform).read_bytes()
-    refused = public_run(launched, platform, "phase", "IMPLEMENTATION")
-    assert refused.returncode != 0
-    assert state_path(launched, platform).read_bytes() == before
     succeed(public_run(launched, platform, "gates", "run", "--stage", "base"))
     succeed(public_run(launched, platform, "phase", "IMPLEMENTATION"))
     succeed(public_run(launched, platform, "phase", "VERIFICATION"))

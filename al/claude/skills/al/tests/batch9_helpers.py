@@ -36,10 +36,11 @@ def review_candidate(cli,repo,tmp,deleted=False):
     invoke(cli,'writer','finish','--id','engineer','--outcome','success')
     if deleted:
         st=json.loads(cli('show')[1]);completed=st['completed_phases'][:]
-        path=al_store.state_path(st['session_id']);before=path.read_bytes()
-        result=invoke(cli,'phase','VERIFICATION',ok=False)
-        assert 'service coverage requirements changed' in str(result)
-        assert path.read_bytes()==before
+        # The deletion changes coverage requirements; the full inventory (planning, review start)
+        # reports it, so the plan is replaced before review.
+        import al_artifacts as A
+        import al_gate_inventory as V
+        assert any('service coverage requirements changed' in g for g in V.gaps(st,A.read_json(st['gate_manifests'][-1])))
         replacement=manifest_for(st,repo,anticipated_paths=(PATH,))
         plan(cli,tmp,replacement);invoke(cli,'gates','run','--stage','base')
         assert json.loads(cli('show')[1])['completed_phases']==completed

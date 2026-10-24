@@ -115,3 +115,19 @@ def test_concurrent_commit_cannot_poison_an_exact_tree_listing(repo, monkeypatch
 def test_repository_selecting_git_environment_disables_reuse(repo, monkeypatch):
     monkeypatch.setenv('GIT_DIR', str(repo / '.git'))
     assert G.plain_metadata(repo) is None and G._index_key(repo) is None
+
+
+def test_blob_content_hashes_are_computed_once_per_process(repo, monkeypatch):
+    import al_scope as S
+    oid = subprocess.run(['git', 'rev-parse', 'HEAD:svc/app.py'], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+    S._BLOB_SHA256.clear()
+    requested = []
+    real = S._blob_hashes_uncached
+    def counting(root, oids):
+        requested.append(list(oids))
+        return real(root, oids)
+    monkeypatch.setattr(S, '_blob_hashes_uncached', counting)
+    first = S._blob_hashes(repo, [oid])
+    second = S._blob_hashes(repo, [oid, oid])
+    assert first == second and len(first[oid]) == 64
+    assert requested == [[oid], []]

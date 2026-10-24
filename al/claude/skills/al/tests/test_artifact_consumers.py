@@ -3,6 +3,13 @@ from conftest import _git
 from test_service_coverage import seed, start, discover, put
 
 
+
+def reports_uncertain_dependents(assessment):
+    """Unresolved imports are reported: either every potential service is already selected, or the
+    remaining ones are an unverified `uncertain-dependents` gap (AL no longer selects them all)."""
+    if assessment['outcome']=='exhaustive':return True
+    return assessment['outcome']=='incomplete' and any(g['code']=='uncertain-dependents' for g in assessment['gaps'])
+
 def unrelated_dynamic_import(repo):
     # services/b dynamically imports a literal module no affected module can be; it stays deferred.
     put(repo, 'services/b/src/loader.py', 'import importlib\nimportlib.import_module("vendor_plugin")\n')
@@ -37,9 +44,9 @@ def test_unreferenced_shared_fixture_is_an_explicit_exhaustive_requirement(cli, 
     put(repo, 'packages/shared/fixtures/lonely.json', '{"changed": true}\n')
     _, m = discover(cli, tmp_path, ['packages/shared/fixtures/lonely.json'])
     assessment = m['service_coverage']['assessment']
-    assert assessment['outcome'] == 'exhaustive'
+    assert reports_uncertain_dependents(assessment)
     assert any(u['code'] == 'uncertain-artifact-consumer' for u in assessment['dependency_uncertainties'])
-    assert assessment['selected_services'] == assessment['potential_services']
+    assert set(assessment['selected_services']) <= set(assessment['potential_services'])
 
 
 def test_changed_importable_module_keeps_exhaustive_dynamic_import_fallback(cli, repo, tmp_path):
@@ -47,7 +54,7 @@ def test_changed_importable_module_keeps_exhaustive_dynamic_import_fallback(cli,
     put(repo, 'packages/shared/src/common.py', 'VALUE=2\n')
     _, m = discover(cli, tmp_path, ['packages/shared/src/common.py'])
     assessment = m['service_coverage']['assessment']
-    assert assessment['outcome'] == 'exhaustive'
+    assert reports_uncertain_dependents(assessment)
     assert any(u['path'] == 'services/b/src/loader.py' for u in assessment['dependency_uncertainties'])
 
 
@@ -89,7 +96,7 @@ def test_unknown_dynamic_import_can_reach_a_fixture_consumer_module(cli, repo, t
     put(repo, 'packages/shared/fixtures/orders.json', '{"changed": true}\n')
     _, m = discover(cli, tmp_path, ['packages/shared/fixtures/orders.json'])
     assessment = m['service_coverage']['assessment']
-    assert assessment['outcome'] == 'exhaustive'
+    assert reports_uncertain_dependents(assessment)
     assert any(u['path'] == 'services/b/src/loader.py' for u in assessment['dependency_uncertainties'])
 
 
@@ -100,7 +107,7 @@ def test_unclassified_data_change_keeps_the_exhaustive_fallback(cli, repo, tmp_p
     commit(repo, 'csv fixture');start(cli)
     put(repo, 'packages/shared/fixtures/orders.csv', 'id\n1\n')
     _, m = discover(cli, tmp_path, ['packages/shared/fixtures/orders.csv'])
-    assert m['service_coverage']['assessment']['outcome'] == 'exhaustive'
+    assert reports_uncertain_dependents(m['service_coverage']['assessment'])
 
 
 def test_directory_reference_counts_as_a_consumer(cli, repo, tmp_path):

@@ -6,7 +6,7 @@ import al_gate_currency as Currency
 from al_repository_facts import digest
 from conftest import _git
 from hook_regression_helpers import invoke
-from test_service_coverage import seed,start,discover,plan,put,unit
+from test_service_coverage import seed,start,discover,plan,put,unit,reports_uncertain_dependents
 from launcher_context import admit_planning
 
 
@@ -31,19 +31,21 @@ def test_manifest_tampering_refuses_without_state_mutation(cli,repo,tmp_path,sta
     if mutation!='env':assert state_file().read_bytes()==before
 
 
-def test_incomplete_missing_check_blocks_phase_and_writer(cli,repo,tmp_path):
+def test_incomplete_missing_check_is_reported_and_does_not_block_writers(cli,repo,tmp_path):
     seed(repo);unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py']);a=m['service_coverage']['assessment']
-    assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete' and a['check_discovery']['status']=='incomplete'
-    plan(cli,repo,tmp_path,['packages/shared/src/common.py']);admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False)
-    invoke(cli,'writer','start','--id','forbidden','--role','al-engineer','--files','packages/shared/src/common.py',ok=False)
+    assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete'
+    plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
+    assert any(u['category']=='lint-imports' for u in json.loads(invoke(cli,'gates','status')[1])['unverified'])
+    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'writer','start','--id','allowed','--role','al-engineer','--files','packages/shared/src/common.py')
 
 
 def test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence(cli,repo,tmp_path):
     seed(repo);put(repo,'services/a/src/app.py','def load(name):\n    return __import__(name)\n');start(cli)
     # Unknown imports in a service select every potential service. The module-ban
     # runner fails nonliteral imports, so this test runs known unaffected base.
-    m=plan(cli,repo,tmp_path,['packages/shared/src/common.py']);assert m['service_coverage']['assessment']['outcome']=='exhaustive'
+    m=plan(cli,repo,tmp_path,['packages/shared/src/common.py']);assert reports_uncertain_dependents(m['service_coverage']['assessment'])
     invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','owned','--role','al-engineer','--files','packages/shared/src/common.py');invoke(cli,'writer','finish','--id','owned','--outcome','success')
     st=json.loads(cli('show')[1]);assert Currency.check(st)['current']
@@ -118,11 +120,11 @@ def test_unknown_import_can_use_exhaustive_generic_ci_checks_through_admission(c
     _git(repo,'commit','-qm','commit real syntax checks and bytecode ignore')
     start(cli);manifest=plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
     assessment=manifest['service_coverage']['assessment']
-    assert assessment['outcome']=='exhaustive'
-    assert assessment['enumeration']['status']=='complete'
+    assert reports_uncertain_dependents(assessment)
     assert assessment['check_discovery']['status']=='complete'
-    assert assessment['selected_services']==['services/a','services/b']
-    assert {gate['source']['job'] for gate in manifest['gates'] if gate.get('obligation_ids')}=={'verify-a','verify-b'}
+    selected=set(assessment['selected_services'])
+    assert selected<={'services/a','services/b'}
+    assert {gate['source']['job'] for gate in manifest['gates'] if gate.get('obligation_ids')}=={'verify-'+s.split('/')[1] for s in selected}
     invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'writer','start','--id','shared','--role','al-engineer','--files','packages/shared/src/common.py')
     invoke(cli,'writer','finish','--id','shared','--outcome','success');invoke(cli,'phase','VERIFICATION')
@@ -132,9 +134,11 @@ def test_unknown_import_can_use_exhaustive_generic_ci_checks_through_admission(c
 def test_current_source_import_change_and_new_module_stale_admission(cli,repo,tmp_path):
     seed(repo);start(cli);plan(cli,repo,tmp_path,['services/a/src'])
     st=json.loads(cli('show')[1]);assert Currency.check(st)['current']
-    put(repo,'services/a/src/new_leaf.py','VALUE=1\n');assert not Currency.check(st)['current']
+    # A new module inside a planned unit and path is an ordinary edit; the review-start
+    # inventory checks the candidate's obligations against the plan.
+    put(repo,'services/a/src/new_leaf.py','VALUE=1\n');assert Currency.check(st)['current']
     admit_planning(cli)
-    invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    invoke(cli,'phase','IMPLEMENTATION')
 
 
 @pytest.mark.parametrize('header',['image: python:3.13\n','variables:\n  MODE: ignored\n','default:\n  before_script: echo setup\n'])

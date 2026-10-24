@@ -22,31 +22,26 @@ def test_recovered_unfinished_phase_replaces_gates_before_advancing(cli,tmp_path
     install_replacement(cli,tmp_path,repo,command)
     s=state(cli);assert s['phase']==phase and s['completed_phases']==old
     assert s['gate_recovery']['replacement_manifest']==s['gate_manifests'][-1]['sha256']
-    before=state_file().read_bytes();invoke(cli,'phase',destination,ok=False);assert state_file().read_bytes()==before
-    if phase=='IMPLEMENTATION':
-        invoke(cli,'writer','start','--id','blocked','--role','al-engineer','--files','svc/app.py',ok=False)
-        assert state_file().read_bytes()==before
+    # With a current replacement plan, base gates run alongside the work (review requires them).
     invoke(cli,'gates','run','--stage','base')
     invoke(cli,'phase',destination)
     s=state(cli);assert 'gate_recovery' not in s and s['gate_recovery_history'][-1]['evidence']
     if route=='retry':assert s['retries']['al-engineer']==1
 
 
-def test_failed_base_blocks_writer_then_valid_replacement_allows_new_lifetime(cli,tmp_path,repo,state_file):
+def test_failed_base_admits_writer_but_holds_review(cli,tmp_path,repo,state_file):
     changed_recovery(cli,tmp_path,repo,'IMPLEMENTATION')
     install_replacement(cli,tmp_path,repo,[sys.executable,'-c','import sys;sys.exit(1)'])
     invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
-    before=state_file().read_bytes()
-    invoke(cli,'writer','start','--id','writer','--role','al-engineer','--files','svc/app.py',ok=False)
-    invoke(cli,'phase','FINALIZATION',ok=False);assert state_file().read_bytes()==before
-    install_replacement(cli,tmp_path,repo,[sys.executable,'-c',"print('base passes')"])
-    invoke(cli,'gates','run','--stage','base')
+    # A failed base gate no longer blocks the writer; review requires a passing run or a decision.
     invoke(cli,'writer','start','--id','writer','--role','al-engineer','--files','svc/app.py')
     assert not state(cli).get('gate_recovery') and state(cli)['writers']['writer']['state']=='ACTIVE'
+    import al_transitions
+    assert any('base gate loc' in gap for gap in al_transitions.workflow_gaps(state(cli)))
 
 
 @pytest.mark.parametrize('phase',['PSEUDOCODE','IMPLEMENTATION'])
-def test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing(cli,tmp_path,repo,state_file,phase):
+def test_ordinary_stale_obligations_need_a_replacement_plan_before_advancing(cli,tmp_path,repo,state_file,phase):
     unfinished(cli,tmp_path,repo,phase);completed=state(cli)['completed_phases'][:]
     (repo/'Makefile').write_text('lint-imports:\n\ttrue # changed obligation\n')
     command=[sys.executable,'-c',"print('replacement base gate passed')"]
@@ -55,13 +50,6 @@ def test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing(cl
     planned=state(cli)
     assert planned['phase']==phase and planned['completed_phases']==completed
     assert planned['gate_recovery']['replacement_manifest']==planned['gate_manifests'][-1]['sha256']
-    before=state_file().read_bytes()
-    if phase=='IMPLEMENTATION':
-        invoke(cli,'writer','start','--id','replacement','--role','al-engineer','--files','svc/app.py',ok=False)
-    else:
-        admit_planning(cli)
-        invoke(cli,'phase','IMPLEMENTATION',ok=False)
-    assert state_file().read_bytes()==before
     invoke(cli,'gates','run','--stage','base')
     if phase=='IMPLEMENTATION':
         invoke(cli,'writer','start','--id','replacement','--role','al-engineer','--files','svc/app.py')

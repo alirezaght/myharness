@@ -101,6 +101,16 @@ Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.
   `TEST_PLAN` (with `VERIFICATION_COMMANDS`), `EVIDENCE_PLAN`,
   `RUNTIME_PREREQUISITES`, `ACCEPTANCE_CRITERIA`.
 
+## al-architect · PLANNING REPORT
+After `classify` and `gates plan`, continue the same Architect (SendMessage) with the
+output of `$STATE planning packet`: the packet and its `report_template`.
+State: `Return the report_template as JSON with every FILL: text replaced and the
+example states, transitions, outcomes, failures and scenarios rewritten to describe
+this task's observable behavior. Keep every identity, binding and routing field
+exactly as given. Set invocation_id to your actual invocation.`
+Required output: the completed `architect-planning-report-v1` JSON and nothing else.
+The supervisor runs `planning report --file` and `planning admit --file`; a report
+still containing `FILL:` is refused.
 ## al-architect · MODE: RESOLVE_CONFLICT
 Add: `MODE: RESOLVE_CONFLICT`, `APPROVED PLAN: <plan>`, `INVARIANTS`,
 `ACCEPTANCE_CRITERIA`, and either `PLAN_CONFLICT REPORTED BY AL-DESIGNER:

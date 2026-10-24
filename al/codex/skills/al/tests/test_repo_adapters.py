@@ -16,6 +16,11 @@ def test_unsupported_boundary_cannot_be_omitted(cli,repo,tmp_path,defect,code):
     elif defect=='symlink':(repo/'services/b/link').symlink_to(repo/'packages/shared',target_is_directory=True)
     elif defect=='setup':put(repo,'services/b/setup.py','raise RuntimeError("never execute discovery")\n')
     start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py']);assessment=m['service_coverage']['assessment']
+    if defect=='layout':
+        # Python beside a service's declared package is its tooling: recorded, not a gap.
+        exclusions=m['service_coverage']['semantic_requirements']['enumeration']['exclusions']
+        assert any(e['path']=='services/b/lib' for e in exclusions)
+        return
     assert assessment['outcome']=='incomplete' and any(g['code']==code for g in assessment['gaps'])
 
 
@@ -110,7 +115,9 @@ def test_uv_workspace_container_and_unsupported_members(cli,repo,tmp_path):
     assert m['service_coverage']['assessment']['outcome']=='identified'
     assert '.' not in m['service_coverage']['assessment']['potential_services']
     put(repo,'pyproject.toml','[tool.uv.workspace]\nmembers=["backend/**"]\n')
-    _,m=discover(cli,tmp_path,['services/a/src/app.py']);assert m['service_coverage']['assessment']['outcome']=='incomplete'
+    # A member outside services/, packages/ or apps/ is tooling, recorded rather than a gap.
+    _,m=discover(cli,tmp_path,['services/a/src/app.py'])
+    assert any(e['path']=='backend/**' for e in m['service_coverage']['semantic_requirements']['enumeration']['exclusions'])
 
 
 def test_unmanifested_foreign_source_root_is_reported_unverified(cli,repo,tmp_path):

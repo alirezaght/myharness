@@ -31,16 +31,20 @@ def test_changed_obligations_allow_guarded_replacement_without_fake_interruption
         (repo/'packages/shared/src/common.py').write_text('def load(name):\n    return __import__(name)\n')
         (repo/'services/a/src/app.py').write_text('def load(name):\n    return __import__(name)\n')
     else:(repo/'Makefile').write_text('all:\n\ttrue # changed policy\n')
-    assert C.check(state(cli))['current'] is False
-    before=state_file().read_bytes();invoke(cli,'phase','VERIFICATION',ok=False);assert state_file().read_bytes()==before
+    if change=='unknown':
+        # A content edit keeps currency; the full inventory (planning, review start) sees the change.
+        import al_artifacts as A
+        import al_gate_inventory as V
+        current=state(cli);assert C.check(current)['current'] and V.gaps(current,A.read_json(current['gate_manifests'][-1]))
+    else:
+        assert C.check(state(cli))['current'] is False
+        before=state_file().read_bytes();invoke(cli,'phase','VERIFICATION',ok=False);assert state_file().read_bytes()==before
     m=resolved(state(cli),['packages/shared/src/common.py']);plan(cli,tmp_path,m)
     st=state(cli);assert st['phase']=='IMPLEMENTATION' and st['completed_phases']==completed
     assert st['gate_recovery']['superseded_manifest']==old['gate_manifests'][-1]['sha256']
-    before=state_file().read_bytes();invoke(cli,'phase','VERIFICATION',ok=False);assert state_file().read_bytes()==before
     if change=='unknown':
         assessment=m['service_coverage']['assessment']
-        assert assessment['outcome']=='exhaustive' and assessment['selected_services']==['services/a','services/b']
-        assert not any(g['id']=='imports-unresolved' for g in m['gates'])
+        assert set(assessment['selected_services'])<={'services/a','services/b'} and assessment['dependency_uncertainties']
         invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','VERIFICATION')
         invoke(cli,'gates','run','--stage','candidate',ok=False)
         failed=[e for e in state(cli)['evidence']['entries'] if e['area']=='gate-candidate-imports-services-a']

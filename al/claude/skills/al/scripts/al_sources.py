@@ -24,7 +24,8 @@ def validate_sources(sources):
 
 
 def contains(parent,path):
-    return parent=='.' or parent==path or Path(parent) in Path(path).parents
+    # Paths here are normalized repository-relative POSIX strings.
+    return parent=='.' or parent==path or path.startswith(parent+'/')
 
 
 def intersects(scope,path):

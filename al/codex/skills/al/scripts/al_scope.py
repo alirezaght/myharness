@@ -86,8 +86,25 @@ def _source_rows(root=None, base='HEAD'):
     except G.GitlinkError as exc:refuse(str(exc))
 
 
-@measured('indexed-blob-hashing')
+_BLOB_SHA256 = {}
+
+
 def _blob_hashes(root, oids):
+    """Content SHA-256 per blob id; a blob id names immutable content, so one process hashes it once."""
+    from al_git_cache import object_binding
+    try:
+        binding = tuple(object_binding(root))
+    except (OSError,ValueError,subprocess.SubprocessError) as exc:refuse('indexed blob identity unavailable: '+str(exc))
+    oids = list(dict.fromkeys(oids))
+    known = {oid: _BLOB_SHA256[(binding, oid)] for oid in oids if (binding, oid) in _BLOB_SHA256}
+    computed = _blob_hashes_uncached(root, [oid for oid in oids if oid not in known])
+    for oid, value in computed.items():
+        _BLOB_SHA256[(binding, oid)] = value
+    return {**known, **computed}
+
+
+@measured('indexed-blob-hashing')
+def _blob_hashes_uncached(root, oids):
     """Consume bounded cat-file frames; never buffer the request or blob set."""
     result = {}
     unique = list(dict.fromkeys(oids))
@@ -216,12 +233,18 @@ def _records(base,root=None):
     raw_paths.update(x for x in git_bytes('ls-files','--others','--exclude-standard','-z',root=root).split(b'\0') if x)
     raw_paths = {raw.rstrip(b'/') for raw in raw_paths}
     out = []
+    symlinked = {}
+    def linked(parts):
+        # Each directory is checked once per observation, not once per file beneath it.
+        key = parts
+        if key not in symlinked:symlinked[key] = (root / Path(*parts)).is_symlink()
+        return symlinked[key]
     for raw in sorted(raw_paths):
         if any(raw.rstrip(b'/') != parent and raw.startswith(parent + b'/') for parent in opaque):
             continue
         raw = raw.rstrip(b'/')
         rel = safe_path(raw); p = root / rel
-        if any((root / Path(*rel.parts[:i])).is_symlink() for i in range(1,len(rel.parts))):
+        if any(linked(rel.parts[:i]) for i in range(1,len(rel.parts))):
             refuse('candidate path traverses symlink')
         row = {'path': os.fsdecode(raw), 'index': indexed.get(raw)}
         obs = observations.get(raw)

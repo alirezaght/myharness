@@ -47,10 +47,12 @@ def test_waiting_checkpoint_resumes_unchanged_candidate(cli, state_file, tmp_pat
     assert resumed["resumes"][-1]["changed"] is False
 
 
+# A content edit inside planned paths returns to verification; new obligations it implies
+# (an unparsable source, an unknown import) are caught by the review-start inventory.
 @pytest.mark.parametrize(('body', 'expected'), [
     ('x = "changed while stopped"\n', 'VERIFICATION'),
-    ('changed while stopped\n', 'PLANNING'),
-    ('import unknown_new_dependency\nx = 2\n', 'PLANNING'),
+    ('changed while stopped\n', 'VERIFICATION'),
+    ('import unknown_new_dependency\nx = 2\n', 'VERIFICATION'),
 ])
 def test_changed_candidate_resume_invalidates_review_and_returns_to_verification(cli, state_file, tmp_path, repo, body, expected):
     begin(cli, tmp_path, repo, "Resume into verification if the reviewed candidate changes while stopped.")

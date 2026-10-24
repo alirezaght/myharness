@@ -1,12 +1,18 @@
 """Repository-independent coverage decisions and manifest execution bindings."""
 from copy import deepcopy
-from al_repository_facts import digest,semantic_requirements,within,validate_facts
+from al_repository_facts import all_within,digest,semantic_requirements,within,validate_facts
 
 
 def assess(facts):
     validate_facts(facts);deps=facts['dependencies'];uncertain=deps['uncertainties'];potential=deps['potential_services']
-    selected=sorted(set(potential if uncertain else deps['known_affected'])|set(deps.get('policy_selection',[])))
+    # Unresolved imports no longer select every service: AL checks the known affected set and
+    # reports the possible further dependents as unverified (verified by the pipeline).
+    selected=sorted(set(deps['known_affected'])|set(deps.get('policy_selection',[])))
     enum=[*facts['enumeration']['gaps'],*facts['unsupported_boundaries']]
+    # Neither an enumeration nor a check-discovery gap: the units and their checks are known,
+    # only whether further services depend on the change is not.
+    dependents=[{'code':'uncertain-dependents','path':'.','unit':None,
+                 'reason':str(len(uncertain))+' import(s) could not be resolved; services beyond the known affected set are not checked locally'}] if uncertain and set(potential)-set(selected) else []
     if not facts['scan']['stable']:enum.append({'code':'torn-scan','path':'.','reason':'repository changed during fact collection','unit':None})
     obligations=[o for o in facts['checks']['obligations'] if set(o['units'])&set(selected)]
     bindings=[b for b in facts['checks']['bindings'] if set(b['units'])&set(selected)]
@@ -14,10 +20,10 @@ def assess(facts):
     bound={oid for b in bindings for oid in b['obligation_ids']}
     for o in obligations:
         if o['id'] not in bound and not any(g.get('unit') in o['units'] for g in gaps):gaps.append({'code':'missing-check','unit':o['units'][0] if o['units'] else None,'path':'.','category':o['category'],'reason':'required obligation has no executable binding: '+o['id']})
-    return {'schema_version':1,'outcome':'incomplete' if enum or gaps else 'exhaustive' if uncertain else 'identified',
+    return {'schema_version':1,'outcome':'incomplete' if enum or gaps or dependents else 'exhaustive' if uncertain else 'identified',
             'known_affected':deps['known_affected'],'potential_services':potential,'selected_services':selected,'dependency_uncertainties':uncertain,
             'enumeration':{'status':'incomplete' if enum else 'complete','boundary_ids':facts['enumeration']['boundaries'],'gap_ids':[g['code'] for g in enum]},
-            'check_discovery':{'status':'incomplete' if gaps else 'complete','obligation_ids':[o['id'] for o in obligations],'gap_ids':[g['code'] for g in gaps]},'required_bindings':bindings,'gaps':enum+gaps}
+            'check_discovery':{'status':'incomplete' if gaps else 'complete','obligation_ids':[o['id'] for o in obligations],'gap_ids':[g['code'] for g in gaps]},'required_bindings':bindings,'gaps':enum+gaps+dependents}
 
 
 def validate_assessment(value):
@@ -37,7 +43,7 @@ def validate_check_binding(expected,gate):
     if gate.get('required') is not True or gate.get('applicability')!='APPLICABLE':gaps.append('required executable check was disabled: '+expected['id'])
     for key in ('units','env_names'):
         if not set(expected[key])<=set(gate.get(key,[])):gaps.append('check omits '+key+': '+expected['id'])
-    if not all(any(within(scope,p) for scope in gate.get('scope',[])) for p in expected['required_scope']):gaps.append('check omits required scope: '+expected['id'])
+    if not all_within(gate.get('scope',[]),expected['required_scope']):gaps.append('check omits required scope: '+expected['id'])
     if not all(item in gate.get('sources',[]) for item in expected['sources']):gaps.append('check omits source capability: '+expected['id'])
     chain=expected['source_chain']
     if chain:
@@ -70,7 +76,7 @@ def validate_declaration(value,gates):
     deps=semantics['dependencies'];assessment=value['assessment']
     for key in ('known_affected','potential_services'):
         if assessment[key]!=deps[key]:raise ValueError('assessment differs from semantic requirements: '+key)
-    selected=sorted(set(deps['potential_services'] if deps['uncertainties'] else deps['known_affected'])|set(deps.get('policy_selection',[])))
+    selected=sorted(set(deps['known_affected'])|set(deps.get('policy_selection',[])))
     if assessment['selected_services']!=selected:raise ValueError('assessment selection differs from semantic requirements')
     if [{k:v for k,v in u.items() if k!='location'} for u in assessment['dependency_uncertainties']]!=deps['uncertainties']:raise ValueError('assessment erased dependency uncertainty')
     if not isinstance(value['bindings'],list) or len(value['bindings'])>10000:raise ValueError('invalid coverage binding list')

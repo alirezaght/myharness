@@ -34,6 +34,12 @@ def planning(st,sid,anticipated=()):
             if currency['current']:
                 from al_gate_coverage import prospective_gaps
                 currency['reasons']=prospective_gaps(st,anticipated)
+                if not currency['reasons']:
+                    # Planning is a checkpoint: an edit that changed obligations (a new import, a new
+                    # consumer) is found by the full inventory even when rule hashes are unchanged.
+                    import al_artifacts as A
+                    import al_gate_inventory as V
+                    currency['reasons']=V.gaps(st,A.read_json(st['gate_manifests'][-1]),anticipated)
                 if not currency['reasons']:refuse('current obligations do not permit replacement planning in unfinished phase')
             from al_recovery import checkpoint
             ref=checkpoint(st,sid,'Current gate obligations require replacement','Replace stale obligations and satisfy base readiness before continuing')
@@ -45,7 +51,6 @@ def planning(st,sid,anticipated=()):
 
 def ready(st):
     from al_gate_currency import check
-    from al_gates import base_gaps
     currency=check(st)
     if not currency['current']:
         from al_recovery_guidance import refuse_guided
@@ -53,10 +58,7 @@ def ready(st):
     if st.get('gate_recovery'):
         obligation=marker(st)
         if obligation.get('replacement_manifest')!=st['gate_manifests'][-1]['sha256']:refuse('active manifest is not the recovery replacement')
-    gaps=base_gaps(st)
-    if gaps:
-        from al_recovery_guidance import refuse_guided
-        refuse_guided(st,'base gates not ready: '+str(gaps))
+    # Base gates run alongside implementation; review and approval still require them (workflow_gaps).
 
 
 def complete(st):

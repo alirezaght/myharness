@@ -49,6 +49,9 @@ def admit_check(st, spec, *, gate_context=None):
         if e.get('reconciliation') or (e['status']!='RUNNING' and not e.get('interrupted')): continue
         if e.get('interrupted') or not L._alive(e.get('owner_pid')): refuse('reconcile interrupted check '+e['id'])
         if shared or al_parallel.shared_state_hits([shlex.join(e['argv'])]): refuse('shared-state check overlap '+e['id'])
+    # A base gate runs in a disposable checkout of the base commit: writers in the working tree
+    # cannot affect it, nor it them.
+    if gate_context and gate_context.get('stage')=='base':return
     for w in unresolved_writers(st):
         if w['state'] != 'ACTIVE' or st['phase'] in BARRIERS or shared or al_parallel.shared_state_hits(w['commands']) or '.' in spec['scope'] or al_parallel.overlaps(w['files'],spec['scope']):
             refuse('check overlaps unresolved writer ' + w['id'])

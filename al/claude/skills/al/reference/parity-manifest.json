@@ -64,6 +64,7 @@
     "al_phases.py",
     "al_planning.py",
     "al_planning_attempts.py",
+    "al_planning_template.py",
     "al_preflight.py",
     "al_profile.py",
     "al_proof_json.py",

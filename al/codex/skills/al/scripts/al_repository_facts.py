@@ -23,6 +23,16 @@ def safe(path):
 def within(parent,path):return parent=='.' or parent==path or path.startswith(parent.rstrip('/')+'/')
 
 
+def all_within(scopes,paths):
+    """Whether every path lies within some scope: each path's ancestors against a set, not path x scope."""
+    parents={s.rstrip('/') for s in scopes}
+    if '.' in parents:return True
+    for path in paths:
+        parts=path.split('/')
+        if not any('/'.join(parts[:i]) in parents for i in range(1,len(parts)+1)):return False
+    return True
+
+
 def gap(code,path,reason,unit=None,category=None):
     return dict(code=code,path=path,reason=reason,unit=unit,**({'category':category} if category else {}))
 

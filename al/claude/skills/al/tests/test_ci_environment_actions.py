@@ -50,7 +50,9 @@ def test_invalid_inputs_fail_real_required_check(cli,repo,tmp_path,script,body,p
     gate=required_ci(manifest)
     cli('gates','run','--stage','base','--id',gate['id'])
     assert any(e['status']=='FAIL' for e in entries(cli,gate['id']))
-    admit_planning(cli);before=state(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state(cli)==before
+    # The failed required check holds back review (workflow_gaps), not implementation.
+    import al_transitions
+    assert any('base gate '+gate['id'] in g for g in al_transitions.workflow_gaps(state(cli)))
 
 
 def test_architecture_failure_remains_blocking(cli,repo,tmp_path):
@@ -62,7 +64,8 @@ def test_architecture_failure_remains_blocking(cli,repo,tmp_path):
     assert entries(cli,gate['id']) and all(e['status']=='PASS' for e in entries(cli,gate['id']))
     run(cli,'base')
     assert any(e['status']=='FAIL' for e in state(cli)['evidence']['entries'] if e['area'].startswith('gate-base-imports'))
-    admit_planning(cli);before=state(cli);invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state(cli)==before
+    import al_transitions
+    assert any('base gate imports' in g for g in al_transitions.workflow_gaps(state(cli)))
 
 
 @pytest.mark.parametrize('script',[

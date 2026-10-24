@@ -70,7 +70,9 @@ def test_context_replacement_requires_fresh_manifest_bound_base_evidence(cli,rep
     plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base')
     replacement=declaration(st,selection={'label':'A new explicit planning declaration'})
     m['ci_context']=replacement;plan(cli,tmp_path,m)
-    admit_planning(cli);before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
+    # Base evidence bound to the replacement manifest is required before review, not before work.
+    import al_transitions
+    assert any('base gate' in gap for gap in al_transitions.workflow_gaps(json.loads(cli('show')[1])))
     invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
 
 

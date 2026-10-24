@@ -25,13 +25,21 @@ def candidates(scan,nested=False):
     names=set()
     for p in [*scan.members,*scan.base,*scan.paths]:
         parts=Path(p).parts
-        if len(parts)>=2 and parts[0] in {'services','packages','apps'}:names.add('/'.join(parts[:2]))
+        # A unit is a directory: a file directly under services/, packages/ or apps/ is not one.
+        if len(parts)>=2 and parts[0] in {'services','packages','apps'} and (len(parts)>=3 or p.endswith('/')):names.add('/'.join(parts[:2]))
         if nested and len(parts)>2 and parts[0] in {'packages','apps'} and Path(p).name in {'pyproject.toml','package.json','go.mod'}:names.add(str(Path(p).parent))
     if 'pyproject.toml' in scan.files or 'pyproject.toml' in scan.base:names.add('.')
     return {name for name in names if not any(within(o,name) for o in scan.opaque)}
 
 
 WORKSPACE_MANIFESTS=('package.json','pyproject.toml','go.mod')
+
+
+def tooling_root(path):
+    """The directory that names a manifest-less tooling root: `scripts`, `services/x/alembic`, or `.` for root files."""
+    parts=PurePosixPath(path).parts[:-1]
+    if not parts:return '.'
+    return '/'.join(parts[:3 if parts[0] in {'services','packages','apps'} else 1])
 
 
 def expand_members(pattern,files):
@@ -111,7 +119,8 @@ def add_unit(scan,facts,path,role=None,language=None):
             if top=='tests':
                 facts['enumeration']['exclusions'].append({'path':prefix+'tests','reason':'test input; not installed Python source','provenance':[config_path]})
             elif top not in {'setup.py'}:outside.add(prefix+top)
-        for p in sorted(outside):facts['enumeration']['gaps'].append(gap('undeclared-source-root',p,'Python source outside conventional declared roots',path))
+        # Migrations, scripts and entry points beside a service's package are its tooling.
+        for p in sorted(outside):facts['enumeration']['exclusions'].append({'path':p,'reason':'service tooling outside declared source roots','provenance':[config_path]})
         for name,value in uv.get('sources',{}).items():
             if isinstance(value,dict) and isinstance(value.get('path'),str):
                 # Resolve literal local dependencies without following filesystem links.
@@ -200,7 +209,10 @@ def workspace_members(scan,facts):
             negated=isinstance(pattern,str) and pattern.startswith('!')
             literal=pattern[1:] if negated else pattern
             safe(literal.replace('**','x').replace('*','x'))
-            if not literal.startswith(('services/','packages/','apps/')):raise ValueError('unsupported workspace member '+str(pattern))
+            if not literal.startswith(('services/','packages/','apps/')):
+                # Docs or build tooling declared as a workspace member is not a service.
+                if not negated:facts['enumeration']['exclusions'].append({'path':literal,'reason':'workspace member outside services/packages/apps: tooling, not a service','provenance':['workspace declaration']})
+                continue
             members=expand_members(literal,scan.files) if '*' in literal else {literal}
             (excluded if negated else explicit).update(members)
         except (TypeError,ValueError) as exc:facts['enumeration']['gaps'].append(gap('unsupported-workspace','.',str(exc)))
@@ -216,12 +228,23 @@ def observe(scan):
     if '.' in names and not root.get('project') and root.get('tool',{}).get('uv',{}).get('workspace') and not any(p.endswith('.py') and not p.startswith(('services/','packages/','tests/')) for p in scan.files):
         names.remove('.')
         facts['enumeration']['exclusions'].append({'path':'.','reason':'literal uv workspace container','provenance':['pyproject.toml']})
+    tooling=set()
     for p in scan.files:
         if Path(p).name=='pyproject.toml' and str(Path(p).parent) not in names and p!='pyproject.toml':
-            facts['enumeration']['gaps'].append(gap('unsupported-unit-layout',p,'Python manifest outside supported root/services/packages layout'))
+            if p.startswith(('services/','packages/','apps/')):
+                facts['enumeration']['gaps'].append(gap('unsupported-unit-layout',p,'Python manifest outside supported root/services/packages layout'))
+            else:tooling.add(tooling_root(p))
         if p.endswith(SOURCE_SUFFIXES) and not any(within(unit,p) for unit in names):
-            facts['enumeration']['gaps'].append(gap('unsupported-source-root',p,'source-bearing root has no supported manifest/ownership boundary'))
+            tooling.add(tooling_root(p))
+    # Manifest-less source outside every unit (scripts, importers, CI helpers) is tooling: one
+    # recorded exclusion per root, outside service coverage, instead of a gap per file.
+    for root in sorted(tooling):
+        facts['enumeration']['exclusions'].append({'path':root,'reason':'manifest-less tooling root outside service coverage','provenance':['repository layout']})
     for path in sorted(names):
         add_unit(scan,facts,path)
         if path.startswith('apps/') and any(u['id']==path and 'python' in u['languages'] for u in facts['units']):facts['enumeration']['gaps'].append(gap('unsupported-unit-layout',path,'generic Python apps layout needs a bundled repository adapter',path))
+    unique=[]
+    for item in facts['enumeration']['exclusions']:
+        if item not in unique:unique.append(item)
+    facts['enumeration']['exclusions']=unique
     return facts

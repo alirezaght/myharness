@@ -33,7 +33,7 @@ def test_component_boundary_and_nonexistent_path_do_not_grant_directory_coverage
 
 @pytest.mark.parametrize('change',['rule','path','unit'])
 @pytest.mark.parametrize('phase',['IMPLEMENTATION','FINALIZATION'])
-def test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer(cli,repo,tmp_path,state_file,change,phase):
+def test_legitimate_extension_keeps_phase_and_admits_writer_before_new_base(cli,repo,tmp_path,state_file,change,phase):
     setup(cli,repo,tmp_path)
     if phase=='FINALIZATION':invoke(cli,'phase','FINALIZATION')
     prior=state(cli)
@@ -48,13 +48,10 @@ def test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer(cl
     replacement=manifest(cli,repo,[target]);plan(cli,tmp_path,replacement);st=state(cli)
     assert st['phase']==phase and st['completed_phases']==prior['completed_phases']
     assert st['gate_recovery']['replacement_manifest']==st['gate_manifests'][-1]['sha256']
-    unchanged_refusal(cli,state_file,target)
-    invoke(cli,'gates','run','--stage','base',ok=change!='unit')
-    if change=='unit':
-        failed=state(cli)['gate_runs'][-1]['gate']
-        invoke(cli,'gates','decision','--id',failed,'--action','fix','--source','Explicit fixture developer instruction','--reason','Implement the new manifest absent from the pinned baseline after recording its real failed check.')
+    # Base gates run alongside implementation; review still requires them.
     writer(cli,target)
     assert state(cli)['writers']['writer']['state']=='ACTIVE' and state(cli)['gate_recovery_history']
+    invoke(cli,'gates','run','--stage','base',ok=change!='unit')
 
 
 @pytest.mark.parametrize('phase',['IMPLEMENTATION','FINALIZATION'])
@@ -87,7 +84,9 @@ def test_unknown_prospective_ci_remains_unresolved(cli,repo,tmp_path,state_file)
     put(repo,'apps/web/package.json','{"name":"web"}')
     setup(cli,repo,tmp_path);unchanged_refusal(cli,state_file,'apps/web')
     m=manifest(cli,repo,['apps/web']);assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED' for g in m['gates'])
-    plan(cli,tmp_path,m);unchanged_refusal(cli,state_file,'apps/web/a.ts')
+    # The unmodelable job is reported as unverified and does not hold back the writer.
+    plan(cli,tmp_path,m);writer(cli,'apps/web/a.ts')
+    assert any(u['category']=='ci' and u['verified_by']=='pipeline' for u in json.loads(invoke(cli,'gates','status')[1])['unverified'])
 
 
 def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(cli,repo,tmp_path,state_file):
@@ -106,7 +105,11 @@ def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(
     writer(cli,'packages/shared/src/common.py')
     invoke(cli,'writer','finish','--id','writer','--outcome','success')
     (repo/'packages/shared/src/common.py').write_text('VALUE=__import__("unknown")\n')
-    unchanged_refusal(cli,state_file,'packages/shared/src/common.py')
+    # A content edit inside a covered path does not hold back writers; the review-start
+    # inventory reports the new import uncertainty against the planned manifest.
+    writer(cli,'packages/shared/src/common.py',identifier='second')
+    st=state(cli);import al_artifacts as A
+    assert V.gaps(st,A.read_json(st['gate_manifests'][-1]))
 
 
 def test_covered_parent_still_requires_prospective_new_unit_obligations(cli,repo,tmp_path,state_file):
@@ -118,8 +121,4 @@ def test_covered_parent_still_requires_prospective_new_unit_obligations(cli,repo
     put(repo,'apps/new/package.json','{"name":"new"}')
     put(repo,'.gitlab-ci.yml','web-verify:\n  script:\n    - python3 -m json.tool apps/web/package.json\n    - python3 -m json.tool apps/new/package.json\n')
     plan(cli,tmp_path,manifest(cli,repo,['apps/new/app.ts']))
-    unchanged_refusal(cli,state_file,'apps/new/app.ts')
-    invoke(cli,'gates','run','--stage','base',ok=False)
-    failed=state(cli)['gate_runs'][-1]['gate']
-    invoke(cli,'gates','decision','--id',failed,'--action','fix','--source','Explicit fixture developer instruction','--reason','Implement the newly admitted manifest absent from the pinned baseline; retain its failed baseline evidence.')
     writer(cli,'apps/new/app.ts')

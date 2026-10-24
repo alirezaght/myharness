@@ -5,7 +5,9 @@ Gate discovery records whether AL can account for every service a change may aff
 The assessment has three outcomes:
 
 - `identified`: dependency analysis found the affected services and their required checks. The selected set is the known affected set plus explicit policy selections.
-- `exhaustive`: dependency analysis contains uncertainty, but service enumeration and check discovery are independently complete. AL selects every service in `potential_services` and requires every discovered binding.
+- `exhaustive`: dependency analysis contains uncertainty, but service enumeration and check discovery are complete and every potential service is already in the known affected set, so selection is complete.
+
+AL selects only the known affected services plus explicit policy selections. When unresolved imports could reach further services, the assessment records an `uncertain-dependents` gap: those services are reported as unverified (verified by the pipeline) rather than all being selected. Manifest-less source outside every unit (`scripts/`, importers, migrations beside a service package) and workspace members outside `services/`, `packages/` or `apps/` are recorded once per root as tooling exclusions, not as gaps.
 - `incomplete`: enumeration or required-check discovery has gaps. The manifest records those gaps as an UNRESOLVED coverage gate. Work continues: the gate is reported as unverified to the reviewer and in the final report, and every check AL can execute still runs.
 
 Unknown or nonliteral dynamic imports add dependency uncertainty. A recognized literal external import can be resolved against declared version and lock information. Uncertainty by itself does not block a task when the complete potential universe and executable checks are proven. Opaque gitlinks and other opaque submodules, unsupported layouts, incomplete workspace membership, unreadable declarations, bounded-scan exhaustion, unsupported shared-language effects and missing or unrecognized checks remain named gaps, reported as unverified rather than blocking.

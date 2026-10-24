@@ -102,7 +102,8 @@
         "tests/test_artifact_consumers.py",
         "tests/test_review_state.py",
         "tests/test_baseline_exceptions.py",
-        "tests/test_unverified_policy.py"
+        "tests/test_unverified_policy.py",
+        "tests/test_planning_template.py"
       ],
       "claude": [
         "tests/test_git_observation.py",
@@ -122,7 +123,8 @@
         "tests/test_review_state.py",
         "tests/test_baseline_exceptions.py",
         "tests/test_model_slots.py",
-        "tests/test_unverified_policy.py"
+        "tests/test_unverified_policy.py",
+        "tests/test_planning_template.py"
       ]
     },
     "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23). Claude test_model_slots.py uses only the per-test repository copy and runtime (2026-10-23)."
@@ -136,21 +138,21 @@
       }
     },
     "claude:tests/test_artifact_consumers.py": {
-      "test": "0593c4c47c43f83f8b87eede840ab9076b1ebdd0223b0aa59648a7d22a26ebd8",
+      "test": "c9589c574d3d8ec42bf85ce09ce41243f4b5903f8b0d40ce6690c9a26d333d9f",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
       }
     },
     "claude:tests/test_assessments_recovery.py": {
-      "test": "f10e98bbd08d567e75f799e2823e1c4771e2fdc1eaf70fbbb82efbb5cb1230d3",
+      "test": "94428c7476e75cc294a9b62ae9bca2339be11da5e0f99412923df8caacb60347",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
       }
     },
     "claude:tests/test_baseline_exceptions.py": {
-      "test": "e6e5d5a51a237d64e8c1b589f69ba185bde903e6825c174ef4a55816a84ae3fa",
+      "test": "14b84e267f980391d0cec0c4473df4ca8b014cc359727544b7340dbe46d32fb3",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -171,7 +173,7 @@
       }
     },
     "claude:tests/test_ci_environment_actions.py": {
-      "test": "ba1459eab9511f9987eb1a23aa6b7838ed652b568392a218d8907a1847f1f355",
+      "test": "4c136d27078a842fa94920d3ae50db3e6dd9e7708b92159975c5ff054d514d18",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -290,7 +292,7 @@
       }
     },
     "claude:tests/test_git_memo.py": {
-      "test": "528f8038f327ce7b6852ab3d7e01f846d52fb19049f9bc10eab0076944664ff7",
+      "test": "675f762fe67359f744192b747cf56b7a82a09244ab5b18ef4e6bbd45a94c4e4b",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -366,6 +368,13 @@
         "mode": 420
       }
     },
+    "claude:tests/test_planning_template.py": {
+      "test": "17e67bdfaf523f3c0e24a59d8f17c26acf803d4e8fa5a140d7e0bd04279dca88",
+      "fixtures": {
+        "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
+        "mode": 420
+      }
+    },
     "claude:tests/test_readonly_guard.py": {
       "test": "8a96eafebff13cb2c623f9fd379cbd5cba04feb278071ffa319d7105b9ae5259",
       "fixtures": {
@@ -395,7 +404,7 @@
       }
     },
     "claude:tests/test_repo_adapters.py": {
-      "test": "eb60a7009216af2241702465f235714b4b2ee68f04e03811affab58e01440861",
+      "test": "ec9b0de5b02c0b96beecbcde41be76ce2fd6d8759db3bc9a875e4ffd84ce6e4a",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -437,7 +446,7 @@
       }
     },
     "claude:tests/test_runtime_batch11_recovery.py": {
-      "test": "dfc4fa2485b0daa91f9032176ad57599e19c467cdb6dd279684a3b2e59f1e7c7",
+      "test": "a864831250b8ca8cacacac45580b89c0505bb2082ea49ebd246e768962f5ce39",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -479,7 +488,7 @@
       }
     },
     "claude:tests/test_runtime_batch14_context.py": {
-      "test": "40665c2883ba56d772e9d5a72b6c51e57085a5d7cd74e1ca88808fca9321b61c",
+      "test": "152a6feeab8ea1e64797cd29e26b2fa3f3d164960f7260dada9a8284a674e38e",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -584,14 +593,14 @@
       }
     },
     "claude:tests/test_runtime_batch8_ci.py": {
-      "test": "a9c0ed7bbdc2a93b876ece21f31fa469948254050a994f40c44277f07eb47795",
+      "test": "255d7a3dc9e4e825597d01d123937bc75f3fa0dbb42316b31d8a4965167c631e",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
       }
     },
     "claude:tests/test_runtime_batch8_context.py": {
-      "test": "82e1d73ec248f504b8977c51c3176b4d4ccf5abd240d4be4a4ca9d0a32ff3cfc",
+      "test": "921fa2edb042e4dd15ef1a334709098349dad04e473a8487299bd1b1eb131d67",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -612,7 +621,7 @@
       }
     },
     "claude:tests/test_runtime_batch9_ci.py": {
-      "test": "f61fc57c26222936f4ff8543776862ae1f951d4a24d4d99396c0b9cc82489be9",
+      "test": "a79eb7d939bfc042d75d89db0b36c73828b9379025c361b9a82b156c4e007e6d",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -647,14 +656,14 @@
       }
     },
     "claude:tests/test_service_coverage.py": {
-      "test": "09357d3ce45dd6dfe1ce8f72623e8f06200d30f65c07cd00858b21ea1ba1d715",
+      "test": "ce56ca448da7f693283b0db21504f161800e9fc6efa95634e0de65e51963c649",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
       }
     },
     "claude:tests/test_service_coverage_admission.py": {
-      "test": "7794bf006b21f1eac0d17b58354cfc2b2b9267f9c41967a36b65316b09c453f6",
+      "test": "013e9d6eb31ec689157ecff525c34395d5b11b1770230034be6c788748df1c41",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -682,7 +691,7 @@
       }
     },
     "claude:tests/test_workflow_routing.py": {
-      "test": "f29fa992c4167a2a0077bb1b0f73d3cdfed182239e4ce410a51b964768e185c7",
+      "test": "b82231e390997b5db6a75757450b2f93e66a10a53cf8a3732b877a0eccd2b3de",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -703,21 +712,21 @@
       }
     },
     "codex:tests/test_artifact_consumers.py": {
-      "test": "0593c4c47c43f83f8b87eede840ab9076b1ebdd0223b0aa59648a7d22a26ebd8",
+      "test": "c9589c574d3d8ec42bf85ce09ce41243f4b5903f8b0d40ce6690c9a26d333d9f",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
       }
     },
     "codex:tests/test_assessments_recovery.py": {
-      "test": "f10e98bbd08d567e75f799e2823e1c4771e2fdc1eaf70fbbb82efbb5cb1230d3",
+      "test": "94428c7476e75cc294a9b62ae9bca2339be11da5e0f99412923df8caacb60347",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
       }
     },
     "codex:tests/test_baseline_exceptions.py": {
-      "test": "e6e5d5a51a237d64e8c1b589f69ba185bde903e6825c174ef4a55816a84ae3fa",
+      "test": "14b84e267f980391d0cec0c4473df4ca8b014cc359727544b7340dbe46d32fb3",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -738,7 +747,7 @@
       }
     },
     "codex:tests/test_ci_environment_actions.py": {
-      "test": "ba1459eab9511f9987eb1a23aa6b7838ed652b568392a218d8907a1847f1f355",
+      "test": "4c136d27078a842fa94920d3ae50db3e6dd9e7708b92159975c5ff054d514d18",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -878,7 +887,7 @@
       }
     },
     "codex:tests/test_git_memo.py": {
-      "test": "528f8038f327ce7b6852ab3d7e01f846d52fb19049f9bc10eab0076944664ff7",
+      "test": "675f762fe67359f744192b747cf56b7a82a09244ab5b18ef4e6bbd45a94c4e4b",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -975,6 +984,13 @@
         "mode": 420
       }
     },
+    "codex:tests/test_planning_template.py": {
+      "test": "17e67bdfaf523f3c0e24a59d8f17c26acf803d4e8fa5a140d7e0bd04279dca88",
+      "fixtures": {
+        "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
+        "mode": 420
+      }
+    },
     "codex:tests/test_remote_gates.py": {
       "test": "5afe3457ee6d2d47debd94ac4efb8089f9a4ac2389615a845749fdb55c29cc40",
       "fixtures": {
@@ -997,7 +1013,7 @@
       }
     },
     "codex:tests/test_repo_adapters.py": {
-      "test": "eb60a7009216af2241702465f235714b4b2ee68f04e03811affab58e01440861",
+      "test": "ec9b0de5b02c0b96beecbcde41be76ce2fd6d8759db3bc9a875e4ffd84ce6e4a",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1039,7 +1055,7 @@
       }
     },
     "codex:tests/test_runtime_batch11_recovery.py": {
-      "test": "dfc4fa2485b0daa91f9032176ad57599e19c467cdb6dd279684a3b2e59f1e7c7",
+      "test": "a864831250b8ca8cacacac45580b89c0505bb2082ea49ebd246e768962f5ce39",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1095,14 +1111,14 @@
       }
     },
     "codex:tests/test_runtime_batch14_consumers.py": {
-      "test": "f8ad8d5fc88aa97b789c7e977ab70f407eab92a12751f412ba54fc71f41128e8",
+      "test": "83cefafddf521049157d871f6f8093c966d8b038d1e3167cec56c5f3f536104f",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
       }
     },
     "codex:tests/test_runtime_batch14_context.py": {
-      "test": "40665c2883ba56d772e9d5a72b6c51e57085a5d7cd74e1ca88808fca9321b61c",
+      "test": "152a6feeab8ea1e64797cd29e26b2fa3f3d164960f7260dada9a8284a674e38e",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1144,7 +1160,7 @@
       }
     },
     "codex:tests/test_runtime_batch16_writers.py": {
-      "test": "5984f4aa5d5cf53fda01ff0fbf4ee0d5fbb0179254f86b0de5330f6ba84b3934",
+      "test": "defa2949e07e6ad6ff059d7dea7d2328c8f4eb13f27d45c0a369e8fbe532bb35",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1179,7 +1195,7 @@
       }
     },
     "codex:tests/test_runtime_batch6_recovery.py": {
-      "test": "8fd207ea38812e76dffc7e04e5b14cdcac3625a7746a9720ae024bea7b10475e",
+      "test": "c33dbeb91bc598204c7c2b92da3c7af82dde3c5d3e0209603a47ccdb9a2fd6eb",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1207,14 +1223,14 @@
       }
     },
     "codex:tests/test_runtime_batch8_ci.py": {
-      "test": "a9c0ed7bbdc2a93b876ece21f31fa469948254050a994f40c44277f07eb47795",
+      "test": "255d7a3dc9e4e825597d01d123937bc75f3fa0dbb42316b31d8a4965167c631e",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
       }
     },
     "codex:tests/test_runtime_batch8_context.py": {
-      "test": "82e1d73ec248f504b8977c51c3176b4d4ccf5abd240d4be4a4ca9d0a32ff3cfc",
+      "test": "921fa2edb042e4dd15ef1a334709098349dad04e473a8487299bd1b1eb131d67",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1228,7 +1244,7 @@
       }
     },
     "codex:tests/test_runtime_batch9_ci.py": {
-      "test": "f61fc57c26222936f4ff8543776862ae1f951d4a24d4d99396c0b9cc82489be9",
+      "test": "a79eb7d939bfc042d75d89db0b36c73828b9379025c361b9a82b156c4e007e6d",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1256,14 +1272,14 @@
       }
     },
     "codex:tests/test_service_coverage.py": {
-      "test": "09357d3ce45dd6dfe1ce8f72623e8f06200d30f65c07cd00858b21ea1ba1d715",
+      "test": "ce56ca448da7f693283b0db21504f161800e9fc6efa95634e0de65e51963c649",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
       }
     },
     "codex:tests/test_service_coverage_admission.py": {
-      "test": "7794bf006b21f1eac0d17b58354cfc2b2b9267f9c41967a36b65316b09c453f6",
+      "test": "013e9d6eb31ec689157ecff525c34395d5b11b1770230034be6c788748df1c41",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1305,7 +1321,7 @@
       }
     },
     "codex:tests/test_workflow_routing.py": {
-      "test": "f29fa992c4167a2a0077bb1b0f73d3cdfed182239e4ce410a51b964768e185c7",
+      "test": "b82231e390997b5db6a75757450b2f93e66a10a53cf8a3732b877a0eccd2b3de",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1718,8 +1734,6 @@
     "claude:tests/test_analysis_cache.py::test_same_mtime_edit_new_and_deleted_sources_invalidate",
     "claude:tests/test_analysis_cache.py::test_scan_stability_is_required_even_on_cache_hits",
     "claude:tests/test_analysis_cache.py::test_verified_blob_cache_corruption_is_miss",
-    "claude:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[changed while stopped\\n-PLANNING]",
-    "claude:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[import unknown_new_dependency\\nx = 2\\n-PLANNING]",
     "claude:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[x = \"changed while stopped\"\\n-VERIFICATION]",
     "claude:tests/test_assessments_recovery.py::test_rendered_ui_trigger_requires_observations_and_artifact",
     "claude:tests/test_assessments_recovery.py::test_rollout_trigger_requires_each_operational_dimension",
@@ -3172,7 +3186,6 @@
     "claude:tests/test_service_coverage_admission.py::test_current_source_import_change_and_new_module_stale_admission",
     "claude:tests/test_service_coverage_admission.py::test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence",
     "claude:tests/test_service_coverage_admission.py::test_generic_required_ci_can_cover_service_without_architecture_policy",
-    "claude:tests/test_service_coverage_admission.py::test_incomplete_missing_check_blocks_phase_and_writer",
     "claude:tests/test_service_coverage_admission.py::test_manifest_tampering_refuses_without_state_mutation[adapter]",
     "claude:tests/test_service_coverage_admission.py::test_manifest_tampering_refuses_without_state_mutation[argv]",
     "claude:tests/test_service_coverage_admission.py::test_manifest_tampering_refuses_without_state_mutation[complete]",
@@ -3196,8 +3209,6 @@
     "codex:tests/test_analysis_cache.py::test_same_mtime_edit_new_and_deleted_sources_invalidate",
     "codex:tests/test_analysis_cache.py::test_scan_stability_is_required_even_on_cache_hits",
     "codex:tests/test_analysis_cache.py::test_verified_blob_cache_corruption_is_miss",
-    "codex:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[changed while stopped\\n-PLANNING]",
-    "codex:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[import unknown_new_dependency\\nx = 2\\n-PLANNING]",
     "codex:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[x = \"changed while stopped\"\\n-VERIFICATION]",
     "codex:tests/test_assessments_recovery.py::test_rendered_ui_trigger_requires_observations_and_artifact",
     "codex:tests/test_assessments_recovery.py::test_rollout_trigger_requires_each_operational_dimension",
@@ -4251,12 +4262,6 @@
     "codex:tests/test_runtime_batch16_writers.py::test_current_manifest_cannot_request_replacement_privilege_or_replan_active_writer[IMPLEMENTATION]",
     "codex:tests/test_runtime_batch16_writers.py::test_directory_inventory_discovers_units_and_sourced_ci_then_missing_job_refuses",
     "codex:tests/test_runtime_batch16_writers.py::test_in_manifest_control_then_sibling_and_new_unit_refuse_atomically",
-    "codex:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[FINALIZATION-path]",
-    "codex:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[FINALIZATION-rule]",
-    "codex:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[FINALIZATION-unit]",
-    "codex:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[IMPLEMENTATION-path]",
-    "codex:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[IMPLEMENTATION-rule]",
-    "codex:tests/test_runtime_batch16_writers.py::test_legitimate_extension_keeps_phase_and_requires_new_base_before_writer[IMPLEMENTATION-unit]",
     "codex:tests/test_runtime_batch16_writers.py::test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path",
     "codex:tests/test_runtime_batch16_writers.py::test_unknown_prospective_ci_remains_unresolved",
     "codex:tests/test_runtime_batch17_shell.py::test_selected_script_and_trailing_positional_data_are_literal[bash --noprofile --norc -c 'rg -- -c README.md']",
@@ -4410,12 +4415,9 @@
     "codex:tests/test_runtime_batch6.py::test_whole_quoted_nonexistent_executable_is_not_unquoted_into_commands[\"]",
     "codex:tests/test_runtime_batch6.py::test_whole_quoted_nonexistent_executable_is_not_unquoted_into_commands[']",
     "codex:tests/test_runtime_batch6_recovery.py::test_actual_running_check_blocks_recovery_replacement",
-    "codex:tests/test_runtime_batch6_recovery.py::test_failed_base_blocks_writer_then_valid_replacement_allows_new_lifetime",
     "codex:tests/test_runtime_batch6_recovery.py::test_mismatched_recovery_marker_cannot_admit_replacement[checkpoint]",
     "codex:tests/test_runtime_batch6_recovery.py::test_mismatched_recovery_marker_cannot_admit_replacement[corrupt-checkpoint]",
     "codex:tests/test_runtime_batch6_recovery.py::test_mismatched_recovery_marker_cannot_admit_replacement[phase]",
-    "codex:tests/test_runtime_batch6_recovery.py::test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing[IMPLEMENTATION]",
-    "codex:tests/test_runtime_batch6_recovery.py::test_ordinary_stale_obligations_need_ready_spec_and_base_before_advancing[PSEUDOCODE]",
     "codex:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[resume-IMPLEMENTATION]",
     "codex:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[resume-PSEUDOCODE]",
     "codex:tests/test_runtime_batch6_recovery.py::test_recovered_unfinished_phase_replaces_gates_before_advancing[retry-IMPLEMENTATION]",
@@ -4840,7 +4842,6 @@
     "codex:tests/test_service_coverage_admission.py::test_current_source_import_change_and_new_module_stale_admission",
     "codex:tests/test_service_coverage_admission.py::test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence",
     "codex:tests/test_service_coverage_admission.py::test_generic_required_ci_can_cover_service_without_architecture_policy",
-    "codex:tests/test_service_coverage_admission.py::test_incomplete_missing_check_blocks_phase_and_writer",
     "codex:tests/test_service_coverage_admission.py::test_manifest_tampering_refuses_without_state_mutation[adapter]",
     "codex:tests/test_service_coverage_admission.py::test_manifest_tampering_refuses_without_state_mutation[argv]",
     "codex:tests/test_service_coverage_admission.py::test_manifest_tampering_refuses_without_state_mutation[complete]",
@@ -4996,8 +4997,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1001,
-    "digest": "8f82e0aa451f8d537703b0d9abab0aaf886d4e1fc665d2b07f6b558f12ef8be3"
+    "members": 1005,
+    "digest": "2e42926299c32f4c95305a2a371ef5732dddc59da55e53da9b88f6a2f9921d17"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",

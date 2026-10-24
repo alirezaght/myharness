@@ -66,6 +66,10 @@ class Inventory:
             self.origins[name]=path
         self.visiting.pop()
 
+    def unit_scope(self):
+        # An unresolved job may apply to any selected path; its unit directories say that compactly.
+        return {R.unit(p) for p in self.paths} or {'.'}
+
     def obligations(self):
         result=[];dependencies=list(self.files.values())
         def append(path,job,status,inputs,reason,execution=None):
@@ -82,7 +86,7 @@ class Inventory:
                 uncertain=[self.provenance[n] for n in used if self.provenance[n]['uncertain']]
                 if uncertain:
                     contributors=sorted({p for item in uncertain for p in item['sources']})
-                    append(path,name,'UNRESOLVED',set(self.paths),'conditional CI definition/inheritance provenance unresolved: '+','.join(contributors));continue
+                    append(path,name,'UNRESOLVED',self.unit_scope(),'conditional CI definition/inheritance provenance unresolved: '+','.join(contributors));continue
                 if self.workflow_unknown:raise Unsupported('include/workflow pipeline context unresolved')
                 semantics=R.structure(job)
                 if not any(k in job for k in ('script','trigger','run')):raise Unsupported('job execution definition missing')
@@ -102,8 +106,8 @@ class Inventory:
                 for key,value in self.globals.items():
                     if key!='default':local.setdefault(key,value)
                 append(path,name,'APPLICABLE',inputs,reason,execution(local,self.root,self.opaque,self.environment_context))
-            except Unsupported as exc:append(path,name,'UNRESOLVED',set(self.paths),str(exc))
-        for index,(path,reason) in enumerate(self.issues):append(path,'<unresolved-definition-'+str(index)+'>','UNRESOLVED',set(self.paths),reason)
+            except Unsupported as exc:append(path,name,'UNRESOLVED',self.unit_scope(),str(exc))
+        for index,(path,reason) in enumerate(self.issues):append(path,'<unresolved-definition-'+str(index)+'>','UNRESOLVED',self.unit_scope(),reason)
         return result
 
 

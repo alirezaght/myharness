@@ -25,11 +25,27 @@ from al_schema import refuse
 
 class CandidateChanged(al_checkouts.MaterializationError):pass
 
+_VALIDATED=set()
+
+
+def stale_sources(m):
+    """Sourced rules and gate sources whose current bytes differ from the plan; checked at every launch."""
+    out=[]
+    for source in m['rules']+[g['source'] for g in m['gates'] if g.get('source')]:
+        p=al_store.REPO_ROOT/S.safe_path(source['path'])
+        if not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=source['sha256']:out.append(source['path'])
+    return sorted(set(out))
+
+
 @S.decision
 def manifest(st):
     refs=st.get('gate_manifests',[])
     if not refs: return None
-    m=A.read_json(refs[-1]); D.validate_manifest(st,m); return m
+    # Full inventory validation runs at gates plan and review start, not on every read; the
+    # structural validation of one exact manifest is done once per process.
+    m=A.read_json(refs[-1]);key=(refs[-1]['sha256'],st['identity']['merge_base'])
+    if key not in _VALIDATED:D.validate_manifest(st,m,check_sources=False);_VALIDATED.add(key)
+    return m
 
 @S.decision
 def gate_gaps(st,stage):
@@ -73,6 +89,14 @@ def unverified(st):
             for g in m['gates'] if g['applicability']=='UNRESOLVED']
 
 def base_gaps(st): return gate_gaps(st,'base')
+
+
+@S.decision
+def status(st):
+    """Every status section within one worktree observation instead of one per section."""
+    from al_recovery_guidance import descriptors
+    return {'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),
+            'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st)}
 @S.decision
 def candidate_gaps(st):
     m=manifest(st)
@@ -119,9 +143,7 @@ def cmd_gates(a,sid):
         if a.decision in {'stop','defer'}: st.update(status='STOPPED_WITH_BLOCKERS',stop_reason='user '+a.decision+' for gate '+a.id)
         al_store.save(sid,st); return
     if a.action=='status':
-        from al_recovery_guidance import descriptors
-        print(json.dumps({'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),
-                          'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st)},indent=2)); return
+        print(json.dumps(status(st),indent=2)); return
     refuse('gate run must use unlocked dispatcher')
 
 def cmd_run(a,sid):
@@ -174,6 +196,8 @@ def cmd_run(a,sid):
                     current=al_store.load(sid)
                     if current['run_id']!=st['run_id'] or current['gate_manifests'][-1]['sha256']!=ref or manifest(current)!=m:
                         raise al_checkouts.MaterializationError('run or manifest changed before launch')
+                    stale=stale_sources(m)
+                    if stale:raise al_checkouts.MaterializationError('source rule changed before launch: '+', '.join(stale))
                     root=checkout['root']
                     before_state=R.scratch_state(root,initial)
                     if R.drift(initial,before_state,root):raise al_checkouts.MaterializationError('scratch changed between gates')

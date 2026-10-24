@@ -53,7 +53,9 @@ def _analyze(facts,scan):
     def targets(record,name):
         own=record['unit'];visible={own}
         visible.update(d for c in units[own]['module_contexts'] for d in c['local_dependencies'])
-        candidates={key for module,keys in owners.items() if module and (module==name or name.startswith(module+'.')) for key in keys}
+        # A module owns an import exactly when it is a dotted prefix of the imported name.
+        parts=name.split('.')
+        candidates={key for i in range(1,len(parts)+1) if parts[0] for key in owners.get('.'.join(parts[:i]),())}
         contextual={key for key in candidates if records[key]['unit'] in visible}
         if contextual:return contextual
         # Cross-unit imports remain conservative when a local dependency declaration

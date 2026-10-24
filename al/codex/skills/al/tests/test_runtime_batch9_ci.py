@@ -4,6 +4,7 @@ import pytest
 import al_artifacts as A
 import al_ci_inventory as CI
 import al_gate_currency as C
+import al_gate_inventory as V
 from batch8_helpers import force_applicable_ci,setup,plan,executable_ci
 
 PATHS=['apps/web/app.ts','apps/admin/app.ts']
@@ -58,7 +59,8 @@ def test_uncertain_job_override_precedes_all_exclusion_paths(repo,override):
     data=definitions(repo,conditional('verify:\n  script: echo checked\n',override))
     job=next(j for j in data['obligations'] if j['job']=='verify')
     assert job['applicability']=='UNRESOLVED' and job['units']==['apps/admin','apps/web']
-    assert job['inputs']==['apps/admin/app.ts','apps/web/app.ts']
+    # An unresolved job's scope is the unit directories of the selected paths (compact, same coverage).
+    assert job['inputs']==['apps/admin','apps/web']
     assert {d['path'] for d in job['dependencies']}=={'.gitlab-ci.yml','ci/base.yml','ci/controller.yml','ci/optional.yml'}
 
 
@@ -114,7 +116,9 @@ def test_manifest_and_currency_cannot_clear_definition_uncertainty(cli,repo,tmp_
     if erasure=='omit':
         with pytest.raises(SystemExit):C.check(state)
     else:
-        current=C.check(state);assert not current['current'] and any('UNRESOLVED' in reason for reason in current['reasons'])
+        # Manifests enter only through `gates plan` (refused above); the review-start inventory
+        # also reports the erased uncertainty.
+        assert any('UNRESOLVED' in reason for reason in V.gaps(state,m))
 
 
 def test_default_test_stage_job_has_complete_public_approval_route(cli,repo,tmp_path):

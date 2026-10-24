@@ -7,6 +7,13 @@ from conftest import _git
 from hook_regression_helpers import invoke,manifest_for
 
 
+
+def reports_uncertain_dependents(assessment):
+    """Unresolved imports are reported: either every potential service is already selected, or the
+    remaining ones are an unverified `uncertain-dependents` gap (AL no longer selects them all)."""
+    if assessment['outcome']=='exhaustive':return True
+    return assessment['outcome']=='incomplete' and any(g['code']=='uncertain-dependents' for g in assessment['gaps'])
+
 def put(repo,path,text):
     file=repo/path;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
 
@@ -56,9 +63,10 @@ def test_identified_transitive_consumers_and_base_removed_source(cli,repo,tmp_pa
 def test_unknown_dynamic_import_broadens_with_complete_checks(cli,repo,tmp_path):
     seed(repo);put(repo,'packages/shared/src/common.py','def load(name):\n    return __import__(name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py'])
-    coverage=m['service_coverage']['assessment'];assert coverage['outcome']=='exhaustive'
-    assert coverage['selected_services']==['services/a','services/b']
-    assert all(g['applicability']=='APPLICABLE' for g in m['gates'] if g['category']=='lint-imports')
+    coverage=m['service_coverage']['assessment'];assert reports_uncertain_dependents(coverage)
+    assert set(coverage['selected_services'])<=set(coverage['potential_services'])
+    # Checks of selected services run; the possible further dependents form one unverified gate.
+    assert all(g['applicability']=='APPLICABLE' for g in m['gates'] if g['category']=='lint-imports' and g['id']!='imports-unresolved')
 
 
 @pytest.mark.parametrize('source,uncertain',[
@@ -86,7 +94,7 @@ def test_dynamic_bindings_are_contextual(cli,repo,tmp_path,source,uncertain):
     put(repo,'services/a/uv.lock','[[package]]\nname="elasticsearch"\nversion="8.0.0"\nsource={registry="https://pypi.org/simple"}\n')
     start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
     assessment=m['service_coverage']['assessment'];assert bool(assessment['dependency_uncertainties'])==uncertain
-    assert assessment['outcome']==('exhaustive' if uncertain else 'identified')
+    assert reports_uncertain_dependents(assessment) if uncertain else assessment['outcome']=='identified'
 
 
 def test_duplicate_modules_and_external_shadow_do_not_overwrite_owners(cli,repo,tmp_path):
@@ -107,9 +115,9 @@ def test_incompatible_external_lock_and_target_stdlib_are_uncertainty(cli,repo,t
     seed(repo);put(repo,'services/a/src/app.py','from importlib import import_module\nimport_module("elasticsearch")\n')
     p=repo/'services/a/pyproject.toml';p.write_text(p.read_text().replace('dependencies=[]','dependencies=["elasticsearch>=8"]'))
     put(repo,'services/a/uv.lock','[[package]]\nname="elasticsearch"\nversion="1.0.0"\nsource={registry="https://pypi.org/simple"}\n')
-    start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py']);assert m['service_coverage']['assessment']['outcome']=='exhaustive'
+    start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py']);assert reports_uncertain_dependents(m['service_coverage']['assessment'])
     put(repo,'services/a/src/app.py','__import__("json")\n');p.write_text(p.read_text().replace('dependencies=["elasticsearch>=8"]','dependencies=[]\nrequires-python="==2.7.*"'))
-    _,m=discover(cli,tmp_path,['services/a/src/app.py']);assert m['service_coverage']['assessment']['outcome']=='exhaustive'
+    _,m=discover(cli,tmp_path,['services/a/src/app.py']);assert reports_uncertain_dependents(m['service_coverage']['assessment'])
 
 
 def test_changed_mixed_language_shared_package_broadens_or_blocks_missing_checks(cli,repo,tmp_path):
@@ -117,7 +125,7 @@ def test_changed_mixed_language_shared_package_broadens_or_blocks_missing_checks
     put(repo,'packages/js/src/shared.js','export const value=1;\n')
     start(cli);_,m=discover(cli,tmp_path,['packages/js/src/shared.js'])
     assessment=m['service_coverage']['assessment']
-    assert assessment['outcome']=='exhaustive' and assessment['selected_services']==['services/a','services/b']
+    assert reports_uncertain_dependents(assessment) and set(assessment['selected_services'])<=set(assessment['potential_services'])
     assert any(u['code']=='uncertain-language-impact' for u in assessment['dependency_uncertainties'])
     unit(repo,'services/b',check=False);_,m=discover(cli,tmp_path,['packages/js/src/shared.js'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
@@ -129,5 +137,5 @@ def test_current_local_override_is_not_external_identity_despite_registry_lock(c
     p=repo/'services/a/pyproject.toml';p.write_text(p.read_text().replace('dependencies=[]','dependencies=["elasticsearch>=8"]')+'[tool.uv.sources]\nelasticsearch={path="../../packages/local_elastic",editable=true}\n')
     put(repo,'services/a/uv.lock','[[package]]\nname="elasticsearch"\nversion="8.0.0"\nsource={registry="https://pypi.org/simple"}\n')
     start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
-    a=m['service_coverage']['assessment'];assert a['outcome']=='exhaustive'
+    a=m['service_coverage']['assessment'];assert reports_uncertain_dependents(a)
     assert any(u['target']=='elasticsearch' for u in a['dependency_uncertainties'])

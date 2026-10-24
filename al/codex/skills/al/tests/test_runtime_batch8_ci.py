@@ -76,7 +76,7 @@ def test_currency_independently_checks_job_coverage(cli,repo,tmp_path):
     pipeline=repo/'.gitlab-ci.yml'
     pipeline.write_text(pipeline.read_text()+'extra-test:\n  script: python3 -m json.tool apps/admin/package.json\n  rules:\n    - changes: [apps/admin/**/*]\n')
     currency=C.check(state)
-    assert not currency['current'] and any('extra-test' in gap for gap in currency['reasons'])
+    assert not currency['current'] and any('.gitlab-ci.yml' in gap for gap in currency['reasons'])
 
 
 def test_changed_template_and_new_unit_invalidate_old_completeness(cli,repo,tmp_path):

@@ -76,8 +76,9 @@ def test_exception_on_one_failure_cannot_satisfy_other_gates(cli, repo, tmp_path
     invoke(cli, 'gates', 'run', '--stage', 'base', '--resume', ok=False)
     gaps = status(cli)['base']
     assert not any('gate loc ' in g for g in gaps) and any('gate contracts ' in g for g in gaps)
-    admit_planning(cli)
-    invoke(cli, 'phase', 'IMPLEMENTATION', ok=False)
+    # The uncovered contracts failure holds back review (workflow_gaps), not implementation.
+    import al_transitions
+    assert any('gate contracts ' in g for g in al_transitions.workflow_gaps(json.loads(cli('show')[1])))
 
 
 def test_tampered_log_or_replanned_manifest_makes_the_exception_stale(cli, repo, tmp_path):

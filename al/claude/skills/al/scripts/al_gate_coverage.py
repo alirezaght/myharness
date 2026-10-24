@@ -29,7 +29,10 @@ def prospective_gaps(st,paths):
     import al_gate_inventory as V
     m=A.read_json(st['gate_manifests'][-1])
     out=['writer path is not anticipated: '+p for p in paths if not covered(m.get('paths',[]),p)]
-    return sorted(set(out+V.gaps(st,m,paths)))
+    opaque={r['path'] for r in S.source_rows() if V.G.opaque(r)}
+    semantic=m.get('service_coverage',{}).get('semantic_requirements')
+    out+=['writer path is in an unplanned unit: '+p for p in paths if V.classify_unit(p,opaque,semantic) not in m['units']]
+    return sorted(set(out))
 
 
 def writer_ready(st,paths):

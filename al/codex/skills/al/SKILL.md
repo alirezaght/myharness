@@ -320,8 +320,23 @@ These two dated source-request seeds cover rollout omissions and earlier
 merge-request corrections. Preserve their `user-reported` provenance; treat them
 as review leads to investigate, not as independently verified incidents.
 
+### Admit the Architect plan (planning proof)
+
+After `spec-gate` and `classify`, and once a gate manifest is planned, writers stay
+blocked (`PROOF_ADMISSION_PENDING`) until the Architect's plan is admitted:
+
+1. `$STATE planning packet` prints the issued packet and a `report_template`. Every
+   identity, binding and routing field in the template is already filled.
+2. Hand the template and the packet to AL-Architect. It replaces every `FILL:` text
+   and edits the example states, transitions, outcomes and scenarios so they
+   describe the task's observable behavior. Its PLAN handoff returns that JSON.
+3. Save it and run `$STATE planning report --file <report.json>`. A report that still
+   contains `FILL:` is refused. The output names `materialized_obligations`.
+4. `$STATE planning admit --file <materialized_obligations.stored_path>`.
+
 A run pins repository root, worktree, Git common directory, current directory,
-target object, merge base and task package. Commands from another repository or
+target object, merge base and task package. Its AL runtime is pinned at `start`:
+reinstalling AL takes effect only in runs started afterwards. Commands from another repository or
 working directory refuse. Each run has a distinct immutable identity; `clear`
 removes only the active pointer. It never deletes or overwrites run history.
 
@@ -337,9 +352,9 @@ is an unverified check, not a blocker. Never mark it NOT_APPLICABLE to get past
 it; record the discovered manifest as is and continue. `gates status` lists every
 unverified check (CI jobs as `verified_by: pipeline`); name them in the final
 report so the user knows what AL did not verify locally. Run base gates in a
-disposable checkout; record each result and source. A failed base gate requires
-a recorded `gates decision --id <id> --action fix|stop|defer --source <ref>
---reason <text>` before implementation. Candidate gates run against a materialized
+disposable checkout, alongside implementation; record each result and source. A
+failed base gate requires a recorded `gates decision --id <id> --action
+fix|stop|defer --source <ref> --reason <text>` before review. Candidate gates run against a materialized
 candidate and every required candidate obligation must pass before review. A base
 decision never waives a candidate gate; local work never impersonates remote CI.
 
@@ -363,7 +378,7 @@ set and `env` is rejected. Known obligations stay executable or UNRESOLVED;
 reasoned N/A is for source-free or demonstrably inapplicable repositories.
 
 Register writer lifetimes with `writer start --id <id> --role al-engineer|al-builder
---files <paths> [--commands-file <json>]`; finish with `writer finish --id <id>
+--files <comma-separated paths> [--commands-file <json>]`; finish with `writer finish --id <id>
 --outcome success|failed|abandoned`. Failed or abandoned writers remain
 unresolved until `writer reconcile --id <id> --reason <text> --artifact <path>`.
 Start the writer lifetime before invoking the writing agent and finish it only
@@ -373,12 +388,13 @@ Checks are reserved before execution. A failed/interrupted operation is never
 recorded as PASS. No writer or check may be active or unresolved at review or
 approval barriers.
 
-Every writer start rechecks current gate currency and base readiness and tests
-its files against a fresh prospective inventory. A file entry covers only that
-file; a directory covers descendants by path components; `.` covers the
-repository. New paths, units, rules, consumers, or CI obligations need a valid
-replacement plan and applicable base gates before a writer can start. Content
-edits inside already covered paths do not alone require replanning.
+Every writer start rechecks gate currency (sourced rule hashes and touched units)
+and that its files lie inside the planned paths and units. A file entry covers only
+that file; a directory covers descendants by path components; `.` covers the
+repository. A new path, unit or changed rule needs a valid replacement plan before a
+writer can start. Content edits inside already covered paths do not alone require
+replanning. The full repository inventory runs at discovery, at `gates plan` and
+once at review start, where the candidate's obligations must still match the plan.
 
 ### Sourced CI planning contexts
 
