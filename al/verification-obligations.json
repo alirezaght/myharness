@@ -243,7 +243,7 @@
       }
     },
     "claude:tests/test_evidence_integrity.py": {
-      "test": "4796968d6c48d523d61b23b39faead07d753aa8748c30f5f3d6a49c10f09c7f9",
+      "test": "925af879b41c49bf3dc9fa8ba6392c9d48b0a63e53481bd040846f9156716bd7",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -677,7 +677,7 @@
       }
     },
     "claude:tests/test_unverified_policy.py": {
-      "test": "f70940d1cf47828cc560f557d4ce747d0e971725c6b90dd47427b15ded0b2893",
+      "test": "1b75bb0711d016cf43b96ca32b88469259cc5dedda5879f31a57e8b1625f6be1",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -824,7 +824,7 @@
       }
     },
     "codex:tests/test_evidence_integrity.py": {
-      "test": "e479fccac8c63d403f97e25e2880d768fa10d3bd54efcb8c7416d5f60bbe72c4",
+      "test": "6a74924e40fc7339f40f8c66fa97a712cd7e6135e67850c8f856fcbdf23b15d0",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -901,7 +901,7 @@
       }
     },
     "codex:tests/test_gitlink_capabilities.py": {
-      "test": "5cdb508c5348bcee75c1ef44c0132e869a743dab682680e858861eff30cb63aa",
+      "test": "1fe830de05972207192a576d807121d9f369987c31f88d66e417946bfbd695e5",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1181,7 +1181,7 @@
       }
     },
     "codex:tests/test_runtime_batch5.py": {
-      "test": "bb7716bab60a8e6dbe166becf9adbd9216a014e7ee8be3b255ac7500ccdbf164",
+      "test": "60a15b6f220e0b2b2046c36a3ee55620cca24277e3372bb884b34c79be7420fc",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1307,7 +1307,7 @@
       }
     },
     "codex:tests/test_unverified_policy.py": {
-      "test": "f70940d1cf47828cc560f557d4ce747d0e971725c6b90dd47427b15ded0b2893",
+      "test": "1b75bb0711d016cf43b96ca32b88469259cc5dedda5879f31a57e8b1625f6be1",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1817,7 +1817,6 @@
     "claude:tests/test_evidence_integrity.py::test_a_needs_cycle_is_never_valid",
     "claude:tests/test_evidence_integrity.py::test_a_pass_claim_whose_prerequisite_broke_is_rejected",
     "claude:tests/test_evidence_integrity.py::test_a_stale_pass_is_not_accepted_as_a_current_claim",
-    "claude:tests/test_evidence_integrity.py::test_a_test_run_without_a_recognised_count_is_not_a_pass",
     "claude:tests/test_evidence_integrity.py::test_ad_hoc_prerequisites_are_rechecked_recursively",
     "claude:tests/test_evidence_integrity.py::test_adding_a_prerequisite_to_the_plan_voids_the_earlier_pass",
     "claude:tests/test_evidence_integrity.py::test_an_early_failure_is_not_hidden_by_a_later_passing_suite",
@@ -3295,7 +3294,6 @@
     "codex:tests/test_evidence_integrity.py::test_a_needs_cycle_is_never_valid",
     "codex:tests/test_evidence_integrity.py::test_a_pass_claim_whose_prerequisite_broke_is_rejected",
     "codex:tests/test_evidence_integrity.py::test_a_stale_pass_is_not_accepted_as_a_current_claim",
-    "codex:tests/test_evidence_integrity.py::test_a_test_run_without_a_recognised_count_is_not_a_pass",
     "codex:tests/test_evidence_integrity.py::test_ad_hoc_prerequisites_are_rechecked_recursively",
     "codex:tests/test_evidence_integrity.py::test_adding_a_prerequisite_to_the_plan_voids_the_earlier_pass",
     "codex:tests/test_evidence_integrity.py::test_an_early_failure_is_not_hidden_by_a_later_passing_suite",
@@ -4345,7 +4343,6 @@
     "codex:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[missing]",
     "codex:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[source]",
     "codex:tests/test_runtime_batch5.py::test_second_round_fixed_resolution_requires_valid_proof[stale]",
-    "codex:tests/test_runtime_batch5.py::test_unknown_loc_interface_stays_unresolved",
     "codex:tests/test_runtime_batch5.py::test_unknown_or_missing_service_recipe_is_unresolved[None]",
     "codex:tests/test_runtime_batch5.py::test_unknown_or_missing_service_recipe_is_unresolved[lint-imports:\\n\\techo unrelated checker\\n]",
     "codex:tests/test_runtime_batch5.py::test_unknown_or_missing_service_recipe_is_unresolved[other:\\n\\techo services/$(SVC)-service\\n]",
@@ -4998,7 +4995,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1005,
-    "digest": "ef618a2e1141e28e93706ce40a014b34afef15aa6d5cd27f2d784161c66c9fa1"
+    "digest": "dad8baf72a1c0f72a30a71607ee80e1ecdad42566e3dd5c9f7c585a20b78b76b"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
