@@ -77,7 +77,8 @@ def _git_arguments(arguments):
     index = 0
     while index < len(arguments) and arguments[index].startswith('-'):
         arg = arguments[index]
-        if arg in {'--no-optional-locks','--no-pager'}:index += 1
+        # --literal-pathspecs only narrows path matching (bracketed file names stay literal).
+        if arg in {'--no-optional-locks','--no-pager','--literal-pathspecs'}:index += 1
         elif arg=='-C' and index+1<len(arguments) and Path(arguments[index+1]).is_absolute():index += 2
         elif arg=='-c' and index+1<len(arguments) and arguments[index+1]=='diff.autoRefreshIndex=false':index += 2
         else:return False
