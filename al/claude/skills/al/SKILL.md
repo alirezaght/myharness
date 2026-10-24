@@ -365,7 +365,13 @@ reasoned NOT_APPLICABLE. Unclear semantics remain UNRESOLVED: an UNRESOLVED gate
 is an unverified check, not a blocker. Never mark it NOT_APPLICABLE to get past
 it; record the discovered manifest as is and continue. `gates status` lists every
 unverified check (CI jobs as `verified_by: pipeline`); name them in the final
-report so the user knows what AL did not verify locally. Run base gates in a
+report so the user knows what AL did not verify locally. The same holds for a
+gate that cannot start a tool in AL's disposable checkout (exit 127, command
+not found): that is AL's environment gap, listed as unverified with its
+evidence, whatever the repository's toolchain. Installed `node_modules` are
+linked into the checkout from the working tree. A failure in a service the
+change does not touch that also fails at base is listed as pre-existing. Only a
+check that ran and failed in a touched service blocks; it goes back to rework. Run base gates in a
 disposable checkout, alongside implementation; record each result and source. A
 failed base gate requires a recorded `gates decision --id <id> --action
 fix|stop|defer --source <ref> --reason <text>` before review. Candidate gates run against a materialized

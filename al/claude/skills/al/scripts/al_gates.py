@@ -74,14 +74,14 @@ def environment_gap(e):
 def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     """Why a current non-passing gate run is reported instead of blocking, or None.
 
-    A tool missing from AL's disposable checkout is AL's environment gap (on a candidate only when
-    base hit the same gap); a candidate failure in a gate whose services the change does not touch,
-    and which also failed at base, is pre-existing. A failure the change causes in a touched
-    service always blocks and goes back to rework."""
+    A tool missing from AL's disposable checkout is AL's environment gap, whatever the repository's
+    toolchain: it is reported as unverified and never blocks. A candidate failure in a gate whose
+    services the change does not touch, and which also failed at base, is pre-existing. A check that
+    ran and failed in a touched service always blocks and goes back to rework."""
     if not e or not r or r.get('fingerprint')!=fp or not environment_current:return None
     base=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']=='base' and x['manifest']==r['manifest']]
     prior=L.find(st,base[-1]['evidence']) if base else None
-    if environment_gap(e) and (stage=='base' or environment_gap(prior)):
+    if environment_gap(e):
         return 'environment gap: a tool this gate needs is not installed in AL\'s disposable checkout (see '+e['id']+')'
     if stage!='candidate' or e['status']!='FAIL' or not prior or prior['status']!='FAIL':return None
     # A base `fix` decision commits this change to repairing the failure, so the candidate must pass.

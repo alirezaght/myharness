@@ -121,7 +121,8 @@ def test_pre_existing_failures_and_environment_gaps_are_reported_not_blocking(tm
     assert G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E2'], run, 'f') is None
     assert G.accepted_failure(st('E5'), {}, untouched, 'candidate', runs['E2'], run, 'f') is None
     assert 'environment gap' in G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f')
-    assert G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
+    # A missing tool is AL's environment gap even when the base run happened not to need it.
+    assert 'environment gap' in G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f')
     assert 'environment gap' in G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f')
     assert G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], dict(run, fingerprint='old'), 'f') is None
 
