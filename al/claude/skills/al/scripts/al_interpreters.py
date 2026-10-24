@@ -3,6 +3,11 @@
 class InvocationError(ValueError):pass
 
 
+# Test runners, type checkers and linters that only read the tree (writes such as --fix are refused
+# by the shell guard for every command).
+READ_ONLY_MODULES={'pytest','compileall','unittest','doctest','mypy','pyright','pyflakes','pylint','flake8','ruff'}
+
+
 def python(tail):
     flags=set('bBdEhiIOPqRsSuvVx');i=0;exits=False
     while i<len(tail):
@@ -27,7 +32,8 @@ def python(tail):
                 if option=='c':raise InvocationError('inline interpreter execution')
                 if option=='X' and not (value in {'dev','utf8','utf8=0','utf8=1','faulthandler','importtime','warn_default_encoding','no_debug_ranges'} or value in {'tracemalloc','int_max_str_digits'} or value.startswith(('tracemalloc=','int_max_str_digits=')) and value.split('=',1)[1].isdigit()):raise InvocationError('unsupported Python implementation option')
                 if option=='m':
-                    if value not in {'pytest','compileall'}:raise InvocationError('unsupported Python module entry point')
+                    if value not in READ_ONLY_MODULES:raise InvocationError('unsupported Python module entry point')
+                    if value=='ruff' and 'format' in tail[i:] and '--check' not in tail[i:]:raise InvocationError('formatter write')
                     return
                 break
             if option not in flags or option=='i':raise InvocationError('unsupported/interactive Python startup option')

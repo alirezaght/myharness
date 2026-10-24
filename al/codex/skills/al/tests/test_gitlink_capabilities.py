@@ -141,7 +141,10 @@ def test_explicit_gitlink_scope_and_irrelevant_declarations(repo,gitlink):
 
 def test_discovery_declares_parent_entry_and_preserves_reviewed_declarations(cli,repo,tmp_path,gitlink):
     import al_gate_discovery as D
+    from evidence_helpers import git
     path,_,_=gitlink
+    # A contract generation script makes the contracts gate a sourced, unresolved obligation.
+    (repo/'package.json').write_text('{"scripts":{"contracts:gen":"generate"}}');git(repo,'add','package.json');git(repo,'commit','-qm','contracts')
     start(cli,repo);commit_child(path,'B')
     st=json.loads(cli('show')[1]);manifest=D.discover(st,['svc'])
     gate=next(g for g in manifest['gates'] if g['id']=='contracts')

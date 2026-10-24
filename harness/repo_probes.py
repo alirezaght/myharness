@@ -24,6 +24,20 @@ LANGUAGE_BY_SUFFIX = {
     ".cs": "csharp",
     ".sql": "sql",
     ".sh": "shell",
+    ".swift": "swift",
+    ".m": "objective-c",
+    ".c": "c",
+    ".h": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".hpp": "cpp",
+    ".scala": "scala",
+    ".ex": "elixir",
+    ".exs": "elixir",
+    ".dart": "dart",
+    ".fs": "fsharp",
+    ".vue": "vue",
+    ".svelte": "svelte",
 }
 SCHEMA_SUFFIXES = frozenset({".sql", ".prisma", ".proto", ".graphql"})
 API_SPEC_PATTERNS = ("openapi*.yaml", "openapi*.yml", "openapi*.json", "swagger*.yaml")
@@ -62,8 +76,20 @@ def is_test(rel: PurePosixPath) -> bool:
     return bool(TEST_DIR_NAMES & set(rel.parts[:-1])) or _matches(rel.name, TEST_FILE_PATTERNS)
 
 
+CI_FILES = frozenset(
+    {".gitlab-ci.yml", "Jenkinsfile", "azure-pipelines.yml", "bitbucket-pipelines.yml", ".travis.yml"}
+    | {".drone.yml", ".woodpecker.yml", "buildspec.yml", "cloudbuild.yaml"}
+)
+CI_DIRS = frozenset({".github/workflows", ".circleci", ".buildkite", ".woodpecker", ".gitlab/ci"})
+
+
 def is_workflow(rel: PurePosixPath) -> bool:
-    return rel.parent.as_posix() == ".github/workflows"
+    """A CI definition of any provider."""
+    if rel.as_posix() in CI_FILES:
+        return True
+    return rel.suffix in {".yml", ".yaml"} and any(
+        rel.parent.as_posix() == d or rel.parent.as_posix().startswith(d + "/") for d in CI_DIRS
+    )
 
 
 def language_summary(files: list[PurePosixPath]) -> Findings:

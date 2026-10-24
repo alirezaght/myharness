@@ -270,3 +270,14 @@ def test_env_example_is_config_not_a_secret(tmp_path):
     assert not any("secret-bearing" in t for t in _facts(report, FactCategory.CONFIG))
     assert not any(q.topic == "config" for q in report.questions)
     assert any(t.startswith("`.env.example` matches") for t in _facts(report, FactCategory.FILES))
+
+
+@pytest.mark.parametrize(
+    "path",
+    [".gitlab-ci.yml", "Jenkinsfile", ".circleci/config.yml", "azure-pipelines.yml", ".gitlab/ci/test.yml"],
+)
+def test_ci_definitions_of_every_provider_are_constraints(path):
+    from harness.repo_probes import is_workflow
+
+    assert is_workflow(PurePosixPath(path))
+    assert not is_workflow(PurePosixPath("config/settings.yml"))

@@ -145,3 +145,69 @@ def test_disposable_checkouts_link_the_working_trees_node_modules(tmp_path, monk
     P.validate(root)
     status = subprocess.run(['git', 'status', '--porcelain'], cwd=root, capture_output=True, text=True).stdout
     assert 'node_modules' not in status
+
+
+def test_a_touched_gate_reports_only_failures_the_base_did_not_already_have(tmp_path, monkeypatch):
+    import al_gates as G
+    import al_ledger as L
+    base = 'FAILED tests/test_a.py::test_old - AssertionError\n1 failed in 2.31s'
+    runs = {'B': _run(tmp_path, 'B', 'FAIL', 1, base),
+            'same': _run(tmp_path, 'same', 'FAIL', 1, base.replace('2.31s', '9.02s')),
+            'new': _run(tmp_path, 'new', 'FAIL', 1, base + '\nFAILED tests/test_b.py::test_new - KeyError')}
+    monkeypatch.setattr(L, 'find', lambda st, eid: runs.get(eid))
+    monkeypatch.setattr(G, 'touched_units', lambda st, m: {'.'})
+    st = {'gate_runs': [{'gate': 'g', 'stage': 'base', 'manifest': 'm', 'evidence': 'B'}]}
+    run, gate = {'fingerprint': 'f', 'manifest': 'm'}, {'id': 'g', 'units': ['.']}
+    assert 'every failure' in G.accepted_failure(st, {}, gate, 'candidate', runs['same'], run, 'f')
+    assert G.accepted_failure(st, {}, gate, 'candidate', runs['new'], run, 'f') is None
+    st['gate_decisions'] = {'g': {'action': 'fix'}}
+    assert G.accepted_failure(st, {}, gate, 'candidate', runs['same'], run, 'f') is None
+
+
+@pytest.mark.parametrize('text,gap', [
+    ('sh: 1: turbo: not found', True),
+    ('.husky/pre-commit: 2: .: cannot open /tmp/al-gate/checkout/.husky/_/husky.sh: No such file', True),
+    ('make: ./node_modules/.bin/eslint: No such file or directory', True),
+    ('src/app.py: No such file or directory', False),
+    ('AssertionError: expected 2', False),
+])
+def test_a_missing_tool_or_ignored_install_is_an_environment_gap_in_any_ecosystem(tmp_path, monkeypatch, text, gap):
+    import subprocess
+    import al_gates as G
+    import al_store
+    subprocess.run(['git', 'init', '-q'], cwd=tmp_path, check=True)
+    (tmp_path / '.gitignore').write_text('node_modules/\n.husky/_/\n')
+    monkeypatch.setattr(al_store, 'REPO_ROOT', tmp_path)
+    assert G.environment_gap(_run(tmp_path, 'E', 'FAIL', 1, text)) is gap
+
+
+@pytest.mark.parametrize('command,denied', [
+    ('sort -u notes.txt', False), ('diff -u a b', False), ('uniq -u x', False),
+    ('python3 -m unittest discover', False), ('python3 -m mypy src', False), ('python3 -m ruff check .', False),
+    ('python3 -m ruff format .', True), ('jest -u', True), ('eslint --fix .', True), ('sort -o out.txt in.txt', True),
+])
+def test_read_only_guard_knows_what_short_flags_mean_for_each_tool(command, denied):
+    import al_shell
+    assert bool(al_shell.check(command, 'private')) is denied
+
+
+def test_a_project_manifest_of_any_ecosystem_makes_its_directory_a_unit(tmp_path, monkeypatch):
+    import al_gate_inventory as V
+    import al_store
+    for manifest in ('cmd/tool/go.mod', 'crates/core/Cargo.toml', 'java/api/pom.xml', 'dotnet/Web/Web.csproj'):
+        (tmp_path / manifest).parent.mkdir(parents=True);(tmp_path / manifest).write_text('')
+    (tmp_path / 'docs').mkdir()
+    monkeypatch.setattr(al_store, 'REPO_ROOT', tmp_path)
+    assert V.classify_unit('cmd/tool/internal/x.go', set()) == 'cmd/tool'
+    assert V.classify_unit('crates/core/src/lib.rs', set()) == 'crates/core'
+    assert V.classify_unit('java/api/src/main/A.java', set()) == 'java/api'
+    assert V.classify_unit('dotnet/Web/Program.cs', set()) == 'dotnet/Web'
+    assert V.classify_unit('docs/readme.md', set()) == '.'
+
+
+def test_too_many_github_workflows_are_left_to_the_pipeline(tmp_path):
+    import al_ci_inventory as CI
+    workflows = tmp_path / '.github/workflows';workflows.mkdir(parents=True)
+    for index in range(129):(workflows / f'w{index}.yml').write_text('on: push\njobs: {}\n')
+    result = CI.inventory(tmp_path, ['src/a.py'])
+    assert [(o['job'], o['applicability']) for o in result['obligations']] == [('<unresolved-workflows>', 'UNRESOLVED')]

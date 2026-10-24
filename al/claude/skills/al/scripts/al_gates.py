@@ -1,5 +1,6 @@
 """Base/candidate gate manifests and nonwaivable isolated executions."""
 import hashlib
+import re
 import shutil
 import contextlib
 import uuid
@@ -62,13 +63,31 @@ def touched_units(st,m):
     return {V.classify_unit(p,opaque,semantic) for p in S.changed_paths(st['identity']['merge_base'])}
 
 
+MISSING_TOOL_RE=re.compile(r"command not found|: not found\b|Failed to spawn|is not recognized as an internal or external command")
+MISSING_FILE_RE=re.compile(r"(?:can't open|cannot open|No such file or directory:?)\s*['\"]?([^\s'\":]+)|([^\s'\":]+)['\"]?:\s*No such file or directory")
+
+
 def environment_gap(e):
-    """A run that could not start a command: AL's disposable checkout lacks an installed tool."""
+    """A run that could not start a command or read an installed file: AL's disposable checkout
+    lacks a tool or generated dependency, in any ecosystem."""
     if not e or e['status'] not in {'INFRA','FAIL'}:return False
     if e.get('exit')==127:return True
     try:text=Path(e['log']).read_text(errors='replace')[-65536:] if e.get('log') else ''
     except OSError:return False
-    return 'command not found' in text or 'Failed to spawn' in text
+    if MISSING_TOOL_RE.search(text):return True
+    # A missing file the repository ignores (husky's .husky/_, node_modules, .venv, vendor) is
+    # generated or installed locally, never part of the checkout; a missing tracked file is a real
+    # failure of the change.
+    for match in MISSING_FILE_RE.finditer(text):
+        path=(match.group(1) or match.group(2)).split('/checkout/')[-1]
+        while path.startswith('./'):path=path[2:]
+        if path and not path.startswith('/') and ignored(path):return True
+    return False
+
+
+def ignored(path):
+    try:return subprocess.run(['git','check-ignore','-q','--',path],cwd=al_store.REPO_ROOT,capture_output=True).returncode==0
+    except OSError:return False
 
 
 def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
@@ -86,8 +105,25 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     if stage!='candidate' or e['status']!='FAIL' or not prior or prior['status']!='FAIL':return None
     # A base `fix` decision commits this change to repairing the failure, so the candidate must pass.
     if (st.get('gate_decisions',{}).get(g['id']) or {}).get('action')=='fix':return None
-    if set(g['units'])&touched_units(st,m):return None
-    return 'pre-existing failure: it also fails at base and the change does not touch '+', '.join(g['units'])
+    if not set(g['units'])&touched_units(st,m):
+        return 'pre-existing failure: it also fails at base and the change does not touch '+', '.join(g['units'])
+    # A repository-wide gate is always touched; it still reports instead of blocking when every
+    # failure line the candidate prints was already printed at base.
+    added=failure_lines(e)-failure_lines(prior)
+    if failure_lines(prior) and failure_lines(e) and not added:
+        return 'pre-existing failure: every failure the candidate reports also fails at base (see '+prior['id']+')'
+    return None
+
+
+FAILURE_LINE_RE=re.compile(r"error|fail|✗|✖|panic|exception|traceback|warning|violation|exceeds|^E\s",re.I)
+VOLATILE_RE=re.compile(r"(?:/[^\s:'\"]*)?/checkout/|\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds)\b|\x1b\[[0-9;]*m|\b[0-9a-f]{12,}\b|\d{4}-\d\d-\d\dT[\d:.]+Z?")
+
+
+def failure_lines(e):
+    """The run's failure lines with checkout paths, durations, colours and hashes removed."""
+    try:text=Path(e['log']).read_text(errors='replace')[-262144:] if e and e.get('log') else ''
+    except OSError:return set()
+    return {' '.join(VOLATILE_RE.sub('',line).split()) for line in text.splitlines() if FAILURE_LINE_RE.search(line)}-{''}
 
 
 @S.decision

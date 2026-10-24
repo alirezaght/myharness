@@ -21,6 +21,28 @@ PATTERNS=('AGENTS.md','CLAUDE.md','.husky/pre-commit','.githooks/pre-commit','Ma
           'ci/**/*.yml','.al/repository.json','scripts/check-loc.py','scripts/check-loc.allowlist')
 
 
+LOC_CHECKER='scripts/check-loc.py'
+HOOKS=('.husky/pre-commit','.githooks/pre-commit')
+OTHER_CI=('Jenkinsfile','.circleci/config.yml','azure-pipelines.yml','bitbucket-pipelines.yml','.travis.yml',
+          '.buildkite/pipeline.yml','.drone.yml','.woodpecker.yml','.woodpecker/*.yml','buildspec.yml')
+
+
+def hook():
+    """The repository's committed pre-commit hook, if it has one."""
+    return next((p for p in HOOKS if (al_store.REPO_ROOT/p).is_file()),None)
+
+
+def contracts_needed(units):
+    """A package script generates or builds contracts: the drift check needs a sourced rule."""
+    root=al_store.REPO_ROOT
+    for file in {root/'package.json',*(root/u/'package.json' for u in units)}:
+        if not file.is_file():continue
+        try:scripts=json.loads(file.read_text()).get('scripts',{})
+        except (ValueError,AttributeError):return True
+        if any('contract' in k and ('gen' in k or 'build' in k) for k in scripts):return True
+    return False
+
+
 def source(path,job=None):
     return {'path':path,'job':job,'sha256':hashlib.sha256((al_store.REPO_ROOT/path).read_bytes()).hexdigest()}
 
@@ -46,11 +68,28 @@ def compact(paths,universe):
     return sorted(result)
 
 
+# A directory holding one of these is a project of its own, whatever its ecosystem or location.
+MANIFESTS=('package.json','pyproject.toml','setup.py','go.mod','Cargo.toml','pom.xml','build.gradle','build.gradle.kts',
+           'Gemfile','composer.json','mix.exs','Package.swift','CMakeLists.txt','pubspec.yaml','deno.json')
+
+
+def manifest_unit(directory):
+    """The nearest directory below the root, at or above `directory`, that holds a project manifest."""
+    current=Path(directory)
+    while current!=Path('.'):
+        try:names={e.name for e in os.scandir(al_store.REPO_ROOT/current) if e.is_file()}
+        except OSError:names=set()
+        if names&set(MANIFESTS) or any(n.endswith(('.csproj','.fsproj')) for n in names):return current.as_posix()
+        current=current.parent
+    return None
+
+
 def classify_unit(path,opaque,facts=None):
     if facts:
         candidates=[u['path'] for u in facts['units'] if within(u['path'],path)]
-        if candidates and (max(candidates,key=len)!='.' or not path.startswith(('services/','apps/','packages/'))):return max(candidates,key=len)
-    unit='/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.'
+        if candidates and max(candidates,key=len)!='.':return max(candidates,key=len)
+    folder=path if (al_store.REPO_ROOT/path).is_dir() else str(Path(path).parent)
+    unit=manifest_unit(folder) or ('/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.')
     return '.' if any(Sources.contains(child,unit) for child in opaque) else unit
 
 
@@ -87,7 +126,7 @@ def inventory(st,anticipated=(),ci_context=None):
             for directory,dirs,files in os.walk(target,followlinks=False):
                 dirs[:]=[d for d in dirs if d!='.git' and not inside((Path(directory)/d).relative_to(al_store.REPO_ROOT).as_posix())]
                 names.update((Path(directory)/name).relative_to(al_store.REPO_ROOT).as_posix() for name in ('AGENTS.md','CLAUDE.md') if name in files)
-    names.update(str(Path(u)/name) for u in units for name in ('package.json','pyproject.toml') if not inside(str(Path(u)/name)) and (al_store.REPO_ROOT/u/name).is_file())
+    names.update(str(Path(u)/name) for u in units for name in MANIFESTS if not inside(str(Path(u)/name)) and (al_store.REPO_ROOT/u/name).is_file())
     service_inputs=set()
     for service in services:
         members=[p['path'] for p in facts['scan_inputs'] if p['snapshot']=='current' and (service=='.' or within(service,p['path']))]
@@ -146,13 +185,7 @@ def gaps(st,m,anticipated=()):
     if set(expected['units'])-set(m['units']):out.append('manifest omits selected or anticipated units')
     if any(not C.covered(m.get('paths',[]),p) for p in expected['paths']):out.append('manifest omits selected or anticipated paths')
     gates=m['gates'];root=al_store.REPO_ROOT
-    contracts=False
-    for file in {root/'package.json',*(root/u/'package.json' for u in expected['units'])}:
-        if not file.is_file():continue
-        try:scripts=json.loads(file.read_text()).get('scripts',{})
-        except (ValueError,AttributeError):contracts=True;continue
-        contracts=contracts or any('contract' in k and ('gen' in k or 'build' in k) for k in scripts)
-    for category,needed in (('lint-imports',any(o['category']=='lint-imports' and set(o['units'])&set(expected['services']) for o in expected['repository_facts']['checks']['obligations']) or expected['service_coverage']['outcome']=='incomplete'),('loc',(root/'scripts/check-loc.py').is_file()),('pre-commit',(root/'.husky/pre-commit').is_file() or (root/'.githooks/pre-commit').is_file()),('contracts',contracts),('ci',bool(expected['ci']['obligations']))):
+    for category,needed in (('lint-imports',any(o['category']=='lint-imports' and set(o['units'])&set(expected['services']) for o in expected['repository_facts']['checks']['obligations']) or expected['service_coverage']['outcome']=='incomplete'),('loc',(root/LOC_CHECKER).is_file()),('pre-commit',bool(hook())),('contracts',contracts_needed(expected['units'])),('ci',bool(expected['ci']['obligations']))):
         active=[g for g in gates if g['category']==category and g['applicability']!='NOT_APPLICABLE']
         if needed and not active:out.append('N/A contradicts known '+category+' obligation')
     out.extend(Coverage.current_gaps(expected['repository_facts'],expected['service_coverage'],m))

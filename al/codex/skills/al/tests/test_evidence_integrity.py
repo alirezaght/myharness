@@ -18,11 +18,14 @@ def test_a_stale_pass_is_not_accepted_as_a_current_claim(cli, repo):
 
 
 
-def test_a_test_run_without_a_recognised_count_is_not_a_pass(cli, state_file):
+def test_an_unfamiliar_runner_passes_with_unknown_count_but_silence_is_empty(cli, state_file):
     cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
+    # Any ecosystem's runner: exit 0 with a summary AL does not know is a pass with an unknown count.
     code, *_ = cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *ok_cmd("all good"))
-    assert code == 1
-    assert entries(state_file)[0]["status"] == "EMPTY"
+    assert code == 0
+    assert entries(state_file)[0]["status"] == "PASS" and "not recognised" in entries(state_file)[0]["note"]
+    code, *_ = cli("evidence", "run", "--area", "quiet", "--scope", "svc", "--", PY, "-c", "pass")
+    assert code == 1 and entries(state_file)[-1]["status"] == "EMPTY"
     code, *_ = cli("evidence", "run", "--area", "lint", "--kind", "lint", "--scope", "svc", "--", *ok_cmd("ok"))
     assert code == 0
 

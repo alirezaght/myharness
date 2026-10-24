@@ -386,16 +386,18 @@ candidate and every required candidate obligation must pass before review. A bas
 decision never waives a candidate gate; local work never impersonates remote CI.
 
 Discovery records sourced command interfaces without executing repository
-recipes. For `lint-imports`, the recognized `services/$(SVC)-service` recipe
-receives the service name with one terminal `-service` removed; the recognized
-`services/$(SVC)` recipe receives the full directory. Other or missing recipes
-for a touched service remain UNRESOLVED. Import-gate scope includes its service,
-Makefile, package/lock/workspace inputs, import-check script and architecture
-configuration. The supported `scripts/check-loc.py` interface accepts scan
-directories: file paths expand to parent directories, duplicates and covered
-descendants collapse, deleted parents expand to an existing ancestor, and
-escapes refuse. The manifest records those actual directories plus checker and
-allowlist dependencies; an unknown checker interface remains UNRESOLVED.
+recipes, and works the same for any language or layout. A directory holding a
+project manifest of any ecosystem (`package.json`, `pyproject.toml`, `go.mod`,
+`Cargo.toml`, `pom.xml`, `build.gradle`, `*.csproj`, `Gemfile`,
+`composer.json` and similar) is a unit. Import-architecture checks come from the
+repository's own CI or its `.al/repository.json` contract; a touched service
+without one stays UNRESOLVED and is reported, not blocking. A repository opts
+into a LOC limit by committing `scripts/check-loc.py`, which runs as the
+repository defines it, and into a hook gate by committing `.husky/pre-commit` or
+`.githooks/pre-commit`; without them those categories are NOT_APPLICABLE. The
+contracts gate applies only when a package script generates or builds contracts,
+and CI that AL cannot read (Jenkins, CircleCI, Azure, Bitbucket and similar) is
+UNRESOLVED and verified by its pipeline.
 Manifest `paths`, `units`, and `rules` cover actual selected changes, current
 anticipated paths and earlier declared anticipated paths. Preserve them across
 replacement; independent inventory and source hashes prevent omission from

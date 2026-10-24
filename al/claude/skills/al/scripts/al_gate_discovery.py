@@ -40,16 +40,20 @@ def discover(st,paths,ci_context=None):
         gate('imports-unresolved','lint-imports',[],sorted(set(paths+inventory['import_dependencies'])),rules[0] if rules else None,
              reason='; '.join(g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason'] for g in assessment['gaps']))
         gates[-1]['units']=units
+    def not_applicable(id,category,reason):
+        gates.append({'id':id,'category':category,'applicability':'NOT_APPLICABLE','required':False,'reason':reason,'units':units,'argv':[],'scope':paths,'cwd':'.','source':rules[0] if rules else None,'execution_kind':'local'})
     if not any(g['category']=='lint-imports' for g in gates):
-        gates.append({'id':'imports-na','category':'lint-imports','applicability':'NOT_APPLICABLE','required':False,'reason':'Independently enumerated no affected Python architecture service','units':units,'argv':[],'scope':paths,'cwd':'.','source':rules[0] if rules else None,'execution_kind':'local'})
-    checker=al_store.REPO_ROOT/'scripts/check-loc.py'
-    if checker.is_file() and I.loc_supported(checker):
+        not_applicable('imports-na','lint-imports','Independently enumerated no affected Python architecture service')
+    # A repository opts into a LOC limit or a pre-commit hook by committing one; without one there is
+    # nothing to run, so the category is not applicable rather than unverified.
+    if (al_store.REPO_ROOT/V.LOC_CHECKER).is_file():
         # The checker runs as the repository defines it (its own scan roots, exclusions and allowlist);
         # passing the task's directories would scan generated or tooling code it never covers.
-        gate('loc','loc',['python3','scripts/check-loc.py'],['.'],source('scripts/check-loc.py'))
-    else: gate('loc','loc',[],paths,source('scripts/check-loc.py') if checker.is_file() else None,reason='Resolve supported repository LOC checker interface')
-    if (al_store.REPO_ROOT/'.husky/pre-commit').is_file(): gate('hook','pre-commit',['sh','.husky/pre-commit'],['.'],source('.husky/pre-commit'))
-    else: gate('hook','pre-commit',[],paths,None,reason='Resolve repository pre-commit obligation')
+        gate('loc','loc',['python3',V.LOC_CHECKER],['.'],source(V.LOC_CHECKER))
+    else:not_applicable('loc','loc','The repository commits no LOC checker')
+    hook=V.hook()
+    if hook:gate('hook','pre-commit',['sh',hook],['.'],source(hook))
+    else:not_applicable('hook','pre-commit','The repository commits no pre-commit hook')
     for job in inventory['ci']['obligations']:
         if any(g.get('source',{}).get('job')==job['job'] and g['source'].get('path')==job['source_path'] and g['category']=='ci' for g in gates if g.get('source')):continue
         src={'path':job['source_path'],'sha256':job['source_sha256'],'job':job['job']}
@@ -58,8 +62,13 @@ def discover(st,paths,ci_context=None):
         gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',execution['argv'] if execution else [],scope,src,reason=job['reason']+'; map the sourced job to explicit local/remote verification')
         gates[-1]['units']=job['units']
         if execution:gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
-    for category in ('contracts',) if inventory['ci']['obligations'] else ('contracts','ci'):
-        gate(category,category,[],paths,rules[-1] if rules else None,reason='Resolve exact generation/drift or touched-unit CI job applicability from sourced rules')
+    if V.contracts_needed(units):gate('contracts','contracts',[],paths,rules[-1] if rules else None,reason='Resolve the exact contract generation/drift check from sourced rules')
+    else:not_applicable('contracts','contracts','No package script generates or builds contracts')
+    if not inventory['ci']['obligations']:
+        other=[p for p in V.OTHER_CI if any(al_store.REPO_ROOT.glob(p))]
+        # CI that AL cannot read is verified by its own pipeline: reported, never blocking.
+        if other:gate('ci','ci',[],paths,rules[-1] if rules else None,reason='CI defined in '+', '.join(other)+' is verified by the pipeline')
+        else:not_applicable('ci','ci','The repository defines no CI')
     rows=S.source_rows()
     for item in gates:
         if item['applicability']=='NOT_APPLICABLE':continue

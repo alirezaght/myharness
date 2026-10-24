@@ -6,6 +6,11 @@ import al_gate_reuse as R
 import al_task
 import al_verification_inputs as Inputs
 
+# Manifests and lockfiles of every ecosystem: a change to any of them changes what a run installs.
+DEPENDENCY_LOCKS = {'uv.lock', 'pyproject.toml', 'poetry.lock', 'Pipfile.lock', 'requirements.txt', 'package.json',
+                    'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'go.mod', 'go.sum', 'Cargo.toml',
+                    'Cargo.lock', 'Gemfile.lock', 'composer.lock', 'pom.xml', 'gradle.lockfile', 'packages.lock.json'}
+
 
 def epoch(st):
     evidence = st.get('evidence', {})
@@ -49,7 +54,7 @@ def project_execution(st, spec, materialization, preparation, timeout):
             'environment': copy.deepcopy(preparation['environment_policy']),
             'setup_binding': copy.deepcopy(preparation['setup_recipe']),
             'dependency_lock_binding': {p: row for p, row in work.items()
-                                        if p.rsplit('/', 1)[-1] in {'uv.lock', 'pyproject.toml'}},
+                                        if p.rsplit('/', 1)[-1] in DEPENDENCY_LOCKS},
             'prerequisites': copy.deepcopy(preparation['prerequisite_receipts']),
             'isolation_policy': copy.deepcopy(preparation['isolation_policy']),
             'generated_output_policy': profile['generated_output_policy']}

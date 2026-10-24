@@ -118,7 +118,12 @@ def inventory(root,paths,context=None,opaque=()):
         except Unsupported as exc:
             if '.gitlab-ci.yml' in reader.files:reader.issue('.gitlab-ci.yml',str(exc))
     if reader.files and not reader.issues and not any(not name.startswith('.') for name in reader.definitions):reader.issue('.gitlab-ci.yml','CI job graph is empty or only hidden templates')
-    github=github_inventory(root,paths,context,opaque)
+    try:github=github_inventory(root,paths,context,opaque)
+    except Unsupported as exc:
+        # Too many workflows, or workflows edited while AL read them: the pipeline verifies them.
+        github={'obligations':[{'source_path':'.github/workflows','source_sha256':'0'*64,'job':'<unresolved-workflows>',
+                                'units':sorted(reader.unit_scope()),'applicability':'UNRESOLVED','dependencies':[],'reason':str(exc),
+                                'inputs':sorted(paths),'execution':None}],'dependencies':[]}
     obligations=reader.obligations()+github['obligations']
     dependencies={d['path']:d for d in [*reader.files.values(),*github['dependencies'],*(d for o in obligations for d in o['dependencies'])]}
     return {'obligations':obligations,'dependencies':[dependencies[p] for p in sorted(dependencies)]}
@@ -177,6 +182,9 @@ def execution(job,root,opaque=(),environment_context=()):
             if candidate.is_file():
                 if '..' in Path(token).parts or candidate.is_symlink() or root not in candidate.resolve().parents:return None
                 dependencies[token]=source(root,token)
+    # Only recognised verification commands run locally; any other line (publish, push, deploy,
+    # an unknown tool) leaves the job to the pipeline, so a local run can never have side effects.
+    if any(not Verification.observed(tokens) for tokens in parsed):return None
     checks=[check for line in lines for check in Verification.observed(shlex.split(line))]
     requirements=[{'selector':'script['+str(i)+']','purpose':Verification.purpose(tokens,Verification.observed(tokens)),'argv':tokens,'cwd':'.','env_names':['PATH'],'targets':Verification.observed(tokens),'dependencies':sorted(dependencies)} for i,tokens in enumerate(parsed)]
     chain={'schema_version':1,'provider':'gitlab','workflow':None,'job':None,'applicability':None,'setup':[],'requirements':requirements,'source_chain':[],'complete':True}

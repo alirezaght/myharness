@@ -31,9 +31,4 @@ def loc_directories(root,paths):
     return [p.as_posix() for p in kept]
 
 
-def loc_supported(path):
-    text=path.read_text()
-    return all(marker in text for marker in ('nargs="*"','help="Directories to scan','if not d.is_dir()','ALLOWLIST_PATH'))
-
-
 from al_service_coverage import validate_check_binding  # public binding validator

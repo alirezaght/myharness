@@ -115,6 +115,8 @@ def parse(command,find_context=False):
     flush()
     return nodes
 
+TEXT_TOOLS={'rg','grep','egrep','fgrep','git','find','sort','uniq','diff','comm','cut','head','tail','wc','cat',
+            'ls','date','tr','column','join','paste','od','xxd','hexdump','env','cmp','nl','fold','expand','unexpand','strings'}
 GIT_READ={'status','diff','log','show','grep','ls-files','ls-tree','rev-parse','merge-base','cat-file','blame','describe','check-ignore','config'}
 FILES={'rm','rmdir','mv','cp','install','touch','mkdir','ln','chmod','chown','chgrp','tee','dd','truncate','patch','shred'}
 PACKAGES={'pnpm','npm','yarn','bun','pip','pip3','uv','poetry','cargo','go','mvn','gradle','brew','apt','apt-get'}
@@ -170,6 +172,7 @@ def check(command,policy,inherited_environment=(),find_context=False):
             except GitError as exc:out.append(str(exc));continue
             if sub not in GIT_READ:reason='git state change'
         elif exe in FILES:reason='file system mutation'
+        elif exe=='sort' and any(x=='-o' or x.startswith(('-o','--output')) for x in tail):reason='file system mutation'
         elif exe in {'eval','exec','source','.','awk','gawk','xargs'}:reason='dynamic executable unsupported'
         elif exe=='sed' and any(re.match(r'-[^-]*i|--in-place',x) for x in tail):reason='in-place edit'
         elif exe=='find':
@@ -193,6 +196,8 @@ def check(command,policy,inherited_environment=(),find_context=False):
         elif exe in {'python','python3','node','ruby','perl'}:
             from al_interpreters import inspect
             reason=inspect(exe,tail)
-        if exe not in {'rg','grep','egrep','fgrep','git','find'} and any(x in {'--fix','--write','--update-snapshots','--updateSnapshot','-u','-U'} for x in tail):reason='autofix/snapshot write'
+        if exe not in TEXT_TOOLS and any(x in {'--fix','--write','--update-snapshots','--updateSnapshot'} for x in tail):reason='autofix/snapshot write'
+        # -u/-U update snapshots only in test runners; for text tools they mean unique, unified, unbuffered.
+        if exe not in TEXT_TOOLS and any(x in {'-u','-U'} for x in tail):reason='autofix/snapshot write'
         if reason:out.append(reason)
     return out

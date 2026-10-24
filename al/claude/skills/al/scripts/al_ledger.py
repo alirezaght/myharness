@@ -225,7 +225,46 @@ def parse_counts(text):
             if not suite_line:  # but suite/file passes are not test counts
                 counts[key] = int(n)
     counts.update(worst)
+    for key, value in _other_runner_counts(text).items():
+        counts.setdefault(key, value)
+        if key in ("failed", "error"):counts[key] = max(counts[key], value)
+    recognised = bool(counts) or bool(NOT_TEST_COUNT_RE.search(text))
+    if not counts.get("passed") and not counts.get("failed") and (
+            NOTHING_RAN_RE.search(text) or recognised or not text.strip()):
+        # A recognised runner that reports no passed test, an explicit "nothing ran", or no output
+        # at all: no test ran. Only an unfamiliar runner's summary stays "count unknown".
+        counts["passed"] = 0
     return counts
+
+
+# Summaries of other ecosystems' runners: (pattern, passed group or None, failed group, error group).
+OTHER_RUNNERS = (
+    (re.compile(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)"), "run", 2, 3),      # Maven/Gradle/JUnit
+    (re.compile(r"(\d+) examples?,\s*(\d+) failures?"), "run", 2, None),                            # rspec
+    (re.compile(r"test result: \w+\.\s*(\d+) passed;\s*(\d+) failed"), 1, 2, None),                # cargo
+    (re.compile(r"Failed:\s*(\d+),\s*Passed:\s*(\d+)"), 2, 1, None),                                # dotnet
+    (re.compile(r"OK \((\d+) tests?"), 1, None, None),                                               # PHPUnit
+    (re.compile(r"Ran (\d+) tests? in"), "run", None, None),                                          # unittest
+)
+# Explicit statements that nothing ran, in any ecosystem.
+NOTHING_RAN_RE = re.compile(r"no tests ran|no tests collected|Ran 0 tests|\b0 examples\b|No tests found|no test files|testing: warning: no tests to run", re.I)
+
+
+def _other_runner_counts(text):
+    found = {}
+    for pattern, passed, failed, error in OTHER_RUNNERS:
+        for match in pattern.finditer(text):
+            fails = int(match.group(failed)) if failed else 0
+            errors = int(match.group(error)) if error else 0
+            total = int(match.group(1)) if passed == "run" else int(match.group(passed))
+            found["passed"] = found.get("passed", 0) + (total - fails - errors if passed == "run" else total)
+            if fails:found["failed"] = found.get("failed", 0) + fails
+            if errors:found["error"] = found.get("error", 0) + errors
+    go = re.findall(r"^(ok|FAIL)\s+\S+", text, re.M)                                               # go test
+    if go and "passed" not in found:
+        found["passed"] = go.count("ok")
+        if go.count("FAIL"):found["failed"] = go.count("FAIL")
+    return found
 
 
 def classify(kind, exit_code, counts, timed_out, before, after):
@@ -243,8 +282,10 @@ def classify(kind, exit_code, counts, timed_out, before, after):
     if kind == "test" and (counts.get("failed") or counts.get("error")):
         return "FAIL", "exit 0 but the runner reported failed tests or errors"
     if kind == "test" and not (counts.get("passed") or counts.get("failed") or counts.get("flaky")):
-        return "EMPTY", ("exit 0 but no test count was recognised — no proof a test ran "
-                         "(use --kind check for a command that is not a test runner)")
+        if "passed" in counts and counts["passed"] == 0:
+            return "EMPTY", "the runner reported that no tests ran"
+        # An unfamiliar runner's summary is not proof of emptiness: exit 0 passes, count unknown.
+        return "PASS", "exit 0; test count not recognised for this runner"
     return "PASS", ""
 
 

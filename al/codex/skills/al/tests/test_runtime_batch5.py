@@ -73,10 +73,15 @@ def test_loc_escape_refuses(repo,tmp_path,path):
     with pytest.raises(SystemExit):I.loc_directories(repo,[path])
 
 
-def test_unknown_loc_interface_stays_unresolved(cli,repo):
+def test_a_committed_loc_checker_runs_as_the_repository_defines_it(cli,repo):
     (repo/'scripts').mkdir();(repo/'scripts/check-loc.py').write_text('print("custom interface")')
     g=gate(discover(cli,['svc/app.py']),'loc')
-    assert g['applicability']=='UNRESOLVED' and not g['argv']
+    assert g['applicability']=='APPLICABLE' and g['argv']==['python3','scripts/check-loc.py'] and g['scope']==['.']
+
+
+def test_a_repository_without_loc_checker_or_hook_has_nothing_to_run(cli,repo):
+    m=discover(cli,['svc/app.py'])
+    assert gate(m,'loc')['applicability']=='NOT_APPLICABLE' and gate(m,'pre-commit')['applicability']=='NOT_APPLICABLE'
 
 
 @pytest.mark.parametrize('safe,agent,reason',[('no','al-engineer','retry'),('undetermined','al-engineer','retry'),('yes','al-builder','retry'),('yes','al-engineer','')])
