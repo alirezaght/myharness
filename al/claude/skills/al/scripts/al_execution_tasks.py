@@ -155,6 +155,10 @@ def admit_check(st, spec, *, gate_context=None):
         return
     if _pre_task_base_check(st, spec, gate_context):
         return
+    if spec.get('kind') == 'preflight' and not spec.get('scope'):
+        # Tool availability touches no repository path, so no execution task owns it.
+        authority(st, 'start')
+        return
     for tid in sorted(scope_tasks(st, spec['scope'])):
         task = integration(st)['tasks'][tid]
         # Completed tasks remain eligible for verification, subject to blockers.

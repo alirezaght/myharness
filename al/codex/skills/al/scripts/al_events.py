@@ -60,6 +60,8 @@ def prepare_commit(previous, proposed):
             pending.append({'kind': 'writer.updated', 'payload': copy.deepcopy(w)})
     facts = i.setdefault('evidence_facts', {})
     for e in proposed['evidence']['entries']:
+        if e.get('kind') == 'preflight' and not e['scope']:
+            continue  # a tool-availability preflight tests no repository path
         p = {k: e[k] for k in ('id', 'area', 'status', 'scope')}
         p['counts'] = e.get('counts')
         if e['status'] == 'RUNNING':

@@ -55,3 +55,16 @@ def test_graph_and_task_identity_cannot_be_rebound(cli, tmp_path, repo, monkeypa
     assert register_task(cli, tmp_path, 'C', ['web'], ['missing'])[0] != 0
     assert register_task(cli, tmp_path, 'C', ['web'], ['C'])[0] != 0
     controller.conn.close()
+
+
+def test_preflight_runs_in_a_bound_run_but_other_scopeless_checks_stay_unmapped(cli, tmp_path, repo, monkeypatch):
+    controller, _, sid = bound(cli, tmp_path, repo, monkeypatch)
+    assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+    # Tool availability touches no repository path, so no execution task has to own it.
+    code, out, err = cli('preflight', '--name', 'documentation-tools', '--check', 'cmd:git')
+    assert code == 0, (code, out, err)
+    entry = al_store.load(sid)['evidence']['entries'][-1]
+    assert entry['kind'] == 'preflight' and entry['status'] == 'PASS' and entry['scope'] == []
+    with pytest.raises(SystemExit, match='ambiguous'):
+        T.admit_check(al_store.load(sid), {'kind': 'check', 'scope': []})
+    controller.conn.close()
