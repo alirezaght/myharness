@@ -18,6 +18,23 @@ def test_scope_patterns_are_refused(cli):
     for pattern in ("svc/*.py", ":(glob)svc/**", "svc/[ab].py"):
         code, *_ = cli("evidence", "plan", "--area", "x", "--scope", pattern, "--", *ok_cmd("1 passed"))
         assert isinstance(code, str) and "is a pattern" in code, pattern
+def test_real_files_with_glob_characters_are_literal_scopes(cli, repo, state_file):
+    # Astro dynamic routes name real files with brackets; git must not glob-match them.
+    route = repo / "web/pages/[id].ts"
+    route.parent.mkdir(parents=True)
+    route.write_text("export const id = 1\n")
+    (repo / "web/pages/i.ts").write_text("export const i = 1\n")
+    git(repo, "add", "web");git(repo, "commit", "-qm", "routes")
+    cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
+    code, out, err = cli("evidence", "plan", "--area", "route", "--scope", "web/pages/[id].ts", "--", *ok_cmd("1 passed"))
+    assert code == 0, (code, out, err)
+    code, out, err = cli("evidence", "run", "--area", "route")
+    assert code == 0, (code, out, err)
+    assert entries(state_file)[-1]["scope"] == ["web/pages/[id].ts"]
+    import al_scope as S
+    assert S.git_bytes("ls-files", "-z", "--", "web/pages/[id].ts").split(b"\0")[0] == b"web/pages/[id].ts"
+    code, *_ = cli("evidence", "plan", "--area", "glob", "--scope", "web/pages/[ab].ts", "--", *ok_cmd("1 passed"))
+    assert isinstance(code, str) and "is a pattern" in code
 def test_symlinked_directories_cannot_hide_scope_changes(cli, repo, tmp_path):
     real = tmp_path / "outside-lib"
     real.mkdir()

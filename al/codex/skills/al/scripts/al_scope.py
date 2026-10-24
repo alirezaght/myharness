@@ -17,7 +17,7 @@ def git_bytes(*args, root=None):
     context = CURRENT.get()
     options = ['-c', 'diff.autoRefreshIndex=false'] if context and context.readonly_git else []
     if context and context.readonly_git and args and args[0]=='diff':args=(args[0],'--no-ext-diff','--no-textconv',*args[1:])
-    r = subprocess.run(['git', '--no-optional-locks', *options, *args], cwd=root or al_store.REPO_ROOT, capture_output=True)
+    r = subprocess.run(['git', '--no-optional-locks', '--literal-pathspecs', *options, *args], cwd=root or al_store.REPO_ROOT, capture_output=True)
     if r.returncode: refuse('git failed: ' + r.stderr.decode(errors='replace').strip())
     return r.stdout
 

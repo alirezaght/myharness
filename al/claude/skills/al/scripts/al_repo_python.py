@@ -161,6 +161,20 @@ def digest_bytes(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def linter_selection(config):
+    """`uv run` installs the default groups only: name the extra or group that declares import-linter."""
+    def declares(requirements):
+        return isinstance(requirements,list) and any(isinstance(r,str) and re.match(r'import[-_]linter\b',r,re.I) for r in requirements)
+    if declares(config.get('project',{}).get('dependencies')):return []
+    groups=config.get('dependency-groups',{})
+    for name in sorted(groups) if isinstance(groups,dict) else ():
+        if declares(groups[name]):return [] if name=='dev' else ['--group',name]
+    extras=config.get('project',{}).get('optional-dependencies',{})
+    for name in sorted(extras) if isinstance(extras,dict) else ():
+        if declares(extras[name]):return ['--extra',name]
+    return []
+
+
 def checks(scan,facts,unit,config):
     prefix='' if unit['path']=='.' else unit['path']+'/'
     tool=config.get('tool',{});arch=tool.get('al',{}).get('architecture')
@@ -171,7 +185,8 @@ def checks(scan,facts,unit,config):
         row=binding(scan,facts,unit,[sys.executable,'-I',str(runner),'--unit',unit['id']],paths,'tool.al.architecture')
         row['runner_resource']={'name':'al_architecture_check.py','version':1,'sha256':digest_bytes(resource_bytes('al_architecture_check.py'))};row['execution_signature']=digest({k:v for k,v in row.items() if k!='execution_signature'})
     elif isinstance(tool.get('importlinter'),dict) and tool['importlinter'].get('root_packages'):
-        binding(scan,facts,unit,['uv','run','--frozen','lint-imports','--no-logo'],paths,'tool.importlinter',env_names=('PATH','PYTHONPATH','UV_PROJECT_ENVIRONMENT','UV_PYTHON'),cwd=unit['path'])
+        argv=['uv','run','--frozen',*linter_selection(config),'lint-imports','--no-logo']
+        binding(scan,facts,unit,argv,paths,'tool.importlinter',env_names=('PATH','PYTHONPATH','UV_PROJECT_ENVIRONMENT','UV_PYTHON'),cwd=unit['path'])
     else:
         declared_architecture=any(key in tool for key in ('importlinter',)) or 'architecture' in tool.get('al',{})
         id=('imports-' if declared_architecture else 'verification-')+unit['id'].replace('/','-').replace('.','root')

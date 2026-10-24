@@ -15,7 +15,7 @@ from al_checkout_paths import MaterializationError,validate,overlay,cwd as gate_
 
 
 def run(root,*args):
-    r=subprocess.run(['git',*args],cwd=root,capture_output=True)
+    r=subprocess.run(['git','--literal-pathspecs',*args],cwd=root,capture_output=True)
     if r.returncode: raise MaterializationError('disposable git failed: '+r.stderr.decode(errors='replace'))
     return r.stdout
 

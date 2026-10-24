@@ -12,7 +12,7 @@ class GitlinkError(ValueError):
 
 def git(root, *args):
     try:
-        result = subprocess.run(['git', '--no-optional-locks', *args], cwd=root, capture_output=True, timeout=30)
+        result = subprocess.run(['git', '--no-optional-locks', '--literal-pathspecs', *args], cwd=root, capture_output=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
         raise GitlinkError('submodule inspection failed: ' + str(exc)) from exc
     if result.returncode:

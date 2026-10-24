@@ -57,3 +57,14 @@ def test_rework_without_files_reopens_every_completed_task_and_ignores_unbound_r
     st = {'integration': {'tasks': {'T1': _task('Completed', ['a']), 'T2': _task('Completed', ['b'])}}}
     assert al_rework._reopen_tasks(st, []) == ['T1', 'T2']
     assert al_rework._reopen_tasks({}, ['a']) == []
+
+
+@pytest.mark.parametrize('config,expected', [
+    ({'project': {'dependencies': ['import-linter==2.15']}}, []),
+    ({'dependency-groups': {'dev': ['import-linter']}}, []),
+    ({'dependency-groups': {'lint': ['import_linter>=2']}}, ['--group', 'lint']),
+    ({'project': {'optional-dependencies': {'dev': ['import-linter==2.15']}}}, ['--extra', 'dev']),
+    ({'project': {'optional-dependencies': {'docs': ['sphinx']}}}, []),
+])
+def test_import_linter_runs_from_the_extra_or_group_that_declares_it(config, expected):
+    assert Python.linter_selection(config) == expected

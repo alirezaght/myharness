@@ -105,7 +105,7 @@ class FingerprintError(RuntimeError):
 
 def _git_bytes(*args):
     try:
-        r = subprocess.run(["git", *args], cwd=al_store.REPO_ROOT, capture_output=True, timeout=300)
+        r = subprocess.run(["git", "--literal-pathspecs", *args], cwd=al_store.REPO_ROOT, capture_output=True, timeout=300)
     except (OSError, subprocess.SubprocessError) as exc:
         raise FingerprintError(f"git {args[0]} failed: {exc.__class__.__name__}") from exc
     if r.returncode != 0:
@@ -114,11 +114,18 @@ def _git_bytes(*args):
     return r.stdout
 
 
+def _literal_exists(root, p):
+    if Path(p).is_absolute() or '..' in Path(p).parts:return False
+    return (root / p).exists() or bool(_git_bytes("ls-files", "-z", "--", p)) or bool(_git_bytes("ls-tree", "-r", "--name-only", "HEAD", "--", p))
+
+
 def check_scope(scope, sources=(), cwd='.', require_matches=True):
     root = al_store.REPO_ROOT.resolve()
     problems = []
     for p in scope:
-        if p.startswith(":") or any(c in p for c in "*?["):
+        # A real file may carry glob characters (Astro routes like `[id].ts`); only a path that
+        # names nothing literally is a pattern.
+        if p.startswith(":") or (any(c in p for c in "*?[") and not _literal_exists(root, p)):
             problems.append(f"{p} is a pattern — list the files or directories (overlap checks compare paths)")
             continue
         target = (root / p).resolve()
