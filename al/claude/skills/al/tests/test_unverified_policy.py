@@ -211,3 +211,14 @@ def test_too_many_github_workflows_are_left_to_the_pipeline(tmp_path):
     for index in range(129):(workflows / f'w{index}.yml').write_text('on: push\njobs: {}\n')
     result = CI.inventory(tmp_path, ['src/a.py'])
     assert [(o['job'], o['applicability']) for o in result['obligations']] == [('<unresolved-workflows>', 'UNRESOLVED')]
+
+
+@pytest.mark.parametrize('line,remote', [
+    ('npm publish', True), ('cargo publish', True), ('docker push img', True), ('git push origin main', True),
+    ('./scripts/deploy.sh prod', True), ('kubectl rollout status x', True),
+    ('python3 scripts/verify.py', False), ('pytest -q', False), ('make lint', False),
+])
+def test_ci_lines_that_reach_outside_the_checkout_stay_with_the_pipeline(line, remote):
+    import shlex
+    import al_ci_inventory as CI
+    assert CI.side_effect(shlex.split(line)) is remote

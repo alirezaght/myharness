@@ -111,6 +111,18 @@ class Inventory:
         return result
 
 
+REMOTE_TOOLS={'docker','podman','buildah','kubectl','helm','terraform','tofu','pulumi','aws','gcloud','az','ssh','scp',
+              'rsync','curl','wget','twine','gh','glab','firebase','vercel','netlify','flyctl','heroku','ansible-playbook',
+              'serverless','sls','wrangler','eb','skaffold','argocd'}
+REMOTE_WORDS={'publish','deploy','push','release','upload','apply','destroy'}
+
+
+def side_effect(tokens):
+    """A command line whose effect reaches outside the checkout."""
+    name=Path(tokens[0]).name
+    return name in REMOTE_TOOLS or any(Path(t).stem.lower() in REMOTE_WORDS or t.lower() in REMOTE_WORDS for t in tokens)
+
+
 def inventory(root,paths,context=None,opaque=()):
     reader=Inventory(root,paths,context,opaque)
     if (root/'.gitlab-ci.yml').is_file():
@@ -182,9 +194,9 @@ def execution(job,root,opaque=(),environment_context=()):
             if candidate.is_file():
                 if '..' in Path(token).parts or candidate.is_symlink() or root not in candidate.resolve().parents:return None
                 dependencies[token]=source(root,token)
-    # Only recognised verification commands run locally; any other line (publish, push, deploy,
-    # an unknown tool) leaves the job to the pipeline, so a local run can never have side effects.
-    if any(not Verification.observed(tokens) for tokens in parsed):return None
+    # A job that publishes, deploys, pushes or talks to remote infrastructure is left to the pipeline,
+    # so a local run never has outside effects; checks and the repository's own scripts run locally.
+    if any(side_effect(tokens) for tokens in parsed):return None
     checks=[check for line in lines for check in Verification.observed(shlex.split(line))]
     requirements=[{'selector':'script['+str(i)+']','purpose':Verification.purpose(tokens,Verification.observed(tokens)),'argv':tokens,'cwd':'.','env_names':['PATH'],'targets':Verification.observed(tokens),'dependencies':sorted(dependencies)} for i,tokens in enumerate(parsed)]
     chain={'schema_version':1,'provider':'gitlab','workflow':None,'job':None,'applicability':None,'setup':[],'requirements':requirements,'source_chain':[],'complete':True}

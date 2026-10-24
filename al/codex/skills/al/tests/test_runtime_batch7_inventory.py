@@ -1,5 +1,6 @@
 """Admission/currency derive concrete sources beyond submitted manifest claims."""
 import json
+import subprocess
 from test_service_coverage import unit
 from test_repo_adapters import contract
 from conftest import _git
@@ -64,6 +65,9 @@ def test_known_transitive_shared_consumer_retains_unknown_remainder(cli,repo,tmp
 
 
 def test_discovery_preserves_declared_environment_dependencies(cli,repo,tmp_path):
+    # A committed LOC checker makes the loc gate applicable, so its declaration carries across.
+    (repo/'scripts').mkdir(exist_ok=True);(repo/'scripts/check-loc.py').write_text('print("ok")\n')
+    subprocess.run(['git','add','scripts/check-loc.py'],cwd=repo,check=True);subprocess.run(['git','commit','-qm','loc'],cwd=repo,check=True)
     begin(cli,tmp_path,repo)
     state,m=discover(cli,tmp_path,['svc/app.py'])
     next(g for g in m['gates'] if g['id']=='loc')['env_names']=['AL_CHECK_VARIANT']

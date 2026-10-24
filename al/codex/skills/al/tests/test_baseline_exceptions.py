@@ -62,12 +62,15 @@ def test_exception_admits_implementation_keeps_fail_and_shows_separately(cli, re
     assert loc_entry(cli)[1]['id'] == entry['id']
     admit_planning(cli)
     invoke(cli, 'phase', 'IMPLEMENTATION')
-    # Candidate checks still run and report the same failure honestly; nothing approves around red checks.
+    # Candidate checks still run; the same failure stays FAIL evidence and is reported as
+    # pre-existing instead of blocking, because the candidate adds no failure the base lacked.
     invoke(cli, 'writer', 'start', '--id', 'engineer', '--role', 'al-engineer', '--files', 'svc/app.py')
     (repo / 'svc/app.py').write_text('feature = True\n')
     invoke(cli, 'writer', 'finish', '--id', 'engineer', '--outcome', 'success')
     invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
-    assert any('candidate gate loc requires passing evidence' in g for g in status(cli)['candidate'])
+    current = status(cli)
+    assert not any('candidate gate loc' in g for g in current['candidate'])
+    assert any(u['gate'] == 'loc' and 'pre-existing' in u['reason'] for u in current['unverified'])
 
 
 def test_exception_on_one_failure_cannot_satisfy_other_gates(cli, repo, tmp_path):
