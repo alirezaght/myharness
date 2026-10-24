@@ -38,6 +38,19 @@ The attempts before these found and fixed: writer lifetimes opened after the wri
 
 AL no longer fails closed on checks it cannot model. An `UNRESOLVED` gate (unparsed CI rules, unsupported workspace layouts, incomplete service coverage) is an unverified check: `gates status` lists it (CI jobs as verified by the pipeline), reviewers see it in the manifest, and the final report names it, but it does not block admission, review or approval. Failed, running or interrupted checks and writer/attribution safety still block. Discovery also expands pnpm-style workspace globs, declares `parent-entry` for gitlinks a gate covers, binds import targets by digest, and allows four times larger fact sets.
 
+## AL on large repositories (2026-10-24)
+
+Measured on a private clone of amber (25 services, 14.5k files, 336 generated GitLab jobs), one-file task:
+
+| Step | Before | After |
+| --- | --- | --- |
+| `gates discover` | ~20 min, 256 MB manifest | 18 s, 13 MB |
+| `gates plan` | 14 min | 12 s |
+| `gates status` | 68 min | 4 s |
+| `writer start` | blocked (base gates, 338 unverified) | 7 s |
+
+What changed: the full repository inventory runs only at discovery, `gates plan`, replacement planning and review start, with rule hashes, touched units and new rule files checked in between (and rule hashes rechecked at every gate launch); unresolved imports select only the known affected services and report the rest as unverified dependents; manifest-less tooling roots and non-service workspace members are recorded once per root instead of one gap per file; base gates run in their disposable checkout alongside writers and are required before review; import ownership lookups, path containment and worktree observation lost their quadratic or repeated work; and `planning packet` prints a ready-to-fill Architect report template (`FILL:` placeholders are refused).
+
 ## Installation and cleanup (done 2026-10-23)
 
 The guarded `install_global.py` flow was abandoned at the user's request after repeated refusals on leftovers. AL was installed globally by copying both packages and role files and bootstrapping `alctl`; every repository-local AL copy under `~/personal` and `~/Documents` outside myharness was deleted (deletions left uncommitted in those repositories; run histories kept). The old global copies are backed up in `~/.local/state/al-distribution/manual-backup-20261023/`. The installer registry does not know about this install, so `alctl doctor`/`update` report drift; updates are a manual copy and bootstrap.
