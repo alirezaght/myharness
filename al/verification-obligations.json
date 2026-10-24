@@ -255,7 +255,7 @@
       }
     },
     "claude:tests/test_execution_blockers.py": {
-      "test": "6c65ca922c2e54149dfac9cadb4138d80042dbca14109b162dc0778df5729c92",
+      "test": "45cf42ccbfc4ad4768c7321cb4ce868cce34bbe4655e46978e86846dc784dd8a",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -829,7 +829,7 @@
       }
     },
     "codex:tests/test_execution_blockers.py": {
-      "test": "6c65ca922c2e54149dfac9cadb4138d80042dbca14109b162dc0778df5729c92",
+      "test": "45cf42ccbfc4ad4768c7321cb4ce868cce34bbe4655e46978e86846dc784dd8a",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -4997,7 +4997,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1001,
-    "digest": "67ce432acbdb822eabc20707e96f8d3c29764b985a23ee48eac3d70806d73040"
+    "digest": "8f82e0aa451f8d537703b0d9abab0aaf886d4e1fc665d2b07f6b558f12ef8be3"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
