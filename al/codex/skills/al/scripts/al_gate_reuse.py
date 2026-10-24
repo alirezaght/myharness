@@ -14,7 +14,8 @@ def execution_key(st, manifest, manifest_sha, gate, stage, capture, env_fingerpr
     return {'run':st['run_id'], 'manifest':manifest_sha, 'revision':manifest['revision'],
             'stage':stage, 'base':manifest['base_oid'], 'candidate':capture['fingerprint'],
             'argv':gate['argv'], 'cwd':gate['cwd'], 'execution_kind':gate['execution_kind'],
-            'scope':gate['scope'], 'sources':gate.get('sources',[]),
+            # The scope is bound by digest: equality stays exact without a second copy of the list.
+            'scope_sha256':hashlib.sha256(json.dumps(gate['scope']).encode()).hexdigest(), 'sources':gate.get('sources',[]),
             'env':sorted(gate['env_names']), 'env_fingerprint':env_fingerprint, 'timeout':timeout,
             **({'review_state':gate['review_state']} if gate.get('review_state') else {})}
 
@@ -85,6 +86,34 @@ def drift(before, after, root):
             if not leaves or not leaves<=ignored:return 'FAIL'
         return 'REBUILD'
     return None
+
+
+GIT_OWNED={'objects','refs','hooks','index','config','HEAD','logs','worktrees','info','packed-refs','modules','FETCH_HEAD','ORIG_HEAD','shallow','description'}
+
+
+def hook_state(before, after):
+    """The single new `.git/<name>` location a hook created, when that is the gate's only change."""
+    changed={p for p in before.get('metadata',{}).keys() | after.get('metadata',{}).keys()
+             if p!='.' and before.get('metadata',{}).get(p)!=after.get('metadata',{}).get(p)}
+    work=any(before.get('work',{}).get(p)!=after.get('work',{}).get(p) for p in before.get('work',{}).keys() | after.get('work',{}).keys())
+    tops={p.split('/')[0] for p in changed}
+    if not changed or work or len(tops)!=1:return None
+    top=next(iter(tops))
+    if top in GIT_OWNED or top in before.get('metadata',{}):return None
+    return top
+
+
+def drift_report(before, after):
+    """What a gate changed in its checkout, and the review_state declaration that would permit it."""
+    changed=sorted(p for p in before.get('metadata',{}).keys() | after.get('metadata',{}).keys()
+                   if p!='.' and before.get('metadata',{}).get(p)!=after.get('metadata',{}).get(p))
+    lines=['changed: .git/'+p for p in changed[:10]]
+    work=sorted(p for p in before.get('work',{}).keys() | after.get('work',{}).keys() if before.get('work',{}).get(p)!=after.get('work',{}).get(p))
+    lines+=['changed: '+p for p in work[:10]]
+    tops={p.split('/')[0] for p in changed}
+    if changed and not work and len(tops)==1 and not tops&GIT_OWNED:
+        lines.append('a hook state location: declare "review_state": {"path": ".git/'+tops.pop()+'"} on this gate')
+    return lines
 
 
 def reuse_gaps(st, entry):

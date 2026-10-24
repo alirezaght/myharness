@@ -87,5 +87,7 @@ def test_supported_repository_selection_includes_configured_consumers_and_inputs
     _,m=discover(cli,tmp_path,['packages/shared/src/shared/context.py'])
     gates={g['id']:g for g in m['gates']}
     assert gates['imports-services-quiet-service']['applicability']=='APPLICABLE' and 'imports-unresolved' not in gates
+    from al_repository_facts import all_within
+    # Scopes are compacted to covering directories; each dependency must still be covered.
     for dependency in ('.al/repository.json','ci/scripts/check-architecture.sh','services/quiet-service/pyproject.toml'):
-        assert dependency in gates['imports-services-quiet-service']['scope']
+        assert all_within(gates['imports-services-quiet-service']['scope'],[dependency])

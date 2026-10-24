@@ -94,3 +94,12 @@ def test_declared_future_gate_scope_preserves_evidence_typo_and_symlink_guards(c
     assert result[0]!=0 and 'matches nothing' in str(result) and not marker.exists()
     (repo/'scope-link').symlink_to(repo/'svc/app.py')
     assert any('symlink' in problem for problem in L.check_scope(['scope-link'],require_matches=False))
+def test_a_symlinked_directory_inside_the_repository_is_fingerprinted_by_its_link(cli, repo, state_file):
+    (repo / "svc/real").mkdir()
+    (repo / "svc/real/mod.py").write_text("a = 1\n")
+    (repo / "svc/alias").symlink_to("real", target_is_directory=True)
+    git(repo, "add", "svc");git(repo, "commit", "-qm", "inner link")
+    cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
+    code, out, err = cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *ok_cmd("1 passed"))
+    assert code == 0, (code, out, err)
+    assert entries(state_file)[-1]["status"] == "PASS"

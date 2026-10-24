@@ -56,7 +56,8 @@ def validate_check_binding(expected,gate):
 
 def declaration(facts,assessment,gates):
     semantics=semantic_requirements(facts)
-    provenance={'scan_inputs':facts['scan_inputs'],'rule_sources':facts['rule_sources'],'membership':facts['enumeration']['observed_members'],'absent_paths':facts['enumeration']['absent_paths']}
+    # Per-file scan inputs are bound by digest and count: the manifest stays small on large repositories.
+    provenance={'scan_inputs':{'count':len(facts['scan_inputs']),'sha256':digest(facts['scan_inputs'])},'rule_sources':facts['rule_sources'],'membership':facts['enumeration']['observed_members'],'absent_paths':facts['enumeration']['absent_paths']}
     provenance['digest']=digest(provenance)
     return {'schema_version':1,'adapter':facts['adapter'],'policy_version':facts['policy_version'],'repository':facts['repository'], 'assessment':assessment,'semantic_requirements':semantics,'semantic_sha256':digest(semantics),'provenance':provenance,
             'bindings':[{'obligation_id':oid,'gate_id':g['id'],'execution_signature':g['execution_signature']} for g in gates if g.get('execution_signature') for oid in g.get('obligation_ids',[])]}

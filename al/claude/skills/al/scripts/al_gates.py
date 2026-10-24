@@ -1,5 +1,6 @@
 """Base/candidate gate manifests and nonwaivable isolated executions."""
 import hashlib
+import shutil
 import contextlib
 import uuid
 import json
@@ -249,9 +250,23 @@ def cmd_run(a,sid):
                             try:captured=ReviewState.capture(root,g['review_state'])
                             finally:ReviewState.remove(state_top)
                             entry['review_state']=ReviewState.seal(st,sid,g,a.stage,fp,invocation,captured,entry,ref)
-                    dirty=R.drift(before_state,R.scratch_state(root,before_state,post_execution=True),root)
+                    after_state=R.scratch_state(root,before_state,post_execution=True)
+                    dirty=R.drift(before_state,after_state,root)
+                    # Only an undeclared gate gets this; a declared review_state names its one location exactly.
+                    inferred=R.hook_state(before_state,after_state) if dirty=='FAIL' and status=='PASS' and not g.get('review_state') else None
+                    if inferred:
+                        # A hook's own new `.git/<name>` state is removed and noted, like a declared review state.
+                        target=root/'.git'/inferred
+                        if target.is_symlink():raise al_checkouts.MaterializationError('hook state symlink refused')
+                        shutil.rmtree(target) if target.is_dir() else target.unlink()
+                        after_state=R.scratch_state(root,before_state,post_execution=True)
+                        dirty=R.drift(before_state,after_state,root)
+                        if dirty!='FAIL':
+                            note=(note+'; ' if note else '')+'hook state .git/'+inferred+' removed'
+                            log.write_bytes(log.read_bytes()+('\nhook state .git/'+inferred+' removed after execution\n').encode())
                     if dirty=='FAIL' and status=='PASS':
-                        status='FAIL';log.write_bytes(log.read_bytes()+b'\nGenerated/checkout metadata drift detected\n')
+                        report='\n'.join(R.drift_report(before_state,after_state))
+                        status='FAIL';log.write_bytes(log.read_bytes()+('\nGenerated/checkout metadata drift detected\n'+report+'\n').encode())
                     if S.capture_candidate(st)['fingerprint']!=checkout['capture']['fingerprint']:
                         status='TORN';note='source candidate changed during gate execution'
                 except CandidateChanged as exc:

@@ -183,7 +183,13 @@ def _scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
         h.update(b'\0file:'+rel)
         path=root/name
         if path.is_symlink():
-            if path.is_dir():raise FingerprintError(name+' is a symlinked directory — declare its real path in the scope')
+            # A link to a directory inside the repository is identified by its text, as Git tracks it; the
+            # content behind it is listed under its real path. One leading outside stays refused, since
+            # changes behind it would not change the fingerprint.
+            if path.is_dir():
+                real=path.resolve();base=root.resolve()
+                if real!=base and base not in real.parents:
+                    raise FingerprintError(name+' is a symlinked directory outside the repository — declare its real path in the scope')
             h.update(b'\0link:'+os.fsencode(os.readlink(path)))
             if path.is_file():_hash_file(h,path)
         elif path.is_file():_hash_file(h,path)

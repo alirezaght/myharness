@@ -180,5 +180,8 @@ def semantic_requirements(facts):
     deps=facts['dependencies']
     return {'schema_version':1,'repository':facts['repository'],'adapter':facts['adapter'],'policy_version':facts['policy_version'],
             'units':facts['units'],'enumeration':{k:v for k,v in facts['enumeration'].items() if k!='absent_paths'},
-            'dependencies':{**deps,'uncertainties':[{k:v for k,v in u.items() if k!='location'} for u in deps['uncertainties']]},
+            # Import edges and source membership change the requirements hash through digests, not copies.
+            'dependencies':{**{k:v for k,v in deps.items() if k not in {'edges','source_membership'}},
+                            'edges_sha256':digest(deps['edges']),'source_membership_sha256':digest(deps['source_membership']),
+                            'uncertainties':[{k:v for k,v in u.items() if k!='location'} for u in deps['uncertainties']]},
             'checks':facts['checks'],'unsupported_boundaries':facts['unsupported_boundaries'],'stable':facts['scan']['stable']}

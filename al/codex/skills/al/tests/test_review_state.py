@@ -53,8 +53,14 @@ def test_declared_review_state_is_captured_bound_and_removed(cli, repo, tmp_path
     assert not (repo / '.git/codex-review').exists()
 
 
+def test_an_undeclared_single_hook_state_location_is_removed_and_noted(cli, repo, tmp_path):
+    invoke(cli, 'gates', 'plan', '--file', str(planned(cli, repo, tmp_path, '.git/codex-review/verdict.json', None)))
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    _, entry = base_entry(cli)
+    assert entry['status'] == 'PASS' and 'hook state .git/codex-review removed' in entry['note']
+
+
 @pytest.mark.parametrize('target,declaration', [
-    ('.git/codex-review/verdict.json', None),
     ('.git/other-tool/verdict.json', {'path': '.git/codex-review'}),
 ])
 def test_undeclared_metadata_writes_still_fail_scratch_integrity(cli, repo, tmp_path, target, declaration):

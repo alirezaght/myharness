@@ -68,3 +68,33 @@ def test_rework_without_files_reopens_every_completed_task_and_ignores_unbound_r
 ])
 def test_import_linter_runs_from_the_extra_or_group_that_declares_it(config, expected):
     assert Python.linter_selection(config) == expected
+
+
+def test_scopes_compact_to_complete_directories_and_never_to_the_root():
+    import al_gate_inventory as V
+    universe = {'svc/a.py', 'svc/b.py', 'svc/sub/c.py', 'lib/x.py', 'lib/y.py', 'pyproject.toml'}
+    assert V.compact({'svc/a.py', 'svc/b.py', 'svc/sub/c.py', 'lib/x.py', 'pyproject.toml'}, universe) == ['lib/x.py', 'pyproject.toml', 'svc']
+    assert V.compact(universe, universe) == ['lib', 'pyproject.toml', 'svc']
+
+
+def test_execution_key_binds_the_scope_by_digest_not_by_copy():
+    import al_gate_reuse as R
+    gate = {'argv': ['true'], 'cwd': '.', 'execution_kind': 'local', 'scope': ['svc/a.py'] * 1000, 'env_names': []}
+    key = R.execution_key({'run_id': 'r'}, {'revision': 1, 'base_oid': 'b'}, 'm', gate, 'base', {'fingerprint': 'f'}, 'e', None)
+    assert 'scope' not in key and len(key['scope_sha256']) == 64
+    other = R.execution_key({'run_id': 'r'}, {'revision': 1, 'base_oid': 'b'}, 'm', dict(gate, scope=['svc/b.py']), 'base', {'fingerprint': 'f'}, 'e', None)
+    assert other['scope_sha256'] != key['scope_sha256']
+
+
+def test_a_single_new_git_location_is_hook_state_but_git_metadata_is_not():
+    import al_gate_reuse as R
+    before = {'metadata': {'.': ['dir', 493], 'HEAD': ['file', 420, 'a']}, 'work': {'a.py': ['file', 420, 'x']}}
+    hook = {'metadata': {**before['metadata'], 'codex-review': ['dir', 493], 'codex-review/s.json': ['file', 384, 'b']}, 'work': before['work']}
+    assert R.hook_state(before, hook) == 'codex-review'
+    assert any('.git/codex-review' in line for line in R.drift_report(before, hook))
+    owned = {'metadata': {**before['metadata'], 'HEAD': ['file', 420, 'changed']}, 'work': before['work']}
+    assert R.hook_state(before, owned) is None
+    two = {'metadata': {**hook['metadata'], 'other': ['dir', 493]}, 'work': before['work']}
+    assert R.hook_state(before, two) is None
+    edited = {'metadata': hook['metadata'], 'work': {'a.py': ['file', 420, 'y']}}
+    assert R.hook_state(before, edited) is None

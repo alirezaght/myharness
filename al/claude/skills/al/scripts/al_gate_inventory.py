@@ -25,6 +25,27 @@ def source(path,job=None):
     return {'path':path,'job':job,'sha256':hashlib.sha256((al_store.REPO_ROOT/path).read_bytes()).hexdigest()}
 
 
+def compact(paths,universe):
+    """The same coverage in fewer entries: a directory replaces its files once every scanned file
+    under it is selected (it then also covers its other files, which is conservative). Top-level
+    directories are the widest entry, never `.`."""
+    paths=set(paths);covered_files=paths|set(universe)
+    totals={};selected={}
+    for path in covered_files:
+        parts=path.split('/')
+        for i in range(1,len(parts)):
+            directory='/'.join(parts[:i])
+            totals[directory]=totals.get(directory,0)+1
+            if path in paths:selected[directory]=selected.get(directory,0)+1
+    full={d for d,n in totals.items() if selected.get(d)==n}
+    result=set()
+    for path in paths:
+        parts=path.split('/')
+        top=next(('/'.join(parts[:i]) for i in range(1,len(parts)) if '/'.join(parts[:i]) in full),None)
+        result.add(top or path)
+    return sorted(result)
+
+
 def classify_unit(path,opaque,facts=None):
     if facts:
         candidates=[u['path'] for u in facts['units'] if within(u['path'],path)]
@@ -98,9 +119,10 @@ def inventory(st,anticipated=(),ci_context=None):
             facts['checks']['gaps']=[g for g in facts['checks']['gaps'] if not (g.get('unit')==unit and g['code']=='missing-verification-check')]
     # Only checks of the selected services run in this task; others are verified by the pipeline.
     facts['checks']['bindings']=[b for b in facts['checks']['bindings'] if set(b['units'])&set(services)]
+    universe={p['path'] for p in facts['scan_inputs'] if p['snapshot']=='current'}|{p['path'] for p in facts['rule_sources']}
     # Discovery inputs are evidence dependencies for every service execution.
     for binding in facts['checks']['bindings']:
-        binding['required_scope']=sorted(set(binding['required_scope']+dependencies))
+        binding['required_scope']=compact(set(binding['required_scope']+dependencies),universe)
         binding['execution_signature']=digest({k:v for k,v in binding.items() if k!='execution_signature'})
     rows=S.source_rows();runnable=[]
     for binding in facts['checks']['bindings']:
