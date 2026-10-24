@@ -250,7 +250,7 @@
       }
     },
     "claude:tests/test_evidence_scopes.py": {
-      "test": "4e259f892e3c8be4e393cff8f95d578f901e84abe78f62ff2ff0c3b8fb545219",
+      "test": "38d91ee2bc5105bfef7f3633cecd5f1a27f821b42ab2857c36c68d8b0981ea8d",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -369,7 +369,7 @@
       }
     },
     "claude:tests/test_planning_template.py": {
-      "test": "17e67bdfaf523f3c0e24a59d8f17c26acf803d4e8fa5a140d7e0bd04279dca88",
+      "test": "ab0eb1ff2d67ad54f8b83528fcdcc5f38edc43977f2c78b1ac5e88f46590d4c5",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -677,7 +677,7 @@
       }
     },
     "claude:tests/test_unverified_policy.py": {
-      "test": "754c28e3a23140864826a0d71d90fc3360a02e5cb00af0eab41f26e51997b7d9",
+      "test": "fefb278991f67749f8963699ead4a7e5d3fed9090618595e81d1d851dbd2d2ee",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -831,7 +831,7 @@
       }
     },
     "codex:tests/test_evidence_scopes.py": {
-      "test": "4e259f892e3c8be4e393cff8f95d578f901e84abe78f62ff2ff0c3b8fb545219",
+      "test": "38d91ee2bc5105bfef7f3633cecd5f1a27f821b42ab2857c36c68d8b0981ea8d",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -985,7 +985,7 @@
       }
     },
     "codex:tests/test_planning_template.py": {
-      "test": "17e67bdfaf523f3c0e24a59d8f17c26acf803d4e8fa5a140d7e0bd04279dca88",
+      "test": "ab0eb1ff2d67ad54f8b83528fcdcc5f38edc43977f2c78b1ac5e88f46590d4c5",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1181,7 +1181,7 @@
       }
     },
     "codex:tests/test_runtime_batch5.py": {
-      "test": "7eaac5bc9a11617c07ca041ccca3d69296a696aff7da9d69efd65a68e05ff77b",
+      "test": "bb7716bab60a8e6dbe166becf9adbd9216a014e7ee8be3b255ac7500ccdbf164",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1307,7 +1307,7 @@
       }
     },
     "codex:tests/test_unverified_policy.py": {
-      "test": "754c28e3a23140864826a0d71d90fc3360a02e5cb00af0eab41f26e51997b7d9",
+      "test": "fefb278991f67749f8963699ead4a7e5d3fed9090618595e81d1d851dbd2d2ee",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1552,7 +1552,7 @@
       }
     },
     "installer:al/tests/test_runtime_run.py": {
-      "test": "dc537697fc4ddaaf83e5a97e8cf977ac3007896b09770f290b27f074705ba214",
+      "test": "ddb04359f53376921d1c1074febc86aac54bdebf6acbe9454a088c1e5b967350",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
         "mode": 420
@@ -4998,7 +4998,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1005,
-    "digest": "5e76581d455535e242afe37aa28b61405bb4b96f09eab5c7d9d10756daefa8e4"
+    "digest": "dbca5b3efc793891a59724255f95ba49f40347a8929ff89212eee15322a0499a"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
