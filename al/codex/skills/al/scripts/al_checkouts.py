@@ -55,6 +55,25 @@ def overlay_candidate(root, capture, *, stage_files=True):
     validate(root)
 
 
+def link_dependencies(root):
+    """Give the disposable checkout the working tree's installed JavaScript dependencies.
+
+    A gate such as a pre-commit hook needs node_modules (turbo, eslint) that a fresh checkout lacks.
+    Each package directory's node_modules is linked to the working tree's own, and excluded from
+    the checkout's Git status as it is ignored in the working tree."""
+    names=[p for p in run(root,'ls-files','-z').decode(errors='surrogateescape').split('\0') if p=='package.json' or p.endswith('/package.json')]
+    linked=[]
+    for manifest in names:
+        directory=Path(manifest).parent
+        source=al_store.REPO_ROOT/directory/'node_modules';target=root/directory/'node_modules'
+        if source.is_dir() and not source.is_symlink() and not os.path.lexists(target) and (root/directory).is_dir():
+            os.symlink(str(source),str(target),target_is_directory=True);linked.append(directory.as_posix())
+    if linked:
+        exclude=root/'.git/info/exclude';exclude.parent.mkdir(parents=True,exist_ok=True)
+        exclude.write_text((exclude.read_text() if exclude.is_file() else '')+'node_modules\n')
+    return linked
+
+
 @contextlib.contextmanager
 def materialize(st,stage,base=None):
     started=time.monotonic()
@@ -74,6 +93,7 @@ def materialize(st,stage,base=None):
         if stage=='candidate':
             overlay_candidate(root,capture)
             if S.capture_candidate(st)['fingerprint']!=capture['fingerprint']:raise MaterializationError('candidate changed during materialization')
+        link_dependencies(root)
         validate(root)
         record('checkout-materialization',time.monotonic()-started)
         yield {'root':root,'capture':capture,'stage':stage}

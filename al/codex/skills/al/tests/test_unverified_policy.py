@@ -124,3 +124,23 @@ def test_pre_existing_failures_and_environment_gaps_are_reported_not_blocking(tm
     assert G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
     assert 'environment gap' in G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f')
     assert G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], dict(run, fingerprint='old'), 'f') is None
+
+
+def test_disposable_checkouts_link_the_working_trees_node_modules(tmp_path, monkeypatch):
+    import subprocess
+    import al_checkout_paths as P
+    import al_checkouts as C
+    import al_store
+    work, root = tmp_path / 'work', tmp_path / 'checkout'
+    for base in (work, root):
+        (base / 'apps/web').mkdir(parents=True)
+        (base / 'package.json').write_text('{}');(base / 'apps/web/package.json').write_text('{}')
+    (work / 'node_modules/.bin').mkdir(parents=True);(work / 'apps/web/node_modules').mkdir()
+    subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
+    subprocess.run(['git', 'add', '.'], cwd=root, check=True)
+    monkeypatch.setattr(al_store, 'REPO_ROOT', work)
+    assert sorted(C.link_dependencies(root)) == ['.', 'apps/web']
+    assert (root / 'node_modules').is_symlink() and (root / 'node_modules/.bin').is_dir()
+    P.validate(root)
+    status = subprocess.run(['git', 'status', '--porcelain'], cwd=root, capture_output=True, text=True).stdout
+    assert 'node_modules' not in status
