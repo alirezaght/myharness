@@ -103,3 +103,19 @@ def test_a_symlinked_directory_inside_the_repository_is_fingerprinted_by_its_lin
     code, out, err = cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *ok_cmd("1 passed"))
     assert code == 0, (code, out, err)
     assert entries(state_file)[-1]["status"] == "PASS"
+def test_a_mistaken_planned_check_is_retired_with_reason_and_its_run_kept(cli, repo, state_file):
+    import json
+    cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
+    from evidence_helpers import PY
+    assert cli("evidence", "plan", "--area", "wrong", "--scope", "svc", "--", PY, "-c", "import sys; print('1 failed'); sys.exit(1)")[0] == 0
+    cli("evidence", "run", "--area", "wrong")
+    assert cli("evidence", "plan", "--area", "right", "--scope", "svc", "--", *ok_cmd("1 passed"))[0] == 0
+    assert cli("evidence", "run", "--area", "right")[0] == 0
+    right = entries(state_file)[-1]["id"]
+    code, *_ = cli("evidence", "retire", "--area", "wrong", "--reason", "Linted with a config CI does not use", "--replaced-by", "E999")
+    assert code != 0
+    code, out, err = cli("evidence", "retire", "--area", "wrong", "--reason", "Linted with a config CI does not use", "--replaced-by", right)
+    assert code == 0, (code, out, err)
+    state = json.loads(state_file().read_text())
+    assert "wrong" not in state["evidence"]["plan"] and state["evidence"]["retired"][-1]["replaced_by"] == [right]
+    assert any(e["area"] == "wrong" for e in state["evidence"]["entries"])

@@ -44,9 +44,9 @@ def discover(st,paths,ci_context=None):
         gates.append({'id':'imports-na','category':'lint-imports','applicability':'NOT_APPLICABLE','required':False,'reason':'Independently enumerated no affected Python architecture service','units':units,'argv':[],'scope':paths,'cwd':'.','source':rules[0] if rules else None,'execution_kind':'local'})
     checker=al_store.REPO_ROOT/'scripts/check-loc.py'
     if checker.is_file() and I.loc_supported(checker):
-        directories=I.loc_directories(al_store.REPO_ROOT,paths)
-        scope=directories+['scripts/check-loc.py','scripts/check-loc.allowlist' if (al_store.REPO_ROOT/'scripts/check-loc.allowlist').is_file() else 'scripts']
-        gate('loc','loc',['python3','scripts/check-loc.py',*directories],scope,source('scripts/check-loc.py'))
+        # The checker runs as the repository defines it (its own scan roots, exclusions and allowlist);
+        # passing the task's directories would scan generated or tooling code it never covers.
+        gate('loc','loc',['python3','scripts/check-loc.py'],['.'],source('scripts/check-loc.py'))
     else: gate('loc','loc',[],paths,source('scripts/check-loc.py') if checker.is_file() else None,reason='Resolve supported repository LOC checker interface')
     if (al_store.REPO_ROOT/'.husky/pre-commit').is_file(): gate('hook','pre-commit',['sh','.husky/pre-commit'],['.'],source('.husky/pre-commit'))
     else: gate('hook','pre-commit',[],paths,None,reason='Resolve repository pre-commit obligation')

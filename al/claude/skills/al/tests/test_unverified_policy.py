@@ -98,3 +98,29 @@ def test_a_single_new_git_location_is_hook_state_but_git_metadata_is_not():
     assert R.hook_state(before, two) is None
     edited = {'metadata': hook['metadata'], 'work': {'a.py': ['file', 420, 'y']}}
     assert R.hook_state(before, edited) is None
+
+
+def _run(tmp_path, name, status, exit_code, text):
+    log = tmp_path / (name + '.log');log.write_text(text)
+    return {'id': name, 'status': status, 'exit': exit_code, 'log': str(log)}
+
+
+def test_pre_existing_failures_and_environment_gaps_are_reported_not_blocking(tmp_path, monkeypatch):
+    import al_gates as G
+    import al_ledger as L
+    runs = {'E1': _run(tmp_path, 'E1', 'FAIL', 1, 'broken contract'), 'E2': _run(tmp_path, 'E2', 'FAIL', 1, 'broken contract'),
+            'E3': _run(tmp_path, 'E3', 'FAIL', 1, 'turbo: command not found'), 'E4': _run(tmp_path, 'E4', 'FAIL', 1, 'turbo: command not found'),
+            'E5': _run(tmp_path, 'E5', 'PASS', 0, 'ok'), 'E6': _run(tmp_path, 'E6', 'FAIL', 127, '')}
+    monkeypatch.setattr(L, 'find', lambda st, eid: runs.get(eid))
+    monkeypatch.setattr(G, 'touched_units', lambda st, m: {'services/touched'})
+    def st(base_evidence):
+        return {'gate_runs': [{'gate': 'g', 'stage': 'base', 'manifest': 'm', 'evidence': base_evidence}]}
+    run = {'fingerprint': 'f', 'manifest': 'm'}
+    untouched, touched = {'id': 'g', 'units': ['services/other']}, {'id': 'g', 'units': ['services/touched']}
+    assert 'pre-existing' in G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], run, 'f')
+    assert G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E2'], run, 'f') is None
+    assert G.accepted_failure(st('E5'), {}, untouched, 'candidate', runs['E2'], run, 'f') is None
+    assert 'environment gap' in G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f')
+    assert G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
+    assert 'environment gap' in G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f')
+    assert G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], dict(run, fingerprint='old'), 'f') is None

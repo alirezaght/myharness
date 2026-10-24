@@ -76,6 +76,14 @@ def run(repository, platform, session, argv):
             raise ValueError("new runtime requires its protected managed launcher")
         pin = prepare_pin(Path(trusted["snapshot"]), platform, _directory(storage() / "pins"))
         transaction = reserve(value, pin)
+    if list(argv) == ["clear"] and not implicit:
+        # Clearing the active pointer reads no run state, so the current launcher does it itself: a run
+        # whose pinned runtime can no longer read its own state can still be put aside.
+        pointer = Path(value["repository_identity"]["root"]) / ("." + platform) / "al-runtime" / "current"
+        if pointer.is_file() and pointer.read_text().strip() == session:
+            pointer.unlink()
+        print("AL state cleared")
+        return 0
     verified = verify_pin(storage() / "pins", transaction["pin"])
     manifest = verified["manifest"]
     validate_live(

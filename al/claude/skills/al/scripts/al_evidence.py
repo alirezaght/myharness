@@ -229,6 +229,28 @@ def cmd_evidence_plan(a, sid):
     print(f"AL · evidence planned · {a.area} · {a.tier} · `{' '.join(argv)}` · scope {', '.join(scope)}")
 
 
+def cmd_evidence_retire(a, sid):
+    """Withdraw a planned check that was a mistake (wrong command or scope), with a recorded reason.
+
+    Its runs stay in the ledger exactly as they were; the retirement and its replacements are part
+    of the evidence the reviewers read. Gate checks are never retired this way."""
+    # The dispatcher already holds the run lock for this short load-modify-save.
+    st = al_store.load(sid)
+    ev = L.ledger(st)
+    if a.area not in ev["plan"]:sys.exit("al_state: no planned evidence area " + a.area)
+    if a.area.startswith("gate-"):sys.exit("al_state: gate checks are governed by gates decisions, not retired")
+    if not a.reason or not a.reason.strip():sys.exit("al_state: retiring a planned check needs --reason")
+    replaced = _split(a.replaced_by)
+    for eid in replaced:
+        entry = L.find(st, eid)
+        if not entry or entry["status"] != "PASS" or L.entry_verdict(st, entry)[0] != "VALID":
+            sys.exit("al_state: replacement " + eid + " is not a current passing run")
+    ev.setdefault("retired", []).append({"area": a.area, "reason": a.reason.strip(), "replaced_by": replaced,
+                                         "plan": ev["plan"].pop(a.area), "at": time.time()})
+    al_store.save(sid, st)
+    print(f"AL · evidence area {a.area} retired · {a.reason.strip()}" + (f" · replaced by {', '.join(replaced)}" if replaced else ""))
+
+
 def cmd_evidence_run(a, sid):
     st = al_store.load(sid)
     guidance = sys.modules.get("al_recovery_guidance")
@@ -355,6 +377,9 @@ def register(sub):
     p.add_argument("--timeout", type=float); p.add_argument("--tail", type=int, default=40)
     p.add_argument("--recovery-file",dest="operation_recovery_file")
     p.set_defaults(fn=cmd_evidence_run)
+    p = ev.add_parser("retire"); p.add_argument("--area", required=True); p.add_argument("--reason", required=True)
+    p.add_argument("--replaced-by", help="comma-separated ledger ids of the current passing runs that replace it")
+    p.set_defaults(fn=cmd_evidence_retire)
     ev.add_parser("status").set_defaults(fn=cmd_evidence_status)
     p = ev.add_parser("require"); p.add_argument("--tier", choices=["focused", "broad"])
     p.add_argument("--areas"); p.set_defaults(fn=cmd_evidence_require)

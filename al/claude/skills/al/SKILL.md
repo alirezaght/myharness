@@ -327,6 +327,27 @@ blocked (`PROOF_ADMISSION_PENDING`) until the Architect's plan is admitted:
    contains `FILL:` is refused. The output names `materialized_obligations`.
 4. `$STATE planning admit --file <materialized_obligations.stored_path>`.
 
+### Record behavior observations (before review)
+
+After implementation and its evidence pass, and before `review-start`, every
+scenario in the admitted plan needs one observation: `review-start` refuses with
+`missing current behavior scenario: <group>/<scenario>` until each exists.
+
+1. `$STATE behavior packet` prints the current packet and one
+   `observation_templates` entry per scenario still missing, with every binding
+   filled.
+2. Replace each `FILL:` with the ledger ids of the passing runs that exercised
+   the item, what the run showed, and for `assertion_locations` the test file,
+   line and that file's SHA-256.
+3. `$STATE behavior observe --file <observation.json>` per scenario. An
+   observation still containing `FILL:` is refused.
+
+A planned check that was a mistake (a command or scope CI does not use) is
+withdrawn with `$STATE evidence retire --area <area> --reason <text>
+[--replaced-by E<n>,...]`; its runs stay in the ledger and reviewers see the
+retirement. `clear` is handled by the launcher itself, so a run whose state can
+no longer be read can still be put aside.
+
 A run pins repository root, worktree, Git common directory, current directory,
 target object, merge base and task package. Its AL runtime is pinned at `start`:
 reinstalling AL takes effect only in runs started afterwards. Commands from another repository or

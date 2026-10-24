@@ -202,3 +202,16 @@ def test_foreign_native_project_cannot_redirect_new_state(launched, tmp_path):
     assert "project directory differs" in result.stdout
     assert not (foreign / ".claude").exists()
     assert not (repo / ".claude/al-runtime/pin-flow.json").exists()
+
+
+def test_clear_puts_aside_a_run_whose_state_its_runtime_cannot_read(launched):
+    from al.tests.runtime_run_helpers import start, public_run
+    state = start(launched)
+    pointer = state.parent / "current"
+    assert pointer.read_text().strip() == "pin-flow"
+    # A state larger than the validator's 16 MiB read limit can no longer be loaded by any command.
+    state.write_bytes(state.read_bytes()[:-1] + b' ' * (17 * 1024 * 1024) + b'}')
+    assert public_run(launched, "codex", "show").returncode != 0
+    result = public_run(launched, "codex", "clear")
+    assert result.returncode == 0 and "AL state cleared" in result.stdout, (result.stdout, result.stderr)
+    assert not pointer.exists() and state.exists()

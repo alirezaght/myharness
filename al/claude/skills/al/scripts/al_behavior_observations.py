@@ -232,6 +232,9 @@ def cmd_observe(a, sid):
         refuse("behavior observations require a running run")
     candidate = S.capture_candidate(st)
     observation = J.loads(Path(a.file).read_bytes())
+    import al_planning_template as Template
+    if Template.placeholders(observation):
+        refuse("behavior observation still contains FILL: template placeholders")
     validate(st, observation)
     reference = J.snapshot(sid, observation, "behavior-observation-v1", a.file)
     if S.capture_candidate(st) != candidate:
@@ -249,6 +252,8 @@ def cmd_packet(a, sid):
     st = al_store.load(sid)
     before = S.capture_candidate(st)
     result = behavior_packet(st)
+    import al_planning_template as Template
+    result["observation_templates"] = Template.observation_templates(st, result)
     if S.capture_candidate(st) != before:
         refuse("candidate moved during behavior packet observation")
     print(J.raw(result).decode())

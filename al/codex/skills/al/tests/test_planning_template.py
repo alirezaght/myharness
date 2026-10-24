@@ -40,3 +40,21 @@ def test_unedited_template_is_refused_and_a_filled_one_is_admitted(cli, repo, tm
     assert code == 0, (code, out, err)
     obligations = json.loads(out)['materialized_obligations']['stored_path']
     assert cli('planning', 'admit', '--file', obligations)[0] == 0
+
+
+def test_behavior_packet_prints_an_observation_template_per_scenario(cli, repo, tmp_path, monkeypatch):
+    packet = _packet(cli, repo, tmp_path, monkeypatch)
+    filled = json.loads(json.dumps(packet['report_template']).replace('FILL: ', 'Architect: '))
+    path = tmp_path / 'report.json';path.write_text(json.dumps(filled))
+    code, out, err = cli('planning', 'report', '--file', str(path))
+    assert code == 0, (code, out, err)
+    assert cli('planning', 'admit', '--file', json.loads(out)['materialized_obligations']['stored_path'])[0] == 0
+    code, out, err = cli('behavior', 'packet')
+    assert code == 0, (code, out, err)
+    behavior = json.loads(out)
+    templates = behavior['observation_templates']
+    scenarios = [s['id'] for g in behavior['obligations']['content']['obligations'] for s in g['scenarios']]
+    assert [t['scenario_id'] for t in templates] == scenarios
+    path = tmp_path / 'observation.json';path.write_text(json.dumps(templates[0]))
+    code, out, err = cli('behavior', 'observe', '--file', str(path))
+    assert code != 0 and 'FILL:' in str(code) + out + err

@@ -55,6 +55,41 @@ def manifest(st):
     if key not in _VALIDATED:D.validate_manifest(st,m,check_sources=False);_VALIDATED.add(key)
     return m
 
+def touched_units(st,m):
+    """Units the candidate actually changes."""
+    opaque={row['path'] for row in S.source_rows() if G.opaque(row)}
+    semantic=m.get('service_coverage',{}).get('semantic_requirements')
+    return {V.classify_unit(p,opaque,semantic) for p in S.changed_paths(st['identity']['merge_base'])}
+
+
+def environment_gap(e):
+    """A run that could not start a command: AL's disposable checkout lacks an installed tool."""
+    if not e or e['status'] not in {'INFRA','FAIL'}:return False
+    if e.get('exit')==127:return True
+    try:text=Path(e['log']).read_text(errors='replace')[-65536:] if e.get('log') else ''
+    except OSError:return False
+    return 'command not found' in text or 'Failed to spawn' in text
+
+
+def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
+    """Why a current non-passing gate run is reported instead of blocking, or None.
+
+    A tool missing from AL's disposable checkout is AL's environment gap (on a candidate only when
+    base hit the same gap); a candidate failure in a gate whose services the change does not touch,
+    and which also failed at base, is pre-existing. A failure the change causes in a touched
+    service always blocks and goes back to rework."""
+    if not e or not r or r.get('fingerprint')!=fp or not environment_current:return None
+    base=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']=='base' and x['manifest']==r['manifest']]
+    prior=L.find(st,base[-1]['evidence']) if base else None
+    if environment_gap(e) and (stage=='base' or environment_gap(prior)):
+        return 'environment gap: a tool this gate needs is not installed in AL\'s disposable checkout (see '+e['id']+')'
+    if stage!='candidate' or e['status']!='FAIL' or not prior or prior['status']!='FAIL':return None
+    # A base `fix` decision commits this change to repairing the failure, so the candidate must pass.
+    if (st.get('gate_decisions',{}).get(g['id']) or {}).get('action')=='fix':return None
+    if set(g['units'])&touched_units(st,m):return None
+    return 'pre-existing failure: it also fails at base and the change does not touch '+', '.join(g['units'])
+
+
 @S.decision
 def gate_gaps(st,stage):
     m=manifest(st)
@@ -80,6 +115,7 @@ def gate_gaps(st,stage):
                    and e['argv']==g['argv'] and e['cwd']==g['cwd'] and e['scope']==g['scope']
                    and r.get('execution_kind')==g['execution_kind'] and e['area']=='gate-candidate-'+g['id']
                    and L.entry_verdict(st,e)[0]=='VALID')
+        if not valid and accepted_failure(st,m,g,stage,e,r,fp,environment_current):continue
         if not valid:
             decision=st.get('gate_decisions',{}).get(g['id'])
             if stage=='base' and environment_current and e and e['status']=='FAIL' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and decision and decision['action']=='fix' and decision.get('manifest')==st['gate_manifests'][-1]['sha256'] and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id']: continue
@@ -89,12 +125,23 @@ def gate_gaps(st,stage):
     return out
 
 def unverified(st):
-    """Checks AL could not model or run locally: reported to the reviewer and the user, never blocking."""
+    """Checks AL could not model or run locally, pre-existing failures in untouched services and
+    environment gaps: reported to the reviewer and the user, never blocking."""
     m=manifest(st)
     if not m:return []
-    return [{'gate':g['id'],'category':g['category'],'reason':g.get('reason',''),
-             'verified_by':'pipeline' if g['category']=='ci' else 'not verified'}
-            for g in m['gates'] if g['applicability']=='UNRESOLVED']
+    out=[{'gate':g['id'],'category':g['category'],'reason':g.get('reason',''),
+          'verified_by':'pipeline' if g['category']=='ci' else 'not verified'}
+         for g in m['gates'] if g['applicability']=='UNRESOLVED']
+    sha=st['gate_manifests'][-1]['sha256']
+    for stage in ('base','candidate'):
+        fp=S.capture_candidate(st)['fingerprint'] if stage=='candidate' else m['base_oid']
+        for g in m['gates']:
+            if g['applicability']!='APPLICABLE':continue
+            runs=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']==stage and x['manifest']==sha]
+            e=L.find(st,runs[-1]['evidence']) if runs else None
+            reason=accepted_failure(st,m,g,stage,e,runs[-1] if runs else None,fp)
+            if reason:out.append({'gate':g['id'],'category':g['category'],'stage':stage,'evidence':e['id'],'reason':reason,'verified_by':'not verified'})
+    return out
 
 def base_gaps(st): return gate_gaps(st,'base')
 

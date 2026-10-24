@@ -91,5 +91,43 @@ def template(packet_ref, value):
     }
 
 
+def observation_templates(st, packet):
+    """One ready-to-fill behavior-observation-v1 per scenario still missing an observation."""
+    artifact = packet['obligations']
+    seen = {(o['content']['obligation_id'], o['content']['scenario_id']) for o in packet.get('observations', [])}
+    def rows(scenario, key, identifier, text=False, executed=True):
+        return [{identifier: name, **({'observation': _fill('what the run showed for ' + name)} if text else {}),
+                 **({'evidence_ids': [_fill('ledger id of the passing run that exercised this')]} if executed else {}),
+                 'artifact_refs': []} for name in scenario[key]]
+    out = []
+    for group in artifact['content']['obligations']:
+        for scenario in group['scenarios']:
+            if (group['id'], scenario['id']) in seen:
+                continue
+            required = sorted(set().union(*(set(scenario[k]) for k in (
+                'initial_state_ids', 'transition_ids', 'outcome_ids', 'failure_case_ids', 'real_component_ids'))))
+            out.append({
+                'schema_version': 1, 'kind': 'behavior-observation-v1', 'obligation_id': group['id'],
+                'obligation_revision': {'artifact': artifact['artifact'], 'revision': artifact['content']['revision']},
+                'scenario_id': scenario['id'], 'evidence_ids': [_fill('ledger id(s) of the passing runs')],
+                'binding': {'repository_identity': st['identity'], 'session_id': st['session_id'], 'run_id': st['run_id'],
+                            'verification_authority_hash': packet['verification_authority']['hash'],
+                            'document_hash': packet['document_hash'], 'candidate_fingerprint': packet['candidate_fingerprint'],
+                            'input_bindings': [packet['verification_authority']['artifact'], artifact['artifact']]},
+                'starting_state': rows(scenario, 'initial_state_ids', 'state_id', text=True, executed=False),
+                'real_components': rows(scenario, 'real_component_ids', 'component_id'),
+                'simulated_dependencies': [{'component_id': name, 'mechanism': _fill('how it was simulated'),
+                                            'limitations': _fill('what the simulation does not prove')}
+                                           for name in scenario['permitted_simulated_component_ids']],
+                'exercised_transitions': rows(scenario, 'transition_ids', 'transition_id'),
+                'observed_outcomes': rows(scenario, 'outcome_ids', 'outcome_id', text=True),
+                'operational_failures': rows(scenario, 'failure_case_ids', 'failure_case_id', text=True),
+                'assertion_locations': [{'scenario_item_id': name, 'path': _fill('test file asserting this item'), 'line': 1,
+                                         'source_sha256': _fill('sha256 of that file')} for name in required],
+                'artifact_refs': [], 'limitations': [],
+            })
+    return out
+
+
 def placeholders(report):
     return PLACEHOLDER in json.dumps(report)

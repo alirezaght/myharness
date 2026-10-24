@@ -54,17 +54,17 @@ def test_loc_directory_dedup_deleted_path_and_expanded_scope(cli,repo):
     checker(repo);(repo/'services/x/src').mkdir(parents=True)
     (repo/'services/x/src/a.py').write_text('x=1\n')
     g=gate(discover(cli,['services/x/src','services/x/src/a.py','services/x/gone/nested/deleted.py']),'loc')
-    # The checker predates the run, so attribution keeps it out of the task's scanned changes.
-    assert g['argv']==['python3','scripts/check-loc.py','services/x']
-    assert {'services/x','scripts/check-loc.py','scripts/check-loc.allowlist'}<=set(g['scope'])
+    # The checker runs with the repository's own scan roots and exclusions, never the task's directories.
+    assert g['argv']==['python3','scripts/check-loc.py']
+    assert g['scope']==['.']
     assert subprocess.run(g['argv'],cwd=repo,capture_output=True).returncode==0
 
 
 def test_loc_root_directory_and_missing_allowlist_scope(cli,repo):
     checker(repo);(repo/'scripts/check-loc.allowlist').unlink(missing_ok=True)
     g=gate(discover(cli,['.']),'loc')
-    assert g['argv']==['python3','scripts/check-loc.py','.']
-    assert '.' in g['scope'] and 'scripts' in g['scope']
+    assert g['argv']==['python3','scripts/check-loc.py']
+    assert g['scope']==['.']
 
 
 @pytest.mark.parametrize('path',['../outside.py','/tmp/outside.py','escape/file.py'])
