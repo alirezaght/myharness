@@ -25,7 +25,7 @@ def test_full_directory_service_check_and_actual_scope(cli,repo):
     manifest=discover(cli,['services/x-service/src/app.py'])
     g=next(g for g in manifest['gates'] if g['id']=='imports-services-x-service')
     assert g['argv'][-2:]==['--unit','services/x-service']
-    assert {'services/x-service','services/x-service/pyproject.toml'}<=set(g['scope'])
+    assert __import__('al_repository_facts').all_within(g['scope'],['services/x-service','services/x-service/pyproject.toml'])
     binding=next(b for b in manifest['service_coverage']['assessment']['required_bindings'] if b['id']==g['id'])
     assert binding['runner_resource']['name']=='al_architecture_check.py'
     assert binding['execution_signature']==g['execution_signature']

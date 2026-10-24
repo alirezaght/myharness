@@ -23,7 +23,7 @@ def test_discovery_uses_the_full_service_name_with_real_architecture_check(repo,
     manifest = al_gate_discovery.discover(state, ['services/user-listing-service/src/app.py'])
     gate = next(g for g in manifest['gates'] if g['id']=='imports-services-user-listing-service')
     assert gate['argv'][-2:]==['--unit','services/user-listing-service']
-    assert {'services/user-listing-service','services/user-listing-service/pyproject.toml'}<=set(gate['scope'])
+    assert __import__('al_repository_facts').all_within(gate['scope'],['services/user-listing-service','services/user-listing-service/pyproject.toml'])
     assert subprocess.run(gate['argv'],cwd=repo,capture_output=True).returncode==0
     (repo/'services/user-listing-service/src/app.py').write_text('import forbidden_dependency\n')
     assert subprocess.run(gate['argv'],cwd=repo,capture_output=True).returncode!=0
@@ -37,7 +37,7 @@ def test_contract_discovery_binds_full_service_to_declared_chain_without_executi
     gate = next(g for g in manifest['gates'] if g['id']=='imports-services-user-listing-service')
     assert gate['argv']==['make','lint-imports','SVC=user-listing']
     chain={'.al/repository.json','Makefile','ci/scripts/check-architecture.sh','services/user-listing-service/pyproject.toml'}
-    assert chain<=set(gate['scope'])
+    assert __import__('al_repository_facts').all_within(gate['scope'],chain)
     expected=next(b for b in manifest['service_coverage']['assessment']['required_bindings'] if b['id']==gate['id'])
     assert chain<={row['path'] for row in expected['source_chain']}
     assert gate['execution_signature']==expected['execution_signature']

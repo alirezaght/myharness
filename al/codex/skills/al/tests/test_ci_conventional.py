@@ -52,7 +52,7 @@ def test_complete_conventional_ci_is_independently_bound(cli,repo,tmp_path):
     chain=binding['verification_chain']
     assert [r['purpose'] for r in chain['requirements']]==['lint','format-check','test','build']
     assert [s['kind'] for s in chain['setup']]==['checkout','uv-tool-setup','python-install','locked-sync']
-    assert {'pyproject.toml','uv.lock','.python-version','.github/workflows/quality.yml'}<=set(binding['required_scope'])
+    assert __import__('al_repository_facts').all_within(binding['required_scope'],['pyproject.toml','uv.lock','.python-version','.github/workflows/quality.yml'])
     assert {'PATH','UV_PYTHON','UV_CONFIG_FILE'}<=set(binding['env_names'])
     planned=manifest_for(st,repo,['ordinary_project/__init__.py'])
     file=tmp_path/'planned.json';file.write_text(json.dumps(planned));invoke(cli,'gates','plan','--file',str(file))

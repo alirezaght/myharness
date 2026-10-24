@@ -28,7 +28,7 @@ def test_mandated_collection_is_distinct_from_application_scope(cli,repo,tmp_pat
     profile=requirement['pytest_profile']
     assert profile['collection_roots']==['tests'] and profile['plugin_mode']=='disabled'
     assert profile['conftest']['files']==['tests/conftest.py']
-    assert {'tests/conftest.py','pyproject.toml','uv.lock'}<=set(binding['required_scope'])
+    assert __import__('al_repository_facts').all_within(binding['required_scope'],['tests/conftest.py','pyproject.toml','uv.lock'])
     assert set(Profile.ENV)<=set(binding['env_names'])
     assert 'al_pytest_runner.py' in requirement['guarded_argv'][5]
     assert requirement['targets'][0]['collection_roots']==['tests']

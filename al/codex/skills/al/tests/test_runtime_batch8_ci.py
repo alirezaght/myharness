@@ -45,7 +45,7 @@ def test_local_include_anchor_template_and_reference_are_sourced(cli,repo,tmp_pa
     m=executable_ci(setup(cli,repo,tmp_path,files,PATHS[:1]))
     job=next(g for g in m['gates'] if g['category']=='ci')
     assert job['source']['path']=='ci/jobs.yml' and job['source']['job']=='web-test'
-    assert {'ci/templates.yml','ci/jobs.yml','.gitlab-ci.yml'}<=set(job['scope'])
+    assert __import__('al_repository_facts').all_within(job['scope'],['ci/templates.yml','ci/jobs.yml','.gitlab-ci.yml'])
     plan(cli,tmp_path,m)
 
 
