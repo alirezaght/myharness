@@ -152,7 +152,7 @@
       }
     },
     "claude:tests/test_baseline_exceptions.py": {
-      "test": "14b84e267f980391d0cec0c4473df4ca8b014cc359727544b7340dbe46d32fb3",
+      "test": "83578a23af56335b00f7c0ec94639d0aff787f58f2a77dd9560fb70231c13fd7",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -285,7 +285,7 @@
       }
     },
     "claude:tests/test_gate_resume.py": {
-      "test": "4291c3696d3e043ec7b447222674a3a9dbccbed57c766b0190094bcec09d4519",
+      "test": "2433a13c5f8db83cbb39d2163693054d7799aeb6301931a32125dc83356fde56",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -726,7 +726,7 @@
       }
     },
     "codex:tests/test_baseline_exceptions.py": {
-      "test": "14b84e267f980391d0cec0c4473df4ca8b014cc359727544b7340dbe46d32fb3",
+      "test": "83578a23af56335b00f7c0ec94639d0aff787f58f2a77dd9560fb70231c13fd7",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -873,7 +873,7 @@
       }
     },
     "codex:tests/test_gate_resume.py": {
-      "test": "4291c3696d3e043ec7b447222674a3a9dbccbed57c766b0190094bcec09d4519",
+      "test": "2433a13c5f8db83cbb39d2163693054d7799aeb6301931a32125dc83356fde56",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -1160,7 +1160,7 @@
       }
     },
     "codex:tests/test_runtime_batch16_writers.py": {
-      "test": "defa2949e07e6ad6ff059d7dea7d2328c8f4eb13f27d45c0a369e8fbe532bb35",
+      "test": "c50d0ca8210452b3129067285e3884e1907e4c8148d76c5ad20e208343a74b57",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -4998,7 +4998,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1005,
-    "digest": "3c00dc96a7dff463d83c47a43f6f16edfa769967c861309f8ba30bba2577caa3"
+    "digest": "5e76581d455535e242afe37aa28b61405bb4b96f09eab5c7d9d10756daefa8e4"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
