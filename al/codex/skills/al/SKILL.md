@@ -383,7 +383,11 @@ Register writer lifetimes with `writer start --id <id> --role al-engineer|al-bui
 unresolved until `writer reconcile --id <id> --reason <text> --artifact <path>`.
 Start the writer lifetime before invoking the writing agent and finish it only
 after that agent returns: an edit made outside an open writer lifetime cannot be
-attributed and blocks the task.
+attributed and blocks the task. A writer's own checks run with
+`evidence run ... --writer <id>`; without it, a check overlapping an active
+writer's files is refused. `gates run --stage base` runs every base gate and
+lists all failures at once, so each pre-existing failure gets its
+`gates decision` in one pass.
 Checks are reserved before execution. A failed/interrupted operation is never
 recorded as PASS. No writer or check may be active or unresolved at review or
 approval barriers.

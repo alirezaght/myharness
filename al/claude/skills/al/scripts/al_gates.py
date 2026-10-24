@@ -29,6 +29,13 @@ class CandidateChanged(al_checkouts.MaterializationError):pass
 _VALIDATED=set()
 
 
+def base_loc_argv(root,g):
+    """A LOC gate lists the task's directories; at base each becomes its nearest existing ancestor."""
+    if g['category']!='loc' or g['argv'][:2]!=['python3','scripts/check-loc.py']:return g['argv']
+    import al_discovery_inputs as I
+    return g['argv'][:2]+[str(p) for p in I.loc_directories(Path(root),g['argv'][2:])]
+
+
 def stale_sources(m):
     """Sourced rules and gate sources whose current bytes differ from the plan; checked at every launch."""
     out=[]
@@ -117,7 +124,8 @@ def cmd_gates(a,sid):
         from al_gate_recovery import planning
         if a.action=='discover':
             paths=json.loads(Path(a.paths_file).read_text())
-            if a.base and S.git_bytes('rev-parse',a.base).decode().strip()!=st['identity']['merge_base']: refuse('base differs from pinned merge base')
+            # `pinned-base` (as the docs write it) names the run's pinned merge base.
+            if a.base and a.base!='pinned-base' and S.git_bytes('rev-parse',a.base).decode().strip()!=st['identity']['merge_base']: refuse('base differs from pinned merge base')
             m=D.discover(st,paths)
         else: m=json.loads(Path(a.file).read_bytes())
         D.validate_manifest(st,m)
@@ -235,9 +243,12 @@ def cmd_run(a,sid):
                     else:
                         state_top=ReviewState.prepare(root,g['review_state']) if g.get('review_state') else None
                         try:
+                            argv=base_loc_argv(root,g) if a.stage=='base' else g['argv']
                             with log.open('wb') as out:
-                                out.write(('argv: '+json.dumps(g['argv'])+'\ncwd: '+str(cwd)+'\nexecution_sha256: '+R.key_digest(key)+'\ninvocation: '+invocation+'\n').encode()); out.flush()
-                                proc=owner.spawn(g['argv'],cwd=cwd,stdout=out,stderr=subprocess.STDOUT)
+                                out.write(('argv: '+json.dumps(g['argv'])+'\ncwd: '+str(cwd)+'\nexecution_sha256: '+R.key_digest(key)+'\ninvocation: '+invocation+'\n').encode())
+                                if argv!=g['argv']:out.write(('executed at base: '+json.dumps(argv)+'\n').encode())
+                                out.flush()
+                                proc=owner.spawn(argv,cwd=cwd,stdout=out,stderr=subprocess.STDOUT)
                                 entry['pid']=proc.pid; E._commit(sid,entry)
                                 try: code=proc.wait(timeout=a.timeout)
                                 except subprocess.TimeoutExpired: code=stop(proc); status='INFRA'
@@ -330,9 +341,16 @@ def cmd_run(a,sid):
                 stack.close();checkout=None
             print(L.row(entry,status))
             results.append({'gate':g['id'],'evidence':entry['id'],'status':status})
-            if status!='PASS':
+            # Base failures are pre-existing and each needs a decision, so every base gate runs and all
+            # failures are listed at once; a candidate failure (or a torn run) stops the stage.
+            if status=='TORN' or (status!='PASS' and a.stage!='base'):
                 if resume:report()
                 raise SystemExit(1)
+    failed=[r for r in results if r['status']!='PASS']
+    if failed:
+        print('AL · '+str(len(failed))+' gate(s) did not pass: '+', '.join(r['gate']+' '+r['status']+' ('+r['evidence']+')' for r in failed))
+        if resume:report()
+        raise SystemExit(1)
     if resume and not report():raise SystemExit(1)
 
 def register(sub):

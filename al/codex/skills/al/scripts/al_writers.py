@@ -32,7 +32,7 @@ def canonical_paths(paths):
     if not out: refuse('writer needs owned files')
     return out
 
-def admit_check(st, spec, *, gate_context=None):
+def admit_check(st, spec, *, gate_context=None, own_writer=None):
     from al_execution_tasks import admit_check as execution_check
     execution_check(st, spec, gate_context=gate_context)
     if st['status'] != 'RUNNING' or st['phase'] in {'REVIEW','DONE'}: refuse('checks cannot start in this state')
@@ -52,7 +52,11 @@ def admit_check(st, spec, *, gate_context=None):
     # A base gate runs in a disposable checkout of the base commit: writers in the working tree
     # cannot affect it, nor it them.
     if gate_context and gate_context.get('stage')=='base':return
+    if own_writer is not None and not any(w['id']==own_writer and w['state']=='ACTIVE' for w in unresolved_writers(st)):
+        refuse('--writer names no active writer: '+str(own_writer))
     for w in unresolved_writers(st):
+        # A writer's own check runs between its own edits; other writers still conflict as before.
+        if w['id']==own_writer and w['state']=='ACTIVE':continue
         if w['state'] != 'ACTIVE' or st['phase'] in BARRIERS or shared or al_parallel.shared_state_hits(w['commands']) or '.' in spec['scope'] or al_parallel.overlaps(w['files'],spec['scope']):
             refuse('check overlaps unresolved writer ' + w['id'])
 

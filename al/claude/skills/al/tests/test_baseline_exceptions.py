@@ -54,10 +54,10 @@ def test_exception_admits_implementation_keeps_fail_and_shows_separately(cli, re
     assert current['baseline_exceptions'][0]['status'] == 'current' and current['baseline_exceptions'][0]['evidence_status'] == 'FAIL'
     _, entry = loc_entry(cli)
     assert entry['status'] == 'FAIL'
-    # Continuation processes the remaining base gates and retains the excepted failure as FAIL.
+    # The base stage already ran every gate; continuation retains the excepted failure as FAIL.
     _, out, _ = invoke(cli, 'gates', 'run', '--stage', 'base', '--resume')
     report = json.loads(next(line for line in reversed(out.strip().splitlines()) if line.startswith("{")))
-    assert report['stage_ready'] and 'loc' not in report['selected'] and report['selected']
+    assert report['stage_ready'] and 'loc' not in report['selected']
     assert report['base_decisions']['loc']['action'] == 'exception'
     assert loc_entry(cli)[1]['id'] == entry['id']
     admit_planning(cli)

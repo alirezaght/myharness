@@ -85,7 +85,7 @@ Add: `MODE: PLAN`, and — when AL ran a read-only investigation fan-out —
 them; they carry no authority): <verbatim reports>` (else the line
 `INVESTIGATION_REPORTS: none — AL ran no scouts`).
 State: `Answer the specification validity gate FIRST. Then classify the task and
-decide whether pseudocode is genuinely needed. If you answer DESIGNER_REQUIRED:
+decide whether pseudocode is genuinely needed (COMPLEX always uses the Designer). If you answer DESIGNER_REQUIRED:
 NO, your IMPLEMENTATION_PLAN is the implementation guidance and must be concrete
 enough to build from.`
 Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.

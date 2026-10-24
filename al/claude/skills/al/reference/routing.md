@@ -89,7 +89,9 @@ multi-component behaviour change.
 ## 4. When AL-Designer runs
 
 Designer is invoked when `DESIGNER_REQUIRED: YES`, which AL-Architect answers
-YES only when pseudocode **materially reduces implementation risk**. In practice:
+YES only when pseudocode **materially reduces implementation risk**. A COMPLEX
+classification always uses the Designer (`classify COMPLEX --designer no` is
+refused); the choice applies to SMALL and STANDARD. In practice:
 
 - **Skipped** for SMALL and most STANDARD tasks; skipped whenever the plan is
   already concrete enough to implement from. Record it in the output:

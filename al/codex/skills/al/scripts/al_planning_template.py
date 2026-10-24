@@ -38,21 +38,37 @@ def template(packet_ref, value):
                                   'to_state': 'after'}], _fill('which transitions matter')),
         'owners': _section([{'id': 'owner', 'subject': _fill('what is owned'),
                              'responsible_component_id': 'component'}], _fill('who owns the behavior')),
-        'preserve': _section([], _fill('what must stay unchanged, or why nothing applies')),
+        # One example item per section shows the required fields; delete an item (and its ids in the
+        # scenarios) when a section does not apply, and give the section a not-applicable reason.
+        'preserve': _section([{'id': 'unchanged', 'subject': _fill('what must stay unchanged'),
+                               'expected_observation': _fill('how a test sees it unchanged')}],
+                             _fill('what must stay unchanged')),
         'reset': _section([], _fill('what state is reset, or why nothing applies')),
         'journey_end': _section([{'id': 'after', 'subject': _fill('end state subject'),
                                   'expected_observation': _fill('what a test observes at the end')}],
                                 _fill('terminal state of the journey')),
-        'persistence_observations': _section([], _fill('what persists, or why nothing applies')),
-        'operational_failures': _section([], _fill('supported failures, or why none apply')),
+        'persistence_observations': _section([{'id': 'persisted', 'subject': _fill('what persists'),
+                                               'expected_observation': _fill('how a test reads it back')}],
+                                             _fill('what persists')),
+        'operational_failures': _section([{'id': 'failure', 'trigger': _fill('the supported failure'),
+                                           'expected_observation': _fill('what a test observes on failure')}],
+                                         _fill('supported failures')),
         'required_real_components': _section([{'id': 'component', 'description': _fill('real component exercised'),
                                                'boundary': _fill('what runs for real')}], _fill('real components')),
-        'permitted_simulated_boundaries': _section([], _fill('simulated boundaries, or why none are allowed')),
+        'permitted_simulated_boundaries': _section([{'id': 'simulated', 'description': _fill('simulated dependency'),
+                                                     'boundary': _fill('exactly what is simulated')}],
+                                                   _fill('simulated boundaries')),
+        # When changed exports have consumers: applicability 'applicable' and entries shaped
+        # {id, role, kind, contract, locations, source_refs}.
         'consumer_inventory': {'applicability': 'not_applicable', 'reason': _fill('consumers of changed exports, or why none'),
                                'entries': [], 'discovery_refs': [], 'uncertainties': []},
+        # Every journey_end, preserve and persistence item appears in some scenario's outcome_ids.
         'scenarios': [{'id': 'happy-path', 'initial_state_ids': ['before'], 'transition_ids': ['change'],
-                       'outcome_ids': ['after'], 'failure_case_ids': [], 'real_component_ids': ['component'],
-                       'permitted_simulated_component_ids': []}],
+                       'outcome_ids': ['after', 'persisted'], 'failure_case_ids': [], 'real_component_ids': ['component'],
+                       'permitted_simulated_component_ids': ['simulated']},
+                      {'id': 'failure-path', 'initial_state_ids': ['before'], 'transition_ids': [],
+                       'outcome_ids': ['unchanged'], 'failure_case_ids': ['failure'], 'real_component_ids': ['component'],
+                       'permitted_simulated_component_ids': ['simulated']}],
     }
     binding = value['binding']
     behavior = {

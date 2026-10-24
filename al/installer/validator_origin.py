@@ -37,8 +37,11 @@ def safe(path):
 def capture(path):
     path = safe(path)
     before = path.stat()
-    if not stat.S_ISREG(before.st_mode) or before.st_size > 16 * 1024 * 1024:
-        raise ValueError('invalid validator resource')
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError('invalid validator resource: ' + str(path) + ' is not a regular file')
+    if before.st_size > 16 * 1024 * 1024:
+        raise ValueError('invalid validator resource: ' + str(path) + ' is ' + format(before.st_size / 1048576, '.1f')
+                         + ' MiB, over the 16 MiB limit')
     raw = path.read_bytes()
     after = path.stat()
     if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_mode) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_mode):

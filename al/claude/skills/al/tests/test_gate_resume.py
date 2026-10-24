@@ -81,9 +81,11 @@ def test_baseline_fix_decision_is_preserved_without_synthesizing_pass(cli, repo,
     invoke(cli, 'gates', 'decision', '--id', 'middle', '--action', 'fix',
            '--reason', 'The developer explicitly includes repairing this demonstrated baseline failure.',
            '--source', 'Synthetic developer baseline-fix decision')
+    # Every base gate already ran in the first pass, so the resume has nothing left to execute.
+    assert markers[2].read_text() == 'x'
     _, output, _ = invoke(cli, 'gates', 'run', '--stage', 'base', '--resume')
     result = report(output)
-    assert result['selected'] == ['last'] and result['stage_ready']
+    assert result['selected'] == [] and result['stage_ready']
     assert result['base_decisions']['middle']['action'] == 'fix'
     state = cli.state()
     attempts = [e for e in state['evidence']['entries'] if e['area'] == 'gate-base-middle']

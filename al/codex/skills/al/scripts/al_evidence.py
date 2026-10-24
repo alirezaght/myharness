@@ -54,7 +54,7 @@ def _commit(sid, entry):
         al_store.save(sid, st)
 
 
-def _create(sid, expected_run, *, gate_context=None, **fields):
+def _create(sid, expected_run, *, gate_context=None, own_writer=None, **fields):
     """Allocate the entry id and record it as RUNNING, atomically — refused when
     the session was restarted since the caller read the state."""
     with al_store.locked(sid):
@@ -71,7 +71,7 @@ def _create(sid, expected_run, *, gate_context=None, **fields):
         if gate_context:
             from al_gate_continuation import admit_destination
             destination = admit_destination(st, gate_context)
-        al_writers.admit_check(st, spec, gate_context=destination)
+        al_writers.admit_check(st, spec, gate_context=destination, own_writer=own_writer)
         entry = L.new_entry(st, **fields)
         if destination is not None: entry['gate_reservation'] = destination
         entry["reservation"] = secrets.token_hex(16)
@@ -266,7 +266,8 @@ def cmd_evidence_run(a, sid):
         return
     entry = _create(sid, st.get("run_id"), area=spec["area"], kind=spec["kind"], tier=spec["tier"], argv=spec["argv"],
                     cwd=spec["cwd"], scope=spec["scope"], env_names=spec["env"],
-                    preflight=spec.get("preflight"), needs=spec.get("needs") or (), sources=spec.get("sources", []))
+                    preflight=spec.get("preflight"), needs=spec.get("needs") or (), sources=spec.get("sources", []),
+                    own_writer=getattr(a, "writer", None))
     text = _execute(sid, entry, a.timeout)
     tail = text.splitlines()[-a.tail:] if a.tail else []
     if tail:
@@ -350,6 +351,7 @@ def register(sub):
     ev = sub.add_parser("evidence").add_subparsers(dest="action", required=True)
     p = ev.add_parser("plan"); common(p); p.set_defaults(fn=cmd_evidence_plan, tier="broad")
     p = ev.add_parser("run"); common(p); p.add_argument("--fresh", action="store_true")
+    p.add_argument("--writer", help="the active writer this check belongs to; its own files may overlap the scope")
     p.add_argument("--timeout", type=float); p.add_argument("--tail", type=int, default=40)
     p.add_argument("--recovery-file",dest="operation_recovery_file")
     p.set_defaults(fn=cmd_evidence_run)

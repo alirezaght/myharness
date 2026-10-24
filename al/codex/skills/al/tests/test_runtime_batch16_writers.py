@@ -122,3 +122,12 @@ def test_covered_parent_still_requires_prospective_new_unit_obligations(cli,repo
     put(repo,'.gitlab-ci.yml','web-verify:\n  script:\n    - python3 -m json.tool apps/web/package.json\n    - python3 -m json.tool apps/new/package.json\n')
     plan(cli,tmp_path,manifest(cli,repo,['apps/new/app.ts']))
     writer(cli,'apps/new/app.ts')
+
+
+def test_a_writers_own_check_may_overlap_its_files_but_others_may_not(cli,repo,tmp_path):
+    import sys
+    setup(cli,repo,tmp_path);writer(cli,'docs/readme.md')
+    command=[sys.executable,'-c','print("1 passed")']
+    invoke(cli,'evidence','run','--area','own','--scope','docs/readme.md','--',*command,ok=False)
+    invoke(cli,'evidence','run','--area','own','--scope','docs/readme.md','--writer','writer','--',*command)
+    invoke(cli,'evidence','run','--area','foreign','--scope','docs/readme.md','--writer','nobody','--',*command,ok=False)
