@@ -79,14 +79,29 @@ them; they carry no authority): <verbatim reports>` (else the line
 State: `Answer the specification validity gate FIRST. Then classify the task and
 decide whether pseudocode is genuinely needed (COMPLEX always uses the Designer). If you answer DESIGNER_REQUIRED:
 NO, your IMPLEMENTATION_PLAN is the implementation guidance and must be concrete
-enough to build from.`
+enough to build from. Before finalizing a SPEC_READY plan, determine from intended
+behavior and affected components whether migrations or Pub/Sub subscriptions are
+in scope, regardless of filenames or eventual diff. For either trigger, inspect
+actual target-repository CI/deployment/infrastructure/environment sources,
+including unchanged files: trace relevant effective CI job timeouts through
+includes, shared templates, defaults, job overrides, and applicable project or
+runner limits; inspect per-environment feature/pilot/rollout flags, including
+staging pilot gates and overrides. Record source paths and keys/locations,
+effective values or explicit gaps, design/verification consequences, migration
+duration/batching and subscription activation/deployment sequencing, and required
+resolution for missing or inaccessible sources. Do not guess values or request
+unauthorized changes. Material uncertainty uses the existing SPEC_BLOCKED gate;
+lesser gaps remain explicit in the plan.`
 Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.
 - On `SPEC_BLOCKED`: `BLOCKING_QUESTIONS` (each with `WHY_MATERIAL` and `RECOMMENDED`),
   `WHAT_IS_CLEAR` — and nothing else.
 - On `SPEC_READY`: `TASK_CLASSIFICATION`, `CLASSIFICATION_REASON`, `IMPLEMENTER`,
   `IMPLEMENTER_REASON`, `DESIGNER_REQUIRED`, `DESIGNER_REASON`, `SPEC_SUMMARY`,
-  `ASSUMPTIONS`, `INVARIANTS`, `IMPLEMENTATION_PLAN` (with `CORE_SCOPE`,
-  `SUPPORT_SCOPE`, `INTEGRATION_POINTS`, `EDGE_CASES`, `RISKS`),
+  `ASSUMPTIONS`, `INVARIANTS`, `IMPLEMENTATION_PLAN` (with
+  `INFRASTRUCTURE_CONSTRAINTS`—trigger/applicability, inspected source-backed
+  timeout and per-environment flag findings, consequences, unresolved gaps or a
+  brief not-applicable rationale—plus `CORE_SCOPE`, `SUPPORT_SCOPE`,
+  `INTEGRATION_POINTS`, `EDGE_CASES`, `RISKS`),
   `WRITE_OWNERSHIP` (with `CORE_FILES`, `SUPPORT_FILES`, `SHARED_FILES`),
   `PARALLEL_ASSESSMENT` (with `BUILDER_EARLY_WORK`, `BUILDER_DEFERRED_WORK`,
   `INTERFACE_STABILITY`, `SHARED_STATE_COMMANDS`, `PARALLEL_SAFE`, `REASON`),

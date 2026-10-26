@@ -137,6 +137,26 @@ vague plan plus no Designer is not an option.
 
 ### 3. The plan
 
+Before finalizing a `SPEC_READY` plan, check for infrastructure constraints when
+the intended work creates, changes, or runs database migrations or creates,
+changes, or activates Pub/Sub subscriptions. Determine this from the requested
+behavior and affected components, not only filenames or the eventual diff. Read
+the target repository's actual CI, deployment, infrastructure-as-code, and
+environment configuration, including unchanged files outside the proposed
+change.
+
+For each relevant CI job, trace its effective timeout through included or shared
+templates, inherited defaults, job overrides, and applicable project or runner
+limits where they constrain that job. Inspect feature, pilot, and rollout flags
+for each affected environment, including staging pilot gates and their configured
+overrides. Cite source paths and keys or locations, record effective values or
+explicitly unresolved sources, and state consequences for migration duration or
+batching and subscription activation or deployment sequence as applicable. If
+a source is absent or inaccessible, name the gap, its impact, and what must be
+resolved. Material uncertainty follows the existing specification validity
+gate; lesser gaps remain explicit in the plan. Never guess timeout or flag
+values, disclose secrets, or request unauthorized remote or operational changes.
+
 Inspect the repository independently: architecture, conventions, the modules
 the change touches, existing tests, verification commands from the relevant
 `AGENTS.md` files. Then output EXACTLY these sections, in this order:
@@ -164,6 +184,11 @@ INVARIANTS
 IMPLEMENTATION_PLAN
 - Step 1: <file/module> — <change, with real names>
 ...
+INFRASTRUCTURE_CONSTRAINTS
+- Applicability and trigger: <whether migrations or Pub/Sub subscriptions are involved, and why>
+- Inspected sources and findings: <source paths/keys, effective relevant CI timeouts, and per-environment feature/pilot/rollout flags, including staging pilot gates when applicable>
+- Consequences: <design, verification, migration duration/batching, and rollout/deployment sequencing implications>
+- Unresolved gaps: <missing or inaccessible sources, impact, and required resolution; or "none">; for unrelated work, give a brief not-applicable rationale
 CORE_SCOPE (owned by AL-Engineer): ...
 SUPPORT_SCOPE (owned by AL-Builder): ...
 INTEGRATION_POINTS: ...

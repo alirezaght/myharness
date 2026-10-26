@@ -333,6 +333,12 @@ as review leads to investigate, not as independently verified incidents.
 
 ### Admit the Architect plan (planning proof)
 
+Before implementation, plans for migration or Pub/Sub subscription work must
+include source-backed effective CI timeout and per-environment flag findings,
+including staging pilot gates, in `INFRASTRUCTURE_CONSTRAINTS`. Follow the
+canonical Architect PLAN and handoff guidance; this discovery is separate from
+the supervisor's optional CI planning-context profile selection.
+
 After `spec-gate` and `classify`, and once a gate manifest is planned, writers stay
 blocked (`PROOF_ADMISSION_PENDING`) until the Architect's plan is admitted:
 
