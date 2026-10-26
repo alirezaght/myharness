@@ -21,7 +21,8 @@ def test_changed_rules_replan_then_complete_fresh_approval(cli,repo,tmp_path,sta
     ruled(cli,tmp_path,repo);old=state(cli)['gate_manifests'][-1]
     if route=='resume':checkpoint=pause(cli,tmp_path)
     else:invoke(cli,'agent-failed','al-engineer','--reason','transient','--retry-safe','yes')
-    (repo/'Makefile').write_text('lint-imports:\n\ttrue # revised source\n')
+    # A new rule source outside the planned paths needs the Architect's replacement plan.
+    (repo/'AGENTS.md').write_text('Revised repository instructions.\n')
     if route=='resume':invoke(cli,'resume','--checkpoint',checkpoint)
     else:invoke(cli,'retry','al-engineer','--reason','reconcile changed rules')
     s=state(cli);assert s['recovery_replans'][-1]['superseded']==old and old in s['gate_manifests']
@@ -29,13 +30,19 @@ def test_changed_rules_replan_then_complete_fresh_approval(cli,repo,tmp_path,sta
     replanned_approval(cli,tmp_path,repo);assert state(cli)['status']=='APPROVED'
 
 
-@pytest.mark.parametrize('drift',['missing','unit'])
-def test_missing_rules_and_new_units_require_planning(cli,repo,tmp_path,drift):
+def test_new_unplanned_units_require_planning(cli,repo,tmp_path):
     ruled(cli,tmp_path,repo);checkpoint=pause(cli,tmp_path)
-    if drift=='missing':(repo/'Makefile').unlink()
-    else:(repo/'apps/new').mkdir(parents=True);(repo/'apps/new/a.ts').write_text('server data')
+    (repo/'apps/new').mkdir(parents=True);(repo/'apps/new/a.ts').write_text('server data')
     invoke(cli,'resume','--checkpoint',checkpoint)
     assert state(cli)['phase']=='PLANNING' and state(cli)['recovery_replans'][-1]['reasons']
+
+
+def test_removed_planned_rule_refreshes_without_replanning(cli,repo,tmp_path):
+    ruled(cli,tmp_path,repo);checkpoint=pause(cli,tmp_path)
+    (repo/'Makefile').unlink()
+    invoke(cli,'resume','--checkpoint',checkpoint)
+    s=state(cli)
+    assert 'source rule missing: Makefile' in s['gate_refreshes'][-1]['reasons'] and not s.get('recovery_replans')
 
 
 @pytest.mark.parametrize('artifact',['manifest','checkpoint'])

@@ -46,6 +46,7 @@
     "al_gate_inventory.py",
     "al_gate_process.py",
     "al_gate_recovery.py",
+    "al_gate_refresh.py",
     "al_gate_reuse.py",
     "al_gates.py",
     "al_git_cache.py",
