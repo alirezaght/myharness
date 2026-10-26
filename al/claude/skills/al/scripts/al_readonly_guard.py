@@ -15,6 +15,9 @@ def main():
         if data['tool_name']!='Bash': return
         tool=data.get('tool_input')
         if not isinstance(tool,dict) or not isinstance(tool.get('command'),str): deny('malformed Bash input')
+        if 'run_in_background' in tool:
+            if type(tool['run_in_background']) is not bool: deny('malformed background metadata')
+            if tool['run_in_background']: deny('background execution is prohibited')
         hits=al_shell.check(tool['command'],'readonly')
         if hits: deny('; '.join(hits))
     except (ValueError,TypeError): deny('malformed hook JSON/input')

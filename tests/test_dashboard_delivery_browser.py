@@ -1,5 +1,6 @@
 """P4-06 browser acceptance at real desktop and mobile CDP viewports."""
 
+import json
 import os
 
 import pytest
@@ -66,6 +67,32 @@ def test_delivery_panel_fits_desktop_and_mobile_viewports(
         ),
     )
     _delivery_row(controller.conn, execution_id, provider)
+    controller.conn.execute(
+        "INSERT INTO browser_plans(id,execution_id,document,created_at) VALUES (?,?,?,?)",
+        (
+            "phase5-plan-fixture",
+            execution_id,
+            json.dumps(
+                {
+                    "target": {
+                        "url": "https://staging.example.test/very/long/path/" + "segment" * 40,
+                        "deployment_id": "deploy-" + "a" * 80,
+                    },
+                    "criteria": [
+                        {
+                            "id": "Q24",
+                            "text": "<img src=x onerror=alert(1)> " + "long-assertion-" * 30,
+                            "classification": "selected",
+                            "reason": "Fixture only; never indicates live acceptance",
+                            "steps": [{"op": "assert_visible", "selector": "h1"}],
+                        }
+                    ],
+                    "limitations": ["Synthetic display fixture; no browser run"],
+                }
+            ),
+            "2026-10-26T09:30:00Z",
+        ),
+    )
 
     with serve(db_path, task_id) as server:
         server.stream_lifetime = 30
@@ -103,6 +130,11 @@ def test_delivery_panel_fits_desktop_and_mobile_viewports(
             "Stagingready",
             "12 tests passed" if provider == "github" else "11 passed",
             "one approval remains",
-            "Phase 5",
+            "Completion summary",
+            "selected",
+            "Q24",
+            "separate explicit approval",
+            "Synthetic display fixture",
+            "<img src=x onerror=alert(1)>",
         ):
             assert content in panel["text"]

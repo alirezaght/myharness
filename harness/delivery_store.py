@@ -109,9 +109,12 @@ def save_snapshot(
 
 
 def delivery_view(conn, execution_id):
+    from harness.browser_store import browser_view
+    from harness.reporting import assemble_report
+
     row = get_delivery(conn, execution_id)
     snapshot = row["snapshot"] or {}
-    return {
+    view = {
         "execution_id": execution_id,
         "provider": row["config"].get("provider", "gitlab"),
         "generation": row["generation"],
@@ -122,8 +125,16 @@ def delivery_view(conn, execution_id):
         "jobs": snapshot.get("jobs", []),
         "test_report": snapshot.get("test_report"),
         "staging": snapshot.get("staging", {"ready": False, "status": "unknown"}),
-        "browser_validation": {"status": "not_run", "phase": 5},
+        "browser_validation": browser_view(conn, execution_id),
         "retries": {"used": row["retries"], "limit": row["config"]["retry_limit"]},
         "blockers": snapshot.get("blockers", []),
         "observed_at": snapshot.get("observed_at"),
     }
+
+    summary = assemble_report(conn, execution_id, view)
+    summary["browser"] = {
+        key: view["browser_validation"][key]
+        for key in ("status", "currency", "reason", "observed_at", "evidence_origin", "blockers")
+    }
+    view["completion_summary"] = summary
+    return view

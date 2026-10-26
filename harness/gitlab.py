@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -34,6 +35,63 @@ class GitLabClient:
         self.credentials = credential_provider or (lambda: os.environ[config["credential_env"]])
         self.opener = build_opener(NoRedirect())
 
+    def _response(self, request, method, page_header):
+        deadline = min(time.monotonic() + 30, getattr(self, "_read_deadline", float("inf")))
+        for attempt in range(3 if method == "GET" else 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise GitLabError("Provider read deadline exceeded")
+            delay = 0.1 * (attempt + 1)
+            try:
+                with self.opener.open(request, timeout=min(15, remaining)) as response:
+                    chunks, size = [], 0
+                    while True:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise GitLabError(
+                                "Provider response deadline exceeded", uncertain=method != "GET"
+                            )
+                        # read1 performs one underlying read per deadline check.
+                        if response.fp is None:
+                            break
+                        response.fp.raw._sock.settimeout(min(15, remaining))
+                        block = response.read1(min(65536, 2 * 1024 * 1024 + 1 - size))
+                        if not block:
+                            break
+                        chunks.append(block)
+                        size += len(block)
+                        if size > 2 * 1024 * 1024:
+                            raise GitLabError(
+                                "Provider response exceeds limit", uncertain=method != "GET"
+                            )
+                    raw = b"".join(chunks)
+                    return raw, response.headers.get(page_header, "")
+            except HTTPError as error:
+                retry_after = error.headers.get("Retry-After", "")
+                error.close()
+                if method != "GET" or error.code not in {429, 502, 503, 504} or attempt == 2:
+                    raise GitLabError(
+                        f"Provider HTTP {error.code}",
+                        status=error.code,
+                        uncertain=method != "GET" and error.code >= 500,
+                    ) from None
+                if retry_after:
+                    try:
+                        delay = max(delay, float(retry_after))
+                    except ValueError:
+                        raise GitLabError("Provider retry delay unavailable") from None
+                    if not 0 <= delay <= 1:
+                        raise GitLabError("Provider retry delay exceeds bounded policy") from None
+            except (URLError, TimeoutError, OSError):
+                if method != "GET" or attempt == 2:
+                    raise GitLabError(
+                        "Provider transport unavailable", uncertain=method != "GET"
+                    ) from None
+            if time.monotonic() + delay >= deadline:
+                raise GitLabError("Provider read deadline exceeded")
+            time.sleep(delay)
+        raise GitLabError("Provider integration unavailable")
+
     def request(self, method, path, payload=None, query=None):
         if (path and not path.startswith("/")) or ".." in path.split("/"):
             raise ValueError("invalid GitLab API path")
@@ -49,34 +107,31 @@ class GitLabClient:
             headers={"PRIVATE-TOKEN": token, "Content-Type": "application/json"},
             method=method,
         )
+        raw, next_page = self._response(req, method, "X-Next-Page")
         try:
-            with self.opener.open(req, timeout=15) as response:
-                raw = response.read(2 * 1024 * 1024 + 1)
-                if len(raw) > 2 * 1024 * 1024:
-                    raise GitLabError("GitLab response exceeds limit", uncertain=method != "GET")
-                value = json.loads(raw)
-                from harness.execution_logs import redact_value
+            value = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise GitLabError("GitLab response failure", uncertain=method != "GET") from None
+        from harness.execution_logs import redact_value
 
-                return redact_value(value, secrets=(token,)), response.headers.get(
-                    "X-Next-Page", ""
-                )
-        except HTTPError as error:
-            raise GitLabError(
-                f"GitLab HTTP {error.code}",
-                uncertain=method != "GET" and error.code >= 500,
-                status=error.code,
-            ) from None
-        except (URLError, TimeoutError, OSError, json.JSONDecodeError):
-            raise GitLabError(
-                "GitLab transport or response failure", uncertain=method != "GET"
-            ) from None
+        return redact_value(value, secrets=(token,)), next_page
 
     def get(self, path, **query):
         return self.request("GET", path, query=query)[0]
 
     def list_pages(self, path, **query):
+        try:
+            return self._list_pages(path, **query)
+        finally:
+            self._read_deadline = float("inf")
+
+    def _list_pages(self, path, **query):
         result, page = [], "1"
+        deadline = time.monotonic() + 30
         for _ in range(100):
+            if time.monotonic() >= deadline:
+                raise GitLabError("GitLab pagination deadline exceeded")
+            self._read_deadline = deadline
             values, next_page = self.request(
                 "GET", path, query=dict(query, page=page, per_page=100)
             )

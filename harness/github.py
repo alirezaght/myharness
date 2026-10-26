@@ -130,9 +130,17 @@ class GitHubClient(GitHubHTTP):
                 "id": latest["id"],
                 "sha": latest["sha"],
                 "status": last_status.get("state", "unknown"),
+                "status_id": last_status.get("id"),
+                "environment_url": last_status.get("environment_url"),
                 "environment": {"id": identifier, "name": name},
             }
-        return {"id": identifier, "name": name, "state": "available", "last_deployment": deployment}
+        return {
+            "id": identifier,
+            "name": name,
+            "state": "available",
+            "last_deployment": deployment,
+            "external_url": (deployment or {}).get("environment_url"),
+        }
 
     def get(self, path, **query):
         parts = path.strip("/").split("/")

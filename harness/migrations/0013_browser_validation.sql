@@ -1,0 +1,7 @@
+CREATE TABLE browser_plans(id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), document TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE browser_approvals(id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), plan_id TEXT NOT NULL REFERENCES browser_plans(id), request_id TEXT NOT NULL, attempt INTEGER NOT NULL, binding TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(execution_id,request_id), UNIQUE(execution_id,plan_id,attempt));
+CREATE TABLE browser_runs(id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), approval_id TEXT NOT NULL UNIQUE REFERENCES browser_approvals(id), state TEXT NOT NULL, owner_token TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, error TEXT, final_observation TEXT);
+CREATE UNIQUE INDEX browser_active_owner ON browser_runs(execution_id) WHERE state IN ('Dispatching','Running','Uncertain');
+CREATE TABLE browser_results(run_id TEXT NOT NULL REFERENCES browser_runs(id), criterion_id TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(run_id,criterion_id));
+CREATE TABLE browser_investigations(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES browser_runs(id), criterion_id TEXT NOT NULL, record TEXT NOT NULL, UNIQUE(run_id,criterion_id));
+CREATE TABLE browser_capabilities(id TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), observation TEXT NOT NULL, created_at TEXT NOT NULL);

@@ -6,6 +6,7 @@ import sys
 from harness import __version__
 from harness.classification import Complexity
 from harness.cli_approve import add_approve_parser
+from harness.cli_browser import add_browser_parser
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
 from harness.cli_dashboard import add_dashboard_parser
 from harness.cli_decision import add_decision_parser
@@ -82,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_approve_parser(subparsers)
     add_execution_parser(subparsers)
     add_delivery_parser(subparsers)
+    add_browser_parser(subparsers)
     add_diagnostics_parser(subparsers)
 
     return parser

@@ -86,7 +86,8 @@
     "al_verification_authority.py",
     "al_verification_inputs.py",
     "al_verification_prepare.py",
-    "al_verification_scope.py"
+    "al_verification_scope.py",
+    "al_writer_handoff.py"
   ],
   "required_claude_scripts": [
     "al_readonly_guard.py",

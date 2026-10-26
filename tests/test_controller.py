@@ -159,6 +159,7 @@ def test_migrations_are_tracked_and_idempotent(conn):
         (10, "0010_comments.sql"),
         (11, "0011_executions.sql"),
         (12, "0012_delivery.sql"),
+        (13, "0013_browser_validation.sql"),
     ]
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -180,6 +181,7 @@ def test_fresh_connect_reports_applied_migration(tmp_path):
             "0010_comments.sql",
             "0011_executions.sql",
             "0012_delivery.sql",
+            "0013_browser_validation.sql",
         ]
         assert apply_migrations(raw) == []
     finally:

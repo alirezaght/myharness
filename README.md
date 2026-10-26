@@ -423,3 +423,42 @@ Results: the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md), the full [dog
 ## Phase 4 delivery
 
 Authorized AL candidates can be published to GitHub or GitLab and monitored through the delivery panel. Technical failures re-enter guarded AL correction with bounded retries; design decisions return to the developer. Existing native signed-in authentication is preserved. See the [configuration and repeatable demo](docs/demo-phase-4.md) and [AL recovery improvements](docs/al-session-fixes.md).
+
+## Phase 5 browser validation and reporting
+
+Phase 5 adds a separately approved browser validation workflow and a read-only
+completion report. Install the project with its development tools and ensure
+`harness` is on `PATH`:
+
+```sh
+uv sync --group dev
+uv run harness --help
+```
+
+Configure GitLab or GitHub delivery as described in
+[Phase 4 configuration](docs/demo-phase-4.md). Credentials are supplied through
+the existing provider credential mechanism and are not stored in browser plans.
+For a compatible Chrome/Chromium binary outside standard discovery locations,
+set `HARNESS_BROWSER_EXECUTABLE` to its trusted absolute executable path. The
+driver uses a fresh anonymous profile; it does not borrow the signed-in desktop
+browser session. See [browser validation](docs/browser-validation.md) for plan,
+approval, recovery and troubleshooting details.
+
+After a delivery has observed staging, inspect browser capability and propose a
+plan. Review the plan and explicitly approve its exact hash before running it:
+
+```sh
+harness browser capability TASK EXECUTION
+harness browser propose TASK EXECUTION --file mapping.json
+harness browser approve TASK EXECUTION --plan PLAN_HASH --request-id REQUEST_ID --attempt 1
+harness browser run TASK EXECUTION --approval APPROVAL_ID
+harness report TASK EXECUTION
+```
+
+The dashboard displays stored results only. It has no browser run or approval
+control. Delivery and browser validation require provider credentials, but the
+Harness's local SQLite state needs no external database. If another application
+database is inspected by a workflow, use a dedicated credential restricted to
+read-only access; Harness does not perform a privilege probe or write test.
+Harness state, browser profiles, screenshots and receipts remain local and
+private. A local fixture demonstration is not staging acceptance.

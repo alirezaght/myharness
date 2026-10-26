@@ -41,3 +41,22 @@ and event replay are available with `al_state.py integration capabilities` and
 for task admission, agent reports, scoped decisions and recovery. Source edits
 do not replace an active global or project installation; install a reviewed
 candidate through the existing ownership-aware `alctl` workflow.
+
+
+Read-only agents must never request background execution, detached/daemonized
+commands or persistent services such as database proxies; unmet service
+prerequisites go to the supervisor. Claude's Bash hook accepts background
+metadata only when absent or literal false and retains its shell restrictions.
+This does not contain arbitrary foreground executables spawning descendants or
+hosts automatically backgrounding work. Codex role instructions and filesystem
+sandboxing are not a universal process sandbox. No automatic process cleanup is
+claimed; existing role permissions remain unchanged.
+
+Every supported writer dispatch now uses `writer handoff --id ID --body-file BODY`
+after writer admission and evidence-plan registration. It preserves the body and
+appends concrete writer/run-bound ledger instructions, saving an immutable prompt
+receipt before printing. Use its complete output for initial work, finalization,
+rework and follow-ups. Generation does not execute checks, intercept every host
+spawn, prevent every bare check or certify delivery. Regenerate when bindings
+change. These changes apply after installing this release; existing pinned runs
+retain their original runtime.

@@ -191,3 +191,12 @@ def test_service_coverage_policy_and_schemas_match_admission_contract():
     assert {row["obligation_id"] for row in example["bindings"]} == {
         check["id"] for check in checks
     }
+
+
+def test_writer_handoffs_are_generated_for_all_dispatches():
+    for text in (SKILL, HANDOFFS):
+        assert 'writer handoff --id' in text
+        assert 'verbatim' in text and 'finalization' in text and 'follow-up' in text
+        assert 'al_command' in text and 'controller' in text
+    assert 'Always include the EVIDENCE block printed by' not in HANDOFFS
+    assert '<planned-area>' not in HANDOFFS

@@ -137,14 +137,14 @@ paths:
         - {$ref: '#/components/parameters/projectId'}
         - {name: environmentId, in: path, required: true, schema: {type: integer}}
       responses:
-        '200': {description: Environment with current state and last deployment, content: {application/json: {schema: {type: object}}}}
+        '200': {description: Environment with current state, public staging URL and latest deployment identity, content: {application/json: {schema: {$ref: '#/components/schemas/Environment'}}}}
         '404': {$ref: '#/components/responses/NotFound'}
   /projects/{id}/deployments:
     get:
       tags: [Deployments]
       operationId: listDeployments
       parameters: [{$ref: '#/components/parameters/projectId'}, {name: environment, in: query, schema: {type: string}}, {$ref: '#/components/parameters/page'}, {$ref: '#/components/parameters/perPage'}]
-      responses: {'200': {description: Deployment list, content: {application/json: {schema: {type: array, items: {type: object}}}}}}
+      responses: {'200': {description: Deployment list, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Deployment'}}}}}}
 components:
   securitySchemes:
     privateToken: {type: apiKey, in: header, name: PRIVATE-TOKEN}
@@ -196,3 +196,22 @@ components:
         stage: {type: string}
         ref: {type: string}
         pipeline: {type: object, properties: {id: {type: integer}}}
+    Environment:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        external_url: {type: string, format: uri, description: Public environment URL; validate before navigation}
+        state: {type: string}
+        last_deployment: {$ref: '#/components/schemas/Deployment'}
+    Deployment:
+      type: object
+      properties:
+        id: {type: integer}
+        sha: {type: string}
+        status: {type: string}
+        environment:
+          type: object
+          properties:
+            id: {type: integer}
+            name: {type: string}

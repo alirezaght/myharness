@@ -55,7 +55,7 @@ If there is no text after `$al`: print `AL · no task given — usage: $al <task
   directory. Choose one fresh run id before `start` (for example
   `al-$(date -u +%Y%m%dT%H%M%SZ)-$(openssl rand -hex 3)`) and use exactly that
   `--session` for every `"${STATE[@]}"` call of the run, including the ones you hand to
-  agents (the EVIDENCE block). The launcher pins the run to its immutable runtime and
+  agents (the generated EVIDENCE block). The launcher pins the run to its immutable runtime and
   verifier policy: never invoke `al_state.py` directly (new runs refuse it) and never
   set `AL_RUNTIME_DIR` (refused). Runs started before pinning keep their original
   issuer. Run state lives in the repository's `.codex/al-runtime/`, which AL
@@ -180,9 +180,20 @@ for AL-Architect, never authority, never a finding of record.
   (`timeout_ms` 300000–600000), never short polls; after each stretch check
   `list_agents` and print `"${STATE[@]}" show --panel`. Never predict, fabricate or
   assume a result, and never start the next phase while a sibling is still running.
-- Build every prompt from `$HOME/.codex/skills/al/reference/handoffs.md`. A
-  concurrent writer also carries the **concurrency block** with its own owned
-  paths, the peer's, and the unstable interfaces it must not code against.
+- Build every prompt body from `$HOME/.codex/skills/al/reference/handoffs.md`.
+  For every writer dispatch (initial Engineer/Builder, Builder finalization,
+  rework, correction or follow-up), admit/start the writer, then run
+  `"${STATE[@]}" writer handoff --id ID --body-file BODY` and pass the complete
+  generated output verbatim to spawn/follow-up. The runtime appends authoritative
+  writer-bound evidence commands automatically; do not copy a block manually.
+  Register evidence areas first; optionally select repeatable `--area AREA`.
+  Regenerate after relevant plan, writer or phase changes. Generation records an
+  immutable prompt receipt, executes no checks and does not certify delivery or
+  intercept arbitrary raw host dispatch. Under Harness, register the actual
+  agent before admission when required and keep it waiting for its generated
+  handoff; generated `al_command` instructions retain controller binding.
+  A concurrent writer body also carries the **concurrency block** with its owned
+  paths, the peer's, and unstable interfaces.
 - Validate each returned contract independently (required headings in
   handoffs.md). Missing/partial output (e.g. the agent ran out of turns) ⇒ send
   ONE continuation via `followup_task` to that agent id asking for the missing

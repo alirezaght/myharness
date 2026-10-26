@@ -8,30 +8,27 @@ The live stream is recycled after half a second so the page goes quiet for --dum
 """
 
 import os
-import shutil
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+from harness.browser_driver import chrome_executable
 from harness.dashboard.server import DashboardServer
 from harness.db import connect
 from tests.test_dashboard import needs_git, serve, start_task
 from tests.test_dashboard_overview import _investigated, _propose, _resume
 from tests.test_dashboard_spec import _spec_text, _versions, _write
 
-MAC_CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 TIMEOUT = 60
 
 
 def _chrome() -> str | None:
-    if MAC_CHROME.is_file():
-        return str(MAC_CHROME)
-    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
-        if found := shutil.which(name):
-            return found
-    return None
+    try:
+        return chrome_executable()
+    except OSError:
+        return None
 
 
 CHROME = _chrome()

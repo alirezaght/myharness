@@ -4,7 +4,7 @@ import json
 import os
 import re
 import subprocess
-from urllib.error import HTTPError, URLError
+import time
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request
 
@@ -67,33 +67,31 @@ class GitHubHTTP(GitLabClient):
             },
             method=method,
         )
+        raw, links = self._response(request, method, "Link")
         try:
-            with self.opener.open(request, timeout=15) as response:
-                raw = response.read(2 * 1024 * 1024 + 1)
-                if len(raw) > 2 * 1024 * 1024:
-                    raise GitLabError("GitHub response exceeds limit", uncertain=method != "GET")
-                from harness.execution_logs import redact_value
+            value = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            raise GitLabError("GitHub response failure", uncertain=method != "GET") from None
+        from harness.execution_logs import redact_value
 
-                return redact_value(json.loads(raw), secrets=(token,)), response.headers.get(
-                    "Link", ""
-                )
-        except HTTPError as error:
-            raise GitLabError(
-                f"GitHub HTTP {error.code}",
-                status=error.code,
-                uncertain=method != "GET" and error.code >= 500,
-            ) from None
-        except (URLError, OSError, TimeoutError, json.JSONDecodeError):
-            raise GitLabError(
-                "GitHub transport or response failure", uncertain=method != "GET"
-            ) from None
+        return redact_value(value, secrets=(token,)), links
 
     def raw_get(self, path, **query):
         return self.request("GET", path, query=query)[0]
 
     def pages(self, path, key=None, **query):
+        try:
+            return self._pages(path, key, **query)
+        finally:
+            self._read_deadline = float("inf")
+
+    def _pages(self, path, key=None, **query):
         values = []
+        deadline = time.monotonic() + 30
         for page in range(1, 101):
+            if time.monotonic() >= deadline:
+                raise GitLabError("GitHub pagination deadline exceeded")
+            self._read_deadline = deadline
             value, links = self.request("GET", path, query=query | {"page": page, "per_page": 100})
             rows = value.get(key) if key and isinstance(value, dict) else value
             if not isinstance(rows, list):

@@ -23,6 +23,7 @@ from tests.test_dashboard import _db_dump
 OPEN, ADDRESSED, RESOLVED = CommentStatus.OPEN, CommentStatus.ADDRESSED, CommentStatus.RESOLVED
 BASE_COMMANDS = [
     "approve",
+    "browser",
     "classify",
     "dashboard",
     "decision",
@@ -33,6 +34,7 @@ BASE_COMMANDS = [
     "interview",
     "investigate",
     "phase",
+    "report",
     "resume",
     "review",
     "show",

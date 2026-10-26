@@ -8,7 +8,7 @@ from harness.execution_authority import require_execution_authority
 from harness.gitlab import GitLabError
 
 
-def poll_delivery(controller, execution_id, *, client=None):
+def poll_delivery(controller, execution_id, *, client=None, route_failures=True):
     require_execution_authority(controller, execution_id, operation="delivery")
     delivery = get_delivery(controller.conn, execution_id)
     if not delivery["mr"] or not delivery["candidate_sha"]:
@@ -70,6 +70,9 @@ def poll_delivery(controller, execution_id, *, client=None):
                 "environment": exact[0]["name"],
                 "deployment_id": max(matching, key=lambda d: d["id"])["id"],
                 "sha": sha,
+                "environment_id": environment["id"],
+                "external_url": environment.get("external_url"),
+                "deployment_status_id": latest_deployment.get("status_id"),
             }
     # Recheck remote identities after paginated observations to close candidate movement windows.
     latest = api.get(f"/merge_requests/{iid}")
@@ -78,9 +81,11 @@ def poll_delivery(controller, execution_id, *, client=None):
         raise ValueError("candidate moved during monitoring")
     if staging["ready"]:
         latest_environment = api.get(f"/environments/{exact[0]['id']}")
-        if latest_environment.get("state") != "available" or latest_environment.get(
-            "last_deployment"
-        ) != environment.get("last_deployment"):
+        if (
+            latest_environment != environment
+            or latest_environment.get("state") != "available"
+            or latest_environment.get("last_deployment") != environment.get("last_deployment")
+        ):
             staging = {
                 "ready": False,
                 "status": "changed during observation",
@@ -125,7 +130,8 @@ def poll_delivery(controller, execution_id, *, client=None):
         expected_generation=delivery["generation"],
     )
     if (
-        current
+        route_failures
+        and current
         and pipeline
         and pipeline.get("status") == "failed"
         and latest.get("state") == "opened"

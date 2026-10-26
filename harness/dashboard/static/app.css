@@ -270,6 +270,50 @@ figure.diagram {
   padding: 0.2rem 0;
 }
 
+.delivery-browser,
+.delivery-completion,
+.delivery-browser details,
+.delivery-completion section {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.delivery-browser p,
+.delivery-completion p,
+.delivery-browser li,
+.delivery-completion li,
+.delivery-approval-instructions {
+  overflow-wrap: anywhere;
+}
+
+.delivery-browser details {
+  margin-block: 0.65rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
+  border-radius: 0.375rem;
+}
+
+.delivery-browser summary:focus-visible,
+#delivery a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 0.125rem;
+}
+
+.delivery-status {
+  font-weight: 700;
+}
+
+.delivery-status[data-state="completed"]::before {
+  content: "Completed: ";
+}
+
+.delivery-status[data-state="failed"]::before,
+.delivery-status[data-state="uncertain"]::before,
+.delivery-status[data-state="blocked"]::before {
+  content: "Review required: ";
+}
+
 #delivery a:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;

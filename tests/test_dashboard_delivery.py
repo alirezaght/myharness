@@ -83,11 +83,16 @@ def test_dashboard_api_nests_delivery_projection_without_changing_delivery_state
     assert delivery["jobs"][0]["status"] == "success"
     assert delivery["test_report"]["failed_count"] == 1
     assert delivery["staging"]["ready"] is True
-    assert delivery["browser_validation"] == {"status": "not_run", "phase": 5}
+    assert delivery["browser_validation"]["status"] == "not_run"
+    assert delivery["browser_validation"]["currency"] == "unavailable"
+    assert delivery["browser_validation"]["plan"] is None
+    assert delivery["completion_summary"]["live_acceptance"] == "outstanding"
     assert delivery["retries"] == {"used": 1, "limit": 3}
     assert delivery["blockers"] == ["one approval remains"]
     assert status == 200 and "text/javascript" in headers["Content-Type"]
     assert b"safeDeliveryUrl" in body and b"textContent" in body
+    assert b"deliveryDisclosure" in body and b"withDeliveryFocus" in body
+    assert b"Browser validation" in body and b"Investigation records" in body
     after = controller.conn.execute(
         "SELECT * FROM deliveries WHERE execution_id=?", (execution_id,)
     ).fetchone()
@@ -131,6 +136,29 @@ def test_delivery_stream_is_read_only(controller, sample_repo, monkeypatch, db_p
         ).fetchone()
     )
     assert before == after
+
+
+def test_browser_read_model_does_not_claim_acceptance_or_add_write_routes(
+    controller, sample_repo, monkeypatch, db_path
+):
+    task_id, execution_id = approved_execution(controller, sample_repo, monkeypatch)
+    _delivery_row(controller.conn, execution_id)
+    before = controller.conn.execute(
+        "SELECT COUNT(*) FROM browser_runs WHERE execution_id=?", (execution_id,)
+    ).fetchone()[0]
+    with serve(db_path, task_id) as server:
+        result = api(server, f"?task={task_id}")
+        status, headers, body = _fetch(server, "/static/delivery.js")
+    delivery = result["task"]["execution"]["delivery"]
+    assert delivery["browser_validation"]["status"] == "not_run"
+    assert delivery["browser_validation"]["currency"] == "unavailable"
+    assert delivery["completion_summary"]["live_acceptance"] == "outstanding"
+    assert "POST" not in body.decode()
+    assert status == 200 and "text/javascript" in headers["Content-Type"]
+    after = controller.conn.execute(
+        "SELECT COUNT(*) FROM browser_runs WHERE execution_id=?", (execution_id,)
+    ).fetchone()[0]
+    assert before == after == 0
 
 
 def _fetch(server, path):

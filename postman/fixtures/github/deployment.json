@@ -1,0 +1,12 @@
+{
+  "id": 7,
+  "environment": "staging",
+  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "statuses": [
+    {
+      "id": 8,
+      "state": "success",
+      "environment_url": "https://staging.example.invalid"
+    }
+  ]
+}

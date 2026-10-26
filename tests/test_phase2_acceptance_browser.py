@@ -25,7 +25,11 @@ from tests.test_dashboard_comments_browser import _result
 from tests.test_dashboard_redesign_browser import _driven_dom, _events, _shot, _status
 from tests.test_phase2_acceptance import RIGHT, WRONG, harness_fixes, wrong_connection_task
 
-pytestmark = [pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"), needs_git]
+pytestmark = [
+    pytest.mark.browser,
+    pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
+    needs_git,
+]
 TEXT = "fixture: the arrow points the wrong way"
 
 DRIVER_JS = r"""

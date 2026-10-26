@@ -61,3 +61,14 @@ The executed demo also changes one workflow to failed, starts a new attempt,
 and makes staging stale, then restores the default synthetic scenario. It does
 not prove live GitHub permissions or repository-specific required-check policy.
 Native request paths follow the official [GitHub REST documentation](https://docs.github.com/en/rest).
+
+## Phase 5 staging identity fields
+
+Phase 5 consumes GitLab environment `external_url` and the latest deployment's
+`id`, `sha`, `status` and environment identity. GitHub's normalized staging
+observation is derived from the selected environment, latest deployment and
+latest deployment status `id`, `state` and `environment_url`. These fields are
+represented in `fixtures/gitlab/environments.json`,
+`fixtures/gitlab/deployments.json`, and `fixtures/github/deployment.json`, and in
+the local mocks. The client validates the URL before it can become a browser
+target. Local mock responses are provider-fixture evidence only.

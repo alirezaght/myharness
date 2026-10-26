@@ -124,6 +124,7 @@
     "al_verification_inputs.py",
     "al_verification_prepare.py",
     "al_verification_scope.py",
+    "al_writer_handoff.py",
     "al_writers.py"
   ],
   "shared_reference_files": [

@@ -60,6 +60,6 @@ http.createServer(async (req, res) => {
   if (path === '/environments') return send(res, 200, {environments: [{id: 3, name: 'staging'}]});
   if (path === '/environments/staging') return send(res, 200, {id: 3, name: 'staging'});
   if (path === '/deployments') return send(res, 200, [{id: 7, environment: 'staging', sha: store.mode.deployment_sha || sha}]);
-  if (path === '/deployments/7/statuses') return send(res, 200, [{id: 8, state: store.mode.deployment_status || 'success'}]);
+  if (path === '/deployments/7/statuses') return send(res, 200, [{id: 8, state: store.mode.deployment_status || 'success', environment_url: 'https://staging.example.invalid'}]);
   return send(res, 501, {message: 'Unmodeled GitHub request', path});
 }).listen(process.env.PORT || 8788);

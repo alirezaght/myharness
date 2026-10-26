@@ -27,14 +27,6 @@ TASK CLASSIFICATION: <SMALL | STANDARD | COMPLEX> · PATH: <the route AL is runn
 PRE-EXISTING WORKING-TREE CHANGES (user's, not AL's — do not touch or revert):
 <preexisting_changes list, or "none">
 
-EVIDENCE (writers only — omit for read-only agents):
-Run every check you report through the AL ledger, never bare:
-  <the run's "${STATE[@]}" launcher prefix> evidence run --area <a> [--tier focused --scope <paths> -- <argv>]
-Planned checks: <`"${STATE[@]}" evidence status` table, or "none yet">
-Report each check as `E<n> · <area> → PASS | FAIL | EMPTY | INFRA` (the ledger's
-status and counts, verbatim) or `<check> → NOT RUN — <why>`. Never retype a count,
-never cite a log the ledger did not write, never present a focused run as the
-broad suite. A VALID PASS is reused automatically — do not re-run it by hand.
 ```
 
 The ID in an EVIDENCE block is the immutable AL run ID the supervisor chose for
@@ -298,6 +290,29 @@ authorized report file outside the repository or the host final-message capture
 a matching prompt from transcript text. The supervisor records it with `artifact
 output --name NAME --file FILE` and retrieves it with `artifact show --name NAME`.
 
-Always include the EVIDENCE block printed by `writer start` in writer handoffs.
-Under Harness, workers run registered ledger areas through `al_command` with
-`["evidence", "run", "--area", "<area>"]`; the controller binds their own writer.
+## Generate every writer handoff
+
+For initial Engineer/Builder work, Builder finalization, rework, corrections and
+follow-up dispatch, prepare a UTF-8 body file with the template above, original
+specification, applicable artifacts, ownership and any concurrency instructions.
+Admit/start the writer with the existing lifecycle, then generate its complete prompt:
+
+```sh
+"${STATE[@]}" writer handoff --id WRITER_ID --body-file /path/to/body.md
+```
+
+Pass the complete generated stdout verbatim to the supported spawn/follow-up
+mechanism. Do not assemble or copy evidence blocks manually. The command appends
+an authoritative EVIDENCE block bound to the active writer, immutable AL run,
+repository, platform and concrete registered evidence areas. Optional repeatable
+`--area AREA` selects areas; omission selects the whole plan. Register new checks
+before regenerating. The body is preserved verbatim and the complete prompt is
+snapshotted with a writer-bound receipt. Generation does not execute checks,
+finish the writer, prove delivery, or intercept arbitrary host dispatch.
+Regenerate after relevant plan, writer or phase changes.
+
+Under Harness, register the actual agent before writer admission when required;
+the agent waits for its generated work handoff. Workers use the generated
+`al_command` evidence route; the controller binds their own writer. Native
+launcher commands are a separately identified route. Read-only handoffs omit the
+managed writer block.

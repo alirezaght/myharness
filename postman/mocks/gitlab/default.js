@@ -18,7 +18,7 @@ const jobs = [
   {id: 81981, name: 'unit-tests', status: 'failed', stage: 'test', pipeline: {id: 5798}}
 ];
 const testReport = {total_time: 18.4, total_count: 42, success_count: 41, failed_count: 1, skipped_count: 0, test_suites: [{name: 'synthetic-suite', total_count: 42, success_count: 41, failed_count: 1, skipped_count: 0}]};
-const environments = [{id: 310, name: 'staging', slug: 'staging', state: 'available', tier: 'staging'}, {id: 311, name: 'production', slug: 'production', state: 'available', tier: 'production'}];
+const environments = [{id: 310, name: 'staging', slug: 'staging', external_url: 'https://staging.example.invalid', state: 'available', tier: 'staging'}, {id: 311, name: 'production', slug: 'production', state: 'available', tier: 'production'}];
 const deployments = [{id: 4102, iid: 3, ref: 'al/run-42-delivery', sha: 'd4e5f6a1b2c3', status: 'success', environment: {id: 310, name: 'staging'}}, {id: 4098, iid: 2, ref: 'main', sha: 'c3d4e5f6a1b2', status: 'success', environment: {id: 310, name: 'staging'}}];
 
 async function state() {

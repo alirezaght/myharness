@@ -120,17 +120,19 @@ def cmd_writer(a,sid):
     if a.action == 'start':
         if getattr(a, 'degraded', False):
             print('AL · DEGRADED TRACKING · scoped writer/evidence only; proof admission, review and approval remain required.')
-        platform = Path(__file__).resolve().parents[3].name
-        prefix = shlex.join(['alctl', 'run', '--repository', st['identity']['root'],
-                             '--platform', platform, '--session', sid, '--existing-run', '--'])
-        print('EVIDENCE (include this block in the writer handoff):')
-        print('Run every reported check through the ledger; never run bare checks and claim evidence.')
-        print(prefix + ' evidence run --writer ' + shlex.quote(a.id) + ' --area <planned-area>')
-        print('Planned checks: ' + (', '.join(sorted(st['evidence']['plan'])) or 'none; supervisor must register an evidence plan'))
-        print('Report E<n> · area → PASS | FAIL | EMPTY | INFRA, or NOT RUN with its reason; never invent counts.')
+        from al_writer_handoff import evidence_block
+        print('Generate the complete writer handoff with writer handoff --id ' + shlex.quote(a.id) + ' --body-file PATH; dispatch its output verbatim.')
+        if st['evidence']['plan']:
+            print(evidence_block(st, sid, a.id, sorted(st['evidence']['plan'])))
+        else:
+            print('EVIDENCE: no planned checks; register evidence areas before generating the handoff for --writer ' + a.id)
 
 def register(sub):
     children=sub.add_parser('writer').add_subparsers(dest='action',required=True)
+    from al_writer_handoff import cmd_handoff
+    p=children.add_parser('handoff'); p.add_argument('--id',required=True)
+    p.add_argument('--body-file',required=True); p.add_argument('--area',action='append')
+    p.set_defaults(fn=cmd_handoff)
     for action in ('start','finish','reconcile'):
         p=children.add_parser(action); p.add_argument('--id',required=True); p.set_defaults(fn=cmd_writer)
         if action=='start':

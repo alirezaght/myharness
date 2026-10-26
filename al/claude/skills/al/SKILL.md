@@ -165,9 +165,20 @@ for AL-Architect, never authority, never a finding of record.
   Calls in separate messages are sequential no matter what you print. Then wait
   for every result notification — never predict, fabricate or assume one, and
   never start the next phase while a sibling is still running.
-- Build every prompt from `${CLAUDE_SKILL_DIR}/reference/handoffs.md`. A
-  concurrent writer also carries the **concurrency block** with its own owned
-  paths, the peer's, and the unstable interfaces it must not code against.
+- Build every prompt body from `$HOME/.claude/skills/al/reference/handoffs.md`.
+  For every writer dispatch (initial Engineer/Builder, Builder finalization,
+  rework, correction or follow-up), admit/start the writer, then run
+  `"${STATE[@]}" writer handoff --id ID --body-file BODY` and pass the complete
+  generated output verbatim to spawn/follow-up. The runtime appends authoritative
+  writer-bound evidence commands automatically; do not copy a block manually.
+  Register evidence areas first; optionally select repeatable `--area AREA`.
+  Regenerate after relevant plan, writer or phase changes. Generation records an
+  immutable prompt receipt, executes no checks and does not certify delivery or
+  intercept arbitrary raw host dispatch. Under Harness, register the actual
+  agent before admission when required and keep it waiting for its generated
+  handoff; generated `al_command` instructions retain controller binding.
+  A concurrent writer body also carries the **concurrency block** with its owned
+  paths, the peer's, and unstable interfaces.
 - Validate each returned contract independently (required headings in
   handoffs.md). Missing/partial output (e.g. `maxTurns` reached) ⇒ send ONE
   continuation via `SendMessage` to that agent asking for the missing sections.

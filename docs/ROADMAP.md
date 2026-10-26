@@ -116,6 +116,18 @@ Capabilities:
 
 **Goal:** after deployment, the real result is validated and the whole system is reliable.
 
+**Implementation status (2026-10-26):** the local browser plan/approval/controller,
+read-only reporting/dashboard, recovery and security coverage, 30-criterion
+evidence map, fixture demonstration, and installation/usage documentation are
+implemented. Focused ledger checks for those areas are recorded.
+
+**Release status:** the production browser capability and desktop/mobile visual
+checks are not verified in this environment because available Chrome binaries
+failed signature validation. No live staging target was requested for this
+session, so real staging acceptance is outside this run. The Phase 5/V1 exit
+and “all tests green” checks remain incomplete; see the task checklist for
+implementation versus release evidence.
+
 Capabilities:
 - Identify the acceptance criteria that can be tested in a browser
 - Request approval before browser testing
