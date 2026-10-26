@@ -50,8 +50,8 @@ def planning(st,sid,anticipated=()):
 
 
 def ready(st):
-    from al_gate_currency import check
-    currency=check(st)
+    from al_gate_refresh import refresh
+    currency=refresh(st)
     if not currency['current']:
         from al_recovery_guidance import refuse_guided
         refuse_guided(st,'current gate obligations require replanning: '+str(currency['reasons']))

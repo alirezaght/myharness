@@ -37,7 +37,8 @@ def binding(st, manifest, gate):
     if entry.get('env', []) != sorted(gate['env_names']) or run.get('env_fingerprint') != environment:return None
     key = entry.get('execution_key')
     return {'session': st['session_id'], 'run': st['run_id'], 'base_oid': manifest['base_oid'],
-            'manifest': st['gate_manifests'][-1]['sha256'], 'gate': gate['id'], 'command': command,
+            # A run carried over by a manifest refresh keeps the manifest it was authorized under.
+            'manifest': run.get('carried_from') or run['manifest'], 'gate': gate['id'], 'command': command,
             'env_names': sorted(gate['env_names']), 'env_fingerprint': environment,
             'evidence': entry['id'], 'reservation': entry.get('reservation'), 'exit': entry.get('exit'),
             'log_sha256': entry['log_sha256'],

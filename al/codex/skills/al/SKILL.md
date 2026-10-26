@@ -424,9 +424,12 @@ approval barriers.
 Every writer start rechecks gate currency (sourced rule hashes and touched units)
 and that its files lie inside the planned paths and units. A file entry covers only
 that file; a directory covers descendants by path components; `.` covers the
-repository. A new path, unit or changed rule needs a valid replacement plan before a
-writer can start. Content edits inside already covered paths do not alone require
-replanning. The full repository inventory runs at discovery, at `gates plan` and
+repository. Content edits inside already covered paths never require replanning: when
+a planned file is a rule source (a manifest, CI file, hook or instruction file) or a
+planned path becomes a new unit, AL refreshes the manifest itself at the next writer or
+phase step (`gate_refreshes`), keeping base runs, decisions and exceptions of unchanged
+gates. Only a path, unit or rule outside the planned paths needs a replacement plan.
+Never abandon AL over a stale-gate refusal; follow its recovery guidance. The full repository inventory runs at discovery, at `gates plan` and
 once at review start, where the candidate's obligations must still match the plan.
 
 ### Sourced CI planning contexts

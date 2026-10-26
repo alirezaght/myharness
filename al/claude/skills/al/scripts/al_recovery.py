@@ -28,8 +28,8 @@ def close_occurrence(st):
 
 def apply_checkpoint(st,data,checkpoint_id):
     if data['run_id']!=st['run_id'] or data['identity']!=st['identity'] or data['task_hash']!=al_task.task_hash(st):refuse('checkpoint identity/task mismatch')
-    from al_gate_currency import check
-    currency=check(st)
+    from al_gate_refresh import refresh
+    currency=refresh(st)
     changed=data['candidate_hash']!=S.capture_candidate(st)['fingerprint']
     phase=data['prior_phase']
     if (changed or not currency['current']) and phase in {'REVIEW','FINAL_VERIFICATION','VERIFICATION'}:

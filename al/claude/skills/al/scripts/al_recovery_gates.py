@@ -9,8 +9,11 @@ def gates(st):
     import al_gates as G
     from al_gate_recovery import EXCEPTION, marker
 
+    from al_gate_refresh import refreshable
+
     currency = Currency.check(st)
-    if not currency["current"]:
+    # Stale reasons inside the planned paths refresh automatically at the next writer or phase step.
+    if not currency["current"] and not refreshable(st, currency):
         legal = st["phase"] in {"PLANNING", "VERIFICATION"}
         if st["phase"] in EXCEPTION:
             if st.get("gate_recovery"):

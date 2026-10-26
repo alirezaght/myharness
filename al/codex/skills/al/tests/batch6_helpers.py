@@ -73,7 +73,8 @@ def changed_recovery(cli,tmp,repo,phase,route='resume'):
     old=state(cli)['completed_phases'][:]
     if route=='resume':checkpoint=pause(cli,tmp)
     else:invoke(cli,'agent-failed','al-engineer','--reason','transient','--retry-safe','yes')
-    (repo/'Makefile').write_text('lint-imports:\n\ttrue # changed obligations\n')
+    # A rule source outside the planned paths: a refresh cannot cover it, so recovery replans.
+    (repo/'AGENTS.md').write_text('Changed obligations.\n')
     if route=='resume':invoke(cli,'resume','--checkpoint',checkpoint)
     else:invoke(cli,'retry','al-engineer','--reason','recover unfinished rules')
     assert state(cli)['phase']==phase and state(cli)['completed_phases']==old

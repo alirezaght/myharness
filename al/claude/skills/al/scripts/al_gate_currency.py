@@ -25,11 +25,13 @@ def check(st):
     # The full inventory runs at discovery, planning and review start; between them rule hashes
     # and touched units decide currency.
     reasons=[] if context['current'] else ['CI context belongs to a superseded task revision; declare replacement context']
+    # The path behind each path-specific reason: a refresh may rediscover them when all are planned.
+    subjects=[];pathless=bool(reasons)
     sources=m['rules']+[g['source'] for g in m['gates'] if g.get('source')]
     for source in sources:
         p=al_store.REPO_ROOT/S.safe_path(source['path'])
-        if not p.is_file():reasons.append('source rule missing: '+source['path'])
-        elif hashlib.sha256(p.read_bytes()).hexdigest()!=source['sha256']:reasons.append('source rule changed: '+source['path'])
+        if not p.is_file():reasons.append('source rule missing: '+source['path']);subjects.append(source['path'])
+        elif hashlib.sha256(p.read_bytes()).hexdigest()!=source['sha256']:reasons.append('source rule changed: '+source['path']);subjects.append(source['path'])
     changed=S.git_bytes('diff','--name-only','-z',st['identity']['merge_base']).split(b'\0')
     changed+=S.git_bytes('ls-files','--others','--exclude-standard','-z').split(b'\0')
     paths=[raw.decode() for raw in filter(None,changed)]
@@ -39,10 +41,10 @@ def check(st):
         paths=classify_changes(st)['discovery_paths']
     for p in paths:
         unit=V.classify_unit(p,[],m.get('service_coverage',{}).get('semantic_requirements'))
-        if unit not in m['units']:reasons.append('new touched unit requires replanning: '+unit)
+        if unit not in m['units']:reasons.append('new touched unit requires replanning: '+unit);subjects.append(p)
     # A new instruction, hook, CI or manifest file anywhere is a rule source the plan never consulted.
     declared={r['path'] for r in m['rules']}
     for p in changed_paths:
         if p not in declared and (al_store.REPO_ROOT/p).is_file() and rule_source(p):
-            reasons.append('new repository rule source: '+p)
-    return {'current':not reasons,'reasons':sorted(set(reasons)),'superseded':ref}
+            reasons.append('new repository rule source: '+p);subjects.append(p)
+    return {'current':not reasons,'reasons':sorted(set(reasons)),'superseded':ref,'paths':sorted(set(subjects)),'pathless':pathless}
