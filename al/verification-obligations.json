@@ -4991,7 +4991,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1009,
-    "digest": "850b51eea062d2e4331d95315582e7e061bc4b6cbb9b689d6df98bb7127d825b"
+    "digest": "4e20e7427a49401169983e6ca495b61c66dccb8cc8deb2341f70dca7d2d74135"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
