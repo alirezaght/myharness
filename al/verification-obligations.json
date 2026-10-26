@@ -565,7 +565,7 @@
       }
     },
     "claude:tests/test_runtime_batch6.py": {
-      "test": "cdff5df6649114c5dfc9500a5e7cbc9d241935d7ae968ae6f8035d337a1d691a",
+      "test": "db05e6c77a0098f018831af2251b4b881cf179ea7287ac82f028ac17d5489599",
       "fixtures": {
         "sha256": "f893c1175389066f4b25518de15915d166fb0cfc85a674ae0eb0da51bde4b65c",
         "mode": 420
@@ -1188,7 +1188,7 @@
       }
     },
     "codex:tests/test_runtime_batch6.py": {
-      "test": "ce5e502e07d6f7bcf150489365b89afa04b8fe1d2642a6135ecdc6394b112a11",
+      "test": "b4784bde83bd31a0e3923a12a521cf6666938315852d37770779f02c56d9fd50",
       "fixtures": {
         "sha256": "c022dbf25aa2cd47432460e1b5c16d1a74f77ab7bd3eff3904a085a5b18afd41",
         "mode": 420
@@ -2760,8 +2760,6 @@
     "claude:tests/test_runtime_batch6.py::test_inert_git_config_and_option_looking_operands_remain_harmless[rg 'cp, mv']",
     "claude:tests/test_runtime_batch6.py::test_linked_unsatisfied_fresh_has_one_blocker_and_explicit_compare_fix_approves",
     "claude:tests/test_runtime_batch6.py::test_manifest_corrupt_metadata_is_not_ordinary_rule_drift",
-    "claude:tests/test_runtime_batch6.py::test_missing_rules_and_new_units_require_planning[missing]",
-    "claude:tests/test_runtime_batch6.py::test_missing_rules_and_new_units_require_planning[unit]",
     "claude:tests/test_runtime_batch6.py::test_old_fresh_stage_receipt_is_material_not_comparison_clearance",
     "claude:tests/test_runtime_batch6.py::test_repeated_finding_id_cannot_change_source_identity",
     "claude:tests/test_runtime_batch6.py::test_unsatisfied_comparison_cannot_use_a_fixed_finding_as_its_link",
@@ -4402,8 +4400,6 @@
     "codex:tests/test_runtime_batch6.py::test_inert_git_config_and_option_looking_operands_remain_harmless[rg 'cp, mv']",
     "codex:tests/test_runtime_batch6.py::test_linked_unsatisfied_fresh_has_one_blocker_and_explicit_compare_fix_approves",
     "codex:tests/test_runtime_batch6.py::test_manifest_corrupt_metadata_is_not_ordinary_rule_drift",
-    "codex:tests/test_runtime_batch6.py::test_missing_rules_and_new_units_require_planning[missing]",
-    "codex:tests/test_runtime_batch6.py::test_missing_rules_and_new_units_require_planning[unit]",
     "codex:tests/test_runtime_batch6.py::test_old_fresh_stage_receipt_is_material_not_comparison_clearance",
     "codex:tests/test_runtime_batch6.py::test_repeated_finding_id_cannot_change_source_identity",
     "codex:tests/test_runtime_batch6.py::test_unsatisfied_comparison_cannot_use_a_fixed_finding_as_its_link",
@@ -4995,7 +4991,7 @@
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
     "members": 1009,
-    "digest": "8fe3ac68e0094c82ab096a7788392fe79dc96c8c519729855facc0e3f2b64aec"
+    "digest": "850b51eea062d2e4331d95315582e7e061bc4b6cbb9b689d6df98bb7127d825b"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
