@@ -8,7 +8,7 @@ def prerequisites(st):
     plan = L.ledger(st)["plan"]
     visited = set()
 
-    def walk(name, active):
+    def walk(name, active, preflight=False):
         if name in active:
             return issue(
                 "PREREQUISITE_UNRESOLVED",
@@ -21,11 +21,14 @@ def prerequisites(st):
                 ),
                 {"cycle": active + [name]},
             )
-        if name in visited:
+        if (name, preflight) in visited:
             return None
-        visited.add(name)
+        visited.add((name, preflight))
         spec = plan.get(name)
         if spec is None:
+            recorded = L.latest(st, name, kind='preflight') if preflight else None
+            if recorded and recorded.get('run') == st['run_id'] and L.entry_verdict(st, recorded)[0] == 'VALID':
+                return None
             return issue(
                 "PREREQUISITE_UNRESOLVED",
                 "area",
@@ -37,10 +40,8 @@ def prerequisites(st):
                 ),
                 {"missing_area": name},
             )
-        for dependency in ([spec["preflight"]] if spec.get("preflight") else []) + list(
-            spec.get("needs", [])
-        ):
-            found = walk(dependency, active + [name])
+        for dependency, is_preflight in ([(spec['preflight'], True)] if spec.get('preflight') else []) + [(n, False) for n in spec.get('needs', [])]:
+            found = walk(dependency, active + [name], is_preflight)
             if found:
                 return found
         entry, verdict, reason = L.planned_verdict(st, name, spec)
@@ -75,10 +76,8 @@ def prerequisites(st):
         return None
 
     for spec in plan.values():
-        for dependency in ([spec["preflight"]] if spec.get("preflight") else []) + list(
-            spec.get("needs", [])
-        ):
-            found = walk(dependency, [])
+        for dependency, is_preflight in ([(spec['preflight'], True)] if spec.get('preflight') else []) + [(n, False) for n in spec.get('needs', [])]:
+            found = walk(dependency, [], is_preflight)
             if found:
                 return [found]
     return []

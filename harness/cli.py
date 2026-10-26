@@ -9,7 +9,9 @@ from harness.cli_approve import add_approve_parser
 from harness.cli_commands import cmd_classify, cmd_investigate, cmd_phase, cmd_show, cmd_start
 from harness.cli_dashboard import add_dashboard_parser
 from harness.cli_decision import add_decision_parser
+from harness.cli_delivery import add_delivery_parser
 from harness.cli_design import add_design_parser
+from harness.cli_diagnostics import add_diagnostics_parser
 from harness.cli_execution import add_execution_parser
 from harness.cli_interview import add_interview_parser
 from harness.cli_resume import add_resume_parser
@@ -79,6 +81,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_resume_parser(subparsers)
     add_approve_parser(subparsers)
     add_execution_parser(subparsers)
+    add_delivery_parser(subparsers)
+    add_diagnostics_parser(subparsers)
 
     return parser
 

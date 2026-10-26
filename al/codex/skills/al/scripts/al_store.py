@@ -37,6 +37,10 @@ def _resolve_repo_root():
 
 REPO_ROOT = _resolve_repo_root()
 RUNTIME_DIR = Path(os.environ.get("AL_RUNTIME_DIR") or REPO_ROOT / ".codex" / "al-runtime")
+_pinned = sys.modules.get("_al_run_pin_context")
+if _pinned is not None and _pinned.transaction.get("schema_version") == 2:
+    from installer.runtime_pin_transaction import runtime_directory
+    RUNTIME_DIR = runtime_directory(_pinned.transaction)
 CURRENT = RUNTIME_DIR / "current"
 
 

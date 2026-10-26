@@ -117,6 +117,8 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
     context = J.closed(
         artifact["implementation_context"], {"status", "observation_ref"}, "implementation context"
     )
+    if any(w.get('degraded') for w in st.get('writers', {}).values()) and context['status'] != 'partially_built':
+        refuse('degraded tracked work requires partially_built implementation_context and the current issued observation_ref')
     if context["status"] == "partially_built":
         if context["observation_ref"] != observation_ref:
             refuse("partially built context lacks the issued current observation")

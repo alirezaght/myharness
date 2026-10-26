@@ -63,9 +63,17 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
 def cmd_writer(a,sid):
     st=al_store.load(sid); writers=st['writers']
     if a.action == 'start':
-        from al_new_origin import require_admitted
-        require_admitted(st)
-        if st['status'] != 'RUNNING' or st['phase'] not in WRITING: refuse('writer admission requires a writing phase')
+        from al_new_origin import require_admitted, validate
+        degraded = getattr(a, 'degraded', False)
+        if degraded:
+            validate(st)
+            if st.get('proof_admission', {}).get('status') != 'pending' or not getattr(a, 'reason', '').strip():
+                refuse('degraded tracking requires pending proof admission and an explicit reason')
+            if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
+                refuse('degraded tracking still requires SPEC_READY and classification')
+        else: require_admitted(st)
+        phases = WRITING | {'PLANNING', 'PSEUDOCODE'} if degraded else WRITING
+        if st['status'] != 'RUNNING' or st['phase'] not in phases: refuse('writer admission requires a writing phase or explicit degraded planning tracking')
         if not valid_id(a.id) or a.id in writers: refuse('duplicate/invalid writer id')
         if a.role not in {'al-engineer','al-builder'}: refuse('invalid writer role')
         files=canonical_paths(al_parallel.parse_paths(a.files))
@@ -95,6 +103,8 @@ def cmd_writer(a,sid):
         before = begin_contribution(st, {'id':a.id,'files':files})
         writers[a.id]={'id':a.id,'role':a.role,'files':files,'commands':commands,'phase':st['phase'],'started_at':time.time(),'state':'ACTIVE', **({'task':a.task,'agent':a.agent} if 'integration' in st else {})}
         if before is not None: writers[a.id]['contribution_before']=before
+        if degraded:
+            writers[a.id]['degraded'] = {'reason': a.reason, 'proof_status': 'pending', 'started_at': time.time()}
     else:
         w=writers.get(a.id)
         if not w: refuse('unknown writer')
@@ -107,6 +117,17 @@ def cmd_writer(a,sid):
             if w['state'] not in {'ACTIVE','UNRESOLVED'} or not a.reason: refuse('reconciliation requires unresolved writer and reason')
             w.update(state='RECONCILED',reconciliation={'reason':a.reason,'artifact':snapshot_artifact(sid,Path(a.artifact),'writer-reconciliation'),'at':time.time()})
     al_store.save(sid,st)
+    if a.action == 'start':
+        if getattr(a, 'degraded', False):
+            print('AL · DEGRADED TRACKING · scoped writer/evidence only; proof admission, review and approval remain required.')
+        platform = Path(__file__).resolve().parents[3].name
+        prefix = shlex.join(['alctl', 'run', '--repository', st['identity']['root'],
+                             '--platform', platform, '--session', sid, '--existing-run', '--'])
+        print('EVIDENCE (include this block in the writer handoff):')
+        print('Run every reported check through the ledger; never run bare checks and claim evidence.')
+        print(prefix + ' evidence run --writer ' + shlex.quote(a.id) + ' --area <planned-area>')
+        print('Planned checks: ' + (', '.join(sorted(st['evidence']['plan'])) or 'none; supervisor must register an evidence plan'))
+        print('Report E<n> · area → PASS | FAIL | EMPTY | INFRA, or NOT RUN with its reason; never invent counts.')
 
 def register(sub):
     children=sub.add_parser('writer').add_subparsers(dest='action',required=True)
@@ -114,5 +135,6 @@ def register(sub):
         p=children.add_parser(action); p.add_argument('--id',required=True); p.set_defaults(fn=cmd_writer)
         if action=='start':
             p.add_argument('--role',required=True); p.add_argument('--files',required=True); p.add_argument('--commands-file'); p.add_argument('--task'); p.add_argument('--agent')
+            p.add_argument('--degraded',action='store_true');p.add_argument('--reason',default='')
         elif action=='finish': p.add_argument('--outcome',required=True,choices=['success','failed','abandoned'])
         else: p.add_argument('--reason',required=True); p.add_argument('--artifact',required=True)

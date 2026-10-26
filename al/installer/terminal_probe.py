@@ -48,6 +48,12 @@ def evaluate(session, run, repository):
         if any(approved.get(key) != value or value is None for key, value in expected.items()):
             raise ValueError('terminal approval artifact/source binding mismatch')
         gaps = completion_gaps(state) + review.approval_gaps(state)
+        # A terminal source proof applies current repository policy even to an old issuer.
+        # The issuer's historical review cannot supply newly required coverage declarations.
+        if state.get('gate_manifests'):
+            import al_artifacts as artifacts
+            import al_gate_inventory as inventory
+            gaps += inventory.gaps(state, artifacts.read_json(state['gate_manifests'][-1]))
         if gaps:
             raise ValueError('terminal approval is no longer valid: ' + str(gaps))
         if path.read_bytes() != before or scope.capture_candidate(state)['fingerprint'] != candidate['fingerprint']:

@@ -18,7 +18,11 @@ def require_execution_authority(
     controller, execution_id, *, binding=None, operation="admit", delivery=None
 ):
     execution = get_execution(controller.conn, execution_id)
-    if execution["status"] in TERMINAL:
+    if execution["status"] in TERMINAL and operation not in {
+        "read",
+        "delivery",
+        "delivery-correction",
+    }:
         raise ExecutionConflict("terminal execution is read-only")
     envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
     if not same_path(
@@ -70,6 +74,10 @@ def require_execution_authority(
             raise ExecutionConflict("foreign authority request binding")
         if execution["al_run_id"] is None and operation != "start":
             raise ExecutionConflict("AL source not yet bound by worker")
+    if operation == "delivery-correction":
+        from harness.delivery_routing import validate_correction_authority
+
+        validate_correction_authority(controller, execution, delivery)
     if operation == "decision":
         row = controller.conn.execute(
             "SELECT * FROM execution_decisions WHERE id=? AND execution_id=?",
@@ -100,7 +108,16 @@ def main():
     parser.add_argument(
         "--operation",
         required=True,
-        choices=["start", "admit", "launch", "resume", "decision", "revalidate", "approve"],
+        choices=[
+            "start",
+            "admit",
+            "launch",
+            "resume",
+            "decision",
+            "revalidate",
+            "approve",
+            "delivery-correction",
+        ],
     )
     parser.add_argument("--nonce", required=True)
     parser.add_argument("--binding", required=True)

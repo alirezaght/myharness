@@ -24,7 +24,8 @@ def cmd_isolate(a,sid):
     entry=E._create(sid,st['run_id'],area='isolation',kind='preflight',tier='preflight',argv=['git','worktree','add','--detach',str(destination),st['baseline_head']],cwd='.',scope=['.'],env_names=[],sources=sources)
     log=L.log_dir(sid)/(entry['id']+'-isolation.log')
     with log.open('wb') as out:
-        proc=subprocess.Popen(entry['argv'],cwd=al_store.REPO_ROOT,stdout=out,stderr=subprocess.STDOUT,start_new_session=True)
+        import al_harness_process
+        proc=al_harness_process.popen(entry['argv'],cwd=al_store.REPO_ROOT,stdout=out,stderr=subprocess.STDOUT,start_new_session=True)
         entry['pid']=proc.pid;E._commit(sid,entry)
         try:code=proc.wait(timeout=a.timeout)
         except subprocess.TimeoutExpired:code=E._stop(proc)

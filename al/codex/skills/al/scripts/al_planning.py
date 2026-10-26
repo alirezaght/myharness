@@ -177,6 +177,7 @@ def validate_report(st, report, current, contents, attempt, report_ref):
 def cmd_packet(a, sid):
     st = al_store.load(sid)
     ready(st)
+    partially_built = any(w.get('degraded') for w in st.get('writers', {}).values())
     from al_task_attribution import observe
 
     observed = observe(st)
@@ -186,7 +187,7 @@ def cmd_packet(a, sid):
         old = J.read(previous["packet"])
         if old["binding"] == target:
             print(J.raw({"packet": previous["packet"], "content": old,
-                         "report_template": Template.template(previous["packet"], old)}).decode())
+                         "report_template": Template.template(previous["packet"], old, partially_built=partially_built)}).decode())
             return
     if previous:
         same = J.read(previous["packet"])["binding"] == target
@@ -217,7 +218,7 @@ def cmd_packet(a, sid):
         refuse("planning source moved before packet publication")
     al_store.save(sid, st)
     print(J.raw({"packet": reference, "content": value,
-                 "report_template": Template.template(reference, value)}).decode())
+                 "report_template": Template.template(reference, value, partially_built=partially_built)}).decode())
 
 
 def cmd_report(a, sid):
@@ -277,6 +278,10 @@ def cmd_admit(a, sid):
         report=current["report"],
         obligations=current["obligations"],
     )
+    for writer in st.get('writers', {}).values():
+        if writer.get('degraded'):
+            writer['degraded'].update(proof_status='reviewed', report=current['report'],
+                                      observation=J.read(current['packet'])['source_observation'])
     N.validate(st)
     al_store.save(sid, st)
     print(J.raw({"status": "admitted", "authority": authority}).decode())

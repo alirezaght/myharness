@@ -33,11 +33,16 @@ def invoking(source):
         raise ValueError("workspace invoking worktree identity differs")
     approval = source["approval"]
     runtime = Path(identity["root"]) / ("." + source["platform"]) / "al-runtime"
+    state_path = runtime / (approval["session_id"] + ".json")
+    private = runtime / "sessions" / approval["session_id"] / (approval["session_id"] + ".json")
+    if private.is_file():
+        if state_path.is_file():raise ValueError("ambiguous flat/private invoking session")
+        state_path = private
     return {
         "repository": identity,
         "platform": source["platform"],
         "runtime_root": str(runtime),
-        "state_path": str(runtime / (approval["session_id"] + ".json")),
+        "state_path": str(state_path),
         "session_id": approval["session_id"],
         "run_id": approval["run_id"],
     }

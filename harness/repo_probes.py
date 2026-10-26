@@ -77,7 +77,13 @@ def is_test(rel: PurePosixPath) -> bool:
 
 
 CI_FILES = frozenset(
-    {".gitlab-ci.yml", "Jenkinsfile", "azure-pipelines.yml", "bitbucket-pipelines.yml", ".travis.yml"}
+    {
+        ".gitlab-ci.yml",
+        "Jenkinsfile",
+        "azure-pipelines.yml",
+        "bitbucket-pipelines.yml",
+        ".travis.yml",
+    }
     | {".drone.yml", ".woodpecker.yml", "buildspec.yml", "cloudbuild.yaml"}
 )
 CI_DIRS = frozenset({".github/workflows", ".circleci", ".buildkite", ".woodpecker", ".gitlab/ci"})

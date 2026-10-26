@@ -100,3 +100,14 @@ def require_transition(st, command, destination):
     if guarded and st.get('gate_recovery'):
         from al_gate_recovery import complete
         complete(st)
+
+
+def require_delivery_correction(st):
+    if st['status'] != 'APPROVED' or st['phase'] != 'DONE':
+        refuse('delivery correction requires terminal approved run')
+    if 'integration' not in st:
+        refuse('delivery correction requires Harness authority')
+    from al_writers import operation_gaps
+    gaps = operation_gaps(st)
+    if gaps:
+        refuse('delivery correction has unresolved operations: ' + str(gaps))

@@ -128,7 +128,12 @@ def inventory_activity(roots, *, invoking_run, nonstate=None, orphan_review=None
                     if row['platform'] != 'claude' or len(Path(relative).parts) != 2:
                         raise ValueError('unsupported native pointer layout')
                     row['pointers'].append(_pointer(path, root, members, conversation=True))
-                if len(Path(relative).parts) != 1 or path.suffix != '.json':continue
+                parts = Path(relative).parts
+                private_state = (len(parts) == 3 and parts[0] == 'sessions' and ID.fullmatch(parts[1])
+                                 and parts[2] == parts[1] + '.json')
+                if len(parts) == 3 and parts[0] == 'sessions' and parts[2] == 'current':
+                    row['pointers'].append(_pointer(path, root, members))
+                if (len(parts) != 1 and not private_state) or path.suffix != '.json':continue
                 if item['type'] != 'file':raise ValueError('runtime session is not a regular file')
                 raw = path.read_bytes()
                 if hashlib.sha256(raw).hexdigest() != item['sha256']:raise ValueError('runtime state moved')
@@ -151,6 +156,7 @@ def inventory_activity(roots, *, invoking_run, nonstate=None, orphan_review=None
                 recognized = recognize(path, path.read_bytes(), source_references)
                 if recognized:record.update(recognized)
             sessions = {r['identity']['session_id']: r for r in row['records']}
+            if len(sessions) != len(row['records']):raise ValueError('duplicate flat/private runtime session identity')
             for pointer in row['pointers']:
                 record = sessions.get(pointer['session_id'])
                 if not record or record['classification'] in {'unknown', 'nonstate-artifact'}:

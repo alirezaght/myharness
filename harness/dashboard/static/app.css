@@ -217,6 +217,7 @@ figure.diagram {
 }
 
 #execution,
+#delivery,
 .execution-summary,
 .execution-progress,
 .execution-agents,
@@ -234,6 +235,44 @@ figure.diagram {
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
   border-radius: 0.5rem;
   background: color-mix(in srgb, currentColor 3%, Canvas);
+}
+
+#delivery {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, currentColor 3%, Canvas);
+}
+
+#delivery h3,
+#delivery h4 {
+  margin-top: 0.5rem;
+}
+
+.delivery-summary {
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.35rem 0.9rem;
+}
+
+.delivery-summary dd,
+.delivery-list li,
+.delivery-list p {
+  overflow-wrap: anywhere;
+}
+
+.delivery-list ul {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+
+.delivery-list li {
+  padding: 0.2rem 0;
+}
+
+#delivery a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 #execution h3,
@@ -366,6 +405,15 @@ progress {
   .execution-identities,
   .execution-agent dl {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .delivery-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  .delivery-summary dd {
+    margin-bottom: 0.4rem;
   }
 
   .execution-identities dd,

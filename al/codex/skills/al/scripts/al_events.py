@@ -51,7 +51,8 @@ def prepare_commit(previous, proposed):
         raise ValueError('integration identity/history is immutable')
     pending = i.pop('pending', [])
     if not previous or (previous['status'] != 'RUNNING' and proposed['status'] == 'RUNNING'):
-        pending.insert(0, {'kind': 'run.started', 'payload': {'status': proposed['status']}})
+        offset = 1 if pending and pending[0]['kind'] == 'delivery.correction.acknowledged' else 0
+        pending.insert(offset, {'kind': 'run.started', 'payload': {'status': proposed['status']}})
     if not previous or previous['phase'] != proposed['phase'] or previous.get('phase_occurrences') != proposed.get('phase_occurrences'):
         pending.append({'kind': 'phase.changed', 'payload': {'phase': proposed['phase'], 'occurrence': len(proposed['phase_occurrences'])}})
     before = (previous or {}).get('writers', {})

@@ -54,7 +54,7 @@ package installation · lockfile changes · code generation · repository-wide
 formatting or `--fix` · database migrations · dependency updates · generated
 files · build output · test snapshot updates · any git operation.
 
-Any of those in either side's plan ⇒ sequential. `$STATE ownership` checks this
+Any of those in either side's plan ⇒ sequential. `"${STATE[@]}" ownership` checks this
 mechanically from `--engineer-commands` / `--builder-commands`, and its exit 5 is
 a decision, not advice. Pass the commands each agent is actually expected to run
 (the plan's `SHARED_STATE_COMMANDS` plus the verification each side will scope to
@@ -69,7 +69,7 @@ containment and remote-response rules.
 ## Overlapping a fix with a running check
 
 Not a parallel writer phase, and narrower: while a verification command runs, a
-small fix may be written only when `$STATE overlap --area <running check>
+small fix may be written only when `"${STATE[@]}" overlap --area <running check>
 --fix-files <files> --fix-commands <commands>` exits 0 — the fix lies outside the
 running check's whole scope (code, fixtures, contracts, dependency manifests,
 runtime config), runs no shared-state command, and the phase is not a barrier.
@@ -117,13 +117,13 @@ re-checked: the ledger marks the run TORN if its scope moved while it ran.
 
 | Command | Exit | Meaning |
 |---|---|---|
-| `$STATE ownership --engineer L --builder L [--engineer-commands L --builder-commands L]` | 5 | owned paths overlap, or a declared command mutates shared tree state ⇒ run this phase SEQUENTIALLY |
-| `$STATE snapshot pre-review --require pre-verify` | 6 | the tree moved ⇒ writes still landing; wait, re-verify, do NOT review |
-| `$STATE retry <agent> --reason ...` | 7 | retry budget spent ⇒ STOP with blockers |
-| `$STATE correction --route ...` | 3 | six correction iterations used ⇒ STOP with blockers |
-| `$STATE model-unavailable <model>` | 4 | no approved model left ⇒ STOP with blockers |
-| `$STATE spec-gate SPEC_BLOCKED` | 8 | the specification is not implementable ⇒ STOP, report the questions |
-| `$STATE correction --route ...` | 9 | 0 BLOCKING findings ⇒ no correction loop; approve with notes |
+| `"${STATE[@]}" ownership --engineer L --builder L [--engineer-commands L --builder-commands L]` | 5 | owned paths overlap, or a declared command mutates shared tree state ⇒ run this phase SEQUENTIALLY |
+| `"${STATE[@]}" snapshot pre-review --require pre-verify` | 6 | the tree moved ⇒ writes still landing; wait, re-verify, do NOT review |
+| `"${STATE[@]}" retry <agent> --reason ...` | 7 | retry budget spent ⇒ STOP with blockers |
+| `"${STATE[@]}" correction --route ...` | 3 | six correction iterations used ⇒ STOP with blockers |
+| `"${STATE[@]}" model-unavailable <model>` | 4 | no approved model left ⇒ STOP with blockers |
+| `"${STATE[@]}" spec-gate SPEC_BLOCKED` | 8 | the specification is not implementable ⇒ STOP, report the questions |
+| `"${STATE[@]}" correction --route ...` | 9 | 0 BLOCKING findings ⇒ no correction loop; approve with notes |
 
 The ownership check treats a directory as every file beneath it, so
 `src/auth` ⟷ `src/auth/token.test.ts` is a conflict. It only ever refuses
@@ -166,7 +166,7 @@ Run AL-Engineer and AL-Builder concurrently only when EVERY line holds:
    either omits an item, it waits. Without a Designer (SMALL/STANDARD) there is
    no second opinion on early safety, so AL runs the phase sequentially unless
    the early set is unambiguously standalone.
-3. `SHARED_FILES` is empty and `$STATE ownership` exits 0 — including the
+3. `SHARED_FILES` is empty and `"${STATE[@]}" ownership` exits 0 — including the
    `--engineer-commands` / `--builder-commands` shared-state check.
 4. The early work is worth a parallel round (more than a couple of trivial files).
 5. Nothing in the early set needs a symbol, signature or behaviour the Engineer
@@ -195,7 +195,7 @@ ALL hold:
 1. Every routed finding says `PARALLEL_SAFE: YES`.
 2. No finding in one batch appears in another finding's `DEPENDENCIES`.
 3. No `TYPE: BOTH` finding is in play (it needs both agents in one region).
-4. The union of `EXPECTED_FILES` per batch is disjoint and `$STATE ownership`
+4. The union of `EXPECTED_FILES` per batch is disjoint and `"${STATE[@]}" ownership`
    exits 0, commands included.
 5. Neither batch needs the other's output — no "test the new API" against an API
    this same iteration introduces.
@@ -210,7 +210,7 @@ dependency and file ownership come first.
 
 **One reviewer rejection plus its one batch of routed corrections is ONE
 correction iteration**, whether the batch ran in parallel or sequentially.
-`$STATE correction` is called exactly once per rejection.
+`"${STATE[@]}" correction` is called exactly once per rejection.
 
 ## D. Read-only review fan-out (Phase 6)
 
@@ -244,7 +244,7 @@ AL-Architect must never review while any agent can still write.
    a half-applied edit nobody can describe. Only stop the sibling if the user
    asks, or if it is a read-only scout (nothing to corrupt).
 3. Record the failure with
-   `$STATE agent-failed <agent> --reason "<why>" --peer <peer>
+   `"${STATE[@]}" agent-failed <agent> --reason "<why>" --peer <peer>
    --peer-status <completed|running|failed|none|unknown> --retry-safe <yes|no|undetermined>`.
    This captures the failure checkpoint and closes the phase occurrence without
    marking it complete. The run is now AGENT_FAILED; `waiting`, `interrupt`,
@@ -252,17 +252,17 @@ AL-Architect must never review while any agent can still write.
    that failed state. Preserve the failure until guarded retry or `stopped`.
 4. Before retry, reconcile every outstanding writer and check with its own
    reconciliation command and inspected artifact. For a parallel peer, also run
-   `$STATE agent-peer-reconcile <peer> --reason "<observed state and inspected changes>"
+   `"${STATE[@]}" agent-peer-reconcile <peer> --reason "<observed state and inspected changes>"
    --artifact <proof-file>`. A peer-status label alone is not proof. Generic
    `resume` cannot clear a pending failure; use guarded `retry` or `stopped`.
-5. Retry at most once, via `$STATE retry <agent> --reason "<why>"` (exit 7 = no
+5. Retry at most once, via `"${STATE[@]}" retry <agent> --reason "<why>"` (exit 7 = no
    budget left), and only when the failure is transient, `retry-safe=yes`, the
    requested role matches, the checkpoint still identifies the same task and
    candidate, all operations are reconciled, and peer proof is valid. Retry
    creates a new writer lifetime; never reopen a finished or reconciled writer.
 6. When retrying is unsafe, or the retry also fails, re-run the phase
    **sequentially** if the tree is clean enough to continue; otherwise
-   `$STATE stopped` and finish with `STATUS: STOPPED_WITH_BLOCKERS`, naming what
+   `"${STATE[@]}" stopped` and finish with `STATUS: STOPPED_WITH_BLOCKERS`, naming what
    landed and what did not.
 
 ## Package-script migration classification

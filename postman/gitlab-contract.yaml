@@ -1,0 +1,198 @@
+openapi: 3.0.3
+info:
+  title: GitLab Delivery API subset
+  version: 1.0.0
+  description: >-
+    Synthetic-contract subset for project, branch, merge-request, pipeline,
+    job, test-report, environment and deployment reads plus branch/MR creation.
+    Paths and fields follow the official GitLab REST API; see asset README.
+servers:
+  - url: https://gitlab.example.com/api/v4
+security:
+  - privateToken: []
+  - bearerToken: []
+tags:
+  - name: Projects
+  - name: Branches
+  - name: Merge requests
+  - name: Pipelines
+  - name: Jobs
+  - name: Environments
+  - name: Deployments
+paths:
+  /projects/{id}:
+    get:
+      tags: [Projects]
+      operationId: getProject
+      parameters: [{$ref: '#/components/parameters/projectId'}]
+      responses:
+        '200': {description: Project}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /projects/{id}/repository/branches/{branch}:
+    get:
+      tags: [Branches]
+      operationId: getBranch
+      parameters:
+        - {$ref: '#/components/parameters/projectId'}
+        - {name: branch, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Branch}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /projects/{id}/repository/branches:
+    post:
+      tags: [Branches]
+      operationId: createBranch
+      parameters: [{$ref: '#/components/parameters/projectId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [branch, ref], properties: {branch: {type: string}, ref: {type: string}}}
+      responses:
+        '201': {description: Created branch}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /projects/{id}/merge_requests:
+    get:
+      tags: [Merge requests]
+      operationId: listMergeRequests
+      parameters:
+        - {$ref: '#/components/parameters/projectId'}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: source_branch, in: query, schema: {type: string}}
+        - {name: target_branch, in: query, schema: {type: string}}
+        - {$ref: '#/components/parameters/page'}
+        - {$ref: '#/components/parameters/perPage'}
+      responses: {'200': {description: Merge request list, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/MergeRequest'}}}}}}
+    post:
+      tags: [Merge requests]
+      operationId: createMergeRequest
+      parameters: [{$ref: '#/components/parameters/projectId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_branch, target_branch, title]
+              properties:
+                source_branch: {type: string}
+                target_branch: {type: string}
+                title: {type: string}
+                description: {type: string}
+                remove_source_branch: {type: boolean}
+                squash: {type: boolean}
+      responses:
+        '201': {description: Created MR, content: {application/json: {schema: {$ref: '#/components/schemas/MergeRequest'}}}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /projects/{id}/merge_requests/{mergeRequestIid}:
+    get:
+      tags: [Merge requests]
+      operationId: getMergeRequest
+      parameters:
+        - {$ref: '#/components/parameters/projectId'}
+        - {name: mergeRequestIid, in: path, required: true, schema: {type: integer}}
+      responses: {'200': {description: MR, content: {application/json: {schema: {$ref: '#/components/schemas/MergeRequest'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /projects/{id}/merge_requests/{mergeRequestIid}/pipelines:
+    get:
+      tags: [Pipelines]
+      operationId: listMergeRequestPipelines
+      parameters:
+        - {$ref: '#/components/parameters/projectId'}
+        - {name: mergeRequestIid, in: path, required: true, schema: {type: integer}}
+      responses: {'200': {description: Pipelines for MR, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Pipeline'}}}}}}
+  /projects/{id}/pipelines/{pipelineId}:
+    get:
+      tags: [Pipelines]
+      operationId: getPipeline
+      parameters: [{$ref: '#/components/parameters/projectId'}, {name: pipelineId, in: path, required: true, schema: {type: integer}}]
+      responses: {'200': {description: Pipeline, content: {application/json: {schema: {$ref: '#/components/schemas/Pipeline'}}}}, '404': {$ref: '#/components/responses/NotFound'}}
+  /projects/{id}/pipelines/{pipelineId}/jobs:
+    get:
+      tags: [Jobs]
+      operationId: listPipelineJobs
+      parameters: [{$ref: '#/components/parameters/projectId'}, {name: pipelineId, in: path, required: true, schema: {type: integer}}, {$ref: '#/components/parameters/page'}, {$ref: '#/components/parameters/perPage'}]
+      responses: {'200': {description: Paginated job list, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Job'}}}}}}
+  /projects/{id}/pipelines/{pipelineId}/test_report:
+    get:
+      tags: [Jobs]
+      operationId: getPipelineTestReport
+      parameters: [{$ref: '#/components/parameters/projectId'}, {name: pipelineId, in: path, required: true, schema: {type: integer}}]
+      responses: {'200': {description: Pipeline test report, content: {application/json: {schema: {type: object, properties: {total_time: {type: number}, total_count: {type: integer}, success_count: {type: integer}, failed_count: {type: integer}, skipped_count: {type: integer}, test_suites: {type: array, items: {type: object}}}}}}}}
+  /projects/{id}/environments:
+    get:
+      tags: [Environments]
+      operationId: listEnvironments
+      parameters: [{$ref: '#/components/parameters/projectId'}, {$ref: '#/components/parameters/page'}, {$ref: '#/components/parameters/perPage'}]
+      responses: {'200': {description: Environment list, content: {application/json: {schema: {type: array, items: {type: object}}}}}}
+  /projects/{id}/environments/{environmentId}:
+    get:
+      tags: [Environments]
+      operationId: getEnvironment
+      parameters:
+        - {$ref: '#/components/parameters/projectId'}
+        - {name: environmentId, in: path, required: true, schema: {type: integer}}
+      responses:
+        '200': {description: Environment with current state and last deployment, content: {application/json: {schema: {type: object}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /projects/{id}/deployments:
+    get:
+      tags: [Deployments]
+      operationId: listDeployments
+      parameters: [{$ref: '#/components/parameters/projectId'}, {name: environment, in: query, schema: {type: string}}, {$ref: '#/components/parameters/page'}, {$ref: '#/components/parameters/perPage'}]
+      responses: {'200': {description: Deployment list, content: {application/json: {schema: {type: array, items: {type: object}}}}}}
+components:
+  securitySchemes:
+    privateToken: {type: apiKey, in: header, name: PRIVATE-TOKEN}
+    bearerToken: {type: http, scheme: bearer}
+  parameters:
+    projectId: {name: id, in: path, required: true, description: Numeric project ID or URL-encoded full project path, schema: {type: string}}
+    page: {name: page, in: query, schema: {type: integer, minimum: 1}}
+    perPage: {name: per_page, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+  responses:
+    BadRequest: {description: Invalid request}
+    Unauthorized: {description: Authentication required}
+    Forbidden: {description: Permission denied}
+    NotFound: {description: Resource not found}
+    Conflict: {description: Conflicting resource or stale state}
+  schemas:
+    MergeRequest:
+      type: object
+      properties:
+        id: {type: integer, description: Global database ID}
+        iid: {type: integer, description: Project-local internal ID}
+        project_id: {type: integer}
+        title: {type: string}
+        state: {type: string}
+        source_branch: {type: string}
+        target_branch: {type: string}
+        sha: {type: string}
+        web_url: {type: string, format: uri}
+        merge_status: {type: string}
+        detailed_merge_status: {type: string}
+    Pipeline:
+      type: object
+      properties:
+        id: {type: integer}
+        iid: {type: integer}
+        project_id: {type: integer}
+        sha: {type: string}
+        ref: {type: string}
+        status: {type: string}
+        source: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        web_url: {type: string, format: uri}
+    Job:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        status: {type: string}
+        stage: {type: string}
+        ref: {type: string}
+        pipeline: {type: object, properties: {id: {type: integer}}}

@@ -65,6 +65,7 @@ STATIC = {
     "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
     "/static/approvals.js": ("approvals.js", "text/javascript; charset=utf-8"),
     "/static/execution.js": ("execution.js", "text/javascript; charset=utf-8"),
+    "/static/delivery.js": ("delivery.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"

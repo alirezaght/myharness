@@ -64,9 +64,10 @@ The harness **does not** replace AL and must not become a competing orchestrator
 | [`docs/decisions/`](docs/decisions/) | Approved decision records: DEC-0001 to DEC-0004 for the harness itself, DEC-0005 to DEC-0018 from the Phase 2 dogfood run |
 | [`docs/specs/`](docs/specs/) | Sealed, versioned specifications; [`t-a3752edf/v1.md`](docs/specs/t-a3752edf/v1.md) is the Phase 2 spec |
 | [`docs/demo.md`](docs/demo.md) | Recorded Phase 1 demo transcript, kept in sync with `scripts/demo.py` by `tests/test_demo.py` |
+| [`docs/demo-phase-2.md`](docs/demo-phase-2.md) | Recorded Phase 2 demo transcript (the wrong-connection scenario), kept in sync with `scripts/demo_phase2.py` by `tests/test_demo_phase2.py` |
 | [`docs/dogfood/`](docs/dogfood/) | Transcript of the run that produced the Phase 2 spec |
 | [`harness/dashboard/`](harness/dashboard/) | The Phase 2 local web dashboard: stdlib HTTP server, read model, launcher and static HTML/JS assets |
-| [`scripts/`](scripts/) | `demo.py`, the throwaway-state Phase 1 demo |
+| [`scripts/`](scripts/) | `demo.py` and `demo_phase2.py`, the throwaway-state Phase 1 and Phase 2 demos |
 | [`tasks/`](tasks/) | One task checklist per phase |
 
 ## Delivery phases
@@ -90,6 +91,7 @@ uv run pytest              # run tests
 uv run ruff check .        # lint
 uv run ruff format .       # format
 uv run python scripts/demo.py   # replay the Phase 1 demo on throwaway state (see docs/demo.md)
+uv run python scripts/demo_phase2.py   # replay the Phase 2 demo on throwaway state (see docs/demo-phase-2.md)
 uv run harness --version   # run the CLI
 uv run harness start "<request>"             # create a task (the only entry point)
 uv run harness phase <id> next               # advance one phase
@@ -387,7 +389,7 @@ An approval binds the specification version, the path of the sealed file, the gi
 
 ## Status
 
-Phase 1 done (P1-01 to P1-13); Phase 2 in progress: P2-01 to P2-07 done; design spec approved for implementation (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list, a recorded demo, and a dogfood run that produced the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md); see the [dogfood log](docs/dogfood/phase-2-spec-run.md)). Next: P2-08 Phase 2 acceptance.
+Phase 1 done (P1-01 to P1-13); Phase 2 done (P2-01 to P2-08); the Phase 2 spec was approved for implementation (stack: Python 3.13 / uv / stdlib sqlite3 / pytest + ruff / GitHub Actions; `/harness` activation, phase state machine, task classification and local SQLite state with per-task workspaces, read-only repository analyzer, adaptive interview engine with unresolved-decision checklist, text architecture design with delegation marking and coverage check, Git-versioned decision registry with automatic recording, supersede history and read-only cross-project suggestions, specification manager with immutable approved versions tied to a commit, test planner with justified mocks and an approved plan embedded in the spec, final design review gate that blocks entering approval while anything is open, CLI approval gate whose approval record is the only handoff authorization, resume from committed checkpoints with a resumable-task list, a recorded demo, and a dogfood run that produced the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md); see the [dogfood log](docs/dogfood/phase-2-spec-run.md)). Phase 2 added the local web dashboard with versioned diagrams, comments, the redesign loop and the Approval Center. Its acceptance is the wrong-connection scenario (a diagram with a wrong connection, a comment, the harness fixes it, approval only once every comment is resolved), tested over HTTP and in headless Chrome, plus the recorded [Phase 2 demo](docs/demo-phase-2.md). Next: Phase 3 (AL Integration & Live Monitoring).
 
 ## Demo
 
@@ -399,6 +401,14 @@ uv run python scripts/demo.py
 
 The script runs in a temporary directory with its own throwaway `HARNESS_HOME` and a small temporary git repository, and deletes both afterwards, so it never touches real harness state or this repository's files. `tests/test_demo.py` keeps the transcript in `docs/demo.md` in sync with what the script prints.
 
+[`docs/demo-phase-2.md`](docs/demo-phase-2.md) is the recorded Phase 2 demo: a task whose design has a wrong connection, the developer's comment in the dashboard, the harness fixing it through the redesign loop (the developer's verdicts are scripted), and Approve & Implement becoming possible only once every comment is resolved. It is mapped to the P2-08 acceptance bullets and the ROADMAP Phase 2 acceptance check. Reproduce it with:
+
+```bash
+uv run python scripts/demo_phase2.py
+```
+
+It needs `git` and a free loopback port, uses the same kind of throwaway state, and always stops the dashboard it starts. `tests/test_demo_phase2.py` keeps the transcript in `docs/demo-phase-2.md` in sync with what the script prints.
+
 ## Dogfooding
 
 Phase 1 was accepted by using the harness on its own repository to produce the specification for Phase 2:
@@ -409,3 +419,7 @@ Phase 1 was accepted by using the harness on its own repository to produce the s
 - 96 quoted spans in the spec were checked against their cited source lines, with no mismatches.
 
 Results: the approved [Phase 2 spec](docs/specs/t-a3752edf/v1.md), the full [dogfood log](docs/dogfood/phase-2-spec-run.md), and the decision records [DEC-0005 to DEC-0018](docs/decisions/README.md).
+
+## Phase 4 delivery
+
+Authorized AL candidates can be published to GitHub or GitLab and monitored through the delivery panel. Technical failures re-enter guarded AL correction with bounded retries; design decisions return to the developer. Existing native signed-in authentication is preserved. See the [configuration and repeatable demo](docs/demo-phase-4.md) and [AL recovery improvements](docs/al-session-fixes.md).

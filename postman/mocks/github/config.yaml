@@ -1,0 +1,9 @@
+version: 1
+name: github-delivery
+port: 8788
+origin: https://api.github.com
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

@@ -1,0 +1,1 @@
+[{"id":310,"name":"staging","slug":"staging","external_url":"https://staging.example.invalid","state":"available","tier":"staging","last_deployment":{"id":4102,"status":"success","sha":"d4e5f6a1b2c3"}},{"id":311,"name":"production","slug":"production","state":"available","tier":"production"}]

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AL immutable artifact reference",
+  "description": "Returned by artifact record. id and sha256 must also be equal and the stored bytes must match the hash.",
+  "type": "object", "additionalProperties": false,
+  "required": ["id", "kind", "sha256", "stored_path", "source", "captured_at"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "kind": {"type": "string", "minLength": 1},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stored_path": {"type": "string", "pattern": "^/"},
+    "source": {"type": "string"},
+    "captured_at": {"type": "number", "minimum": 0}
+  }
+}

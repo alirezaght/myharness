@@ -1,0 +1,1 @@
+{"total_time":18.4,"total_count":42,"success_count":41,"failed_count":1,"skipped_count":0,"error_count":0,"test_suites":[{"name":"synthetic-suite","total_time":18.4,"total_count":42,"success_count":41,"failed_count":1,"skipped_count":0,"test_cases":[{"status":"failed","name":"synthetic regression example"}]}]}

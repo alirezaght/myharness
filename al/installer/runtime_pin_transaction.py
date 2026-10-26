@@ -14,10 +14,10 @@ from .runtime_pin import _directory
 from .validator_origin import canonical, capture, decode, digest, repository_identity, safe
 
 
-def storage():
+def storage(*, readonly=False):
     pinned = sys.modules.get("_al_run_pin_context")
     if pinned is not None:
-        return _directory(Path(pinned.storage), create=not getattr(pinned, "readonly", False))
+        return _directory(Path(pinned.storage), create=not (readonly or getattr(pinned, "readonly", False)))
     trusted = sys.modules.get("_al_validator_context")
     if trusted is None or trusted.request.get("mode") != "snapshot":
         raise ValueError("runtime storage requires the protected managed launcher")
@@ -28,7 +28,7 @@ def storage():
         or root.parent.parent.parent.name != "installer"
     ):
         raise ValueError("unrecognized managed runtime registry layout")
-    return _directory(root.parents[3] / "al-run-pins")
+    return _directory(root.parents[3] / "al-run-pins", create=not readonly)
 
 
 def subject(repository, platform, session):
@@ -58,11 +58,13 @@ def read(path):
 
 
 @contextmanager
-def coordinated(value):
-    directory = _directory(storage() / "runs")
+def coordinated(value, *, readonly=False):
+    context = sys.modules.get("_al_run_pin_context")
+    readonly = readonly or bool(getattr(context, "readonly", False))
+    directory = _directory(storage(readonly=readonly) / "runs", create=not readonly)
     lock = directory / (key(value) + ".lock")
     safe(lock)
-    descriptor = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    descriptor = os.open(lock, (0 if readonly else os.O_CREAT) | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         state = os.fstat(descriptor)
         if (
@@ -77,7 +79,25 @@ def coordinated(value):
         os.close(descriptor)
 
 
+LAYOUT = "harness-session-directory-v1"
+LAYOUT_FIELDS = {"runtime_layout", "runtime_directory"}
+
+
+def runtime_directory(value):
+    base = Path(value["repository_identity"]["root"]) / ("." + value["platform"]) / "al-runtime"
+    if value.get("schema_version") == 2:
+        expected = base / "sessions" / value["session_id"]
+        if value.get("runtime_layout") != LAYOUT or value.get("runtime_directory") != str(expected):
+            raise ValueError("protected session runtime layout differs")
+        return safe(expected)
+    return safe(base)
+
+
 def state_path(value):
+    return runtime_directory(value) / (value["session_id"] + ".json")
+
+
+def _legacy_state_path(value):
     return (
         Path(value["repository_identity"]["root"])
         / ("." + value["platform"])
@@ -86,7 +106,7 @@ def state_path(value):
     )
 
 
-def reserve(value, pin):
+def reserve(value, pin, *, private_session=False):
     with coordinated(value) as path:
         if path.exists():
             transaction = read(path)
@@ -104,6 +124,11 @@ def reserve(value, pin):
             "status": "RESERVED",
             "initialization": None,
         }
+        if private_session:
+            directory = Path(value["repository_identity"]["root"]) / ("." + value["platform"]) / "al-runtime" / "sessions" / value["session_id"]
+            transaction.update(schema_version=2, kind="run-pin-binding-v2",
+                               runtime_layout=LAYOUT, runtime_directory=str(safe(directory)))
+            _directory(directory)
         write_json(path, transaction)
         return transaction
 
@@ -121,15 +146,18 @@ def validate(transaction, value):
         "status",
         "initialization",
     }
+    version = transaction.get("schema_version") if isinstance(transaction, dict) else None
+    expected_fields = fields | LAYOUT_FIELDS if version == 2 else fields
     if (
         not isinstance(transaction, dict)
-        or set(transaction) != fields
-        or transaction["schema_version"] != 1
-        or transaction["kind"] != "run-pin-binding-v1"
+        or set(transaction) != expected_fields
+        or version not in {1, 2}
+        or transaction["kind"] != "run-pin-binding-v" + str(version)
         or transaction["status"] not in {"RESERVED", "ACTIVE"}
         or any(transaction.get(k) != v for k, v in value.items())
     ):
         raise ValueError("protected runtime run binding differs")
+    runtime_directory(transaction)
     if not re.fullmatch(r"[0-9a-f]{8}", transaction["run_id"]) or not re.fullmatch(
         r"[0-9a-f]{64}", transaction["publication_transaction"]
     ):
@@ -188,6 +216,8 @@ def read_state(transaction):
             "initialization",
         )
     }
+    if transaction["schema_version"] == 2:
+        expected.update({k: transaction[k] for k in LAYOUT_FIELDS})
     if (
         state.get("session_id") != transaction["session_id"]
         or state.get("run_id") != transaction["run_id"]

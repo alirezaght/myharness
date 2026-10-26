@@ -204,6 +204,7 @@ def test_replay_accepts_legacy_path_aliases_but_refuses_other_targets(
             str(handoff.parent / "task-package.json"),
             "--handoff",
             str(handoff),
+            session_directory=True,
         ),
         cwd=sample_repo,
         env=execution_environment(),
@@ -212,7 +213,9 @@ def test_replay_accepts_legacy_path_aliases_but_refuses_other_targets(
         timeout=10,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    source = runtime / (execution["al_session_id"] + ".json")
+    source = (
+        runtime / "sessions" / execution["al_session_id"] / (execution["al_session_id"] + ".json")
+    )
     state = json.loads(source.read_bytes())
     state["identity"]["root"] = str(repository_alias)
     source.write_text(json.dumps(state))

@@ -5,7 +5,7 @@ import re
 
 from .registry import write_json
 from .runtime_pin import _directory, _sync
-from .runtime_pin_transaction import coordinated, read, storage, validate
+from .runtime_pin_transaction import LAYOUT_FIELDS, coordinated, read, storage, validate, runtime_directory
 from .validator_origin import canonical, capture, digest
 
 
@@ -27,6 +27,7 @@ def read_initialization(transaction, *, storage_root=None):
     reference = transaction.get("initialization")
     if not isinstance(reference, dict):
         raise ValueError("missing protected proof initialization")
+    version = transaction["schema_version"]
     expected_fields = {"id", "sha256", "kind", "stored_path", "source", "captured_at"}
     if set(reference) != expected_fields or not re.fullmatch(
         r"[0-9a-f]{64}", reference.get("sha256", "")
@@ -37,7 +38,7 @@ def read_initialization(transaction, *, storage_root=None):
     if (
         str(expected) != reference["stored_path"]
         or reference["id"] != reference["sha256"]
-        or reference["kind"] != "proof-admission-initialization-v1"
+        or reference["kind"] != "proof-admission-initialization-v" + str(version)
     ):
         raise ValueError("proof initialization reference escaped protected storage")
     raw, metadata = capture(expected)
@@ -47,9 +48,9 @@ def read_initialization(transaction, *, storage_root=None):
 
     value = decode(raw)
     if (
-        set(value) != KEYS
-        or value["schema_version"] != 1
-        or value["kind"] != "proof-admission-initialization-v1"
+        set(value) != (KEYS | LAYOUT_FIELDS if version == 2 else KEYS)
+        or value["schema_version"] != version
+        or value["kind"] != "proof-admission-initialization-v" + str(version)
     ):
         raise ValueError("unsupported proof initialization")
     if (
@@ -57,11 +58,15 @@ def read_initialization(transaction, *, storage_root=None):
         or value["runtime_pin"] != transaction["pin"]
     ):
         raise ValueError("proof initialization and protected run binding differ")
+    if version == 2:
+        runtime_directory(transaction)
+        if any(value[k] != transaction[k] for k in LAYOUT_FIELDS):
+            raise ValueError("proof initialization runtime layout differs")
     return value
 
 
 def initialize(transaction, supplied):
-    if set(supplied) != KEYS:
+    if set(supplied) != (KEYS | LAYOUT_FIELDS if transaction["schema_version"] == 2 else KEYS):
         raise ValueError("incomplete new-run proof initialization")
     subject = {k: transaction[k] for k in ("repository_identity", "platform", "session_id")}
     with coordinated(subject) as path:

@@ -14,10 +14,14 @@ def record(st,sid,a):
     if st['phase']=='DONE':refuse('agent failure requires a nonterminal phase')
     if a.agent not in al_models.ROLES or not a.reason.strip():refuse('agent failure needs a valid role and reason')
     if st.get('failure'):refuse('pending agent failure must be retried or stopped')
+    import al_failures
+    kind = al_failures.guard_record(a.reason, getattr(a, 'kind', 'auto'))
+    safe = a.retry_safe if kind == 'implementation' else 'no'
     phase=st['phase'];parallel=st.get('exec_mode',{}).get(phase)=='parallel'
     st['failure']={'agent':a.agent,'phase':phase,'reason':a.reason,'at':time.time(),
-                   'parallel':parallel,'peer':a.peer or None,'peer_status':a.peer_status,'retry_safe':a.retry_safe}
-    ref=R.checkpoint(st,sid,a.reason,'Reconcile operations and peer state, then use guarded retry')
+                   'parallel':parallel,'peer':a.peer or None,'peer_status':a.peer_status,
+                   'retry_safe':safe, 'kind':kind, 'next_step':al_failures.next_step(kind)}
+    ref=R.checkpoint(st,sid,a.reason,st['failure']['next_step'])
     st['failure']['checkpoint']=ref
     st['stopping_checkpoint']=ref['id'];st['status']='AGENT_FAILED';st['stop_reason']=a.reason
     R.close_occurrence(st)
@@ -37,6 +41,13 @@ def cmd_peer(a,sid):
 def cmd_retry(a,sid):
     st=al_store.load(sid)
     if a.agent not in al_models.ROLES:refuse('invalid retry role')
+    failure = st.get('failure')
+    if failure:
+        import al_failures
+        kind = al_failures.classify(failure['reason'], failure.get('kind', 'auto'))
+        if kind != 'implementation':
+            refuse(al_failures.next_step(kind) if kind in {'permission','model-refusal'}
+                   else 'availability errors use model-retry/Model policy, not implementation retry')
     used=st.get('retries',{}).get(a.agent,0)
     if used>=1:
         st['status']='STOPPED_WITH_BLOCKERS'

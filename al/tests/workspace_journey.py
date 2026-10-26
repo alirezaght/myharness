@@ -29,7 +29,11 @@ class WorkspaceJourney(Workflow):
     def create_project(self):
         super().create_project()
         ignore = shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc", ".ruff_cache")
-        shutil.copytree(ROOT / "al", self.repo / "al", ignore=ignore)
+        # Keep the complete installer/runtime source. Embedded example repositories are
+        # test data, not applications of this disposable Python project: their package
+        # manifests would otherwise declare unrelated contract-generation obligations.
+        shutil.copytree(ROOT / "al", self.repo / "al", ignore=shutil.ignore_patterns(
+            "__pycache__", ".pytest_cache", "*.pyc", ".ruff_cache", "fixtures"))
         shutil.copytree(ROOT / "harness", self.repo / "harness", ignore=ignore)
         for name in (".claude/commands/harness.md", "scripts/install_global.py"):
             path = self.repo / name

@@ -186,7 +186,13 @@ def base_gaps(st): return gate_gaps(st,'base')
 def status(st):
     """Every status section within one worktree observation instead of one per section."""
     from al_recovery_guidance import descriptors
-    return {'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),
+    runs = []
+    for run in st.get('gate_runs', []):
+        entry = L.find(st, run['evidence'])
+        if entry:
+            runs.append({'gate': run['gate'], 'stage': run['stage'], 'evidence': entry['id'],
+                         'status': entry['status'], 'reason': entry.get('note', ''), 'log': entry.get('log')})
+    return {'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),'evidence':runs,
             'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st)}
 @S.decision
 def candidate_gaps(st):
@@ -244,7 +250,10 @@ def cmd_run(a,sid):
         if not m: refuse('gate manifest missing')
         resume = getattr(a,'resume',False)
         retry_failed = getattr(a,'retry_failed',False)
-        if retry_failed and not resume: refuse('--retry-failed requires --resume')
+        if retry_failed and not resume and not a.id:
+            refuse('--retry-failed requires --resume or an explicit --id; use gates run --stage '
+                   + a.stage + ' --id <gate> --retry-failed, or gates run --stage ' + a.stage + ' --resume --retry-failed')
+        if retry_failed and a.id: resume = True
         selected = Continuation.select_continuation(st,m,a.stage,a.id,retry_failed) if resume else [g for g in m['gates'] if not a.id or g['id']==a.id]
         if not selected and not resume: refuse('unknown gate ID')
         if a.id and selected and all(g['applicability']=='UNRESOLVED' for g in selected): refuse('gate '+a.id+' is unverified: AL cannot execute it locally')
@@ -334,11 +343,14 @@ def cmd_run(a,sid):
                                 proc=owner.spawn(argv,cwd=cwd,stdout=out,stderr=subprocess.STDOUT)
                                 entry['pid']=proc.pid; E._commit(sid,entry)
                                 try: code=proc.wait(timeout=a.timeout)
-                                except subprocess.TimeoutExpired: code=stop(proc); status='INFRA'
+                                except subprocess.TimeoutExpired:
+                                    code=stop(proc); status='INFRA'; note=f'timeout after {a.timeout:g} s'
+                                    out.write(('\nAL: '+note+'\n').encode());out.flush()
                                 else:
                                     status='PASS' if code==0 else ('INFRA' if code in {126,127} else 'FAIL')
                                     stop(proc)  # Reap surviving group members before inspecting reusable state.
-                        except OSError as exc: log.write_text(str(exc)); status='INFRA'
+                        except OSError as exc:
+                            note='process failure: '+str(exc);log.write_text(note+'\n'); status='INFRA'
                         if state_top is not None:
                             # The declared location is removed even when its capture is refused.
                             try:captured=ReviewState.capture(root,g['review_state'])

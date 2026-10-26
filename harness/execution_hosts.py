@@ -25,9 +25,10 @@ def al_runtime(host, repository):
 
 
 def al_source(execution, envelope):
-    return al_runtime(execution["host"], envelope["repository"]) / (
-        execution["al_session_id"] + ".json"
-    )
+    root = al_runtime(execution["host"], envelope["repository"])
+    if envelope.get("runtime_layout") == "harness-session-directory-v1":
+        root = root / "sessions" / execution["al_session_id"]
+    return root / (execution["al_session_id"] + ".json")
 
 
 def managed_launcher():
@@ -39,7 +40,9 @@ def managed_launcher():
     return str(candidate)
 
 
-def al_argv(launcher, host, repository, session, *arguments):
+def al_argv(
+    launcher, host, repository, session, *arguments, existing_run=False, session_directory=False
+):
     return [
         launcher,
         "run",
@@ -49,6 +52,8 @@ def al_argv(launcher, host, repository, session, *arguments):
         host,
         "--session",
         session,
+        *(["--existing-run"] if existing_run else []),
+        *(["--session-directory"] if session_directory else []),
         "--",
         *arguments,
     ]
@@ -175,7 +180,11 @@ def native_identity(host, raw):
     if not isinstance(record, dict):
         raise ValueError("native stream record must be an object")
     value = None
-    if host == "claude" and record.get("type") in {"system", "result"}:
+    if host == "claude" and (
+        record.get("type") == "result"
+        or record.get("type") == "system"
+        and record.get("subtype") in {None, "init"}
+    ):
         value = record.get("session_id")
     elif host == "codex" and record.get("type") == "thread.started":
         value = record.get("thread_id")

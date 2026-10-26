@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install test runner
-        run: python -m pip install pytest
+        run: python -m pip install pytest 'jsonschema>=4,<5'
       - name: Verify installer, platform suites, and release payload
         run: python al/release_verify.py --full
       - name: Run the pre-release acceptance tier (long end-to-end proofs)

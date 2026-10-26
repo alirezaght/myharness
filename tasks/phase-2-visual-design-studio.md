@@ -45,11 +45,11 @@
 - [x] Approval writes the same immutable snapshot as the Phase 1 CLI gate
 
 ### P2-08 — Phase 2 acceptance
-- [ ] Scenario: a diagram with a wrong connection → comment → harness fixes it → approval only becomes possible once every comment is resolved
-- [ ] No regressions in the Phase 1 CLI flow
-- [ ] Docs and demo
+- [x] Scenario: a diagram with a wrong connection → comment → harness fixes it → approval only becomes possible once every comment is resolved
+- [x] No regressions in the Phase 1 CLI flow
+- [x] Docs and demo
 
 ## Phase exit checklist
-- [ ] All tasks done, all tests green
-- [ ] Demo recorded
-- [ ] Docs updated
+- [x] All tasks done, all tests green
+- [x] Demo recorded
+- [x] Docs updated

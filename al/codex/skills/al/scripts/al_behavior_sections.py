@@ -92,16 +92,20 @@ def validate(group, *, required=True):
         for key, allowed in expected.items():
             values = set(J.strings(scenario[key], "scenario " + key))
             if not values <= allowed:
-                refuse("scenario references unknown " + key)
+                refuse("scenario " + identifier + " references unknown " + key + ": " + ", ".join(sorted(values - allowed)))
             covered[key].update(values)
         if not scenario["outcome_ids"]:
             refuse("scenario omits observable outcome")
     for key in ("transition_ids", "outcome_ids", "failure_case_ids", "real_component_ids"):
         if covered[key] != expected[key]:
-            refuse("behavior scenarios omit required " + key)
+            missing = sorted(expected[key] - covered[key])
+            detail = ('; every preserve, reset, journey_end and persistence_observations item ID '
+                      'must appear in at least one scenario outcome_ids') if key == 'outcome_ids' else ''
+            refuse("behavior obligation " + str(group.get('id', '<unnamed>')) +
+                   " scenarios omit required " + key + ": " + ", ".join(missing) + detail)
     used_states = set(covered["initial_state_ids"])
     for transition in sections["transitions"].values():
         used_states.update((transition["from_state"], transition["to_state"]))
     if used_states != states:
-        refuse("behavior scenarios omit declared states")
+        refuse("behavior scenarios omit declared states: " + ", ".join(sorted(states - used_states)))
     return seen

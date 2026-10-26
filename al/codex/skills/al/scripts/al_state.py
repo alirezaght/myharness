@@ -92,7 +92,9 @@ def cmd_agent_failed(a, sid):
     elif parallel:
         lines.append("Other agent: unknown — AL must resolve the sibling's state before continuing")
     lines += [f"Error/Reason: {a.reason}",
-              f"Retry: {a.retry_safe} · budget used {used}/1"]
+              f"Failure kind: {st['failure']['kind']}",
+              f"Retry: {st['failure']['retry_safe']} · budget used {used}/1",
+              f"Next step: {st['failure']['next_step']}"]
     print("\n".join(lines))
 
 
@@ -101,6 +103,14 @@ def cmd_model_unavailable(a, sid):
     their approved fallback. Exits 4 when a role has no approved model left —
     AL must STOP with STATUS: STOPPED_WITH_BLOCKERS, never downgrade."""
     st = load(sid)
+    import al_failures
+    kind = al_failures.classify(a.reason)
+    if kind in {'model-refusal', 'permission'}:
+        al_schema.refuse('model fallback is not available for this failure. ' + al_failures.next_step(kind))
+    if kind == 'model-capacity' and not any(
+        r['model'] == a.model.strip().lower() for r in st.get('model_retry_history', [])
+    ):
+        al_schema.refuse('retry the same approved primary once with model-retry before recording capacity as unavailability')
     lines, blocked, switched = al_models.mark_unavailable(st, a.model, a.reason)
     refresh_active(st)
     if blocked:
@@ -174,7 +184,7 @@ def cmd_show(a, sid):
         print(json.dumps(st, indent=2))
 
 
-def main():
+def _main():
     ap = argparse.ArgumentParser(prog="al_state.py")
     ap.add_argument("--session")
     ap.add_argument("--recovery-file")
@@ -204,10 +214,15 @@ def main():
     al_review.register(sub)
     import al_retry
     al_retry.register(sub)
+    import al_failures
+    al_failures.register(sub)
+    import al_artifact_cli
+    al_artifact_cli.register(sub)
     s = sub.add_parser("agent-failed"); s.add_argument("agent"); s.add_argument("--reason", default="")
     s.add_argument("--peer"); s.add_argument("--peer-status", default="unknown",
                                              choices=["completed", "running", "failed", "none", "unknown"])
     s.add_argument("--retry-safe", default="undetermined", choices=["yes", "no", "undetermined"])
+    s.add_argument("--kind", default="auto", choices=al_failures.KINDS)
     s.set_defaults(fn=cmd_agent_failed)
     s = sub.add_parser("model-unavailable"); s.add_argument("model"); s.add_argument("--reason", default="")
     s.set_defaults(fn=cmd_model_unavailable)
@@ -271,10 +286,21 @@ def main():
         a.fn(a, sid)
     else:
         with locked(sid):
-            if a.cmd not in {"start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile","integration","recovery"} and not (a.cmd == "publication" and a.action in {"packet", "status"}):
+            if a.cmd not in {"start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile","integration","recovery","artifact"} and not (a.cmd == "publication" and a.action in {"packet", "status"}):
                 existing = load(sid)
                 if existing["status"] != "RUNNING": al_schema.refuse("run is not running; explicit resume required")
             a.fn(a, sid)
+
+
+def main():
+    """Normalize textual refusals to an explicit nonzero process exit for embedders."""
+    try:
+        return _main()
+    except SystemExit as error:
+        if error.code is None or isinstance(error.code, int):
+            raise
+        print(str(error.code), file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

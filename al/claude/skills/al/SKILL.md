@@ -30,23 +30,23 @@ If the block above is empty: print `AL · no task given — usage: /al <task spe
 
 ## Constants
 
-- `MAX_CORRECTION_ITERATIONS = 6` (also enforced mechanically: `$STATE correction` exit 3).
+- `MAX_CORRECTION_ITERATIONS = 6` (also enforced mechanically: `"${STATE[@]}" correction` exit 3).
 - `MAX_REWORK_PER_BATCH = 2` — returns to AL-Engineer *before* review, per batch
-  (`$STATE rework` exit 10; see **Rework and the fast path**).
+  (`"${STATE[@]}" rework` exit 10; see **Rework and the fast path**).
 - Agents (Agent tool `subagent_type` → model / effort, fixed in their frontmatter):
   `al-architect` Fable/MEDIUM · `al-designer` Fable/LOW · `al-engineer` Opus/MEDIUM ·
   `al-builder` Sonnet/HIGH. Fallbacks: `al-architect-fallback` Opus/HIGH ·
   `al-designer-fallback` Opus/MEDIUM (see **Model policy**). Read-only
   helper: `al-scout` Sonnet/MEDIUM — an optional accelerator with no authority,
   never a substitute for a role. The single source of truth is
-  `scripts/al_models.py`; `$STATE show --models` prints it.
+  `scripts/al_models.py`; `"${STATE[@]}" show --models` prints it.
 - State script: every new run goes through the protected managed launcher that the
   AL installation provides:
   `STATE="$HOME/.local/bin/alctl run --repository <repo-root> --platform claude --"`.
   `<repo-root>` is `git rev-parse --show-toplevel` (it must equal
   `$CLAUDE_PROJECT_DIR` when that is set); run every command from that directory.
   Inside this Claude conversation the launcher mints the AL run id at `start` and
-  every later `$STATE` call follows the conversation's active run. `start` prints the
+  every later `"${STATE[@]}"` call follows the conversation's active run. `start` prints the
   run id: hand agents that exact id as `--session <id>` (insert it before `--`), and
   pass it yourself whenever you must address a specific run. Native
   `$CLAUDE_SESSION_ID` and `$CLAUDE_CODE_SESSION_ID` values are conversation
@@ -72,7 +72,7 @@ state, or correctness is uncertain, execute sequentially.**
 Non-overlapping files are not enough: no dependency, no producer/consumer
 relationship, no consumption of an interface another agent is changing, disjoint
 writes, no indirect coupling, and no command that mutates shared working-tree
-state. Every `$STATE` guard that exits non-zero has already decided — take the
+state. Every `"${STATE[@]}"` guard that exits non-zero has already decided — take the
 sequential or stop branch, do not argue with it.
 
 ## Model policy (routing, fallback, and when NOT to fall back)
@@ -110,7 +110,7 @@ Cost control is the **classification's** job, never the model's: a SMALL task
 saves money by skipping the Designer, not by demoting the Architect.
 
 **On a genuine unavailability:**
-1. `$STATE model-unavailable <fable|opus|sonnet> --reason "<verbatim error>"`.
+1. `"${STATE[@]}" model-unavailable <fable|opus|sonnet> --reason "<verbatim error>"`.
 2. Print the script's banner verbatim — it emits exactly:
    `AL · Model fallback` / `<Model>/<EFFORT> unavailable` / `→ <Agent> · <Model>/<EFFORT>`.
 3. Re-invoke the SAME phase with the fallback `subagent_type` and the byte-identical
@@ -174,11 +174,11 @@ for AL-Architect, never authority, never a finding of record.
   Still invalid ⇒ agent failure (below). Never treat a partial result as success.
 - Any `OWNERSHIP_CONFLICTS` other than `none` ⇒ that work was deliberately left
   undone. Sequence it in the next phase; never leave it silently unfinished.
-- Any `CORE_FLAW_REPORTS` other than `none` ⇒ route it with `$STATE rework`
+- Any `CORE_FLAW_REPORTS` other than `none` ⇒ route it with `"${STATE[@]}" rework`
   (see **Rework and the fast path**). Never let the Builder's workaround stand as
   the answer.
 - Every `VERIFICATION` / `VERIFICATION_RUN` line must cite a ledger id
-  (`E<n>`). Check them with `$STATE evidence validate --claims "E3=PASS,..."`
+  (`E<n>`). Check them with `"${STATE[@]}" evidence validate --claims "E3=PASS,..."`
   before advancing; exit 14 ⇒ the claim is not evidence (no such run, log gone or
   edited, or a status that does not match). Treat that check as NOT RUN — never
   as a pass — and never accept a count, a log path or a nearby focused run in
@@ -190,14 +190,21 @@ for AL-Architect, never authority, never a finding of record.
   rows — plus the ORIGINAL specification. Spawn fresh only if it is gone.
 - A model-availability or entitlement error is NOT an agent failure — handle it
   under **Model policy** above.
+- A model-service content/safety refusal is not an approval request or model
+  unavailability. Report the exact refusal and preserve the checkpoint; do not
+  automatically retry or switch models to evade it. For an actual permission
+  denial, identify the denied operation and permission source, reuse existing
+  authorization where applicable, and ask only for a concrete missing permission.
+  `agent-failed --kind model-refusal|permission` records a non-retryable failure
+  with the appropriate next step; never describe either as exhausted retries.
 - Agent failure: run
-  `$STATE agent-failed <agent> --reason "<why>" [--peer <peer> --peer-status <completed|running|failed|none>] [--retry-safe <yes|no>]`
+  `"${STATE[@]}" agent-failed <agent> --reason "<why>" [--peer <peer> --peer-status <completed|running|failed|none>] [--retry-safe <yes|no>]`
   and print its block verbatim. In a parallel phase, first let the sibling
   finish (do not `interrupt_agent` a writer) and never report the phase as succeeded
-  because the sibling did. Retry at most once via `$STATE retry <agent> --reason
+  because the sibling did. Retry at most once via `"${STATE[@]}" retry <agent> --reason
   "<why>"` (exit 7 ⇒ STOP), and only if the failure was transient and the tree
   shows no half-applied edits from that agent. Otherwise re-run the phase
-  sequentially if the tree allows, else `$STATE stopped --reason ...` and finish
+  sequentially if the tree allows, else `"${STATE[@]}" stopped --reason ...` and finish
   with `STATUS: STOPPED_WITH_BLOCKERS`.
 - Read-only agents (Architect, Designer, Scout) must not change the tree. The
   Architect's Bash calls are additionally blocked by a PreToolUse guard
@@ -205,14 +212,14 @@ for AL-Architect, never authority, never a finding of record.
   all. Still capture `git status --porcelain` before and after each of their runs
   — including around a whole fan-out; a difference is reported as a warning in
   the final output (the user may be editing concurrently), and for a fan-out also
-  via `$STATE fanout --done --tree-changed`.
+  via `"${STATE[@]}" fanout --done --tree-changed`.
 
 ## Git safety
 
 Assume the working tree already contains the user's own changes. Never commit,
 push, force-push, stash, reset, revert, checkout, switch branches, rewrite
 unrelated changes, delete untracked files, or "clean the working tree" unless the
-user explicitly asks for it in the specification. `$STATE start` records
+user explicitly asks for it in the specification. `"${STATE[@]}" start` records
 `preexisting_changes`; pass that list to every implementing and reviewing agent
 so AL's changes stay distinguishable from the user's, and never blame AL's review
 on a pre-existing change. Concurrent writers are additionally forbidden
@@ -221,7 +228,7 @@ run, and any command that mutates shared working-tree state.
 
 ## Evidence ledger (verification is recorded, reused and checked)
 
-Every verification command runs through `$STATE evidence run`: AL — not the agent's
+Every verification command runs through `"${STATE[@]}" evidence run`: AL — not the agent's
 memory — records the argv, cwd, exit status, the full log, the test counts and a
 fingerprint of the command's **scope** (implementation, fixtures, contracts,
 dependency manifests, runtime config, plus hashed `--env` names). The status is
@@ -234,7 +241,7 @@ missing binary, timeout), or `TORN` (the scope moved during the run).
 - **Focused during work, broad once.** Corrections and rework run focused checks
   (`--tier focused`). The plan's broad suites run once against the stable
   candidate and again only for a concrete invalidation (STALE) or failure.
-- **Preflight before expensive suites.** `$STATE preflight --name <n> --check ...`
+- **Preflight before expensive suites.** `"${STATE[@]}" preflight --name <n> --check ...`
   checks the plan's `RUNTIME_PREREQUISITES` once (native libraries via a custom
   `-- <argv>`, loopback, an owned disposable DB/sidecar port, required env vars by
   name — values are never printed). A planned check with `--preflight <n>` refuses
@@ -243,7 +250,7 @@ missing binary, timeout), or `TORN` (the scope moved during the run).
   state through the framework's public runtime API (`Alpine.reactive`, not
   private internals) before the full browser suite.
 - **Overlap only when provably independent.** While a check runs, a narrowly
-  scoped fix may be written only if `$STATE overlap --area <running> --fix-files
+  scoped fix may be written only if `"${STATE[@]}" overlap --area <running> --fix-files
   ... --fix-commands ...` exits 0 (fix outside the running scope, no shared-state
   command, not at a barrier). Exit 5 ⇒ wait. Disjoint filenames alone are never
   enough — the scope covers fixtures, contracts, deps and config — and the run
@@ -257,7 +264,7 @@ check at the verification barrier — is a *rework*, not a re-plan. Batch every
 confirmed, independent defect into ONE return, then:
 
 ```
-$STATE rework --source <finalization|verification|core-flaw> --findings <n> \
+"${STATE[@]}" rework --source <finalization|verification|core-flaw> --findings <n> \
   --cause-demonstrated <yes|no> --local <yes|no> --contract-change <yes|no> \
   --scope-ambiguous <yes|no> --safety-decision <yes|no> --spec-conflict <yes|no> \
   [--repro E<n>]
@@ -268,7 +275,7 @@ a ledger run of ONE command that goes red on this defect — fast, deterministic
 driving the defect's code path and asserting its exact symptom (a failing
 barrier check is its own repro). **Exit 14 ⇒** no such red run (missing, PASS,
 log gone or edited): nothing is recorded and no budget is spent — record the
-repro with `$STATE evidence run`, or answer `--cause-demonstrated no`. A flaky
+repro with `"${STATE[@]}" evidence run`, or answer `--cause-demonstrated no`. A flaky
 or "it didn't crash" command is not a repro. The same command must go green
 before review: `evidence require` and `review-start` exit 13 while a repro is
 still red or stale.
@@ -288,7 +295,7 @@ still red or stale.
 
 Rework is counted separately from review corrections; both appear in the status
 line and the final output. A new review rejection opens a new rework batch, and
-`$STATE` prints that it did.
+`"${STATE[@]}"` prints that it did.
 
 ## State machine
 
@@ -298,7 +305,7 @@ Create an immutable task package containing the original request, accepted
 proposal/specification, provenance for acceptance, constraints, explicit ticket
 presence or absence, stable criterion IDs, and invariant IDs. A bare assent such
 as “yes” must point to the accepted proposal; it is not a specification. Start with
-`$STATE start --package-file <json> --review-mode task|whole-mr --target <rev>`.
+`"${STATE[@]}" start --package-file <json> --review-mode task|whole-mr --target <rev>`.
 Whole-MR mode must name its target branch or revision explicitly (normally
 `main`); never let an implicit `HEAD` target narrow the review to the latest edit.
 Substantive legacy `--spec`/`--spec-file` input is accepted only with an explicit
@@ -308,7 +315,7 @@ never rewrite the original package. Reviewer scope suggestions remain findings
 until the user amends the task.
 
 After `start`, register each user-reported seed in the active package's
-`reference/escape-seeds/` directory with `$STATE escape record --file <seed.json>`.
+`reference/escape-seeds/` directory with `"${STATE[@]}" escape record --file <seed.json>`.
 These two dated source-request seeds cover rollout omissions and earlier
 merge-request corrections. Preserve their `user-reported` provenance; treat them
 as review leads to investigate, not as independently verified incidents.
@@ -318,14 +325,14 @@ as review leads to investigate, not as independently verified incidents.
 After `spec-gate` and `classify`, and once a gate manifest is planned, writers stay
 blocked (`PROOF_ADMISSION_PENDING`) until the Architect's plan is admitted:
 
-1. `$STATE planning packet` prints the issued packet and a `report_template`. Every
+1. `"${STATE[@]}" planning packet` prints the issued packet and a `report_template`. Every
    identity, binding and routing field in the template is already filled.
 2. Hand the template and the packet to AL-Architect. It replaces every `FILL:` text
    and edits the example states, transitions, outcomes and scenarios so they
    describe the task's observable behavior. Its PLAN handoff returns that JSON.
-3. Save it and run `$STATE planning report --file <report.json>`. A report that still
+3. Save it and run `"${STATE[@]}" planning report --file <report.json>`. A report that still
    contains `FILL:` is refused. The output names `materialized_obligations`.
-4. `$STATE planning admit --file <materialized_obligations.stored_path>`.
+4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
 
 ### Record behavior observations (before review)
 
@@ -333,17 +340,17 @@ After implementation and its evidence pass, and before `review-start`, every
 scenario in the admitted plan needs one observation: `review-start` refuses with
 `missing current behavior scenario: <group>/<scenario>` until each exists.
 
-1. `$STATE behavior packet` prints the current packet and one
+1. `"${STATE[@]}" behavior packet` prints the current packet and one
    `observation_templates` entry per scenario still missing, with every binding
    filled.
 2. Replace each `FILL:` with the ledger ids of the passing runs that exercised
    the item, what the run showed, and for `assertion_locations` the test file,
    line and that file's SHA-256.
-3. `$STATE behavior observe --file <observation.json>` per scenario. An
+3. `"${STATE[@]}" behavior observe --file <observation.json>` per scenario. An
    observation still containing `FILL:` is refused.
 
 A planned check that was a mistake (a command or scope CI does not use) is
-withdrawn with `$STATE evidence retire --area <area> --reason <text>
+withdrawn with `"${STATE[@]}" evidence retire --area <area> --reason <text>
 [--replaced-by E<n>,...]`; its runs stay in the ledger and reviewers see the
 retirement. `clear` is handled by the launcher itself, so a run whose state can
 no longer be read can still be put aside.
@@ -524,7 +531,7 @@ approve around an unresolved failure or downgrade a model.
 
 ## Progress output
 
-Only the short transition lines and banners printed by `$STATE`, the counts, and
+Only the short transition lines and banners printed by `"${STATE[@]}"`, the counts, and
 the final output. Never paste agent transcripts or hidden reasoning; summarize
 results. Claude Code already shows running subagents in the transcript, `/tasks`
 and the status line — do NOT build any polling loop, progress poller or custom
@@ -593,7 +600,7 @@ Execution:
 each sequential choice; skipped stages and why; read-only fan-outs and worker
 counts>
 
-<$STATE show --models output, verbatim — states any fallback that occurred and
+<"${STATE[@]}" show --models output, verbatim — states any fallback that occurred and
 marks a deliberately skipped role "skipped">
 
 Caveats:
@@ -601,7 +608,7 @@ Caveats:
 conflicts that were sequenced | review oscillation that was stopped | core flaw
 reports that were routed>
 ```
-Then print `$STATE show --panel`. Do not commit; leave the working tree for the user.
+Then print `"${STATE[@]}" show --panel`. Do not commit; leave the working tree for the user.
 
 ## Rework 6 report, recovery, and command ownership rules
 
@@ -656,3 +663,22 @@ not an observed outcome. Action-only fixtures remain valid. See
 ## Execution events and scoped decisions
 
 For harness-bound runs, use the versioned event and scoped admission protocol in `reference/execution-integration.md`. Register actual agent/task activity, use task admission and the ordinary evidence/writer/review gates, and report blockers that need a developer decision. Never turn a report, host exit, or progress estimate into approval. Reconnect replays the existing run; resume targets its recorded native session.
+
+## Artifact reports and degraded tracking
+
+Use `artifact record --file PATH --kind consumer-discovery` to create the typed
+references required by consumer inventories. See [artifacts](reference/artifacts.md)
+and the adjacent artifact/consumer JSON schemas. Never skip proof admission.
+
+Supply a unique OUTPUT_ARTIFACT name with every agent handoff. Prefer the Harness
+`submit_output` tool or the host final-message file capture to a large transcript
+response; read the exact returned immutable artifact. Reports do not grant proof.
+
+If proof repair is blocked, `writer start --id ID --role ROLE --files PATHS
+--degraded --reason TEXT` is a supported tracking path after SPEC_READY,
+classification and current gate planning. It records scoped writer lifetimes
+and evidence in planning without admitting proof, review or approval. Close the
+writers, issue a fresh planning packet over the partially built implementation,
+and complete ordinary proof admission before advancing. Never edit outside an
+open writer or hand-edit runtime state. Refusals exit nonzero; preserve that exit
+status in shell wrappers (do not mask it with a later successful command).

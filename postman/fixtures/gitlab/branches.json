@@ -1,0 +1,4 @@
+[
+  {"name":"main","commit":{"id":"a1b2c3d4e5f6","short_id":"a1b2c3d4","title":"Synthetic base revision"},"protected":true,"default":true,"can_push":false,"web_url":"https://gitlab.example.com/example-group/my-project/-/tree/main"},
+  {"name":"al/run-42-delivery","commit":{"id":"d4e5f6a1b2c3","short_id":"d4e5f6a1","title":"Synthetic delivery revision"},"protected":false,"default":false,"can_push":true,"web_url":"https://gitlab.example.com/example-group/my-project/-/tree/al/run-42-delivery"}
+]

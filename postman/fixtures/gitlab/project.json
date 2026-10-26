@@ -1,0 +1,9 @@
+{
+  "id": 731,
+  "description": "Synthetic fixture only",
+  "name": "my-project",
+  "path": "my-project",
+  "path_with_namespace": "example-group/my-project",
+  "default_branch": "main",
+  "web_url": "https://gitlab.example.com/example-group/my-project"
+}

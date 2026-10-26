@@ -1,0 +1,11 @@
+version: 1
+name: gitlab-delivery
+port: 8787
+origin: https://gitlab.com
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true
+  - name: rate-limited
+    path: ./rate-limited.js

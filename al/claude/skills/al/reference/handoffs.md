@@ -29,8 +29,8 @@ PRE-EXISTING WORKING-TREE CHANGES (user's, not AL's — do not touch or revert):
 
 EVIDENCE (writers only — omit for read-only agents):
 Run every check you report through the AL ledger, never bare:
-  <the run's $STATE launcher prefix> evidence run --area <a> [--tier focused --scope <paths> -- <argv>]
-Planned checks: <`$STATE evidence status` table, or "none yet">
+  <the run's "${STATE[@]}" launcher prefix> evidence run --area <a> [--tier focused --scope <paths> -- <argv>]
+Planned checks: <`"${STATE[@]}" evidence status` table, or "none yet">
 Report each check as `E<n> · <area> → PASS | FAIL | EMPTY | INFRA` (the ledger's
 status and counts, verbatim) or `<check> → NOT RUN — <why>`. Never retype a count,
 never cite a log the ledger did not write, never present a focused run as the
@@ -38,7 +38,7 @@ broad suite. A VALID PASS is reused automatically — do not re-run it by hand.
 ```
 
 The ID in an EVIDENCE block is the immutable AL run ID the supervisor chose for
-`$STATE start` and passes to the launcher on every call. Native harness or
+`"${STATE[@]}" start` and passes to the launcher on every call. Native harness or
 conversation IDs are attribution only and must never be passed as `--session`.
 
 Claude's native `start` inspects an existing run only to validate its pointer,
@@ -103,7 +103,7 @@ Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.
 
 ## al-architect · PLANNING REPORT
 After `classify` and `gates plan`, continue the same Architect (SendMessage) with the
-output of `$STATE planning packet`: the packet and its `report_template`.
+output of `"${STATE[@]}" planning packet`: the packet and its `report_template`.
 State: `Return the report_template as JSON with every FILL: text replaced and the
 example states, transitions, outcomes, failures and scenarios rewritten to describe
 this task's observable behavior. Keep every identity, binding and routing field
@@ -114,7 +114,7 @@ still containing `FILL:` is refused.
 ## al-architect · MODE: RESOLVE_CONFLICT
 Add: `MODE: RESOLVE_CONFLICT`, `APPROVED PLAN: <plan>`, `INVARIANTS`,
 `ACCEPTANCE_CRITERIA`, and either `PLAN_CONFLICT REPORTED BY AL-DESIGNER:
-<verbatim>` or — for a pre-review defect `$STATE rework` sent here (exit 12) —
+<verbatim>` or — for a pre-review defect `"${STATE[@]}" rework` sent here (exit 12) —
 `DEFECT NEEDING A DECISION: <verbatim CORE_FLAW_REPORTS item or failing check,
 with its ledger id and log path>` plus `WHY NOT FAST PATH: <rework's reasons>`.
 State: `The conflict may mean your plan was wrong. Say so if it does.`
@@ -223,8 +223,8 @@ Required: `SCOUT_ANGLE`, `OBSERVATIONS`, `NOTHING_FOUND`, `COVERAGE`.
 ## al-architect · MODE: REVIEW (two context-isolated invocations)
 
 The runtime owns stage separation. For fresh review, pass only the frozen fresh
-packet from `$STATE review-packet --stage fresh`; it excludes plan, pseudocode,
-and implementer summaries. Save a structured report with `$STATE review-fresh
+packet from `"${STATE[@]}" review-packet --stage fresh`; it excludes plan, pseudocode,
+and implementer summaries. Save a structured report with `"${STATE[@]}" review-fresh
 --file <report.json>` before creating the comparison invocation. Start comparison
 with `review-compare-start --plan <approved-plan-file>` and add
 `--pseudocode <approved-pseudocode-file>` when the route required a Designer.
@@ -285,3 +285,19 @@ Builder answers on the FINALIZATION contract; parallel runs add
 `OWNERSHIP_CONFLICTS`). A Builder correcting in parallel with the Engineer runs
 only verification scoped to its own findings — AL re-runs the full
 VERIFICATION_COMMANDS at the barrier.
+
+## Named report output
+
+OUTPUT_ARTIFACT: <unique JSON/Markdown filename for this invocation>
+For Harness-native agents, call `submit_output` with this name, final content and
+the current graph revision; return only its artifact reference. This permits a
+report outbox, not source edits by read-only agents. Otherwise use an explicitly
+authorized report file outside the repository or the host final-message capture
+(for Codex CLI, `--output-last-message FILE`). If the host cannot save it, return
+`OUTPUT_BLOCKED` and the exact final report; never claim the file exists or scrape
+a matching prompt from transcript text. The supervisor records it with `artifact
+output --name NAME --file FILE` and retrieves it with `artifact show --name NAME`.
+
+Always include the EVIDENCE block printed by `writer start` in writer handoffs.
+Under Harness, workers run registered ledger areas through `al_command` with
+`["evidence", "run", "--area", "<area>"]`; the controller binds their own writer.

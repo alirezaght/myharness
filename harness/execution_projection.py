@@ -18,7 +18,11 @@ def _known(conn, eid, family, identity):
 
 def _project(conn, execution, event):
     eid, kind, payload = execution["id"], event["kind"], event["payload"]
-    if kind == "run.started":
+    if kind == "delivery.correction.acknowledged":
+        from harness.delivery_projection import acknowledge_correction
+
+        acknowledge_correction(conn, execution, payload)
+    elif kind == "run.started":
         conn.execute("UPDATE executions SET status='Running' WHERE id=?", (eid,))
     elif kind == "run.ended":
         if payload["status"] != "RUNNING":
@@ -189,7 +193,10 @@ def ingest_event(conn, execution_id, event):
                 if len(old) == 1 and old[0]["record"] == raw:
                     return False
                 raise ExecutionConflict("conflicting duplicate execution event")
-            if execution["status"] in {"Completed", "Failed"}:
+            if (
+                execution["status"] in {"Completed", "Failed"}
+                and event["kind"] != "delivery.correction.acknowledged"
+            ):
                 raise ExecutionConflict("terminal execution cannot accept new work events")
             if event["sequence"] != execution["cursor"] + 1:
                 raise ExecutionConflict("execution event sequence gap")

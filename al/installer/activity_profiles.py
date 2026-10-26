@@ -28,7 +28,7 @@ checkpoints stopping_checkpoint comparison_artifacts gate_recovery gate_recovery
 recovery_replans resumes retry_history native_conversation_id integration gate_recovery_supersessions task_attribution verification_preparations
 runtime_origin proof_admission planning_authorship planning_history behavior_observations editorial_history
 conflict_resolution conflict_resolution_history notes_triage publication_authorizations publication_records
-baseline_exceptions gate_retentions'''.split())
+baseline_exceptions gate_retentions delivery_completion_history'''.split())
 
 
 def decode(raw):
@@ -193,10 +193,15 @@ def _modern(value, path, provenance):
     # New pinned runs bind their state to an independently protected launcher transaction.
     origin = value.get('runtime_origin')
     if origin is not None:
-        if (not isinstance(origin, dict) or origin.get('kind') != 'run-pin-binding-v1' or origin.get('schema_version') != 1
+        if (not isinstance(origin, dict) or origin.get('schema_version') not in {1, 2} or origin.get('kind') != 'run-pin-binding-v' + str(origin.get('schema_version'))
                 or origin.get('run_id') != value['run_id'] or not isinstance(origin.get('pin'), dict)
                 or not re.fullmatch(r'[0-9a-f]{64}', str(origin.get('publication_transaction')))):
             raise ValueError('invalid pinned runtime origin')
+        if origin['schema_version'] == 2:
+            expected = Path(provenance['repository']['root']) / ('.' + provenance['platform']) / 'al-runtime' / 'sessions' / value['session_id']
+            if (origin.get('runtime_layout') != 'harness-session-directory-v1'
+                    or origin.get('runtime_directory') != str(expected) or path.parent != expected):
+                raise ValueError('private runtime identity/layout differs')
         admission = value.get('proof_admission')
         if not isinstance(admission, dict) or admission.get('status') not in {'pending', 'admitted'}:
             raise ValueError('pinned run lacks a valid proof admission')

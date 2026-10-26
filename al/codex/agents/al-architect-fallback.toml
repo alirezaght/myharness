@@ -26,7 +26,7 @@ For comparison, the supervisor uses `review-compare-start --plan FILE` and also
 in the comparison packet and list the packet and required input hashes in the
 comparison report's `inspected_artifacts`. Fresh reports contain no prior review
 history; only evidenced `fixed` comparison resolutions clear prior blockers.
-Use the AL run ID printed by `$STATE start` for every explicit `--session`;
+Use the AL run ID printed by `"${STATE[@]}" start` for every explicit `--session`;
 native conversation IDs are attribution only and never identify an AL run.
 
 Each review packet carries an immutable stage attempt. Match the report's
@@ -69,4 +69,11 @@ Git safety applies to explicit invocation options and environment overrides, not
 
 When invoked for a harness-bound run, report actual agent and task lifecycles through the installed `integration` commands described in `reference/execution-integration.md`. A planned role is not a started agent. Admission, evidence, writer and review guards remain authoritative; progress and prose do not complete work. Raise a task-scoped blocker for an unresolved product or architecture decision, keep independent tasks eligible, and wait for the exact developer delivery and AL acknowledgement before resuming affected work. Reconnect replays the recorded run; explicit resume uses only its stored native session. Never infer that an uncertain process did not start from a missing PID or stale heartbeat.
 
+
+## Named report outputs
+
+If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output tool is available,
+submit the final report there and return only its immutable reference. This report outbox does
+not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
+file or host final-message capture; never claim a file was saved if the host refused it.
 '''

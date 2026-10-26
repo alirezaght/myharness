@@ -22,6 +22,7 @@ def _al(session, *args):
         "claude",
         "--session",
         session,
+        "--existing-run",
         "--",
         *args,
     ]
@@ -65,6 +66,21 @@ def run() -> int:
     argv = sys.argv
     native_id = argv[argv.index("--session-id") + 1]
     uuid.UUID(native_id)
+    # The external provider is simulated; it still performs the trusted native
+    # SessionStart lifecycle before the real worker observes its session fact.
+    import shlex
+
+    if "--settings" in argv:
+        settings = json.loads(Path(argv[argv.index("--settings") + 1]).read_bytes())
+        for entry in settings["hooks"]["SessionStart"]:
+            for hook in entry["hooks"]:
+                subprocess.run(
+                    shlex.split(hook["command"]) + hook.get("args", []),
+                    input=json.dumps({"hook_event_name": "SessionStart", "session_id": native_id}),
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
 
     _report(
         session,
@@ -182,7 +198,7 @@ def run() -> int:
         "B completed with real pytest evidence", encoding="utf-8"
     )
 
-    source = repo / ".claude/al-runtime" / f"{session}.json"
+    source = repo / ".claude/al-runtime/sessions" / session / f"{session}.json"
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         state = json.loads(source.read_text(encoding="utf-8"))
@@ -205,6 +221,9 @@ def run() -> int:
 
 
 def main() -> int:
+    if "--version" in sys.argv:
+        print("2.1.310 (fixture Claude Code)")
+        return 0
     try:
         return run()
     except Exception:

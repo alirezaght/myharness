@@ -12,10 +12,27 @@ _CLAUDE = """#!/usr/bin/env python3
 import json
 import sys
 import uuid
+import shlex
+import subprocess
+import os
+from pathlib import Path
 
 args = sys.argv
+if "--version" in args:
+    print("2.1.310 (fixture Claude Code)")
+    raise SystemExit(0)
 native_id = args[args.index("--session-id") + 1]
 uuid.UUID(native_id)
+if os.environ.get("HARNESS_FIXTURE_CALL_COUNT"):
+    counter = Path(os.environ["HARNESS_FIXTURE_CALL_COUNT"])
+    counter.write_text(str(int(counter.read_text()) + 1 if counter.exists() else 1))
+if "--settings" in args:
+    settings = json.load(open(args[args.index("--settings") + 1]))
+    for entry in settings.get("hooks", {}).get("SessionStart", []):
+        for hook in entry["hooks"]:
+            subprocess.run(shlex.split(hook["command"]) + hook.get("args", []),
+                input=json.dumps({"hook_event_name":"SessionStart", "session_id":native_id}),
+                text=True, check=True, capture_output=True)
 print(json.dumps({"type": "system", "session_id": native_id}), flush=True)
 print(json.dumps({"type": "result", "session_id": native_id, "is_error": False}), flush=True)
 """

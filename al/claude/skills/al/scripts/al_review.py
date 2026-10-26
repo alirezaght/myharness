@@ -80,6 +80,8 @@ def cmd_packet(a,sid):
         data.update(fresh=A.read_json(r['fresh']),prior_findings=prior_findings(st),comparison_artifacts=st.get('comparison_artifacts',[]),approved_inputs=al_comparison.packet(st))
         data['comparison_contents'] = [{'artifact':ref,'content':A.read(ref).decode(errors='replace')} for ref in data['comparison_artifacts']]
     data=Behavior.packet(st,data)
+    import al_review_rules
+    data['repository_review_rules']=al_review_rules.capture(st,sid)
     raw=json.dumps(data,sort_keys=True).encode(); ref=A.snapshot_bytes(sid,raw,'review-packet-'+a.stage+('-v2' if Behavior.enabled(st) else ''),'runtime')
     r['packets'][a.stage]=ref; al_store.save(sid,st)
     if a.output: Path(a.output).write_bytes(raw)

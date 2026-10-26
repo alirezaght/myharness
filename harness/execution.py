@@ -80,6 +80,7 @@ def start_execution(controller, task_id, *, host="claude", specs=None, launch=Tr
             }
             envelope = {
                 "schema_version": 1,
+                "runtime_layout": "harness-session-directory-v1",
                 "execution_id": eid,
                 "task_id": task_id,
                 "approval": {**binding, "path": approval.path},
@@ -97,6 +98,9 @@ def start_execution(controller, task_id, *, host="claude", specs=None, launch=Tr
             if len(canonical(envelope).encode()) > MAX_HANDOFF:
                 raise ValueError("approved execution handoff exceeds the 4 MiB limit")
             handoff = runtime / "handoff.json"
+            from harness.execution_bootstrap import authority_snapshot
+
+            authority_snapshot(runtime)
             hh = publish(handoff, envelope)
             publish(runtime / "task-package.json", package)
             saved, created = reserve_execution(

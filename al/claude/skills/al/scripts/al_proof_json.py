@@ -45,8 +45,16 @@ def loads(content):
 
 
 def closed(value, fields, label):
-    if not isinstance(value, dict) or set(value) != set(fields):
-        refuse("invalid closed " + label)
+    if not isinstance(value, dict):
+        refuse("invalid closed " + label + ": expected an object")
+    if set(value) != set(fields):
+        missing, unexpected = sorted(set(fields) - set(value)), sorted(set(value) - set(fields))
+        detail = []
+        if missing: detail.append('missing fields: ' + ', '.join(missing))
+        if unexpected: detail.append('unexpected fields: ' + ', '.join(unexpected))
+        if label == 'proof artifact reference':
+            detail.append('create the six-field reference with artifact record --file PATH --kind KIND')
+        refuse("invalid closed " + label + ": " + '; '.join(detail))
     return value
 
 

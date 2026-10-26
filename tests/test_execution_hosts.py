@@ -1,6 +1,5 @@
 import os
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -29,7 +28,9 @@ def test_fixed_native_argv_and_explicit_resume():
         native_identity("codex", b'{"type":"thread.started","thread_id":"bad"}')
 
 
-def test_real_external_host_exit_zero_is_incomplete(controller, sample_repo, monkeypatch, tmp_path):
+def test_real_external_host_exit_zero_is_incomplete(
+    controller, sample_repo, monkeypatch, tmp_path, launched
+):
     _, eid = approved_execution(controller, sample_repo, monkeypatch)
     source = Path(__file__).resolve().parents[1]
     package = sample_repo / ".claude/skills/al"
@@ -37,15 +38,12 @@ def test_real_external_host_exit_zero_is_incomplete(controller, sample_repo, mon
     shutil.copytree(source / "al/claude/agents", sample_repo / ".claude/agents/al")
     binary = tmp_path / "bin"
     binary.mkdir()
-    fake = binary / "claude"
+    (binary / "alctl").symlink_to(launched[3])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-fixture-provider-key")
+    from tests.native_provider_fixture import install_fake_claude
+
     # A provider process with no semantic AL result cannot complete implementation.
-    fake.write_text(
-        f"#!{sys.executable}\n"
-        "import sys,json\n"
-        "sys.stdin.read()\n"
-        'print(json.dumps({"type":"result","subtype":"success"}))\n'
-    )
-    fake.chmod(0o700)
+    install_fake_claude(binary)
     monkeypatch.setenv("PATH", str(binary) + os.pathsep + os.environ["PATH"])
     controller.conn.execute(
         "UPDATE executions SET status='WorkerOwned',worker_token='owner' WHERE id=?", (eid,)

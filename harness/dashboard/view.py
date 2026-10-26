@@ -56,6 +56,14 @@ def _task_view(
     from harness.dashboard.execution_view import task_execution
 
     execution = task_execution(controller, task.id)
+    if execution is not None:
+        delivery = controller.conn.execute(
+            "SELECT 1 FROM deliveries WHERE execution_id=?", (execution["id"],)
+        ).fetchone()
+        if delivery is not None:
+            from harness.delivery_store import delivery_view
+
+            execution["delivery"] = delivery_view(controller.conn, execution["id"])
     center = approval_center(
         controller, task, store, shown["pending_approvals"], shown["resume"]["approval"]
     )

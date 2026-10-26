@@ -298,7 +298,10 @@ function renderTask(task) {
   list.append(el("dt", "Spec directory"), directory);
   list.append(el("dt", "Latest activity"), el("dd", activityText(task.latest_activity)));
   section.append(list, renderApprovalCenter(task));
-  if (task.execution) section.append(renderExecution(task.id, task.execution));
+  if (task.execution) {
+    section.append(renderExecution(task.id, task.execution));
+    if (task.execution.delivery) section.append(renderDelivery(task.execution.delivery));
+  }
   section.append(renderResume(task.resume));
   section.append(
     renderSpec(task.spec, task.phase),
@@ -324,9 +327,9 @@ function render(data) {
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
   const content = data.task ? renderTask(data.task) : renderNotice(data.notice);
-  withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() =>
+  withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(() =>
     main.replaceChildren(renderNav(data.tasks, selected), content),
-  )));
+  ))));
 }
 
 function renderError(message) {

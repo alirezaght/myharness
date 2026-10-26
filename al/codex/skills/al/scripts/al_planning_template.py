@@ -19,7 +19,7 @@ def _fill(what):
     return PLACEHOLDER + ' ' + what
 
 
-def template(packet_ref, value):
+def template(packet_ref, value, *, partially_built=False):
     reference = value['task_package']
     package = J.read(reference)
     criteria = list(package.get('criteria', []))
@@ -29,7 +29,8 @@ def template(packet_ref, value):
         'id': 'primary-behavior',
         'criterion_ids': criteria,
         'requirement_refs': registry,
-        'observable_outcome': _fill('the externally observable result this task delivers'),
+        'observable_outcome': _fill('the externally observable result; every preserve, reset, journey_end '
+                                    'and persistence_observations item ID must occur in at least one scenario outcome_ids'),
         'applicability': {'status': 'required', 'reason': _fill('why this behavior is required by the specification')},
         'initial_state': _section([{'id': 'before', 'description': _fill('state before the change')},
                                    {'id': 'after', 'description': _fill('state after the change')}],
@@ -60,7 +61,10 @@ def template(packet_ref, value):
                                                    _fill('simulated boundaries')),
         # When changed exports have consumers: applicability 'applicable' and entries shaped
         # {id, role, kind, contract, locations, source_refs}.
-        'consumer_inventory': {'applicability': 'not_applicable', 'reason': _fill('consumers of changed exports, or why none'),
+        'consumer_inventory': {'applicability': 'not_applicable', 'reason': _fill('consumers of changed exports, or why none; '
+            'entries have id, role (producer|consumer), kind (code|link|message|export|other), contract, '
+            'locations (string array), source_refs (typed artifact references). Create discovery_refs/source_refs '
+            'with artifact record --file PATH --kind consumer-discovery; see reference/artifacts.md'),
                                'entries': [], 'discovery_refs': [], 'uncertainties': []},
         # Every journey_end, preserve and persistence item appears in some scenario's outcome_ids.
         'scenarios': [{'id': 'happy-path', 'initial_state_ids': ['before'], 'transition_ids': ['change'],
@@ -76,7 +80,8 @@ def template(packet_ref, value):
         'binding': {key: binding[key] for key in ('repository_identity', 'session_id', 'run_id', 'requirement_lineage_hash')},
         'authorship': {'role': 'al-architect', 'planning_occurrence': binding['planning_occurrence'], 'report_ref': None},
         'criteria_registry': registry,
-        'implementation_context': {'status': 'not_started', 'observation_ref': None},
+        'implementation_context': {'status': 'partially_built' if partially_built else 'not_started',
+                                   'observation_ref': value['source_observation'] if partially_built else None},
         'obligations': [group],
     }
     behavior['binding']['document_hash_at_authoring'] = binding['document_hash']

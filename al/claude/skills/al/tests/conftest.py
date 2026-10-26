@@ -91,7 +91,7 @@ def cli_process(repo, launcher):
 
 @pytest.fixture
 def cli(monkeypatch, capsys, launcher, repo):
-    """Invoke `al_state.main()` in-process. Returns (result, stdout, stderr).
+    """Invoke `al_state._main()` in-process. Returns (result, stdout, stderr).
 
     `result` is `0` on a normal return, the int passed to a guard's
     `sys.exit(<int>)`, or the string passed to an argument-error
@@ -108,9 +108,9 @@ def cli(monkeypatch, capsys, launcher, repo):
         monkeypatch.setattr(sys, "argv", ["al_state.py", "--session", session, *args])
         try:
             if args[:1] == ('inspect',) or args[:2] == ('integration', 'capabilities'):
-                al_state.main()
+                al_state._main()
             else:
-                launcher.run(Path.cwd(), session, args[:1] == ('start',), al_state.main)
+                launcher.run(Path.cwd(), session, args[:1] == ('start',), al_state._main)
             result = 0
         except SystemExit as exc:
             result = exc.code

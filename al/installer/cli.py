@@ -20,6 +20,8 @@ def parser():
     pinned = sub.add_parser('run', help='run AL through its protected immutable runtime')
     pinned.add_argument('--repository', required=True)
     pinned.add_argument('--platform', choices=('codex', 'claude'), required=True)
+    pinned.add_argument('--existing-run', action='store_true')
+    pinned.add_argument('--session-directory', action='store_true')
     pinned.add_argument('--session', help='AL run id; inside a Claude conversation it may be omitted')
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
     for name in ('source-proof','replan-proof','compatibility-readiness'):
@@ -88,7 +90,7 @@ def main(argv=None):
         if args.command == 'run':
             from .runtime_run import run
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
-            return run(args.repository, args.platform, args.session, arguments)
+            return run(args.repository, args.platform, args.session, arguments, existing_run=args.existing_run, private_session=args.session_directory)
         if args.command == 'source-proof':
             from .terminal_source import terminal_source
             result = terminal_source(args.repository, session=args.session, run=args.run, platform=args.platform)

@@ -10,6 +10,8 @@ Escape leads retain their recorded provenance: `user-reported` means the user
 described the class, not that the runtime independently reproduced an incident.
 Investigate them within scope and never treat them as current candidate evidence.
 
+`repository_review_rules` includes repository instructions, hook and gate rule sources, and their statically referenced local text files. Each entry carries its path, content hash, immutable artifact reference and contents. Discovery never executes a hook. Bounded or unreadable sources appear in `omissions` for the reviewer to resolve; an empty list does not certify rules outside this discovery surface. These are repository-owned rules, with no universal project-specific rule identifiers added by AL.
+
 The comparison invocation receives a different packet and a new invocation ID.
 Start it with `review-compare-start --plan FILE`; also pass `--pseudocode FILE`
 when the route required a Designer. Optional `--approval-source TEXT` records

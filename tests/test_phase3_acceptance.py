@@ -69,6 +69,7 @@ def _al(env, repo, session, *args):
         "claude",
         "--session",
         session,
+        *(["--session-directory"] if args and args[0] == "start" else ["--existing-run"]),
         "--",
         *args,
     ]
@@ -386,7 +387,7 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
         diagnostic_summary = [
             {"channel": row["channel"], "text": redact(row["text"])} for row in logs
         ]
-        source_path = repo / ".claude/al-runtime" / f"{session}.json"
+        source_path = repo / ".claude/al-runtime/sessions" / session / f"{session}.json"
         source_identity = {}
         if source_path.is_file():
             source_state = json.loads(source_path.read_text(encoding="utf-8"))

@@ -10,7 +10,7 @@ dependencies = []
 harness = "harness.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.9"]
+dev = ["pytest>=8", "ruff>=0.9", "jsonschema>=4,<5"]
 
 [build-system]
 requires = ["uv_build>=0.10,<0.11"]
@@ -30,4 +30,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["browser: headless-Chrome end-to-end checks, run by the browser workflow"]
+markers = [
+    "browser: headless-Chrome end-to-end checks, run by the browser workflow",
+    "native: exact-version installed CLI integration; skipped when unavailable",
+]

@@ -10,13 +10,77 @@ MAX_TEXT = 16384
 MAX_LOGS = 200
 
 
-def redact(text):
+def redact(text, *, secrets=()):
+    value = str(text)
+    for secret in sorted((s for s in secrets if s), key=len, reverse=True):
+        value = value.replace(secret, "[redacted]")
     value = re.sub(
-        r"(?i)(authorization\s*:\s*(?:bearer\s+)?|(?:api[_-]?key|token|secret|password)\s*[=:]\s*)[^\s,;]+",
+        r"(?is)-----BEGIN [^-\r\n]*PRIVATE KEY-----.*?(?:-----END [^-\r\n]*PRIVATE KEY-----|$)",
+        "[private key redacted]",
+        value,
+    )
+    value = re.sub(
+        r'(?i)("(?:[^"\\]*)(?:password|secret|token|api[_-]?key|private[_-]?key)'
+        r'(?:[^"\\]*)"\s*:\s*)"(?:[^"\\]|\\.)*"',
+        r'\1"[redacted]"',
+        value,
+    )
+    value = re.sub(r"(https?://)[^/@\s]+:[^/@\s]+@", r"\1[redacted]@", value)
+    value = re.sub(
+        r"(?i)((?:authorization|private-token|x-api-key)\s*:\s*(?:bearer\s+)?|"
+        r"(?:api[_-]?key|access_token|token|secret|password)\s*[=:]\s*)[^\s,;\"&]+",
         r"\1[redacted]",
-        str(text),
+        value,
     )
     return value[:MAX_TEXT]
+
+
+def redact_value(value, *, secrets=()):
+    if isinstance(value, dict):
+        return {
+            str(k): (
+                "[redacted]"
+                if re.search(
+                    r"(?i)authorization|password|secret|token|api.?key|private.?key", str(k)
+                )
+                else redact_value(v, secrets=secrets)
+            )
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [redact_value(v, secrets=secrets) for v in value]
+    return redact(value, secrets=secrets) if isinstance(value, str) else value
+
+
+class StreamRedactor:
+    """Retain a bounded overlap so split credentials never reach retained output."""
+
+    def __init__(self, secrets=()):
+        self.secrets = tuple(s for s in secrets if s)
+        self.pending = ""
+        self.private_key = False
+
+    def feed(self, text, *, final=False):
+        self.pending += text
+        # Line buffering also handles credential headers split across chunks.
+        if not final and "\n" not in self.pending:
+            if len(self.pending) > MAX_TEXT:
+                self.pending = "[oversized diagnostic redacted]"
+            return ""
+        cut = len(self.pending) if final else self.pending.rfind("\n") + 1
+        lines = []
+        for line in self.pending[:cut].splitlines(keepends=True):
+            if re.search(r"-----BEGIN [^-\r\n]*PRIVATE KEY-----", line):
+                self.private_key = True
+                lines.append("[private key redacted]\n")
+            if self.private_key:
+                if re.search(r"-----END [^-\r\n]*PRIVATE KEY-----", line):
+                    self.private_key = False
+                continue
+            lines.append(line)
+        result = redact("".join(lines), secrets=self.secrets)
+        self.pending = self.pending[cut:]
+        return result
 
 
 def append_log(conn, execution_id, channel, text):

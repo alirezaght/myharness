@@ -26,13 +26,18 @@ class Owner:
         self.defer=True
         try:
             self.spawned_at=time.time()
-            self.proc=subprocess.Popen(*args,**kwargs,start_new_session=True)
+            import al_harness_process
+            self.proc=al_harness_process.popen(*args,**kwargs,start_new_session=True)
         finally:self.defer=False
         if self.reason:raise KeyboardInterrupt
         return self.proc
 
     def completion(self):
         """No reusable proof when any owned group member or inspection doubt remains."""
+        if self.proc is not None and hasattr(self.proc, 'completion'):
+            return dict(self.proc.completion(), ownership='private-Harness-owned-Popen', token=self.token,
+                        pid=self.proc.pid, pgid=self.proc.pid, owner_pid=os.getpid(),
+                        spawned_at=self.spawned_at, observed_at=time.time())
         errors=[];absent=False
         if self.proc is not None and self.proc.poll() is not None:
             try:os.killpg(self.proc.pid,0)
@@ -89,6 +94,7 @@ class Owner:
 
 
 def stop(proc):
+    if hasattr(proc, 'cancel'):return proc.cancel()
     try:os.killpg(proc.pid,signal.SIGTERM)
     except ProcessLookupError:pass
     try:proc.wait(timeout=1)

@@ -172,7 +172,9 @@ def _cdp_call(sock: socket.socket, call_id: int, method: str, params: dict | Non
             return reply.get("result", {})
 
 
-def _cdp_capture(server, profile: Path, name: str, width: int, height: int, task_id: str) -> dict:
+def _cdp_capture(
+    server, profile: Path, name: str, width: int, height: int, task_id: str, *, delivery=False
+) -> dict:
     directory = Path(os.environ["HARNESS_DASHBOARD_SCREENSHOT_DIR"])
     directory.mkdir(parents=True, exist_ok=True)
     shot = directory / name
@@ -327,7 +329,11 @@ def _cdp_capture(server, profile: Path, name: str, width: int, height: int, task
         )
         shot.write_bytes(base64.b64decode(capture["data"]))
 
-        overview_shot = directory / name.replace("execution-", "execution-overview-", 1)
+        overview_shot = directory / (
+            name.replace("execution-", "execution-overview-", 1)
+            if name.startswith("execution-")
+            else name.replace(".png", "-overview.png")
+        )
         call(
             "Runtime.evaluate",
             {
@@ -349,7 +355,11 @@ def _cdp_capture(server, profile: Path, name: str, width: int, height: int, task
         )
         overview_shot.write_bytes(base64.b64decode(overview["data"]))
 
-        graph_shot = directory / name.replace("execution-", "execution-graph-", 1)
+        graph_shot = directory / (
+            name.replace("execution-", "execution-graph-", 1)
+            if name.startswith("execution-")
+            else name.replace(".png", "-graph.png")
+        )
         call(
             "Runtime.evaluate",
             {
@@ -368,6 +378,51 @@ def _cdp_capture(server, profile: Path, name: str, width: int, height: int, task
             },
         )
         graph_shot.write_bytes(base64.b64decode(graph["data"]))
+        artifacts = [shot, overview_shot, graph_shot]
+        delivery_metrics = None
+        if delivery:
+            delivery_metrics = (
+                call(
+                    "Runtime.evaluate",
+                    {
+                        "expression": """(async () => {
+                    let panel = document.getElementById('delivery');
+                    const link = panel.querySelector('a');
+                    link.focus();
+                    const href = link.href;
+                    await refreshDashboard();
+                    panel = document.getElementById('delivery');
+                    panel.scrollIntoView({block: 'start'});
+                    return {text: panel.textContent,
+                        focusedLink: document.activeElement.href === href,
+                        unsafeNodes: panel.querySelectorAll('img,script,iframe').length,
+                        unsafeLinks: [...panel.querySelectorAll('a')].filter(a =>
+                            !/^https?:/.test(a.href) || a.rel !== 'noopener noreferrer').length,
+                        right: panel.getBoundingClientRect().right};
+                })()""",
+                        "awaitPromise": True,
+                        "returnByValue": True,
+                    },
+                )
+                .get("result", {})
+                .get("value", {})
+            )
+            for position in ("start", "end"):
+                call(
+                    "Runtime.evaluate",
+                    {
+                        "expression": "document.getElementById('delivery').scrollIntoView({block: '"
+                        + position
+                        + "'})"
+                    },
+                )
+                capture = call(
+                    "Page.captureScreenshot",
+                    {"format": "png", "fromSurface": True, "captureBeyondViewport": False},
+                )
+                path = directory / name.replace(".png", "-panel-" + position + ".png")
+                path.write_bytes(base64.b64decode(capture["data"]))
+                artifacts.append(path)
         sock.close()
     finally:
         process.terminate()
@@ -376,7 +431,7 @@ def _cdp_capture(server, profile: Path, name: str, width: int, height: int, task
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=3)
-    for artifact in (shot, overview_shot, graph_shot):
+    for artifact in artifacts:
         assert artifact.is_file() and artifact.stat().st_size > 1024
     import hashlib
 
@@ -390,9 +445,10 @@ def _cdp_capture(server, profile: Path, name: str, width: int, height: int, task
         "global_horizontal_overflow": resources["documentWidth"] > resources["viewportWidth"],
         "controls": resources["controls"],
         "graph": resources["graph"],
+        "delivery": delivery_metrics,
         "screenshots": {
             str(artifact): hashlib.sha256(artifact.read_bytes()).hexdigest()
-            for artifact in (shot, overview_shot, graph_shot)
+            for artifact in artifacts
         },
     }
 

@@ -25,7 +25,7 @@ def bootstrap_alctl(base: Path, destination: Path | None = None, env: dict | Non
     return destination
 
 
-def al_command(alctl, host, repository, session, *arguments) -> list[str]:
+def al_command(alctl, host, repository, session, *arguments, session_directory=False) -> list[str]:
     return [
         str(alctl),
         "run",
@@ -35,6 +35,7 @@ def al_command(alctl, host, repository, session, *arguments) -> list[str]:
         host,
         "--session",
         session,
+        *(["--session-directory"] if session_directory else []),
         "--",
         *arguments,
     ]

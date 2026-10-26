@@ -1,0 +1,8 @@
+simulation: gitlab-delivery
+routing: path
+mocks:
+  - name: gitlab
+    routeKey: gitlab
+    origin:
+      - gitlab.com
+    path: postman/mocks/gitlab

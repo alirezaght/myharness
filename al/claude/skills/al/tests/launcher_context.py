@@ -65,8 +65,17 @@ class Launcher:
                 if not start:
                     raise ValueError("no protected run binding; use the original issuer for legacy runs")
                 verify_pin(self.storage / "pins", self.pin)
-                transaction = reserve(value, self.pin)
+                private_session = False
+                if '--handoff' in sys.argv:
+                    envelope = json.loads(Path(sys.argv[sys.argv.index('--handoff') + 1]).read_bytes())
+                    private_session = envelope.get('runtime_layout') == 'harness-session-directory-v1'
+                transaction = reserve(value, self.pin, private_session=private_session)
             module.transaction = transaction
+            if transaction['schema_version'] == 2:
+                import al_store
+                from installer.runtime_pin_transaction import runtime_directory
+                al_store.RUNTIME_DIR = runtime_directory(transaction)
+                al_store.CURRENT = al_store.RUNTIME_DIR / 'current'
             old = read_state(transaction)
             if transaction["status"] == "ACTIVE" and old is None:
                 raise ValueError("active runtime state missing")
@@ -391,4 +400,5 @@ def current_protocol(call):
                     path.write_text(json.dumps(upgrade_report(state, data)))
         return call(*args)
     run.__dict__.update(getattr(call, "__dict__", {}))
+    run.raw = call
     return run

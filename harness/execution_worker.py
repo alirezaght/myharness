@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from harness.controller import HarnessController
@@ -27,8 +27,6 @@ from harness.execution_hosts import (
     native_diagnostic,
     native_identity,
     package_fingerprint,
-    resume_argv,
-    start_argv,
 )
 from harness.execution_logs import append_log
 from harness.execution_models import TERMINAL, ExecutionConflict
@@ -100,7 +98,12 @@ def launch_worker(conn, execution_id, *, mode="start"):
                     stderr=output,
                     close_fds=True,
                     start_new_session=True,
-                    env=execution_environment(),
+                    env=dict(
+                        execution_environment(),
+                        HARNESS_AUTHORITY_ROOT=str(
+                            Path(execution["handoff_path"]).parent / "trusted"
+                        ),
+                    ),
                 )
         except OSError as error:
             # Popen failed before creation; no native host was attempted by this worker.
@@ -231,9 +234,23 @@ def _prompt(execution, package, envelope, mode):
             execution["host"],
             envelope["repository"],
             execution["al_session_id"],
+            existing_run=True,
         )
     )
     return (
+        "Use Harness MCP tools for all file, command, and AL state operations. "
+        "Read read_file paths harness:handoff, harness:task-package, harness:skill, "
+        "and harness:al-state for the fixed approved documents. al_command accepts "
+        "structured AL arguments. Use write_artifact for JSON/Markdown drafts, then "
+        "Set al_command background=true for long checks "
+        "and poll the returned owned process handle. "
+        "pass inputs as artifact:<artifact_id>:<sha256> and outputs as output:<name.json>. "
+        "Register actual native child IDs with integration agent-register; never invent IDs. "
+        "Children call await_assignment: read-only roles receive read-only context; writers "
+        "wait for a scoped task. Use submit_output for named final reports and return its "
+        "artifact reference. Inspect harness:outputs to retrieve reports. "
+        "An AL active writer must name that "
+        "same child ID. run_command uses the assignment's task and scope revision. "
         "Use the installed $al skill and its pinned role/permission policies to "
         "implement the exact "
         "approved harness task. "
@@ -245,18 +262,9 @@ def _prompt(execution, package, envelope, mode):
         + ". The exact task package is "
         + str(Path(execution["handoff_path"]).parent / "task-package.json")
         + ". "
-        + (
-            "Resume the existing AL run using its guarded resume command and exact --session "
-            if mode == "resume"
-            else "Start AL using the exact --session "
-        )
+        + "AL is already initialized by the trusted supervisor. Inspect and continue exact run "
         + execution["al_session_id"]
-        + (
-            ". Do not create a new AL run. "
-            if mode == "resume"
-            else " and start --package-file <that task-package.json> --handoff "
-            "<that handoff.json>. "
-        )
+        + ". Never invoke start or create a different AL run. "
         + "Run every AL state command through the protected launcher as `"
         + launcher
         + " <command>`; never invoke al_state.py directly. Its run state is in "
@@ -353,18 +361,28 @@ def supervise(conn, execution_id, token, mode="start"):
                     "refusing competing resume",
                 )
                 return
+        isolation_stack = ExitStack()
         native_id = (
             execution["native_id"]
             if mode == "resume"
             else (str(uuid.uuid4()) if execution["host"] == "claude" else None)
         )
-        argv = (
-            resume_argv(execution["host"], package["executable"], envelope["repository"], native_id)
-            if mode == "resume"
-            else start_argv(
-                execution["host"], package["executable"], envelope["repository"], native_id
+        try:
+            from harness.execution_initialization import initialize_execution
+            from harness.native_runtime import NativeRuntime, native_auth_environment
+
+            initialization = initialize_execution(controller, execution, package, envelope)
+            replay_source(conn, execution_id, token)
+            runtime = NativeRuntime(
+                database_path(conn), execution, envelope, package, initialization, native_id
             )
-        )
+            isolation_stack.callback(runtime.close)
+            env = native_auth_environment()
+            argv = runtime.argv(envelope["repository"], resume=mode == "resume")
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            isolation_stack.close()
+            update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
+            return
         with transaction(conn):
             update_owned(
                 conn, execution_id, token, status="Launching", heartbeat=time.time(), error=None
@@ -377,10 +395,6 @@ def supervise(conn, execution_id, token, mode="start"):
             )
             if native_id:
                 bind_host(conn, execution_id, native_id, token)
-        env = dict(execution_environment())
-        env["PYTHONPATH"] = (
-            str(Path(__file__).resolve().parent.parent) + os.pathsep + env.get("PYTHONPATH", "")
-        )
         try:
             require_execution_authority(
                 controller, execution_id, operation="resume" if mode == "resume" else "launch"
@@ -401,6 +415,7 @@ def supervise(conn, execution_id, token, mode="start"):
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
+            isolation_stack.close()
             return
         conn.execute(
             "UPDATE execution_attempts SET status='Running',child_pid=?,updated_at=? WHERE token=?",
@@ -438,10 +453,12 @@ def supervise(conn, execution_id, token, mode="start"):
                     found = native_identity(execution["host"], raw)
                     if found:
                         bind_host(conn, execution_id, found, token)
+                        runtime.observe(found)
                     # Native content may contain reasoning; retain only process/session facts.
                 elif channel == "stderr":
                     append_log(conn, execution_id, "stderr", raw.decode(errors="replace"))
                 if time.monotonic() - last_poll > 1:
+                    runtime.tick()
                     current = get_execution(conn, execution_id)
                     if current["status"] not in TERMINAL:
                         require_execution_authority(controller, execution_id, operation="launch")
@@ -456,16 +473,17 @@ def supervise(conn, execution_id, token, mode="start"):
         except (ValueError, OSError, LookupError) as error:
             failure = str(error)
             try:
-                proc.terminate()
+                os.killpg(proc.pid, __import__("signal").SIGTERM)
             except ProcessLookupError:
                 pass
             try:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                proc.kill()
+                os.killpg(proc.pid, __import__("signal").SIGKILL)
                 proc.wait(timeout=5)
             append_log(conn, execution_id, "worker", failure)
         finally:
+            isolation_stack.close()
             try:
                 for _ in range(100):
                     if replay_source(conn, execution_id, token):
@@ -487,6 +505,38 @@ def supervise(conn, execution_id, token, mode="start"):
                 "UPDATE execution_attempts SET status='Exited',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
+    # Release worker ownership before admitting a recorded-session correction.
+    # A new generation's worker owns its own publication and monitoring loop.
+    monitor_completed_delivery(controller, execution_id, token)
+
+
+def monitor_completed_delivery(controller, execution_id, token):
+    from harness.delivery import publish_delivery, watch_delivery
+    from harness.delivery_store import get_delivery, save_snapshot
+    from harness.execution_logs import redact
+
+    execution = get_execution(controller.conn, execution_id)
+    if execution["status"] != "Completed" or execution["worker_token"] != token:
+        return
+    try:
+        delivery = get_delivery(controller.conn, execution_id)
+    except LookupError:
+        return
+    try:
+        if delivery["config"]["publication_authorized"]:
+            publish_delivery(controller, execution_id)
+        elif not delivery["mr"]:
+            return
+        watch_delivery(controller, execution_id)
+    except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+        current = get_delivery(controller.conn, execution_id)
+        snapshot = current["snapshot"] | {
+            "blockers": [
+                *current["snapshot"].get("blockers", []),
+                "Delivery requires attention: " + redact(str(error)),
+            ]
+        }
+        save_snapshot(controller, execution_id, snapshot, "Blocked")
 
 
 def main():

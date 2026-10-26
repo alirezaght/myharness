@@ -39,7 +39,7 @@ def native_session(repository, platform, argv):
     return data["session_id"]
 
 
-def run(repository, platform, session, argv):
+def run(repository, platform, session, argv, *, existing_run=False, private_session=False):
     if not sys.flags.isolated or not sys.flags.no_site or not sys.dont_write_bytecode:
         raise ValueError("run requires the trusted isolated managed launcher")
     if not argv or argv[0].startswith("-"):
@@ -49,6 +49,10 @@ def run(repository, platform, session, argv):
             raise ValueError("session is supplied only by the trusted run launcher")
     if "AL_RUNTIME_DIR" in os.environ:
         raise ValueError("new pinned runs do not accept an alternate runtime directory")
+    if existing_run and (session is None or argv[0] in {"start", "clear"}):
+        raise ValueError("existing-run requires explicit initialized session and non-start operation")
+    if private_session and (existing_run or argv[0] != "start" or "--handoff" not in argv):
+        raise ValueError("session-directory applies only to new supervisor Harness starts")
     implicit = session is None
     if implicit:
         session = native_session(repository, platform, argv)
@@ -58,10 +62,14 @@ def run(repository, platform, session, argv):
         raise ValueError("native project directory differs from protected repository")
     # The managed launcher verifies its immutable origin before importing this
     # helper. Target paths never select a runtime distribution or pin store.
-    with coordinated(value) as path:
+    with coordinated(value, readonly=existing_run) as path:
         transaction = read(path) if path.exists() else None
         if transaction:
             validate(transaction, value)
+    if private_session and transaction is not None and transaction["schema_version"] != 2:
+        raise ValueError("legacy flat AL run requires explicit migration before session-directory enrollment")
+    if existing_run and (transaction is None or transaction["status"] != "ACTIVE"):
+        raise ValueError("existing-run requires ACTIVE protected binding")
     if transaction is None:
         if argv[0] != "start":
             raise ValueError("no protected run binding; use the original issuer for legacy runs")
@@ -75,7 +83,7 @@ def run(repository, platform, session, argv):
         else:
             raise ValueError("new runtime requires its protected managed launcher")
         pin = prepare_pin(Path(trusted["snapshot"]), platform, _directory(storage() / "pins"))
-        transaction = reserve(value, pin)
+        transaction = reserve(value, pin, private_session=private_session)
     if list(argv) == ["clear"] and not implicit:
         # Clearing the active pointer reads no run state, so the current launcher does it itself: a run
         # whose pinned runtime can no longer read its own state can still be put aside.
@@ -84,12 +92,12 @@ def run(repository, platform, session, argv):
             pointer.unlink()
         print("AL state cleared")
         return 0
-    verified = verify_pin(storage() / "pins", transaction["pin"])
+    verified = verify_pin(storage(readonly=existing_run) / "pins", transaction["pin"])
     manifest = verified["manifest"]
     validate_live(
         manifest["interpreter_execution_identity"], manifest["interpreter"], observe(os.getpid())
     )
-    request = {"transaction": transaction, "argv": list(argv), "storage": str(storage()),
+    request = {"transaction": transaction, "argv": list(argv), "storage": str(storage(readonly=existing_run)), "existing_run": existing_run,
                "native_implicit": implicit}
     executable = manifest["interpreter"]["executable"]
     os.execv(executable, [executable, "-I", "-S", "-B", "-c", program(request)])

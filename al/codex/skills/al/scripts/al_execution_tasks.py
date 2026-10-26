@@ -38,7 +38,13 @@ def authority(st, operation, task=None, delivery=None):
     if delivery:
         argv += ['--delivery', delivery]
     try:
-        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
+        import os
+        environment = dict(os.environ)
+        trusted_root = Path(i['handoff']).resolve(strict=True).parent / 'trusted'
+        if not (trusted_root / 'manifest.json').is_file():
+            raise ValueError('sealed Harness authority snapshot unavailable')
+        environment['HARNESS_AUTHORITY_ROOT'] = str(trusted_root)
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=environment) as proc:
             try:
                 import selectors
                 import os
@@ -325,6 +331,13 @@ def cmd_integration(a, sid):
         print(canonical(E.events_after(st, a.after, a.limit)))
         return
     i = integration(st)
+    if a.action == 'delivery-correction':
+        from al_execution_corrections import apply_correction
+        data = loads(Path(a.file).read_bytes(), max_bytes=4194304)
+        apply_correction(st, sid, data)
+        S.save(sid, st)
+        print(canonical({'ok': True, 'sequence': i['sequence']}))
+        return
     if st['status'] != 'RUNNING':
         refuse('execution reporting requires a running run')
     data = loads(Path(a.file).read_bytes()) if getattr(a, 'file', None) else None
@@ -396,7 +409,7 @@ def register(sub):
     p = sub.add_parser('integration').add_subparsers(dest='action', required=True)
     p.add_parser('capabilities').set_defaults(fn=cmd_integration)
     s = p.add_parser('events'); s.add_argument('--after', type=int, default=0); s.add_argument('--limit', type=int, default=100); s.set_defaults(fn=cmd_integration)
-    for action in ('task-register', 'agent-register', 'agent-update', 'blocker', 'handoff', 'decision', 'revalidate', 'task-progress', 'graph-update'):
+    for action in ('task-register', 'agent-register', 'agent-update', 'blocker', 'handoff', 'decision', 'revalidate', 'task-progress', 'graph-update', 'delivery-correction'):
         s = p.add_parser(action); s.add_argument('--file', required=True); s.set_defaults(fn=cmd_integration)
     for action in ('task-admit', 'task-start', 'task-finish'):
         s = p.add_parser(action); s.add_argument('--task', required=True); s.set_defaults(fn=cmd_integration)

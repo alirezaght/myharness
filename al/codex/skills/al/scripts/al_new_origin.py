@@ -64,8 +64,8 @@ def initialize(st):
     origin = context()
     transaction = origin.transaction
     supplied = {
-        "schema_version": 1,
-        "kind": "proof-admission-initialization-v1",
+        "schema_version": transaction["schema_version"],
+        "kind": "proof-admission-initialization-v" + str(transaction["schema_version"]),
         "repository_identity": transaction["repository_identity"],
         "session_id": st["session_id"],
         "run_id": st["run_id"],
@@ -75,6 +75,8 @@ def initialize(st):
         "verifier_policy": policy(),
         "planning_occurrence": occurrence(st),
     }
+    if transaction["schema_version"] == 2:
+        supplied.update(runtime_layout=transaction["runtime_layout"], runtime_directory=transaction["runtime_directory"])
     try:
         transaction, initial = publish(transaction, supplied)
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -93,6 +95,8 @@ def initialize(st):
             "initialization",
         )
     }
+    if transaction["schema_version"] == 2:
+        st["runtime_origin"].update(runtime_layout=transaction["runtime_layout"], runtime_directory=transaction["runtime_directory"])
     st["proof_admission"] = {
         "schema_version": 1,
         "kind": "proof-admission-v1",
@@ -157,7 +161,10 @@ def require_admitted(st):
     validate(st)
     if st.get("proof_admission", {}).get("status") == "pending":
         from al_recovery_guidance import refuse_guided
-        refuse_guided(st, "proof admission pending; admitted Architect planning obligations are required")
+        refuse_guided(st, "proof admission pending; admitted Architect planning obligations are required. "
+                      "If proof repair is blocked, use writer start --id ID --role ROLE --files PATHS "
+                      "--degraded --reason TEXT for scoped tracked work after SPEC_READY/classification "
+                      "and gate planning. This records writers/evidence; it never admits proof or approval.")
 
 
 def prepare_save(st, previous=None):

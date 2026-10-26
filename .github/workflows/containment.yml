@@ -1,0 +1,22 @@
+name: Linux containment checks
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+jobs:
+  containment:
+    runs-on: ubuntu-latest
+    env:
+      HARNESS_REQUIRE_OPERATION_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: uv python install
+      - run: uv sync --locked
+      - run: uv run pytest tests/test_operation_isolation.py tests/test_guarded_check_channel.py tests/test_private_runtime_operation.py tests/test_execution_operations.py

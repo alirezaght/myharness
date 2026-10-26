@@ -10,6 +10,7 @@ request=REQUEST
 transaction=request['transaction']
 base=Path(request['storage'])
 run_context=types.ModuleType('_al_run_pin_context');run_context.transaction=transaction;run_context.storage=str(base)
+run_context.readonly=bool(request.get('existing_run'))
 sys.modules['_al_run_pin_context']=run_context
 pin=transaction['pin'];root=base/'pins'/pin['pin_identity']
 raw,state=_read(root/'manifest.json')
@@ -47,6 +48,7 @@ with coordinated(value) as path:
 validate(transaction,value)
 validate_live(manifest['interpreter_execution_identity'],manifest['interpreter'],observe(os.getpid()))
 old=read_state(transaction)
+if run_context.readonly and (transaction['status']!='ACTIVE' or old is None):raise ValueError('existing-run requires matching ACTIVE state')
 if transaction['status']=='ACTIVE' and old is None:raise ValueError('active runtime state missing')
 if transaction['status']=='RESERVED' and old is not None:
     commit_run_binding(transaction)
@@ -67,7 +69,11 @@ explicit=[] if request.get('native_implicit') else ['--session',transaction['ses
 sys.argv=[str(payload/prefix/'al_state.py'),*explicit,*request['argv']]
 al_state.main()
 transaction=run_context.transaction
-if read_state(transaction) is not None:commit_run_binding(transaction)
+if run_context.readonly:
+    with coordinated(value) as path:
+        if read(path)!=request['transaction']:raise ValueError('existing-run protected binding changed')
+    if read_state(transaction) is None:raise ValueError('existing-run state disappeared')
+elif read_state(transaction) is not None:commit_run_binding(transaction)
 """
 )
 

@@ -1,0 +1,5 @@
+[
+  {"id":82001,"name":"unit-tests","status":"success","stage":"test","ref":"al/run-42-delivery","pipeline":{"id":5801}},
+  {"id":82002,"name":"integration-tests","status":"success","stage":"test","ref":"al/run-42-delivery","pipeline":{"id":5801}},
+  {"id":81981,"name":"unit-tests","status":"failed","stage":"test","ref":"al/run-42-delivery","pipeline":{"id":5798}}
+]

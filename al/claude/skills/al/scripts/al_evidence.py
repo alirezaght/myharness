@@ -94,6 +94,9 @@ def _raise_interrupt(signum, frame):
 
 def _stop(proc):
     """Stop only the process group created by this live child handle."""
+    if hasattr(proc, 'cancel'):
+        code = proc.cancel();proof = proc.completion()
+        return {'exit':code, 'errors':proof['errors'], 'unresolved':proof['unresolved']}
     errors = []
     for number, grace in ((signal.SIGTERM, 1), (signal.SIGKILL, 2)):
         try:
@@ -130,7 +133,8 @@ def _execute(sid, entry, timeout, commit=True):
                     raise PermissionError(entry.get('fingerprint_error') or '; '.join(gaps))
                 for number in (signal.SIGINT, signal.SIGTERM):
                     previous[number] = signal.signal(number, _raise_interrupt)
-                proc = subprocess.Popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
+                import al_harness_process
+                proc = al_harness_process.popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
                                         stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
                 entry['pid'] = proc.pid
                 entry['process'] = {'pid': proc.pid, 'pgid': proc.pid, 'ownership': 'live-Popen-start_new_session'}

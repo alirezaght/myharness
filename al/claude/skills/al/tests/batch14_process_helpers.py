@@ -11,9 +11,9 @@ from hook_regression_helpers import manifest_for
 PROGRAM='''import json,os,subprocess,sys,time
 from pathlib import Path
 if os.environ.get('AL_B14_MODE')=='wait':
- child=subprocess.Popen([sys.executable,'-c',"import os,signal,time; from pathlib import Path; signal.signal(signal.SIGTERM,signal.SIG_IGN); Path(os.environ['AL_B14_GRAND']).write_text(str(os.getpid())); time.sleep(60)"])
+ child=subprocess.Popen([sys.executable,'-c',"import os,signal,time; from pathlib import Path; signal.signal(signal.SIGTERM,signal.SIG_IGN); target=Path(os.environ['AL_B14_GRAND']); staged=target.with_suffix('.pending'); staged.write_text(str(os.getpid())); staged.replace(target); time.sleep(60)"])
  while not Path(os.environ['AL_B14_GRAND']).exists():time.sleep(.01)
- Path(os.environ['AL_B14_CHILD']).write_text(str(os.getpid()))
+ target=Path(os.environ['AL_B14_CHILD']); staged=target.with_suffix('.pending'); staged.write_text(str(os.getpid())); staged.replace(target)
  print('owned gate running',flush=True)
  time.sleep(60)
 else:

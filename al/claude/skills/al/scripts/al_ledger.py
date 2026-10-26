@@ -105,7 +105,7 @@ class FingerprintError(RuntimeError):
 
 def _git_bytes(*args):
     try:
-        r = subprocess.run(["git", "--literal-pathspecs", *args], cwd=al_store.REPO_ROOT, capture_output=True, timeout=300)
+        r = subprocess.run(["git", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", *args], cwd=al_store.REPO_ROOT, capture_output=True, timeout=300)
     except (OSError, subprocess.SubprocessError) as exc:
         raise FingerprintError(f"git {args[0]} failed: {exc.__class__.__name__}") from exc
     if r.returncode != 0:
@@ -389,7 +389,7 @@ def unmet(st, spec, _seen=()):
     missing = []
     if spec.get("preflight"):
         pre = latest(st, spec["preflight"], kind="preflight")
-        if not pre or assess(pre)[0] != "VALID":
+        if not pre or pre['area'] in _seen or entry_verdict(st, pre, (*_seen, pre['area']))[0] != "VALID":
             missing.append(f"preflight `{spec['preflight']}` has not passed in this run")
     for area in spec.get("needs") or ():
         if area in _seen:

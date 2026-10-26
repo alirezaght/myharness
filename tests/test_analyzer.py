@@ -274,7 +274,13 @@ def test_env_example_is_config_not_a_secret(tmp_path):
 
 @pytest.mark.parametrize(
     "path",
-    [".gitlab-ci.yml", "Jenkinsfile", ".circleci/config.yml", "azure-pipelines.yml", ".gitlab/ci/test.yml"],
+    [
+        ".gitlab-ci.yml",
+        "Jenkinsfile",
+        ".circleci/config.yml",
+        "azure-pipelines.yml",
+        ".gitlab/ci/test.yml",
+    ],
 )
 def test_ci_definitions_of_every_provider_are_constraints(path):
     from harness.repo_probes import is_workflow

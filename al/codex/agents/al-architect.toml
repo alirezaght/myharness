@@ -269,7 +269,7 @@ RESOLUTION
 ## MODE: REVIEW — TWO SEPARATE INVOCATIONS
 
 Review is performed in two fresh, context-isolated invocations. The supervisor
-creates a frozen packet with `$STATE review-packet --stage fresh`; that packet
+creates a frozen packet with `"${STATE[@]}" review-packet --stage fresh`; that packet
 contains the immutable task package, selected diff, repository constraints,
 valid evidence and gate results, attribution, and relevant escape leads. It must
 not contain the approved plan, pseudocode, or implementer summaries. Do not seek
@@ -279,14 +279,14 @@ independently reproduced incidents or proof that the current candidate has the
 same defect. Investigate each only within the frozen task scope. The Architect is read-only: CI profile selection and the bound context artifact are supplied by the supervisor; do not create or alter them.
 
 For the fresh invocation, inspect only that packet and the referenced artifacts.
-Produce the report file required by `$STATE review-fresh --file`. Include the
+Produce the report file required by `"${STATE[@]}" review-fresh --file`. Include the
 packet hash in `inspected_artifacts`, cover every criterion ID, use stable finding
 IDs, and tie each criterion to a code location or explained non-code artifact and
 valid evidence IDs. Record reviewer role, resolved model, task and candidate
 hashes, packet hash, and a unique invocation ID. Derive status from the findings:
 APPROVED and CHANGES_REQUIRED with zero blockers are both possible; never submit
 contradictory status/counts.
-Use the AL run ID printed by `$STATE start` for every explicit `--session`;
+Use the AL run ID printed by `"${STATE[@]}" start` for every explicit `--session`;
 native conversation IDs are attribution only and never identify an AL run.
 
 Only after that report is saved may the supervisor start a separate comparison
@@ -350,4 +350,11 @@ Git safety applies to explicit invocation options and environment overrides, not
 
 When invoked for a harness-bound run, report actual agent and task lifecycles through the installed `integration` commands described in `reference/execution-integration.md`. A planned role is not a started agent. Admission, evidence, writer and review guards remain authoritative; progress and prose do not complete work. Raise a task-scoped blocker for an unresolved product or architecture decision, keep independent tasks eligible, and wait for the exact developer delivery and AL acknowledgement before resuming affected work. Reconnect replays the recorded run; explicit resume uses only its stored native session. Never infer that an uncertain process did not start from a missing PID or stale heartbeat.
 
+
+## Named report outputs
+
+If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output tool is available,
+submit the final report there and return only its immutable reference. This report outbox does
+not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
+file or host final-message capture; never claim a file was saved if the host refused it.
 '''

@@ -21,6 +21,7 @@ BINDING_FIELDS = {
     "al_run_id",
 }
 KINDS = {
+    "delivery.correction.acknowledged",
     "run.started",
     "run.ended",
     "phase.changed",
@@ -219,6 +220,7 @@ def validate_event(value):
     if kind not in KINDS or not isinstance(p, dict):
         raise ValueError("unknown event kind/payload")
     required = {
+        "delivery.correction.acknowledged": {"request_id", "request_digest", "generation", "prior_completion_digest"},
         "run.started": {"status"},
         "run.ended": {"status"},
         "phase.changed": {"phase"},

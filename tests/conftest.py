@@ -3,6 +3,13 @@ import os
 import pytest
 
 
+@pytest.fixture
+def launched(tmp_path):
+    from al.tests.runtime_run_helpers import launched as isolated_launcher
+
+    return isolated_launcher.__wrapped__(tmp_path)
+
+
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "home"

@@ -89,3 +89,10 @@ COVERAGE
 ## Harness-bound execution reports
 
 When invoked for a harness-bound run, report actual agent and task lifecycles through the installed `integration` commands described in `reference/execution-integration.md`. A planned role is not a started agent. Admission, evidence, writer and review guards remain authoritative; progress and prose do not complete work. Raise a task-scoped blocker for an unresolved product or architecture decision, keep independent tasks eligible, and wait for the exact developer delivery and AL acknowledgement before resuming affected work. Reconnect replays the recorded run; explicit resume uses only its stored native session. Never infer that an uncertain process did not start from a missing PID or stale heartbeat.
+
+## Named report outputs
+
+If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output tool is available,
+submit the final report there and return only its immutable reference. This report outbox does
+not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
+file or host final-message capture; never claim a file was saved if the host refused it.
