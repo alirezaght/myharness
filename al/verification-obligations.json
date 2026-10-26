@@ -4994,8 +4994,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1005,
-    "digest": "c328ec7ef584609ab30da01890c6ef8bd6ae694c69f716da4203e7f85945f757"
+    "members": 1009,
+    "digest": "8fe3ac68e0094c82ab096a7788392fe79dc96c8c519729855facc0e3f2b64aec"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",
