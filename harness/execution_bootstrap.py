@@ -17,11 +17,15 @@ def execution_environment():
     return dict(os.environ, HARNESS_AUTHORITY_ROOT=str(Path(__file__).resolve().parent.parent))
 
 
-def authority_snapshot(directory):
+def authority_snapshot(directory, *, versioned=False):
     """Copy the fixed bridge outside the target's writable implementation tree."""
     import hashlib
     import json
 
+    if not versioned and (Path(directory) / "bridge-selection.json").exists():
+        from harness.execution_bridge import selected_bridge
+
+        return str(selected_bridge(directory))
     source = Path(__file__).resolve().parent
     destination = Path(directory) / "trusted" / "harness"
     files = {
@@ -38,6 +42,8 @@ def authority_snapshot(directory):
     fingerprint = hashlib.sha256(
         b"".join(k.encode() + v for k, v in sorted(files.items()))
     ).hexdigest()
+    if versioned:
+        destination = Path(directory) / "bridge-revisions" / fingerprint / "trusted/harness"
     marker = destination.parent / "manifest.json"
     if marker.exists():
         manifest = json.loads(marker.read_bytes())

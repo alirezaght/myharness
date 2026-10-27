@@ -118,27 +118,28 @@ uv run python scripts/demo_phase2.py
 
 ## 1. Build a task whose design has a wrong connection
 
-$ harness start --complexity trivial '[demo] Add a CSV export of items'
+$ harness start --complexity trivial '[demo] Add a CSV export of items in app/export.py'
 task t-xxxxxxxx created · phase investigation · complexity trivial (developer)
 $ harness investigate t-xxxxxxxx
 investigation of <demo>/repo (revision <rev>)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 approved decisions (1):
   DEC-0001 v1 — [demo] Storage engine
-verified facts (10):
+verified facts (12):
   [repository] 4 files enumerated via git ls-files — git ls-files
   [repository] revision <rev> — git rev-parse HEAD
   [repository] branch main — git rev-parse --abbrev-ref HEAD
   [repository] working tree clean — git status --porcelain
+  [repository] 0 ahead and 0 behind refs/heads/main — local Git ref comparison; remote freshness unverified (no fetch)
   [decisions] DEC-0001 v1 approved — [demo] Storage engine (scope: Persistence) — docs/decisions/DEC-0001-storage-engine.md
   [repository] 2 python files — file extensions
   [components] `app/` is a Python package (2 source files) — app/__init__.py
-  [files] `docs/decisions/DEC-0001-storage-engine.md` matches 2 request keywords (demo, export) — keyword match: demo, export
-  [files] `app/export.py` matches 1 request keyword (export) — keyword match: export (path: export)
+  [files] `docs/decisions/DEC-0001-storage-engine.md` matches 3 request keywords (demo, export, app) — keyword match: demo, export, app
+  [files] `app/export.py` matches 2 request keywords (export, app) — keyword match: export, app (path: export, app)
+  [files] `app/__init__.py` matches 1 request keyword (app) — keyword match: app (path: app)
   [files] `README.md` matches 1 request keyword (demo) — keyword match: demo
-assumptions (2):
+assumptions (1):
   primary language is python — basis: majority of source files
-  the change most likely concerns `docs/` — basis: highest request-keyword density
 unresolved questions (2):
   [dependencies] No dependency manifest found; how are dependencies managed?
   [tests] No tests found; which framework and layout should new tests use?
@@ -176,6 +177,7 @@ unresolved decisions (0):
 blocking: no
 $ harness phase t-xxxxxxxx next
 task t-xxxxxxxx · phase design · complexity trivial (developer)
+After clarification, reassess inspected implementation risk: harness classify t-xxxxxxxx --assessment FILE --repo REPOSITORY
 $ harness design add t-xxxxxxxx components '[demo] The exporter writes the item rows
 component Exporter
 component Item Store
@@ -301,7 +303,7 @@ $ kill -TERM <dashboard>
 dashboard stopped
 $ harness show t-xxxxxxxx
 task t-xxxxxxxx · phase approval · complexity trivial (developer)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 created: <timestamp> · updated: <timestamp>
 approval: spec v1 sha256:<hash> (current)
 interview topics: functional_behavior, acceptance_criteria
@@ -320,7 +322,7 @@ $ harness spec verify t-xxxxxxxx
 v1 ok
 $ harness resume t-xxxxxxxx
 task t-xxxxxxxx · phase approval · complexity trivial (developer)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 checkpoint: approval <timestamp> (#30)
 approval: spec v1 sha256:<hash> (current)
 next: harness execution reconnect t-xxxxxxxx exec-xxxxxxxxxxxxxxxxxxxxxxxx

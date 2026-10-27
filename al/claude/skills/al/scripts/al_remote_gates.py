@@ -53,4 +53,6 @@ def execute_remote(st,gate,stage,log,timeout,sid,entry,owner):
         return 'INFRA',126,dict(provenance,reason='remote job provenance mismatch')
     if data.get('pipeline',{}).get('project_id') not in {None,remote['project_id']}:
         return 'INFRA',126,dict(provenance,reason='remote project mismatch')
-    return ('PASS',0,provenance) if provenance['status']=='success' else ('FAIL',1,provenance)
+    if provenance['status']=='success':return 'PASS',0,provenance
+    if provenance['status']=='failed':return 'FAIL',1,provenance
+    return 'INFRA',126,dict(provenance,reason='provider verification is not successful: '+provenance['status'])

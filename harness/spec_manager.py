@@ -109,7 +109,7 @@ class SpecificationManager:
 
     # Read-only
 
-    def body(self) -> str:
+    def body(self, *, proposed=False) -> str:
         engine = InterviewEngine(self.controller, self.task_id)
         designer = ArchitectureDesigner(self.controller, self.task_id)
         checkpoint = self.ws.latest_checkpoint("investigation")
@@ -117,7 +117,14 @@ class SpecificationManager:
         recorded = _recorded_decisions(self.ws.events())
         plan = TestPlanner(self.controller, self.task_id).document()
         summary, design = engine.summary(), designer.document()
-        return build_body(summary, design, decisions, recorded, self.ws.proposals(), plan)
+        body = build_body(summary, design, decisions, recorded, self.ws.proposals(), plan)
+        if proposed:
+            from harness.spec_document import proposed_content
+
+            body = proposed_content(
+                body, self.ws.proposals(), self.ws.design_entries(), self.ws.scenarios(), plan
+            )
+        return body
 
     def render(
         self,
@@ -138,7 +145,7 @@ class SpecificationManager:
             revision,
             working_tree,
             supersedes,
-            self.body(),
+            self.body(proposed=status is SpecStatus.DRAFT),
         )
 
     def preview(self) -> str:

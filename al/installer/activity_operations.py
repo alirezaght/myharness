@@ -6,6 +6,40 @@ from pathlib import Path
 from .engine import R
 
 
+def setup_checks(entries):
+    """Dependency installers are owned children, including failed/unfinished setup."""
+    checks=[]
+    required={'schema_version','kind','manager','argv','cwd','inputs','stage','status','started_at','hook'}
+    optional={'executable','pid','cleanup','exit','python_interpreter','reason','ended_at'}
+    for entry in entries:
+        rows=entry.get('setup',[])
+        if not isinstance(rows,list):raise ValueError('unknown dependency setup registry')
+        for index,row in enumerate(rows):
+            if (not isinstance(row,dict) or not required<=set(row) or set(row)-required-optional
+                    or type(row['schema_version']) is not int or row['schema_version']!=1
+                    or row['kind']!='check-setup-v1' or row['stage']!='setup'
+                    or row['status'] not in {'RUNNING','PASS','INFRA'}
+                    or row['manager'] not in {'uv','npm','pnpm'} or not finite(row['started_at'])):
+                raise ValueError('unknown dependency setup activity profile')
+            cleanup=row.get('cleanup')
+            if cleanup is not None and (not isinstance(cleanup,dict) or type(cleanup.get('complete')) is not bool or not isinstance(cleanup.get('errors'),list)):
+                raise ValueError('unknown dependency setup cleanup profile')
+            pid=row.get('pid')
+            if pid is not None and (type(pid) is not int or pid<=0):
+                raise ValueError('invalid dependency setup PID')
+            uncertain=bool(pid is not None and (cleanup is None or not cleanup['complete']
+                           or cleanup.get('unresolved') is not False
+                           or cleanup.get('group_absent') is not True))
+            checks.append({'id':entry['id']+'-setup-'+str(index+1),
+                           'status':row['status'],'pid':pid,'started_at':row['started_at'],
+                           'ended_at':row.get('ended_at'),
+                           'cleanup':{'exit':row.get('exit'),
+                                      'errors':cleanup.get('errors',[]) if cleanup else [],
+                                      'unresolved':uncertain},
+                           'process':{'pid':pid} if pid else {}})
+    return checks
+
+
 def finite(value):
     return type(value) in {int, float} and math.isfinite(value) and value >= 0
 

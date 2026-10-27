@@ -26,7 +26,7 @@ def pending(cli, tmp_path, repo):
     invoke(cli.raw, 'classify', 'SMALL', '--designer', 'no', '--implementers', 'al-engineer')
     path = tmp_path / 'gates.json'
     path.write_text(json.dumps(manifest_for(state(cli), repo, ['svc/app.py'])))
-    invoke(cli, 'gates', 'plan', '--file', str(path))
+    invoke(cli.raw, 'gates', 'plan', '--file', str(path))
 
 
 def test_report_names_uncovered_outcomes_and_template_explains_the_rule(cli, tmp_path, repo, state_file):

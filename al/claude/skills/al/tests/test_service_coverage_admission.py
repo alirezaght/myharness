@@ -31,14 +31,31 @@ def test_manifest_tampering_refuses_without_state_mutation(cli,repo,tmp_path,sta
     if mutation!='env':assert state_file().read_bytes()==before
 
 
-def test_incomplete_missing_check_is_reported_and_does_not_block_writers(cli,repo,tmp_path):
+def test_incomplete_missing_check_blocks_proof_phase_and_degraded_writer(cli,repo,tmp_path,state_file):
     seed(repo);unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py']);a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete'
     plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
-    assert any(u['category']=='lint-imports' for u in json.loads(invoke(cli,'gates','status')[1])['unverified'])
-    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
-    invoke(cli,'writer','start','--id','allowed','--role','al-engineer','--files','packages/shared/src/common.py')
+    before=state_file().read_bytes()
+    for args in [('phase','IMPLEMENTATION'),('writer','start','--id','blocked','--role','al-engineer','--files','packages/shared/src/common.py','--degraded','--reason','diagnostic repair')]:
+        invoke(cli,*args,ok=False)
+        assert state_file().read_bytes()==before
+    # Issuance may append immutable planning provenance; only the refused commit must not mutate.
+    from launcher_context import _reports
+    packet=json.loads(invoke(cli,'planning','packet')[1])
+    report=tmp_path/'blocked-planning.json';report.write_text(json.dumps(_reports().report_for(packet)))
+    response=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
+    before=state_file().read_bytes()
+    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'],ok=False)
+    assert state_file().read_bytes()==before
+
+
+def test_relevant_uncertainty_selects_all_potential_services(cli,repo,tmp_path):
+    seed(repo);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
+    _,m=discover(cli,tmp_path,['packages/shared/src/common.py'])
+    a=m['service_coverage']['assessment']
+    assert a['outcome']=='exhaustive'
+    assert a['selected_services']==a['potential_services']==['services/a','services/b']
 
 
 def test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence(cli,repo,tmp_path):
@@ -136,7 +153,9 @@ def test_current_source_import_change_and_new_module_stale_admission(cli,repo,tm
     st=json.loads(cli('show')[1]);assert Currency.check(st)['current']
     # A new module inside a planned unit and path is an ordinary edit; the review-start
     # inventory checks the candidate's obligations against the plan.
-    put(repo,'services/a/src/new_leaf.py','VALUE=1\n');assert Currency.check(st)['current']
+    put(repo,'services/a/src/new_leaf.py','VALUE=1\n');assert not Currency.check(st)['current']
+    invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    plan(cli,repo,tmp_path,['services/a/src'])
     admit_planning(cli)
     invoke(cli,'phase','IMPLEMENTATION')
 
@@ -151,7 +170,9 @@ def test_ci_global_environment_is_bound_or_explicitly_unavailable(cli,repo,tmp_p
         assert a['outcome']=='identified'
         assert any('echo setup' in g['argv'][-1] for g in m['gates'] if g.get('obligation_ids'))
     else:
-        assert a['outcome']=='incomplete' and any(g['code']=='unresolved-ci-check' for g in a['gaps'])
+        assert a['outcome']=='incomplete' and any(g['code']=='missing-verification-check' for g in a['gaps'])
+        assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED'
+                   and g['source'].get('job')=='syntax-check' for g in m['gates'])
 
 
 def test_ci_script_bytes_are_check_policy_not_implementation_currency(cli,repo,tmp_path):
@@ -186,3 +207,44 @@ def test_control_flow_and_custom_tool_paths_cannot_certify_verification(cli,repo
     put(repo,'.gitlab-ci.yml','verify:\n  script:\n'+''.join('    - '+line+'\n' for line in lines)+'  rules:\n    - changes: [services/a/**/*]\n')
     start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
+
+
+def test_incomplete_coverage_blocks_all_shared_boundaries_even_with_admitted_proof(cli,repo,tmp_path,state_file):
+    seed(repo);start(cli);plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
+    assert json.loads(cli('show')[1])['proof_admission']['status']=='admitted'
+    unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown)\n')
+    _,m=discover(cli,tmp_path,['packages/shared/src/common.py'])
+    st=json.loads(cli('show')[1]);before=deepcopy(st);disk=state_file().read_bytes()
+    from al_new_origin import require_admitted,prepare_save
+    from al_gate_coverage import writer_ready
+    from al_gate_recovery import ready
+    from al_transitions import require_transition
+    from al_review import approval_gaps
+    from al_gates import gate_gaps
+    for check in [lambda:require_admitted(st),lambda:writer_ready(st,['packages/shared/src/common.py']),lambda:ready(st),lambda:require_transition(st,'review-start','REVIEW'),lambda:require_transition(st,'approved','DONE')]:
+        with pytest.raises(SystemExit,match='coverage'):check()
+        assert st==before and state_file().read_bytes()==disk
+    assert any('coverage incomplete' in g for g in gate_gaps(st,'candidate'))
+    assert any('coverage incomplete' in g for g in approval_gaps(st))
+    previous=deepcopy(st);previous['proof_admission']['status']='pending'
+    with pytest.raises(SystemExit,match='coverage'):prepare_save(st,previous)
+    assert st==before and state_file().read_bytes()==disk
+
+
+def test_known_extra_unverified_job_does_not_hide_unknown_job_inventory(cli,repo,tmp_path,state_file):
+    seed(repo)
+    put(repo,'.gitlab-ci.yml','known:\n  script: echo unsupported-extra\n  image: python:3.13\n')
+    start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
+    assert m['service_coverage']['assessment']['outcome']=='identified'
+    assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED' for g in m['gates'])
+    put(repo,'.gitlab-ci.yml','include:\n  - remote: https://example.invalid/jobs.yml\n')
+    _,m=discover(cli,tmp_path,['services/a/src/app.py'])
+    assert any(g['code']=='unknown-ci-inventory' for g in m['service_coverage']['assessment']['gaps'])
+    before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    assert state_file().read_bytes()==before
+
+
+def test_unsupported_ci_provider_blocks_even_without_selected_services(cli,repo,tmp_path):
+    seed(repo);put(repo,'Jenkinsfile','pipeline {}\n');start(cli)
+    _,m=discover(cli,tmp_path,['docs/readme.md'])
+    assert any(g['code']=='unsupported-ci-provider' for g in m['service_coverage']['assessment']['gaps'])

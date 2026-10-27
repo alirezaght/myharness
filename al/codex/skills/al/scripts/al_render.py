@@ -45,7 +45,8 @@ def fmt_elapsed(sec):
 
 
 def phase_elapsed(st, phase):
-    t = st["phase_timings"].get(phase)
+    occurrence = next((row for row in reversed(st.get("phase_occurrences", [])) if row['phase']==phase), None)
+    t = occurrence or st["phase_timings"].get(phase)
     if not t:
         return None
     return (t["ended"] or time.time()) - t["started"]
@@ -64,9 +65,15 @@ def findings_text(st):
 def rework_text(st):
     """`Rework 1/2` while the current batch has sent defects back to AL-Engineer."""
     rw = st.get("rework") or {}
-    if rw.get("batch") != st.get("correction_iteration", 0) or not rw.get("used"):
+    if not rw.get("used"):
         return ""
-    return f"Rework {rw['used']}/{rw.get('max', 2)}"
+    tail = ''
+    recovery=st.get('rework_recovery')
+    if recovery:
+        tail=f" · total {rw['total']} · automatic {recovery['automatic_authorizations']}/2"
+        if recovery['pending']:tail+=' · Architect reassessment pending'
+        elif recovery['stop']:tail+=' · '+recovery['stop']['reason']
+    return f"Rework {rw['used']}/{rw.get('max', 2)}"+tail
 
 
 def render_line(st):
@@ -80,7 +87,7 @@ def render_line(st):
     if status in {"WAITING_FOR_USER", "INTERRUPTED", "TRANSFERRED"}:
         return f"AL │ {status} │ {st.get('stop_reason') or 'reason missing'} │ {counter}"
     if status == "STOPPED_WITH_BLOCKERS":
-        return f"AL │ STOPPED_WITH_BLOCKERS │ {counter}"
+        return f"AL │ STOPPED_WITH_BLOCKERS │ {st.get('stop_reason') or 'reason missing'} │ {counter}"
     if status == "SPEC_BLOCKED":
         return "AL │ SPEC_BLOCKED │ specification not implementable as written"
     if status == "AGENT_FAILED":
@@ -135,6 +142,8 @@ def render_panel(st):
             mark = "–"
         elif not_needed:
             mark = "–"
+        elif p == st["phase"] and st["status"] == "RUNNING":
+            mark = "●"
         elif p in st["completed_phases"]:
             mark = "✓"
         elif p == st["phase"]:

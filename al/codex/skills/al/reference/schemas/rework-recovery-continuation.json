@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://myharness.invalid/al/rework-recovery-continuation.json",
+  "title": "AL explicit bounded recovery continuation v1",
+  "description": "Closed user continuation request. user_authorization references an immutable explicit-user-continuation-v1 artifact; the runtime checks its content and current run binding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "request_id", "checkpoint_id", "binding", "user_authorization", "next_action", "grant_size"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "rework-recovery-continuation-v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "checkpoint_id": {"type": "string", "minLength": 1},
+    "binding": {"$ref": "#/$defs/binding"},
+    "user_authorization": {"$ref": "#/$defs/userAuthorizationReference"},
+    "next_action": {"type": "string", "minLength": 1},
+    "grant_size": {"const": 2}
+  },
+  "$defs": {
+    "userAuthorizationReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "sha256", "stored_path", "source", "captured_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "kind": {"const": "user-authorization"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "stored_path": {"type": "string", "minLength": 1},
+        "source": {"type": "string"},
+        "captured_at": {"type": "number", "minimum": 0}
+      }
+    },
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["root", "cwd", "common_dir", "git_dir", "target", "target_oid", "merge_base"],
+      "properties": {"root": {"type": "string"}, "cwd": {"type": "string"}, "common_dir": {"type": "string"}, "git_dir": {"type": "string"}, "target": {"type": "string"}, "target_oid": {"type": "string"}, "merge_base": {"type": "string"}}
+    },
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["session_id", "run_id", "identity", "original_task_hash", "runtime_pin"],
+      "properties": {
+        "session_id": {"type": "string", "minLength": 1}, "run_id": {"type": "string", "minLength": 1},
+        "identity": {"$ref": "#/$defs/identity"}, "original_task_hash": {"$ref": "#/$defs/digest"},
+        "runtime_pin": {"type": "object", "additionalProperties": false, "required": ["pin_identity", "pin_manifest_digest"], "properties": {"pin_identity": {"$ref": "#/$defs/digest"}, "pin_manifest_digest": {"$ref": "#/$defs/digest"}}}
+      }
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["origin", "candidate_hash", "task_hash", "history_hash", "occurrence_id"],
+      "properties": {"origin": {"$ref": "#/$defs/origin"}, "candidate_hash": {"$ref": "#/$defs/digest"}, "task_hash": {"$ref": "#/$defs/digest"}, "history_hash": {"$ref": "#/$defs/digest"}, "occurrence_id": {"type": "null"}}
+    }
+  }
+}

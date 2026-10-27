@@ -16,12 +16,11 @@ repro is remembered: before review, the same command must be a VALID PASS on
 the current tree (`al_ledger.repro_gaps`), so the fix is proven by the loop that
 proved the bug.
 
-Budget. Every return to AL-Engineer is counted here, separately from review
-corrections, at most MAX_REWORK_PER_BATCH per batch. A batch is the initial
-implementation (correction 0) or one review correction; a new review rejection
-opens a new batch, and that is printed, never silent. Exhaustion exits 10:
-STOP with STATUS: STOPPED_WITH_BLOCKERS. Confirmed independent defects go out
-together in ONE return (`--findings N`), not one return each.
+Budget. A new run has two return credits. Review corrections never replenish
+these credits. A further valid request opens durable Architect reassessment;
+at most two evidence-bound automatic grants of two are allowed per run. A
+capable subsystem stop supports explicit, bound two-credit user continuation.
+Exhaustion exits 10 after persisting the reassessment or precise stopping state.
 """
 import sys
 import time
@@ -54,7 +53,7 @@ def rework_state(st):
 
 def batch_line(st):
     rw = st.get("rework") or {}
-    if rw.get("batch") != st.get("correction_iteration", 0) or not rw.get("used"):
+    if not rw.get("used"):
         return ""
     return f"Rework {rw['used']}/{rw.get('max', MAX_REWORK_PER_BATCH)}"
 
@@ -105,48 +104,60 @@ def _reopen_tasks(st, files):
     return reopened
 
 
+def validated_request(st,a):
+    from al_schema import refuse
+    if type(a.findings) is not int or a.findings<1:refuse('--findings must be at least 1 (batch every confirmed defect into one return)')
+    repro=_check_repro(st,a)
+    reasons=[why for key,bad,why in TRIGGERS if getattr(a,key)==bad]
+    from al_writers import canonical_paths
+    files=[f.strip() for f in (a.files or '').split(',') if f.strip()]
+    if files:files=canonical_paths(files)
+    arguments={key:getattr(a,key) for key,_,_ in TRIGGERS}
+    arguments.update(source=a.source,findings=a.findings,files=','.join(files),label=a.label,repro=a.repro)
+    return {'arguments':arguments,'source':a.source,'findings':a.findings,'files':files,
+            'label':a.label,'repro':repro,'reasons':reasons,'route':'architect' if reasons else 'fast'}
+
+
+def consume_return(st,request):
+    rw=rework_state(st)
+    row={key:request[key] for key in ('source','findings','files','label','repro','reasons','route')}
+    if 'rework_recovery' in st:
+        r=st['rework_recovery'];row.update(grant_id=r['grants'][-1]['id'],correction_iteration=st.get('correction_iteration',0))
+    if rw['used']>=rw['max']:raise ValueError('no rework credit')
+    rw['used']+=1;rw['total']+=1
+    row.update(batch=rw['batch'],n=rw['used'],phase=st['phase'],at=time.time());rw['history'].append(row)
+    st['status']='RUNNING';_reopen_tasks(st,row['files'])
+    set_phase(st,'REWORK',['al-architect','al-engineer'] if row['reasons'] else ['al-engineer'])
+    return row
+
+
 def cmd_rework(a, sid):
-    st = load(sid)
+    st=load(sid)
+    request=validated_request(st,a)
+    from al_rework_recovery_contract import require
+    recovery=require(st)
+    if recovery['pending']:
+        o=next(o for o in recovery['occurrences'] if o['id']==recovery['pending'])
+        if o['request']!=request:
+            from al_schema import refuse
+            refuse('conflicting pending rework request')
+        from al_rework_recovery import current
+        current(st,o)
+        print('AL · rework budget exhausted · Architect reassessment pending',file=sys.stderr);sys.exit(10)
     from al_transitions import require_transition
-    require_transition(st,"rework","REWORK")
-    rw = rework_state(st)
-    batch = st.get("correction_iteration", 0)
-    if rw["batch"] != batch:
-        if rw["batch"] is not None:
-            print(f"AL · rework budget · new batch (correction {batch}) — "
-                  f"previous batch used {rw['used']}/{rw['max']}")
-        rw["batch"], rw["used"] = batch, 0
-    if a.findings < 1:
-        sys.exit("al_state: --findings must be at least 1 (batch every confirmed defect into one return)")
-    if rw["used"] >= rw["max"]:
-        print("AL: rework budget exhausted; record explicit stopping state", file=sys.stderr)
+    require_transition(st,'rework','REWORK')
+    rw=rework_state(st)
+    if rw['used']>=rw['max']:
+        from al_rework_recovery import enter
+        enter(st,sid,request)
+        print('AL · rework budget exhausted · '+('Architect reassessment pending' if recovery['pending'] else st['stop_reason']),file=sys.stderr)
         sys.exit(10)
-    repro = _check_repro(st, a)
-    reasons = [why for key, bad, why in TRIGGERS if getattr(a, key) == bad]
-    rw["used"] += 1
-    rw["total"] += 1
-    rw["history"].append({
-        "batch": batch, "n": rw["used"], "source": a.source, "findings": a.findings,
-        "route": "architect" if reasons else "fast", "reasons": reasons, "repro": repro,
-        "files": [f.strip() for f in (a.files or "").split(",") if f.strip()],
-        "label": a.label, "phase": st.get("phase"), "at": time.time(),
-    })
-    st["status"] = "RUNNING"
-    reopened = _reopen_tasks(st, rw["history"][-1]["files"])
-    set_phase(st, "REWORK", ["al-architect", "al-engineer"] if reasons else ["al-engineer"])
-    save(sid, st)
-    head = f"AL · Rework {rw['used']}/{rw['max']} · {a.findings} defect(s) from {a.source}"
-    if a.label:
-        head += f" · {a.label}"
-    print(head)
-    if reopened:
-        print("AL · reopened execution task(s) for rework: " + ", ".join(reopened))
-    if reasons:
-        print("→ AL-Architect first (MODE: RESOLVE_CONFLICT) — " + "; ".join(reasons))
-        print("→ then AL-Engineer with the resolution · Builder resumes only the affected support work")
-        sys.exit(12)
-    print("→ AL-Engineer · fast path: confirmed local core defect, interface and invariants unchanged")
-    print("Builder resumes only the affected support work afterwards · no new plan, no Designer")
+    consume_return(st,request);save(sid,st)
+    print(f"AL · Rework {rw['used']}/{rw['max']} · {a.findings} defect(s) from {a.source}")
+    if request['reasons']:
+        print('→ AL-Architect first (MODE: RESOLVE_CONFLICT) — '+'; '.join(request['reasons']));sys.exit(12)
+    print('→ AL-Engineer · fast path: confirmed local core defect, interface and invariants unchanged')
+    print('Builder resumes only the affected support work afterwards · no new plan, no Designer')
 
 
 def cmd_rework_resolve(a, sid):

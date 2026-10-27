@@ -63,31 +63,13 @@ def touched_units(st,m):
     return {V.classify_unit(p,opaque,semantic) for p in S.changed_paths(st['identity']['merge_base'])}
 
 
-MISSING_TOOL_RE=re.compile(r"command not found|: not found\b|Failed to spawn|is not recognized as an internal or external command")
-MISSING_FILE_RE=re.compile(r"(?:can't open|cannot open|No such file or directory:?)\s*['\"]?([^\s'\":]+)|([^\s'\":]+)['\"]?:\s*No such file or directory")
-
-
 def environment_gap(e):
-    """A run that could not start a command or read an installed file: AL's disposable checkout
-    lacks a tool or generated dependency, in any ecosystem."""
-    if not e or e['status'] not in {'INFRA','FAIL'}:return False
-    if e.get('exit')==127:return True
-    try:text=Path(e['log']).read_text(errors='replace')[-65536:] if e.get('log') else ''
-    except OSError:return False
-    if MISSING_TOOL_RE.search(text):return True
-    # A missing file the repository ignores (husky's .husky/_, node_modules, .venv, vendor) is
-    # generated or installed locally, never part of the checkout; a missing tracked file is a real
-    # failure of the change.
-    for match in MISSING_FILE_RE.finditer(text):
-        path=(match.group(1) or match.group(2)).split('/checkout/')[-1]
-        while path.startswith('./'):path=path[2:]
-        if path and not path.startswith('/') and ignored(path):return True
-    return False
+    """Only recorded setup/launch infrastructure is an environment gap.
 
-
-def ignored(path):
-    try:return subprocess.run(['git','check-ignore','-q','--',path],cwd=al_store.REPO_ROOT,capture_output=True).returncode==0
-    except OSError:return False
+    Check output is untrusted and cannot turn an executed code failure into INFRA.
+    """
+    return bool(e and e.get('status') == 'INFRA' and (
+        e.get('execution_stage') == 'setup' or e.get('exit') in {126,127}))
 
 
 def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
@@ -100,8 +82,6 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     if not e or not r or r.get('fingerprint')!=fp or not environment_current:return None
     base=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']=='base' and x['manifest']==r['manifest']]
     prior=L.find(st,base[-1]['evidence']) if base else None
-    if environment_gap(e):
-        return 'environment gap: a tool this gate needs is not installed in AL\'s disposable checkout (see '+e['id']+')'
     if stage!='candidate' or e['status']!='FAIL' or not prior or prior['status']!='FAIL':return None
     # A base `fix` decision commits this change to repairing the failure, so the candidate must pass.
     if (st.get('gate_decisions',{}).get(g['id']) or {}).get('action')=='fix':return None
@@ -126,48 +106,68 @@ def failure_lines(e):
     return {' '.join(VOLATILE_RE.sub('',line).split()) for line in text.splitlines() if FAILURE_LINE_RE.search(line)}-{''}
 
 
+def gate_result(st,m,g,stage,fp):
+    """Typed execution result shared by admission, continuation and presentation."""
+    if g['applicability']=='NOT_APPLICABLE':return 'not-required'
+    if g['applicability']=='UNRESOLVED':return 'unverified'
+    runs=[r for r in st.get('gate_runs',[]) if r['gate']==g['id'] and r['stage']==stage and r['manifest']==st['gate_manifests'][-1]['sha256']]
+    r=runs[-1] if runs else None
+    e=L.find(st,r['evidence']) if r else None
+    valid=e and e['status']=='PASS' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and r['fingerprint']==fp
+    environment_current=bool(e and e.get('env',[])==sorted(g['env_names']) and r.get('env_fingerprint')==L.scope_fingerprint([],g['env_names']))
+    valid=valid and environment_current and e.get('sources',[])==g.get('sources',[]) and r.get('sources',[])==g.get('sources',[])
+    if valid and 'reuse' in e:valid=not R.reuse_gaps(st,e)
+    if valid and 'execution_association' in e:
+        import al_execution_receipts as Receipts
+        valid=not Receipts.validate_association(st,e)
+    if valid:valid=not ReviewState.gaps(st,g,e,fp)
+    if valid and stage=='candidate':
+        valid=(e.get('kind')=='check' and e.get('gate_stage')=='candidate' and e.get('gate_manifest')==r['manifest']
+               and e['argv']==g['argv'] and e['cwd']==g['cwd'] and e['scope']==g['scope']
+               and r.get('execution_kind')==g['execution_kind'] and e['area']=='gate-candidate-'+g['id']
+               and L.entry_verdict(st,e)[0]=='VALID')
+    if e is None:return 'missing'
+    cleanup=e.get('cleanup') or {}
+    if e['status']=='RUNNING' or cleanup.get('unresolved') or cleanup.get('errors') or (e.get('interrupted') and not e.get('reconciliation')):return 'unresolved'
+    if valid and e.get('setup'):
+        import al_check_setup
+        valid=not al_check_setup.current_gaps(e['setup'])
+    if valid:return 'valid'
+    reason=accepted_failure(st,m,g,stage,e,r,fp,environment_current)
+    if reason:return 'accepted-existing-failure'
+    decision=st.get('gate_decisions',{}).get(g['id'])
+    if stage=='base' and environment_current and e['status']=='FAIL' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and r['fingerprint']==fp:
+        if decision and decision['action']=='fix' and decision.get('manifest')==st['gate_manifests'][-1]['sha256'] and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id']:return 'accepted-base-decision'
+        if Exceptions.current(st,m,g):return 'accepted-base-decision'
+    same=bool(r and r.get('fingerprint')==fp and environment_current and e.get('run')==st['run_id']
+              and e.get('argv')==g['argv'] and e.get('cwd')==g['cwd'] and e.get('scope')==g['scope']
+              and e.get('sources',[])==g.get('sources',[]) and r.get('sources',[])==g.get('sources',[])
+              and r.get('execution_kind')==g['execution_kind'])
+    if same and e['status']=='FAIL' and L.entry_verdict(st,e)[0]=='FAIL':return 'failed'
+    if same and e['status'] in {'INFRA','EMPTY','TORN'}:return 'blocked'
+    return 'stale'
+
+
 @S.decision
 def gate_gaps(st,stage):
     m=manifest(st)
-    if not m: return ['repository gate manifest missing']
-    out=[]
+    if not m:return ['repository gate manifest missing']
+    from al_service_coverage import admission_gaps
+    out=admission_gaps(st)
     fp=S.capture_candidate(st)['fingerprint'] if stage=='candidate' else m['base_oid']
     for g in m['gates']:
-        if g['applicability']=='NOT_APPLICABLE': continue
-        if g['applicability']=='UNRESOLVED': continue  # unverified: reported by unverified(), never blocking
-        runs=[r for r in st.get('gate_runs',[]) if r['gate']==g['id'] and r['stage']==stage and r['manifest']==st['gate_manifests'][-1]['sha256']]
-        r=runs[-1] if runs else None
-        e=L.find(st,r['evidence']) if r else None
-        valid=e and e['status']=='PASS' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and r['fingerprint']==fp
-        environment_current=bool(e and e.get('env',[])==sorted(g['env_names']) and r.get('env_fingerprint')==L.scope_fingerprint([],g['env_names']))
-        valid=valid and environment_current and e.get('sources',[])==g.get('sources',[]) and r.get('sources',[])==g.get('sources',[])
-        if valid and 'reuse' in e:valid=not R.reuse_gaps(st,e)
-        if valid and 'execution_association' in e:
-            import al_execution_receipts as Receipts
-            valid=not Receipts.validate_association(st,e)
-        if valid:valid=not ReviewState.gaps(st,g,e,fp)
-        if valid and stage=='candidate':
-            valid=(e.get('kind')=='check' and e.get('gate_stage')=='candidate' and e.get('gate_manifest')==r['manifest']
-                   and e['argv']==g['argv'] and e['cwd']==g['cwd'] and e['scope']==g['scope']
-                   and r.get('execution_kind')==g['execution_kind'] and e['area']=='gate-candidate-'+g['id']
-                   and L.entry_verdict(st,e)[0]=='VALID')
-        if not valid and accepted_failure(st,m,g,stage,e,r,fp,environment_current):continue
-        if not valid:
-            decision=st.get('gate_decisions',{}).get(g['id'])
-            if stage=='base' and environment_current and e and e['status']=='FAIL' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and decision and decision['action']=='fix' and decision.get('manifest')==st['gate_manifests'][-1]['sha256'] and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id']: continue
-            # An authorized exception accepts only this exact unchanged-base failure; the evidence stays FAIL.
-            if stage=='base' and e and e['status']=='FAIL' and Exceptions.current(st,m,g):continue
+        if gate_result(st,m,g,stage,fp) not in {'valid','not-required','unverified','accepted-base-decision','accepted-existing-failure'}:
             out.append(stage+' gate '+g['id']+' requires passing evidence')
     return out
 
 def unverified(st):
-    """Checks AL could not model or run locally, pre-existing failures in untouched services and
-    environment gaps: reported to the reviewer and the user, never blocking."""
+    """Known individual checks and accepted failures; incomplete discovery is a separate blocker."""
     m=manifest(st)
     if not m:return []
     out=[{'gate':g['id'],'category':g['category'],'reason':g.get('reason',''),
-          'verified_by':'pipeline' if g['category']=='ci' else 'not verified'}
-         for g in m['gates'] if g['applicability']=='UNRESOLVED']
+          'verified_by':'not verified'}
+         for g in m['gates'] if g['applicability']=='UNRESOLVED' and g['id'] not in {'imports-unresolved','ci'}
+         and not str((g.get('source') or {}).get('job','')).startswith('<unresolved-')]
     sha=st['gate_manifests'][-1]['sha256']
     for stage in ('base','candidate'):
         fp=S.capture_candidate(st)['fingerprint'] if stage=='candidate' else m['base_oid']
@@ -193,7 +193,9 @@ def status(st):
             runs.append({'gate': run['gate'], 'stage': run['stage'], 'evidence': entry['id'],
                          'status': entry['status'], 'reason': entry.get('note', ''), 'log': entry.get('log')})
     return {'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),'evidence':runs,
-            'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st)}
+            'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st),
+            'coverage_blockers':__import__('al_service_coverage').admission_gaps(st),
+            'coverage_resolution':'Complete repository, consumer and required-check discovery before admission'}
 @S.decision
 def candidate_gaps(st):
     m=manifest(st)
@@ -306,6 +308,19 @@ def cmd_run(a,sid):
                     gaps+=Sources.capability_gaps(g['scope'],g.get('sources',[]),S.source_rows(root),g['cwd'],root=root)
                     if gaps:raise al_checkouts.MaterializationError('; '.join(gaps))
                     if env_fingerprint!=L.scope_fingerprint([],g['env_names']):raise CandidateChanged('declared environment changed before execution')
+                    if g['category']=='pre-commit' and g['execution_kind']=='local':
+                        import al_check_setup
+                        entry['execution_stage']='setup'
+                        entry['hook_status']='NOT_RUN'
+                        entry['setup']=[]
+                        try:
+                            al_check_setup.execute(root,g['cwd'],owner,log,a.timeout,entry['setup'],argv=g['argv'])
+                        finally:E._commit(sid,entry)
+                        # Setup output belongs to the disposable checkout; hooks are checked
+                        # against this prepared state, with source/locks already verified.
+                        initial=R.scratch_state(root)
+                        before_state=initial
+                    entry['execution_stage']='check'
                     cwd=al_checkouts.gate_cwd(root,g['cwd'])
                     fp=checkout['capture']['fingerprint'] if a.stage=='candidate' else m['base_oid']
                     key=R.execution_key(st,m,ref,g,a.stage,checkout['capture'],env_fingerprint,a.timeout)
@@ -336,12 +351,24 @@ def cmd_run(a,sid):
                         state_top=ReviewState.prepare(root,g['review_state']) if g.get('review_state') else None
                         try:
                             argv=base_loc_argv(root,g) if a.stage=='base' else g['argv']
-                            with log.open('wb') as out:
+                            with log.open('ab') as out:
                                 out.write(('argv: '+json.dumps(g['argv'])+'\ncwd: '+str(cwd)+'\nexecution_sha256: '+R.key_digest(key)+'\ninvocation: '+invocation+'\n').encode())
                                 if argv!=g['argv']:out.write(('executed at base: '+json.dumps(argv)+'\n').encode())
                                 out.flush()
-                                proc=owner.spawn(argv,cwd=cwd,stdout=out,stderr=subprocess.STDOUT)
-                                entry['pid']=proc.pid; E._commit(sid,entry)
+                                hook_env=None
+                                if g['category']=='pre-commit':
+                                    hook_env=dict(__import__('os').environ)
+                                    hook_env.pop('NODE_PATH',None)
+                                    bins=[]
+                                    for setup in entry.get('setup',[]):
+                                        directory=root/setup['cwd']
+                                        bins.append(str(directory/('.venv/bin' if setup['manager']=='uv' else 'node_modules/.bin')))
+                                        if setup['manager']=='uv':hook_env['VIRTUAL_ENV']=str(directory/'.venv')
+                                    hook_env['PATH']=__import__('os').pathsep.join(bins+[hook_env.get('PATH','')])
+                                proc=owner.spawn(argv,cwd=cwd,env=hook_env,stdout=out,stderr=subprocess.STDOUT)
+                                entry['pid']=proc.pid
+                                if g['category']=='pre-commit':entry['hook_status']='RUNNING'
+                                E._commit(sid,entry)
                                 try: code=proc.wait(timeout=a.timeout)
                                 except subprocess.TimeoutExpired:
                                     code=stop(proc); status='INFRA'; note=f'timeout after {a.timeout:g} s'
@@ -378,8 +405,8 @@ def cmd_run(a,sid):
                 except CandidateChanged as exc:
                     status='TORN';code=126;note=str(exc);log.write_text(str(exc)+'\n')
                 except al_checkouts.MaterializationError as exc:
-                    status='INFRA';code=126;fp=None;note='rejected '+a.stage+' materialization'
-                    log.write_text('Disposable materialization rejected: '+str(exc)+'\n')
+                    status='INFRA';code=126;fp=None;note=('dependency setup failed; hook NOT_RUN: '+str(exc)) if entry.get('execution_stage')=='setup' else 'rejected '+a.stage+' materialization'
+                    with log.open('a') as out:out.write('Disposable materialization rejected during setup: '+str(exc)+'\n')
                 except (L.FingerprintError, Sources.SourceError, SystemExit) as exc:
                     status='INFRA';code=126;fp=None;note='source capture/capability unavailable'
                     log.write_text(str(exc)+'\n')
@@ -395,6 +422,7 @@ def cmd_run(a,sid):
                         entry['interrupted']=True
                         result_status,result_code,result_note='INFRA',130,'gate cancelled: '+reason
                     else:result_status,result_code,result_note=status,code,note
+                    if entry.get('hook_status')=='RUNNING':entry['hook_status']=result_status
                     entry.update(status=result_status,exit=result_code,ended_at=time.time(),log=str(log),log_sha256=L.file_sha(log),note=result_note,gate_stage=a.stage,gate_manifest=ref)
                     current=al_store.load(sid)
                     previous=next((e for e in current['evidence']['entries'] if e['id']==entry['id']),None)

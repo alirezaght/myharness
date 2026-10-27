@@ -84,9 +84,9 @@ def test_unknown_prospective_ci_remains_unresolved(cli,repo,tmp_path,state_file)
     put(repo,'apps/web/package.json','{"name":"web"}')
     setup(cli,repo,tmp_path);unchanged_refusal(cli,state_file,'apps/web')
     m=manifest(cli,repo,['apps/web']);assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED' for g in m['gates'])
-    # The unmodelable job is reported as unverified and does not hold back the writer.
-    plan(cli,tmp_path,m);writer(cli,'apps/web/a.ts')
-    assert any(u['category']=='ci' and u['verified_by']=='pipeline' for u in json.loads(invoke(cli,'gates','status')[1])['unverified'])
+    # An unmodelable required check remains diagnostic and blocks writer admission.
+    plan(cli,tmp_path,m);unchanged_refusal(cli,state_file,'apps/web/a.ts')
+    assert json.loads(invoke(cli,'gates','status')[1])['coverage_blockers']
 
 
 def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(cli,repo,tmp_path,state_file):
@@ -105,9 +105,8 @@ def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(
     writer(cli,'packages/shared/src/common.py')
     invoke(cli,'writer','finish','--id','writer','--outcome','success')
     (repo/'packages/shared/src/common.py').write_text('VALUE=__import__("unknown")\n')
-    # A content edit inside a covered path does not hold back writers; the review-start
-    # inventory reports the new import uncertainty against the planned manifest.
-    writer(cli,'packages/shared/src/common.py',identifier='second')
+    # Unknown consumers invalidate coverage even inside an already covered path.
+    unchanged_refusal(cli,state_file,'packages/shared/src/common.py')
     st=state(cli);import al_artifacts as A
     assert V.gaps(st,A.read_json(st['gate_manifests'][-1]))
 

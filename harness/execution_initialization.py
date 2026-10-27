@@ -1,7 +1,6 @@
 """Supervisor performs guarded AL start before admitting any native process."""
 
 import json
-import subprocess
 from pathlib import Path
 
 from harness.db import utcnow
@@ -9,6 +8,7 @@ from harness.execution_authority import require_execution_authority
 from harness.execution_contract import canonical, digest
 from harness.execution_hosts import al_argv, al_source
 from harness.execution_models import ExecutionConflict
+from harness.owned_subprocess import run_owned
 
 
 def initialization_identity(execution, envelope):
@@ -95,11 +95,10 @@ def initialize_execution(controller, execution, package, envelope):
         )
         from harness.execution_bootstrap import execution_environment
 
-        result = subprocess.run(
+        result = run_owned(
             argv,
             cwd=envelope["repository"],
             env=execution_environment(),
-            capture_output=True,
             timeout=60,
         )
         if result.returncode or len(result.stdout) > 262144:
@@ -110,13 +109,24 @@ def initialize_execution(controller, execution, package, envelope):
                 + redact((result.stderr + result.stdout).decode(errors="replace")[-4096:])
             )
         identity = initialization_identity(execution, envelope)
+    identity = validate_existing_origin(execution, envelope, package["launcher"])
+    conn.execute(
+        "UPDATE execution_initializations SET state='Active',identity=?,updated_at=? "
+        "WHERE execution_id=?",
+        (canonical(identity), utcnow(), eid),
+    )
+    return identity
+
+
+def validate_existing_origin(execution, envelope, launcher):
+    """Read-only managed validation, also used before bridge maintenance."""
     # Protected managed origin validates state independently; never trust a self-described
     # runtime_origin path from native-writable AL state as the authority root.
     from harness.execution_bootstrap import execution_environment
 
-    verified = subprocess.run(
+    verified = run_owned(
         al_argv(
-            package["launcher"],
+            launcher,
             execution["host"],
             envelope["repository"],
             execution["al_session_id"],
@@ -126,15 +136,8 @@ def initialize_execution(controller, execution, package, envelope):
         ),
         cwd=envelope["repository"],
         env=execution_environment(),
-        capture_output=True,
         timeout=30,
     )
     if verified.returncode:
         raise ExecutionConflict("protected existing AL origin validation refused")
-    identity = initialization_identity(execution, envelope)
-    conn.execute(
-        "UPDATE execution_initializations SET state='Active',identity=?,updated_at=? "
-        "WHERE execution_id=?",
-        (canonical(identity), utcnow(), eid),
-    )
-    return identity
+    return initialization_identity(execution, envelope)

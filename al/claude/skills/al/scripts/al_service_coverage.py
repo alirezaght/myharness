@@ -5,25 +5,19 @@ from al_repository_facts import all_within,digest,semantic_requirements,within,v
 
 def assess(facts):
     validate_facts(facts);deps=facts['dependencies'];uncertain=deps['uncertainties'];potential=deps['potential_services']
-    # Unresolved imports no longer select every service: AL checks the known affected set and
-    # reports the possible further dependents as unverified (verified by the pipeline).
-    selected=sorted(set(deps['known_affected'])|set(deps.get('policy_selection',[])))
+    selected=sorted(set(potential) if uncertain else set(deps['known_affected'])|set(deps.get('policy_selection',[])))
     enum=[*facts['enumeration']['gaps'],*facts['unsupported_boundaries']]
-    # Neither an enumeration nor a check-discovery gap: the units and their checks are known,
-    # only whether further services depend on the change is not.
-    dependents=[{'code':'uncertain-dependents','path':'.','unit':None,
-                 'reason':str(len(uncertain))+' import(s) could not be resolved; services beyond the known affected set are not checked locally'}] if uncertain and set(potential)-set(selected) else []
     if not facts['scan']['stable']:enum.append({'code':'torn-scan','path':'.','reason':'repository changed during fact collection','unit':None})
     obligations=[o for o in facts['checks']['obligations'] if set(o['units'])&set(selected)]
     bindings=[b for b in facts['checks']['bindings'] if set(b['units'])&set(selected)]
     gaps=[g for g in facts['checks']['gaps'] if g.get('unit') is None or g['unit'] in selected]
     bound={oid for b in bindings for oid in b['obligation_ids']}
     for o in obligations:
-        if o['id'] not in bound and not any(g.get('unit') in o['units'] for g in gaps):gaps.append({'code':'missing-check','unit':o['units'][0] if o['units'] else None,'path':'.','category':o['category'],'reason':'required obligation has no executable binding: '+o['id']})
-    return {'schema_version':1,'outcome':'incomplete' if enum or gaps or dependents else 'exhaustive' if uncertain else 'identified',
+        if o['id'] not in bound:gaps.append({'code':'missing-check','unit':o['units'][0] if o['units'] else None,'path':'.','category':o['category'],'reason':'required obligation has no executable binding: '+o['id']})
+    return {'schema_version':1,'outcome':'incomplete' if enum or gaps else 'exhaustive' if uncertain else 'identified',
             'known_affected':deps['known_affected'],'potential_services':potential,'selected_services':selected,'dependency_uncertainties':uncertain,
             'enumeration':{'status':'incomplete' if enum else 'complete','boundary_ids':facts['enumeration']['boundaries'],'gap_ids':[g['code'] for g in enum]},
-            'check_discovery':{'status':'incomplete' if gaps else 'complete','obligation_ids':[o['id'] for o in obligations],'gap_ids':[g['code'] for g in gaps]},'required_bindings':bindings,'gaps':enum+gaps+dependents}
+            'check_discovery':{'status':'incomplete' if gaps else 'complete','obligation_ids':[o['id'] for o in obligations],'gap_ids':[g['code'] for g in gaps]},'required_bindings':bindings,'gaps':enum+gaps}
 
 
 def validate_assessment(value):
@@ -57,7 +51,7 @@ def validate_check_binding(expected,gate):
 def declaration(facts,assessment,gates):
     semantics=semantic_requirements(facts)
     # Per-file scan inputs are bound by digest and count: the manifest stays small on large repositories.
-    provenance={'scan_inputs':{'count':len(facts['scan_inputs']),'sha256':digest(facts['scan_inputs'])},'rule_sources':facts['rule_sources'],'membership':facts['enumeration']['observed_members'],'absent_paths':facts['enumeration']['absent_paths']}
+    provenance={'scan_inputs':{'count':len(facts['scan_inputs']),'sha256':digest(facts['scan_inputs'])},'rule_sources':facts['rule_sources'],'membership':facts['enumeration']['observed_members'],'absent_paths':facts['enumeration']['absent_paths'],'ignored_outputs':facts['enumeration'].get('ignored_outputs',[])}
     provenance['digest']=digest(provenance)
     return {'schema_version':1,'adapter':facts['adapter'],'policy_version':facts['policy_version'],'repository':facts['repository'], 'assessment':assessment,'semantic_requirements':semantics,'semantic_sha256':digest(semantics),'provenance':provenance,
             'bindings':[{'obligation_id':oid,'gate_id':g['id'],'execution_signature':g['execution_signature']} for g in gates if g.get('execution_signature') for oid in g.get('obligation_ids',[])]}
@@ -77,7 +71,7 @@ def validate_declaration(value,gates):
     deps=semantics['dependencies'];assessment=value['assessment']
     for key in ('known_affected','potential_services'):
         if assessment[key]!=deps[key]:raise ValueError('assessment differs from semantic requirements: '+key)
-    selected=sorted(set(deps['known_affected'])|set(deps.get('policy_selection',[])))
+    selected=sorted(set(deps['potential_services']) if deps['uncertainties'] else set(deps['known_affected'])|set(deps.get('policy_selection',[])))
     if assessment['selected_services']!=selected:raise ValueError('assessment selection differs from semantic requirements')
     if [{k:v for k,v in u.items() if k!='location'} for u in assessment['dependency_uncertainties']]!=deps['uncertainties']:raise ValueError('assessment erased dependency uncertainty')
     if not isinstance(value['bindings'],list) or len(value['bindings'])>10000:raise ValueError('invalid coverage binding list')
@@ -92,7 +86,7 @@ def validate_declaration(value,gates):
     if seen!=set(expected):raise ValueError('coverage declaration omits obligation bindings')
 
 
-def current_gaps(facts,assessment,manifest):
+def current_gaps(facts,assessment,manifest,*,admission=True):
     value=manifest.get('service_coverage');out=[]
     relevant=bool(facts['units'] or assessment['gaps'] or assessment['dependency_uncertainties'])
     if not value:return ['service coverage declaration required; rediscover repository gates'] if relevant else []
@@ -100,9 +94,35 @@ def current_gaps(facts,assessment,manifest):
     old=value['assessment']
     for key in ('outcome','known_affected','potential_services','selected_services','enumeration','check_discovery'):
         if old[key]!=assessment[key]:out.append('service coverage assessment changed: '+key)
-    if assessment['outcome']=='incomplete' and not any(g['category']=='lint-imports' and g['applicability']=='UNRESOLVED' and g.get('required') is True for g in manifest['gates']):out.append('coverage incomplete requires a blocking unresolved coverage gate')
     for binding in assessment['required_bindings']:
         matches=[g for g in manifest['gates'] if g.get('obligation_ids')==binding['obligation_ids']]
         if not matches:out.append('missing sourced check binding: '+binding['id'])
         else:out.extend(validate_check_binding(binding,matches[0]))
+    if admission:out.extend(readiness_gaps(value,manifest['gates']))
     return out
+
+
+def readiness_gaps(value,gates):
+    """Reconstruct coverage before granting any admission; sentinels confer no authority."""
+    validate_declaration(value,gates)
+    a=value['assessment']
+    if a['outcome']!='incomplete':return []
+    return sorted(set('coverage incomplete: '+g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason'] for g in a['gaps']))
+
+
+def admission_gaps(st,*,current=False):
+    import al_artifacts as A
+    refs=st.get('gate_manifests',[])
+    if not refs:return ['repository gate manifest missing']
+    manifest=A.read_json(refs[-1]);value=manifest.get('service_coverage')
+    out=readiness_gaps(value,manifest['gates']) if value else []
+    if current:
+        import al_gate_inventory as V
+        out.extend(V.gaps(st,manifest))
+    return sorted(set(out))
+
+
+def require_ready(st,*,current=False):
+    from al_schema import refuse
+    missing=admission_gaps(st,current=current)
+    if missing:refuse('service coverage blocks admission: '+str(missing))

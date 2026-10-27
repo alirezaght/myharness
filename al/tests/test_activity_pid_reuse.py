@@ -24,6 +24,9 @@ class Clock:
         self.value += .01
         return self.value
     def time(self):return BASE + 100 + self.value
+    def get_clock_info(self,name):
+        return SimpleNamespace(resolution=1e-7,implementation='deterministic Darwin clock',
+                               monotonic=name=='monotonic',adjustable=name=='time')
 
 
 def case_with_pid(tmp_path, monkeypatch, *, end=BASE - 100, status='PASS', role='child', interrupted=False, start=BASE - 200, cleanup=None, receipt=None):
@@ -59,7 +62,7 @@ def case_with_pid(tmp_path, monkeypatch, *, end=BASE - 100, status='PASS', role=
         return real(pid)
     monkeypatch.setattr(O, 'kernel_identity', denied)
     monkeypatch.setattr(P, 'sys', SimpleNamespace(platform='darwin'))
-    clock = Clock();monkeypatch.setattr(P.time, 'time', clock.time);monkeypatch.setattr(P.time, 'monotonic', clock.monotonic)
+    clock = Clock();monkeypatch.setattr(P, 'time', clock)
     return case, clock
 
 
@@ -81,15 +84,18 @@ def ps_rows(monkeypatch, values):
 def test_two_fresh_later_starts_resolve_only_hash_bound_historical_pid(tmp_path, monkeypatch, role):
     case, _ = case_with_pid(tmp_path, monkeypatch, role=role);seen = ps_rows(monkeypatch, [GOOD])
     with quiescence_context(case['plan']) as check:
+        assert len(seen) == 2  # context admission independently proves reuse
         result = check()
+        assert len(seen) == 4  # explicit freshness check repeats both observations
         row = next(p for p in result['observation']['processes'] if p['pid'] == PID)
-        assert row['result'] == 'different-process'
+        assert row['result'] == 'different-process', row['evidence']
         proof = row['evidence']['independent_start_observation']
         assert proof['kernel_error'] and not proof['signal_authority']
         assert proof['historical_binding']['state_sha256'] == digest(case['old_path'].read_bytes())
         assert proof['historical_binding']['pid_role'] == role
         assert len(proof['observations']) == 2 and proof['observed_start_lower_bound'] == BASE - 1
         assert proof['inventory_digest'] == case['inventory']['digest'] and proof['held_locks_digest']
+    assert len(seen) == 4
     assert all(argv == ['/bin/ps', '-p', str(PID), '-o', 'pid=,lstart='] and opts['env'] == P.ENV
                and opts['timeout'] == 2 and 'shell' not in opts for argv, opts in seen)
 
@@ -122,10 +128,11 @@ BAD = [b'', b'\n' + GOOD, GOOD + b'\n', b'424242 Tue Oct 20 00:00:00\n', b'42424
 
 @pytest.mark.parametrize('bad', BAD)
 def test_unavailable_malformed_locale_or_owner_name_output_stays_unknown(tmp_path, monkeypatch, bad):
-    case, _ = case_with_pid(tmp_path, monkeypatch);ps_rows(monkeypatch, [bad])
+    case, _ = case_with_pid(tmp_path, monkeypatch);seen = ps_rows(monkeypatch, [bad])
     monkeypatch.setenv('LC_ALL', 'hostile');monkeypatch.setenv('TZ', 'Pacific/Honolulu');monkeypatch.setenv('DYLD_INSERT_LIBRARIES', '/untrusted')
     with pytest.raises(ValueError, match='blocked|incomplete'):
         with quiescence_context(case['plan']):pass
+    assert len(seen) == 1  # output/OS refusal was reached with supported clock metadata
 
 
 @pytest.mark.parametrize('mutation', ['different', 'disappeared', 'future', 'clock', 'state', 'membership'])
@@ -212,7 +219,7 @@ def test_recorded_os_clock_quantization_is_not_misclassified_as_discontinuity():
 
 @pytest.mark.parametrize('resolution', [0, -1, True, float('nan'), float('inf'), .001])
 def test_unsupported_clock_resolution_cannot_relax_precision(tmp_path, monkeypatch, resolution):
-    case, _ = case_with_pid(tmp_path, monkeypatch);ps_rows(monkeypatch, [GOOD])
+    case, _ = case_with_pid(tmp_path, monkeypatch);seen = ps_rows(monkeypatch, [GOOD])
     original = P.time.get_clock_info
     def info(name):
         value = original(name)
@@ -221,3 +228,5 @@ def test_unsupported_clock_resolution_cannot_relax_precision(tmp_path, monkeypat
     monkeypatch.setattr(P.time, 'get_clock_info', info)
     with pytest.raises(ValueError, match='blocked|incomplete'):
         with quiescence_context(case['plan']):pass
+
+    assert not seen  # unsupported metadata refuses before invoking ps

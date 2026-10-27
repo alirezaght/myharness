@@ -118,6 +118,11 @@ def cmd_model_unavailable(a, sid):
         st["stop_reason"] = al_models.blocked_reason(st, blocked)
         if st.get("phase") in st["phase_timings"]:
             st["phase_timings"][st["phase"]]["ended"] = time.time()
+        recovery = st.get('rework_recovery')
+        if recovery and recovery['pending']:
+            from al_rework_recovery import stop
+            pending = next(o for o in recovery['occurrences'] if o['id']==recovery['pending'])
+            stop(st,sid,pending,st['stop_reason'],'model')
     save(sid, st)
     for line in lines:
         print(line)
@@ -187,6 +192,7 @@ def _main():
     s = sub.add_parser("spec-gate"); s.add_argument("verdict", choices=["SPEC_READY", "SPEC_BLOCKED"])
     s.add_argument("--reason", default=""); s.set_defaults(fn=cmd_spec_gate)
     s = sub.add_parser("classify"); s.add_argument("classification")
+    s.add_argument("--assessment-file", help="source-bound residual implementation risk")
     s.add_argument("--designer", choices=["yes", "no"], required=True)
     s.add_argument("--implementers"); s.add_argument("--reason"); s.add_argument("--designer-reason")
     s.set_defaults(fn=cmd_classify)
@@ -230,6 +236,8 @@ def _main():
     s.set_defaults(fn=cmd_show)
     import al_execution_tasks
     al_execution_tasks.register(sub)
+    import al_repository_audit
+    al_repository_audit.register(sub)
     al_isolation.register(sub)
     al_writers.register(sub)
     al_gates.register(sub)
@@ -246,6 +254,10 @@ def _main():
     al_recovery.register(sub)
     al_escapes.register(sub)
     al_rework.register(sub)
+    import al_rework_recovery
+    al_rework_recovery.register(sub)
+    import al_acceptance
+    al_acceptance.register(sub)
     al_evidence.register(sub)
     al_preflight.register(sub)
     argv = sys.argv[1:]
@@ -281,7 +293,7 @@ def _main():
             a.fn(a, sid)
         else:
             with locked(sid):
-                if a.cmd not in {"start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile","integration","recovery","artifact"} and not (a.cmd == "publication" and a.action in {"packet", "status"}):
+                if a.cmd not in {"rework-recovery","start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile","integration","recovery","artifact"} and not (a.cmd in {"publication", "acceptance"} and a.action in {"packet", "status"}):
                     existing = load(sid)
                     if existing["status"] != "RUNNING": al_schema.refuse("run is not running; explicit resume required")
                 a.fn(a, sid)

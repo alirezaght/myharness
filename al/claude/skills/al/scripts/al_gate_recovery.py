@@ -55,6 +55,8 @@ def ready(st):
     if not currency['current']:
         from al_recovery_guidance import refuse_guided
         refuse_guided(st,'current gate obligations require replanning: '+str(currency['reasons']))
+    from al_service_coverage import require_ready
+    require_ready(st,current=True)
     if st.get('gate_recovery'):
         obligation=marker(st)
         if obligation.get('replacement_manifest')!=st['gate_manifests'][-1]['sha256']:refuse('active manifest is not the recovery replacement')

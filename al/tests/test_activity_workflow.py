@@ -45,10 +45,6 @@ def workflow_case(tmp_path_factory, request):
     cli('start', '--spec', 'Verify actual content attribution and reserved gate workflow metadata.')
     cli('spec-gate', 'SPEC_READY')
     cli('classify', 'SMALL', '--designer', 'no', '--implementers', 'al-engineer')
-    report = root.parent / 'architect-planning-report.json'
-    report.write_text(json.dumps(report_for(json.loads(cli('planning', 'packet')))))
-    saved = json.loads(cli('planning', 'report', '--file', str(report)))
-    cli('planning', 'admit', '--file', saved['materialized_obligations']['stored_path'])
     paths = root.parent / 'paths.json';paths.write_text('["src"]')
     manifest = json.loads(cli('gates', 'discover', '--paths-file', str(paths)))
     for gate in manifest['gates']:
@@ -58,6 +54,10 @@ def workflow_case(tmp_path_factory, request):
     file = root.parent / 'manifest.json';file.write_text(json.dumps(manifest))
     cli('gates', 'plan', '--file', str(file))
     cli('gates', 'run', '--stage', 'base')
+    report = root.parent / 'architect-planning-report.json'
+    report.write_text(json.dumps(report_for(json.loads(cli('planning', 'packet')))))
+    saved = json.loads(cli('planning', 'report', '--file', str(report)))
+    cli('planning', 'admit', '--file', saved['materialized_obligations']['stored_path'])
     cli('phase', 'IMPLEMENTATION')
     cli('writer', 'start', '--id', 'repair', '--role', 'al-engineer', '--files', 'src')
     (root / 'src/app.py').write_text('VALUE=2\n')
@@ -87,7 +87,7 @@ def inventory(case):
 
 def test_actual_public_attribution_contribution_reconciliation_and_reservation_profile(workflow_case):
     result = inventory(workflow_case)
-    assert result['stable'], result['roots']
+    assert result['stable'], json.dumps(result, indent=2)
     record = result['roots'][0]['records'][0]
     assert record['classification'] == 'current-session' and not record['errors']
     assert record['historical_status'] == 'RUNNING'  # Recognition is no approval/eligibility.

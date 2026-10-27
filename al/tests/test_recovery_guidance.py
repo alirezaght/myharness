@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from al.tests.editorial_receipt_helpers import latest, prepare_readers, state, state_path, succeed
+from al.tests.editorial_receipt_helpers import latest, plan_fixture_gates, prepare_readers, state, state_path, succeed
 from al.tests.planning_helpers import report_for, save_report
-from al.tests.runtime_run_helpers import launched, public_run
+from al.tests.runtime_run_helpers import invoke, launched, public_run
 
 
 def guidance(launched, platform):
@@ -30,6 +30,11 @@ def validate(launched, platform, path):
 def test_guided_planning_operations_cannot_bypass_inputs_or_replay_stale_binding(
     launched, platform
 ):
+    repo = launched[2]
+    (repo / "Makefile").write_text("all:\n\ttrue\n")
+    (repo / "rows.json").write_text('{"rows": [1, 2]}\n')
+    succeed(invoke(["git", "add", "Makefile", "rows.json"], repo, launched[4]))
+    succeed(invoke(["git", "commit", "-qm", "reader prerequisites"], repo, launched[4]))
     for arguments in (
         ("start", "--spec", "Verify exact current recovery without bypassing planning authority."),
         ("spec-gate", "SPEC_READY"),
@@ -77,6 +82,7 @@ def test_guided_planning_operations_cannot_bypass_inputs_or_replay_stale_binding
     )
     assert validate(launched, platform, prerequisite_file).returncode != 0
     assert state(launched, platform)["proof_admission"]["status"] == "pending"
+    plan_fixture_gates(launched, platform, ["Makefile", "rows.json", "setup.json"], readers=True)
     offered = guidance(launched, platform)[0]
     assert offered["code"] == "PROOF_ADMISSION_PENDING"
     assert offered["recovery"]["command"] == "planning.packet"
@@ -110,9 +116,10 @@ def test_guided_planning_operations_cannot_bypass_inputs_or_replay_stale_binding
     assert current["status"] == "RUNNING" and current["phase"] == "PLANNING"
     assert validate(launched, platform, path).returncode != 0
     before = state_path(launched, platform).read_bytes()
-    refused = public_run(launched, platform, "phase", "IMPLEMENTATION")
-    assert refused.returncode != 0 and "AL_RECOVERY " in refused.stdout + refused.stderr
+    refused = public_run(launched, platform, "--recovery-file", path, "phase", "IMPLEMENTATION")
+    assert refused.returncode != 0
     assert state_path(launched, platform).read_bytes() == before
+    succeed(public_run(launched, platform, "phase", "IMPLEMENTATION"))
 
 
 # Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).

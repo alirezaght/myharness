@@ -138,10 +138,11 @@ def test_opaque_unit_root_discovery_and_passed_candidate_gates_agree(cli,repo,tm
     assert manifest['units']==['.']
     invoke(cli,'gates','run','--stage','candidate','--id','contracts')
     finished(cli,'PASS')
-    # The opaque unit's coverage gap is reported as unverified; it no longer blocks the passed candidate.
+    # Local execution passes, while opaque discovery still blocks admission.
     status=json.loads(cli('gates','status')[1])
-    assert status['candidate']==[]
-    assert any(u['category']=='lint-imports' for u in status['unverified'])
+    assert status['candidate'] and status['coverage_blockers']
+    assert any('gitlink' in gap for gap in status['coverage_blockers'])
+    assert not any(u['category']=='lint-imports' for u in status['unverified'])
 
 
 @pytest.mark.parametrize('namespace',['services','apps','packages'])

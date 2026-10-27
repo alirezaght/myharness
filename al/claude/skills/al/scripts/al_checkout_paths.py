@@ -42,19 +42,11 @@ def resolve(root,path,allow_missing=False):
     return walk(parts,missing=allow_missing)
 
 
-def dependency_link(root,path):
-    """Whether `path` is one of AL's links to the working tree's installed node_modules."""
-    import al_store
-    if path.name!='node_modules' or not path.is_symlink():return False
-    return os.readlink(path)==str(al_store.REPO_ROOT/path.relative_to(root))
-
-
 def validate(root):
     root=Path(root).resolve()
     for directory,dirs,files in os.walk(root,followlinks=False):
         if Path(directory)==root:dirs[:]=[d for d in dirs if d!='.git'];files=[f for f in files if f!='.git']
         for name in dirs+files:
-            if dependency_link(root,Path(directory)/name):continue
             resolve(root,Path(directory)/name)
 
 

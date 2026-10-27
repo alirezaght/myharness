@@ -39,7 +39,7 @@ def begin(repo,native):
 
 def resources():
     root=al_store.RUNTIME_DIR
-    return {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file() and (p.suffix=='.json' or 'artifacts' in p.parts or p.name.startswith('.pointer-'))}
+    return {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*') if p.is_file() and (p.suffix=='.json' or 'artifacts' in p.relative_to(root).parts or p.name.startswith('.pointer-') or p.name=='current')}
 
 @pytest.mark.parametrize('nested',[False,True])
 def test_new_cwd_publication_preserves_history_and_execution_binding(repo,nested):
@@ -59,8 +59,22 @@ def test_new_cwd_publication_preserves_history_and_execution_binding(repo,nested
     if nested:assert process(destination,'conversation','--session',first,'show').returncode!=0
     assert 'AL' in al_statusline.al_segment('conversation')
 
+def coordination_locks():
+    root=al_store.RUNTIME_DIR
+    return {str(p.relative_to(root)):p.read_bytes() for p in root.rglob('*.lock') if p.is_file()}
+
+@pytest.mark.parametrize('ancestor',['ordinary','artifacts'])
 @pytest.mark.parametrize('corruption',['array','missing-field','foreign-conversation','invalid-session','dangling','schema','attribution','session','root','git_dir','common_dir'])
-def test_invalid_previous_reference_refuses_before_task_or_state(repo,corruption):
+def test_invalid_previous_reference_refuses_before_task_or_state(repo,corruption,ancestor,monkeypatch):
+    # Keep the managed repository layout, varying an ancestor name in both contexts.
+    import shutil
+    destination=repo.parent/ancestor/'repo'
+    shutil.copytree(repo,destination,symlinks=True)
+    repo=destination
+    monkeypatch.chdir(repo)
+    runtime=repo/'.claude'/'al-runtime'
+    monkeypatch.setattr(al_store,'RUNTIME_DIR',runtime);monkeypatch.setattr(al_store,'CURRENT',runtime/'current')
+    monkeypatch.setattr(al_store,'REPO_ROOT',repo);monkeypatch.setenv('AL_RUNTIME_DIR',str(runtime));monkeypatch.setenv('CLAUDE_PROJECT_DIR',str(repo))
     sid,_=begin(repo,'conversation');pointer=N.pointer('conversation');state=al_store.state_path(sid)
     if corruption=='array':pointer.write_text('[]')
     elif corruption=='missing-field':pointer.write_text('{}')
@@ -74,9 +88,28 @@ def test_invalid_previous_reference_refuses_before_task_or_state(repo,corruption
         elif corruption=='session':value['session_id']='foreign'
         else:value['identity'][corruption]='/foreign'
         state.write_text(json.dumps(value))
-    before=resources();result=process(repo/'svc','conversation','start','--spec',SPEC)
+    before=resources();locks=coordination_locks()
+    reservations=set((LAUNCHER[0].storage/'runs').glob('*.json'))
+    all_before={str(p.relative_to(al_store.RUNTIME_DIR)):p.read_bytes() for p in al_store.RUNTIME_DIR.rglob('*') if p.is_file()}
+    result=process(repo/'svc','conversation','start','--spec',SPEC)
     assert result.returncode!=0
     assert resources()==before
+    after=coordination_locks()
+    assert all(after.get(name)==raw for name,raw in locks.items())
+    added=set(after)-set(locks)
+    # The protected launcher reserves a distinct failed-start identity before native history validation.
+    from installer.runtime_pin_transaction import read
+    created=set((LAUNCHER[0].storage/'runs').glob('*.json'))-reservations
+    assert len(created)==1
+    reservation=read(created.pop())
+    assert reservation['status']=='RESERVED' and reservation['session_id']!=sid
+    assert reservation['platform']=='claude' and reservation['pin']==LAUNCHER[0].pin
+    assert reservation['repository_identity']['root']==str(repo.resolve())
+    expected={'.'+reservation['session_id']+'.lock'} if corruption not in {'array','missing-field','foreign-conversation','invalid-session'} else set()
+    assert added == expected
+    assert all(after[name]==b'' for name in added)
+    all_after={str(p.relative_to(al_store.RUNTIME_DIR)):p.read_bytes() for p in al_store.RUNTIME_DIR.rglob('*') if p.is_file()}
+    assert all_after == all_before | {name:b'' for name in added}
 
 
 def public_main(monkeypatch,capsys,repo,*args):

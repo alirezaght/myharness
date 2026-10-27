@@ -351,8 +351,8 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
         "--implementers",
         "al-engineer",
     )
-    _admit_planning(repo, env, session, tmp_path)
     _plan_scenario_gates(repo, tmp_path, env, session)
+    _admit_planning(repo, env, session, tmp_path)
     _run(repo, env, session, "phase", "IMPLEMENTATION")
 
     launched = start_execution(controller, task.id, host="claude")

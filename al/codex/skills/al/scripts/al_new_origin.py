@@ -166,6 +166,15 @@ def require_admitted(st):
                       "--degraded --reason TEXT for scoped tracked work after SPEC_READY/classification "
                       "and gate planning. This records writers/evidence; it never admits proof or approval.")
 
+    # Refresh only already planned rule changes before reconstructing coverage.
+    # Unplanned sources and incomplete discovery still refuse admission.
+    from al_gate_refresh import refresh
+    currency = refresh(st)
+    if not currency["current"]:
+        refuse("current gate obligations require replanning: " + str(currency["reasons"]))
+    from al_service_coverage import require_ready
+    require_ready(st,current=True)
+
 
 def prepare_save(st, previous=None):
     if "proof_admission" not in st:
@@ -173,6 +182,9 @@ def prepare_save(st, previous=None):
     from al_task import revision_hashes
 
     admission = st["proof_admission"]
+    if admission.get("status")=="admitted" and previous and previous.get("proof_admission",{}).get("status")=="pending":
+        from al_service_coverage import require_ready
+        require_ready(st,current=True)
     lineage = revision_hashes(st)[-1]
     rerouted = bool(
         previous

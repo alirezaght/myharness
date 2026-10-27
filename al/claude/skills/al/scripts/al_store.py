@@ -111,6 +111,8 @@ def load(sid):
         validate_state(st)
         from al_new_origin import validate as validate_origin
         validate_origin(st)
+        from al_rework_recovery_contract import require_current
+        require_current(st)
         if "editorial_history" in st:
             from al_task_editorial import document_binding
             document_binding(st)
@@ -136,6 +138,8 @@ def save(sid, st):
     if any(key in st or key in (previous or {}) for key in ("publication_authorizations", "publication_records")):
         from al_publication import prepare_save as prepare_publication
         prepare_publication(st, previous)
+    from al_rework_recovery_contract import prepare_save as prepare_recovery
+    prepare_recovery(st, previous)
     prepare_commit(previous, st)
     from al_new_origin import prepare_save
     prepare_save(st, previous)

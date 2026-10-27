@@ -27,13 +27,46 @@ def cmd_classify(a, sid):
     from al_schema import refuse
     if st["phase"] != "PLANNING": refuse("classification can only change during planning")
     designer = a.designer == "yes"
+    import al_artifacts as A
+    package = A.read_json(st['task_package'])
+    inherited = package.get('implementation_risk')
+    override = package.get('routing_override')
+    assessment = None
+    if inherited and not getattr(a, 'assessment_file', None):
+        import al_store
+        from al_task_risk import assess
+        assessment = inherited['assessment']
+        try:
+            expected = assess(assessment, al_store.REPO_ROOT)
+        except (ValueError, OSError) as exc:
+            refuse(str(exc))
+        if not override and a.classification != expected:
+            refuse('classification differs from current clarified Harness risk: '+expected)
+    if override:
+        if override.get('source') != 'explicit developer classification' or override.get('classification') != a.classification:
+            refuse('classification differs from explicit developer routing')
+    if getattr(a, 'assessment_file', None):
+        import json
+        import al_store
+        from al_task_risk import assess
+        assessment = json.loads(Path(a.assessment_file).read_bytes())
+        try:
+            expected = assess(assessment, al_store.REPO_ROOT)
+        except (ValueError, OSError) as exc:
+            refuse(str(exc))
+        if not override and a.classification != expected:
+            refuse('classification differs from inspected residual implementation risk: '+expected)
+        if a.classification == 'COMPLEX' and not designer:
+            refuse('COMPLEX requires a useful pseudocode step')
     if a.classification == "COMPLEX" and not designer: refuse("COMPLEX requires Designer")
     if a.classification == "SMALL" and len((a.implementers or "al-engineer").split(",")) != 1: refuse("SMALL requires one writer")
     _, optional, skipped = phase_plan(a.classification, designer)
     impl = [x.strip() for x in (a.implementers or "").split(",") if x.strip()]
     impl_label = " + ".join(al_models.display(i) for i in impl) or "Engineer/Builder"
     st["classification"] = a.classification
-    st["classification_reason"] = a.reason
+    st["classification_reason"] = a.reason or (assessment["reason"] if assessment else "")
+    if assessment is not None:
+        st["classification_assessment"] = assessment
     st["designer_required"] = designer
     st["designer_reason"] = a.designer_reason
     st["skipped_phases"] = skipped

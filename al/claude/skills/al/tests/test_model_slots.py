@@ -10,6 +10,7 @@ def test_planning_attempt_fallback_binds_the_claude_fallback_slot(cli,repo,tmp_p
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'model-unavailable',M.POLICY['al-architect']['primary']['model'],'--reason','Provider unavailable')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')  # issues the planning attempt
+    invoke(cli,'planning','packet')
     state=json.loads(cli('show')[1])
     attempt=A.read_json(state['planning_authorship']['attempt'])
     slot=M.POLICY['al-architect']['fallback']

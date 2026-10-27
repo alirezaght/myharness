@@ -101,7 +101,9 @@ def launch_worker(conn, execution_id, *, mode="start"):
                     env=dict(
                         execution_environment(),
                         HARNESS_AUTHORITY_ROOT=str(
-                            Path(execution["handoff_path"]).parent / "trusted"
+                            __import__(
+                                "harness.execution_bridge", fromlist=["bridge_root"]
+                            ).bridge_root(execution)
                         ),
                     ),
                 )
@@ -240,8 +242,17 @@ def _prompt(execution, package, envelope, mode):
     return (
         "Use Harness MCP tools for all file, command, and AL state operations. "
         "Read read_file paths harness:handoff, harness:task-package, harness:skill, "
-        "and harness:al-state for the fixed approved documents. al_command accepts "
-        "structured AL arguments. Use write_artifact for JSON/Markdown drafts, then "
+        "and harness:al-state for the fixed approved documents. "
+        "Read harness:skill/index to enumerate the exact protected pin. Resolve every "
+        "required reference or schema through harness:skill/reference/... using read_file "
+        "offset/limit cursors until truncated is false; preserve its resource hash. "
+        "Read harness:repository-audit before final classification/planning; inspect "
+        "manifest ownership, call sites, nested AGENTS.md, existing implementation "
+        "and locally known main divergence. Keyword/test counts do not establish ownership. "
+        "Read harness:planning-adoptions and inspect any hash-bound prior planning receipts "
+        "as reference inputs; a current Architect must revalidate them and author current "
+        "planning proof. Old approval, admission and evidence are never transferred. "
+        "al_command accepts structured AL arguments. Use write_artifact for JSON/Markdown drafts. "
         "Set al_command background=true for long checks "
         "and poll the returned owned process handle. "
         "pass inputs as artifact:<artifact_id>:<sha256> and outputs as output:<name.json>. "
@@ -318,6 +329,22 @@ def supervise(conn, execution_id, token, mode="start"):
                     )
                 return
             package = installed_package(execution["host"], envelope["repository"])
+            if (
+                mode == "resume"
+                and (Path(execution["handoff_path"]).parent / "bridge-selection.json").exists()
+            ):
+                from harness.execution_bridge import bridge_root
+                from harness.execution_initialization import initialization_identity
+
+                bridge_root(execution)
+                existing = initialization_identity(execution, envelope)
+                pinned = Path(existing["pin_root"]) / "payload" / execution["host"] / "skills/al"
+                package = dict(
+                    package,
+                    package=str(pinned),
+                    script=str(pinned / "scripts/al_state.py"),
+                    sha256=package_fingerprint(pinned),
+                )
             previous_package = conn.execute(
                 "SELECT package FROM execution_attempts "
                 "WHERE execution_id=? AND package IS NOT NULL ORDER BY rowid DESC LIMIT 1",

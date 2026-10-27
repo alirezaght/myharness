@@ -30,7 +30,8 @@ If there is no text after `$al`: print `AL · no task given — usage: $al <task
 ## Constants
 
 - `MAX_CORRECTION_ITERATIONS = 6` (also enforced mechanically: `"${STATE[@]}" correction` exit 3).
-- `MAX_REWORK_PER_BATCH = 2` — returns to AL-Engineer *before* review, per batch
+- `MAX_REWORK_PER_BATCH = 2` — local returns to AL-Engineer per batch. A needed
+  further return is durably routed to Architect reassessment or a precise stop
   (`"${STATE[@]}" rework` exit 10; see **Rework and the fast path**).
 - Agents (`spawn_agent` `agent_type` → Codex model / reasoning effort, pinned in
   `$HOME/.codex/agents/<agent_type>.toml` and registered in `$HOME/.codex/config.toml`):
@@ -315,13 +316,24 @@ still red or stale.
   non-local patch, changed contract/interface/invariant, ambiguous scope, safety
   decision, spec or design conflict). Invoke the effective architect with
   `MODE: RESOLVE_CONFLICT` and the defect, then AL-Engineer with the resolution.
-- **Exit 10 — budget spent** (`MAX_REWORK_PER_BATCH` returns this batch) ⇒ Phase 9.
-  Never reset the budget by hand, never claim approval, never invent a new
-  permission requirement to keep going.
-
-Rework is counted separately from review corrections; both appear in the status
-line and the final output. A new review rejection opens a new rework batch, and
-`"${STATE[@]}"` prints that it did.
+- **Exit 10 — batch exhausted.** The command has persisted either a pending
+  `REWORK_REASSESSMENT` for the Architect or a subsystem stop at the automatic
+  cap. Inspect the state. For a pending occurrence, obtain
+  `rework-recovery packet`, send that immutable packet to the actual approved
+  Architect, and submit its structured decision with `rework-recovery decide
+  --file FILE`. The Architect is read-only; the supervisor runs AL commands.
+- A run starts with two returns and allows at most two automatic Architect grants
+  of two each: six default returns total across every review-correction boundary.
+  Review corrections retain their separate six-correction cap and never replenish
+  rework credits. No-progress, decline, or the automatic cap stops with a durable
+  checkpoint. Only an explicit user continuation bound to the latest eligible
+  checkpoint, current source and run can add exactly two credits once; replaying
+  that request adds none.
+- An unavailable Architect model, permission refusal, unresolved service, or
+  scope blocker remains its own blocker. Follow only the approved model-fallback
+  policy. Old immutable runtimes cannot acquire these commands or be migrated by
+  an updated installation; use the original issuer for historical inspection.
+  Never reset counters or state by hand and never imply approval.
 
 ## State machine
 
@@ -400,18 +412,9 @@ record exact sourced rules, arguments, working directory, scope and applicabilit
 `gates discover --paths-file <json> --base pinned-base`, then `gates plan
 --file <manifest>`. Every category—lint-imports, LOC, contract generation/drift,
 pre-commit and touched-unit CI—needs an executable obligation or a sourced,
-reasoned NOT_APPLICABLE. Unclear semantics remain UNRESOLVED: an UNRESOLVED gate
-is an unverified check, not a blocker. Never mark it NOT_APPLICABLE to get past
-it; record the discovered manifest as is and continue. `gates status` lists every
-unverified check (CI jobs as `verified_by: pipeline`); name them in the final
-report so the user knows what AL did not verify locally. The same holds for a
-gate that cannot start a tool in AL's disposable checkout (exit 127, command
-not found): that is AL's environment gap, listed as unverified with its
-evidence, whatever the repository's toolchain. Installed `node_modules` are
-linked into the checkout from the working tree. A failure in a service the
-change does not touch that also fails at base is listed as pre-existing. Only a
-check that ran and failed in a touched service blocks; it goes back to rework. Run base gates in a
-disposable checkout, alongside implementation; record each result and source. A
+reasoned NOT_APPLICABLE. Incomplete relevant service, consumer or check discovery blocks writing, proof admission, review and approval. Resolve relevant uncertainty with complete potential coverage and real mandatory bindings. A concrete extra unresolved check may remain individually unverified when required coverage is complete; never declare an unknown inventory harmless or imply pipeline success. Record diagnostic manifests and report precise coverage blockers separately.
+
+Run checks in owned disposable checkouts. Before package-backed hooks, install supported locked dependencies there; never link ambient node_modules. Missing tooling/setup is INFRA with hook NOT_RUN and remains unsatisfied; executed code failures stay FAIL. Log wording cannot waive a failed check. Run base gates and preserve their actual results. A
 failed base gate requires a recorded `gates decision --id <id> --action
 fix|stop|defer --source <ref> --reason <text>` before review. Candidate gates run against a materialized
 candidate and every required candidate obligation must pass before review. A base
@@ -712,3 +715,26 @@ writers, issue a fresh planning packet over the partially built implementation,
 and complete ordinary proof admission before advancing. Never edit outside an
 open writer or hand-edit runtime state. Refusals exit nonzero; preserve that exit
 status in shell wrappers (do not mask it with a later successful command).
+
+
+## Classify the remaining implementation work
+
+Initial Harness complexity is provisional interview depth. Reassess after clarification and repository inspection, even when Harness already supplied a category. Classify the change being implemented, not the complexity of its surrounding subsystem. Keywords, importance, repository size and file count alone never justify COMPLEX.
+
+Use the lightest justified route:
+- SMALL: local behavior follows an inspected existing pattern, with clear acceptance and no new difficult design. Changing a retry limit or adding a guard to an existing state machine can be SMALL.
+- STANDARD: ordinary feature work or understandable changes across components; a concrete plan is enough.
+- COMPLEX: name a specific new difficult algorithm, coupled state invariant, concurrency/transaction protocol or security design, and explain how pseudocode materially reduces the remaining risk. A fully clarified new distributed transaction can still be COMPLEX.
+
+Ask about unresolved material behavior and scope choices. Inspect code to settle routine implementation details and questions already answered by the repository. Do not invent a complete specification or assume away consequential uncertainty. Missing requirements call for clarification, not automatic escalation to COMPLEX. Do not repeat settled questions or add a Designer for reassurance. Escalate only when new evidence shows a concrete harder design problem.
+
+Before the final classification, prepare the closed risk assessment described in `reference/routing-risk.md`, citing inspected files and current hashes. Pass `classify ... --assessment-file FILE` for standalone AL; a current Harness handoff carries the same record. Preserve explicit developer routing choices. The runtime validates supplied evidence and refuses a contradictory category. Legacy runs without this additive record remain readable.
+
+### Portable investigation inputs
+Before final routing/planning, audit the existing implementation and locally
+known main divergence using `routing-audit --request "APPROVED REQUEST"`
+(standalone) or `harness:repository-audit` (Harness read_file). Follow positive
+manifest/path ownership and applicable nested instructions. Treat keyword matches
+as inspection leads; assess remaining design risk after inspecting the actual code.
+For Harness, resolve all skill references through `harness:skill/index` and
+`harness:skill/reference/...`, including schemas, using bounded read_file cursors.

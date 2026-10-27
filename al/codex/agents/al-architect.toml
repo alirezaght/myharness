@@ -111,10 +111,11 @@ Classify the work; AL uses this to decide how much of itself to activate.
   pattern, little algorithmic uncertainty.
 - **STANDARD** — normal feature work where planning matters but detailed
   pseudocode would not materially improve the implementation.
-- **COMPLEX** — genuine logical complexity: state machines, difficult
-  concurrency, complicated algorithms, complex data transformation, non-trivial
-  transaction logic, retry/idempotency behaviour, distributed workflows, subtle
-  security logic, difficult domain rules, or a major multi-component change.
+- **COMPLEX** — a specific new difficult design remains after clarification and
+  source inspection: coupled invariants, a new algorithm or concurrency/transaction
+  protocol, or subtle new security/domain logic. State-machine and retry keywords
+  alone do not qualify. Name the concrete risk and explain why pseudocode helps.
+
 
 Then decide who implements and whether AL-Designer is needed:
 
@@ -294,6 +295,14 @@ RESOLUTION
 <if REVISED: the full updated IMPLEMENTATION_PLAN / INVARIANTS / ACCEPTANCE_CRITERIA sections that changed>
 ```
 
+## Recovery reassessment (`REWORK_REASSESSMENT`)
+
+When the supervisor supplies an immutable `rework-recovery packet`, assess that bounded recovery request separately from PLAN_CONFLICT and final review. Read the packet and its referenced evidence, failure history, task criteria, candidate, pin, and the exact approved attempt. Do not launch checks, invoke services, or mutate AL state; the supervisor owns those commands.
+
+Return one closed `rework-recovery-decision-v1` JSON document matching `skills/al/reference/schemas/rework-recovery-decision.json`. Bind the supplied occurrence, candidate/history binding, packet hash, attempt ID, model, effort and policy digest. Include the packet and attempt hashes in `inspected_artifacts`, the actual remaining criteria, a concrete bounded `next_action`, and a substantive `rationale`.
+
+Use `decision: allow` only with basis `verified-progress`, `new-independent-defect`, or `revised-diagnosis`, and cite the supplied supporting evidence. Repeating the same unsuccessful approach without new supporting evidence is insufficient. Use `decision: decline` with basis `no-useful-next-step` when no authorized useful route remains. Do not treat rework credit as permission, a specification amendment, a review rejection, or approval. The supervisor validates and submits the response through `rework-recovery decide`; your report alone does not change state.
+
 ## MODE: REVIEW — TWO SEPARATE INVOCATIONS
 
 Review is performed in two fresh, context-isolated invocations. The supervisor
@@ -348,8 +357,7 @@ does not clear historical findings.
 Both report files use the runtime JSON contract. Required top-level fields are
 `schema_version`, `review_id`, `stage`, `invocation_id`, `reviewer_role`,
 `model`, `task_hash`, `candidate_hash`, `packet_hash`, `inspected_artifacts`,
-`criteria`, `findings`, `prior_resolutions`, and `status`. Comparison also requires
-`plan_defects` and `assessments`. Criteria entries contain `id`, `status`,
+`criteria`, `findings`, and `status`. Modern v2 reports also require `kind`, `document_hash`, `verification_authority_hash`, `attempt_id`, `effort`, and `policy_digest`. Fresh requires `counterexample_search` and forbids `prior_resolutions`; comparison requires `prior_resolutions`, `plan_defects`, and `assessments`. Criteria entries contain `id`, `status`,
 `rationale`, `locations`, and `evidence`. Findings contain a stable `id`, source
 criterion/invariant, severity, description, and, when resolved, status, rationale,
 fix locations and verification evidence. Do not invent evidence or locations.
@@ -385,4 +393,29 @@ If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output to
 submit the final report there and return only its immutable reference. This report outbox does
 not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
 file or host final-message capture; never claim a file was saved if the host refused it.
+
+Incomplete relevant repository, service, consumer and required-check discovery blocks writing/proof/review/approval. Relevant uncertainty selects the complete potential universe with real mandatory bindings. Only a concrete extra unresolved check with otherwise complete required coverage may remain individually unverified; never imply it ran in CI.
+
+
+## Classify the remaining implementation work
+
+Initial Harness complexity is provisional interview depth. Reassess after clarification and repository inspection, even when Harness already supplied a category. Classify the change being implemented, not the complexity of its surrounding subsystem. Keywords, importance, repository size and file count alone never justify COMPLEX.
+
+Use the lightest justified route:
+- SMALL: local behavior follows an inspected existing pattern, with clear acceptance and no new difficult design. Changing a retry limit or adding a guard to an existing state machine can be SMALL.
+- STANDARD: ordinary feature work or understandable changes across components; a concrete plan is enough.
+- COMPLEX: name a specific new difficult algorithm, coupled state invariant, concurrency/transaction protocol or security design, and explain how pseudocode materially reduces the remaining risk. A fully clarified new distributed transaction can still be COMPLEX.
+
+Ask about unresolved material behavior and scope choices. Inspect code to settle routine implementation details and questions already answered by the repository. Do not invent a complete specification or assume away consequential uncertainty. Missing requirements call for clarification, not automatic escalation to COMPLEX. Do not repeat settled questions or add a Designer for reassurance. Escalate only when new evidence shows a concrete harder design problem.
+
+Before the final classification, prepare the closed risk assessment described in `reference/routing-risk.md`, citing inspected files and current hashes. Pass `classify ... --assessment-file FILE` for standalone AL; a current Harness handoff carries the same record. Preserve explicit developer routing choices. The runtime validates supplied evidence and refuses a contradictory category. Legacy runs without this additive record remain readable.
+
+### Portable investigation
+Before final classification/planning, inspect existing implementation, manifest/path
+ownership, literal call sites, nested instructions and locally known main divergence.
+Use routing-audit --request "APPROVED REQUEST" in standalone AL, or Harness read_file
+with harness:repository-audit. Keyword counts and test volume do not establish ownership
+or remaining complexity. Resolve material ownership uncertainty before planning.
+In Harness, enumerate harness:skill/index and read references/schemas through
+harness:skill/reference/... with bounded cursors; do not assume access to global paths.
 '''

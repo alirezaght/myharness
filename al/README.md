@@ -60,3 +60,21 @@ rework and follow-ups. Generation does not execute checks, intercept every host
 spawn, prevent every bare check or certify delivery. Regenerate when bindings
 change. These changes apply after installing this release; existing pinned runs
 retain their original runtime.
+
+## Bounded rework recovery
+
+New runs begin with two rework returns. Exhaustion after a needed further return
+persists a read-only Architect reassessment; at most two automatic Architect
+authorizations add two returns each, for six default returns total across review
+corrections. A genuine review correction does not replenish rework credits, and
+its independent six-correction limit remains in force. Decline, no useful route,
+or the automatic cap records a stopped checkpoint.
+
+The supervisor retrieves a pending packet with `rework-recovery packet`, submits
+the approved Architect's closed response with `rework-recovery decide --file
+FILE`, and handles explicit user continuation only with a bound
+`rework-recovery continue --file FILE` request. Each distinct accepted user
+request grants exactly two credits; replay returns its original receipt. Real
+permission, scope, service, and model blockers remain separate. An updated
+installation does not migrate older runs or change their immutable runtime
+issuer; those runs retain their original command set and evidence.

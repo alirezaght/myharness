@@ -40,7 +40,9 @@ def review_gaps(st):
 
 @S.decision
 def approval_gaps(st):
-    return S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)+review_gaps(st)
+    from al_service_coverage import admission_gaps
+    from al_acceptance import completion_gaps
+    return completion_gaps(st)+admission_gaps(st,current=True)+S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)+review_gaps(st)
 
 def prior_findings(st):
     return al_review_history.findings(st)
@@ -79,6 +81,8 @@ def cmd_packet(a,sid):
     if a.stage=='compare':
         data.update(fresh=A.read_json(r['fresh']),prior_findings=prior_findings(st),comparison_artifacts=st.get('comparison_artifacts',[]),approved_inputs=al_comparison.packet(st))
         data['comparison_contents'] = [{'artifact':ref,'content':A.read(ref).decode(errors='replace')} for ref in data['comparison_artifacts']]
+    from al_rework_recovery_contract import lineage
+    data["rework_recovery_lineage"]=lineage(st)
     data=Behavior.packet(st,data)
     import al_review_rules
     data['repository_review_rules']=al_review_rules.capture(st,sid)
@@ -92,6 +96,9 @@ def validate_report(st,report,stage):
     if not packet: refuse('review packet must be captured before report')
     A.read(packet)
     packet_value=A.read_json(packet)
+    from al_rework_recovery_contract import lineage,required_hashes
+    if packet_value.get("rework_recovery_lineage")!=lineage(st):refuse("review recovery lineage changed")
+    if not required_hashes(st)<=set(report.get("inspected_artifacts",[])):refuse("review did not inspect recovery decisions/receipts")
     Behavior.validate_report(st,report,stage,packet_value)
     if report.get('schema_version')!=(2 if Behavior.enabled(st) else 1) or report.get('stage')!=stage or report.get('review_id')!=r['id'] or report.get('reviewer_role')!='al-architect': refuse('review report schema/identity/role mismatch')
     if report.get('candidate_hash')!=r['candidate']['fingerprint'] or report.get('task_hash')!=(packet_value['task_hash'] if Behavior.enabled(st) else r['task_hash']) or report.get('packet_hash')!=packet['sha256']: refuse('report hashes do not match packet')

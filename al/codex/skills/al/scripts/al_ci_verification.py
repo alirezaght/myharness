@@ -93,7 +93,12 @@ def conventional_verification(unit, obligations, bindings, enumeration):
         chain=execution.get('verification_chain') if execution else None
         matches=[b for b in bindings if b['category']=='ci' and b['source_chain'] and b['source_chain'][0]['path']==obligation['source_path'] and b['source_chain'][0]['selector']==obligation['job']]
         if obligation['applicability']!='APPLICABLE' or not chain or chain.get('complete') is not True or len(matches)!=1:
-            result['gaps'].append(obligation['source_path']+':'+obligation['job']);continue
+            # An enumerated extra job stays individually unverified. It cannot
+            # erase a complete independently supported verification chain, or
+            # supply a missing one. Unknown job inventories still block.
+            if obligation.get('impact',{}).get('inventory_complete') is False:
+                result['gaps'].append(obligation['source_path']+':'+obligation['job'])
+            continue
         result['binding_ids'].append(matches[0]['id']);result['obligation_ids'].extend(matches[0]['obligation_ids'])
         result['proof'].append(chain);records.extend(execution.get('verification',[]))
     for language in unit['languages']:

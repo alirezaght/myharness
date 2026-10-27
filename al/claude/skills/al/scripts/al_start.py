@@ -49,14 +49,14 @@ def cmd_start(a, sid):
             "exec_mode": {}, "write_ownership": {}, "snapshots": {},
             "retries": {}, "fanout": None, "fanouts": [],
             "run_id": (sys.modules["_al_run_pin_context"].transaction["run_id"]
-                   if "_al_run_pin_context" in sys.modules else secrets.token_hex(4)),  # a restarted session must not accept an older run's results
+                       if "_al_run_pin_context" in sys.modules else secrets.token_hex(4)),  # a restarted session must not accept an older run's results
             "evidence": {"seq": 0, "entries": [], "plan": {}}, "overlaps": [], "handoffs": 0,
             "rework": {"batch": None, "used": 0, "max": al_rework.MAX_REWORK_PER_BATCH,
                        "total": 0, "history": []},
             **al_models.initial_state(),
         }
         from al_native_sessions import attribution
-        st["native_conversation_id"]=attribution()
+        st["native_conversation_id"] = attribution()
         if "_al_run_pin_context" in sys.modules:
             transaction = sys.modules["_al_run_pin_context"].transaction
             st['runtime_origin'] = {key: transaction[key] for key in
@@ -75,8 +75,11 @@ def cmd_start(a, sid):
         set_phase(st, "PLANNING")
         from al_new_origin import initialize
         initialize(st)
+        from al_rework_recovery_contract import initial_state
+        st["rework_recovery"] = initial_state(st)
+        st["rework"].update(batch=0)
         save(sid, st)
-        write_current(sid,publication)
+        write_current(sid, publication)
         print(f"AL session {sid}")
         print(f"AL state started for session {sid}: {state_path(sid)}")
         print(f"pre-existing working-tree changes: {len(st['preexisting_changes'])}")

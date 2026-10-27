@@ -9,7 +9,7 @@ import pytest
 from al.installer import execution_process as processes
 from al.installer import interpreter_execution as execution
 from al.installer.issuer_provenance import capture_issuer,retain_issuer,verify_issuer
-from al.installer.validator_origin import capture,decode,interpreter_identity
+from al.installer.validator_origin import capture,decode,executable_state,interpreter_identity
 from al.tests.test_issuer_provenance import fixture
 
 
@@ -99,7 +99,7 @@ def test_linux_mechanism_simulation_uses_exact_proc_path(monkeypatch):
     monkeypatch.setattr(processes,'os',SimpleNamespace(readlink=lambda path:(seen.append(path) or str(image))))
     result=processes.kernel_image(123)
     assert seen==['/proc/123/exe']
-    assert result==dict(capture(image)[1],path=str(image),platform='linux',mechanism='linux-proc-exe-v1')
+    assert result==dict(executable_state(image),path=str(image),platform='linux',mechanism='linux-proc-exe-v1')
 
 
 def test_new_capture_references_but_never_mutates_v1(tmp_path):

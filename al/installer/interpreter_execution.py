@@ -7,7 +7,7 @@ import sys
 import time
 from .execution_process import observe
 from .activity_process import identity
-from .validator_origin import canonical,capture,decode,digest,interpreter_identity
+from .validator_origin import canonical,decode,digest,executable_state,interpreter_identity
 
 PROBE=r'''
 import ctypes,json,os,sys
@@ -114,7 +114,7 @@ def validate_profile(value,expected):
 
 def validate_live(profile,expected,observed):
     validate_profile(profile,expected);launcher(expected)
-    _,metadata=capture(Path(profile['requested_executable']).resolve(strict=True))
+    metadata=executable_state(Path(profile['requested_executable']).resolve(strict=True))
     if str(Path(profile['requested_executable']).resolve(strict=True))!=expected['canonical_executable'] or metadata!={k:expected[k] for k in ('sha256','mode')}:
         raise ValueError('requested interpreter launcher changed')
     if observed['image']!=profile['image']:raise ValueError('live interpreter differs from protected kernel image')

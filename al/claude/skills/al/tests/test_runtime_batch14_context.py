@@ -23,7 +23,6 @@ def test_amend_interrupt_resume_requires_new_context_and_base_evidence(cli,repo,
     file=tmp_path/'old.json';file.write_text(json.dumps(old))
     invoke(cli,'gates','plan','--file',str(file),ok=False);assert state_file().read_bytes()==before
     invoke(cli,'spec-gate','SPEC_READY');replacement=resolved(state(cli),['svc/app.py'],context(state(cli)))
-    admit_planning(cli)
     plan(cli,tmp_path,replacement)
     invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     st=state(cli);assert not st.get('gate_recovery') and st['gate_recovery_history'][-1]['evidence']

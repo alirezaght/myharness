@@ -66,8 +66,8 @@ def discover(st,paths,ci_context=None):
     else:not_applicable('contracts','contracts','No package script generates or builds contracts')
     if not inventory['ci']['obligations']:
         other=[p for p in V.OTHER_CI if any(al_store.REPO_ROOT.glob(p))]
-        # CI that AL cannot read is verified by its own pipeline: reported, never blocking.
-        if other:gate('ci','ci',[],paths,rules[-1] if rules else None,reason='CI defined in '+', '.join(other)+' is verified by the pipeline')
+        # Unsupported providers are recorded as unknown inventory in the coverage declaration.
+        if other:gate('ci','ci',[],paths,rules[-1] if rules else None,reason='CI defined in '+', '.join(other)+' cannot establish complete local check inventory')
         else:not_applicable('ci','ci','The repository defines no CI')
     rows=S.source_rows()
     for item in gates:

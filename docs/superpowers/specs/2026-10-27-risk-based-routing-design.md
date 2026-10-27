@@ -1,0 +1,11 @@
+# Shared implementation routing
+
+Approved by the user on 2026-10-27: initial complexity is provisional, reassess after clarification and code inspection, choose SMALL for local established-pattern changes and STANDARD for ordinary features, and require a specific difficult design problem plus a useful role for pseudocode before COMPLEX. Explicit developer classifications remain authoritative.
+
+Harness keeps trivial/simple/standard/complex interview depth. It does not infer implementation complexity from subject keywords. After material choices are resolved, the agent records a source-bound residual-risk assessment through `harness classify TASK --assessment FILE --repo REPOSITORY`. A local change following an existing pattern maps to simple/AL SMALL; ordinary features and understandable cross-component work map to STANDARD. COMPLEX requires a genuinely new difficult design and a concrete pseudocode benefit. Unknown requirements require clarification, not complexity inflation.
+
+The assessment records scope, existing patterns, clear behavior, specific new hard parts, pseudocode benefit, inspected file hashes and rationale. Harness preserves explicit developer overrides, records the assessment, reports changed source/clarification as stale, and carries a current assessment into the AL handoff. No assessment is fabricated from interview answers or inferred from an absent problem statement. Standalone AL uses the same rubric and records the same assessment at classification. An old task without this artifact remains compatible and provisional; the agent reassesses during planning.
+
+Clarification covers behavior, input/output, failure boundaries, acceptance and consequential scope choices. Resolve routine implementation details from code. A clear specification can still require intrinsically difficult new concurrent/transactional logic; do not force that into SMALL. Escalate only on a concrete new finding, preserving the reason and completed work.
+
+Validation covers keyword false positives, local fixes inside complex subsystems, ordinary features, genuine new difficult logic, misleading category requests, missing or stale evidence, unresolved material questions, explicit overrides and both AL distributions. This change does not waive implementation verification or approval.

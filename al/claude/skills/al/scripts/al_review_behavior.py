@@ -95,6 +95,8 @@ def factual_evidence(st):
         "execution_receipt",
         "execution_association",
         "execution_projection_digest",
+        "setup",
+        "execution_stage",
     }
     return [
         dict(
@@ -110,6 +112,9 @@ def packet(st, data):
         return data
     review = st["review"]
     validate_review_lineage(st, review)
+    from al_rework_recovery_contract import lineage
+    if 'rework_recovery' in st and ('rework_recovery_lineage' not in data or data['rework_recovery_lineage']!=lineage(st)):
+        refuse('fresh/comparison recovery lineage missing or changed')
     from al_verification_authority import document_binding
 
     data.update(
@@ -145,6 +150,7 @@ def packet(st, data):
             "document_hash",
             "verification_authority",
             "behavior",
+            "rework_recovery_lineage",
         }
         if set(data) != allowed:
             refuse("fresh review context contains unsupported inputs")
@@ -180,18 +186,13 @@ def validate_report(st, report, stage, packet_value):
         required.add("counterexample_search")
     else:
         required.update({"prior_resolutions", "plan_defects", "assessments"})
-    if (
-        not isinstance(report, dict)
-        or not required <= report.keys()
-        or set(report) - required - optional
-    ):
-        refuse("invalid closed version-two Architect report")
-    if (
-        report["schema_version"] != 2
-        or type(report["schema_version"]) is not int
-        or report["kind"] != "architect-review-report-v2"
-    ):
-        refuse("new-origin report cannot downgrade its schema")
+    if not isinstance(report,dict):
+        refuse("version-two Architect report must be an object")
+    if type(report.get("schema_version")) is not int or report.get("schema_version")!=2 or report.get("kind")!="architect-review-report-v2":
+        refuse("modern Architect report requires schema_version 2 and kind architect-review-report-v2; cannot downgrade its schema")
+    missing=required-report.keys();extra=set(report)-required-optional
+    if missing or extra:
+        refuse("invalid closed version-two Architect report: missing="+str(sorted(missing))+" extra="+str(sorted(extra)))
     validate_review_lineage(st, st["review"], packet_value)
     if (
         report["document_hash"] != packet_value["document_hash"]

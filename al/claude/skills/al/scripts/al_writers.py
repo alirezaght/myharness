@@ -63,6 +63,8 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
 def cmd_writer(a,sid):
     st=al_store.load(sid); writers=st['writers']
     if a.action == 'start':
+        from al_rework_recovery_contract import guard
+        guard(st)
         from al_new_origin import require_admitted, validate
         degraded = getattr(a, 'degraded', False)
         if degraded:

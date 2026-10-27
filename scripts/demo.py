@@ -21,6 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT_DATE = "2026-01-01T00:00:00+00:00"
+SAMPLE_REQUEST = "[demo] Add a CSV export of items in app/export.py"
 GIT_IDENTITY = {
     "GIT_AUTHOR_NAME": "demo",
     "GIT_AUTHOR_EMAIL": "demo@example.invalid",
@@ -152,9 +153,7 @@ def ident(pattern: str, output: str) -> str:
 
 def walkthrough(demo: Demo) -> None:
     demo.banner("1. Start a task and override its complexity")
-    task = ident(
-        r"task (t-[0-9a-f]{8}) created", demo.harness("start", "[demo] Add a CSV export of items")
-    )
+    task = ident(r"task (t-[0-9a-f]{8}) created", demo.harness("start", SAMPLE_REQUEST))
     demo.harness("classify", task, "trivial")
 
     demo.banner("2. Read-only investigation of the sample repository")

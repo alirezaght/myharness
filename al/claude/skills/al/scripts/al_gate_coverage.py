@@ -18,9 +18,10 @@ def covered(paths,path):
 def expand(paths):
     result=set(paths);directories=[p for p in paths if (al_store.REPO_ROOT/p).is_dir()]
     if directories:
-        known=[p.decode() for p in S.git_bytes('ls-files','--cached','--others','--exclude-standard','-z').split(b'\0') if p]
-        known += [p.relative_to(al_store.REPO_ROOT).as_posix() for kind in ('apps','services','packages') for p in (al_store.REPO_ROOT/kind).glob('*') if p.is_dir() and not p.is_symlink()]
-        result.update(p for p in known if any(contains(d,p) for d in directories))
+        from al_repository_facts import Snapshot
+        scan=Snapshot(al_store.REPO_ROOT,None,paths,[])
+        if scan.gaps:refuse('anticipated-path membership incomplete: '+str(scan.gaps))
+        result.update(p.rstrip('/') for p in scan.members if any(contains(d,p.rstrip('/')) for d in directories))
     return sorted(result)
 
 

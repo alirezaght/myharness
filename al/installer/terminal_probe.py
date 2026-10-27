@@ -55,7 +55,13 @@ def evaluate(session, run, repository):
             import al_gate_inventory as inventory
             gaps += inventory.gaps(state, artifacts.read_json(state['gate_manifests'][-1]))
         if gaps:
-            raise ValueError('terminal approval is no longer valid: ' + str(gaps))
+            details=[]
+            if state.get('gate_manifests'):
+                manifest=artifacts.read_json(state['gate_manifests'][-1])
+                current=inventory.inventory(state,manifest.get('paths',[]),manifest.get('ci_context'))
+                details=current['service_coverage']['gaps'][:10]
+            raise ValueError('terminal approval is no longer valid: ' + str(gaps)+
+                             '; current coverage diagnostics: '+str(details))
         if path.read_bytes() != before or scope.capture_candidate(state)['fingerprint'] != candidate['fingerprint']:
             raise ValueError('terminal state/source changed during validation')
     return {'schema_version': 1, 'kind': 'terminal-workspace-source-proof',
@@ -71,7 +77,7 @@ def main(argv=None):
     parser.add_argument('--session', required=True)
     parser.add_argument('--run', required=True)
     parser.add_argument('--platform', choices=('codex', 'claude'), required=True)
-    parser.add_argument('--operation',choices=('terminal','replan','readiness'),default='terminal')
+    parser.add_argument('--operation',choices=('terminal','planning','replan','readiness'),default='terminal')
     parser.add_argument('--issuer-binding');parser.add_argument('--issuer-binding-sha256')
     parser.add_argument('--proposal');parser.add_argument('--proposal-sha256')
     parser.add_argument('--expected-manifest');parser.add_argument('--replan-proof');parser.add_argument('--replan-proof-sha256')
@@ -95,10 +101,9 @@ def main(argv=None):
     import al_runtime_resources as resources
     mapping = captured['origin']['platforms'][args.platform]['resources']
     os.environ['AL_RUNTIME_DIR'] = str(Path(args.repository).resolve()/('.'+args.platform)/'al-runtime')
-    readonly.start()
     try:
         pin_context=None
-        if args.operation=='terminal':
+        if args.operation in {'terminal','planning'}:
             from installer.validator_run_pin import capture_run_pin,install_run_context
             pin_context=capture_run_pin(captured,args.repository,args.session,args.run,args.platform)
             if pin_context!=context.request.get('run_pin_context'):
@@ -112,7 +117,20 @@ def main(argv=None):
             'bytes':{name:captured['bytes'][path] for name,path in mapping.items()},'identities':identities}
         if pin_context is not None:resource_context['original_execution_origin']=pin_context['execution_origin']
         resources._bind_verified_context(resource_context)
+        # The protected pin validator observes this interpreter's kernel process
+        # identity semantically (PID/start/executable). /proc/<pid>/stat also has
+        # volatile CPU counters, so it is not an immutable file-byte input.
+        # Pin data is independently captured and compared by the parent before
+        # and after the query. Begin the immutable read-set at task observation.
+        readonly.start()
+        if pin_context is None and args.operation in {'terminal','replan','readiness'}:
+            context.readonly=readonly
+            context.legacy_readonly={'repository':str(Path(args.repository).resolve()),
+                                     'session_id':args.session,'run_id':args.run}
         if args.operation=='terminal':result = evaluate(args.session,args.run,args.repository)
+        elif args.operation=='planning':
+            from installer.planning_probe import evaluate as evaluate_planning
+            result=evaluate_planning(args.session,args.run,args.repository)
         else:
             from installer.current_policy import evaluate_operation
             args.self_reservation=context.request.get('self_reservation')
@@ -124,7 +142,7 @@ def main(argv=None):
             fresh = origin.capture_canonical(captured['snapshot'])
             if fresh['origin']!=captured['origin']:raise ValueError('canonical validator changed during query')
         readonly.verify()
-        result.update(schema_version=2 if args.operation=='terminal' else 1,platform=args.platform)
+        result.update(schema_version=2 if args.operation in {'terminal','planning'} else 1,platform=args.platform)
         result['validator'] = dict(captured['expected'],closure_digest=captured['origin']['closure_digest'],
             interpreter_identity=captured['origin']['interpreter'],platform=args.platform,
             loaded_module_origins_digest=origin.digest(origin.canonical(loaded)),loaded_modules=loaded,
@@ -134,7 +152,7 @@ def main(argv=None):
         if pin_context is not None:
             result['validator']['run_pin_context_digest']=origin.digest(origin.canonical(pin_context))
             result['validator']['caller_environment_digest']=origin.digest(origin.canonical(context.request['caller_environment']))
-        if args.operation!='terminal':result['observation_digest']=origin.digest(origin.canonical(result))
+        if args.operation not in {'terminal','planning'}:result['observation_digest']=origin.digest(origin.canonical(result))
     except (OSError, ValueError, KeyError, TypeError, SystemExit, ImportError) as exc:
         print(json.dumps({'schema_version': 1, 'error': str(exc)}))
         return 1

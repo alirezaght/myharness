@@ -3,6 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import stat
 import sys
 
 
@@ -12,6 +13,37 @@ class Readonly:
         self.hashing = False
         self.reads = {}
         self.git = Path('/usr/bin/git').resolve(strict=True)
+        self.directories = {}
+        self.pending_open = None
+        self.original_open = os.open
+
+    def open(self, path, flags, mode=0o777, *, dir_fd=None):
+        """Bind fd-relative opens to their actual directory, retaining O_NOFOLLOW.
+
+        Python's open audit event omits dir_fd. Resolving its relative basename
+        against cwd would record the wrong file or reject valid nested sources.
+        """
+        name = Path(os.fsdecode(path))
+        if dir_fd is not None and not name.is_absolute():
+            known = self.directories.get(dir_fd)
+            info = os.fstat(dir_fd)
+            if known is None or known[1:] != (info.st_dev, info.st_ino):
+                raise PermissionError('unknown terminal input directory descriptor')
+            actual = known[0] / name
+        else:
+            actual = name.absolute()
+        prior = self.pending_open
+        self.pending_open = actual
+        try:
+            descriptor = self.original_open(path, flags, mode, dir_fd=dir_fd)
+        finally:
+            self.pending_open = prior
+        info = os.fstat(descriptor)
+        if stat.S_ISDIR(info.st_mode):
+            self.directories[descriptor] = (actual, info.st_dev, info.st_ino)
+        else:
+            self.directories.pop(descriptor, None)
+        return descriptor
 
     def fingerprint(self, path):
         self.hashing = True
@@ -36,7 +68,7 @@ class Readonly:
             if os.fspath(path) == os.devnull:return
             if flags & (os.O_WRONLY|os.O_RDWR|os.O_CREAT|os.O_TRUNC|os.O_APPEND):
                 raise PermissionError('terminal validator is read-only')
-            path = Path(os.fsdecode(path)).absolute()
+            path = self.pending_open or Path(os.fsdecode(path)).absolute()
             if path.is_symlink():raise PermissionError('terminal validator symlink read refused')
             if path not in self.reads:self.reads[path] = self.fingerprint(path)
         if event in {'os.remove','os.rename','os.rmdir','os.mkdir','os.chmod','os.chown','os.link','os.symlink','os.truncate','os.utime','os.chdir'}:
@@ -67,6 +99,7 @@ class Readonly:
     def start(self):
         sys.addaudithook(self.audit)
         self.enabled = True
+        os.open = self.open
 
     def verify(self):
         for path,state in list(self.reads.items()):
@@ -81,7 +114,8 @@ def _git_arguments(arguments):
         if arg in {'--no-optional-locks','--no-pager','--literal-pathspecs'}:index += 1
         elif arg=='-C' and index+1<len(arguments) and Path(arguments[index+1]).is_absolute():index += 2
         elif arg=='-c' and index+1<len(arguments) and arguments[index+1] in {
-            'diff.autoRefreshIndex=false','core.fsmonitor=false','core.hooksPath=/dev/null'
+            'diff.autoRefreshIndex=false','core.fsmonitor=false','core.hooksPath=/dev/null',
+            'core.excludesFile=/dev/null','core.untrackedCache=false'
         }:index += 2
         else:return False
     if index==len(arguments):return False
@@ -96,8 +130,9 @@ def _git_arguments(arguments):
         return (len(values)==5 and values[:3]==['--git-common-dir','--git-dir','--end-of-options']
                 and values[4]=='HEAD^{commit}' and values[3].endswith('^{commit}') and oid(values[3][:-9]))
     allowed={
-      'ls-files':{'-z','--cached','--others','--exclude-standard','--stage'},
-      'ls-tree':{'-r','-z','-rlz','--name-only','--full-tree'},
+      'ls-files':{'-z','--cached','--others','--exclude-standard','--stage',
+                  '--ignored','--directory','--exclude-per-directory=.gitignore'},
+      'ls-tree':{'-r','-l','-z','-rlz','--name-only','--full-tree'},
       'diff':{'--ignore-submodules=all','--ignore-submodules=none','--name-only','-z','--binary','--no-ext-diff','--no-textconv'},
       'status':{'--porcelain','--porcelain=v1','-z','--untracked-files=all','--ignore-submodules=all','--ignore-submodules=none'},
     }
@@ -107,6 +142,7 @@ def _git_arguments(arguments):
     revisions=[]
     for value in values:
         if value in allowed[command]:continue
+        if command=='ls-files' and value.startswith('--exclude=') and 0<len(value)<512 and not any(ord(c)<32 for c in value):continue
         if command in {'ls-tree','diff'} and revision(value):revisions.append(value)
         else:return False
     return len(revisions)==(1 if command in {'ls-tree','diff'} else 0)

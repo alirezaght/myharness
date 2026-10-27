@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://myharness.invalid/al/rework-recovery-receipt.json",
+  "title": "AL bounded recovery authorization receipt v1",
+  "description": "Immutable receipt returned after an accepted recovery decision or user continuation. A decline records null grant and consumption.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "request_id", "request_hash", "grant_id", "consumption", "binding"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "rework-recovery-receipt-v1"},
+    "request_id": {"type": "string", "minLength": 1},
+    "request_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "grant_id": {"oneOf": [{"type": "string", "pattern": "^G[1-9][0-9]*$"}, {"type": "null"}]},
+    "consumption": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "null"}]},
+    "binding": {"$ref": "#/$defs/binding"}
+  },
+  "allOf": [
+    {"if": {"properties": {"grant_id": {"type": "null"}}, "required": ["grant_id"]}, "then": {"properties": {"consumption": {"type": "null"}}}}
+  ],
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["root", "cwd", "common_dir", "git_dir", "target", "target_oid", "merge_base"],
+      "properties": {"root": {"type": "string"}, "cwd": {"type": "string"}, "common_dir": {"type": "string"}, "git_dir": {"type": "string"}, "target": {"type": "string"}, "target_oid": {"type": "string"}, "merge_base": {"type": "string"}}
+    },
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["session_id", "run_id", "identity", "original_task_hash", "runtime_pin"],
+      "properties": {
+        "session_id": {"type": "string", "minLength": 1}, "run_id": {"type": "string", "minLength": 1},
+        "identity": {"$ref": "#/$defs/identity"}, "original_task_hash": {"$ref": "#/$defs/digest"},
+        "runtime_pin": {"type": "object", "additionalProperties": false, "required": ["pin_identity", "pin_manifest_digest"], "properties": {"pin_identity": {"$ref": "#/$defs/digest"}, "pin_manifest_digest": {"$ref": "#/$defs/digest"}}}
+      }
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["origin", "candidate_hash", "task_hash", "history_hash", "occurrence_id"],
+      "properties": {"origin": {"$ref": "#/$defs/origin"}, "candidate_hash": {"$ref": "#/$defs/digest"}, "task_hash": {"$ref": "#/$defs/digest"}, "history_hash": {"$ref": "#/$defs/digest"}, "occurrence_id": {"oneOf": [{"type": "string", "pattern": "^RR[1-9][0-9]*$"}, {"type": "null"}]}}
+    }
+  }
+}

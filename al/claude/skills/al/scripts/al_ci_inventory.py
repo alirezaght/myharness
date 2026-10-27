@@ -19,7 +19,7 @@ class Inventory:
         self.opaque=opaque
         self.context=context
         self.directories={p for p in paths if p=='.' or (root/p).is_dir() or p.startswith(('apps/','services/','packages/')) and len(Path(p).parts)==2}
-        self.root=root.resolve();self.paths=paths;self.files={};self.globals={};self.definitions={};self.origins={};self.provenance={};self.visits=0;self.issues=[];self.visiting=[];self.workflow_unknown=False;self.environment_context=[]
+        self.root=root.resolve();self.paths=paths;self.files={};self.globals={};self.definitions={};self.origins={};self.provenance={};self.visits=0;self.issues=[];self.deferred=[];self.visiting=[];self.workflow_unknown=False;self.environment_context=[]
 
     def issue(self,path,reason):self.issues.append((path,reason))
 
@@ -72,13 +72,13 @@ class Inventory:
 
     def obligations(self):
         result=[];dependencies=list(self.files.values())
-        def append(path,job,status,inputs,reason,execution=None):
+        def append(path,job,status,inputs,reason,execution=None,inventory_complete=True):
             if execution:
                 inputs=set(inputs)|set(execution.get('input_scope',[]))
                 execution['verification_chain'].update(provider='gitlab',workflow=path,job=job,applicability={'profile':self.context,'status':status},source_chain=dependencies)
             result.append({'source_path':path,'source_sha256':self.files[path]['sha256'],'job':job,
                            'units':sorted({R.unit(p) for p in inputs}),'applicability':status,
-                           'dependencies':dependencies+(execution.pop('source_dependencies',[]) if execution else []),'reason':reason,'inputs':sorted(inputs),'execution':execution})
+                           'dependencies':dependencies+(execution.pop('source_dependencies',[]) if execution else []),'reason':reason,'inputs':sorted(inputs),'execution':execution,'impact':{'inventory_complete':inventory_complete,'classification':'unknown' if not inventory_complete else 'relevant'}})
         for name,path in self.origins.items():
             if name.startswith('.'):continue
             try:
@@ -89,10 +89,12 @@ class Inventory:
                     append(path,name,'UNRESOLVED',self.unit_scope(),'conditional CI definition/inheritance provenance unresolved: '+','.join(contributors));continue
                 if self.workflow_unknown:raise Unsupported('include/workflow pipeline context unresolved')
                 semantics=R.structure(job)
-                if not any(k in job for k in ('script','trigger','run')):raise Unsupported('job execution definition missing')
                 if 'only' in job or 'except' in job:raise Unsupported('legacy applicability expression unresolved')
                 selected,inputs,reason=R.rules(job['rules'],self.paths,self.context,self.directories) if 'rules' in job else (True,set(self.paths),'verification job without path restrictions')
-                if selected is False:continue
+                if selected is False:
+                    self.deferred.append({'source_path':path,'source_sha256':self.files[path]['sha256'],'job':name,'reason':reason,'classification':'deferred','dependencies':dependencies})
+                    continue
+                if not any(k in job for k in ('script','trigger','run')):raise Unsupported('job execution definition missing')
                 if selected is None:
                     append(path,name,'UNRESOLVED',inputs,reason);continue
                 release=R.release(name,semantics)
@@ -106,8 +108,8 @@ class Inventory:
                 for key,value in self.globals.items():
                     if key!='default':local.setdefault(key,value)
                 append(path,name,'APPLICABLE',inputs,reason,execution(local,self.root,self.opaque,self.environment_context))
-            except Unsupported as exc:append(path,name,'UNRESOLVED',self.unit_scope(),str(exc))
-        for index,(path,reason) in enumerate(self.issues):append(path,'<unresolved-definition-'+str(index)+'>','UNRESOLVED',self.unit_scope(),reason)
+            except Unsupported as exc:append(path,name,'UNRESOLVED',self.unit_scope(),str(exc),inventory_complete=not self.workflow_unknown)
+        for index,(path,reason) in enumerate(self.issues):append(path,'<unresolved-definition-'+str(index)+'>','UNRESOLVED',self.unit_scope(),reason,inventory_complete=False)
         return result
 
 
@@ -135,10 +137,10 @@ def inventory(root,paths,context=None,opaque=()):
         # Too many workflows, or workflows edited while AL read them: the pipeline verifies them.
         github={'obligations':[{'source_path':'.github/workflows','source_sha256':'0'*64,'job':'<unresolved-workflows>',
                                 'units':sorted(reader.unit_scope()),'applicability':'UNRESOLVED','dependencies':[],'reason':str(exc),
-                                'inputs':sorted(paths),'execution':None}],'dependencies':[]}
+                                'inputs':sorted(paths),'execution':None,'impact':{'inventory_complete':False,'classification':'unknown'}}],'dependencies':[]}
     obligations=reader.obligations()+github['obligations']
     dependencies={d['path']:d for d in [*reader.files.values(),*github['dependencies'],*(d for o in obligations for d in o['dependencies'])]}
-    return {'obligations':obligations,'dependencies':[dependencies[p] for p in sorted(dependencies)]}
+    return {'obligations':obligations,'deferred':reader.deferred+github.get('deferred',[]),'dependencies':[dependencies[p] for p in sorted(dependencies)]}
 
 
 def covered(scope,path):return any(p=='.' or p==path or path.startswith(p.rstrip('/')+'/') for p in scope)

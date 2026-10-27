@@ -47,7 +47,7 @@ def test_invalid_encoding_and_json_finalize_infra(cli,repo,tmp_path,monkeypatch,
 
 @pytest.mark.parametrize('stage',['base','candidate'])
 @pytest.mark.parametrize('change,expected',[
- ({},'PASS'),({'status':'failed'},'FAIL'),({'status':'canceled'},'FAIL'),
+ ({},'PASS'),({'status':'failed'},'FAIL'),({'status':'canceled'},'INFRA'),({'status':'pending'},'INFRA'),({'status':'manual'},'INFRA'),({'status':'running'},'INFRA'),
  ({'name':'other'},'INFRA'),({'commit':{'id':'wrong'}},'INFRA'),
  ({'pipeline':{'id':11,'project_id':43}},'INFRA'),
  ({'pipeline':{'id':11}},'PASS'),({'pipeline':{'id':11,'project_id':None}},'PASS'),

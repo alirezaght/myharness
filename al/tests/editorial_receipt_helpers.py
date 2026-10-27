@@ -4,7 +4,7 @@ import copy
 import json
 import sys
 
-from al.tests.planning_helpers import prepare, save_report
+from al.tests.planning_helpers import prepare, report_for, save_report
 from al.tests.runtime_run_helpers import invoke, public_run
 
 
@@ -27,16 +27,18 @@ def prepare_readers(launched, platform, *, duplicate=True, extra_paths=()):
     (repo / "Makefile").write_text("all:\n\ttrue\n")
     succeed(invoke(["git", "add", "rows.json", "Makefile", *extra_paths], repo, env))
     succeed(invoke(["git", "commit", "-qm", "literal reader inputs"], repo, env))
-    _, report = prepare(launched, platform)
-    succeed(save_report(launched, platform, report))
-    succeed(public_run(launched, platform, "planning", "admit"))
-    return plan_fixture_gates(
+    prepare(launched, platform)
+    plan_fixture_gates(
         launched,
         platform,
         ["Makefile", "rows.json", *extra_paths],
         readers=True,
         duplicate=duplicate,
     )
+    packet = json.loads(succeed(public_run(launched, platform, "planning", "packet")).stdout)
+    succeed(save_report(launched, platform, report_for(packet)))
+    succeed(public_run(launched, platform, "planning", "admit"))
+    return state(launched, platform)
 
 
 def plan_fixture_gates(launched, platform, selected_paths, *, readers=False, duplicate=True):

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "review-packet",
+  "title": "review-packet-v2",
   "type": "object",
   "required": [
     "attempt",
@@ -14,14 +14,19 @@
     "candidate",
     "evidence",
     "gates",
-    "escapes"
+    "kind",
+    "document_hash",
+    "verification_authority",
+    "behavior",
+    "rework_recovery_lineage",
+    "repository_review_rules"
   ],
   "properties": {
     "attempt": {
       "$ref": "review-attempt.json"
     },
     "schema_version": {
-      "const": 1
+      "const": 2
     },
     "review_id": {
       "type": "string",
@@ -51,7 +56,10 @@
       "type": "object"
     },
     "evidence": {
-      "type": "object"
+      "type": [
+        "array",
+        "object"
+      ]
     },
     "gates": {
       "type": "array"
@@ -92,6 +100,39 @@
           "type": "string"
         }
       }
+    },
+    "kind": {
+      "const": "review-packet-v2"
+    },
+    "document_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "verification_authority": {
+      "type": "object",
+      "required": [
+        "hash",
+        "artifact"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "artifact": {
+          "type": "object"
+        }
+      }
+    },
+    "behavior": {
+      "type": "object"
+    },
+    "rework_recovery_lineage": {
+      "type": [
+        "object",
+        "null"
+      ]
     }
   },
   "allOf": [
@@ -101,10 +142,7 @@
           "stage": {
             "const": "compare"
           }
-        },
-        "required": [
-          "stage"
-        ]
+        }
       },
       "then": {
         "required": [
@@ -112,8 +150,14 @@
           "prior_findings",
           "comparison_artifacts",
           "approved_inputs",
-          "comparison_contents"
-        ]
+          "comparison_contents",
+          "escapes"
+        ],
+        "properties": {
+          "evidence": {
+            "type": "object"
+          }
+        }
       }
     },
     {
@@ -122,12 +166,14 @@
           "stage": {
             "const": "fresh"
           }
-        },
-        "required": [
-          "stage"
-        ]
+        }
       },
       "then": {
+        "properties": {
+          "evidence": {
+            "type": "array"
+          }
+        },
         "not": {
           "anyOf": [
             {
@@ -142,12 +188,28 @@
             },
             {
               "required": [
+                "comparison_artifacts"
+              ]
+            },
+            {
+              "required": [
                 "approved_inputs"
+              ]
+            },
+            {
+              "required": [
+                "comparison_contents"
+              ]
+            },
+            {
+              "required": [
+                "escapes"
               ]
             }
           ]
         }
       }
     }
-  ]
+  ],
+  "additionalProperties": false
 }

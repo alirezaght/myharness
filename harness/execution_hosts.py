@@ -98,6 +98,7 @@ def installed_package(host, repository):
         cwd=repository,
         capture_output=True,
         timeout=10,
+        env=dict(os.environ, PYTHONDONTWRITEBYTECODE="1"),
     )
     if (
         result.returncode

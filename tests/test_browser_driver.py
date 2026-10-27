@@ -102,28 +102,37 @@ def test_pipe_descriptor_diagnostic():
 @pytest.mark.browser
 def test_chrome_direct_startup_control(tmp_path):
     import subprocess
+    import tempfile
 
     from harness.browser_driver import chrome_executable
 
-    result = subprocess.run(
-        [
-            chrome_executable(),
-            "--headless=new",
-            "--disable-gpu",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-background-networking",
-            "--disable-component-update",
-            "--disable-sync",
-            "--disable-extensions",
-            "--user-data-dir=" + str(tmp_path / "direct-profile"),
-            "--dump-dom",
-            "about:blank",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
+    with tempfile.TemporaryFile(mode="w+") as stdout, tempfile.TemporaryFile(mode="w+") as stderr:
+        result = subprocess.run(
+            [
+                chrome_executable(),
+                "--headless=new",
+                "--incognito",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-sync",
+                "--disable-extensions",
+                "--user-data-dir=" + str(tmp_path / "direct-profile"),
+                "--dump-dom",
+                "about:blank",
+            ],
+            stdout=stdout,
+            stderr=stderr,
+            text=True,
+            timeout=20,
+        )
+        stdout.seek(0)
+        stderr.seek(0)
+        result = subprocess.CompletedProcess(
+            result.args, result.returncode, stdout.read(), stderr.read()
+        )
     assert result.returncode == 0, (result.returncode, result.stderr)
 
 

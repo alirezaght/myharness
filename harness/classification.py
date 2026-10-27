@@ -46,16 +46,6 @@ _TOPICS_BY_COMPLEXITY = {
     Complexity.COMPLEX: frozenset(INTERVIEW_TOPICS),
 }
 
-_COMPLEX_MARKERS = (
-    "architecture",
-    "migration",
-    "new service",
-    "concurrency",
-    "distributed",
-    "multi-tenant",
-    "redesign",
-    "security model",
-)
 _TRIVIAL_MARKERS = ("typo", "rename", "wording", "comment", "log message")
 _SIMPLE_MARKERS = ("bug", "fix", "crash", "regression")
 _TRIVIAL_MAX_WORDS = 40
@@ -77,8 +67,8 @@ def interview_depth(complexity: Complexity) -> InterviewDepth:
 def classify_request(text: str) -> Complexity:
     """Propose a complexity for a request; the developer may override it."""
     lowered = text.lower()
-    if any(marker in lowered for marker in _COMPLEX_MARKERS):
-        return Complexity.COMPLEX
+    # Before inspection this is interview depth only, never proof of difficult design.
+    # Keywords such as "migration" or "architecture" cannot establish COMPLEX.
     if any(m in lowered for m in _TRIVIAL_MARKERS) and len(lowered.split()) < _TRIVIAL_MAX_WORDS:
         return Complexity.TRIVIAL
     if any(marker in lowered for marker in _SIMPLE_MARKERS):

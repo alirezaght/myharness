@@ -78,8 +78,9 @@ uv run python scripts/demo.py
 
 ## 1. Start a task and override its complexity
 
-$ harness start '[demo] Add a CSV export of items'
+$ harness start '[demo] Add a CSV export of items in app/export.py'
 task t-xxxxxxxx created · phase investigation · complexity standard (proposed)
+Initial complexity is provisional interview depth; reassess after clarification and repository inspection.
 override: harness classify t-xxxxxxxx <trivial|simple|standard|complex>
 $ harness classify t-xxxxxxxx trivial
 task t-xxxxxxxx · phase investigation · complexity trivial (developer)
@@ -88,23 +89,24 @@ task t-xxxxxxxx · phase investigation · complexity trivial (developer)
 
 $ harness investigate t-xxxxxxxx
 investigation of <demo>/repo (revision <rev>)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 approved decisions (1):
   DEC-0001 v1 — [demo] Storage engine
-verified facts (10):
+verified facts (12):
   [repository] 4 files enumerated via git ls-files — git ls-files
   [repository] revision <rev> — git rev-parse HEAD
   [repository] branch main — git rev-parse --abbrev-ref HEAD
   [repository] working tree clean — git status --porcelain
+  [repository] 0 ahead and 0 behind refs/heads/main — local Git ref comparison; remote freshness unverified (no fetch)
   [decisions] DEC-0001 v1 approved — [demo] Storage engine (scope: Persistence) — docs/decisions/DEC-0001-storage-engine.md
   [repository] 2 python files — file extensions
   [components] `app/` is a Python package (2 source files) — app/__init__.py
-  [files] `docs/decisions/DEC-0001-storage-engine.md` matches 2 request keywords (demo, export) — keyword match: demo, export
-  [files] `app/export.py` matches 1 request keyword (export) — keyword match: export (path: export)
+  [files] `docs/decisions/DEC-0001-storage-engine.md` matches 3 request keywords (demo, export, app) — keyword match: demo, export, app
+  [files] `app/export.py` matches 2 request keywords (export, app) — keyword match: export, app (path: export, app)
+  [files] `app/__init__.py` matches 1 request keyword (app) — keyword match: app (path: app)
   [files] `README.md` matches 1 request keyword (demo) — keyword match: demo
-assumptions (2):
+assumptions (1):
   primary language is python — basis: majority of source files
-  the change most likely concerns `docs/` — basis: highest request-keyword density
 unresolved questions (2):
   [dependencies] No dependency manifest found; how are dependencies managed?
   [tests] No tests found; which framework and layout should new tests use?
@@ -148,11 +150,11 @@ Q5 [acceptance_criteria] What are the acceptance criteria for calling this done?
 
 $ harness resume
 t-xxxxxxxx · phase interview · complexity trivial · updated <timestamp>
-  [demo] Add a CSV export of items
+  [demo] Add a CSV export of items in app/export.py
   next: harness interview next t-xxxxxxxx
 $ harness resume t-xxxxxxxx
 task t-xxxxxxxx · phase interview · complexity trivial (developer)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 checkpoint: interview <timestamp> (#11)
 Q5 [acceptance_criteria] What are the acceptance criteria for calling this done?
 next: harness interview next t-xxxxxxxx
@@ -178,6 +180,7 @@ unresolved decisions (0):
 blocking: no
 $ harness phase t-xxxxxxxx next
 task t-xxxxxxxx · phase design · complexity trivial (developer)
+After clarification, reassess inspected implementation risk: harness classify t-xxxxxxxx --assessment FILE --repo REPOSITORY
 
 ## 5. Architecture design with a delegated detail
 
@@ -258,7 +261,7 @@ approved v1 -> <demo>/repo/docs/specs/t-xxxxxxxx/v1.md (revision <rev>, clean)
 approval #1 recorded: spec v1 sha256:<hash> (implementation handoff authorized; AL launch is Phase 3)
 $ harness show t-xxxxxxxx
 task t-xxxxxxxx · phase approval · complexity trivial (developer)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 created: <timestamp> · updated: <timestamp>
 approval: spec v1 sha256:<hash> (current)
 interview topics: functional_behavior, acceptance_criteria
@@ -272,7 +275,7 @@ history:
 $ harness spec verify t-xxxxxxxx
 v1 ok
 $ cat docs/specs/t-xxxxxxxx/v1.md
-# Specification — [demo] Add a CSV export of items
+# Specification — [demo] Add a CSV export of items in app/export.py
 
 - **Task:** t-xxxxxxxx
 - **Status:** approved
@@ -351,7 +354,7 @@ $ cat docs/specs/t-xxxxxxxx/v1.md
 - blocking: no
 $ harness resume t-xxxxxxxx
 task t-xxxxxxxx · phase approval · complexity trivial (developer)
-request: [demo] Add a CSV export of items
+request: [demo] Add a CSV export of items in app/export.py
 checkpoint: approval <timestamp> (#32)
 approval: spec v1 sha256:<hash> (current)
 next: harness execution start t-xxxxxxxx

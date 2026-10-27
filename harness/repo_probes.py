@@ -128,7 +128,11 @@ def component_summary(files: list[PurePosixPath]) -> Findings:
             text = f"`{top}/` is a Python package ({count} source files)"
             out.fact(FactCategory.COMPONENTS, text, marker)
         else:
-            out.assume(f"`{top}/` is a component ({count} source files)", "directory layout")
+            out.fact(
+                FactCategory.COMPONENTS,
+                f"source directory `{top}/` ({count} files)",
+                "directory inventory; ownership unresolved",
+            )
     return out
 
 
@@ -169,7 +173,7 @@ def schema_facts(files: list[PurePosixPath]) -> Findings:
     return out
 
 
-def config_facts(files: list[PurePosixPath]) -> Findings:
+def config_facts(files: list[PurePosixPath], *, relevant=None) -> Findings:
     out = Findings()
     configs = []
     for rel in files:
@@ -178,7 +182,8 @@ def config_facts(files: list[PurePosixPath]) -> Findings:
             text = f"secret-bearing file `{where}` present (contents not read)"
             out.fact(FactCategory.CONFIG, text, "path only")
             text = f"Which values from `{where}` matter for this change? (not read by the harness)"
-            out.ask("config", text)
+            if relevant is None or where in relevant:
+                out.ask("config", text)
         elif rel.name in MANIFESTS or is_workflow(rel) or _matches(rel.name, API_SPEC_PATTERNS):
             continue
         elif rel.suffix in CONFIG_SUFFIXES or _matches(rel.name, CONFIG_NAMES):
@@ -197,8 +202,6 @@ def test_facts(files: list[PurePosixPath]) -> Findings:
     dirs = Counter(_test_dir(rel) for rel in tests)
     listed = [(f"test location `{d}/` ({n} files)", d) for d, n in sorted(dirs.items())]
     _listed(out, FactCategory.TESTS, listed)
-    directory = max(dirs.items(), key=lambda item: (item[1], item[0]))[0]
-    out.assume(f"new tests belong under `{directory}/`", "where most existing tests live")
     return out
 
 

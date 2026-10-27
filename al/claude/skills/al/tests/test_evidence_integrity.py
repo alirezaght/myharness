@@ -125,6 +125,8 @@ def test_review_start_is_refused_from_planning_before_it_can_skip_gates(cli, tmp
     cli("start", "--spec", "A complete task package must have sourced repository gates before review.")
     cli("spec-gate", "SPEC_READY")
     cli("classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
+    from evidence_helpers import plan_na_gates
+    plan_na_gates(cli, tmp_path, ("svc/app.py", "web/app.py"))
     admit_planning(cli, tmp_path)  # isolate the phase gate from proof admission
     cli("evidence", "plan", "--area", "focused", "--tier", "focused", "--scope", "web", "--", *ok_cmd("1 passed"))
     cli("evidence", "run", "--area", "focused")

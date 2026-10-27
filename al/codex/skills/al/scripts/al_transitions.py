@@ -47,6 +47,8 @@ def workflow_gaps(st):
 
 
 def require_transition(st, command, destination):
+    from al_rework_recovery_contract import guard
+    guard(st)
     from al_new_origin import require_admitted
     if destination in WRITING | BARRIERS or command in {'review-start', 'approved'}:
         require_admitted(st)

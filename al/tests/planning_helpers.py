@@ -16,6 +16,10 @@ def prepare(
     ]:
         result = public_run(launched, platform, *args)
         assert result.returncode == 0, (result.stdout[-2000:], result.stderr[-2000:])
+    paths = launched[2].parent / "planning-paths.json"
+    paths.write_text(json.dumps(["."]))
+    discovery = public_run(launched, platform, "gates", "discover", "--paths-file", str(paths))
+    assert discovery.returncode == 0, (discovery.stdout[-2000:], discovery.stderr[-2000:])
     result = public_run(launched, platform, "planning", "packet")
     assert result.returncode == 0, (result.stdout[-2000:], result.stderr[-2000:])
     packet = json.loads(result.stdout)

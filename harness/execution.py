@@ -78,6 +78,29 @@ def start_execution(controller, task_id, *, host="claude", specs=None, launch=Tr
                 "criteria": ["AC-01"],
                 "invariants": [],
             }
+            from harness.requirement_registry import registry
+
+            package.update(registry(controller, task_id, body))
+            from harness.complexity_assessment import current
+
+            risk = current(controller, task_id)
+            if risk:
+                if not risk["current"]:
+                    raise ValueError(
+                        "implementation risk assessment is stale; reassess before handoff"
+                    )
+                package["implementation_risk"] = risk
+            task = controller.get_task(task_id)
+            if risk and task.complexity_source == "developer":
+                package["routing_override"] = {
+                    "source": "explicit developer classification",
+                    "classification": {
+                        "trivial": "SMALL",
+                        "simple": "SMALL",
+                        "standard": "STANDARD",
+                        "complex": "COMPLEX",
+                    }[task.complexity],
+                }
             envelope = {
                 "schema_version": 1,
                 "runtime_layout": "harness-session-directory-v1",

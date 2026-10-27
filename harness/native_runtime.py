@@ -70,8 +70,14 @@ class NativeRuntime:
             }
         )
         native_root = os.environ.get("CODEX_HOME", str(Path.home() / ".codex"))
+        registry_directory = directory / "principals"
+        if (directory / "bridge-selection.json").exists():
+            registry_directory = registry_directory / (
+                "bridge-"
+                + json.loads((Path(trusted) / "manifest.json").read_bytes())["fingerprint"]
+            )
         self.registry = PrincipalRegistry(
-            directory / "principals", native_root, execution["binding"], stable_policy
+            registry_directory, native_root, execution["binding"], stable_policy
         )
         profile = directory / "native-profiles" / secrets.token_hex(16)
         profile.mkdir(mode=0o700, parents=True)

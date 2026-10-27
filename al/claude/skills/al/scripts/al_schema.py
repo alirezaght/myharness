@@ -68,6 +68,8 @@ def validate_state(st):
     except (KeyError, OSError, ValueError) as exc:
         refuse('task artifact is corrupt: '+str(exc))
 
+    from al_rework_recovery_contract import validate as validate_recovery
+    validate_recovery(st)
     from al_events import validate
     try:
         validate(st)

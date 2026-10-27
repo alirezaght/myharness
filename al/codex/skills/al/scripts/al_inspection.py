@@ -9,7 +9,7 @@ from al_analysis_cache import ObservationContext
 from al_schema import refuse
 
 DEFAULT_SECTIONS = ('summary', 'evidence', 'gates', 'operations')
-SECTIONS = (*DEFAULT_SECTIONS, 'attribution', 'publication')
+SECTIONS = (*DEFAULT_SECTIONS, 'attribution', 'publication', 'acceptance')
 
 
 def source_binding(state):
@@ -38,6 +38,9 @@ def inspect_session(sid, *, expected_run, expected_repo, sections):
     observation = {'state': digest, 'source': source, 'run': expected_run}
     output = {}
     with ObservationContext(observation, readonly_git=True):
+        if 'acceptance' in sections:
+            from al_acceptance import status
+            output['acceptance'] = status(state)
         if 'publication' in sections:
             from al_publication import publication_readiness
             output['publication'] = publication_readiness(state)
@@ -46,12 +49,14 @@ def inspect_session(sid, *, expected_run, expected_repo, sections):
             output['attribution'] = view(state)
         if 'summary' in sections:
             output['summary'] = {k: state.get(k) for k in ('status', 'phase', 'classification', 'spec_status', 'model', 'effort', 'updated_at')}
+            output['summary']['rework_recovery'] = state.get('rework_recovery')
+            output['summary']['rework'] = state.get('rework')
         if 'evidence' in sections:
             import al_ledger as L
             output['evidence'] = []
             for e in L.ledger(state)['entries']:
                 verdict, reason = L.entry_verdict(state, e)
-                output['evidence'].append({'id': e['id'], 'area': e['area'], 'status': e['status'], 'counts': e.get('counts', {}), 'verdict': verdict, 'reason': reason})
+                output['evidence'].append({'id': e['id'], 'area': e['area'], 'status': e['status'], 'counts': e.get('counts', {}), 'verdict': verdict, 'reason': reason, 'supersessions': [ref for ref in L.ledger(state).get('supersessions',[]) if __import__('al_artifacts').read_json(ref)['original']['id']==e['id']]})
         if 'gates' in sections:
             import al_gate_currency
             import al_gates

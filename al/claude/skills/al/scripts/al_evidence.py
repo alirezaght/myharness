@@ -312,6 +312,10 @@ def cmd_evidence_status(a, sid):
         print("AL · evidence ledger empty")
     for e in entries:
         print(L.row(e, *L.entry_verdict(st, e)))
+    for ref in L.ledger(st).get("supersessions", []):
+        import al_artifacts as A
+        value = A.read_json(ref)
+        print(f"AL · superseded {value['original']['id']} → {value['replacement']['id']} · {value['reason']} · original preserved")
     for area, spec in L.ledger(st)["plan"].items():
         if not L.latest(st, area, spec):
             print(f"--   {area:<18} {spec['tier']:<9} NOT_RUN     planned `{' '.join(spec['argv'])}`")
@@ -384,6 +388,10 @@ def register(sub):
     p = ev.add_parser("retire"); p.add_argument("--area", required=True); p.add_argument("--reason", required=True)
     p.add_argument("--replaced-by", help="comma-separated ledger ids of the current passing runs that replace it")
     p.set_defaults(fn=cmd_evidence_retire)
+    from al_evidence_supersession import cmd_supersede
+    p = ev.add_parser("supersede"); p.add_argument("--id", required=True)
+    p.add_argument("--replaced-by", required=True); p.add_argument("--reason", required=True)
+    p.set_defaults(fn=cmd_supersede)
     ev.add_parser("status").set_defaults(fn=cmd_evidence_status)
     p = ev.add_parser("require"); p.add_argument("--tier", choices=["focused", "broad"])
     p.add_argument("--areas"); p.set_defaults(fn=cmd_evidence_require)

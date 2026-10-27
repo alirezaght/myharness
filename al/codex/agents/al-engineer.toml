@@ -156,4 +156,15 @@ If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output to
 submit the final report there and return only its immutable reference. This report outbox does
 not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
 file or host final-message capture; never claim a file was saved if the host refused it.
+
+Incomplete relevant repository, service, consumer and required-check discovery blocks writing/proof/review/approval. Relevant uncertainty selects the complete potential universe with real mandatory bindings. Only a concrete extra unresolved check with otherwise complete required coverage may remain individually unverified; never imply it ran in CI.
+
+### Portable investigation
+Before final classification/planning, inspect existing implementation, manifest/path
+ownership, literal call sites, nested instructions and locally known main divergence.
+Use routing-audit --request "APPROVED REQUEST" in standalone AL, or Harness read_file
+with harness:repository-audit. Keyword counts and test volume do not establish ownership
+or remaining complexity. Resolve material ownership uncertainty before planning.
+In Harness, enumerate harness:skill/index and read references/schemas through
+harness:skill/reference/... with bounded cursors; do not assume access to global paths.
 '''

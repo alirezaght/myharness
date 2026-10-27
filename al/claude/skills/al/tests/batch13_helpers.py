@@ -73,14 +73,15 @@ def finished(cli,status,materialized=True):
 
 
 def assert_incomplete_admission(cli):
-    """A gate receipt never authorizes approval; incomplete coverage is reported as unverified."""
+    """Structural coverage gaps block actual admission, while receipts remain diagnostic."""
     import al_artifacts as A
     state=json.loads(cli('show')[1])
     manifest=A.read_json(state['gate_manifests'][-1])
-    if manifest['service_coverage']['assessment']['outcome']=='incomplete':
-        assert json.loads(cli('gates','status')[1])['unverified']
+    incomplete=manifest['service_coverage']['assessment']['outcome']=='incomplete'
+    if incomplete:
+        assert json.loads(cli('gates','status')[1])['coverage_blockers']
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
-    admit_planning(cli)
-    invoke(cli,'phase','IMPLEMENTATION')
+    admit_planning(cli,expect_coverage_blocked=incomplete)
+    invoke(cli,'phase','IMPLEMENTATION',ok=not incomplete)
     invoke(cli,'approved',ok=False)

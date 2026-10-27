@@ -79,8 +79,9 @@ def test_rework6_protocol_covers_report_ownership_recovery_and_git_options():
     receipt_schema = json.loads((AL / "reference/schemas/resolution-validation.json").read_text())
     assert receipt_schema["properties"]["schema_version"]["const"] == 2
     assert receipt_schema["properties"]["stage"]["const"] == "compare"
-    fresh_rule = report_schema["allOf"][-1]["then"]
-    assert fresh_rule["properties"]["prior_resolutions"]["maxItems"] == 0
+    fresh_rule = next(rule["then"] for rule in report_schema["allOf"] if rule["if"]["properties"]["stage"]["const"]=="fresh")
+    assert fresh_rule["not"] == {"required":["prior_resolutions"]}
+    assert report_schema["properties"]["schema_version"]["const"] == 2
     assert "resolution" in str(fresh_rule["properties"]["findings"])
 
 

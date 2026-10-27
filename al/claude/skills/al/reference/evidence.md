@@ -1,0 +1,9 @@
+# Evidence supersession and isolated setup
+
+`evidence supersede --id EOLD --replaced-by ENEW --reason TEXT` appends an immutable audit artifact. Both entries and their logs remain unchanged, including the original FAIL. The replacement must be a newer original execution, a current VALID PASS of the same declared obligation and current plan. A later failed/running attempt wins. Changed command semantics require separate supported replanning; free text cannot assert equivalence. Corrupt logs, unresolved processes, foreign runs and conflicting replay refuse without changing state. Exact replay is idempotent while its binding is current.
+
+This records why a current rerun replaces obsolete evidence; it does not resurrect old receipts, clear review findings or retire gates. Evidence status and inspection expose the relation. Area/repro readiness still uses the current command and latest-attempt ledger rules. `evidence retire` remains a distinct mistaken-plan operation.
+
+Package-backed hooks use source-selected locked setup in disposable checkout storage. Setup records command, input hashes, executable identity, timing, outcome and cleanup before the hook. Missing tools, failed install and unsafe changed inputs are setup INFRA; code has not passed. Hooks then execute against prepared dependencies. Local environment paths and caches stay inside owned temporary storage; no global installs, generated locks or working-tree dependency links are used. General checkout symlink guards remain strict; only the owned venv link to the independently bound running interpreter is materialized as a copy.
+
+Diagnostic status commands can exit zero while displaying FAIL or BLOCKED. Execution/refusal commands return nonzero when they do not succeed. Actual provider pending/manual/canceled results are recorded as unsuccessful verification, never code PASS or an invented provider test failure.

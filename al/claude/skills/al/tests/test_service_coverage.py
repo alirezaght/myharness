@@ -9,10 +9,9 @@ from hook_regression_helpers import invoke,manifest_for
 
 
 def reports_uncertain_dependents(assessment):
-    """Unresolved imports are reported: either every potential service is already selected, or the
-    remaining ones are an unverified `uncertain-dependents` gap (AL no longer selects them all)."""
-    if assessment['outcome']=='exhaustive':return True
-    return assessment['outcome']=='incomplete' and any(g['code']=='uncertain-dependents' for g in assessment['gaps'])
+    """Relevant uncertainty requires the complete potential universe, never a partial selection."""
+    return bool(assessment['dependency_uncertainties']) and set(assessment['selected_services'])==set(assessment['potential_services']) and assessment['outcome'] in {'exhaustive','incomplete'}
+
 
 def put(repo,path,text):
     file=repo/path;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
@@ -64,7 +63,7 @@ def test_unknown_dynamic_import_broadens_with_complete_checks(cli,repo,tmp_path)
     seed(repo);put(repo,'packages/shared/src/common.py','def load(name):\n    return __import__(name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py'])
     coverage=m['service_coverage']['assessment'];assert reports_uncertain_dependents(coverage)
-    assert set(coverage['selected_services'])<=set(coverage['potential_services'])
+    assert set(coverage['selected_services'])==set(coverage['potential_services'])
     # Checks of selected services run; the possible further dependents form one unverified gate.
     assert all(g['applicability']=='APPLICABLE' for g in m['gates'] if g['category']=='lint-imports' and g['id']!='imports-unresolved')
 

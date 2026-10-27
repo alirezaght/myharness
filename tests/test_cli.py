@@ -42,7 +42,8 @@ def test_start_prints_id_phase_and_override_hint(run):
     code, out, err = run("start", "fix the login crash")
     assert code == 0
     assert err == ""
-    first, second = out.splitlines()
+    first, provisional, second = out.splitlines()
+    assert "provisional interview depth" in provisional
     assert TASK_ID.match(first)
     assert "phase investigation" in first
     assert "complexity simple (proposed)" in first

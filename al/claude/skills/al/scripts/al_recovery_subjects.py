@@ -213,6 +213,15 @@ def issues(st):
     unresolved = operations(st)
     if unresolved:
         return unresolved
+    recovery=st.get('rework_recovery')
+    if recovery and recovery['stop'] and st['status']=='STOPPED_WITH_BLOCKERS':
+        if recovery['stop']['kind']=='model':
+            return [issue('REWORK_MODEL_BLOCKED','rework-recovery',recovery['stop']['occurrence_id'],
+                          recovery['stop']['reason'],supply('approved-model-availability',
+                          'No approved model remains. Budget continuation cannot clear a model-availability blocker.'),recovery['stop'])]
+        return [issue('REWORK_RECOVERY_STOPPED','rework-recovery',recovery['stop']['occurrence_id'],
+                      recovery['stop']['reason'],supply('rework-continuation-input',
+                      'Inspect the latest stopping checkpoint; use rework-recovery continue --file PATH with explicit user authorization.'),recovery['stop'])]
     if st["status"] != "RUNNING":
         return [
             issue(
@@ -231,6 +240,11 @@ def issues(st):
                 },
             )
         ]
+    recovery=st.get('rework_recovery')
+    if recovery and recovery['pending']:
+        return [issue('REWORK_REASSESSMENT_REQUIRED','rework-recovery',recovery['pending'],
+                      'The exhausted batch requires a bound Architect decision.',
+                      supply('rework-recovery-input','Use rework-recovery packet, then rework-recovery decide --file PATH.'),recovery)]
     prerequisites_missing = prerequisites(st)
     if prerequisites_missing:
         return prerequisites_missing

@@ -24,7 +24,7 @@ from harness.execution_logs import redact_value
 from harness.execution_processes import ProcessManager, bounded_capture
 from harness.execution_store import get_execution
 
-READ_COMMANDS = {"show", "status", "review-status", "next", "help"}
+READ_COMMANDS = {"show", "status", "review-status", "next", "help", "routing-audit"}
 COMMANDS = READ_COMMANDS | {
     "artifact",
     "preflight",
@@ -51,6 +51,8 @@ COMMANDS = READ_COMMANDS | {
     "handoff",
     "integration",
     "publication",
+    "acceptance",
+    "rework-recovery",
     "stopped",
     "completed",
     "spec",
@@ -253,6 +255,47 @@ class OperationController:
     def _dispatch(self, controller, principal, name, a, state):
         root, owner = self.envelope["repository"], principal["thread_id"]
         if name == "read_file":
+            if a["path"] == "harness:planning-adoptions":
+                from harness.execution_adoption import adoptions
+
+                return {
+                    "adoptions": adoptions(controller, self.execution_id),
+                    "authority": "REFERENCE_ONLY_CURRENT_HARNESS_ARCHITECT_REVALIDATION_REQUIRED",
+                }
+            if a["path"] == "harness:repository-audit":
+                from harness.repository_audit import audit
+
+                execution = get_execution(controller.conn, self.execution_id)
+                package = json.loads(
+                    (Path(execution["handoff_path"]).parent / "task-package.json").read_bytes()
+                )
+                raw = canonical(audit(root, package["original_request"])).encode()
+                offset, limit = a.get("offset", 0), a.get("limit", 16384)
+                if (
+                    type(offset) is not int
+                    or type(limit) is not int
+                    or offset < 0
+                    or not 1 <= limit <= 65536
+                ):
+                    raise ValueError("bounded repository audit cursor required")
+                return {
+                    "text": raw[offset : offset + limit].decode(errors="replace"),
+                    "offset": offset,
+                    "size": len(raw),
+                    "truncated": offset + limit < len(raw),
+                    "sha256": digest(raw),
+                    "resource": a["path"],
+                }
+            if a["path"].startswith("harness:skill"):
+                from harness.pinned_resources import read_skill
+
+                return read_skill(
+                    self.initialization,
+                    self.envelope["host"],
+                    a["path"],
+                    offset=a.get("offset", 0),
+                    limit=a.get("limit", 16384),
+                )
             if a["path"] == "harness:outputs":
                 if principal["role"] != "orchestrator":
                     raise ValueError("only orchestrator may list all agent report outputs")
@@ -494,8 +537,9 @@ class OperationController:
             if k in {"HOME", "PATH", "AL_DISTRIBUTION_STATE", "XDG_DATA_HOME", "XDG_STATE_HOME"}
         }
         environment["HARNESS_AUTHORITY_ROOT"] = str(
-            Path(get_execution(controller.conn, self.execution_id)["handoff_path"]).parent
-            / "trusted"
+            __import__("harness.execution_bridge", fromlist=["bridge_root"]).bridge_root(
+                get_execution(controller.conn, self.execution_id)
+            )
         )
         profile = self.profile(al=True)
         context_path = Path(profile.policy).parent / "check-context.json"

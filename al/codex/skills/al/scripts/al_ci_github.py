@@ -21,18 +21,32 @@ def read(root,path):
     return raw,{'path':path,'sha256':hashlib.sha256(raw).hexdigest(),'job':None}
 
 
-def applicability(value,context):
+def applicability(value,context,paths=None):
     events={v:None for v in value} if isinstance(value,list) else {value:None} if isinstance(value,str) else value
     if not isinstance(events,dict) or not events:raise Unsupported('literal workflow trigger required')
     for name,filters in events.items():
         if name not in {'push','pull_request','workflow_dispatch'}:raise Unsupported('unsupported workflow event '+str(name))
         if filters is not None:
-            if not isinstance(filters,dict) or set(filters)-({'branches','tags'} if name=='push' else {'branches'}):raise Unsupported('unsupported workflow event filtering')
+            if not isinstance(filters,dict) or set(filters)-({'branches','tags','paths','paths-ignore'} if name=='push' else {'branches','paths','paths-ignore'}):raise Unsupported('unsupported workflow event filtering')
             if any(not isinstance(v,list) or any(not isinstance(x,str) or '$' in x for x in v) for v in filters.values()):raise Unsupported('nonliteral workflow filters')
     quality='pull_request' in events or ('push' in events and not (events['push'] or {}).get('tags'))
     if not quality:
         if context=='merge_request_quality':return None
         raise Unsupported('release/manual workflow needs explicit quality planning context')
+    if paths is not None:
+        possible=[]
+        for name,filters in events.items():
+            if name not in {'push','pull_request'} or name=='push' and (filters or {}).get('tags'):continue
+            filters=filters or {}
+            if 'paths' in filters and 'paths-ignore' in filters:raise Unsupported('conflicting workflow path filters')
+            selected=True
+            if 'paths' in filters:
+                matched=[Rules.pattern_matches(pattern,path) for pattern in filters['paths'] for path in paths]
+                selected=any(v is True for v in matched) or any(v is None for v in matched)
+            elif 'paths-ignore' in filters:
+                selected=not all(any(Rules.pattern_matches(pattern,path) is True for pattern in filters['paths-ignore']) for path in paths)
+            possible.append(selected)
+        if possible and not any(possible):return False
     return {'profile':context,'events':events,'selection':'conservative quality-event union'}
 
 
@@ -114,17 +128,19 @@ def github_inventory(root,paths,context=None,opaque=()):
     directory=root/'.github/workflows'
     files=sorted(p.relative_to(root).as_posix() for p in directory.glob('*') if p.suffix in {'.yml','.yaml'})
     if len(files)>128:raise Unsupported('GitHub workflow count limit')
-    obligations=[];dependencies={}
+    obligations=[];dependencies={};deferred=[]
     for path in files:
         src={'path':path,'sha256':'0'*64,'job':None}
-        def append(name,status,reason,exe=None):
+        def append(name,status,reason,exe=None,inventory_complete=True):
             obligations.append({'source_path':path,'source_sha256':src['sha256'],'job':name,'units':sorted({Rules.unit(p) for p in paths}),
-                                'applicability':status,'dependencies':list(dependencies.values())+(exe.pop('source_dependencies') if exe else []),'reason':reason,'inputs':sorted(paths),'execution':exe})
+                                'applicability':status,'dependencies':list(dependencies.values())+(exe.pop('source_dependencies') if exe else []),'reason':reason,'inputs':sorted(paths),'execution':exe,'impact':{'inventory_complete':inventory_complete,'classification':'unknown' if not inventory_complete else 'relevant'}})
         try:
             if any(path==o or path.startswith(o.rstrip('/')+'/') for o in opaque):raise Unsupported('unavailable workflow child')
             raw,src=read(root,path);dependencies[path]=src;data=load(raw.decode())
-            selected=applicability(data.get('on'),context)
-            if selected is None:continue
+            selected=applicability(data.get('on'),context,paths)
+            if selected is None or selected is False:
+                deferred.append({'source_path':path,'source_sha256':src['sha256'],'classification':'deferred','reason':'sourced trigger excludes the selected quality context or all affected inputs','dependencies':[src]})
+                continue
             if set(data)-{'name','on','jobs'}:raise Unsupported('unsupported workflow-level execution semantics')
             jobs=data.get('jobs')
             if not isinstance(jobs,dict) or not jobs:raise Unsupported('literal nonempty jobs required')
@@ -134,7 +150,7 @@ def github_inventory(root,paths,context=None,opaque=()):
                     exe['verification_chain']['workflow_membership']=files
                     append(name,'APPLICABLE','complete literal GitHub quality job',exe)
                 except (Unsupported,ValueError,TypeError) as exc:append(name,'UNRESOLVED',str(exc))
-        except (Unsupported,ValueError,UnicodeError,TypeError) as exc:append('<unresolved-workflow>','UNRESOLVED',str(exc))
+        except (Unsupported,ValueError,UnicodeError,TypeError) as exc:append('<unresolved-workflow>','UNRESOLVED',str(exc),inventory_complete=False)
     after=sorted(p.relative_to(root).as_posix() for p in directory.glob('*') if p.suffix in {'.yml','.yaml'})
     if after!=files:raise Unsupported('GitHub workflow membership changed')
     dependencies.update({d['path']:d for o in obligations for d in o['dependencies']})
@@ -143,4 +159,4 @@ def github_inventory(root,paths,context=None,opaque=()):
     # Every applicable job depends on complete workflow enumeration, including excluded workflows.
     for obligation in obligations:
         obligation['dependencies']=[{**d} for d in {d['path']:d for d in [*dependencies.values(),*obligation['dependencies']]}.values()]
-    return {'obligations':obligations,'dependencies':list(dependencies.values())}
+    return {'obligations':obligations,'deferred':deferred,'dependencies':list(dependencies.values())}

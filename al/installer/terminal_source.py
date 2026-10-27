@@ -53,6 +53,14 @@ def query_environment():
     return environment
 
 def terminal_source(repository, *, session, run, platform):
+    return _source_query(repository, session=session, run=run, platform=platform, operation='terminal')
+
+
+def planning_source(repository, *, session, run, platform):
+    return _source_query(repository, session=session, run=run, platform=platform, operation='planning')
+
+
+def _source_query(repository, *, session, run, platform, operation):
     repository = safe(Path(repository).resolve())
     if platform not in {'codex','claude'} or not session or not run:
         raise ValueError('explicit terminal source identity required')
@@ -65,20 +73,22 @@ def terminal_source(repository, *, session, run, platform):
     request=dict(_request(captured),run_pin_context=pin_context,caller_environment=caller_environment)
     inventory_before=target_inventory(repository,environment)
     argv = [sys.executable,'-I','-S','-B','-c',CHILD,'--repository',str(repository),
-            '--session',session,'--run',run,'--platform',platform]
+            '--session',session,'--run',run,'--platform',platform,'--operation',operation]
     result = subprocess.run(argv, input=canonical(request), cwd=repository,
                             env=environment, capture_output=True, timeout=120)
     if len(result.stdout)>16*1024*1024 or len(result.stderr)>65536:
         raise ValueError('terminal validator output exceeded bounds')
     try:value = decode(result.stdout)
     except (ValueError,UnicodeError) as exc:raise ValueError('invalid terminal validator response') from exc
-    if result.returncode or not isinstance(value,dict) or value.get('kind')!='terminal-workspace-source-proof':
-        raise ValueError('terminal approval refused: '+str(value.get('error','validator failed') if isinstance(value,dict) else 'invalid response'))
+    expected_kind='terminal-workspace-source-proof' if operation=='terminal' else 'planning-workspace-source-proof'
+    if result.returncode or not isinstance(value,dict) or value.get('kind')!=expected_kind:
+        label='terminal approval' if operation=='terminal' else 'planning source'
+        raise ValueError(label+' refused: '+str(value.get('error','validator failed') if isinstance(value,dict) else 'invalid response'))
     if (value.get('schema_version'),value.get('repository'),value.get('session_id'),value.get('run_id'),value.get('platform')) != (2,str(repository),session,run,platform):
         raise ValueError('terminal validator response identity mismatch')
     if any(value.get('validator',{}).get(key)!=item for key,item in before.items()):
         raise ValueError('terminal validator closure/origin response mismatch')
-    _validate_proof(value,captured,platform,pin_context,caller_environment)
+    _validate_proof(value,captured,platform,pin_context,caller_environment,operation=operation)
     if validator_binding()!=before:raise ValueError('trusted terminal validator changed during query')
     if capture_run_pin(captured,repository,session,run,platform)!=pin_context:
         raise ValueError('protected terminal run pin changed during query')
@@ -91,10 +101,13 @@ def terminal_source(repository, *, session, run, platform):
     return value
 
 
-def _validate_proof(value,captured,platform,pin_context=None,caller_environment=None):
-    if set(value)!={'schema_version','kind','repository','session_id','run_id','platform','state_sha256','approval','source','validator'}:
+def _validate_proof(value,captured,platform,pin_context=None,caller_environment=None,*,operation='terminal'):
+    fields={'schema_version','kind','repository','session_id','run_id','platform','state_sha256','source','validator'}
+    fields |= {'approval'} if operation=='terminal' else {'task_package','planning','authority'}
+    if set(value)!=fields:
         raise ValueError('unknown terminal proof fields')
-    for digest_value in (value['state_sha256'],value['source'].get('fingerprint'),value['approval'].get('task_hash')):
+    task_hash=value['approval'].get('task_hash') if operation=='terminal' else value['task_package'].get('sha256')
+    for digest_value in (value['state_sha256'],value['source'].get('fingerprint'),task_hash):
         if not isinstance(digest_value,str) or not re.fullmatch('[0-9a-f]{64}',digest_value):
             raise ValueError('invalid terminal proof digest')
     validate_runtime(value['validator'],captured,platform,pin_context)

@@ -273,7 +273,7 @@ def build_task(demo: Phase2Demo) -> tuple[str, str]:
     demo.banner("1. Build a task whose design has a wrong connection")
     task = ident(
         r"task (t-[0-9a-f]{8}) created",
-        demo.harness("start", "--complexity", "trivial", "[demo] Add a CSV export of items"),
+        demo.harness("start", "--complexity", "trivial", phase1.SAMPLE_REQUEST),
     )
     demo.harness("investigate", task)
     demo.harness("phase", task, "next")

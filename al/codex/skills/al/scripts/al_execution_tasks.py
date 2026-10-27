@@ -103,6 +103,8 @@ def scope_tasks(st, scope):
 
 
 def require_task_admission(st, task_id, *, files=(), check_scope=(), verify_authority=True):
+    from al_rework_recovery_contract import guard
+    guard(st)
     i = integration(st)
     task = i['tasks'].get(task_id)
     if not task:
@@ -190,6 +192,26 @@ def _strings(value, label):
     return value
 
 
+def _input(action, data):
+    fields = {
+        'task-register': ({'id','title','files','criteria'}, {'dependencies'}),
+        'agent-register': ({'id','name','role'}, {'task'}),
+        'blocker': ({'id','tasks','question','context','alternatives','recommendation'}, set()),
+        'graph-update': ({'id'}, {'files','dependencies'}),
+        'agent-update': ({'id','status'}, {'activity','progress','latest_output'}),
+        'task-progress': ({'id','activity'}, {'progress'}),
+        'handoff': ({'from','to','text'}, set()),
+    }
+    required, optional = fields[action]
+    missing = sorted(required-set(data)) if isinstance(data,dict) else sorted(required)
+    extra = sorted(set(data)-required-optional) if isinstance(data,dict) else []
+    if not isinstance(data,dict) or missing or extra:
+        refuse(canonical({'error':'input_schema','operation':'integration '+action,
+                          'missing':missing,'unexpected':extra,
+                          'schema':'reference/schemas/blocker.json' if action=='blocker' else 'reference/execution-integration.md',
+                          'recovery':'Supply --file with one object containing the required fields; read references through harness:skill/ when using Harness. No reporting state was saved.'}))
+
+
 def _task(st, data):
     from al_writers import canonical_paths
     import al_artifacts as A
@@ -236,6 +258,7 @@ def _agent(st, data):
 
 def _blocker(st, data):
     i = integration(st)
+    _input('blocker', data)
     bid = identity(data['id'])
     if bid in i['blockers']:
         if i['blockers'][bid].get('registration') == digest(data):
@@ -341,6 +364,8 @@ def cmd_integration(a, sid):
     if st['status'] != 'RUNNING':
         refuse('execution reporting requires a running run')
     data = loads(Path(a.file).read_bytes()) if getattr(a, 'file', None) else None
+    if a.action in {'graph-update','task-register','agent-register','blocker','agent-update','task-progress','handoff'}:
+        _input(a.action, data)
     if a.action == 'graph-update':
         _graph(st, data)
     elif a.action == 'task-register':

@@ -1,11 +1,9 @@
-"""Heuristic relevance: rank files by how many request keywords their path or text contains."""
+"""Keyword inspection leads; these do not establish ownership or implementation."""
 
 import re
-from collections import Counter
 from pathlib import Path, PurePosixPath
 
 from harness.investigation import FactCategory
-from harness.repo_probes import is_test
 from harness.repo_scan import Findings, read_text
 
 STOPWORDS = frozenset(
@@ -21,10 +19,6 @@ def keywords(request: str) -> list[str]:
     words = re.findall(r"[a-z0-9]+", request.lower())
     usable = [w for w in words if len(w) >= MIN_KEYWORD_LENGTH and w not in STOPWORDS]
     return list(dict.fromkeys(usable))
-
-
-def _area(rel: PurePosixPath) -> str:
-    return f"`{rel.parts[0]}/`" if len(rel.parts) > 1 else "the repository root"
 
 
 def relevance(root: Path, files: list[PurePosixPath], request: str) -> Findings:
@@ -58,10 +52,4 @@ def relevance(root: Path, files: list[PurePosixPath], request: str) -> Findings:
         noun = "keyword" if len(matched) == 1 else "keywords"
         text = f"`{where}` matches {len(matched)} request {noun} ({listed})"
         out.fact(FactCategory.FILES, text, evidence)
-    production = [entry for entry in scored if not is_test(entry[3])] or scored
-    density = Counter()
-    for entry in production:
-        density[_area(entry[3])] += -entry[0]
-    area = min(density.items(), key=lambda item: (-item[1], item[0]))[0]
-    out.assume(f"the change most likely concerns {area}", "highest request-keyword density")
     return out

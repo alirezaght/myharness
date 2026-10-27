@@ -40,8 +40,8 @@ def main():
     cli=current_protocol(cli)
     for args in (('spec-gate','SPEC_READY'),('classify','STANDARD','--designer','no','--implementers','al-engineer')):
         result=cli(*args);assert result[0]==0,str(result)[-4000:]
-    admit_planning(cli,artifacts)
     plan_na_gates(cli,artifacts)
+    admit_planning(cli,artifacts)
     for phase in ('IMPLEMENTATION','FINALIZATION','VERIFICATION'):
         result=cli('phase',phase);assert result[0]==0,str(result)[-4000:]
     assert plan_and_run_broad(cli)==0

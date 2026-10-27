@@ -2,6 +2,7 @@
 
 import json
 import time
+from pathlib import Path
 
 from harness.db import transaction, utcnow
 from harness.execution_contract import canonical, integer, validate_event
@@ -304,6 +305,9 @@ def execution_view(conn, execution_id):
         agent.setdefault("latest_output", None)
         agent.setdefault("activity", "")
         agent.setdefault("progress", None)
+    from harness.execution_artifacts import output_reports
+
+    reports = output_reports(Path(saved["handoff_path"]).parent / "operations/drafts")
     return {
         k: saved[k]
         for k in (
@@ -325,6 +329,7 @@ def execution_view(conn, execution_id):
         )
     } | {
         "binding": saved["binding"],
+        "reports": reports,
         "agents": agents,
         "tasks": tasks,
         "blockers": blockers,

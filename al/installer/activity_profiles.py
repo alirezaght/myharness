@@ -11,7 +11,7 @@ ID = re.compile(r'[A-Za-z0-9_-]+\Z')
 SHA = re.compile(r'[0-9a-f]{64}\Z')
 STATUS = {'RUNNING', 'APPROVED', 'STOPPED_WITH_BLOCKERS', 'SPEC_BLOCKED', 'AGENT_FAILED',
           'WAITING_FOR_USER', 'INTERRUPTED', 'TRANSFERRED'}
-PHASE = {'INTAKE', 'SPEC', 'CLASSIFICATION', 'PLANNING', 'PSEUDOCODE', 'PLAN_CONFLICT',
+PHASE = {'INTAKE', 'SPEC', 'CLASSIFICATION', 'PLANNING', 'PSEUDOCODE', 'PLAN_CONFLICT', 'REWORK_REASSESSMENT',
          'IMPLEMENTATION', 'FINALIZATION', 'VERIFICATION', 'FINAL_VERIFICATION', 'REVIEW',
          'CORRECTION', 'REWORK', 'DONE', 'WAITING_FOR_USER', 'STOPPED', 'INVESTIGATION'}
 LEGACY_KEYS = set('''agent agents approved_with_notes aux_runs baseline_head classification
@@ -28,7 +28,8 @@ checkpoints stopping_checkpoint comparison_artifacts gate_recovery gate_recovery
 recovery_replans resumes retry_history native_conversation_id integration gate_recovery_supersessions task_attribution verification_preparations
 runtime_origin proof_admission planning_authorship planning_history behavior_observations editorial_history
 conflict_resolution conflict_resolution_history notes_triage publication_authorizations publication_records
-baseline_exceptions gate_retentions delivery_completion_history'''.split())
+baseline_exceptions gate_retentions delivery_completion_history rework_recovery
+classification_assessment code_assessments business_acceptances'''.split())
 
 
 def decode(raw):
@@ -126,7 +127,8 @@ ENTRY_KEYS = set('''id area kind tier argv cwd scope sources env preflight needs
 started_at ended_at pid owner_pid log log_sha256 fp_before fp_after phase correction_iteration run
 execution_key gate_manifest gate_stage interrupted invocation reconciliation reservation rejected
 fingerprint_error process owner_identity cleanup aggregate_report complete_verification gate_reservation
-execution_projection_digest execution_completion execution_receipt execution_association review_state audit_receipt'''.split())
+execution_projection_digest execution_completion execution_receipt execution_association review_state audit_receipt
+execution_stage setup'''.split())
 WRITER_KEYS = {'id', 'role', 'files', 'commands', 'phase', 'started_at', 'ended_at', 'state',
                'outcome', 'reconciliation', 'task', 'agent', 'contribution_before'}
 
@@ -147,7 +149,7 @@ def _pin_initialization(reference, admitted):
 
 def _ledger(value, *, modern):
     evidence = value.get('evidence')
-    if not isinstance(evidence, dict) or set(evidence) - {'seq', 'entries', 'plan', 'invalidated_at', 'invalidation_reason'}:
+    if not isinstance(evidence, dict) or set(evidence) - {'seq', 'entries', 'plan', 'invalidated_at', 'invalidation_reason', 'retired', 'supersessions'}:
         raise ValueError('unknown evidence ledger profile')
     entries = evidence.get('entries')
     if not isinstance(entries, list) or not isinstance(evidence.get('plan'), dict):raise ValueError('invalid evidence ledger')
@@ -209,6 +211,12 @@ def _modern(value, path, provenance):
     elif 'proof_admission' in value:
         raise ValueError('proof admission without pinned runtime origin')
     integration = value.get('integration')
+    if 'rework_recovery' in value:
+        from .activity_recovery import validate
+        validate(value)
+    for field in ('code_assessments','business_acceptances'):
+        if field in value and not isinstance(value[field],list):
+            raise ValueError('invalid acceptance activity reference list')
     if integration is not None:
         if not isinstance(integration, dict) or integration.get('schema_version') != 1:
             raise ValueError('unknown execution integration')
@@ -289,7 +297,7 @@ def classify_artifact(path, raw, *, provenance):
             if 'run_id' in value and not ID.fullmatch(value['run_id']):raise ValueError('invalid historical run identity')
             entries = _ledger(value, modern=False) if ledger else []
             profile = 'legacy-ledger-v1' if ledger else 'legacy-workflow-v1'
-        from .activity_operations import reconciliation_validation
+        from .activity_operations import reconciliation_validation, setup_checks
         state_sha256 = hashlib.sha256(raw).hexdigest()
         validations = {e['id']: reconciliation_validation(e, value, provenance, state_sha256) for e in entries}
         result.update(classification='current-session' if value.get('schema_version') == 2 else 'legacy-session',
@@ -297,7 +305,7 @@ def classify_artifact(path, raw, *, provenance):
                       session_id=value['session_id'], run_id=value.get('run_id'),
                       operation_facts={'writers': value.get('writers', {}),
                                        'check_reconciliations': validations,
-                                       'checks': [{k: e.get(k) for k in ('id', 'status', 'pid', 'owner_pid', 'started_at', 'ended_at', 'process', 'owner_identity', 'interrupted', 'reconciliation', 'log', 'cleanup', 'note')} for e in entries],
+                                       'checks': [{k: e.get(k) for k in ('id', 'status', 'pid', 'owner_pid', 'started_at', 'ended_at', 'process', 'owner_identity', 'interrupted', 'reconciliation', 'log', 'cleanup', 'note')} for e in entries]+setup_checks(entries),
                                        'integration': value.get('integration'), 'aux_runs': value.get('aux_runs', [])},
                       native_conversation_id=value.get('native_conversation_id'))
     except (OSError, ValueError, TypeError, KeyError) as exc:result['errors'].append(str(exc))

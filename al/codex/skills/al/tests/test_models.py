@@ -100,3 +100,14 @@ def test_spawn_args_pairs_model_and_effort_for_every_policy_slot():
                 "reasoning_effort": slot["effort"],
                 "fork_turns": "none",
             }
+
+
+def test_all_codex_role_instruction_files_parse_as_toml():
+    import tomllib
+    from test_resources import role_dir
+    roles=list(role_dir(__file__).glob('al-*.toml'))
+    assert len(roles)==7
+    for role in roles:
+        value=tomllib.loads(role.read_text())
+        assert value['developer_instructions'].strip()
+        assert value['model'] and value['model_reasoning_effort']

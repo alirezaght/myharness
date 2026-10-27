@@ -71,6 +71,9 @@ def cmd_start(a, sid):
     set_phase(st, "PLANNING")
     from al_new_origin import initialize
     initialize(st)
+    from al_rework_recovery_contract import initial_state
+    st["rework_recovery"] = initial_state(st)
+    st["rework"].update(batch=0)
     save(sid, st)
     write_current(sid)
     print(f"AL session {sid}")

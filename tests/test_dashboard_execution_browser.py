@@ -183,6 +183,7 @@ def _cdp_capture(
         [
             CHROME,
             "--headless=new",
+            "--incognito",
             "--disable-gpu",
             "--no-first-run",
             "--no-default-browser-check",

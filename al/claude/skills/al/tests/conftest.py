@@ -36,6 +36,8 @@ def seed_repo(tmp_path_factory):
     (root/"pyproject.toml").write_text('[project]\nname="al-fixture"\ndependencies=[]\n[tool.setuptools.packages.find]\nwhere=["svc"]\n[tool.al.architecture]\nforbidden=["forbidden_dependency"]\n')
     (root / ".gitignore").write_text("__pycache__/\n")
     _git(root, "init", "-q")
+    _git(root, "config", "user.name", "fixture")
+    _git(root, "config", "user.email", "fixture@example.invalid")
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "init")
     return root

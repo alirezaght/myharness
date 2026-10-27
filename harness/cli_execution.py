@@ -13,7 +13,12 @@ from harness.execution_store import get_execution
 
 def cmd_execution(args):
     with _controller(args) as controller:
-        if args.action == "start":
+        if args.action == "readiness":
+            from harness.cli_commands import task_repo_root
+            from harness.launch_readiness import readiness
+
+            result = readiness(args.repo or task_repo_root(controller, args.task_id), args.host)
+        elif args.action == "start":
             result = start_execution(controller, args.task_id, host=args.host, specs=args.specs)
         else:
             execution = get_execution(controller.conn, args.execution_id)
@@ -25,6 +30,24 @@ def cmd_execution(args):
                 result = event_page(controller.conn, args.execution_id, args.after, args.limit)
             elif args.action == "logs":
                 result = read_log(controller.conn, args.execution_id, args.log_id)
+            elif args.action == "upgrade-bridge":
+                from harness.execution_bridge import upgrade_bridge
+
+                result = upgrade_bridge(controller, args.execution_id, reason=args.reason)
+            elif args.action == "adopt-planning":
+                from pathlib import Path
+
+                from harness.execution_adoption import adopt_planning
+                from harness.execution_contract import loads
+
+                request = loads(Path(args.file).read_bytes(), max_bytes=4 * 1024 * 1024)
+                result = adopt_planning(
+                    controller,
+                    args.execution_id,
+                    request,
+                    args.sha256,
+                    approval_source=args.source,
+                )
             elif args.action == "reconnect":
                 result = reconnect_execution(controller, args.execution_id)
             elif args.action == "resume":
@@ -62,6 +85,7 @@ def add_execution_parser(subparsers):
     ).add_subparsers(dest="action", required=True)
     for action in (
         "start",
+        "readiness",
         "status",
         "events",
         "logs",
@@ -69,16 +93,28 @@ def add_execution_parser(subparsers):
         "resume",
         "reconcile",
         "decision",
+        "upgrade-bridge",
+        "adopt-planning",
     ):
         p = actions.add_parser(action)
         p.add_argument("task_id")
         p.set_defaults(handler=cmd_execution)
+        if action == "readiness":
+            p.add_argument("--host", choices=["claude", "codex"], default="claude")
+            p.add_argument("--repo")
+            continue
         if action == "start":
             p.add_argument("--host", choices=["claude", "codex"], default="claude")
             p.add_argument("--specs")
             continue
         p.add_argument("execution_id")
-        if action == "events":
+        if action == "upgrade-bridge":
+            p.add_argument("--reason", required=True)
+        elif action == "adopt-planning":
+            p.add_argument("--file", required=True)
+            p.add_argument("--sha256", required=True)
+            p.add_argument("--source", required=True, help="explicit user approval provenance")
+        elif action == "events":
             p.add_argument("--after", type=int, default=0)
             p.add_argument("--limit", type=int, default=100)
         elif action == "logs":

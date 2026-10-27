@@ -8,14 +8,16 @@
 
 **Implementation status:** local Phase 5 plan/approval/controller, reporting,
 dashboard, recovery/security coverage, acceptance map, fixture demonstration and
-documentation are implemented. Focused verification is recorded in the AL
-ledger. The release checklist below remains open where safe real-browser,
-real-staging or complete-regression evidence is required. No live staging target
-was requested for this session; live release acceptance is outside this run.
+documentation are implemented. This developer-authorized self-maintenance run
+uses preserved direct test logs; earlier AL ledger receipts retain their original
+outcomes. The release checklist stays open where external staging/provider
+acceptance is unverified. The developer selected a simple static petshop as the acceptance target. Real
+loopback Chrome desktop/mobile acceptance passed on 2026-10-27; this does not
+claim an external provider pipeline or production deployment.
 
 ### P5-01 — Browser automation capability check
-- [ ] Verify a usable production browser integration for staging (Chrome CDP is implemented; installed, cached and newly downloaded Chrome binaries failed signature checks in this environment)
-- [x] Record the selected integration and its limits. A safely usable capability probe is still needed before live execution; no capability success is claimed
+- [x] Verify a usable real browser integration: existing native macOS Chrome Headless Shell passed capability/interception and petshop desktop/mobile checks on 2026-10-27
+- [x] Record the selected integration and limits: isolated anonymous Chrome CDP; the normal Chrome profiles inject extension workers and remain refused by the target guard. All 18 browser-marked tests and the earlier selected 11-check browser/driver run passed with Headless Shell
 
 ### P5-02 — Browser-testable AC selection
 - [x] Derive the exact criterion inventory from the approved specification and preserve selected, excluded and unresolved states
@@ -25,7 +27,8 @@ was requested for this session; live release acceptance is outside this run.
 - [x] Browser tests require their **own** explicit approval, separate from spec approval (AC 24)
 
 ### P5-04 — Browser Validation Controller
-- [ ] Run the approved plan against the **real** staging app (not performed in this session)
+- [x] Run real Chrome against the developer-approved static petshop on loopback, covering catalog, add/remove/clear, empty state, keyboard focus, desktop/mobile layout and screenshots
+- [ ] Run the provider-bound controller against an external staging deployment (not requested for the replacement petshop example; no external staging success claimed)
 - [x] Persist criterion-level status, evidence metadata, errors and blockers; only fixture/controller evidence is currently verified (AC 25)
 - [x] Route failures to investigation without authorizing an architecture decision
 
@@ -50,11 +53,30 @@ was requested for this session; live release acceptance is outside this run.
 
 ### P5-10 — Phase 5 / V1 acceptance
 - [ ] Run a real feature end to end → staging test → a final report with current results, MR and pipeline (release evidence outside this session)
-- [ ] Complete Phases 1–4 regression with all checks green; E33 remains failed on recorded environment/baseline issues and migration/CLI assertions were corrected afterward
+- [x] Run the supported Phases 1–4 regression: 757 non-browser tests passed, 17 native/environment tests skipped, and all 18 native Chrome browser tests passed. Historical E33 failures remain preserved; direct current results are recorded separately. Signed-in provider acceptance is unverified
 - [x] Add and verify a deterministic isolated Phase 5 fixture demo; it does not establish live acceptance
 
 ## Phase exit checklist
 - [ ] All tasks done, all tests green
 - [ ] All 30 V1 acceptance criteria verified
-- [ ] Real browser/staging demo recorded (local fixture demo exists but is not release evidence)
+- [x] Real browser petshop example recorded with desktop/mobile screenshots and all 11 selected checks passing; external deployment acceptance remains separate
 - [x] Implementation and operation docs complete
+
+## 2026-10-27 real browser evidence
+
+`tests/test_petshop_browser.py`, `tests/test_dashboard_browser.py`,
+`tests/test_dashboard_execution_browser.py` and `tests/test_browser_driver.py`
+passed unchanged in the selected native Chrome Headless Shell run: **11 passed**.
+The complete browser-marked suite subsequently passed **all 18 tests**. Desktop/mobile
+screenshots, cart totals and keyboard focus were visually inspected. The final
+local log is `/private/tmp/phase5-final-native-browser.log`; artifacts are under
+`/private/tmp/phase5-final-native-browser/`. This is real application/browser
+evidence, distinct from the synthetic provider/controller demonstration. Full
+regression and publication evidence are recorded separately at release closeout.
+The current non-browser run passed **757 tests**, with **17 skips**.
+
+Visual review found one existing cosmetic issue: reciprocal component-diagram
+arrows cross their labels. The petshop and dashboard interaction/viewport checks
+passed. The complete browser log is `/private/tmp/phase5-complete-native-browser.log`;
+original screenshots and the derived detail are retained with the visual review
+in `/private/tmp/phase5-visual-review.md`.

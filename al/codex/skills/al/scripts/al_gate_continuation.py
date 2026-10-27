@@ -29,25 +29,8 @@ def _attempt(st, stage, gate):
 
 
 def _state(st, manifest, stage, gate, gaps, fingerprint):
-    if gate['applicability'] == 'NOT_APPLICABLE':return 'not-required'
-    # A check AL cannot model locally is reported as unverified; it never blocks work.
-    if gate['applicability'] != 'APPLICABLE':return 'unverified'
-    entry, run = _attempt(st, stage, gate)
-    if entry is None:return 'missing'
-    if _uncertain(entry) or entry['status'] == 'RUNNING' or (entry.get('interrupted') and not entry.get('reconciliation')):
-        return 'unresolved'
-    if stage+' gate '+gate['id']+' requires passing evidence' not in gaps:
-        return 'accepted-base-decision' if entry['status'] == 'FAIL' else 'valid'
-    same = bool(run and run.get('fingerprint') == fingerprint and entry.get('run') == st['run_id']
-                and run.get('env_fingerprint') == L.scope_fingerprint([], gate['env_names'])
-                and entry.get('argv') == gate['argv'] and entry.get('cwd') == gate['cwd']
-                and entry.get('scope') == gate['scope'] and entry.get('env') == sorted(gate['env_names'])
-                and entry.get('sources', []) == gate.get('sources', [])
-                and run.get('sources', []) == gate.get('sources', [])
-                and run.get('execution_kind') == gate['execution_kind'])
-    if same and entry['status'] == 'FAIL' and L.entry_verdict(st, entry)[0] == 'FAIL':
-        return 'failed'
-    return 'stale'
+    from al_gates import gate_result
+    return gate_result(st, manifest, gate, stage, fingerprint)
 
 
 def _states(st, manifest, stage):
@@ -66,7 +49,7 @@ def select_continuation(st, manifest, stage, requested_id=None, retry_failed=Fal
         name = gate['id']; status = states[name]
         if requested_id and name != requested_id:continue
         if status in {'not-required', 'unresolved', 'unverified'}:continue
-        if requested_id or status in {'missing', 'stale'} or (retry_failed and status == 'failed'):
+        if requested_id or status in {'missing', 'stale', 'blocked'} or (retry_failed and status == 'failed'):
             selected.append(gate)
     return selected
 
@@ -87,9 +70,11 @@ def stage_report(st, stage, selected_results=(), selected=()):
     return {'schema_version': 1, 'kind': 'continuation-report-v1',
             'selected': list(selected), 'completed': [r for r in selected_results if r['status'] == 'PASS'],
             'retained_valid': [g for g, s in states.items() if s == 'valid' and g not in selected],
+            'accepted_existing_failures': [g for g,s in states.items() if s=='accepted-existing-failure'],
             'retained_failed': [g for g, s in states.items() if s == 'failed'],
             'unresolved': [g for g, s in states.items() if s == 'unresolved']+uncertain,
             'unverified': [g for g, s in states.items() if s == 'unverified'],
+            'blocked': [g for g,s in states.items() if s=='blocked'],
             'unexecuted': [g for g, s in states.items() if s in {'missing', 'stale'}],
             'base_decisions': decisions, 'stage_ready': not gaps and not uncertain and not any(s == 'unresolved' for s in states.values())}
 
@@ -111,6 +96,6 @@ def admit_destination(st, context):
         states, _ = _states(st, current, context['stage'])
         status = states[gate['id']]
         if status == 'unresolved':refuse('gate destination is unresolved')
-        if not context.get('explicit') and (status in {'valid', 'accepted-base-decision'} or (status == 'failed' and not context.get('retry_failed'))):
+        if not context.get('explicit') and (status in {'valid', 'accepted-base-decision', 'accepted-existing-failure'} or (status == 'failed' and not context.get('retry_failed'))):
             raise DestinationSettled(gate['id'])
     return _identity(context['manifest'], context['stage'], context['gate'])

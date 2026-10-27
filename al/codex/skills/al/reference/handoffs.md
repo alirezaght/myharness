@@ -154,7 +154,7 @@ Required: `IMPLEMENTATION_SUMMARY`, `CHANGED_FILES`, `DEVIATIONS_FROM_PSEUDOCODE
 clean), `CONCERNS`.
 
 ## al-engineer · REWORK (pre-review defect — fast path or after the Architect)
-Prefer `followup_task` to the Engineer instance that wrote the core. Add:
+A rework batch remains two local returns. Exit 10 after a needed further return records a pending Architect reassessment or a precise cap stop; it is not an instruction to end the task or reset a counter. Prefer `followup_task` to the Engineer instance that wrote the core. Add:
 `REWORK <n> of 2 (this batch)`, `DEFECTS (confirmed; fix all of them in this one
 pass): <verbatim CORE_FLAW_REPORTS items / failing checks, each with ledger id and
 the failing lines of its log>`, `ARCHITECT RESOLUTION: <verbatim, or "none — fast
@@ -166,6 +166,9 @@ yet (Architect route, unproven cause), record the one the resolution names
 before touching code and see it go red. Prove each fix by re-running that repro
 command unchanged — it must PASS — plus any focused ledger check it needs.`
 Required: the implementation contract.
+
+## al-architect · REWORK_REASSESSMENT
+The supervisor supplies the current immutable `rework-recovery packet` and the exact evidence references. Inspect that packet, its bound source/evidence, failure history, remaining criteria and blockers. Return the decision JSON described by `reference/schemas/rework-recovery-decision.json`: allow only for verified progress, a newly exposed independent defect, or a revised source-backed diagnosis; decline when no useful next step exists. Name a concrete bounded next action, include all remaining criteria and inspected packet/attempt hashes, and provide supporting evidence for an allow. Do not launch checks, change state, or treat a decision as permission, specification approval, or final review. The supervisor submits the report through the locked `rework-recovery decide` command.
 
 ## al-builder · RESUME (after rework)
 Continue the Builder instance. Add: the Engineer's rework summary and diff, and
@@ -331,3 +334,6 @@ the agent waits for its generated work handoff. Workers use the generated
 `al_command` evidence route; the controller binds their own writer. Native
 launcher commands are a separately identified route. Read-only handoffs omit the
 managed writer block.
+
+## Explicit user continuation
+Only after a subsystem decline or automatic-cap stop may an explicit user turn authorize a bounded continuation. Preserve the exact user message/provenance as an immutable artifact, then submit the closed continuation request described by `reference/schemas/rework-recovery-continuation.json`. It must bind the latest checkpoint and current candidate and grant exactly two returns. Do not manufacture user authorization or use generic resume.

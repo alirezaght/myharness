@@ -74,7 +74,7 @@ def implementation_digest():
             state = os.stat(os.path.join(root, name))
             stats.append((name, state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, state.st_ctime_ns))
         key = ('ordinary', tuple(stats))
-    if _DIGEST is not None and _DIGEST[0] == key:
+    if _CONTEXT and _DIGEST is not None and _DIGEST[0] == key:
         return _DIGEST[1]
     value = hashlib.sha256(b''.join((names[name] if _CONTEXT else names[name].read_bytes()) for name in sorted(names)
                                     if name.startswith('al_') and name.endswith('.py') and '/' not in name)).hexdigest()

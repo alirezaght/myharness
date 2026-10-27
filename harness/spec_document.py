@@ -153,3 +153,44 @@ def build_body(
     }
     parts = [f"## {name}\n\n" + "\n".join(content[name]) + "\n" for name in SECTIONS]
     return "\n".join(parts)
+
+
+def proposed_content(body, proposals, design_entries, scenarios, plan):
+    """A draft shows all proposed material; no pending content becomes approved."""
+    from harness.design_models import EntryStatus
+
+    pending = []
+    for p in proposals:
+        if p.status is ProposalStatus.PENDING:
+            pending.append(
+                flow(f"- P{p.id} [UNAPPROVED answer] {p.title}: {p.recommendation} — {p.rationale}")
+            )
+    for e in design_entries:
+        if e.status is EntryStatus.PENDING:
+            pending.append(
+                flow(f"- E{e.id} [{e.section}] [UNAPPROVED design] {e.statement} — {e.rationale}")
+            )
+    rows = [
+        s
+        for s in scenarios
+        if s.status
+        in {EntryStatus.STATED, EntryStatus.ACCEPTED, EntryStatus.MODIFIED, EntryStatus.PENDING}
+    ]
+    if rows and not plan.approved:
+        lines = [
+            "- **UNAPPROVED proposed test plan; final review and exact plan approval "
+            "remain required.**"
+        ]
+        for s in rows:
+            lines.append(
+                flow(
+                    f"- S{s.id} [{s.category}] [{s.status}] {s.statement}; "
+                    f"covers {', '.join(s.covers)}; mock {s.mock or 'none'}; "
+                    f"justification {s.mock_justification or 'not applicable'}; "
+                    f"rationale {s.rationale or 'developer statement'}"
+                )
+            )
+        body = body.replace(NO_TEST_PLAN, "\n".join(lines), 1)
+    if pending:
+        body += "\n### Proposed content — UNAPPROVED\n" + "\n".join(pending) + "\n"
+    return body

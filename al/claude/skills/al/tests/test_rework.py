@@ -74,17 +74,20 @@ def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path):
     cli("phase", "FINALIZATION")
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     cli("phase", "FINALIZATION")
-    before = state_file().read_bytes()
+    before = load(state_file)
     code, _, err = cli("rework", "--source", "finalization", *fast(cli))
     assert code == 10 and "rework budget exhausted" in err
-    assert state_file().read_bytes() == before
     st = load(state_file)
-    assert st["status"] == "RUNNING" and st["phase"] == "FINALIZATION"
+    assert st['rework']==before['rework'] and st['runtime_origin']==before['runtime_origin']
+    assert st["status"] == "RUNNING" and st["phase"] == "REWORK_REASSESSMENT"
+    assert st['agents']==['al-architect'] and st['rework_recovery']['pending']
+    refused=cli('writer','start','--id','blocked','--role','al-engineer','--files','svc/app.py')[0]
+    assert refused!=0
     assert st["rework"]["total"] == 2
     assert st["correction_iteration"] == 0  # review corrections stay separate
 
 
-def test_a_new_correction_batch_opens_a_new_budget_and_says_so(cli, state_file, tmp_path, repo):
+def test_a_genuine_correction_does_not_replenish_rework_credit(cli, state_file, tmp_path, repo):
     started(cli, tmp_path)
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     assert cli("phase", "FINALIZATION")[0] == 0
@@ -102,9 +105,11 @@ def test_a_new_correction_batch_opens_a_new_budget_and_says_so(cli, state_file, 
     assert code == 1
     fresh_repro = load(state_file)["evidence"]["entries"][-1]["id"]
     code, out, _ = cli("rework", "--source", "finalization", *flags(cli, repro=fresh_repro))
-    assert code == 0
-    assert "new batch (correction 1) — previous batch used 2/2" in out
-    assert load(state_file)["rework"]["total"] == 3
+    assert code == 10
+    st=load(state_file)
+    assert st['phase']=='REWORK_REASSESSMENT' and st['correction_iteration']==1
+    assert st['rework']['total']==2 and st['rework']['used']==2
+    assert len(st['rework_recovery']['grants'])==1
 
 
 def test_status_line_shows_the_rework_counter(cli, tmp_path):

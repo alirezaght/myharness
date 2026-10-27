@@ -97,7 +97,7 @@ def test_relevant_files_are_ranked_by_request_keywords(sample_repo):
     report = analyze(sample_repo, "add csv export")
     files = _facts(report, FactCategory.FILES)
     assert files[0].startswith("`demo/export.py` matches 2 request keywords")
-    assert "the change most likely concerns `demo/`" in [a.text for a in report.assumptions]
+    assert not any("keyword density" in a.basis for a in report.assumptions)
 
 
 def test_no_match_and_no_keyword_requests_raise_questions(sample_repo):

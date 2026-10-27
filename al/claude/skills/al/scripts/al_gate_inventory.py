@@ -105,11 +105,18 @@ def inventory(st,anticipated=(),ci_context=None):
     paths.update(attributed['discovery_paths'] if attributed else S.changed_paths(st['identity']['merge_base']))
     opaque={r['path'] for r in S.source_rows() if G.opaque(r)}
     def inside(path):return any(Sources.contains(child,path) for child in opaque)
-    paths=C.expand(sorted('.' if p=='.' else S.safe_path(p).as_posix() for p in paths))
+    paths=sorted('.' if p=='.' else S.safe_path(p).as_posix() for p in paths)
+    expansion_gaps=[]
+    if any((al_store.REPO_ROOT/p).is_dir() for p in paths):
+        from al_repository_facts import Snapshot
+        expanded=Snapshot(al_store.REPO_ROOT,None,paths,opaque)
+        expansion_gaps=expanded.gaps
+        paths=sorted(set(paths)|{p.rstrip('/') for p in expanded.members if any(C.contains(d,p.rstrip('/')) for d in paths if (al_store.REPO_ROOT/d).is_dir())})
     paths=sorted({'.' if p=='.' else S.safe_path(p).as_posix() for p in paths})
     paths=[p for p in paths if not any(p!=child and Sources.contains(child,p) for child in opaque)]
     units={classify_unit(p,opaque) for p in paths}
     facts=al_affected_services.select(al_store.REPO_ROOT,paths,opaque,base_oid=st['identity']['merge_base'],required_adapter=required_adapter)
+    facts['enumeration']['gaps'].extend(expansion_gaps)
     assessment=Coverage.assess(facts)
     services=assessment['selected_services']
     dependencies=sorted({p['path'] for p in facts['scan_inputs']}|{p['path'] for p in facts['rule_sources']})
@@ -133,16 +140,22 @@ def inventory(st,anticipated=(),ci_context=None):
         members.extend(p['path'] for p in facts['rule_sources'] if service=='.' or within(service,p['path']))
         service_inputs.update(members or [service])
     ci=CI.inventory(al_store.REPO_ROOT,sorted(set(paths)|service_inputs),context,opaque)
+    for job in ci['obligations']:
+        if job.get('impact',{}).get('inventory_complete') is False or job['job'].startswith('<unresolved-'):
+            facts['enumeration']['gaps'].append(gap('unknown-ci-inventory',job['source_path'],job['reason']))
+    for pattern in OTHER_CI:
+        if any(al_store.REPO_ROOT.glob(pattern)):
+            facts['enumeration']['gaps'].append(gap('unsupported-ci-provider',pattern,'CI job universe cannot be enumerated'))
     # CI applicability is monotone over the finite selected service universe.
     for job in ci['obligations']:
         selected=set(job['units'])&set(services)
         if '.' in job['units']:selected.update(services)
         if not selected:continue
         oid='ci-'+digest([job['source_path'],job['job']])[:12]
-        facts['checks']['obligations'].append({'id':oid,'category':'ci','units':sorted(selected)})
         if job['applicability']!='APPLICABLE' or not job.get('execution'):
-            facts['checks']['gaps'].append(gap('unresolved-ci-check',job['source_path'],job['reason']+'; local execution semantics unavailable',category='ci'))
+            continue
         else:
+            facts['checks']['obligations'].append({'id':oid,'category':'ci','units':sorted(selected)})
             execution=job['execution'];src={'path':job['source_path'],'sha256':job['source_sha256'],'selector':job['job'],'semantics':'sourced CI execution'}
             b={'id':oid,'category':'ci','units':sorted(set(job['units'])|selected),'required':True,**execution,'sources':[], 'required_scope':sorted(set(job['inputs']+[d['path'] for d in job['dependencies']])), 'source_chain':[src]+[{'path':d['path'],'sha256':d['sha256'],'selector':job['job'],'semantics':'sourced CI dependency'} for d in job['dependencies'] if d['path']!=src['path']],'obligation_ids':[oid]}
             b['execution_signature']=digest(b);facts['checks']['bindings'].append(b)
@@ -177,7 +190,7 @@ def inventory(st,anticipated=(),ci_context=None):
     return {'paths':paths,'units':sorted(units),'rules':[source(p) for p in sorted(names)],'services':services,'import_dependencies':dependencies,'ci':ci,'repository_facts':facts,'service_coverage':assessment}
 
 
-def gaps(st,m,anticipated=()):
+def gaps(st,m,anticipated=(),*,admission=True):
     expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'));out=[]
     declared={r['path']:r['sha256'] for r in m['rules']}
     for r in expected['rules']:
@@ -188,11 +201,11 @@ def gaps(st,m,anticipated=()):
     for category,needed in (('lint-imports',any(o['category']=='lint-imports' and set(o['units'])&set(expected['services']) for o in expected['repository_facts']['checks']['obligations']) or expected['service_coverage']['outcome']=='incomplete'),('loc',(root/LOC_CHECKER).is_file()),('pre-commit',bool(hook())),('contracts',contracts_needed(expected['units'])),('ci',bool(expected['ci']['obligations']))):
         active=[g for g in gates if g['category']==category and g['applicability']!='NOT_APPLICABLE']
         if needed and not active:out.append('N/A contradicts known '+category+' obligation')
-    out.extend(Coverage.current_gaps(expected['repository_facts'],expected['service_coverage'],m))
+    out.extend(Coverage.current_gaps(expected['repository_facts'],expected['service_coverage'],m,admission=admission))
     out.extend(CI.gaps(expected['ci'],gates))
     return sorted(set(out))
 
 
 def validate(st,m):
-    missing=gaps(st,m)
+    missing=gaps(st,m,admission=False)
     if missing:refuse('incomplete repository gate inventory: '+str(missing))

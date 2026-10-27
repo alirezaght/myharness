@@ -77,10 +77,11 @@ improve the implementation.
 `Architect → Designer → Engineer + safe independent Builder work → Builder
 finalization → Verify → Architect review`
 
-For state machines, difficult concurrency, complicated algorithms, complex data
-transformation, non-trivial transaction logic, retry/idempotency behaviour,
-distributed workflows, subtle security logic, difficult domain rules, or a major
-multi-component behaviour change.
+For a specific new difficult algorithm, coupled invariant, concurrency or
+transaction protocol, security design, or domain rule that remains after
+clarification and inspection. Name why pseudocode helps. A localized change to
+an existing state machine or retry implementation may still be SMALL; inherited
+subsystem complexity and keywords are insufficient.
 
 - Designer runs (see below), read-only, on the real code.
 - Early parallel Builder work is allowed when — and only when — `parallelism.md`
@@ -109,13 +110,26 @@ stronger model on an easy task.
 (`MODE: RESOLVE_CONFLICT`) before any implementation starts, and implementation
 never continues with an unresolved conflict.
 
-## 5. A defect is not a reason to re-route
+## 5. Rework exhaustion routes to a bounded Architect reassessment
 
 A small confirmed defect found during finalization or verification does not
-re-run planning, does not add a Designer, and does not re-classify the task.
-`"${STATE[@]}" rework` decides: fast path to AL-Engineer, or AL-Architect first when the
-defect needs a decision. Only a genuine specification/design conflict, a changed
-contract, an ambiguous scope or a safety decision reaches the Architect.
+re-run planning, add a Designer, or re-classify the task. `"${STATE[@]}" rework`
+sends a confirmed local defect to AL-Engineer, or routes an unresolved decision
+to AL-Architect. A successful second return proceeds normally. A needed return
+after the batch is exhausted persists `REWORK_REASSESSMENT`; exit 10 now means
+inspect the saved state, not end the task. The supervisor obtains
+`rework-recovery packet`, dispatches the actual approved Architect reassessment,
+and submits the bound decision with `rework-recovery decide --file FILE`.
+
+The run allows an initial two returns plus at most two automatic grants of two
+returns each: six default returns total across review-correction boundaries.
+A genuine review correction retains its separate six-correction cap and creates
+no rework credit. A declined/no-path decision or the automatic cap creates a
+precise stopped checkpoint. A later explicit user continuation may grant exactly
+two credits for its bound latest checkpoint and current candidate; identical
+replay does not grant again. Permission, scope, service, or model blockers remain
+independent. Old pinned issuers and their stopped runs are never migrated by an
+updated installation; they keep their original command surface.
 
 ## 6. Escalating a skipped stage
 
@@ -123,3 +137,24 @@ If the work turns out to need a stage this path skipped, run it — but say so.
 `"${STATE[@]}" phase <PHASE> --reason "<why>"` on a skipped phase prints
 `AL · <Phase> escalated — this path had skipped it (<reason>)` and records it. An
 escalation needs a concrete new reason, not second thoughts about thoroughness.
+
+
+## Bounded recovery commands
+
+Use `rework-recovery packet [--output FILE]` only for a persisted pending Architect reassessment. The packet contains the immutable request, candidate and history binding, current evidence, criteria, gates, readiness, and approved Architect attempt. The supervisor sends that packet to the actual approved Architect. Submit its closed decision JSON through `rework-recovery decide --file FILE`; only a valid allow consumes the pending return and adds an automatic two-credit grant. A decline records its reason and stopping checkpoint.
+
+For a subsystem stop caused by decline or the automatic cap, the only budget continuation is `rework-recovery continue --file FILE`. The report must bind the latest checkpoint, current candidate and task/history identity, a concrete next action, and an intact `explicit-user-continuation-v1` artifact recorded through the public artifact command. Each distinct accepted request grants two once; exact replay returns the retained receipt. Generic resume cannot clear these stops. Pre-capability issuers refuse the new commands and remain immutable.
+
+
+## Classify the remaining implementation work
+
+Initial Harness complexity is provisional interview depth. Reassess after clarification and repository inspection, even when Harness already supplied a category. Classify the change being implemented, not the complexity of its surrounding subsystem. Keywords, importance, repository size and file count alone never justify COMPLEX.
+
+Use the lightest justified route:
+- SMALL: local behavior follows an inspected existing pattern, with clear acceptance and no new difficult design. Changing a retry limit or adding a guard to an existing state machine can be SMALL.
+- STANDARD: ordinary feature work or understandable changes across components; a concrete plan is enough.
+- COMPLEX: name a specific new difficult algorithm, coupled state invariant, concurrency/transaction protocol or security design, and explain how pseudocode materially reduces the remaining risk. A fully clarified new distributed transaction can still be COMPLEX.
+
+Ask about unresolved material behavior and scope choices. Inspect code to settle routine implementation details and questions already answered by the repository. Do not invent a complete specification or assume away consequential uncertainty. Missing requirements call for clarification, not automatic escalation to COMPLEX. Do not repeat settled questions or add a Designer for reassurance. Escalate only when new evidence shows a concrete harder design problem.
+
+Before the final classification, prepare the closed risk assessment described in `reference/routing-risk.md`, citing inspected files and current hashes. Pass `classify ... --assessment-file FILE` for standalone AL; a current Harness handoff carries the same record. Preserve explicit developer routing choices. The runtime validates supplied evidence and refuses a contradictory category. Legacy runs without this additive record remain readable.

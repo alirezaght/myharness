@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://myharness.invalid/al/rework-recovery-decision.json",
+  "title": "AL bounded recovery decision v1",
+  "description": "Closed Architect reassessment report. The runtime also checks packet, attempt, evidence, task, candidate, history, pin and model-policy bindings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "kind", "request_id", "occurrence_id", "binding", "packet_hash",
+    "attempt_id", "invocation_id", "model", "effort", "policy_digest", "decision", "basis",
+    "rationale", "next_action", "remaining_criteria", "inspected_artifacts", "evidence"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "rework-recovery-decision-v1"},
+    "request_id": {"$ref": "#/$defs/id"},
+    "occurrence_id": {"type": "string", "pattern": "^RR[1-9][0-9]*$"},
+    "binding": {"$ref": "#/$defs/decisionBinding"},
+    "packet_hash": {"$ref": "#/$defs/digest"},
+    "attempt_id": {"$ref": "#/$defs/id"},
+    "invocation_id": {"$ref": "#/$defs/id"},
+    "model": {"type": "string", "minLength": 1},
+    "effort": {"type": "string", "minLength": 1},
+    "policy_digest": {"$ref": "#/$defs/digest"},
+    "decision": {"enum": ["allow", "decline"]},
+    "basis": {"type": "string"},
+    "rationale": {"type": "string", "minLength": 1},
+    "next_action": {"type": "string", "minLength": 1},
+    "remaining_criteria": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "inspected_artifacts": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidenceClaim"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"decision": {"const": "allow"}}, "required": ["decision"]}, "then": {"properties": {"basis": {"enum": ["verified-progress", "new-independent-defect", "revised-diagnosis"]}, "evidence": {"minItems": 1}}}},
+    {"if": {"properties": {"decision": {"const": "decline"}}, "required": ["decision"]}, "then": {"properties": {"basis": {"const": "no-useful-next-step"}}}}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "identity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["root", "cwd", "common_dir", "git_dir", "target", "target_oid", "merge_base"],
+      "properties": {"root": {"type": "string"}, "cwd": {"type": "string"}, "common_dir": {"type": "string"}, "git_dir": {"type": "string"}, "target": {"type": "string"}, "target_oid": {"type": "string"}, "merge_base": {"type": "string"}}
+    },
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["session_id", "run_id", "identity", "original_task_hash", "runtime_pin"],
+      "properties": {
+        "session_id": {"$ref": "#/$defs/id"}, "run_id": {"$ref": "#/$defs/id"},
+        "identity": {"$ref": "#/$defs/identity"}, "original_task_hash": {"$ref": "#/$defs/digest"},
+        "runtime_pin": {"type": "object", "additionalProperties": false, "required": ["pin_identity", "pin_manifest_digest"], "properties": {"pin_identity": {"$ref": "#/$defs/digest"}, "pin_manifest_digest": {"$ref": "#/$defs/digest"}}}
+      }
+    },
+    "decisionBinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["origin", "candidate_hash", "task_hash", "history_hash", "occurrence_id"],
+      "properties": {"origin": {"$ref": "#/$defs/origin"}, "candidate_hash": {"$ref": "#/$defs/digest"}, "task_hash": {"$ref": "#/$defs/digest"}, "history_hash": {"$ref": "#/$defs/digest"}, "occurrence_id": {"type": "string", "pattern": "^RR[1-9][0-9]*$"}}
+    },
+    "evidenceClaim": {
+      "type": "object", "additionalProperties": false, "required": ["id", "entry_hash", "claim"],
+      "properties": {"id": {"$ref": "#/$defs/id"}, "entry_hash": {"$ref": "#/$defs/digest"}, "claim": {"enum": ["historical-red", "current-success"]}}
+    }
+  }
+}

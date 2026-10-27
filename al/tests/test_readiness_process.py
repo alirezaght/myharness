@@ -11,7 +11,7 @@ import ctypes,json,os,sys
 from pathlib import Path
 sys.path.insert(0,sys.argv[1])
 from installer.readiness_reservation import process_arguments
-from installer.validator_origin import interpreter_identity,capture
+from installer.validator_origin import interpreter_identity,executable_state
 if sys.platform=='darwin':
     library=ctypes.CDLL('/usr/lib/libproc.dylib',use_errno=True)
     buffer=ctypes.create_string_buffer(4096)
@@ -19,7 +19,7 @@ if sys.platform=='darwin':
     if result<=0:raise OSError(ctypes.get_errno(),'kernel executable observation failed')
     kernel=os.fsdecode(buffer.value)
 else:kernel=os.readlink('/proc/self/exe')
-raw,metadata=capture(Path(kernel).resolve())
+metadata=executable_state(Path(kernel).resolve())
 print(json.dumps({'argv':process_arguments(os.getpid()),'python_executable':sys.executable,
                   'interpreter':interpreter_identity(),'kernel_executable':kernel,'kernel_metadata':metadata}))
 '''

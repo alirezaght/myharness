@@ -175,3 +175,37 @@ class ArtifactStore:
             "artifact_id": artifact_id,
             "sha256": expected_sha256,
         }
+
+
+def output_reports(directory):
+    """Pure metadata view; status never rewrites indexes or exposes report reasoning."""
+    directory = Path(directory)
+    path = directory / "index.json"
+    if not path.exists():
+        return []
+    if path.is_symlink():
+        raise ValueError("report index symlink refused")
+    before = path.read_bytes()
+    index = json.loads(before)
+    rows = []
+    for owner, names in index.get("outputs", {}).items():
+        for name, identifier in names.items():
+            row = index["records"][identifier]
+            content = Path(row["path"])
+            if (
+                content.parent != directory
+                or content.is_symlink()
+                or digest(content.read_bytes()) != row["sha256"]
+            ):
+                raise ValueError("named report provenance changed")
+            rows.append(
+                {
+                    "owner": owner,
+                    "name": name,
+                    **{k: row[k] for k in ["artifact_id", "sha256", "size", "role"]},
+                    "resource": "artifact:" + row["artifact_id"] + ":" + row["sha256"],
+                }
+            )
+    if path.read_bytes() != before:
+        raise ValueError("report index changed during status observation")
+    return sorted(rows, key=lambda r: (r["owner"], r["name"]))

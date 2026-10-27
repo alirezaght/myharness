@@ -295,7 +295,11 @@ def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sam
         "--mock", "clock", "--mock-reason", "stable timestamps",
     )  # fmt: skip
     shown = _ok(run, "spec", "show", task)
-    assert _section(shown, "Test plan") == "- (no approved test plan recorded)"
+    proposed = _section(shown, "Test plan")
+    assert "UNAPPROVED proposed test plan" in proposed
+    assert "S1 [unit] [stated] rows" in proposed and "with quotes" in proposed
+    assert "S2 [integration] [pending] writes the file" in proposed
+    assert "justification stable timestamps" in proposed
     review = _section(shown, "Unresolved items").split("### Test plan\n")[1].splitlines()
     assert review == [
         "- S2 [integration] awaiting_decision — writes the file",
@@ -331,7 +335,10 @@ def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sam
     _ok(run, "phase", task, "back", "test_plan", "--reason", "drop a case")
     _ok(run, "testplan", "withdraw", task, "1")
     shown = _ok(run, "spec", "show", task)
-    assert _section(shown, "Test plan") == "- (no approved test plan recorded)"
+    pending_plan = _section(shown, "Test plan")
+    assert "UNAPPROVED proposed test plan" in pending_plan
+    assert "S2 [integration] [accepted] writes the file" in pending_plan
+    assert "S1" not in pending_plan
     assert "- plan changed_since_approval\n- blocking: yes" in shown
     assert v1.read_bytes() == sealed
     assert _ok(run, "spec", "verify", task) == "v1 ok\n"

@@ -169,7 +169,7 @@ def _reports():
     return module
 
 
-def admit_planning(cli, directory=None):
+def admit_planning(cli, directory=None, *, expect_coverage_blocked=False):
     """Admit planning through the public packet -> report -> admit protocol.
 
     Only the external Architect model response is fixture data; the packet,
@@ -182,13 +182,28 @@ def admit_planning(cli, directory=None):
     result, out, err = cli("planning", "packet")
     assert result == 0, f"planning packet failed: {result} {out}{err}"
     packet = json.loads(out)
-    path = Path(directory) / "architect-planning-report.json"
-    path.write_text(json.dumps(_reports().report_for(packet)))
-    result, out, err = cli("planning", "report", "--file", str(path))
-    assert result == 0, f"planning report failed: {result} {out}{err}"
-    obligations = json.loads(out)["materialized_obligations"]["stored_path"]
+    retained = json.loads(cli("show")[1]).get("planning_authorship", {})
+    if retained.get("report") and retained.get("obligations"):
+        obligations = retained["obligations"]["stored_path"]
+    else:
+        path = Path(directory) / "architect-planning-report.json"
+        path.write_text(json.dumps(_reports().report_for(packet)))
+        result, out, err = cli("planning", "report", "--file", str(path))
+        assert result == 0, f"planning report failed: {result} {out}{err}"
+        obligations = json.loads(out)["materialized_obligations"]["stored_path"]
+    import al_store
+    sid = json.loads(cli("show")[1])["session_id"]
+    source = al_store.state_path(sid)
+    observed_root = Path(json.loads(cli("show")[1])["identity"]["root"])
+    if observed_root != al_store.REPO_ROOT:
+        source = observed_root / ".codex/al-runtime" / (sid + ".json")
+    before = source.read_bytes()
     result, out, err = cli("planning", "admit", "--file", obligations)
-    assert result == 0, f"planning admission failed: {result} {out}{err}"
+    if expect_coverage_blocked:
+        assert result != 0 and "coverage" in str(result) + out + err, (result, out, err)
+        assert source.read_bytes() == before
+    else:
+        assert result == 0, f"planning admission failed: {result} {out}{err}"
 
 
 def _tracked_source(root, scopes=(".",)):
@@ -363,7 +378,7 @@ def _only_missing_observations(text):
 def current_protocol(call):
     """Let suite cases written before the proof contract drive the current planning/review protocol.
 
-    A successful classify of a SPEC_READY run admits planning (as AL does before gates);
+    A complete captured gate inventory of a SPEC_READY run permits planning admission;
     review-start refused only for missing scenario observations publishes them and retries;
     legacy review report files are upgraded to v2 on pinned runs. Nothing else changes."""
     def run(*args):
@@ -371,15 +386,17 @@ def current_protocol(call):
         command = args[len(prefix):]
         def plain(*rest):
             return call(*prefix, *rest)
-        if command[:1] == ("classify",):
-            # AL admits Architect planning right after classification, before any gate runs.
+        if command[:1] == ("gates",) and command[1:2] in {("plan",),("discover",)}:
+            # Admission needs independently reconstructed complete coverage; diagnostic capture is not admission.
             result = call(*args)
             if result[0] == 0:
                 code, out, _ = plain("show")
                 state = json.loads(out) if code == 0 else {}
                 if (state.get("proof_admission", {}).get("status") == "pending"
                         and state.get("spec_status") == "SPEC_READY"):
-                    admit_planning(plain)
+                    manifest = json.loads(Path(state["gate_manifests"][-1]["stored_path"]).read_bytes())
+                    if manifest.get("service_coverage",{}).get("assessment",{}).get("outcome")!="incomplete":
+                        admit_planning(plain)
             return result
         if command[:1] == ("review-start",):
             result = call(*args)

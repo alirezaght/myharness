@@ -11,15 +11,17 @@ current task's path runs it at all.
 MAX_CORRECTION_ITERATIONS = 6
 
 MAIN_PHASES = ["PLANNING", "PSEUDOCODE", "IMPLEMENTATION", "FINALIZATION", "VERIFICATION", "REVIEW"]
-AUX_PHASES = ["PLAN_CONFLICT", "INVESTIGATION", "REWORK", "CORRECTION", "FINAL_VERIFICATION", "DONE"]
+AUX_PHASES = ["REWORK_REASSESSMENT", "PLAN_CONFLICT", "INVESTIGATION", "REWORK", "CORRECTION", "FINAL_VERIFICATION", "DONE"]
 # Pre-parallelism phase names, still accepted so an in-flight run keeps working.
 PHASE_ALIASES = {"CORE_IMPLEMENTATION": "IMPLEMENTATION", "TESTS_AND_CLEANUP": "FINALIZATION"}
 # VERIFICATION is deliberately absent: AL runs the barrier itself, no agent owns it.
 PHASE_AGENT = {
+    "REWORK_REASSESSMENT": "al-architect",
     "PLANNING": "al-architect", "PSEUDOCODE": "al-designer", "PLAN_CONFLICT": "al-architect",
     "IMPLEMENTATION": "al-engineer", "FINALIZATION": "al-builder", "REVIEW": "al-architect",
 }
 PHASE_LABEL = {
+    "REWORK_REASSESSMENT": "Rework reassessment",
     "PLANNING": "Planning", "PSEUDOCODE": "Design", "PLAN_CONFLICT": "Plan conflict",
     "INVESTIGATION": "Investigation", "IMPLEMENTATION": "Implementation",
     "FINALIZATION": "Builder finalization", "VERIFICATION": "Verification",

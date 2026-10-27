@@ -68,3 +68,17 @@ def test_preflight_runs_in_a_bound_run_but_other_scopeless_checks_stay_unmapped(
     with pytest.raises(SystemExit, match='ambiguous'):
         T.admit_check(al_store.load(sid), {'kind': 'check', 'scope': []})
     controller.conn.close()
+
+
+@pytest.mark.parametrize('action',['blocker','task-register','agent-register','agent-update','task-progress','graph-update','handoff'])
+def test_missing_integration_fields_have_structured_recovery_without_mutation(cli,tmp_path,repo,monkeypatch,action):
+    import json
+    controller,_,sid=bound(cli,tmp_path,repo,monkeypatch)
+    path=al_store.state_path(sid)
+    before=path.read_bytes()
+    code,out,err=report(cli,tmp_path,action,{})
+    message=str(code)+out+err
+    assert code!=0 and 'input_schema' in message and 'missing' in message
+    assert 'KeyError' not in message and 'Traceback' not in message
+    assert path.read_bytes()==before
+    controller.conn.close()

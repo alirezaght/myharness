@@ -26,6 +26,7 @@ from harness.repo_probes import (
 )
 from harness.repo_relevance import relevance
 from harness.repo_scan import Findings, git_facts, list_files
+from harness.repository_audit import audit
 
 
 def _shown(root: Path, path: Path) -> str:
@@ -71,17 +72,58 @@ def analyze(
     repository.fact(FactCategory.REPOSITORY, f"{len(files)} files enumerated via {source}", source)
     facts, revision = git_facts(root)
     repository.facts.extend(facts)
+    ownership = audit(root, text, files=files)
+    for unit in ownership["selected_units"]:
+        repository.fact(
+            FactCategory.COMPONENTS,
+            f"scoped package `{unit['root']}/`",
+            f"manifest {unit['manifest']}; explicit path/package identity",
+        )
+    for comparison in ownership["main_comparisons"]:
+        repository.fact(
+            FactCategory.REPOSITORY,
+            f"{comparison['ahead']} ahead and {comparison['behind']} behind {comparison['ref']}",
+            "local Git ref comparison; remote freshness unverified (no fetch)",
+        )
+    if ownership["ownership"] == "UNRESOLVED":
+        repository.ask(
+            "scope",
+            "Ownership is unresolved; which package or implementation path "
+            "does this request target? Keyword and test counts do not establish ownership.",
+        )
+    if not ownership["inventory_complete"]:
+        repository.ask(
+            "scope",
+            "Repository inventory reached its bound; provide the target package "
+            "before drawing ownership or coverage conclusions.",
+        )
+    for edge in ownership["call_sites"][:25]:
+        repository.fact(
+            FactCategory.FILES,
+            f"call site `{edge['from']}` imports `{edge['to']}`",
+            edge["evidence"],
+        )
+    for instruction in ownership["instructions"]:
+        repository.fact(
+            FactCategory.CONSTRAINTS,
+            f"scoped agent instructions `{instruction['path']}`",
+            f"{instruction['path']} sha256:{instruction['sha256']}",
+        )
+    scoped = [p for p in files if p.as_posix() in ownership["relevant_paths"]]
+    # Repository inventories remain useful context. Material config questions and
+    # test placement must come from scoped ownership rather than global volume.
+    probe_files = scoped if ownership["ownership"] == "SCOPED" else files
     probes = [
         repository,
         decision_findings,
         language_summary(files),
-        dependency_facts(root, files),
+        dependency_facts(root, probe_files),
         component_summary(files),
         relevance(root, files, text),
         interface_facts(files),
         schema_facts(files),
-        config_facts(files),
-        test_facts(files),
+        config_facts(files, relevant=set(ownership["relevant_paths"])),
+        test_facts(probe_files),
         convention_facts(root, files),
     ]
     questions = {(q.topic, q.text): q for probe in probes for q in probe.questions}

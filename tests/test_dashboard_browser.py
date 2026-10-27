@@ -9,6 +9,7 @@ The live stream is recycled after half a second so the page goes quiet for --dum
 
 import os
 import subprocess
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -48,6 +49,7 @@ def _headless(profile: Path, *args: str) -> subprocess.CompletedProcess:
     command = [
         CHROME,
         "--headless=new",
+        "--incognito",
         "--disable-gpu",
         "--no-first-run",
         "--no-default-browser-check",
@@ -59,7 +61,57 @@ def _headless(profile: Path, *args: str) -> subprocess.CompletedProcess:
         "--virtual-time-budget=10000",
         *args,
     ]
-    return subprocess.run(command, capture_output=True, text=True, timeout=TIMEOUT, check=False)
+    with tempfile.TemporaryFile(mode="w+") as stdout, tempfile.TemporaryFile(mode="w+") as stderr:
+        result = subprocess.run(
+            command, stdout=stdout, stderr=stderr, text=True, timeout=TIMEOUT, check=False
+        )
+        stdout.seek(0)
+        stderr.seek(0)
+        return subprocess.CompletedProcess(
+            result.args, result.returncode, stdout.read(), stderr.read()
+        )
+
+
+def test_headless_capture_preserves_output_status_and_closes_files(monkeypatch, tmp_path):
+    # Controlled subprocess seam: interface/ownership coverage, not real Chrome evidence.
+    handles = []
+    actual_args = ["observed-chrome", "--dump-dom"]
+
+    def run(command, *, stdout, stderr, text, timeout, check):
+        assert text is True and timeout == TIMEOUT and check is False
+        assert command[-2:] == ["--dump-dom", "about:blank"]
+        assert stdout is not stderr
+        handles.extend([stdout, stderr])
+        stdout.write("actual stdout: café\n")
+        stderr.write("actual stderr: warning\n")
+        return subprocess.CompletedProcess(actual_args, 7)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    result = _headless(tmp_path / "capture-profile", "--dump-dom", "about:blank")
+    assert result.args == actual_args
+    assert result.returncode == 7
+    assert result.stdout == "actual stdout: café\n"
+    assert result.stderr == "actual stderr: warning\n"
+    assert len(handles) == 2 and all(handle.closed for handle in handles)
+
+
+def test_headless_capture_timeout_propagates_and_closes_files(monkeypatch, tmp_path):
+    # This seam does not establish real child termination or browser behavior.
+    handles = []
+    failure = subprocess.TimeoutExpired(["observed-chrome"], TIMEOUT)
+
+    def run(command, *, stdout, stderr, text, timeout, check):
+        assert text is True and timeout == TIMEOUT and check is False
+        handles.extend([stdout, stderr])
+        stdout.write("partial stdout\n")
+        stderr.write("partial stderr\n")
+        raise failure
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(subprocess.TimeoutExpired) as caught:
+        _headless(tmp_path / "timeout-profile", "--dump-dom", "about:blank")
+    assert caught.value is failure
+    assert len(handles) == 2 and all(handle.closed for handle in handles)
 
 
 def _dom(server: DashboardServer, profile: Path, query: str = "") -> str:

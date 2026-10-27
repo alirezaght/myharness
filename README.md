@@ -462,3 +462,15 @@ database is inspected by a workflow, use a dedicated credential restricted to
 read-only access; Harness does not perform a privilege probe or write test.
 Harness state, browser profiles, screenshots and receipts remain local and
 private. A local fixture demonstration is not staging acceptance.
+
+## Implementation complexity after clarification
+
+The initial Harness complexity is provisional interview depth. Subject keywords such as migration, architecture or distributed do not establish a complex implementation. After resolving material behavior/scope questions and inspecting the existing code, record the remaining implementation risk:
+
+```sh
+harness classify TASK --assessment /tmp/implementation-risk.json --repo /path/to/repository
+```
+
+The shared rubric chooses AL SMALL for local established-pattern changes, STANDARD for ordinary feature work, and COMPLEX only for a specific new difficult design where pseudocode materially reduces risk. Inspect code to answer routine implementation details; ask users about unresolved consequential choices. Explicit developer choices are preserved. Source/answer changes make recorded assessments stale. Current assessments travel in the immutable AL handoff; standalone AL uses the same rubric with `classify ... --assessment-file FILE`. See [the approved design](docs/superpowers/specs/2026-10-27-risk-based-routing-design.md) and [the assessment format](al/codex/skills/al/reference/routing-risk.md).
+
+See [context reuse and execution recovery](docs/harness-al-maintenance.md) for reviewed context imports, complete draft/batch acceptance, ownership/routing investigation, launch readiness, dependency reconciliation, versioned bridge repair and verified planning reuse.

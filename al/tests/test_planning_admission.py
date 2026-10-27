@@ -51,11 +51,9 @@ def test_actual_packet_report_materialization_and_separate_admission(launched, p
     )
     assert authority["original_task_package"] == state["task_package"]
     assert state["status"] == "RUNNING" and state["phase"] == "PLANNING"
-    before = state_path(launched, platform).read_bytes()
     result = public_run(launched, platform, "phase", "IMPLEMENTATION")
-    assert result.returncode != 0
-    assert "manifest" in (result.stdout + result.stderr).lower()
-    assert state_path(launched, platform).read_bytes() == before
+    assert result.returncode == 0, result.stderr
+    assert json.loads(state_path(launched, platform).read_bytes())["phase"] == "IMPLEMENTATION"
     writer = public_run(
         launched,
         platform,
@@ -68,9 +66,8 @@ def test_actual_packet_report_materialization_and_separate_admission(launched, p
         "--files",
         "artifact.md",
     )
-    assert writer.returncode != 0
-    assert "writing phase" in (writer.stdout + writer.stderr).lower()
-    assert state_path(launched, platform).read_bytes() == before
+    assert writer.returncode == 0, writer.stderr
+    assert json.loads(state_path(launched, platform).read_bytes())["writers"]["no-gates"]["state"] == "ACTIVE"
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,7 @@
 import hashlib
 import json
 from al.tests.editorial_receipt_helpers import plan_fixture_gates, state, succeed
-from al.tests.planning_helpers import prepare, save_report, section
+from al.tests.planning_helpers import prepare, report_for, save_report, section
 from al.tests.runtime_run_helpers import invoke, public_run
 
 TEST_SOURCE = """import json
@@ -158,14 +158,15 @@ def prepare_behavior(launched, platform):
     )
     succeed(invoke(["git", "add", "."], repo, env))
     succeed(invoke(["git", "commit", "-qm", "observable parser journeys"], repo, env))
-    _, report = prepare(
+    prepare(
         launched,
         platform,
         "Verify persisted JSON through a fresh parser process and reject malformed input without changing stored bytes.",
     )
-    succeed(save_report(launched, platform, authored_json_report(report)))
-    succeed(public_run(launched, platform, "planning", "admit"))
     plan_fixture_gates(launched, platform, ["Makefile", "pyproject.toml", "tests", "rows.json"])
+    packet = json.loads(succeed(public_run(launched, platform, "planning", "packet")).stdout)
+    succeed(save_report(launched, platform, authored_json_report(report_for(packet))))
+    succeed(public_run(launched, platform, "planning", "admit"))
     succeed(
         public_run(
             launched,

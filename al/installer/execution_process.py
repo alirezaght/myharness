@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import sys
 from .activity_process import identity,process_cwd,BSDInfo
-from .validator_origin import capture,safe
+from .validator_origin import executable_state
 
 
 def process_arguments(pid):
@@ -38,7 +38,7 @@ def kernel_image(pid):
     else:raise ValueError('unsupported interpreter image observation platform')
     path=Path(name)
     if not path.is_absolute() or path!=path.resolve(strict=True):raise ValueError('noncanonical kernel executable image')
-    _,metadata=capture(safe(path))
+    metadata=executable_state(path)
     return dict(metadata,path=str(path),platform=sys.platform,mechanism=mechanism)
 
 

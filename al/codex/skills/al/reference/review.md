@@ -31,8 +31,7 @@ Each stage packet contains an immutable `attempt` binding with `attempt_id`,
 `fallback_event_reference`. It records the approved Architect slot effective
 when that packet was issued; the current run model is not a substitute. Reports
 must keep the required `packet_hash` and `model`, which bind the report to the
-issued attempt. `attempt_id`, `effort`, and `policy_digest` may also be echoed;
-when present they must match the packet. See `schemas/review-attempt.json`,
+issued attempt. `attempt_id`, `effort`, and `policy_digest` are required in modern v2 reports and must match the packet. Genuine legacy v1 reports retain their separately documented optional echoes. See `schemas/review-attempt.json`,
 `schemas/review-packet.json`, and `schemas/architect-report.json`.
 
 If a model is recorded unavailable before packet issuance, issue the stage packet
@@ -60,10 +59,8 @@ CI planning context is data-only and run-bound. A supervisor records the fixed p
 Reports are JSON artifacts submitted through `review-fresh --file` and
 `review-result --file`. Required report fields: schema version, review ID, stage,
 invocation ID, reviewer role, resolved model, task hash, candidate hash, packet
-hash, inspected artifact hashes, criteria, findings, prior resolutions, and
-status. Comparison also contains plan defects and assessments. Counts come from
-findings; do not supply a verdict that contradicts them. `APPROVED` and
-`CHANGES_REQUIRED` are eligible only with zero blocking findings.
+hash, inspected artifact hashes, criteria, findings, and status. Modern reports require `schema_version: 2`, `kind: architect-review-report-v2`, `document_hash`, `verification_authority_hash`, `attempt_id`, `effort`, and `policy_digest`. Fresh requires `counterexample_search` and forbids `prior_resolutions` and every finding `resolution` key, even null. Comparison requires `prior_resolutions`, `plan_defects`, and `assessments`, and forbids `counterexample_search`. Planning reports remain v1; genuine legacy review contracts are in the separately named `*-v1.json` schemas. Counts come from
+findings; do not supply a verdict that contradicts them. `APPROVED` requires zero blocking findings; `CHANGES_REQUIRED` retains actual findings.
 
 `prior_resolutions` requires an explicit status (`fixed`, `unresolved`,
 `deferred`, or `disputed`). Only a verified `fixed` resolution clears a prior
@@ -121,3 +118,10 @@ Git subcommands use bounded, subcommand-specific option and operand tables. Unkn
 Shell command wrappers are accepted only as `sh|bash|dash|zsh -c SCRIPT [ARGUMENTS...]`. Bash may additionally use one each of `--noprofile` and `--norc` before `-c`. Startup clusters, other options, `+` options, `--`, script-file or stdin forms, missing scripts, and repeated `-c` selectors are refused; the parser never searches later arguments for a selector. After the selected script operand, remaining arguments are positional data. The selected script is still recursively checked through wrappers and substitutions, with inherited environment and `find` context preserved.
 
 For Claude's native conversation adapter, a new implicit `start` validates the previous pointer, state schema and repository identity before creating artifacts, but does not load or resume the old run. The old run's working directory does not prevent a new run elsewhere in the same repository; each run remains bound to its own directory for later execution. Publication atomically replaces the conversation pointer only after the new state is saved. If start fails, it restores the prior pointer and removes only resources created by that start; the old run and its artifacts remain intact.
+
+## Recovery lineage and Architect reassessment
+Fresh and comparison packets include the runtime-validated factual recovery lineage. Inspect the retained recovery decision and continuation reports and receipts required by the packet; each accepted report and receipt hash must appear in `inspected_artifacts`. A count or status line does not replace the underlying history. The closed decision request and continuation request schemas are in `schemas/rework-recovery-decision.json` and `schemas/rework-recovery-continuation.json`; accepted receipts use `schemas/rework-recovery-receipt.json`.
+
+An Architect reassessment is a separate, read-only action in the `REWORK_REASSESSMENT` phase, not a fresh/comparison review. Inspect the immutable packet and its evidence, then return its bound structured decision. The supervisor persists it using the public command. It does not create review findings, waive criteria, authorize permissions, or imply approval.
+
+Modern fresh packet evidence is a factual array; comparison retains its ledger object and comparison-only inputs. Fresh omits escapes and prior comparison context. Validate real issued artifacts against the published schemas. An acceptance code assessment is a separate non-authorizing artifact, never a formal review substitute.

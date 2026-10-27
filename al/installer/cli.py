@@ -24,13 +24,13 @@ def parser():
     pinned.add_argument('--session-directory', action='store_true')
     pinned.add_argument('--session', help='AL run id; inside a Claude conversation it may be omitted')
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
-    for name in ('source-proof','replan-proof','compatibility-readiness'):
+    for name in ('source-proof','planning-proof','replan-proof','compatibility-readiness'):
         proof = sub.add_parser(name, help='read-only protected source policy validation')
         proof.add_argument('--repository', required=True)
         proof.add_argument('--session', required=True)
         proof.add_argument('--run', required=True)
         proof.add_argument('--platform', choices=('codex','claude'), required=True)
-        if name!='source-proof':
+        if name not in {'source-proof','planning-proof'}:
             proof.add_argument('--issuer-binding',required=True)
             proof.add_argument('--issuer-binding-sha256',required=True)
         if name=='replan-proof':
@@ -91,9 +91,10 @@ def main(argv=None):
             from .runtime_run import run
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments
             return run(args.repository, args.platform, args.session, arguments, existing_run=args.existing_run, private_session=args.session_directory)
-        if args.command == 'source-proof':
-            from .terminal_source import terminal_source
-            result = terminal_source(args.repository, session=args.session, run=args.run, platform=args.platform)
+        if args.command in {'source-proof','planning-proof'}:
+            from .terminal_source import terminal_source,planning_source
+            query=terminal_source if args.command=='source-proof' else planning_source
+            result = query(args.repository, session=args.session, run=args.run, platform=args.platform)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.command in {'replan-proof','compatibility-readiness'}:

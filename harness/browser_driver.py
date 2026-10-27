@@ -144,7 +144,11 @@ class BrowserDriver:
                 or info["type"] != "page"
                 or info.get("url") not in {"", "about:blank"}
             ):
-                self.violation = "Unsupported additional browser target blocked"
+                self.violation = (
+                    "Unsupported additional browser target blocked "
+                    f"(type={info.get('type')!r}, existing_session={self.session is not None}, "
+                    f"url={str(info.get('url', ''))[:120]!r})"
+                )
                 self._call("Target.closeTarget", {"targetId": info["targetId"]}, browser=True)
                 return
             self.session, self.target = session, info["targetId"]

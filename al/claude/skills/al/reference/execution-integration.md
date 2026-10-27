@@ -55,3 +55,43 @@ Both Codex and Claude retain their existing host/session behavior. This Codex
 package does not change Claude continuation pointers or select a latest host
 session. See [the v1 event contract](../../../../../docs/al-event-contract-v1.md)
 for envelope, bounds, kinds and authority rules.
+
+## Bounded recovery and task admission
+A pending `REWORK_REASSESSMENT` blocks writer starts (including degraded tracking), task admission/start, ordinary phase transitions, and generic resume. Preserve independent blockers and their task scope; a recovery credit cannot clear them. After a valid Architect allow, the runtime consumes exactly the pending first return in the new two-return batch. A decline or automatic-cap stop records a checkpoint; only an explicit bound user continuation may grant another two-return batch. Old immutable runtime issuers do not gain these commands after installation update.
+
+## Portable inputs and ownership audit
+
+In Harness, use its `read_file` tool with `harness:skill/index` to enumerate the
+exact protected pin. Read `harness:skill` for SKILL.md and
+`harness:skill/reference/handoffs.md` or `harness:skill/reference/schemas/blocker.json`
+for references and schemas. Follow bounded offsets until `truncated` is false;
+retain resource hashes. Repository file confinement still applies. Required
+inputs do not require a global filesystem or shell capability.
+
+Before final classification/planning, read `harness:repository-audit`. Standalone
+AL uses `routing-audit --request "APPROVED REQUEST"`. Inspect manifest ownership,
+literal call sites, applicable nested AGENTS.md, existing implementation leads
+and locally known main divergence. Remote freshness is unverified without an
+explicit fetch. Keyword matches, test volume and top-level folder names do not
+establish ownership or complexity. Inspect the cited implementation and classify
+its remaining design work; resolve material ownership uncertainty before planning.
+
+Malformed integration inputs return an `input_schema` diagnostic with the
+operation, missing/unexpected fields and recovery reference. For blocker input,
+read `reference/schemas/blocker.json` through the same portable resource mapping.
+Correct the input and retry; a validation failure does not register a blocker.
+
+## Prior standalone planning
+A developer may request `harness execution adopt-planning` with exact source
+repository/platform/session/run/task/report hashes, the target handoff hash, and
+complete target-to-source criterion/invariant mappings. The protected
+`alctl planning-proof` command independently validates the current standalone
+planning occurrence and its original pin, report, obligations and source. Changed
+source, policy or incomplete mappings refuse transfer with a recovery diagnostic.
+
+Before authoring a Harness planning report, read `harness:planning-adoptions`;
+retrieve any named receipt through its hash-bound artifact resource. These are
+verified reference inputs for reuse. The current Architect must inspect them,
+revalidate the current approved requirements/source and author a new current
+planning report and obligations. No old admission, approval, task state, evidence
+result or native identity is copied; neither workflow is restarted.

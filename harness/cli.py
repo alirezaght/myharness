@@ -53,7 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     classify = subparsers.add_parser("classify", help="override a task's complexity")
     classify.add_argument("task_id")
-    classify.add_argument("level", choices=LEVELS)
+    classify.add_argument("level", choices=LEVELS, nargs="?")
+    classify.add_argument(
+        "--assessment", metavar="JSON", help="reassess remaining work from inspected risk evidence"
+    )
+    classify.add_argument("--repo", metavar="PATH", help="repository for assessment evidence")
     classify.set_defaults(handler=cmd_classify)
 
     show = subparsers.add_parser("show", help="show a task, its interview depth and history")
@@ -71,6 +75,9 @@ def build_parser() -> argparse.ArgumentParser:
     investigate.add_argument("--json", action="store_true", help="print the report as JSON")
     investigate.set_defaults(handler=cmd_investigate)
 
+    from harness.cli_maintenance import register
+
+    register(subparsers)
     add_dashboard_parser(subparsers)
     add_interview_parser(subparsers)
     add_design_parser(subparsers)

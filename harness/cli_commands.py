@@ -59,6 +59,10 @@ def cmd_start(args: argparse.Namespace) -> int:
         f" ({task.complexity_source})"
     )
     if task.complexity_source == SOURCE_PROPOSED:
+        print(
+            "Initial complexity is provisional interview depth; "
+            "reassess after clarification and repository inspection."
+        )
         print(f"override: harness classify {task.id} <{'|'.join(Complexity)}>")
     return 0
 
@@ -70,6 +74,11 @@ def cmd_phase(args: argparse.Namespace) -> int:
         else:
             task = controller.go_back(args.task_id, Phase(args.to_phase), args.reason or "")
     print(_summary(task))
+    if args.action == "next" and task.phase is Phase.DESIGN:
+        print(
+            "After clarification, reassess inspected implementation risk: "
+            f"harness classify {task.id} --assessment FILE --repo REPOSITORY"
+        )
     if args.action == "next" and task.phase is Phase.APPROVAL:
         print("final design review passed (checkpoint recorded)")
     return 0
@@ -77,7 +86,18 @@ def cmd_phase(args: argparse.Namespace) -> int:
 
 def cmd_classify(args: argparse.Namespace) -> int:
     with _controller(args) as controller:
-        task = controller.set_complexity(args.task_id, Complexity(args.level))
+        if args.assessment:
+            from harness.complexity_assessment import record
+
+            if args.level:
+                raise ValueError("choose an explicit level or a risk assessment, not both")
+            value = json.loads(Path(args.assessment).read_text())
+            root = Path(args.repo) if args.repo else task_repo_root(controller, args.task_id)
+            task = record(controller, args.task_id, value, root)
+        elif args.level:
+            task = controller.set_complexity(args.task_id, Complexity(args.level))
+        else:
+            raise ValueError("classify requires a level or --assessment JSON")
     print(_summary(task))
     return 0
 
@@ -89,10 +109,25 @@ def cmd_show(args: argparse.Namespace) -> int:
     with _controller(args) as controller:
         task = controller.get_task(args.task_id)
         history = controller.history(task.id)
+        from harness.complexity_assessment import current
+
+        risk = current(controller, task.id)
         store = spec_store(controller, task.id, None)
         root = task_repo_root(controller, task.id)
         approval = ApprovalGate(controller, task.id, store, root).status()
     print(_summary(task))
+    if risk:
+        print(
+            f"implementation routing: {risk['al_classification']} · "
+            f"{'current' if risk['current'] else 'STALE'}"
+        )
+        if not risk["current"]:
+            print(risk.get("reason", "Reassess implementation risk"))
+    elif task.complexity_source == SOURCE_PROPOSED:
+        print(
+            "implementation routing: provisional; "
+            "clarify material choices and inspect existing patterns"
+        )
     print(f"request: {task.request}")
     print(f"created: {task.created_at} · updated: {task.updated_at}")
     print(f"approval: {approval}")

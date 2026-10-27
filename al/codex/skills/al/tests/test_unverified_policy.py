@@ -105,7 +105,7 @@ def _run(tmp_path, name, status, exit_code, text):
     return {'id': name, 'status': status, 'exit': exit_code, 'log': str(log)}
 
 
-def test_pre_existing_failures_and_environment_gaps_are_reported_not_blocking(tmp_path, monkeypatch):
+def test_pre_existing_failures_are_distinct_from_unavailable_setup(tmp_path, monkeypatch):
     import al_gates as G
     import al_ledger as L
     runs = {'E1': _run(tmp_path, 'E1', 'FAIL', 1, 'broken contract'), 'E2': _run(tmp_path, 'E2', 'FAIL', 1, 'broken contract'),
@@ -120,14 +120,14 @@ def test_pre_existing_failures_and_environment_gaps_are_reported_not_blocking(tm
     assert 'pre-existing' in G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], run, 'f')
     assert G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E2'], run, 'f') is None
     assert G.accepted_failure(st('E5'), {}, untouched, 'candidate', runs['E2'], run, 'f') is None
-    assert 'environment gap' in G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f')
-    # A missing tool is AL's environment gap even when the base run happened not to need it.
-    assert 'environment gap' in G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f')
-    assert 'environment gap' in G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f')
+    assert G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
+    # Log text and old FAIL entries cannot waive required verification.
+    assert G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
+    assert G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f') is None
     assert G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], dict(run, fingerprint='old'), 'f') is None
 
 
-def test_disposable_checkouts_link_the_working_trees_node_modules(tmp_path, monkeypatch):
+def test_disposable_checkout_refuses_borrowed_working_tree_dependencies(tmp_path, monkeypatch):
     import subprocess
     import al_checkout_paths as P
     import al_checkouts as C
@@ -140,11 +140,9 @@ def test_disposable_checkouts_link_the_working_trees_node_modules(tmp_path, monk
     subprocess.run(['git', 'init', '-q'], cwd=root, check=True)
     subprocess.run(['git', 'add', '.'], cwd=root, check=True)
     monkeypatch.setattr(al_store, 'REPO_ROOT', work)
-    assert sorted(C.link_dependencies(root)) == ['.', 'apps/web']
-    assert (root / 'node_modules').is_symlink() and (root / 'node_modules/.bin').is_dir()
-    P.validate(root)
-    status = subprocess.run(['git', 'status', '--porcelain'], cwd=root, capture_output=True, text=True).stdout
-    assert 'node_modules' not in status
+    assert not hasattr(C,'link_dependencies')
+    (root/'node_modules').symlink_to(work/'node_modules',target_is_directory=True)
+    with pytest.raises(P.MaterializationError):P.validate(root)
 
 
 def test_a_touched_gate_reports_only_failures_the_base_did_not_already_have(tmp_path, monkeypatch):
@@ -165,9 +163,9 @@ def test_a_touched_gate_reports_only_failures_the_base_did_not_already_have(tmp_
 
 
 @pytest.mark.parametrize('text,gap', [
-    ('sh: 1: turbo: not found', True),
-    ('.husky/pre-commit: 2: .: cannot open /tmp/al-gate/checkout/.husky/_/husky.sh: No such file', True),
-    ('make: ./node_modules/.bin/eslint: No such file or directory', True),
+    ('sh: 1: turbo: not found', False),
+    ('.husky/pre-commit: 2: .: cannot open /tmp/al-gate/checkout/.husky/_/husky.sh: No such file', False),
+    ('make: ./node_modules/.bin/eslint: No such file or directory', False),
     ('src/app.py: No such file or directory', False),
     ('AssertionError: expected 2', False),
 ])
@@ -222,3 +220,10 @@ def test_ci_lines_that_reach_outside_the_checkout_stay_with_the_pipeline(line, r
     import shlex
     import al_ci_inventory as CI
     assert CI.side_effect(shlex.split(line)) is remote
+
+
+def test_only_typed_launch_or_setup_infrastructure_is_an_environment_gap():
+    import al_gates as G
+    assert G.environment_gap({'status':'INFRA','exit':127})
+    assert G.environment_gap({'status':'INFRA','exit':1,'execution_stage':'setup'})
+    assert not G.environment_gap({'status':'FAIL','exit':127})

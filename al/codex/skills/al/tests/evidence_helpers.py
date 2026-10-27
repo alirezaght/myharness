@@ -152,7 +152,7 @@ def _review_report_v2(state, stage, invocation, findings, prior_resolutions, ins
     return report
 
 
-def complete_review(cli, tmp_path, blocking=True):
+def complete_review(cli, tmp_path, blocking=True, inspect_report=None):
     state = json.loads(cli("show")[1])
     if any(item.get("blocking", 0) for item in state["review_history"]):
         source = Path.cwd() / "svc/app.py"
@@ -168,7 +168,9 @@ def complete_review(cli, tmp_path, blocking=True):
     result, out, err = cli("review-packet", "--stage", "fresh")
     assert result == 0, f"fresh packet failed: {result} {out}{err}"
     fresh = tmp_path / "fresh-review.json"
-    fresh.write_text(json.dumps(_review_report(cli, "fresh", f"{review_id}-fresh", False)))
+    fresh_report=_review_report(cli, "fresh", f"{review_id}-fresh", False)
+    if inspect_report:inspect_report(fresh_report)
+    fresh.write_text(json.dumps(fresh_report))
     result, out, err = cli("review-fresh", "--file", str(fresh))
     assert result == 0, f"fresh report failed: {result} {out}{err}"
     plan = tmp_path / "approved-plan.md"
@@ -183,6 +185,8 @@ def complete_review(cli, tmp_path, blocking=True):
     result, out, err = cli("review-packet", "--stage", "compare")
     assert result == 0, f"comparison packet failed: {result} {out}{err}"
     comparison = tmp_path / "comparison-review.json"
-    comparison.write_text(json.dumps(_review_report(cli, "compare", f"{review_id}-compare", blocking)))
+    compare_report=_review_report(cli, "compare", f"{review_id}-compare", blocking)
+    if inspect_report:inspect_report(compare_report)
+    comparison.write_text(json.dumps(compare_report))
     result, out, err = cli("review-result", "--file", str(comparison))
     assert result == 0, f"comparison report failed: {result} {out}{err}"

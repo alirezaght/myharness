@@ -78,7 +78,7 @@ def test_complete_conventional_ci_is_independently_bound(cli,repo,tmp_path):
     lambda s:s.replace('- run: uv build','- if: success()\n        run: uv build'),
     lambda s:s.replace('on: [push, pull_request]','on: {pull_request: {paths: [src/**]}}'),
 ])
-def test_unsupported_chain_stays_incomplete_and_is_reported_unverified(cli,repo,tmp_path,change):
+def test_unsupported_chain_blocks_admission(cli,repo,tmp_path,change):
     project(repo);put(repo,'.github/workflows/quality.yml',change(WORKFLOW));start(cli)
     st,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     a=m['service_coverage']['assessment']
@@ -86,10 +86,7 @@ def test_unsupported_chain_stays_incomplete_and_is_reported_unverified(cli,repo,
     assert any(g['code']=='missing-verification-check' for g in a['gaps'])
     file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
     invoke(cli,'gates','plan','--file',str(file))
-    # Incomplete coverage is an unverified check reported to the user, not a blocker.
-    unverified=json.loads(cli('gates','status')[1])['unverified']
-    assert any(u['category']=='lint-imports' for u in unverified)
-    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
+    assert_incomplete_refuses_admission(cli,tmp_path)
 
 
 @pytest.mark.parametrize('line',['uv run ruff check .','uv run ruff format --check .','uv run pytest','uv build'])
@@ -106,8 +103,12 @@ def test_all_jobs_and_workflow_membership_are_required(cli,repo,tmp_path):
     put(repo,'.github/workflows/second.yml',WORKFLOW.replace('uv run pytest','unmodeled-check .'))
     _,after=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     assert before['service_coverage']['assessment']['outcome']=='identified'
-    assert after['service_coverage']['assessment']['outcome']=='incomplete'
-    assert any(g['code']=='unresolved-ci-check' for g in after['service_coverage']['assessment']['gaps'])
+    assert after['service_coverage']['assessment']['outcome']=='identified'
+    assert any('verification-root' in b['obligation_ids'] for b in after['service_coverage']['assessment']['required_bindings'])
+    file=tmp_path/'extra-job.json';file.write_text(json.dumps(after));invoke(cli,'gates','plan','--file',str(file))
+    status=json.loads(cli('gates','status')[1])
+    assert not status['coverage_blockers']
+    assert any(u['category']=='ci' for u in status['unverified'])
 
 
 def test_declared_architecture_does_not_use_ci_as_a_replacement(cli,repo,tmp_path):
@@ -168,9 +169,7 @@ def test_pytest_ambient_execution_controls_cannot_be_unbound(cli,repo,tmp_path,m
     assert after['service_coverage']['assessment']['outcome']=='incomplete'
     m=manifest_for(json.loads(cli('show')[1]),repo,['ordinary_project/__init__.py'])
     file=tmp_path/'ambient-control.json';file.write_text(json.dumps(m));invoke(cli,'gates','plan','--file',str(file))
-    # The masked check is never claimed as verification: it is reported as unverified.
-    unverified=json.loads(cli('gates','status')[1])['unverified']
-    assert any(u['category']=='lint-imports' for u in unverified)
+    assert_incomplete_refuses_admission(cli,tmp_path)
 
 
 def test_collection_only_pytest_configuration_is_not_verification(cli,repo,tmp_path):
@@ -178,3 +177,20 @@ def test_collection_only_pytest_configuration_is_not_verification(cli,repo,tmp_p
     p.write_text(p.read_text()+'[tool.pytest.ini_options]\naddopts="--collect-only"\n')
     start(cli);_,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
+
+
+def assert_incomplete_refuses_admission(cli,tmp_path):
+    status=json.loads(cli('gates','status')[1])
+    assert status['coverage_blockers'] and status['coverage_resolution']
+    state=json.loads(cli('show')[1])
+    if state.get('proof_admission',{}).get('status')!='pending':
+        before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
+        assert json.loads(cli('show')[1])==before
+        return
+    from launcher_context import _reports
+    packet=json.loads(invoke(cli,'planning','packet')[1])
+    file=tmp_path/'blocked-report.json';file.write_text(json.dumps(_reports().report_for(packet)))
+    response=json.loads(invoke(cli,'planning','report','--file',str(file))[1])
+    before=json.loads(cli('show')[1])
+    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'],ok=False)
+    assert json.loads(cli('show')[1])==before
