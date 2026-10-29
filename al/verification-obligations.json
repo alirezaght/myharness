@@ -35,7 +35,7 @@
   ],
   "isolation_review": {
     "version": 1,
-    "reason": "Existing function-isolated repositories/runtimes and disposable installer homes; file groups preserve module/session fixture semantics. Worker envelope isolates HOME, native homes, runtime/distribution/harness state and temporary directories. Changed/unclassified files serialize; source, fixture and full outcome accounting remain mandatory. Phase 4 review: changed fixtures retain per-test repositories and per-worker homes/pins; local servers use unique loopback ports, native clients are synthetic or explicitly opt-in, and the existing reviewed template chunk boundaries are preserved. Recovery/integration review: current helpers keep source creation and commits before proof issuance, then use real public discovery/admission in per-test repositories. Supersession and acceptance tests use isolated runtime artifacts. Setup uses per-test disposable checkouts/caches and owned, reaped process groups; local wheel setup has no registry dependency. Output and routing tests restore function-scoped monkeypatches and own no services. New nodes keep whole-file grouping. Platform-specific native session/model adapters remain distinct. No cross-platform equivalence or test omission is introduced. AR2301 maintenance review: protected planning exports use per-test managed origins/repositories and fully reaped foreground proof children; nested read-set tests run only inside isolated validator processes. Activity/setup/Git grammar tests are data-only with no services. New file groups remain whole; no cross-platform equivalence or node omission is added. Harness maintenance tests use disposable databases, source trees and owned process groups; no application provider credentials are used. Final recovery regression review: fixture identity is configured only in disposable repositories; planning tests discover gates before requesting admission, explicitly pending fixtures use the raw public command, and refused current-coverage cases retain byte-for-byte state assertions. Ordinary module hashing owns no processes. Existing file-group isolation remains unchanged. Both runtime conftest updates configure Git author identity only in the disposable seed repository; fixture scope, per-test Git copies, per-process pins and owned-child behavior are unchanged. Reviewed file/fixture fingerprints are refreshed for the same groups, including the explicitly listed additional files. No unreviewed file is promoted and no test is omitted.",
+    "reason": "Existing function-isolated repositories/runtimes and disposable installer homes; file groups preserve module/session fixture semantics. Worker envelope isolates HOME, native homes, runtime/distribution/harness state and temporary directories. Changed/unclassified files serialize; source, fixture and full outcome accounting remain mandatory. Phase 4 review: changed fixtures retain per-test repositories and per-worker homes/pins; local servers use unique loopback ports, native clients are synthetic or explicitly opt-in, and the existing reviewed template chunk boundaries are preserved. Recovery/integration review: current helpers keep source creation and commits before proof issuance, then use real public discovery/admission in per-test repositories. Supersession and acceptance tests use isolated runtime artifacts. Setup uses per-test disposable checkouts/caches and owned, reaped process groups; local wheel setup has no registry dependency. Output and routing tests restore function-scoped monkeypatches and own no services. New nodes keep whole-file grouping. Platform-specific native session/model adapters remain distinct. No cross-platform equivalence or test omission is introduced. AR2301 maintenance review: protected planning exports use per-test managed origins/repositories and fully reaped foreground proof children; nested read-set tests run only inside isolated validator processes. Activity/setup/Git grammar tests are data-only with no services. New file groups remain whole; no cross-platform equivalence or node omission is added. Harness maintenance tests use disposable databases, source trees and owned process groups; no application provider credentials are used. Final recovery regression review: fixture identity is configured only in disposable repositories; planning tests discover gates before requesting admission, explicitly pending fixtures use the raw public command, and refused current-coverage cases retain byte-for-byte state assertions. Ordinary module hashing owns no processes. Existing file-group isolation remains unchanged. Both runtime conftest updates configure Git author identity only in the disposable seed repository; fixture scope, per-test Git copies, per-process pins and owned-child behavior are unchanged. Reviewed file/fixture fingerprints are refreshed for the same groups, including the explicitly listed additional files. No unreviewed file is promoted and no test is omitted. Implementation-continuity review: existing per-file subprocess groups retain unchanged conftests and function-scoped repositories, private homes, sockets and owned process cleanup. Successor and epoch recovery tests use disposable managed origins, synthetic credentials and settled children; newly added files remain conservatively serialized. Existing file/fixture approvals are retained unchanged. Only the complete source closure is refreshed; no node classification, equivalence, selection or outcome requirement is relaxed. Per-file continuity and successor tests are now explicitly reviewed: their repositories, SQLite databases, socket pairs, synthetic credentials, managed registries and launchers belong to disposable function/session fixtures under each worker home. Foreground commands have bounded waits; intentional children use identity-bound cleanup/finally. No real provider, private user state, fixed listening port or shared mutable source is used. Existing execution fixture changes only declare typed business choices and genuine spec classification; documentation tests read the linked detailed guide. All node selection and outcome reconciliation remain unchanged. Final race correction retains fixture-private shared/exclusive lock files and settled owned processes; no action lock spans provider/network calls. Policy regressions now distinguish allowed implementation from refused proof, review and approval, with the same private repositories and no new shared resources. Literal Linux/macOS CI jobs preserve conventional adapter discovery. Existing reviewed file groups are refreshed without changing node selection.",
     "additional_reviewed_files": {
       "installer": [
         "al/tests/test_activity_operations.py",
@@ -68,6 +68,10 @@
         "al/tests/test_runtime_pin.py",
         "al/tests/test_runtime_run.py",
         "al/tests/test_runtime_run_native.py",
+        "al/tests/test_runtime_successor.py",
+        "al/tests/test_runtime_successor_channel.py",
+        "al/tests/test_runtime_successor_isolation.py",
+        "al/tests/test_runtime_successor_lineage.py",
         "al/tests/test_task_editorial_revision.py",
         "al/tests/test_terminal_environment.py",
         "al/tests/test_terminal_git_grammar.py",
@@ -109,12 +113,15 @@
         "tests/test_gate_resume.py",
         "tests/test_git_memo.py",
         "tests/test_git_observation.py",
+        "tests/test_implementation_continuity.py",
+        "tests/test_implementation_outputs.py",
         "tests/test_output_contracts.py",
         "tests/test_planning_template.py",
         "tests/test_repository_membership.py",
         "tests/test_review_contract.py",
         "tests/test_review_rules.py",
         "tests/test_review_state.py",
+        "tests/test_rework_implementation_continuity.py",
         "tests/test_rework_recovery.py",
         "tests/test_rework_recovery_integration.py",
         "tests/test_risk_routing.py",
@@ -143,6 +150,8 @@
         "tests/test_gate_resume.py",
         "tests/test_git_memo.py",
         "tests/test_git_observation.py",
+        "tests/test_implementation_continuity.py",
+        "tests/test_implementation_outputs.py",
         "tests/test_model_slots.py",
         "tests/test_output_contracts.py",
         "tests/test_planning_template.py",
@@ -150,6 +159,7 @@
         "tests/test_review_contract.py",
         "tests/test_review_rules.py",
         "tests/test_review_state.py",
+        "tests/test_rework_implementation_continuity.py",
         "tests/test_rework_recovery.py",
         "tests/test_rework_recovery_integration.py",
         "tests/test_risk_routing.py",
@@ -241,7 +251,7 @@
       }
     },
     "claude:tests/test_docs.py": {
-      "test": "2bcdf57a05820cfbf98c798cb89a15a8b46832df0bd1519f7fa7502edce9bd79",
+      "test": "b4b162be95643d623b71bc24ecd1a8a50edef368e211a01ace4a2ac16123c76d",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -290,21 +300,21 @@
       }
     },
     "claude:tests/test_execution_blockers.py": {
-      "test": "ce6e95ba37881d76567b41740a6456834f77dca0c7f5ebe3ae161ee87b3d66fa",
+      "test": "99040f05a27367d5c5f95e22130064dca3b3b09ec52e1817f169630e9c3f9a2e",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
       }
     },
     "claude:tests/test_execution_decisions.py": {
-      "test": "40020fa9b357dbb60369afc541af3348ad8a94c29b45634a8c2ad59865ce99bf",
+      "test": "bcea33b76247ba6dac711f97ec6ab01ce5f68994462c3022eafd168b58ea8e7c",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
       }
     },
     "claude:tests/test_execution_events.py": {
-      "test": "a7d441ea8e0717d666cf35611f268841fdc67b99d972d5d5ebfba2eea6d702d6",
+      "test": "88917fb98fda9e277c29bf26614e1dbfb23cbf13b857e5741fd7e245f3509587",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -458,7 +468,7 @@
       }
     },
     "claude:tests/test_rework.py": {
-      "test": "503270cd3966417c1964026aa90705f54c3d654bcb1daae7369f01dc7cd38ec4",
+      "test": "192a3291e75f11d7af932494766edc5ab140769e57b58e7a49d7958038b17fd7",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -689,14 +699,14 @@
       }
     },
     "claude:tests/test_service_coverage.py": {
-      "test": "13ea934d8b9c0d4c9e8a0a6a5a0cf60ea868f1de2c2ee9e97fe59e1b84cbde77",
+      "test": "71eb8cbf94322562be2f0dd1e4ebc1ec9cabccd299712c38775f926cfaa4093b",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
       }
     },
     "claude:tests/test_service_coverage_admission.py": {
-      "test": "bee90ffaba6d37d3f8cbb5e662378d61b21ad033e190b9fd52e2dcedcab018c1",
+      "test": "07a492097b5a413cdd65ca16704a094a5e0e603df8e8c61f2096f9adb4324dcb",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -794,7 +804,7 @@
       }
     },
     "codex:tests/test_consistency.py": {
-      "test": "80a141d601e4b6003f1f183175c820b5e0b2a6e764d4cf5d485dbcc36eb85ed1",
+      "test": "96dbc2eefc80df9af21884893df3baa84ac27698e40097adff97f4c565e72170",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -822,7 +832,7 @@
       }
     },
     "codex:tests/test_docs.py": {
-      "test": "e563b9840e318957d5755caf4eaed83a2558efee7b914b3aebef738418fd184b",
+      "test": "c02b7a9ddb1238eb85b8facc43a7dd5b5f40831ae607190cf79f87e31efc43af",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -871,21 +881,21 @@
       }
     },
     "codex:tests/test_execution_blockers.py": {
-      "test": "ce6e95ba37881d76567b41740a6456834f77dca0c7f5ebe3ae161ee87b3d66fa",
+      "test": "99040f05a27367d5c5f95e22130064dca3b3b09ec52e1817f169630e9c3f9a2e",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
       }
     },
     "codex:tests/test_execution_decisions.py": {
-      "test": "40020fa9b357dbb60369afc541af3348ad8a94c29b45634a8c2ad59865ce99bf",
+      "test": "bcea33b76247ba6dac711f97ec6ab01ce5f68994462c3022eafd168b58ea8e7c",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
       }
     },
     "codex:tests/test_execution_events.py": {
-      "test": "a7d441ea8e0717d666cf35611f268841fdc67b99d972d5d5ebfba2eea6d702d6",
+      "test": "88917fb98fda9e277c29bf26614e1dbfb23cbf13b857e5741fd7e245f3509587",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -1011,7 +1021,7 @@
       }
     },
     "codex:tests/test_parity.py": {
-      "test": "909d67ce91e6ec858c45ad47cdf77a2e5f9db091d4247bf58fb553530718c852",
+      "test": "6038ac531e7d40be88d040b74301db1ef32a330285625604e860035940b2d327",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -1067,7 +1077,7 @@
       }
     },
     "codex:tests/test_rework.py": {
-      "test": "31124f8d21d70acf6d7c5e5489d0897995139d45c23fe28c788abaeb94d2a952",
+      "test": "cacefa8c7c3b0cbd6c446c61bf1bd13fc7eb5b74582f4bc32d923009c547dc93",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -1305,14 +1315,14 @@
       }
     },
     "codex:tests/test_service_coverage.py": {
-      "test": "13ea934d8b9c0d4c9e8a0a6a5a0cf60ea868f1de2c2ee9e97fe59e1b84cbde77",
+      "test": "71eb8cbf94322562be2f0dd1e4ebc1ec9cabccd299712c38775f926cfaa4093b",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
       }
     },
     "codex:tests/test_service_coverage_admission.py": {
-      "test": "bee90ffaba6d37d3f8cbb5e662378d61b21ad033e190b9fd52e2dcedcab018c1",
+      "test": "07a492097b5a413cdd65ca16704a094a5e0e603df8e8c61f2096f9adb4324dcb",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -1872,14 +1882,14 @@
       }
     },
     "codex:tests/test_rework_recovery.py": {
-      "test": "3bf42466124540b1e90387c843ed8d13c889db523b593a561de3b6b23755d1bf",
+      "test": "c6efc3654a56b7704a399a208133fef45813e351a1415628ce93447136ccf137",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
       }
     },
     "codex:tests/test_rework_recovery_integration.py": {
-      "test": "826b4b7a7cc465f26a6892d3741d8306fe4836af3a242bd45058a3f34988ebca",
+      "test": "fa5601a3e150c1b26352febf98460d03ae8ecddfeea235bb07d7b1627aec60c5",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
@@ -1942,14 +1952,14 @@
       }
     },
     "claude:tests/test_rework_recovery.py": {
-      "test": "3bf42466124540b1e90387c843ed8d13c889db523b593a561de3b6b23755d1bf",
+      "test": "c6efc3654a56b7704a399a208133fef45813e351a1415628ce93447136ccf137",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
       }
     },
     "claude:tests/test_rework_recovery_integration.py": {
-      "test": "826b4b7a7cc465f26a6892d3741d8306fe4836af3a242bd45058a3f34988ebca",
+      "test": "fa5601a3e150c1b26352febf98460d03ae8ecddfeea235bb07d7b1627aec60c5",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -1987,6 +1997,76 @@
       "test": "bb4ca0a546a017046e05d3a4a29f5bba9297bf44de41de861371ebb98835e687",
       "fixtures": {
         "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_runtime_successor.py": {
+      "test": "c1b55039095414b31d70db92bfc7fd36ce3ca0e0fccdc00b912e49b750867285",
+      "fixtures": {
+        "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_runtime_successor_channel.py": {
+      "test": "b3be75338f48cfc4fa410fe038c5cb051fbb473aa9b3b39b952f6d99300af7c6",
+      "fixtures": {
+        "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_runtime_successor_isolation.py": {
+      "test": "375070a1086bb790ab122999ca43cb55faa8684e789729ceca88cb1b7b5816a5",
+      "fixtures": {
+        "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_runtime_successor_lineage.py": {
+      "test": "d139bc646c521bdc136ae5da022c9a332f2c0b95393715944270bb445690cca0",
+      "fixtures": {
+        "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
+        "mode": 420
+      }
+    },
+    "codex:tests/test_implementation_continuity.py": {
+      "test": "12743105d36ad3cf8fc34522ed80a4404997d318aa398b1e0513815f14ffc7c0",
+      "fixtures": {
+        "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
+        "mode": 420
+      }
+    },
+    "codex:tests/test_implementation_outputs.py": {
+      "test": "74b244b48e5eb0019b5b1134c6db6b823da4afc3f320a8de4c043001e2b55267",
+      "fixtures": {
+        "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
+        "mode": 420
+      }
+    },
+    "codex:tests/test_rework_implementation_continuity.py": {
+      "test": "638b7a71c471644c1ca6d7d4a81c6aa5e94fcbfc6a25ad29a0cb552c0ebfbef5",
+      "fixtures": {
+        "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
+        "mode": 420
+      }
+    },
+    "claude:tests/test_implementation_continuity.py": {
+      "test": "12743105d36ad3cf8fc34522ed80a4404997d318aa398b1e0513815f14ffc7c0",
+      "fixtures": {
+        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
+        "mode": 420
+      }
+    },
+    "claude:tests/test_implementation_outputs.py": {
+      "test": "74b244b48e5eb0019b5b1134c6db6b823da4afc3f320a8de4c043001e2b55267",
+      "fixtures": {
+        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
+        "mode": 420
+      }
+    },
+    "claude:tests/test_rework_implementation_continuity.py": {
+      "test": "638b7a71c471644c1ca6d7d4a81c6aa5e94fcbfc6a25ad29a0cb552c0ebfbef5",
+      "fixtures": {
+        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
       }
     }
@@ -5254,8 +5334,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1221,
-    "digest": "3b22824daf82d7d12b7c093e6e04c5280f85079f1ae0a710ffc52f43968139ae"
+    "members": 1298,
+    "digest": "6d335d8ea7103c385a0b70f02e9a19beb6aaff2292b60f87ff75e8f443f7de11"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",

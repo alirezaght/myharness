@@ -57,6 +57,9 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     if implicit:
         session = native_session(repository, platform, argv)
     value = subject(repository, platform, session)
+    from .runtime_successor_store import require_ordinary_authority
+    storage(readonly=existing_run)
+    require_ordinary_authority(value)
     native_root = os.environ.get("CLAUDE_PROJECT_DIR")
     if native_root and Path(native_root).resolve() != Path(value["repository_identity"]["root"]):
         raise ValueError("native project directory differs from protected repository")

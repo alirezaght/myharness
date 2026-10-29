@@ -62,6 +62,14 @@ class NativeRuntime:
         stable_policy = digest(
             {
                 "version": 1,
+                **(
+                    {
+                        "epoch_id": execution["epoch_id"],
+                        "authority_generation": execution["authority_generation"],
+                    }
+                    if execution.get("epoch_id", "legacy-0") != "legacy-0"
+                    else {}
+                ),
                 "executable": executable,
                 "pin": initialization["pin_root"],
                 "authority": json.loads((Path(trusted) / "manifest.json").read_bytes())[
@@ -76,8 +84,25 @@ class NativeRuntime:
                 "bridge-"
                 + json.loads((Path(trusted) / "manifest.json").read_bytes())["fingerprint"]
             )
+        epoch_fence = None
+        if execution.get("epoch_id", "legacy-0") != "legacy-0":
+            from contextlib import closing
+
+            from harness.db import connect
+            from harness.execution_epochs import get_epoch
+            from harness.execution_runtime_recovery import verify_selected_authority
+
+            with closing(connect(database)) as conn:
+                epoch_fence = verify_selected_authority(execution, get_epoch(conn, execution["id"]))
+            from harness.execution_native_epoch import bind_native_boundary
+
+            epoch_fence = bind_native_boundary(registry_directory, native_root, epoch_fence)
         self.registry = PrincipalRegistry(
-            registry_directory, native_root, execution["binding"], stable_policy
+            registry_directory,
+            native_root,
+            execution["binding"],
+            stable_policy,
+            epoch_fence=epoch_fence,
         )
         profile = directory / "native-profiles" / secrets.token_hex(16)
         profile.mkdir(mode=0o700, parents=True)

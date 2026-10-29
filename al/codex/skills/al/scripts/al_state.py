@@ -56,7 +56,7 @@ def cmd_phase(a, sid):
         st.setdefault("escalations", []).append({
             "phase": phase, "reason": a.reason or "escalated by AL", "at": time.time()})
     set_phase(st, phase, agents or None, a.mode)
-    if phase in {"VERIFICATION","FINAL_VERIFICATION"}:
+    if phase == "FINAL_VERIFICATION":
         gaps=al_transitions.workflow_gaps(st)
         if gaps: al_schema.refuse("workflow prerequisites incomplete: " + str(gaps))
     if phase == "REVIEW":

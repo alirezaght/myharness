@@ -23,12 +23,25 @@ def check_profile(context_path, cwd):
     original = Path(context["repository"])
     if not (cwd.is_relative_to(original) or cwd.is_relative_to(temporary)):
         raise OSError("check cwd is outside its approved repository or disposable checkout")
+    checkout = original
+    if not cwd.is_relative_to(original):
+        checkout = next((p for p in (cwd, *cwd.parents) if (p / ".git").exists()), None)
+        if checkout is None:
+            if context.get("classification"):
+                raise ValueError(
+                    "classified check requires its actual materialized repository root"
+                )
+            checkout = cwd
+        if not checkout.is_relative_to(temporary):
+            raise ValueError("check repository escapes its disposable checkout")
     profile = prepare_operation_isolation(
-        cwd,
+        checkout,
         writable=[],
         protected=context["protected"] + [str(original / ".git"), context["al_session"]],
         hidden=context["hidden"] + [str(original / n) for n in (".codex", ".claude", ".agents")],
         directory=temporary / ("check-" + secrets.token_hex(12)),
+        classification=context.get("classification"),
+        allow_classified_read=True,
     )
     environment = safe_environment() | {
         "PATH": os.environ.get("PATH", os.defpath),
@@ -42,7 +55,48 @@ def check_profile(context_path, cwd):
 def check_popen(context_path, argv, **kwargs):
     profile, environment = check_profile(context_path, kwargs.get("cwd"))
     kwargs.pop("env", None)
-    return operation_popen(profile, argv, env=environment, **kwargs)
+    process = operation_popen(profile, argv, env=environment, **kwargs)
+    return ClassifiedCheckProcess(process, profile) if profile.classification else process
+
+
+class ClassifiedCheckProcess:
+    """Do not return successful completion or captured bytes after classification drift."""
+
+    def __init__(self, process, profile):
+        self.process, self.profile = process, profile
+        self.validated_completion = False
+
+    def __getattr__(self, name):
+        return getattr(self.process, name)
+
+    def _validate(self):
+        from harness.template_classification import validate_reference
+
+        if not self.validated_completion:
+            validate_reference(self.profile.classification, root=self.profile.repository)
+            self.validated_completion = True
+
+    @property
+    def returncode(self):
+        if self.process.returncode is not None:
+            self._validate()
+        return self.process.returncode
+
+    def poll(self):
+        code = self.process.poll()
+        if code is not None:
+            self._validate()
+        return code
+
+    def wait(self, *args, **kwargs):
+        code = self.process.wait(*args, **kwargs)
+        self._validate()
+        return code
+
+    def communicate(self, *args, **kwargs):
+        captured = self.process.communicate(*args, **kwargs)
+        self._validate()
+        return captured
 
 
 def main():

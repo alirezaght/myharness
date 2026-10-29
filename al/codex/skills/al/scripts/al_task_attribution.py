@@ -105,7 +105,8 @@ def capture_attribution(st):
         refuse('task attribution cannot be replaced')
     capture = observe(st, retain_content=True)
     data = {'schema_version': 1, 'kind': 'task-attribution-v1', 'binding': _binding(st),
-            'task_hash': al_task.task_hash(st), 'baseline_capture_ref': _save(st, capture, capture['kind']),
+            'task_hash': al_task.revision_hashes(st)[0], 'captured_requirement_hash': al_task.task_hash(st),
+            'baseline_capture_ref': _save(st, capture, capture['kind']),
             'baseline_changed_paths': S.changed_paths(st['identity']['merge_base']),
             'admitted_paths': [], 'contributions': []}
     st['task_attribution'] = {'snapshot': _save(st, data, data['kind']), 'contributions': [], 'reconciliations': []}
@@ -147,22 +148,23 @@ def _snapshot(st):
     if not isinstance(value, dict) or set(value) - {'snapshot', 'contributions', 'reconciliations'} or not {'snapshot', 'contributions'} <= set(value) or not isinstance(value['contributions'], list) or not isinstance(value.get('reconciliations', []), list):
         refuse('corrupt task attribution registry')
     snapshot = _read(st, value['snapshot'], 'task-attribution-v1')
-    if snapshot['task_hash'] != al_task.revision_hashes(st)[0]:
+    if (snapshot['task_hash'] != al_task.revision_hashes(st)[0]
+            or snapshot.get('captured_requirement_hash',snapshot['task_hash']) not in al_task.revision_hashes(st)):
         refuse('task attribution original revision mismatch')
     return snapshot
 
 
-@S.decision
-def classify_changes(st, current_capture=None):
-    if 'task_attribution' not in st:
-        return {'attributed': False, 'task_owned': [], 'unchanged_preexisting': [],
-                'externally_changed': [], 'ambiguous': [], 'overlapping_or_ambiguous': [],
-                'limitations': ['historical run has no start attribution snapshot'],
-                'discovery_paths': S.changed_paths(st['identity']['merge_base'])}
-    snapshot = _snapshot(st)
-    baseline = _map(_capture(st, snapshot['baseline_capture_ref']))
-    expected = dict(baseline)
-    owned, ambiguous = set(), set()
+def _content(row):
+    return None if row is None else {k: row.get(k) for k in ('worktree', 'physical_mode', 'child')}
+
+
+def _content_changes(before, after):
+    return sorted(p for p in before.keys() | after.keys() if _content(before.get(p)) != _content(after.get(p)))
+
+
+def _replay(st, expected, owned, ambiguous, *, content_only=False):
+    row = _content if content_only else lambda value: value
+    comparison = _content_changes if content_only else _changes
     seen = set()
     from al_task_reconciliation import Replay
     replay = Replay(st, expected, owned, ambiguous)
@@ -181,10 +183,10 @@ def classify_changes(st, current_capture=None):
         changes = _changes(before, after)
         if changes != c['changed_records']:
             refuse('invalid task contribution records')
-        for path in changes:
+        for path in comparison(before, after):
             if not _owned(path, writer['files']):
                 continue
-            if before.get(path) != expected.get(path) or c['outcome'] != 'success' or c['task_hash'] != c['ended_task_hash']:
+            if row(before.get(path)) != row(expected.get(path)) or c['outcome'] != 'success' or c['task_hash'] != c['ended_task_hash']:
                 ambiguous.add(path)
             else:
                 owned.add(path)
@@ -192,10 +194,28 @@ def classify_changes(st, current_capture=None):
             else: expected.pop(path, None)
     replay.apply(len(st['task_attribution']['contributions']))
     replay.finish()
+    return replay.external
+
+
+@S.decision
+def classify_changes(st, current_capture=None):
+    if 'inherited_lineage' in st:
+        from al_inherited_lineage import classify
+        return classify(st, current_capture)
+    if 'task_attribution' not in st:
+        return {'attributed': False, 'task_owned': [], 'unchanged_preexisting': [],
+                'externally_changed': [], 'ambiguous': [], 'overlapping_or_ambiguous': [],
+                'limitations': ['historical run has no start attribution snapshot'],
+                'discovery_paths': S.changed_paths(st['identity']['merge_base'])}
+    snapshot = _snapshot(st)
+    baseline = _map(_capture(st, snapshot['baseline_capture_ref']))
+    expected = dict(baseline)
+    owned, ambiguous = set(), set()
+    external_reconciled = _replay(st, expected, owned, ambiguous)
     current = _map(current_capture or observe(st))
     limitations = S.child_content_gaps({'files': list(current.values())})
     ambiguous.update(r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed'))
-    external = set(_changes(expected, current)) | (replay.external - owned)
+    external = set(_changes(expected, current)) | (external_reconciled - owned)
     ambiguous.update(external & owned)
     owned -= ambiguous | external
     # Contributions that reverted to start content are no longer task changes.

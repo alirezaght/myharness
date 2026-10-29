@@ -35,6 +35,23 @@ def start_dashboard(
     db_path: Path, task_id: str | None, specs: str | None, open_browser: bool
 ) -> DashboardServer:
     server = DashboardServer(db_path, task_id, specs)
+    if task_id and Path(db_path).is_file():
+        from harness.dashboard.action_readiness import probe_readiness
+        from harness.dashboard.view import open_state
+        from harness.execution_store import latest_execution
+
+        with open_state(db_path) as controller:
+            execution = latest_execution(controller.conn, task_id)
+            if execution:
+                readiness = probe_readiness(execution)
+                if not readiness["actions"].get("decision") or not readiness["actions"].get(
+                    "reconnect"
+                ):
+                    print(
+                        "dashboard actions unavailable: " + readiness["message"],
+                        file=sys.stderr,
+                        flush=True,
+                    )
     subject = f"task {task_id}" if task_id else NO_ACTIVE_TASK
     print(f"dashboard: {server.url} · {subject} · Ctrl-C stops it", flush=True)
     if open_browser and not _open(server.url):

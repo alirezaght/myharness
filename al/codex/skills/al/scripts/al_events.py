@@ -31,6 +31,14 @@ def validate(st):
         raise ValueError('foreign AL integration identity')
     if type(i['sequence']) is not int or i['sequence'] != len(i['outbox']):
         raise ValueError('corrupt AL outbox cursor')
+    from al_execution_contract import validate_authored, validate_completion
+    for tid, task in i['tasks'].items():
+        if task.get('completion_binding'):
+            validate_completion(task['completion_binding'])
+        if task.get('authored_output'):
+            validate_authored(task['authored_output'])
+            if task['authored_output']['task_id'] != tid:
+                raise ValueError('foreign authored task receipt')
     seen = set()
     for n, event in enumerate(i['outbox'], 1):
         validate_event(event)

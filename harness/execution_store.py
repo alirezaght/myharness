@@ -14,6 +14,16 @@ def get_execution(conn, execution_id):
     result = dict(row)
     for key in ("binding", "result"):
         result[key] = json.loads(result[key]) if result[key] else None
+    legacy = conn.execute(
+        "SELECT identity FROM execution_epochs WHERE execution_id=? AND epoch_id='legacy-0'",
+        (execution_id,),
+    ).fetchone()
+    if legacy:
+        from pathlib import Path
+
+        result["authority_directory"] = str(
+            Path(json.loads(legacy["identity"])["handoff_path"]).parent
+        )
     return result
 
 
@@ -64,6 +74,25 @@ def reserve_execution(
             now,
         ),
     )
+    conn.execute(
+        (
+            "INSERT INTO "
+            "execution_epochs(execution_id,epoch_id,authority_generation,state,identity,cre"
+            "ated_at) VALUES (?,'legacy-0',0,'ACTIVE',?,?)"
+        ),
+        (
+            execution_id,
+            canonical(
+                {
+                    "al_session_id": al_session_id,
+                    "al_run_id": None,
+                    "handoff_path": str(handoff_path),
+                    "handoff_hash": handoff_hash,
+                }
+            ),
+            now,
+        ),
+    )
     return get_execution(conn, execution_id), True
 
 
@@ -82,6 +111,20 @@ def bind_al_run(conn, execution_id, session_id, run_id):
     if row["al_session_id"] != session_id or row["al_run_id"] not in (None, run_id):
         raise ExecutionConflict("AL run identity conflict")
     conn.execute("UPDATE executions SET al_run_id=? WHERE id=?", (run_id, execution_id))
+    epoch = conn.execute(
+        "SELECT identity FROM execution_epochs WHERE execution_id=? AND epoch_id=?",
+        (execution_id, row["epoch_id"]),
+    ).fetchone()
+    if epoch:
+        identity = json.loads(epoch["identity"])
+        if identity.get("al_run_id") is None:
+            identity["al_run_id"] = run_id
+            conn.execute(
+                "UPDATE execution_epochs SET identity=? WHERE execution_id=? AND epoch_id=?",
+                (canonical(identity), execution_id, row["epoch_id"]),
+            )
+        elif identity["al_run_id"] != run_id:
+            raise ExecutionConflict("epoch AL source identity conflict")
 
 
 def update_owned(conn, execution_id, token, **fields):
@@ -104,28 +147,43 @@ def update_owned(conn, execution_id, token, **fields):
         raise ExecutionConflict("worker ownership was lost")
 
 
-def entity(conn, execution_id, family, identity):
+def entity(conn, execution_id, family, identity, *, epoch_id=None):
+    from harness.execution_epochs import selected_epoch
+
+    epoch_id = selected_epoch(conn, execution_id, epoch_id)
     row = conn.execute(
-        "SELECT data FROM execution_entities WHERE execution_id=? AND family=? AND id=?",
-        (execution_id, family, identity),
+        (
+            "SELECT data FROM execution_entities WHERE execution_id=? AND family=? AND "
+            "id=? AND epoch_id=?"
+        ),
+        (execution_id, family, identity, epoch_id),
     ).fetchone()
     return json.loads(row["data"]) if row else None
 
 
 def put_entity(conn, execution_id, family, identity, value):
+    from harness.execution_epochs import selected_epoch
+
+    epoch_id = selected_epoch(conn, execution_id)
     conn.execute(
-        "INSERT INTO execution_entities VALUES (?,?,?,?) "
-        "ON CONFLICT(execution_id,family,id) DO UPDATE SET data=excluded.data",
-        (execution_id, family, identity, canonical(value)),
+        "INSERT INTO execution_entities(execution_id,epoch_id,family,id,data) VALUES (?,?,?,?,?) "
+        "ON CONFLICT(execution_id,epoch_id,family,id) DO UPDATE SET data=excluded.data",
+        (execution_id, epoch_id, family, identity, canonical(value)),
     )
 
 
-def entities(conn, execution_id, family):
+def entities(conn, execution_id, family, *, epoch_id=None):
+    from harness.execution_epochs import selected_epoch
+
+    epoch_id = selected_epoch(conn, execution_id, epoch_id)
     return [
         json.loads(row["data"])
         for row in conn.execute(
-            "SELECT data FROM execution_entities WHERE execution_id=? AND family=? ORDER BY id",
-            (execution_id, family),
+            (
+                "SELECT data FROM execution_entities WHERE execution_id=? AND family=? AND "
+                "epoch_id=? ORDER BY id"
+            ),
+            (execution_id, family, epoch_id),
         )
     ]
 
@@ -135,8 +193,9 @@ def pending_deliveries(conn, execution_id):
         dict(row)
         for row in conn.execute(
             "SELECT * FROM execution_decisions "
-            "WHERE execution_id=? AND state IN ('Ready','Delivered') ORDER BY rowid",
-            (execution_id,),
+            "WHERE execution_id=? AND epoch_id=(SELECT epoch_id FROM executions WHERE id=?) "
+            "AND state IN ('Ready','Delivered') ORDER BY rowid",
+            (execution_id, execution_id),
         )
     ]
 

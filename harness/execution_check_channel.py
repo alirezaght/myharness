@@ -34,6 +34,10 @@ class CheckChannel:
         self.identifier = None
         self.closed = threading.Event()
         self.deadline = None
+        self.classification = None
+        self.classification_root = None
+        self.failure = None
+        self.validated_completion = False
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
 
@@ -57,12 +61,26 @@ class CheckChannel:
         code = self.process.poll() if self.process else None
         if code is not None:
             self.stop()
+            if not self.validated_completion:
+                self.validate_templates()
+                self.validated_completion = True
         return code
+
+    def validate_templates(self):
+        from harness.template_classification import ERROR, validate_reference
+
+        try:
+            validate_reference(self.classification, root=self.classification_root)
+        except (ValueError, OSError):
+            self.failure = ERROR
+            raise ValueError(ERROR) from None
 
     def request(self, value, descriptors):
         action = value.get("action")
         if action in {"start", "poll"}:
             self.validate()
+            if action == "poll" and self.classification and not self.validated_completion:
+                self.validate_templates()
         if action == "start":
             if self.process is not None and self.process.poll() is None:
                 raise ValueError("check channel already owns a running process")
@@ -84,6 +102,14 @@ class CheckChannel:
                 or target.is_relative_to(context["temporary"])
             ):
                 raise ValueError("check cwd outside repository/disposable checkout")
+            self.classification = context.get("classification")
+            original = Path(context["repository"])
+            self.classification_root = (
+                original
+                if target.is_relative_to(original)
+                else next((p for p in (target, *target.parents) if (p / ".git").exists()), target)
+            )
+            self.validate_templates()
             root = str(Path(__file__).resolve().parent.parent)
             program = (
                 "import sys;sys.path.insert(0," + repr(root) + ");"
@@ -102,6 +128,7 @@ class CheckChannel:
                 close_fds=True,
                 start_new_session=True,
             )
+            self.validated_completion = False
             self.identifier = secrets.token_hex(24)
             self.settled = False
             self.deadline = time.monotonic() + 900
@@ -183,3 +210,7 @@ class CheckChannel:
         except OSError:
             pass
         self.thread.join(timeout=6)
+        if self.process is not None:
+            self.observe()
+        if self.failure:
+            raise ValueError(self.failure)

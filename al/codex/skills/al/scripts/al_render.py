@@ -76,7 +76,7 @@ def rework_text(st):
     return f"Rework {rw['used']}/{rw.get('max', 2)}"+tail
 
 
-def render_line(st):
+def _render_line(st):
     r, c, m = st["review_iteration"], st["correction_iteration"], st["max_correction_iterations"]
     counter = f"Review {r} · Corrections {c}/{m}"
     if rework_text(st):
@@ -124,6 +124,41 @@ def render_line(st):
         return f"AL │ {PHASE_LABEL.get(phase, phase)}{cls} │ {agents_short(st)}{par} │ {counter}{tail}"
     me = f" │ {st['model'].capitalize()}/{st['effort'].capitalize()}" if st.get("model") else ""
     return f"AL │ {PHASE_LABEL.get(phase, phase)}{cls} │ {st['agent']}{me}{par} │ {counter}{tail}"
+
+
+def continuity_status(st):
+    """Recorded facts only: presentation never probes capability or grants approval."""
+    if 'implementation_readiness' not in st and 'operational_issues' not in st:
+        return None
+    obligations = st.get('implementation_readiness', {}).get('obligations', [])
+    pending = len(set(obligations))
+    if st.get('proof_admission', {}).get('status') == 'pending' and not pending:
+        pending = 1
+    issues = sum(v.get('state') != 'Resolved' for v in st.get('operational_issues', {}).values())
+    decisions = sum(v.get('state') != 'Resolved' and v.get('kind') in {
+        'specification', 'developer_engineering_decision'
+    } for v in st.get('integration', {}).get('blockers', {}).values())
+    if st.get('status') == 'APPROVED':
+        verification = 'approved (recorded)'
+    elif pending or issues:
+        verification = f'pending: {pending} recorded obligation(s), {issues} operational issue(s)'
+    else:
+        verification = 'approval not recorded'
+    implementation = ('scoped work may continue; authority checks apply'
+                      if st.get('status') == 'RUNNING' and st.get('spec_status') == 'SPEC_READY'
+                      else 'recorded workflow state ' + str(st.get('status', 'unknown')))
+    return {'implementation': implementation, 'verification': verification,
+            'developer_decisions': decisions, 'pending': pending, 'issues': issues}
+
+
+def render_line(st):
+    result = _render_line(st)
+    value = continuity_status(st)
+    if value is not None and st.get('status') != 'APPROVED':
+        result += ' │ verification ' + ('pending' if value['pending'] or value['issues'] else 'not approved')
+        if value['developer_decisions']:
+            result += f" │ {value['developer_decisions']} scoped developer decision(s)"
+    return result
 
 
 def render_panel(st):
@@ -195,6 +230,12 @@ def render_panel(st):
         lines.append("∥ = ran in parallel")
     if skipped or any(p in optional and p not in st["phase_timings"] for p in MAIN_PHASES):
         lines.append("– = not run on this task's path")
+    value = continuity_status(st)
+    if value is not None:
+        lines.append('Implementation: ' + value['implementation'])
+        lines.append('Verification: ' + value['verification'])
+        if value['developer_decisions']:
+            lines.append(f"Developer decisions: {value['developer_decisions']} (affected scope only)")
     lines.append(rule)
     return "\n".join(lines)
 

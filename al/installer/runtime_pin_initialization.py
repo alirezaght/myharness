@@ -24,6 +24,12 @@ KEYS = {
 
 
 def read_initialization(transaction, *, storage_root=None):
+    from .runtime_initialization_client import selected
+    client = selected()
+    if client is not None:
+        if transaction != client.transaction or client.initialization is None:
+            raise ValueError('prepared initialization cache differs')
+        return client.initialization
     reference = transaction.get("initialization")
     if not isinstance(reference, dict):
         raise ValueError("missing protected proof initialization")
@@ -66,44 +72,55 @@ def read_initialization(transaction, *, storage_root=None):
 
 
 def initialize(transaction, supplied):
-    if set(supplied) != (KEYS | LAYOUT_FIELDS if transaction["schema_version"] == 2 else KEYS):
-        raise ValueError("incomplete new-run proof initialization")
-    subject = {k: transaction[k] for k in ("repository_identity", "platform", "session_id")}
-    with coordinated(subject) as path:
-        current = read(path)
-        validate(current, subject)
-        if current != transaction or current["status"] != "RESERVED":
-            raise ValueError("proof initialization requires the exact reserved transaction")
-        if current["initialization"] is not None:
-            original = read_initialization(current)
-            comparable = dict(supplied, original_task_package=original["original_task_package"])
-            if (
-                comparable != original
-                or supplied["original_task_package"]["sha256"]
-                != original["original_task_package"]["sha256"]
-            ):
-                raise ValueError("retry differs from immutable proof initialization")
-            return current, original
-        raw = canonical(supplied) + b"\n"
-        sha = digest(raw)
-        directory = _directory(storage() / "initializations")
-        destination = directory / sha
-        if destination.exists():
-            old, metadata = capture(destination)
-            if old != raw or metadata["mode"] != 0o600:
-                raise ValueError("proof initialization collision or mode drift")
-        else:
-            write_json(destination, supplied)
-            _sync(directory)
-        reference = {
-            "id": sha,
-            "sha256": sha,
-            "kind": supplied["kind"],
-            "stored_path": str(destination),
-            "source": "protected-run-bootstrap",
-            "captured_at": time.time(),
-        }
-        current = dict(current, initialization=reference)
-        write_json(path, current)
-        _sync(path.parent)
-        return current, supplied
+    from .runtime_initialization_client import selected, initialize as channel_initialize
+    if selected() is not None:
+        return channel_initialize(transaction, supplied)
+    subject = {k: transaction[k] for k in ('repository_identity', 'platform', 'session_id')}
+    from .runtime_pin_transaction import publication_lock
+    with publication_lock(subject) as capability:
+        return initialize_locked(capability, transaction, supplied)
+
+
+def initialize_locked(capability, transaction, supplied):
+    if set(supplied) != (KEYS | LAYOUT_FIELDS if transaction['schema_version'] == 2 else KEYS):
+        raise ValueError('incomplete new-run proof initialization')
+    subject = {k: transaction[k] for k in ('repository_identity', 'platform', 'session_id')}
+    capability.validate(subject)
+    path = capability.path
+    current = read(path)
+    validate(current, subject)
+    if current != transaction or current["status"] != "RESERVED":
+        raise ValueError("proof initialization requires the exact reserved transaction")
+    if current["initialization"] is not None:
+        original = read_initialization(current)
+        comparable = dict(supplied, original_task_package=original["original_task_package"])
+        if (
+            comparable != original
+            or supplied["original_task_package"]["sha256"]
+            != original["original_task_package"]["sha256"]
+        ):
+            raise ValueError("retry differs from immutable proof initialization")
+        return current, original
+    raw = canonical(supplied) + b"\n"
+    sha = digest(raw)
+    directory = _directory(storage() / "initializations")
+    destination = directory / sha
+    if destination.exists():
+        old, metadata = capture(destination)
+        if old != raw or metadata["mode"] != 0o600:
+            raise ValueError("proof initialization collision or mode drift")
+    else:
+        write_json(destination, supplied)
+        _sync(directory)
+    reference = {
+        "id": sha,
+        "sha256": sha,
+        "kind": supplied["kind"],
+        "stored_path": str(destination),
+        "source": "protected-run-bootstrap",
+        "captured_at": time.time(),
+    }
+    current = dict(current, initialization=reference)
+    write_json(path, current)
+    _sync(path.parent)
+    return current, supplied

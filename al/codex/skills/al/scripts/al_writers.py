@@ -64,8 +64,8 @@ def cmd_writer(a,sid):
     st=al_store.load(sid); writers=st['writers']
     if a.action == 'start':
         from al_rework_recovery_contract import guard
-        guard(st)
-        from al_new_origin import require_admitted, validate
+        guard(st,implementation=True)
+        from al_new_origin import require_implementation_ready, validate
         degraded = getattr(a, 'degraded', False)
         if degraded:
             validate(st)
@@ -73,7 +73,7 @@ def cmd_writer(a,sid):
                 refuse('degraded tracking requires pending proof admission and an explicit reason')
             if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
                 refuse('degraded tracking still requires SPEC_READY and classification')
-        else: require_admitted(st)
+        else: require_implementation_ready(st)
         phases = WRITING | {'PLANNING', 'PSEUDOCODE'} if degraded else WRITING
         if st['status'] != 'RUNNING' or st['phase'] not in phases: refuse('writer admission requires a writing phase or explicit degraded planning tracking')
         if not valid_id(a.id) or a.id in writers: refuse('duplicate/invalid writer id')
@@ -99,8 +99,9 @@ def cmd_writer(a,sid):
         for e in st['evidence']['entries']:
             if (e['status']=='RUNNING' or e.get('interrupted')) and not e.get('reconciliation'):
                 if shared or '.' in e['scope'] or al_parallel.overlaps(files,e['scope']) or al_parallel.shared_state_hits([shlex.join(e['argv'])]): refuse('writer overlaps check '+e['id'])
-        from al_gate_recovery import complete
-        complete(st)
+        if 'integration' in st:
+            from al_execution_outputs import invalidate_for_write
+            invalidate_for_write(st, a.task, files)
         from al_task_attribution import begin_contribution
         before = begin_contribution(st, {'id':a.id,'files':files})
         writers[a.id]={'id':a.id,'role':a.role,'files':files,'commands':commands,'phase':st['phase'],'started_at':time.time(),'state':'ACTIVE', **({'task':a.task,'agent':a.agent} if 'integration' in st else {})}

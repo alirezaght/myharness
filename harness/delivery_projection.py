@@ -10,6 +10,11 @@ def acknowledge_correction(conn, execution, payload):
     ).fetchone()
     if not row or row["state"] != "Admitted":
         raise ValueError("unadmitted or duplicate terminal correction acknowledgement")
+    if row["epoch_id"] != execution["epoch_id"]:
+        raise ValueError("stale_epoch: historical correction acknowledgement")
+    from harness.delivery_store import get_delivery, require_delivery_epoch
+
+    require_delivery_epoch(conn, get_delivery(conn, execution["id"]))
     request = loads(row["request"], max_bytes=4194304)
     expected = {
         "request_id": request["id"],

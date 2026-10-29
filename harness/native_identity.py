@@ -21,6 +21,7 @@ class NativeIdentity:
     role: str | None
     version: str
     source: object
+    created_at: str | None = None
 
     def to_dict(self):
         return asdict(self)
@@ -83,8 +84,10 @@ def read_native_identity(native_root, thread_id):
         or role is not None
     ):
         raise ValueError("unsupported native root provenance")
-    return NativeIdentity(thread_id, session, parent, role, value["cli_version"], source)
+    return NativeIdentity(
+        thread_id, session, parent, role, value["cli_version"], source, value.get("timestamp")
+    )
 
 
 def identity_digest(identity):
-    return digest(identity.to_dict())
+    return digest({key: value for key, value in identity.to_dict().items() if key != "created_at"})

@@ -62,9 +62,41 @@ def binding(st, occurrence=None):
             'task_hash':al_task.task_hash(st),'history_hash':history(st),
             'occurrence_id':occurrence['id'] if occurrence else None}
 
-def guard(st):
+def continuity(st):
+    records = st.get('rework_implementation_continuity',[])
+    if not isinstance(records,list):refuse('invalid implementation continuity history')
     r=st.get('rework_recovery')
-    if r and r['pending']:refuse('rework Architect reassessment pending; use rework-recovery packet/decide')
+    if not r:return False
+    for row in records:
+        J.closed(row,{'schema_version','kind','origin','pending','stop','history_hash','at'},'implementation continuity record')
+        if row['schema_version']!=1 or row['kind']!='implementation-continuity-v1' or row['origin']!=origin(st):
+            refuse('foreign implementation continuity record')
+        timestamp(row['at']);sha(row['history_hash'])
+    return bool(records and records[-1]['pending']==r['pending'] and records[-1]['stop']==r['stop']
+                and records[-1]['history_hash']==history(st))
+
+
+def guard(st, *, implementation=False):
+    r=st.get('rework_recovery')
+    if not r:return
+    validate(st)
+    if implementation and (r['pending'] or r['stop']) and not continuity(st):
+        # This records a continuation of authorized work, never another bounded credit.
+        if st.get('spec_status')!='SPEC_READY' or st.get('classification') not in {'SMALL','STANDARD','COMPLEX'}:
+            refuse('defined implementation requires SPEC_READY and classification')
+        from al_writers import operation_gaps
+        if operation_gaps(st):refuse('implementation continuation requires settled operations')
+        import time
+        st.setdefault('rework_implementation_continuity',[]).append({
+            'schema_version':1,'kind':'implementation-continuity-v1','origin':copy.deepcopy(origin(st)),
+            'pending':r['pending'],'stop':copy.deepcopy(r['stop']),'history_hash':history(st),'at':time.time()})
+        if st['status']=='STOPPED_WITH_BLOCKERS' and r['stop']:
+            st['status']='RUNNING'
+        if st['phase']=='REWORK_REASSESSMENT' or r['stop']:
+            from al_store import set_phase
+            set_phase(st,'IMPLEMENTATION',['al-engineer'])
+    if r['pending'] and not continuity(st):
+        refuse('bounded reassessment pending; ordinary scoped implementation may continue')
 
 def lineage(st):
     if 'rework_recovery' not in st:return None
@@ -222,10 +254,10 @@ def validate(st):
                 if d['kind']=='declined' and not any(v[0]=='decisions' and v[1]['occurrence_id']==o['id'] and v[1]['decision']=='decline' for v in accepted.values()):refuse('decline disposition lacks decision')
     if r['pending'] is not None:
         o=occurrences.get(r['pending'])
-        if not o or o['dispositions'] or st['phase']!='REWORK_REASSESSMENT':refuse('pending recovery state mismatch')
+        if not o or o['dispositions'] or (st['phase']!='REWORK_REASSESSMENT' and not continuity(st)):refuse('pending recovery state mismatch')
     if r['stop'] is not None:
         stop=J.closed(r['stop'],{'occurrence_id','checkpoint_id','kind','reason'},'active recovery stop');o=occurrences.get(stop['occurrence_id'])
-        if not o or not any({k:v for k,v in d.items() if k!='checkpoint'}==stop for d in o['dispositions']) or st.get('stopping_checkpoint')!=stop['checkpoint_id'] or st['status']!='STOPPED_WITH_BLOCKERS' or r['pending'] is not None:refuse('active stopping checkpoint mismatch')
+        if not o or not any({k:v for k,v in d.items() if k!='checkpoint'}==stop for d in o['dispositions']) or st.get('stopping_checkpoint')!=stop['checkpoint_id'] or (st['status']!='STOPPED_WITH_BLOCKERS' and not continuity(st)) or r['pending'] is not None:refuse('active stopping checkpoint mismatch')
 
 
 def prepare_save(st, previous):
@@ -241,6 +273,8 @@ def prepare_save(st, previous):
             if i>=len(new['occurrences']):refuse('recovery occurrence removed')
             n=new['occurrences'][i]
             if {k:v for k,v in o.items() if k not in {'packets','dispositions'}}!={k:v for k,v in n.items() if k not in {'packets','dispositions'}} or n['packets'][:len(o['packets'])]!=o['packets'] or n['dispositions'][:len(o['dispositions'])]!=o['dispositions']:refuse('recovery occurrence binding is immutable')
+        prior_continuity=previous.get('rework_implementation_continuity',[])
+        if st.get('rework_implementation_continuity',[])[:len(prior_continuity)]!=prior_continuity:refuse('implementation continuity history is append-only')
         before=previous['rework']['history'];after=st['rework']['history']
         if len(after)<len(before):refuse('rework consumption removed')
         for a,b in zip(before,after):

@@ -1,7 +1,10 @@
 # AL routing — the spec gate, the classification, and the three paths
 
-Routing is decided ONCE, by AL-Architect, in `MODE: PLAN`. AL executes the
-decision; it does not re-derive it and does not add stages "to be safe".
+Routing reflects the remaining design risk after specification clarification and
+code inspection. Preserve explicit developer routing choices. Reassess only when
+new material design evidence warrants it; tooling trouble and repository size
+never justify extra stages. Keep local established-pattern work on the lightest
+supported path and reuse agent context.
 
 ## 1. The specification validity gate
 
@@ -18,7 +21,8 @@ the codebase.
 - `SPEC_BLOCKED` ⇒ `"${STATE[@]}" spec-gate SPEC_BLOCKED --reason "<short>"` (exit 8).
   Print the Architect's `BLOCKING_QUESTIONS` (each with its `RECOMMENDED` answer)
   and `WHAT_IS_CLEAR` verbatim, finish
-  with `STATUS: SPEC_BLOCKED`, and **implement nothing**. Never convert a
+  with `STATUS: SPEC_BLOCKED` for the affected scope; continue independently
+  defined authorized work. Never convert a
   blocking question into an assumption, and never invent a major requirement to
   keep the run moving.
 
@@ -42,13 +46,16 @@ every task".
 ## 3. The three paths
 
 ### SMALL
-`Architect → (Engineer OR Builder) → Verify → Architect review`
+`Inspect/clarify → (Engineer OR Builder) → focused tests → independent Architect review`
 
 For small bug fixes, localised behaviour changes, straightforward refactors,
 small API changes, one/few-file changes, well-understood existing patterns,
 little algorithmic uncertainty.
 
-- Designer is skipped. No pseudocode is produced.
+- Designer is skipped. No pseudocode is produced. For a clear local pattern, the
+  supervisor records the ready specification, source-backed risk assessment and
+  brief implementation guidance; a separate pre-write planning agent/report is
+  unnecessary. Keep required final runtime proof and independent review honest.
 - ONE implementer, chosen from the work itself: `al-engineer` for a
   reasoning-heavy bug or correctness-sensitive change, `al-builder` for routine
   implementation. `both` only when both are genuinely needed — and then

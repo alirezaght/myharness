@@ -12,7 +12,7 @@ EXCEPTION={'PSEUDOCODE','PLAN_CONFLICT','IMPLEMENTATION','FINALIZATION','REWORK'
 
 def marker(st):
     obligation=st.get('gate_recovery')
-    if not isinstance(obligation,dict) or not obligation or st['status']!='RUNNING' or obligation.get('phase')!=st['phase']:refuse('gate recovery does not match retained phase')
+    if not isinstance(obligation,dict) or not obligation or st['status']!='RUNNING' or obligation.get('continuation_phase', obligation.get('phase'))!=st['phase']:refuse('gate recovery does not match retained phase')
     ref=next((r for r in st.get('checkpoints',[]) if r['id']==obligation.get('checkpoint')),None)
     if not ref:refuse('gate recovery checkpoint missing')
     data=A.read_json(ref)
@@ -20,6 +20,28 @@ def marker(st):
     hashes={r['sha256'] for r in st.get('gate_manifests',[])}
     if obligation.get('superseded_manifest') is not None and obligation['superseded_manifest'] not in hashes:refuse('superseded recovery manifest missing')
     if not isinstance(obligation.get('reasons'),list) or not obligation['reasons']:refuse('gate recovery reason missing')
+    if 'continuation_phase' in obligation and not obligation.get('continuations'):
+        refuse('recovery continuation provenance missing')
+    previous = obligation['phase']
+    for step in obligation.get('continuations', []):
+        index = step.get('occurrence')
+        if (type(index) is not int or not 0 < index < len(st['phase_occurrences'])
+                or step.get('from') != previous
+                or st['phase_occurrences'][index]['phase'] != step.get('to')
+                or st['phase_occurrences'][index-1]['phase'] != step.get('from')
+                or st['phase_occurrences'][index-1]['ended'] is None):
+            refuse('invalid recovery continuation provenance')
+        from al_transitions import COMPLETION_EDGES
+        allowed = COMPLETION_EDGES.get(step['from'], set()) | ({'PLAN_CONFLICT'} if step['from'] == 'PSEUDOCODE' else set())
+        if step.get('command', 'phase') == 'rework':
+            allowed = {'REWORK'} if step['from'] in {'FINALIZATION', 'VERIFICATION'} else set()
+        elif step.get('command', 'phase') not in {'phase', 'correction'}:
+            refuse('invalid recovery continuation command')
+        if step['to'] not in allowed:
+            refuse('invalid recovery continuation edge')
+        previous = step['to']
+    if obligation.get('continuations') and obligation['continuations'][-1]['to'] != obligation.get('continuation_phase'):
+        refuse('invalid recovery continuation phase')
     return obligation
 
 
@@ -85,4 +107,12 @@ def amend(st,sid,amendment,binding):
         'status':'SUPERSEDED_BY_AMENDMENT','amendment':{'id':amendment['id'],'artifact':amendment['artifact']},
         'old_checkpoint':old_ref,'new_checkpoint':copy.deepcopy(new_ref),
         'marker':previous,'at':time.time()})
-    st['gate_recovery']=dict(previous,checkpoint=new_ref['id'],phase='PLANNING',replacement_manifest=None)
+    retained = {k: v for k, v in previous.items() if k not in {'continuation_phase', 'continuations'}}
+    st['gate_recovery']=dict(retained,checkpoint=new_ref['id'],phase='PLANNING',replacement_manifest=None)
+
+
+def continue_phase(st, destination, command):
+    value = marker(st)
+    value.setdefault('continuations', []).append({'from': st['phase'], 'to': destination, 'command': command,
+                                                'occurrence': len(st['phase_occurrences'])})
+    value['continuation_phase'] = destination

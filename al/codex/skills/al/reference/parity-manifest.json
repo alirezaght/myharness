@@ -40,6 +40,7 @@
     "al_execution_contract.py",
     "al_execution_corrections.py",
     "al_execution_decisions.py",
+    "al_execution_outputs.py",
     "al_execution_projection.py",
     "al_execution_receipts.py",
     "al_execution_tasks.py",
@@ -62,11 +63,14 @@
     "al_gitlinks.py",
     "al_guards.py",
     "al_harness_process.py",
+    "al_implementation.py",
+    "al_inherited_lineage.py",
     "al_inspection.py",
     "al_interpreters.py",
     "al_isolation.py",
     "al_ledger.py",
     "al_new_origin.py",
+    "al_operational_issues.py",
     "al_package_policy.py",
     "al_parallel.py",
     "al_phases.py",
@@ -148,6 +152,7 @@
     "examples/service-coverage.json",
     "execution-integration.md",
     "gates.md",
+    "implementation-continuity.md",
     "parity-manifest.json",
     "performance.md",
     "replay.md",
@@ -170,6 +175,7 @@
     "schemas/architect-report-v1.json",
     "schemas/architect-report.json",
     "schemas/artifact-reference.json",
+    "schemas/authored-output-input.json",
     "schemas/behavior-consumer-inventory.json",
     "schemas/blocker.json",
     "schemas/checkpoint.json",
@@ -178,6 +184,7 @@
     "schemas/execution-decision-v1.json",
     "schemas/execution-event-v1.json",
     "schemas/gate-manifest.json",
+    "schemas/operational-issue.json",
     "schemas/replay-fixture.json",
     "schemas/replay-result.json",
     "schemas/repository-facts.json",
@@ -229,13 +236,15 @@
       "distribution.md",
       "handoffs.md",
       "parallelism.md",
-      "routing.md"
+      "routing.md",
+      "workflow.md"
     ],
     "reference_rationales": {
       "distribution.md": "The command must select the target harness platform (`codex` or `claude`); every registry, provenance, preservation, and recovery rule is otherwise shared.",
       "handoffs.md": "Harness handoffs use platform-specific repository-policy names, task-argument placeholders, and continuation APIs; review-stage isolation, typed approved inputs, inspected hashes, and evidence contracts are shared.",
       "parallelism.md": "The available agent invocation, continuation, isolation, and progress APIs differ by harness; write ownership, non-overlapping scope, failure handling, and no-mid-write interruption policy are shared.",
-      "routing.md": "The user-facing skill invocation name is `$al` in Codex and `/al` in Claude; classification and execution paths are shared."
+      "routing.md": "The user-facing skill invocation name is `$al` in Codex and `/al` in Claude; classification and execution paths are shared.",
+      "workflow.md": "The detailed workflow retains platform-specific native invocation, role configuration and progress APIs; shared risk routing, implementation continuity and review requirements remain in common references."
     },
     "native_adapter_rationales": {
       "al_native_sessions.py": "This adapter maps Claude conversation identities to immutable AL run IDs and serializes per-conversation pointer/statusline behavior; Codex uses its repository-scoped current-run pointer."

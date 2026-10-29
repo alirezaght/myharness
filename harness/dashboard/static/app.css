@@ -2,12 +2,16 @@
   color-scheme: light dark;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
 }
 
 body {
   margin: 0 auto;
   max-width: 72rem;
-  padding: 1.5rem;
+  padding: clamp(1rem, 3vw, 2rem);
+  color: CanvasText;
+  background: Canvas;
 }
 
 header {
@@ -20,7 +24,7 @@ header {
 }
 
 h1 {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   margin: 0;
 }
 
@@ -55,6 +59,162 @@ main {
   align-items: start;
 }
 
+#task > section,
+#task > #execution,
+#task > #delivery {
+  min-width: 0;
+  margin: 1rem 0;
+  padding: clamp(0.85rem, 2vw, 1.25rem);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, CanvasText 2.5%, Canvas);
+  box-shadow: 0 1px 2px color-mix(in srgb, CanvasText 7%, transparent);
+}
+
+#task > h2 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+#task > .task-metadata dl {
+  grid-template-columns: max-content minmax(0, 1fr);
+  margin: 0.75rem 0 1.25rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.65rem;
+  background: color-mix(in srgb, currentColor 4%, Canvas);
+}
+
+.task-metadata {
+  margin: 0.75rem 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.6rem;
+  background: color-mix(in srgb, currentColor 3%, Canvas);
+}
+
+.task-metadata summary {
+  font-weight: 650;
+}
+
+.status-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  border: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.status-summary article {
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, currentColor 4%, Canvas);
+}
+
+.status-summary h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.status-summary p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.diagram-provenance {
+  font-weight: 650;
+}
+
+.diagram-proposals {
+  margin-block: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px dashed color-mix(in srgb, #a66300 55%, currentColor);
+  border-inline-start: 0.25rem solid #a66300;
+  border-radius: 0.55rem;
+  background: color-mix(in srgb, #a66300 8%, Canvas);
+}
+
+.diagram-proposals h4 {
+  margin-top: 0;
+}
+
+.diagram-proposals p,
+.diagram-guidance {
+  overflow-wrap: anywhere;
+}
+
+.diagram-guidance {
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, #2463a6 9%, Canvas);
+}
+
+.execution-action {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 26rem;
+}
+
+.execution-action small {
+  max-width: 42rem;
+  line-height: 1.4;
+  color: color-mix(in srgb, CanvasText 78%, Canvas);
+}
+
+.execution-action-results {
+  width: 100%;
+}
+
+.execution-action-results p,
+.saved-decision-details p {
+  overflow-wrap: anywhere;
+}
+
+.saved-decision-details {
+  margin-block: 0.4rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.5rem;
+}
+
+.saved-decision-details summary,
+.execution-identities-disclosure summary {
+  font-weight: 650;
+}
+
+.execution-identities-disclosure {
+  margin-block: 0.65rem;
+}
+
+button,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  background: color-mix(in srgb, currentColor 7%, Canvas);
+  color: CanvasText;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+:focus-visible {
+  outline: 3px solid #286fc2;
+  outline-offset: 3px;
+}
+
 main[data-stale] > :not(nav) {
   opacity: 0.6;
 }
@@ -70,6 +230,14 @@ nav ul,
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+nav#tasks {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, CanvasText 2.5%, Canvas);
 }
 
 nav li,
@@ -219,6 +387,7 @@ figure.diagram {
 #execution,
 #delivery,
 .execution-summary,
+.execution-verification,
 .execution-progress,
 .execution-agents,
 .execution-graph,
@@ -227,6 +396,11 @@ figure.diagram {
 .execution-logs {
   min-width: 0;
   max-width: 100%;
+}
+
+.execution-verification p,
+.execution-verification li {
+  overflow-wrap: anywhere;
 }
 
 #execution {
@@ -472,6 +646,30 @@ progress {
   .execution-actions > *,
   .execution-actions .execution-reconcile {
     width: 100%;
+  }
+
+  .status-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #task > .task-metadata dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.1rem;
+  }
+
+  #task > .task-metadata dl dd:not(:last-child) {
+    margin-bottom: 0.45rem;
+  }
+
+  .execution-action {
+    max-width: none;
+  }
+
+  nav#tasks ul {
+    max-height: min(14rem, 35vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-inline-end: 0.4rem;
   }
 }
 

@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import shutil
+import stat
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -128,6 +129,9 @@ def prepare_isolation(execution, envelope, initialization, provider):
         Path.home() / ".kube",
     ):
         policy.append(f"(deny file-read* (subpath {_literal(path)}))")
+    policy.append(
+        f"(deny file-read* (subpath {_literal(sealed / 'operations/private-report-spools')}))"
+    )
     raw = "\n".join(policy) + "\n"
     destination = Path(profile.policy)
     if destination.exists() and destination.read_text() != raw:
@@ -206,6 +210,8 @@ class OperationIsolation:
     session_directory: str | None
     coordination_lock: str | None
     system: str
+    classification: dict | None = None
+    scratch_identity: tuple[int, int] = ()
 
 
 def prepare_operation_isolation(
@@ -217,13 +223,36 @@ def prepare_operation_isolation(
     directory,
     session_directory=None,
     coordination_lock=None,
+    classification=None,
+    allow_classified_read=False,
 ):
     """Scope an operation tree, leaving native authentication infrastructure outside."""
     repository = Path(repository).resolve(strict=True)
-    directory = Path(directory).resolve()
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    from harness.template_classification import validate_reference
+
+    classified = validate_reference(classification, root=repository)
+    directory = Path(directory).absolute()
+    if (
+        ".." in directory.parts
+        or any(p.is_symlink() for p in (directory, *directory.parents))
+        or directory.is_relative_to(repository)
+    ):
+        raise ValueError("operation scratch must be fresh, unaliased and outside repository writes")
+    collisions = [
+        Path(p).absolute()
+        for p in [*protected, *classified]
+        if Path(p).absolute() == directory or Path(p).absolute().is_relative_to(directory)
+    ]
+    if collisions or any(
+        directory == Path(p).absolute() for p in (session_directory, coordination_lock) if p
+    ):
+        raise ValueError("operation scratch collides with protected authority")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=False)
+    if directory.stat().st_uid != os.getuid() or stat.S_IMODE(directory.stat().st_mode) != 0o700:
+        raise ValueError("operation scratch ownership is invalid")
     temporary = directory / "tmp"
-    temporary.mkdir(mode=0o700, exist_ok=True)
+    temporary.mkdir(mode=0o700)
+    scratch_info = temporary.stat()
     paths = []
     for item in writable:
         path = Path(item)
@@ -245,7 +274,7 @@ def prepare_operation_isolation(
         if path.is_file() and not path.is_symlink() and path.stat().st_nlink != 1:
             raise ValueError("repository hardlink aliases require reconciliation before operations")
     fixed_protected = [repository / name for name in (".git", ".codex", ".claude", ".agents")]
-    protected = [str(Path(p).resolve()) for p in [*protected, *fixed_protected]]
+    protected = [str(Path(p).resolve()) for p in [*protected, *fixed_protected, *classified]]
     hidden = [str(Path(p).resolve()) for p in hidden]
     hidden.extend(
         str(p.resolve())
@@ -257,6 +286,8 @@ def prepare_operation_isolation(
         )
         and not p.is_symlink()
     )
+    if allow_classified_read:
+        hidden = [p for p in hidden if p not in classified]
     home = Path.home()
     hidden.extend(
         str(p.resolve())
@@ -267,6 +298,9 @@ def prepare_operation_isolation(
             home / ".aws",
             home / ".config/gcloud",
             home / ".config/gh",
+            home / ".docker/config.json",
+            home / ".azure",
+            home / ".kube",
             home / ".git-credentials",
             home / ".netrc",
             home / "Library/Keychains",
@@ -289,6 +323,8 @@ def prepare_operation_isolation(
         session,
         coordination_lock,
         platform.system(),
+        classification,
+        (scratch_info.st_dev, scratch_info.st_ino),
     )
     if profile.system == "Darwin":
         if not shutil.which("sandbox-exec"):
@@ -306,11 +342,16 @@ def prepare_operation_isolation(
             "(allow process-info* (target self))",
             '(allow file-write* (literal "/dev/null"))',
         ]
-        for path in [*paths, str(temporary)]:
+        for path in paths:
             exclusions = " ".join(f"(require-not (subpath {_literal(p)}))" for p in protected)
             rules.append(
                 f"(allow file-write* (require-all (subpath {_literal(path)}) {exclusions}))"
             )
+        descendants = [p for p in protected if Path(p).is_relative_to(temporary)]
+        exclusions = " ".join(f"(require-not (subpath {_literal(p)}))" for p in descendants)
+        rules.append(
+            f"(allow file-write* (require-all (subpath {_literal(temporary)}) {exclusions}))"
+        )
         if session:
             rules.append(f"(allow file-write* (subpath {_literal(session)}))")
         if coordination_lock:
@@ -367,9 +408,15 @@ def operation_argv(profile, argv):
         command.extend(["--bind", profile.coordination_lock, profile.coordination_lock])
     if profile.session_directory:
         command.extend(["--bind", profile.session_directory, profile.session_directory])
-    command.extend(
-        ["--bind", profile.temporary, profile.temporary, "--chdir", profile.repository, "--", *argv]
-    )
+    command.extend(["--bind", profile.temporary, profile.temporary])
+    for path in profile.protected:
+        if Path(path).is_relative_to(profile.temporary):
+            if not Path(path).exists():
+                raise ValueError(
+                    "Linux scratch protected descendant is absent; refusing write grant"
+                )
+            command.extend(["--ro-bind", path, path])
+    command.extend(["--chdir", profile.repository, "--", *argv])
     return command
 
 
@@ -422,14 +469,93 @@ def operation_command(profile, argv):
         os.close(descriptor)
 
 
+def _validate_scratch(profile):
+    path = Path(profile.temporary)
+    if any(p.is_symlink() for p in (path, *path.parents)):
+        raise ValueError("operation scratch alias refused")
+    info = path.stat()
+    if (
+        (profile.scratch_identity and (info.st_dev, info.st_ino) != profile.scratch_identity)
+        or info.st_uid != os.getuid()
+        or stat.S_IMODE(info.st_mode) != 0o700
+    ):
+        raise ValueError("operation scratch identity or ownership changed")
+
+
 def operation_popen(profile, argv, **kwargs):
+    _validate_scratch(profile)
     with operation_command(profile, argv) as (command, descriptors):
         extra = kwargs.pop("pass_fds", ())
         return subprocess.Popen(command, pass_fds=(*descriptors, *extra), **kwargs)
 
 
 def operation_exec(profile, argv, environment):
+    _validate_scratch(profile)
     with operation_command(profile, argv) as (command, descriptors):
         for descriptor in descriptors:
             os.set_inheritable(descriptor, True)
         os.execvpe(command[0], command, environment)
+
+
+def describe_prepared_start(context, resources, notification):
+    """Data only. The managed issuer independently reconstructs and validates every grant."""
+    from harness.template_classification import validate_prepared_classification
+
+    root = Path(context["repository"])
+    classified = validate_prepared_classification(resources["classification_ref"], context)
+    hidden = set()
+    names = {
+        ".netrc",
+        ".git-credentials",
+        ".mcp.json",
+        ".npmrc",
+        ".pypirc",
+        ".ssh",
+        ".aws",
+        "auth.json",
+        ".credentials.json",
+    }
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        hidden.update(
+            str(Path(directory) / name)
+            for name in [*dirs, *files]
+            if name.startswith(".env") or name in names
+        )
+    home = Path.home()
+    hidden.update(
+        str(home / p)
+        for p in (
+            ".codex",
+            ".claude",
+            ".ssh",
+            ".aws",
+            ".config/gcloud",
+            ".config/gh",
+            ".docker/config.json",
+            ".azure",
+            ".kube",
+            ".netrc",
+            ".git-credentials",
+            "Library/Keychains",
+        )
+    )
+    successor = context["successor"]
+    runtime = root / ("." + successor["platform"]) / "al-runtime/sessions" / successor["session_id"]
+    return {
+        "schema_version": 1,
+        "repository": str(root),
+        "successor_runtime": str(runtime),
+        "scratch": notification["scratch"],
+        "protected_paths": notification["protected_paths"],
+        "hidden_paths": sorted(hidden - set(classified)),
+        "classified_paths": sorted(classified),
+        "approved_files": sorted(
+            [
+                resources["handoff_ref"]["path"],
+                resources["package_ref"]["path"],
+                notification["lineage_path"],
+                notification["requirements_path"],
+            ]
+        ),
+    }

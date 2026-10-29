@@ -4,26 +4,59 @@ from harness.db import transaction, utcnow
 from harness.execution_authority import require_execution_authority
 from harness.execution_models import TERMINAL, ExecutionConflict
 from harness.execution_projection import execution_view
-from harness.execution_store import get_execution, process_alive
-from harness.execution_worker import launch_worker, worker_lock
+from harness.execution_store import process_alive
+from harness.execution_worker import WorkerOwnedConflict, launch_worker, worker_lock
 
 
-def reconnect_execution(controller, execution_id):
+def reconnect_execution(
+    controller, execution_id, *, expected_epoch_id=None, expected_authority_generation=None
+):
     conn = controller.conn
-    saved = get_execution(conn, execution_id)
+    from harness.execution_epochs import require_active_epoch
+
+    saved = require_active_epoch(
+        conn,
+        execution_id,
+        expected_epoch_id=expected_epoch_id,
+        expected_authority_generation=expected_authority_generation,
+        mutation=True,
+    )
     if saved["status"] in TERMINAL:
         return execution_view(conn, execution_id)
     require_execution_authority(controller, execution_id)
     try:
-        launch_worker(conn, execution_id, mode="reconnect")
-    except ExecutionConflict:
-        pass  # a live owner already polls; reconnect only reads its persisted projection
+        launch_worker(
+            conn,
+            execution_id,
+            mode="reconnect",
+            expected_epoch_id=saved["epoch_id"],
+            expected_authority_generation=saved["authority_generation"],
+        )
+    except WorkerOwnedConflict:
+        # Ownership contention permits observation, never a stale epoch mutation request.
+        require_active_epoch(
+            conn,
+            execution_id,
+            expected_epoch_id=saved["epoch_id"],
+            expected_authority_generation=saved["authority_generation"],
+            mutation=True,
+        )
     return execution_view(conn, execution_id)
 
 
-def resume_execution(controller, execution_id):
+def resume_execution(
+    controller, execution_id, *, expected_epoch_id=None, expected_authority_generation=None
+):
     conn = controller.conn
-    saved = get_execution(conn, execution_id)
+    from harness.execution_epochs import require_active_epoch
+
+    saved = require_active_epoch(
+        conn,
+        execution_id,
+        expected_epoch_id=expected_epoch_id,
+        expected_authority_generation=expected_authority_generation,
+        mutation=True,
+    )
     if saved["status"] in TERMINAL:
         return execution_view(conn, execution_id)
     require_execution_authority(controller, execution_id, operation="resume")
@@ -40,11 +73,26 @@ def resume_execution(controller, execution_id):
             raise ExecutionConflict(
                 "recorded native process is live or its outcome requires explicit reconciliation"
             )
-    launch_worker(conn, execution_id, mode="resume")
+    launch_worker(
+        conn,
+        execution_id,
+        mode="resume",
+        expected_epoch_id=saved["epoch_id"],
+        expected_authority_generation=saved["authority_generation"],
+    )
     return execution_view(conn, execution_id)
 
 
-def reconcile_execution(controller, execution_id, *, outcome, evidence, native_id=None):
+def reconcile_execution(
+    controller,
+    execution_id,
+    *,
+    outcome,
+    evidence,
+    native_id=None,
+    expected_epoch_id=None,
+    expected_authority_generation=None,
+):
     if (
         outcome not in {"not-started", "exited"}
         or not isinstance(evidence, str)
@@ -54,11 +102,29 @@ def reconcile_execution(controller, execution_id, *, outcome, evidence, native_i
             "reconciliation requires explicit outcome and substantive inspected evidence"
         )
     conn = controller.conn
-    saved = get_execution(conn, execution_id)
+    from harness.execution_epochs import require_active_epoch
+
+    saved = require_active_epoch(
+        conn,
+        execution_id,
+        expected_epoch_id=expected_epoch_id,
+        expected_authority_generation=expected_authority_generation,
+        mutation=True,
+    )
     if saved["status"] in TERMINAL:
         return execution_view(conn, execution_id)
     require_execution_authority(controller, execution_id)
     with worker_lock(saved), transaction(conn):
+        saved = require_active_epoch(
+            conn,
+            execution_id,
+            expected_epoch_id=saved["epoch_id"],
+            expected_authority_generation=saved["authority_generation"],
+            mutation=True,
+        )
+        if saved["status"] in TERMINAL:
+            return execution_view(conn, execution_id)
+        require_execution_authority(controller, execution_id)
         rows = conn.execute(
             "SELECT * FROM execution_attempts WHERE execution_id=? ORDER BY rowid", (execution_id,)
         ).fetchall()

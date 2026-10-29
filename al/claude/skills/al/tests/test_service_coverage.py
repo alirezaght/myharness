@@ -34,7 +34,7 @@ def seed(repo):
 
 
 def start(cli):
-    invoke(cli,'start','--spec','Prove complete service coverage before implementation admission.')
+    invoke(cli,'start','--spec','Implement the scoped change and prove service coverage before verified completion.')
     invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     return json.loads(cli('show')[1])
 

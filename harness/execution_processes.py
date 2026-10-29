@@ -1,5 +1,6 @@
 """Owned, bounded operation subprocesses; native credentials never enter them."""
 
+import codecs
 import os
 import secrets
 import selectors
@@ -10,7 +11,7 @@ import time
 
 from harness.command_safety import safe_environment
 from harness.execution_isolation import operation_popen
-from harness.execution_logs import StreamRedactor
+from harness.execution_logs import MAX_TEXT, StreamRedactor
 
 
 class ProcessManager:
@@ -31,9 +32,14 @@ class ProcessManager:
         environment=None,
         max_timeout=300,
         pass_fds=(),
+        completion=None,
+        report=None,
     ):
         if type(timeout) is not int or not 1 <= timeout <= max_timeout:
             raise ValueError("operation timeout exceeds its capability limit")
+        from harness.template_classification import validate_reference
+
+        validate_reference(getattr(profile, "classification", None), root=profile.repository)
         with self.lock:
             if (
                 len(self.records) >= 128
@@ -69,9 +75,16 @@ class ProcessManager:
                 "returncode": None,
                 "error": None,
                 "cancel": threading.Event(),
+                "classification": getattr(profile, "classification", None),
+                "classification_root": profile.repository,
+                "completion": completion,
+                "report": report,
+                "result": None,
             }
             self.records[handle] = record
-            threading.Thread(target=self._drain, args=(record, timeout), daemon=True).start()
+            thread = threading.Thread(target=self._drain, args=(record, timeout), daemon=True)
+            record["thread"] = thread
+            thread.start()
             return {"handle": handle, "status": "Running"}
 
     @staticmethod
@@ -85,6 +98,9 @@ class ProcessManager:
         proc, size = record["process"], 0
         deadline = time.monotonic() + timeout
         redactors = {stream: StreamRedactor() for stream in (proc.stdout, proc.stderr)}
+        decoders = {
+            stream: codecs.getincrementaldecoder("utf-8")("replace") for stream in redactors
+        }
         try:
             with selectors.DefaultSelector() as selector:
                 for stream in redactors:
@@ -95,11 +111,18 @@ class ProcessManager:
                     for key, _ in selector.select(0.1):
                         chunk = os.read(key.fd, 16384)
                         size += len(chunk)
-                        if size > 1048576:
+                        if record.get("report"):
+                            record["report"].consume(
+                                "stdout" if key.fileobj is proc.stdout else "stderr", chunk
+                            )
+                            text = ""
+                        elif size > 1048576:
                             raise ValueError("operation output limit exceeded")
-                        text = redactors[key.fileobj].feed(
-                            chunk.decode(errors="replace"), final=not chunk
-                        )
+                        else:
+                            text = redactors[key.fileobj].feed(
+                                decoders[key.fileobj].decode(chunk, final=not chunk),
+                                final=not chunk,
+                            )
                         with self.lock:
                             record["output"] += text
                         if not chunk:
@@ -110,10 +133,38 @@ class ProcessManager:
                 record["error"] = str(error)
         finally:
             # Kill remaining descendants in the owned process group even if the parent exited.
-            self._kill(proc)
-            proc.wait(timeout=5)
-            proc.stdout.close()
-            proc.stderr.close()
+            try:
+                self._kill(proc)
+                proc.wait(timeout=5)
+            except (OSError, subprocess.SubprocessError) as error:
+                record["error"] = "operation cleanup failed: " + str(error)
+            finally:
+                proc.stdout.close()
+                proc.stderr.close()
+            if record["cancel"].is_set():
+                record["error"] = "operation cancelled or deadline exceeded"
+            try:
+                from harness.template_classification import validate_reference
+
+                if record.get("completion"):
+                    record["completion"]()
+                validate_reference(
+                    record.get("classification"), root=record.get("classification_root")
+                )
+                if record.get("report") and not record["error"]:
+                    record["result"] = record["report"].publish(proc.returncode)
+            except (OSError, ValueError, LookupError) as error:
+                with self.lock:
+                    record["output"] = ""
+                    record["cursor"] = 0
+                    record["error"] = (
+                        str(error)
+                        if record.get("report")
+                        else ("template classification changed during operation; result invalid")
+                    )
+            finally:
+                if record.get("report"):
+                    record["report"].close()
             with self.lock:
                 record["returncode"] = proc.returncode
                 record["status"] = "Failed" if record["error"] else "Exited"
@@ -130,15 +181,24 @@ class ProcessManager:
         with self.lock:
             record = self._owned(owner, handle)
             cursor = record["cursor"]
-            output = record["output"][cursor : cursor + limit]
-            record["cursor"] += len(output)
+            # limit is an upper bound; drain `more` until the public-sized pages are exhausted.
+            withheld = record.get("classification") and record["status"] == "Running"
+            from harness.execution_artifacts import presentation_page
+
+            consumed, output = (
+                (0, "")
+                if withheld
+                else presentation_page(record["output"][cursor : cursor + min(limit, MAX_TEXT)])
+            )
+            record["cursor"] += consumed
             return {
                 "handle": handle,
                 "status": record["status"],
                 "output": output,
-                "more": record["cursor"] < len(record["output"]),
+                "more": False if withheld else record["cursor"] < len(record["output"]),
                 "returncode": record["returncode"],
                 "error": record["error"],
+                **({"result": record["result"]} if record.get("report") else {}),
             }
 
     def cancel(self, owner, handle):
@@ -169,9 +229,13 @@ class ProcessManager:
                     self._kill(record["process"])
         for record in records:
             record["process"].wait(timeout=5)
+            if record.get("thread"):
+                record["thread"].join(timeout=20)
+                if record["thread"].is_alive():
+                    raise ValueError("operation completion is unsettled; reconciliation required")
 
 
-def bounded_capture(proc, *, timeout=60, max_bytes=16 * 1024 * 1024):
+def bounded_capture(proc, *, timeout=60, max_bytes=16 * 1024 * 1024, report=None):
     """Limit capture while reading, including children keeping pipes open after parent exit."""
     deadline, size = time.monotonic() + timeout, 0
     outputs = {"stdout": [], "stderr": []}
@@ -185,11 +249,13 @@ def bounded_capture(proc, *, timeout=60, max_bytes=16 * 1024 * 1024):
                 for key, _ in selector.select(0.1):
                     raw = os.read(key.fd, 65536)
                     size += len(raw)
-                    if size > max_bytes:
+                    if report:
+                        report.consume(key.data, raw)
+                    elif size > max_bytes:
                         raise ValueError("AL output limit exceeded; reconcile its recorded state")
-                    if raw:
+                    if raw and not report:
                         outputs[key.data].append(raw)
-                    else:
+                    if not raw:
                         selector.unregister(key.fileobj)
         proc.wait(timeout=1)
         return b"".join(outputs["stdout"]), b"".join(outputs["stderr"])

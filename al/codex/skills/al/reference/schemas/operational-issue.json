@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "revision",
+    "cause",
+    "task_ids",
+    "paths",
+    "capability_or_check_ref",
+    "diagnostic_ref",
+    "state",
+    "next_action",
+    "observed_binding"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "cause": {
+      "enum": [
+        "coverage_unknown",
+        "tool_unavailable",
+        "provider_unavailable",
+        "check_failed",
+        "capability_unavailable",
+        "runtime_repair"
+      ]
+    },
+    "task_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "capability_or_check_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "diagnostic_ref": {
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "Open",
+        "Repairing",
+        "Resolved"
+      ]
+    },
+    "next_action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "observed_binding": {
+      "$ref": "execution-event-v1.json#/properties/binding"
+    },
+    "resolution_ref": {
+      "type": "object"
+    }
+  }
+}

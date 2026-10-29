@@ -31,6 +31,36 @@ def _project(conn, execution, event):
                 "UPDATE executions SET status='Interrupted' WHERE id=? AND status!='Completed'",
                 (eid,),
             )
+    elif kind == "issue.updated":
+        old = entity(conn, eid, "issue", payload["id"])
+        if payload["revision"] != (old["revision"] + 1 if old else 1):
+            raise ExecutionConflict("stale issue revision")
+        for task in payload["task_ids"]:
+            _known(conn, eid, "task", task)
+        if old and (
+            old["state"] == "Resolved"
+            or any(
+                old[k] != payload[k]
+                for k in (
+                    "cause",
+                    "task_ids",
+                    "paths",
+                    "capability_or_check_ref",
+                    "observed_binding",
+                )
+            )
+        ):
+            raise ExecutionConflict("issue scope or terminal observation changed")
+        put_entity(conn, eid, "issue", payload["id"], payload)
+    elif kind in {"output.authored", "output.invalidated"}:
+        task = _known(conn, eid, "task", payload["task_id"])
+        if kind == "output.authored":
+            if payload["task_revision"] != task["revision"]:
+                raise ExecutionConflict("stale authored task revision")
+            task["authored_output"] = payload
+        else:
+            task.pop("authored_output", None)
+        put_entity(conn, eid, "task", task["id"], task)
     elif kind.startswith(("agent.", "task.")):
         family = kind.split(".")[0]
         old = entity(conn, eid, family, payload["id"])
@@ -43,8 +73,12 @@ def _project(conn, execution, event):
                 for dep in payload["dependencies"]:
                     _known(conn, eid, "task", dep)
                     conn.execute(
-                        "INSERT INTO execution_edges VALUES (?,?,?,?,?)",
-                        (eid, "dependency", payload["id"], dep, "{}"),
+                        (
+                            "INSERT INTO "
+                            "execution_edges(execution_id,family,source,target,data,epoch_i"
+                            "d) VALUES (?,?,?,?,?,?)"
+                        ),
+                        (eid, "dependency", payload["id"], dep, "{}", execution["epoch_id"]),
                     )
             elif payload.get("task"):
                 _known(conn, eid, "task", payload["task"])
@@ -107,8 +141,19 @@ def _project(conn, execution, event):
         for key in ("from", "to"):
             _known(conn, eid, "task", payload[key])
         conn.execute(
-            "INSERT OR REPLACE INTO execution_edges VALUES (?,?,?,?,?)",
-            (eid, "handoff", payload["from"], payload["to"], canonical(payload)),
+            (
+                "INSERT OR REPLACE INTO "
+                "execution_edges(execution_id,family,source,target,data,epoch_id) VALUES "
+                "(?,?,?,?,?,?)"
+            ),
+            (
+                eid,
+                "handoff",
+                payload["from"],
+                payload["to"],
+                canonical(payload),
+                execution["epoch_id"],
+            ),
         )
     elif kind in {"dependency.changed", "ownership.changed"}:
         task = _known(conn, eid, "task", payload["task"])
@@ -131,13 +176,17 @@ def _project(conn, execution, event):
                 visit(node, set())
             conn.execute(
                 "DELETE FROM execution_edges "
-                "WHERE execution_id=? AND family='dependency' AND source=?",
-                (eid, task["id"]),
+                "WHERE execution_id=? AND family='dependency' AND source=? AND epoch_id=?",
+                (eid, task["id"], execution["epoch_id"]),
             )
             for dep in payload[key]:
                 conn.execute(
-                    "INSERT INTO execution_edges VALUES (?,?,?,?,?)",
-                    (eid, "dependency", task["id"], dep, "{}"),
+                    (
+                        "INSERT INTO "
+                        "execution_edges(execution_id,family,source,target,data,epoch_id) "
+                        "VALUES (?,?,?,?,?,?)"
+                    ),
+                    (eid, "dependency", task["id"], dep, "{}", execution["epoch_id"]),
                 )
         task[key] = payload[key]
         put_entity(conn, eid, "task", task["id"], task)
@@ -165,6 +214,15 @@ def _project(conn, execution, event):
 
 def ingest_event(conn, execution_id, event):
     """No caller transaction: record, projection and cursor are one commit."""
+    current = get_execution(conn, execution_id)
+    if (
+        current["epoch_id"] != "legacy-0"
+        and isinstance(event, dict)
+        and event.get("binding", {}).get("al_run_id") != current["al_run_id"]
+    ):
+        raise ExecutionConflict(
+            "stale_epoch: historical callback cannot mutate successor projection"
+        )
     try:
         validate_event(event)
         with transaction(conn):
@@ -187,8 +245,8 @@ def ingest_event(conn, execution_id, event):
             raw = canonical(event)
             old = conn.execute(
                 "SELECT record FROM execution_events "
-                "WHERE event_id=? OR (execution_id=? AND sequence=?)",
-                (event["event_id"], execution_id, event["sequence"]),
+                "WHERE epoch_id=? AND (event_id=? OR (execution_id=? AND sequence=?))",
+                (execution["epoch_id"], event["event_id"], execution_id, event["sequence"]),
             ).fetchall()
             if old:
                 if len(old) == 1 and old[0]["record"] == raw:
@@ -202,8 +260,19 @@ def ingest_event(conn, execution_id, event):
             if event["sequence"] != execution["cursor"] + 1:
                 raise ExecutionConflict("execution event sequence gap")
             conn.execute(
-                "INSERT INTO execution_events VALUES (?,?,?,?,?)",
-                (event["event_id"], execution_id, event["sequence"], event["kind"], raw),
+                (
+                    "INSERT INTO "
+                    "execution_events(event_id,execution_id,sequence,kind,record,epoch_id) "
+                    "VALUES (?,?,?,?,?,?)"
+                ),
+                (
+                    event["event_id"],
+                    execution_id,
+                    event["sequence"],
+                    event["kind"],
+                    raw,
+                    execution["epoch_id"],
+                ),
             )
             _project(conn, execution, event)
             conn.execute(
@@ -240,8 +309,8 @@ def event_page(conn, execution_id, after=0, limit=100):
     execution = get_execution(conn, execution_id)
     rows = conn.execute(
         "SELECT record FROM execution_events "
-        "WHERE execution_id=? AND sequence>? ORDER BY sequence LIMIT ?",
-        (execution_id, after, limit),
+        "WHERE execution_id=? AND epoch_id=? AND sequence>? ORDER BY sequence LIMIT ?",
+        (execution_id, execution["epoch_id"], after, limit),
     ).fetchall()
     events, size = [], 0
     for row in rows:
@@ -270,19 +339,39 @@ def execution_view(conn, execution_id):
     decisions = [
         dict(r)
         for r in conn.execute(
-            "SELECT id,blocker_id,blocker_revision,state,request,error,registry_id "
-            "FROM execution_decisions WHERE execution_id=? ORDER BY rowid",
-            (execution_id,),
+            "SELECT id,blocker_id,blocker_revision,state,request,error,registry_id,delivery "
+            "FROM execution_decisions WHERE execution_id=? AND epoch_id=? ORDER BY rowid",
+            (execution_id, saved["epoch_id"]),
         )
     ]
     for decision in decisions:
         decision["request"] = json.loads(decision["request"])
+        state = decision["state"]
+        delivered = decision.pop("delivery") is not None
+        undelivered_retirement = state == "Rejected" and not delivered
+        decision["saved"] = True
+        decision["retryable"] = state in {"Intent", "Ready", "Delivered"}
+        decision["delivery_status"] = (
+            ("failed" if decision["error"] else "pending")
+            if state in {"Intent", "Ready"}
+            else ("awaiting_acknowledgment" if state == "Delivered" else "acknowledged")
+        )
+        decision["outcome_notice"] = (
+            "Recorded AL decision outcome; this does not verify environment repair."
+        )
+        if undelivered_retirement:
+            decision["delivery_status"] = "not_delivered"
+            decision["retryable"] = False
+            decision["outcome_notice"] = (
+                "Invalid saved request retired before delivery; no AL acknowledgment was recorded."
+            )
+
     logs = [
         dict(r)
         for r in conn.execute(
             "SELECT id,channel,created_at FROM execution_logs "
-            "WHERE execution_id=? ORDER BY rowid DESC LIMIT 50",
-            (execution_id,),
+            "WHERE execution_id=? AND epoch_id=? ORDER BY rowid DESC LIMIT 50",
+            (execution_id, saved["epoch_id"]),
         )
     ]
     contact = saved["source_contact"]
@@ -308,10 +397,58 @@ def execution_view(conn, execution_id):
     from harness.execution_artifacts import output_reports
 
     reports = output_reports(Path(saved["handoff_path"]).parent / "operations/drafts")
+    from harness.dashboard.action_readiness import last_readiness
+
+    initialization = conn.execute(
+        (
+            "SELECT identity FROM execution_initializations WHERE execution_id=? AND "
+            "epoch_id=? AND state='Active'"
+        ),
+        (execution_id, saved["epoch_id"]),
+    ).fetchone()
+    pin_identity = None
+    if initialization and initialization["identity"]:
+        pin_root = json.loads(initialization["identity"]).get("pin_root")
+        if isinstance(pin_root, str):
+            pin_identity = Path(pin_root).name
+
+    from harness.execution_epochs import history_epochs
+    from harness.execution_work_notice import authored_work_notice
+
+    recorded_work = (
+        None if saved["status"] == "Completed" else authored_work_notice(conn, execution_id)
+    )
+
+    issues = presentation(entities(conn, execution_id, "issue"))
+    decisions_pending = [
+        b["id"]
+        for b in blockers
+        if (
+            b.get("kind") in {"specification", "developer_engineering_decision"}
+            # The original protocol defined untyped blockers as design choices.
+            # Preserve its recorded forms only in the legacy epoch; successor
+            # runtimes require explicit kinds and keep tooling in issue records.
+            or saved["epoch_id"] == "legacy-0"
+            and "kind" not in b
+        )
+        and b["state"] != "Resolved"
+    ]
+    issue_refs = [row["id"] for row in issues if row["state"] != "Resolved"]
+    implementation_status = (
+        "developer_decision"
+        if decisions_pending
+        else "technically_unavailable"
+        if saved["status"] in {"Unavailable", "RecoveryRequired", "Failed"}
+        else "continuing"
+        if saved["status"] in {"Running", "Launching", "WorkerOwned"}
+        else "ready"
+    )
     return {
         k: saved[k]
         for k in (
             "id",
+            "epoch_id",
+            "authority_generation",
             "task_id",
             "approval_id",
             "host",
@@ -328,11 +465,28 @@ def execution_view(conn, execution_id):
             "updated_at",
         )
     } | {
+        "authored_work": recorded_work,
+        "implementation": {"status": implementation_status, "issue_refs": issue_refs},
+        "verification": {
+            "status": "complete"
+            if saved["status"] == "Completed" and saved.get("result")
+            else "incomplete",
+            "obligation_refs": issue_refs,
+        },
+        "developer_decisions": decisions_pending,
+        "available_history_epochs": history_epochs(conn, execution_id),
+        "readiness": last_readiness(execution_id, pin_identity),
+        "status_explanation": "The agent stopped without a verified implementation result."
+        if saved["status"] == "Interrupted"
+        and saved["error"]
+        and "no guarded AL implementation result" in saved["error"]
+        else None,
         "binding": saved["binding"],
         "reports": reports,
         "agents": agents,
         "tasks": tasks,
         "blockers": blockers,
+        "operational_issues": presentation(entities(conn, execution_id, "issue")),
         "decisions": decisions,
         "edges": [
             dict(r)

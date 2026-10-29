@@ -16,6 +16,36 @@ _GIT = {
 }
 
 
+def _git_revision(value):
+    if value == "HEAD" or re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", value):
+        return True
+    if not re.fullmatch(r"refs/(heads|remotes|tags)/[A-Za-z0-9][A-Za-z0-9._/-]*", value):
+        return False
+    return not any(
+        part in {"", ".", ".."}
+        or part.startswith(".")
+        or part.endswith((".", ".lock"))
+        or ".." in part
+        for part in value.split("/")
+    )
+
+
+def _git_log_args(args):
+    revisions = 0
+    for arg in args:
+        if arg in _GIT["log"]:
+            continue
+        if re.fullmatch(r"-n[0-9]{1,3}", arg) and 1 <= int(arg[2:]) <= 100:
+            continue
+        endpoints = arg.split("..")
+        if len(endpoints) not in {1, 2} or not all(_git_revision(v) for v in endpoints):
+            return False
+        revisions += 1
+        if revisions > 1:
+            return False
+    return True
+
+
 def normalized_request(request):
     if set(request) - {"argv", "cwd", "environment", "effects", "target", "execution_id"}:
         raise ValueError("unknown command request fields")
@@ -55,18 +85,29 @@ def classify_command(request, context=None):
             "digest": digest(value),
         }
     safe = False
+    if argv[0] == "rg":
+        from harness.command_discovery import discovery_argv
+
+        try:
+            value["argv"] = discovery_argv(
+                argv, value["cwd"], (context or {}).get("repository", value["cwd"])
+            )
+            return {
+                "decision": "read_only",
+                "reason": "bounded repository discovery",
+                "request": value,
+                "digest": digest(value),
+            }
+        except (ValueError, OSError) as error:
+            return {
+                "decision": "approval_required",
+                "reason": str(error),
+                "request": value,
+                "digest": digest(value),
+            }
     if argv[0] == "git" and len(argv) >= 2 and argv[1] in _GIT:
         args = argv[2:]
-        safe = all(
-            a in _GIT[argv[1]]
-            or (
-                argv[1] == "log"
-                and a.startswith("-n")
-                and a[2:].isdigit()
-                and 1 <= int(a[2:]) <= 100
-            )
-            for a in args
-        )
+        safe = _git_log_args(args) if argv[1] == "log" else all(a in _GIT[argv[1]] for a in args)
     elif argv[:2] == ["docker", "ps"]:
         safe = argv[2:] in ([], ["--all"], ["--format", "{{json .}}"])
     elif argv[:3] == ["docker", "inspect", "--type=container"]:

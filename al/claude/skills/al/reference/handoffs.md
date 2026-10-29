@@ -90,8 +90,9 @@ staging pilot gates and overrides. Record source paths and keys/locations,
 effective values or explicit gaps, design/verification consequences, migration
 duration/batching and subscription activation/deployment sequencing, and required
 resolution for missing or inaccessible sources. Do not guess values or request
-unauthorized changes. Material uncertainty uses the existing SPEC_BLOCKED gate;
-lesser gaps remain explicit in the plan.`
+unauthorized changes. Only unresolved material specification or developer engineering choices use
+SPEC_BLOCKED. Missing infrastructure inputs remain explicit operational repair
+and verification obligations; continue defined scoped implementation.`
 Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.
 - On `SPEC_BLOCKED`: `BLOCKING_QUESTIONS` (each with `WHY_MATERIAL` and `RECOMMENDED`),
   `WHAT_IS_CLEAR` — and nothing else.
@@ -336,4 +337,4 @@ launcher commands are a separately identified route. Read-only handoffs omit the
 managed writer block.
 
 ## Explicit user continuation
-Only after a subsystem decline or automatic-cap stop may an explicit user turn authorize a bounded continuation. Preserve the exact user message/provenance as an immutable artifact, then submit the closed continuation request described by `reference/schemas/rework-recovery-continuation.json`. It must bind the latest checkpoint and current candidate and grant exactly two returns. Do not manufacture user authorization or use generic resume.
+An explicit user turn may authorize continuation of a historically declined or capped bounded subsystem. This is distinct from ordinary scoped implementation, which must not be blocked solely by that internal budget. Preserve the exact user message/provenance as an immutable artifact, then submit the closed continuation request described by `reference/schemas/rework-recovery-continuation.json`. It must bind the latest checkpoint and current candidate and grant exactly two returns. Do not manufacture user authorization or use generic resume.

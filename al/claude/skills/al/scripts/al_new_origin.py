@@ -110,6 +110,13 @@ def initialize(st):
         "invalidation_generation": 0,
     }
 
+    from al_implementation import binding
+    st['implementation_readiness'] = {'schema_version': 1, 'binding': binding(st),
+        'task_id': None, 'paths': [], 'obligations': ['coverage and proof readiness not inspected']}
+    from al_inherited_lineage import verification_debt
+    st['implementation_readiness']['obligations'] += verification_debt(st)
+    st['operational_issues'] = {}
+
 
 def validate(st):
     if "runtime_origin" not in st and "proof_admission" not in st:
@@ -120,6 +127,8 @@ def validate(st):
     from al_task import revision_hashes
 
     origin = context()
+    from al_inherited_lineage import validate as inherited_validate
+    inherited_validate(st)
     try:
         initial = read_initialization(origin.transaction)
         admission = st["proof_admission"]
@@ -174,6 +183,10 @@ def require_admitted(st):
         refuse("current gate obligations require replanning: " + str(currency["reasons"]))
     from al_service_coverage import require_ready
     require_ready(st,current=True)
+    if any(v['state'] != 'Resolved' for v in st.get('operational_issues', {}).values()):
+        refuse('final proof has unresolved operational issues')
+    if st.get('implementation_readiness'):
+        st['implementation_readiness']['obligations'] = []
 
 
 def prepare_save(st, previous=None):
@@ -185,6 +198,12 @@ def prepare_save(st, previous=None):
     if admission.get("status")=="admitted" and previous and previous.get("proof_admission",{}).get("status")=="pending":
         from al_service_coverage import require_ready
         require_ready(st,current=True)
+    if st.get('implementation_readiness'):
+        from al_implementation import binding
+        value = st['implementation_readiness']
+        if value['binding'] != binding(st):
+            value['binding'] = binding(st)
+            value['obligations'] = sorted(set(value['obligations'] + ['requirement revision changed; revalidate proof']))
     lineage = revision_hashes(st)[-1]
     rerouted = bool(
         previous
@@ -199,3 +218,8 @@ def prepare_save(st, previous=None):
             planning_occurrence=occurrence(st),
             invalidation_generation=admission["invalidation_generation"] + 1,
         )
+
+
+def require_implementation_ready(st, *, task_id=None, paths=()):
+    from al_implementation import require_ready
+    return require_ready(st, task_id=task_id, paths=paths)

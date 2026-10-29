@@ -46,7 +46,7 @@ def test_every_policy_slot_has_a_matching_role_toml():
 
 
 def test_skill_md_mentions_every_slug_and_label():
-    text = SKILL_MD.read_text()
+    text = SKILL_MD.read_text() + (PACKAGE / "reference/workflow.md").read_text()
     for slot in _all_slots():
         assert slot["slug"] in text, f"missing slug {slot['slug']}"
         assert al_models.label(slot) in text, f"missing label {al_models.label(slot)}"

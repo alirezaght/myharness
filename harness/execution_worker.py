@@ -21,7 +21,6 @@ from harness.execution_contract import MAX_RECORD, canonical, loads
 from harness.execution_handoff import read_handoff, same_path
 from harness.execution_hosts import (
     al_argv,
-    al_runtime,
     al_source,
     installed_package,
     native_diagnostic,
@@ -31,30 +30,76 @@ from harness.execution_hosts import (
 from harness.execution_logs import append_log
 from harness.execution_models import TERMINAL, ExecutionConflict
 from harness.execution_projection import ingest_event
-from harness.execution_store import bind_host, get_execution, update_owned
+from harness.execution_store import bind_host, get_execution, process_alive, update_owned
+
+
+class WorkerOwnedConflict(ExecutionConflict):
+    """The stable execution worker lock is held by another supervisor."""
 
 
 @contextmanager
 def worker_lock(execution, *, wait=False):
-    path = Path(execution["handoff_path"]).parent / "worker.lock"
+    path = (
+        Path(execution.get("authority_directory") or Path(execution["handoff_path"]).parent)
+        / "worker.lock"
+    )
     with path.open("a") as stream:
         try:
             fcntl.flock(stream, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
         except BlockingIOError:
-            raise ExecutionConflict("execution already has a live worker owner") from None
+            raise WorkerOwnedConflict("execution already has a live worker owner") from None
         try:
             yield
         finally:
             fcntl.flock(stream, fcntl.LOCK_UN)
 
 
-def launch_worker(conn, execution_id, *, mode="start"):
+def launch_worker(
+    conn, execution_id, *, mode="start", expected_epoch_id=None, expected_authority_generation=None
+):
     execution = get_execution(conn, execution_id)
-    if execution["status"] in TERMINAL:
-        return {"status": execution["status"]}
+    if (expected_epoch_id, expected_authority_generation) == (None, None):
+        expected_epoch_id = execution["epoch_id"]
+        expected_authority_generation = execution["authority_generation"]
     with worker_lock(execution):
         with transaction(conn):
-            execution = get_execution(conn, execution_id)
+            from harness.execution_epochs import require_active_epoch
+
+            execution = require_active_epoch(
+                conn,
+                execution_id,
+                expected_epoch_id=expected_epoch_id,
+                expected_authority_generation=expected_authority_generation,
+                mutation=True,
+            )
+            if execution["status"] in TERMINAL:
+                return {"status": execution["status"]}
+            require_execution_authority(
+                HarnessController(conn),
+                execution_id,
+                operation="resume" if mode == "resume" else "admit",
+            )
+            if mode == "resume":
+                if not execution["native_id"]:
+                    raise ExecutionConflict(
+                        "native identity unknown; reconcile uncertain spawn before retry"
+                    )
+                rows = conn.execute(
+                    "SELECT child_pid,status FROM execution_attempts WHERE execution_id=?",
+                    (execution_id,),
+                ).fetchall()
+                if any(
+                    row["child_pid"]
+                    and (
+                        process_alive(row["child_pid"])
+                        or row["status"] not in {"Exited", "Reconciled"}
+                    )
+                    for row in rows
+                ):
+                    raise ExecutionConflict(
+                        "recorded native process is live or its outcome "
+                        "requires explicit reconciliation"
+                    )
             if mode == "start" and execution["status"] != "Reserved":
                 return {"status": execution["status"]}
             if mode != "start" and execution["status"] not in {
@@ -73,9 +118,12 @@ def launch_worker(conn, execution_id, *, mode="start"):
                 ("WorkerOwned", token, now, execution_id),
             )
             conn.execute(
-                "INSERT INTO execution_attempts "
-                "(id,execution_id,token,mode,status,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
-                (attempt, execution_id, token, mode, "Reserved", now, now),
+                (
+                    "INSERT INTO execution_attempts "
+                    "(id,execution_id,token,mode,status,created_at,updated_at,epoch_id) "
+                    "VALUES (?,?,?,?,?,?,?,?)"
+                ),
+                (attempt, execution_id, token, mode, "Reserved", now, now, execution["epoch_id"]),
             )
         argv = module_argv("harness.execution_worker") + [
             "--db",
@@ -141,6 +189,8 @@ def _drain(stream, channel, output):
 
 def replay_source(conn, execution_id, token):
     execution = get_execution(conn, execution_id)
+    if execution["worker_token"] != token:
+        raise ExecutionConflict("stale_epoch: worker ownership changed before source replay")
     envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
     # The runtime directory is fixed by the repository and host, never an event path.
     source = al_source(execution, envelope)
@@ -229,7 +279,7 @@ def dispatch_pending(controller, execution_id, package):
 
 
 def _prompt(execution, package, envelope, mode):
-    runtime = str(al_runtime(execution["host"], envelope["repository"]))
+    runtime = str(al_source(execution, envelope).parent)
     launcher = " ".join(
         al_argv(
             package["launcher"],
@@ -257,6 +307,12 @@ def _prompt(execution, package, envelope, mode):
         "and poll the returned owned process handle. "
         "pass inputs as artifact:<artifact_id>:<sha256> and outputs as output:<name.json>. "
         "Register actual native child IDs with integration agent-register; never invent IDs. "
+        "For explicit task capability replacement, agent-register may name replaces and a "
+        "substantive release_reason. Harness verifies settlement and irrevocably revokes the "
+        "old tool capability; this does not prove the old host thread terminated. "
+        "Terminal child registrations cannot be reopened. New work requires a fresh actual "
+        "native invocation, its observed child ID, and a valid task binding. Preserve the "
+        "existing AL run and parent native conversation identity. "
         "Children call await_assignment: read-only roles receive read-only context; writers "
         "wait for a scoped task. Use submit_output for named final reports and return its "
         "artifact reference. Inspect harness:outputs to retrieve reports. "
@@ -275,7 +331,28 @@ def _prompt(execution, package, envelope, mode):
         + ". "
         + "AL is already initialized by the trusted supervisor. Inspect and continue exact run "
         + execution["al_session_id"]
-        + ". Never invoke start or create a different AL run. "
+        + " / "
+        + str(execution["al_run_id"])
+        + ". Current runtime epoch is "
+        + execution.get("epoch_id", "legacy-0")
+        + " with authority generation "
+        + str(execution.get("authority_generation", 0))
+        + (
+            ". Earlier epoch runs, agents, proof and approvals remain history; register "
+            "fresh actual work and observed invocations against this selected run. Read "
+            "the inherited ordered amendments in harness:al-state as accepted requirements "
+            "alongside the unchanged original package. Never invoke start or create a "
+            "different AL run. The selected session/run supersedes predecessor command "
+            "prefixes from conversation history. Do not reuse predecessor session IDs, "
+            "terminal agents or decision deliveries. Predecessor tooling, coverage and "
+            "provider blockers remain historical verification debt, never new developer "
+            "decisions or proof of resolution. "
+        )
+        + (
+            "The parent native conversation remains " + execution["native_id"] + ". "
+            if execution.get("native_id")
+            else ""
+        )
         + "Run every AL state command through the protected launcher as `"
         + launcher
         + " <command>`; never invoke al_state.py directly. Its run state is in "
@@ -288,10 +365,50 @@ def _prompt(execution, package, envelope, mode):
         )
         + "Requirements and approved test plan are in the handoff; retain them "
         "verbatim. Do not bypass "
-        "approval, evidence or review guards. New decisions require task-scoped "
-        "blockers and explicit "
-        "developer acknowledgement."
+        "approval, evidence or review guards. Only genuine specification ambiguities or developer "
+        "engineering decisions pause affected authored work and require task-scoped developer "
+        "acknowledgement. Tooling, provider, coverage and verification gaps are operational "
+        "issues and proof obligations: report them with issue-update, repair what is capable, "
+        "and continue authorized scoped implementation. Never represent unknown checks as PASS."
     )
+
+
+def _reconnect(controller, execution, token):
+    """Settle only the replay worker that actually processed under this lock/token."""
+    from harness.execution_decisions import deliver_pending
+    from harness.execution_store import pending_deliveries
+
+    conn, execution_id = controller.conn, execution["id"]
+    try:
+        envelope = require_execution_authority(controller, execution_id, operation="launch")
+        replay_source(conn, execution_id, token)
+        deliver_pending(controller, execution_id)
+        if pending_deliveries(conn, execution_id):
+            package = installed_package(execution["host"], envelope["repository"])
+            dispatch_pending(controller, execution_id, package)
+            replay_source(conn, execution_id, token)
+        if get_execution(conn, execution_id)["status"] not in TERMINAL:
+            update_owned(
+                conn,
+                execution_id,
+                token,
+                status="RecoveryRequired",
+                error="replayed committed events; explicit recorded-session resume or "
+                "reconciliation required",
+            )
+    except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+        current = get_execution(conn, execution_id)
+        if current["status"] not in TERMINAL and current["worker_token"] == token:
+            update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
+        append_log(conn, execution_id, "worker", str(error))
+    finally:
+        conn.execute(
+            "UPDATE execution_attempts SET status='Exited',updated_at=? "
+            "WHERE execution_id=? AND token=? AND mode='reconnect' "
+            "AND status IN ('Reserved','Launching','Running') AND child_pid IS NULL "
+            "AND EXISTS (SELECT 1 FROM executions WHERE id=? AND worker_token=?)",
+            (utcnow(), execution_id, token, execution_id, token),
+        )
 
 
 def supervise(conn, execution_id, token, mode="start"):
@@ -303,31 +420,13 @@ def supervise(conn, execution_id, token, mode="start"):
         if execution["status"] in TERMINAL:
             return
         controller = HarnessController(conn)
+        if mode == "reconnect":
+            _reconnect(controller, execution, token)
+            return
         try:
             envelope = require_execution_authority(
                 controller, execution_id, operation="resume" if mode == "resume" else "launch"
             )
-            if mode == "reconnect":
-                replay_source(conn, execution_id, token)
-                from harness.execution_decisions import deliver_pending
-
-                deliver_pending(controller, execution_id)
-                from harness.execution_store import pending_deliveries
-
-                if pending_deliveries(conn, execution_id):
-                    package = installed_package(execution["host"], envelope["repository"])
-                    dispatch_pending(controller, execution_id, package)
-                    replay_source(conn, execution_id, token)
-                if get_execution(conn, execution_id)["status"] not in TERMINAL:
-                    update_owned(
-                        conn,
-                        execution_id,
-                        token,
-                        status="RecoveryRequired",
-                        error="replayed committed events; explicit recorded-session resume or "
-                        "reconciliation required",
-                    )
-                return
             package = installed_package(execution["host"], envelope["repository"])
             if (
                 mode == "resume"
@@ -520,13 +619,30 @@ def supervise(conn, execution_id, token, mode="start"):
                 append_log(conn, execution_id, "protocol", str(error))
             current = get_execution(conn, execution_id)
             if current["status"] not in TERMINAL:
+                recorded_work = None
+                if proc.returncode == 0 and not failure:
+                    from harness.execution_work_notice import authored_work_notice
+
+                    try:
+                        recorded_work = authored_work_notice(conn, execution_id)
+                    except ValueError:
+                        failure = (
+                            "authored output provenance is unavailable; inspect recorded source"
+                        )
                 update_owned(
                     conn,
                     execution_id,
                     token,
                     status="Interrupted",
-                    error=failure
-                    or f"native host exited {proc.returncode}; no guarded AL implementation result",
+                    error=(
+                        None
+                        if recorded_work
+                        else failure
+                        or (
+                            f"native host exited {proc.returncode}; "
+                            "no guarded AL implementation result"
+                        )
+                    ),
                 )
             conn.execute(
                 "UPDATE execution_attempts SET status='Exited',updated_at=? WHERE token=?",

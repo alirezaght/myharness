@@ -24,12 +24,21 @@ def scope_revision(st, task_id):
     task = i['tasks'].get(task_id)
     if not task:
         refuse('unknown authority task scope')
-    return digest({'task':task_id,'revision':task['revision'],'graph_revision':i['graph_revision'],'amendments':[a['artifact']['sha256'] for a in st['amendments'] if task_id in a.get('affected_tasks',[])]})
+    from al_inherited_lineage import scoped_amendments
+    return digest({'task':task_id,'revision':task['revision'],'graph_revision':i['graph_revision'],'amendments':[a['artifact']['sha256'] for a in scoped_amendments(st,task_id)]})
 
 
 def authority(st, operation, task=None, delivery=None):
     i = integration(st)
     nonce = secrets.token_hex(16)
+    origin = sys.modules.get('_al_run_pin_context')
+    prepared = getattr(origin, 'prepared_start', None)
+    if prepared is not None:
+        if (operation != 'start' or task is not None or delivery is not None
+                or i['binding'] != prepared['authorized_start_binding']):
+            refuse('prepared successor has no product operation authority')
+        return {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'],
+                'task': None, 'delivery': None, 'scope_revision': None}
     # Executable/module are fixed here; envelope data cannot select a program.
     argv = [sys.executable, '-I', '-c', BOOTSTRAP, 'harness.execution_authority', '--handoff', i['handoff'], '--operation', operation, '--nonce', nonce, '--binding', canonical(i['binding'])]
     revision = scope_revision(st, task) if task else None
@@ -104,15 +113,16 @@ def scope_tasks(st, scope):
 
 def require_task_admission(st, task_id, *, files=(), check_scope=(), verify_authority=True):
     from al_rework_recovery_contract import guard
-    guard(st)
+    guard(st,implementation=True)
     i = integration(st)
     task = i['tasks'].get(task_id)
     if not task:
         refuse('unknown execution task')
     if st['status'] != 'RUNNING' or task['status'] in {'Completed', 'Failed'}:
         refuse('task is terminal or run is not running')
-    if any(i['tasks'][dep]['status'] != 'Completed' for dep in task['dependencies']):
-        refuse('task dependencies are not completed')
+    from al_execution_outputs import current
+    if any(not current(st, dep) for dep in task['dependencies']):
+        refuse('task dependencies have no current authored output or verified completion')
     for blocker in i['blockers'].values():
         if blocker['state'] != 'Resolved' and task_id in affected_tasks(st, blocker['tasks']):
             refuse('task is blocked by ' + blocker['id'])
@@ -182,8 +192,16 @@ def admit_check(st, spec, *, gate_context=None):
 def completion_gaps(st):
     if 'integration' not in st:
         return []
+    from al_execution_outputs import verified_current
     i = integration(st)
-    return (['execution has no registered tasks'] if not i['tasks'] else []) + ['task ' + t + ' incomplete' for t, v in i['tasks'].items() if v['status'] != 'Completed'] + ['blocker ' + b + ' unresolved' for b, v in i['blockers'].items() if v['state'] != 'Resolved'] + ['amendment ' + a + ' awaiting revalidation' for a, v in i['revalidations'].items() if v['state'] != 'Validated']
+    out = ['execution has no registered tasks'] if not i['tasks'] else []
+    for tid, task in i['tasks'].items():
+        if task['status'] != 'Completed' or not verified_current(st, tid):
+            out.append('task ' + tid + ' has no current verified completion')
+    out += ['blocker ' + key + ' unresolved' for key, v in i['blockers'].items() if v['state'] != 'Resolved']
+    out += ['issue ' + key + ' unresolved' for key, v in st.get('operational_issues', {}).items() if v['state'] != 'Resolved']
+    out += ['amendment ' + key + ' awaiting revalidation' for key, v in i['revalidations'].items() if v['state'] != 'Validated']
+    return out
 
 
 def _strings(value, label):
@@ -195,8 +213,8 @@ def _strings(value, label):
 def _input(action, data):
     fields = {
         'task-register': ({'id','title','files','criteria'}, {'dependencies'}),
-        'agent-register': ({'id','name','role'}, {'task'}),
-        'blocker': ({'id','tasks','question','context','alternatives','recommendation'}, set()),
+        'agent-register': ({'id','name','role'}, {'task','replaces','release_reason'}),
+        'blocker': ({'id','tasks','question','context','alternatives','recommendation'}, {'kind'}),
         'graph-update': ({'id'}, {'files','dependencies'}),
         'agent-update': ({'id','status'}, {'activity','progress','latest_output'}),
         'task-progress': ({'id','activity'}, {'progress'}),
@@ -230,7 +248,13 @@ def _task(st, data):
     criteria = _strings(data['criteria'], 'criteria')
     if not criteria or not set(criteria) <= set(A.read_json(st['task_package'])['criteria']):
         refuse('unknown task criteria')
+    if i['tasks']:
+        from al_execution_outputs import _settled
+        _settled(st, set(i['tasks']))
     row = {'id': tid, 'title': text(data['title'], 'title'), 'status': 'Idle', 'dependencies': dependencies, 'files': files, 'criteria': criteria, 'revision': 1, 'progress': None, 'registration': digest(data)}
+    from al_inherited_lineage import map_scope
+    if 'inherited_lineage' in st:
+        row['inherited_scopes'] = map_scope(st,row)
     i['tasks'][tid] = row
     i['graph_revision'] += 1
     E.queue(st, 'task.registered', row)
@@ -244,6 +268,10 @@ def _agent(st, data):
         if old.get('registration') == digest(data):
             return
         refuse('agent invocation identity already registered')
+    if ('replaces' in data) != ('release_reason' in data):
+        refuse('replacement requires predecessor and explicit capability release reason')
+    if 'replaces' in data:
+        identity(data['replaces']);text(data['release_reason'],'capability release reason')
     role = data['role']
     import al_models
     if role not in al_models.ALL_POLICY:
@@ -264,6 +292,8 @@ def _blocker(st, data):
         if i['blockers'][bid].get('registration') == digest(data):
             return
         refuse('blocker identity already registered')
+    if data.get('kind') not in {'specification', 'developer_engineering_decision'}:
+        refuse('new blockers require typed specification or developer engineering decision; report tooling through issue-update')
     tasks = _strings(data['tasks'], 'blocker tasks')
     if not tasks:
         refuse('blocker requires affected tasks')
@@ -272,7 +302,7 @@ def _blocker(st, data):
     for key in ('question', 'context', 'recommendation'):
         text(row[key], key)
     _strings(row['alternatives'], 'alternatives')
-    row.update(revision=1, state='Open', affected=sorted(affected), registration=digest(data))
+    row.update(kind=data['kind'], revision=1, state='Open', affected=sorted(affected), registration=digest(data))
     i['blockers'][bid] = row
     for tid in affected:
         task = i['tasks'][tid]
@@ -319,13 +349,23 @@ def _graph(st, data):
     authority(st, 'admit', tid)
     if task['dependencies'] == dependencies and task['files'] == files:
         return
+    from al_execution_outputs import invalidate, _settled
+    _settled(st, set(i['tasks']))
+    invalidate(st, tid, 'task graph changed')
     for key, kind, value in (('dependencies','dependency.changed',dependencies),('files','ownership.changed',files)):
         if task[key] != value:
             task[key] = value
             E.queue(st, kind, {'task':tid,key:value})
+    if 'inherited_lineage' in st:
+        from al_inherited_lineage import map_scope
+        task['inherited_scopes'] = map_scope(st,task)
     i['graph_revision'] += 1
     for row in i['tasks'].values():
         row.pop('admission',None)
+        old_output = row.pop('authored_output',None)
+        if old_output:
+            row.setdefault('authored_history', []).append(old_output)
+            E.queue(st, 'output.invalidated', {'task_id': row['id'], 'reason': 'graph revision changed'})
     for item in affected:
         row = i['tasks'][item]
         if row['status'] == 'Completed':
@@ -347,7 +387,7 @@ def _graph(st, data):
 
 def cmd_integration(a, sid):
     if a.action == 'capabilities':
-        print(canonical({'schema_version': 1, 'protocol': 'al-execution-v1', 'semantic_outbox': True, 'scoped_decisions': True}))
+        print(canonical({'schema_version': 1, 'protocol': 'al-execution-v1', 'semantic_outbox': True, 'scoped_decisions': True, 'implementation_continuity': 1}))
         return
     st = S.load(sid)
     if a.action == 'events':
@@ -361,12 +401,20 @@ def cmd_integration(a, sid):
         S.save(sid, st)
         print(canonical({'ok': True, 'sequence': i['sequence']}))
         return
+    from al_rework_recovery_contract import guard
+    guard(st,implementation=True)
     if st['status'] != 'RUNNING':
         refuse('execution reporting requires a running run')
     data = loads(Path(a.file).read_bytes()) if getattr(a, 'file', None) else None
     if a.action in {'graph-update','task-register','agent-register','blocker','agent-update','task-progress','handoff'}:
         _input(a.action, data)
-    if a.action == 'graph-update':
+    if a.action == 'issue-update':
+        from al_operational_issues import update
+        update(st, data)
+    elif a.action == 'task-authored':
+        from al_execution_outputs import authored
+        authored(st, a.task, data)
+    elif a.action == 'graph-update':
         _graph(st, data)
     elif a.action == 'task-register':
         _task(st, data)
@@ -398,13 +446,19 @@ def cmd_integration(a, sid):
         row['activity'] = text(data['activity'], 'activity')
         E.queue(st, 'task.updated', row)
     elif a.action in {'task-admit', 'task-start'}:
-        row = require_task_admission(st, a.task)
+        from al_execution_outputs import reopen_stale_completion
+        reopened = reopen_stale_completion(st, a.task)
+        row = require_task_admission(st, a.task, verify_authority=not reopened)
+        from al_new_origin import require_implementation_ready
+        require_implementation_ready(st, task_id=a.task, paths=row['files'])
         if a.action == 'task-start' and not any(v['task'] == a.task and v['status'] == 'Running' for v in i['agents'].values()):
             refuse('task start requires actual running assigned agent')
         row['admission'] = {'revision': row['revision'], 'graph_revision': i['graph_revision']}
         row['status'] = 'Running' if a.action == 'task-start' else 'Waiting'
         E.queue(st, 'task.updated', row)
     elif a.action == 'task-finish':
+        from al_new_origin import require_admitted
+        require_admitted(st)
         row = require_task_admission(st, a.task)
         writers = [w for w in st['writers'].values() if w.get('task') == a.task]
         if not writers or any(w['state'] != 'FINISHED' or w.get('outcome') != 'success' for w in writers):
@@ -416,6 +470,8 @@ def cmd_integration(a, sid):
             refuse('task completion requires current planned evidence')
         if any(e['status'] == 'RUNNING' or (e.get('interrupted') and not e.get('reconciliation')) for e in relevant):
             refuse('task has unresolved check')
+        from al_execution_outputs import completion_binding
+        row['completion_binding'] = completion_binding(st, a.task)
         row.update(status='Completed', progress={'completed': 1, 'total': 1, 'unit': 'task'}, completed_at=time.time())
         E.queue(st, 'task.updated', row)
     elif a.action == 'handoff':
@@ -434,7 +490,9 @@ def register(sub):
     p = sub.add_parser('integration').add_subparsers(dest='action', required=True)
     p.add_parser('capabilities').set_defaults(fn=cmd_integration)
     s = p.add_parser('events'); s.add_argument('--after', type=int, default=0); s.add_argument('--limit', type=int, default=100); s.set_defaults(fn=cmd_integration)
-    for action in ('task-register', 'agent-register', 'agent-update', 'blocker', 'handoff', 'decision', 'revalidate', 'task-progress', 'graph-update', 'delivery-correction'):
+    for action in ('task-register', 'agent-register', 'agent-update', 'blocker', 'handoff', 'decision', 'revalidate', 'task-progress', 'graph-update', 'delivery-correction', 'issue-update'):
         s = p.add_parser(action); s.add_argument('--file', required=True); s.set_defaults(fn=cmd_integration)
     for action in ('task-admit', 'task-start', 'task-finish'):
         s = p.add_parser(action); s.add_argument('--task', required=True); s.set_defaults(fn=cmd_integration)
+
+    s = p.add_parser('task-authored'); s.add_argument('--task', required=True); s.add_argument('--file', required=True); s.set_defaults(fn=cmd_integration)

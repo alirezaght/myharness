@@ -73,6 +73,7 @@ def test_independent_processes_reserve_one_approval(controller, sample_repo, mon
 
     tid, eid = approved_execution(controller, sample_repo, monkeypatch)
     # Start from the actual approved task before its first execution reservation.
+    controller.conn.execute("DELETE FROM execution_epochs WHERE execution_id=?", (eid,))
     controller.conn.execute("DELETE FROM executions WHERE id=?", (eid,))
     ctx = multiprocessing.get_context("fork")
     out = ctx.Queue()

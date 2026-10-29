@@ -37,7 +37,5 @@ def prospective_gaps(st,paths):
 
 
 def writer_ready(st,paths):
-    from al_gate_recovery import ready
-    ready(st)
-    missing=prospective_gaps(st,paths)
-    if missing:refuse('writer needs extended gate coverage: '+str(missing))
+    from al_new_origin import require_implementation_ready
+    return require_implementation_ready(st, paths=paths)

@@ -257,6 +257,36 @@ function renderDiagrams(taskId, diagrams) {
   const section = el("section");
   section.id = "diagrams";
   section.append(el("h3", "Diagrams"));
+  if (diagrams.state) {
+    const state = el("p", `Design state: ${diagrams.state.replaceAll("_", " ")}`);
+    state.className = "diagram-provenance";
+    section.append(state);
+  }
+  if (diagrams.provenance) section.append(el("p", diagrams.provenance));
+  if (diagrams.state === "prose_only") {
+    section.append(el("p", "The design contains prose but no structured notation. Diagram data does not wait for AL planning."));
+  }
+  if (diagrams.proposals?.length) {
+    const proposals = el("section");
+    proposals.className = "diagram-proposals";
+    proposals.append(el("h4", `Pending diagram proposals (${diagrams.proposals.length})`));
+    proposals.append(el("p", "These proposals are not accepted design versions and cannot be selected as current diagrams."));
+    const list = el("ul");
+    for (const proposal of diagrams.proposals) {
+      const item = el("li");
+      const kinds = proposal.diagrams.map((diagram) => `${diagram.type}: ${diagram.title}`).join(", ") || "notation needs review";
+      item.append(el("p", `${proposal.ref} · pending acceptance · ${kinds}`));
+      if (proposal.issues?.length) item.append(el("p", `${proposal.issues.length} notation issue(s) need review.`));
+      list.append(item);
+    }
+    proposals.append(list);
+    section.append(proposals);
+  }
+  if (diagrams.guidance) {
+    const guidance = el("p", diagrams.guidance);
+    guidance.className = "diagram-guidance";
+    section.append(guidance);
+  }
   if (diagrams.unavailable) section.append(alertText(`diagrams unavailable: ${diagrams.unavailable}`));
   if (diagrams.outdated) {
     section.append(el("p", OUTDATED));

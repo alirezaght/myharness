@@ -8,7 +8,9 @@ from pathlib import Path
 AL = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(AL / "tests"))
 from test_resources import role_dir
-SKILL = (AL / "SKILL.md").read_text()
+ENTRY = (AL / "SKILL.md").read_text()
+WORKFLOW = (AL / "reference" / "workflow.md").read_text()
+SKILL = ENTRY + "\n" + WORKFLOW
 REVIEW = (AL / "reference" / "review.md").read_text()
 HANDOFFS = (AL / "reference" / "handoffs.md").read_text()
 REPOSITORY_POLICY = (AL / "reference" / "repository-policy.md").read_text()

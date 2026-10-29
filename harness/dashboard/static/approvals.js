@@ -37,12 +37,13 @@ function renderApprovalCenter(task) {
   const center = task.approval_center;
   const section = el("section");
   section.id = "approvals";
-  section.append(
-    el("h3", "Approval Center"),
-    approvalGroup("approvals-decisions", "Decisions", center.groups.decisions),
-    approvalGroup("approvals-test-plan", "Test plan", center.groups.test_plan),
-    renderFinalSpec(task.id, center.groups.final_spec, center.final),
-  );
+  const approved = center.final.blockers.some((blocker) => blocker.code === "approved");
+  section.append(el("h3", approved ? "Specification approved" : "Approval Center"));
+  if (!approved || center.groups.decisions.length) section.append(
+    approvalGroup("approvals-decisions", "Decisions", center.groups.decisions));
+  if (!approved || center.groups.test_plan.length) section.append(
+    approvalGroup("approvals-test-plan", "Test plan", center.groups.test_plan));
+  section.append(renderFinalSpec(task.id, center.groups.final_spec, center.final));
   return section;
 }
 
@@ -65,6 +66,7 @@ function approvalBlockers(final) {
 function approvalPreview(taskId, final) {
   const details = el("details");
   details.id = "approve-preview";
+  details.dataset.taskId = taskId;
   details.open = approvalPreviews.has(taskId);
   details.addEventListener("toggle", () => {
     if (details.open) approvalPreviews.add(taskId);
@@ -72,7 +74,8 @@ function approvalPreview(taskId, final) {
   });
   const article = renderBlocks(final.preview);
   article.id = "approve-preview-document";
-  details.append(el("summary", `Specification to be sealed (${final.spec_hash})`), article);
+  const approved = final.blockers.some((blocker) => blocker.code === "approved");
+  details.append(el("summary", `${approved ? "Approved specification" : "Specification to be sealed"} (${final.spec_hash})`), article);
   return details;
 }
 
@@ -124,19 +127,26 @@ function approvalResult(taskId, state) {
 }
 
 function renderFinalSpec(taskId, items, final) {
-  const section = approvalGroup("approvals-final", "Final spec", items);
+  const approved = final.blockers.some((blocker) => blocker.code === "approved");
+  const section = approved ? el("section") : approvalGroup("approvals-final", "Final spec", items);
+  if (approved) {
+    section.id = "approvals-final";
+    section.append(el("h4", "Current approval"));
+    section.append(el("p", "The specification is approved. Follow execution progress below."));
+  }
   const state = approvalState.get(taskId) || {};
-  if (final.status) section.append(el("p", `approval: ${final.status}`));
+  if (final.status && !approved) section.append(el("p", `approval: ${final.status}`));
   const row = el("div");
   row.className = "approve-row";
-  const button = el("button", "Approve & Implement");
+  const button = el("button", approved ? "Approved" : "Approve & Implement");
   button.id = "approve-button";
   button.type = "button";
   button.disabled = !final.enabled || !!state.sending;
   button.setAttribute("aria-describedby", "approve-blockers");
   button.addEventListener("click", () => approveTask(taskId, final));
   row.append(button);
-  section.append(row, approvalBlockers(final), withCode("or run: ", final.command));
+  section.append(row, approvalBlockers(final));
+  if (!approved) section.append(withCode("or run: ", final.command));
   if (final.preview) section.append(approvalPreview(taskId, final));
   section.append(approvalResult(taskId, state));
   return section;
@@ -214,7 +224,18 @@ function focusApproval() {
 function withApprovalFocus(fn) {
   const active = document.activeElement;
   const saved = active && APPROVE_FOCUS_IDS.has(active.id) ? active.id : null;
+  const preview = document.getElementById("approve-preview");
+  const scroll = preview && preview.dataset.taskId
+    ? { taskId: preview.dataset.taskId, top: document.getElementById("approve-preview-document")?.scrollTop || 0 }
+    : null;
   const result = fn();
+  if (scroll) {
+    const nextPreview = document.getElementById("approve-preview");
+    const nextDocument = document.getElementById("approve-preview-document");
+    if (nextPreview?.dataset.taskId === scroll.taskId && nextDocument) {
+      nextDocument.scrollTop = scroll.top;
+    }
+  }
   if (saved) {
     const node = document.getElementById(saved);
     if (node && !node.disabled) node.focus({ preventScroll: true });

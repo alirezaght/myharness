@@ -223,6 +223,14 @@ def run_phase3_scenario(tmp_path: Path) -> dict:
     # Protected AL paths refuse symlinked ancestors (e.g. macOS /var -> /private/var).
     tmp_path = tmp_path.resolve()
     repo = make_sample_repo(tmp_path / "target")
+    # The writer changes this existing test after discovery; its new assertion
+    # still proves the independently authored documentation, without changing membership.
+    (repo / "tests/test_phase3_independent.py").write_text(
+        "from pathlib import Path\n\n"
+        "def test_independent_documentation_was_written():\n"
+        "    assert '# demo' in Path('README.md').read_text()\n",
+        encoding="utf-8",
+    )
     # The sample project must declare a real architecture check. Coverage
     # admission no longer treats a Python service without any discoverable
     # verification command as complete.
@@ -233,7 +241,14 @@ def run_phase3_scenario(tmp_path: Path) -> dict:
         + '\n[tool.al.architecture]\nforbidden = ["os"]\n',
         encoding="utf-8",
     )
-    subprocess.run(["git", "add", "pyproject.toml"], cwd=repo, check=True, capture_output=True)
+    if not repo.resolve().is_relative_to(tmp_path) or repo.resolve() == ROOT:
+        raise AssertionError("fixture Git writes must remain inside the disposable repository")
+    subprocess.run(
+        ["git", "add", "pyproject.toml", "tests/test_phase3_independent.py"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
     # The shared sample's jobless placeholder workflow is not a CI definition; AL
     # correctly refuses to resolve it, so this scenario declares only real checks.
     subprocess.run(
@@ -295,6 +310,7 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
     database = tmp_path / "harness.db"
     env = dict(os.environ)
     env.update(
+        PYTHONDONTWRITEBYTECODE="1",
         HARNESS_DB=str(database),
         HARNESS_HOME=str(tmp_path / "harness-home"),
         HARNESS_AUTHORITY_ROOT=str(ROOT),

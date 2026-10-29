@@ -69,7 +69,9 @@ def ready(st):
             for value in st.get("integration", {}).get("revalidations", {}).values()
         )
     )
-    if st["phase"] not in {"PLANNING", "PSEUDOCODE"} and not scoped:
+    from al_transitions import WRITING
+    retained = st["phase"] in WRITING | {"VERIFICATION"} and bool(st.get("implementation_readiness"))
+    if st["phase"] not in {"PLANNING", "PSEUDOCODE"} and not scoped and not retained:
         refuse("planning provenance requires current planning or acknowledged scoped revalidation")
     from al_writers import operation_gaps
     from al_gate_continuation import _uncertain as cleanup_uncertain

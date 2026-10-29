@@ -48,9 +48,12 @@ def workflow_gaps(st):
 
 def require_transition(st, command, destination):
     from al_rework_recovery_contract import guard
-    guard(st)
-    from al_new_origin import require_admitted
-    if destination in WRITING | BARRIERS or command in {'review-start', 'approved'}:
+    from al_new_origin import require_admitted, require_implementation_ready
+    implementation_edge = destination in WRITING or command == 'phase' and destination in {'VERIFICATION', 'PSEUDOCODE', 'PLAN_CONFLICT'}
+    guard(st,implementation=implementation_edge)
+    if implementation_edge:
+        require_implementation_ready(st)
+    elif destination in BARRIERS or command in {'review-start', 'approved'}:
         require_admitted(st)
     src = st['phase'];guarded=False
     if st['status'] != 'RUNNING':
@@ -73,7 +76,7 @@ def require_transition(st, command, destination):
                 refuse('planning requires SPEC_READY and classification')
         from al_gate_recovery import ready,RETAINED
         if src in RETAINED:
-            ready(st);guarded=True
+            if not implementation_edge: ready(st);guarded=True
         if src == 'PLAN_CONFLICT':
             from al_conflicts import require_resolution
             require_resolution(st)
@@ -88,7 +91,7 @@ def require_transition(st, command, destination):
                    'rework': {'FINALIZATION','VERIFICATION'}, 'approved': {'FINAL_VERIFICATION'}}
         if src not in allowed.get(command, set()):
             refuse(f'{command} is not allowed from {src}')
-    if st.get('gate_recovery') and not guarded:
+    if st.get('gate_recovery') and not guarded and not implementation_edge:
         from al_gate_recovery import ready
         ready(st);guarded=True
     if command in {'review-start','approved'} or destination=='FINAL_VERIFICATION':
@@ -98,6 +101,10 @@ def require_transition(st, command, destination):
         from al_writers import operation_gaps
         missing = operation_gaps(st)
         if missing: refuse('; '.join(missing))
+
+    if implementation_edge and st.get('gate_recovery'):
+        from al_gate_recovery import continue_phase
+        continue_phase(st, destination, command)
 
     if guarded and st.get('gate_recovery'):
         from al_gate_recovery import complete

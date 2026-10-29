@@ -35,6 +35,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture
 def operations(controller, monkeypatch, launched, request):
+    # Imported fixtures do not inherit this module's pytestmark.
+    if operation_sandbox_unavailable():
+        pytest.skip("Linux operation sandbox capability unavailable")
     source, home, repo, launcher, environment = launched
     for key, value in environment.items():
         monkeypatch.setenv(key, value)

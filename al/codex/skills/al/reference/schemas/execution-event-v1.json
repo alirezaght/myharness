@@ -4,34 +4,121 @@
   "title": "AL execution event v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "event_id", "sequence", "timestamp", "binding", "kind", "payload"],
+  "required": [
+    "schema_version",
+    "event_id",
+    "sequence",
+    "timestamp",
+    "binding",
+    "kind",
+    "payload"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "event_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
-    "sequence": {"type": "integer", "minimum": 1},
-    "timestamp": {"type": "number", "exclusiveMinimum": 0},
+    "schema_version": {
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "timestamp": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
     "binding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["execution_id", "task_id", "approval_id", "spec_version", "content_hash", "revision", "review_state_hash", "handoff_hash", "al_session_id", "al_run_id"],
+      "required": [
+        "execution_id",
+        "task_id",
+        "approval_id",
+        "spec_version",
+        "content_hash",
+        "revision",
+        "review_state_hash",
+        "handoff_hash",
+        "al_session_id",
+        "al_run_id"
+      ],
       "properties": {
-        "execution_id": {"$ref": "#/$defs/id"},
-        "task_id": {"$ref": "#/$defs/id"},
-        "approval_id": {"type": "integer", "minimum": 1},
-        "spec_version": {"type": "integer", "minimum": 1},
-        "content_hash": {"$ref": "#/$defs/hash"},
-        "revision": {"type": "string", "minLength": 1},
-        "review_state_hash": {"$ref": "#/$defs/hash"},
-        "handoff_hash": {"$ref": "#/$defs/hash"},
-        "al_session_id": {"$ref": "#/$defs/id"},
-        "al_run_id": {"$ref": "#/$defs/id"}
+        "execution_id": {
+          "$ref": "#/$defs/id"
+        },
+        "task_id": {
+          "$ref": "#/$defs/id"
+        },
+        "approval_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "spec_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "content_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "review_state_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "handoff_hash": {
+          "$ref": "#/$defs/hash"
+        },
+        "al_session_id": {
+          "$ref": "#/$defs/id"
+        },
+        "al_run_id": {
+          "$ref": "#/$defs/id"
+        }
       }
     },
-    "kind": {"enum": ["run.started", "run.ended", "phase.changed", "agent.registered", "agent.updated", "task.registered", "task.updated", "dependency.changed", "ownership.changed", "handoff.created", "blocker.raised", "blocker.resolved", "decision.acknowledged", "test.started", "test.result", "writer.updated", "implementation.result", "amendment.created", "amendment.revalidated", "delivery.updated"]},
-    "payload": {"type": "object"}
+    "kind": {
+      "enum": [
+        "run.started",
+        "run.ended",
+        "phase.changed",
+        "agent.registered",
+        "agent.updated",
+        "task.registered",
+        "task.updated",
+        "dependency.changed",
+        "ownership.changed",
+        "handoff.created",
+        "blocker.raised",
+        "blocker.resolved",
+        "decision.acknowledged",
+        "test.started",
+        "test.result",
+        "writer.updated",
+        "implementation.result",
+        "amendment.created",
+        "amendment.revalidated",
+        "delivery.updated",
+        "issue.updated",
+        "output.authored",
+        "output.invalidated"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
   },
   "$defs": {
-    "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
-    "hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
   }
 }

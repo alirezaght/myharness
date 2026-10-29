@@ -52,6 +52,9 @@ def extract_criteria(sealed_bytes):
 def local_binding(controller, execution_id, target_mapping=None):
     execution = get_execution(controller.conn, execution_id)
     delivery = get_delivery(controller.conn, execution_id)
+    from harness.delivery_store import require_delivery_epoch
+
+    require_delivery_epoch(controller.conn, delivery)
     staging = (delivery["snapshot"] or {}).get("staging", {})
     config = delivery["config"]
     url = staging.get("external_url")
@@ -81,6 +84,10 @@ def local_binding(controller, execution_id, target_mapping=None):
         "staging": staging,
         "target": target,
     }
+    if execution["epoch_id"] != "legacy-0":
+        binding.update(
+            epoch_id=execution["epoch_id"], authority_generation=execution["authority_generation"]
+        )
     # Observation timestamps are freshness metadata, not deployment identity.
     return binding, target
 

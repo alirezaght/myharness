@@ -1,6 +1,7 @@
 """Read-only fixed bridge: current sealed approval is the only execution authority."""
 
 import argparse
+import json
 import sqlite3
 from pathlib import Path
 
@@ -15,9 +16,19 @@ from harness.testplan import TestPlanner
 
 
 def require_execution_authority(
-    controller, execution_id, *, binding=None, operation="admit", delivery=None
+    controller,
+    execution_id,
+    *,
+    binding=None,
+    operation="admit",
+    delivery=None,
+    _transition_validation=False,
 ):
-    execution = get_execution(controller.conn, execution_id)
+    from harness.execution_epochs import require_active_epoch
+
+    execution = require_active_epoch(
+        controller.conn, execution_id, protected=not _transition_validation
+    )
     if execution["status"] in TERMINAL and operation not in {
         "read",
         "delivery",
@@ -102,6 +113,144 @@ def require_execution_authority(
     return envelope
 
 
+def require_authored_report(execution, state, task_id, resource):
+    from harness.execution_artifacts import output_reports
+
+    reports = output_reports(Path(execution["handoff_path"]).parent / "operations/drafts")
+    row = next((r for r in reports if r["resource"] == resource), None)
+    agent = state["integration"]["agents"].get(row["owner"]) if row else None
+    if (
+        not agent
+        or agent["task"] != task_id
+        or agent["status"] != "Completed"
+        or not agent.get("ended_at")
+        or agent.get("yield_required")
+        or agent["role"] != row["role"]
+        or agent.get("latest_output") != resource
+    ):
+        raise ExecutionConflict("report lacks completed observed producer provenance")
+    index = json.loads(
+        (Path(execution["handoff_path"]).parent / "operations/drafts/index.json").read_bytes()
+    )
+    record = index["records"][row["artifact_id"]]
+    if record["graph_revision"] != state["integration"]["graph_revision"]:
+        raise ExecutionConflict("submitted report graph revision is stale")
+    return row
+
+
+def require_dependency_outputs(state, task_id, repository, execution=None, _seen=()):
+    import os
+    import stat
+
+    from harness.execution_contract import dependency_ready
+    from harness.execution_files import parent_descriptor
+
+    def stable(info):
+        return (
+            info.st_dev,
+            info.st_ino,
+            info.st_mode,
+            info.st_nlink,
+            info.st_size,
+            info.st_mtime_ns,
+            info.st_ctime_ns,
+        )
+
+    if task_id in _seen:
+        raise ExecutionConflict("cyclic dependency authority")
+    integration = state["integration"]
+    requirement = (
+        state.get("implementation_readiness", {}).get("binding", {}).get("requirement_hash")
+    )
+    for dep in integration["tasks"][task_id]["dependencies"]:
+        task = integration["tasks"][dep]
+        if not dependency_ready(
+            task, graph_revision=integration["graph_revision"], requirement_hash=requirement
+        ):
+            raise ExecutionConflict(
+                "dependency has no current authored output or verified completion"
+            )
+        require_dependency_outputs(state, dep, repository, execution, (*_seen, task_id))
+        verified = task["status"] == "Completed"
+        receipt = (
+            task.get("authored_output")
+            if not verified
+            else {
+                "output_refs_and_hashes": task["completion_binding"]["outputs"],
+                "producer_invocation_ids": [],
+                "writer_ids": [],
+            }
+        )
+        identity = (
+            task["completion_binding"]["candidate_identity"]
+            if verified
+            else receipt["candidate_identity"]
+        )
+        expected = {
+            key: digest(
+                integration["tasks"][key].get("completion_binding")
+                if integration["tasks"][key]["status"] == "Completed"
+                else integration["tasks"][key].get("authored_output")
+            )
+            for key in task["dependencies"]
+        }
+        if identity["dependency_receipts"] != expected:
+            raise ExecutionConflict("dependency producer receipt changed")
+        for writer in state["writers"].values():
+            if writer.get("task") == dep and writer["state"] in {"ACTIVE", "UNRESOLVED"}:
+                raise ExecutionConflict("dependency has unsettled producer writer")
+        for entry in state["evidence"]["entries"]:
+            if (
+                (entry["status"] == "RUNNING" or entry.get("interrupted"))
+                and not entry.get("reconciliation")
+                and any(
+                    p == "." or p == q or p.startswith(q + "/") or q.startswith(p + "/")
+                    for p in entry["scope"]
+                    for q in task["files"]
+                )
+            ):
+                raise ExecutionConflict("dependency has an unsettled check")
+        for wid in receipt["writer_ids"]:
+            writer = state["writers"].get(wid)
+            if not writer or writer["state"] != "FINISHED" or writer.get("outcome") != "success":
+                raise ExecutionConflict("dependency writer provenance differs")
+        for aid in receipt["producer_invocation_ids"]:
+            producer = integration["agents"].get(aid)
+            if (
+                not producer
+                or producer["status"] != "Completed"
+                or not producer.get("ended_at")
+                or producer.get("yield_required")
+                or producer["task"] != dep
+            ):
+                raise ExecutionConflict("dependency producer lifecycle differs")
+        for output in receipt["output_refs_and_hashes"]:
+            if output["kind"] == "report":
+                if execution is None:
+                    raise ExecutionConflict("report dependency requires execution authority")
+                require_authored_report(execution, state, dep, output["resource"])
+                continue
+            with parent_descriptor(repository, output["path"]) as (directory, name):
+                fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                try:
+                    before = os.fstat(fd)
+                    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                        raise ExecutionConflict("dependency output is not an ordinary file")
+                    with os.fdopen(fd, "rb", closefd=False) as stream:
+                        raw = stream.read()
+                    after = os.fstat(fd)
+                    named = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                    if (
+                        stable(before) != stable(after)
+                        or stable(named) != stable(after)
+                        or digest(raw) != output["sha256"]
+                        or stat.S_IMODE(before.st_mode) != output["mode"]
+                    ):
+                        raise ExecutionConflict("dependency authored bytes changed")
+                finally:
+                    os.close(fd)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--handoff", required=True)
@@ -117,6 +266,7 @@ def main():
             "revalidate",
             "approve",
             "delivery-correction",
+            "authored-output",
         ],
     )
     parser.add_argument("--nonce", required=True)
@@ -159,9 +309,10 @@ def main():
             task = integration.get("tasks", {}).get(args.task)
             if task is None:
                 raise ExecutionConflict("authority task has not been committed")
-            amendments = [
-                a for a in state["amendments"] if args.task in a.get("affected_tasks", [])
-            ]
+            from harness.execution_lineage import scoped_amendments, validate_inherited_scope
+
+            inherited = validate_inherited_scope(conn, execution, state, args.task)
+            amendments = scoped_amendments(state, args.task)
             expected_revision = digest(
                 {
                     "task": args.task,
@@ -173,6 +324,8 @@ def main():
             if args.scope_revision != expected_revision:
                 raise ExecutionConflict("stale task/scope authority revision")
             for amendment in amendments:
+                if amendment["id"] in inherited:
+                    continue
                 decision = conn.execute(
                     "SELECT delivery FROM execution_decisions WHERE id=? AND execution_id=?",
                     (amendment["id"], execution["id"]),
@@ -188,6 +341,10 @@ def main():
                     raise ExecutionConflict(
                         "scoped authority lacks its exact acknowledged developer amendment"
                     )
+        if args.operation == "authored-output":
+            if not args.task:
+                raise ExecutionConflict("authored report requires a task scope")
+            require_authored_report(execution, state, args.task, args.delivery)
         print(
             canonical(
                 {

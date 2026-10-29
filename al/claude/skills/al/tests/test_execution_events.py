@@ -41,6 +41,8 @@ def test_reporting_cannot_manufacture_approval(cli, tmp_path, repo, monkeypatch)
 def test_target_harness_package_cannot_shadow_authority_bridge(cli,tmp_path,repo,monkeypatch):
     from execution_helpers import register_task
     controller,_,sid=bound(cli,tmp_path,repo,monkeypatch)
+    assert cli('spec-gate', 'SPEC_READY')[0] == 0
+    assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
     assert register_task(cli,tmp_path,'A',['svc'])[0] == 0
     shadow=repo/'harness'; shadow.mkdir()
     (shadow/'__init__.py').write_text('')
@@ -96,7 +98,7 @@ def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cl
     assert al_store.state_path(sid).read_bytes() == before
     assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
     assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
-    assert report(cli, tmp_path, 'blocker', {'id': 'design', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+    assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
     before = al_store.state_path(sid).read_bytes()
     assert cli('gates', 'run', '--stage', 'base')[0] != 0
     assert al_store.state_path(sid).read_bytes() == before

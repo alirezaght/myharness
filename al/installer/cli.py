@@ -24,6 +24,20 @@ def parser():
     pinned.add_argument('--session-directory', action='store_true')
     pinned.add_argument('--session', help='AL run id; inside a Claude conversation it may be omitted')
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
+    successor = sub.add_parser('runtime-successor', help='trusted operator successor preparation only')
+    child = successor.add_subparsers(dest='successor_action', required=True)
+    for action in ('prepare', 'activate', 'inputs', 'inspect', 'distribution'):
+        command = child.add_parser(action)
+        command.add_argument('--platform', choices=('codex', 'claude'), required=True)
+        if action != 'distribution':
+            command.add_argument('--request-id', required=True)
+        if action in {'prepare', 'activate', 'inputs'}:
+            command.add_argument('--repository', required=True)
+            if action != 'inputs':
+                command.add_argument('--coordinator-fd', type=int, required=True)
+            else:
+                command.add_argument('--session', required=True)
+                command.add_argument('--authority-ref', required=True)
     for name in ('source-proof','planning-proof','replan-proof','compatibility-readiness'):
         proof = sub.add_parser(name, help='read-only protected source policy validation')
         proof.add_argument('--repository', required=True)
@@ -87,6 +101,24 @@ def main(argv=None):
             os.environ.pop(key)
     os.environ.update(clean)
     try:
+        if args.command == 'runtime-successor':
+            from .runtime_successor import prepare_successor, inspect_successor, distribution
+            if args.successor_action == 'prepare':
+                result = prepare_successor(args.repository, args.platform, args.request_id, args.coordinator_fd)
+            elif args.successor_action == 'inputs':
+                from .runtime_successor import preparation_inputs
+                result = preparation_inputs(args.repository,args.platform,args.session,args.request_id,json.loads(args.authority_ref))
+            elif args.successor_action == 'activate':
+                from .runtime_successor_activation import activate_successor
+                result = activate_successor(args.repository, args.platform, args.request_id, args.coordinator_fd)
+            elif args.successor_action == 'inspect':
+                distribution(args.platform)  # Requires the genuine managed issuer context.
+                result = inspect_successor(args.request_id)
+            else:
+                _, verified = distribution(args.platform)
+                result = {'distribution_identity': verified['manifest']['closure_digest']}
+            print(json.dumps(result, sort_keys=True))
+            return 0
         if args.command == 'run':
             from .runtime_run import run
             arguments = args.arguments[1:] if args.arguments[:1] == ['--'] else args.arguments

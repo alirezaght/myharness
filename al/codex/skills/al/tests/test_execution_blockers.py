@@ -8,10 +8,12 @@ from launcher_context import admit_planning
 
 def test_blocked_task_and_dependents_but_independent_admission(cli, tmp_path, repo, monkeypatch):
     controller, _, sid = bound(cli, tmp_path, repo, monkeypatch)
+    assert cli('spec-gate', 'SPEC_READY')[0] == 0
+    assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
     for tid, files, deps in [('A', ['svc'], []), ('C', ['web'], ['A']), ('B', ['docs'], [])]:
         code, out, err = register_task(cli, tmp_path, tid, files, deps)
         assert code == 0, (code, out, err)
-    code, _, _ = report(cli, tmp_path, 'blocker', {'id': 'design', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit product authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})
+    code, _, _ = report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit product authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})
     assert code == 0
     for tid in ('A', 'C'):
         code, _, _ = cli('integration', 'task-admit', '--task', tid)
@@ -27,8 +29,6 @@ def test_blocked_task_and_dependents_but_independent_admission(cli, tmp_path, re
     # Independent B can finish through normal writer, check and task guards.
     from evidence_helpers import plan_na_gates
     import sys
-    assert cli('spec-gate', 'SPEC_READY')[0] == 0
-    assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
     plan_na_gates(cli, tmp_path, ('docs/readme.md',))
     admit_planning(cli)
     assert cli('phase', 'IMPLEMENTATION')[0] == 0

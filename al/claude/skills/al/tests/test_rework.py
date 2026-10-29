@@ -81,8 +81,10 @@ def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path):
     assert st['rework']==before['rework'] and st['runtime_origin']==before['runtime_origin']
     assert st["status"] == "RUNNING" and st["phase"] == "REWORK_REASSESSMENT"
     assert st['agents']==['al-architect'] and st['rework_recovery']['pending']
-    refused=cli('writer','start','--id','blocked','--role','al-engineer','--files','svc/app.py')[0]
-    assert refused!=0
+    admitted=cli('writer','start','--id','ordinary-repair','--role','al-engineer','--files','svc/app.py')[0]
+    assert admitted==0
+    assert load(state_file)['rework']==st['rework']
+    assert cli('writer','finish','--id','ordinary-repair','--outcome','success')[0]==0
     assert st["rework"]["total"] == 2
     assert st["correction_iteration"] == 0  # review corrections stay separate
 

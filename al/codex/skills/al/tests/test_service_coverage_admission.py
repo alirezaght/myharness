@@ -31,15 +31,11 @@ def test_manifest_tampering_refuses_without_state_mutation(cli,repo,tmp_path,sta
     if mutation!='env':assert state_file().read_bytes()==before
 
 
-def test_incomplete_missing_check_blocks_proof_phase_and_degraded_writer(cli,repo,tmp_path,state_file):
+def test_incomplete_missing_check_blocks_proof_but_allows_scoped_writing(cli,repo,tmp_path,state_file):
     seed(repo);unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py']);a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete'
     plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
-    before=state_file().read_bytes()
-    for args in [('phase','IMPLEMENTATION'),('writer','start','--id','blocked','--role','al-engineer','--files','packages/shared/src/common.py','--degraded','--reason','diagnostic repair')]:
-        invoke(cli,*args,ok=False)
-        assert state_file().read_bytes()==before
     # Issuance may append immutable planning provenance; only the refused commit must not mutate.
     from launcher_context import _reports
     packet=json.loads(invoke(cli,'planning','packet')[1])
@@ -48,6 +44,11 @@ def test_incomplete_missing_check_blocks_proof_phase_and_degraded_writer(cli,rep
     before=state_file().read_bytes()
     invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'],ok=False)
     assert state_file().read_bytes()==before
+    invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'writer','start','--id','scoped','--role','al-engineer','--files','packages/shared/src/common.py')
+    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    invoke(cli,'writer','finish','--id','scoped','--outcome','success')
+    invoke(cli,'approved',ok=False)
 
 
 def test_relevant_uncertainty_selects_all_potential_services(cli,repo,tmp_path):
@@ -67,7 +68,10 @@ def test_exhaustive_can_admit_and_body_only_edit_keeps_plan_but_stales_evidence(
     invoke(cli,'writer','start','--id','owned','--role','al-engineer','--files','packages/shared/src/common.py');invoke(cli,'writer','finish','--id','owned','--outcome','success')
     st=json.loads(cli('show')[1]);assert Currency.check(st)['current']
     put(repo,'packages/shared/src/common.py','VALUE=2\n');assert Currency.check(st)['current']
-    unit(repo,'services/new');invoke(cli,'writer','start','--id','new','--role','al-engineer','--files','packages/shared/src/common.py',ok=False)
+    unit(repo,'services/new');invoke(cli,'writer','start','--id','new','--role','al-engineer','--files','packages/shared/src/common.py')
+    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    invoke(cli,'writer','finish','--id','new','--outcome','success')
+    invoke(cli,'approved',ok=False)
     assert not Currency.check(st)['current']
 
 
@@ -154,10 +158,13 @@ def test_current_source_import_change_and_new_module_stale_admission(cli,repo,tm
     # A new module inside a planned unit and path is an ordinary edit; the review-start
     # inventory checks the candidate's obligations against the plan.
     put(repo,'services/a/src/new_leaf.py','VALUE=1\n');assert not Currency.check(st)['current']
-    invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    invoke(cli,'phase','IMPLEMENTATION')
+    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    invoke(cli,'review-start',ok=False)
     plan(cli,repo,tmp_path,['services/a/src'])
     admit_planning(cli)
-    invoke(cli,'phase','IMPLEMENTATION')
+    state=json.loads(cli('show')[1])
+    assert state['phase']=='IMPLEMENTATION' and state['proof_admission']['status']=='admitted'
 
 
 @pytest.mark.parametrize('header',['image: python:3.13\n','variables:\n  MODE: ignored\n','default:\n  before_script: echo setup\n'])
@@ -209,7 +216,7 @@ def test_control_flow_and_custom_tool_paths_cannot_certify_verification(cli,repo
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
 
 
-def test_incomplete_coverage_blocks_all_shared_boundaries_even_with_admitted_proof(cli,repo,tmp_path,state_file):
+def test_incomplete_coverage_preserves_proof_guards_but_allows_writer_readiness(cli,repo,tmp_path,state_file):
     seed(repo);start(cli);plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
     assert json.loads(cli('show')[1])['proof_admission']['status']=='admitted'
     unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown)\n')
@@ -221,7 +228,11 @@ def test_incomplete_coverage_blocks_all_shared_boundaries_even_with_admitted_pro
     from al_transitions import require_transition
     from al_review import approval_gaps
     from al_gates import gate_gaps
-    for check in [lambda:require_admitted(st),lambda:writer_ready(st,['packages/shared/src/common.py']),lambda:ready(st),lambda:require_transition(st,'review-start','REVIEW'),lambda:require_transition(st,'approved','DONE')]:
+    writing=deepcopy(st)
+    writer_ready(writing,['packages/shared/src/common.py'])
+    assert writing['implementation_readiness']['obligations']
+    assert st==before and state_file().read_bytes()==disk
+    for check in [lambda:require_admitted(st),lambda:ready(st),lambda:require_transition(st,'review-start','REVIEW'),lambda:require_transition(st,'approved','DONE')]:
         with pytest.raises(SystemExit,match='coverage'):check()
         assert st==before and state_file().read_bytes()==disk
     assert any('coverage incomplete' in g for g in gate_gaps(st,'candidate'))
@@ -240,8 +251,11 @@ def test_known_extra_unverified_job_does_not_hide_unknown_job_inventory(cli,repo
     put(repo,'.gitlab-ci.yml','include:\n  - remote: https://example.invalid/jobs.yml\n')
     _,m=discover(cli,tmp_path,['services/a/src/app.py'])
     assert any(g['code']=='unknown-ci-inventory' for g in m['service_coverage']['assessment']['gaps'])
-    before=state_file().read_bytes();invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    invoke(cli,'phase','IMPLEMENTATION')
+    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    before=state_file().read_bytes();invoke(cli,'review-start',ok=False)
     assert state_file().read_bytes()==before
+    invoke(cli,'approved',ok=False)
 
 
 def test_unsupported_ci_provider_blocks_even_without_selected_services(cli,repo,tmp_path):

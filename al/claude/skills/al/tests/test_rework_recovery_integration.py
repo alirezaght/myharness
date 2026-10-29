@@ -42,30 +42,19 @@ def user_request(cli, state_file, tmp_path, request_id, *, binding=None):
     return path
 
 
-def test_pending_reassessment_blocks_all_public_writer_and_task_admission(cli, state_file, tmp_path):
+def test_pending_reassessment_preserves_real_admission_boundaries_without_blocking_work(cli, state_file, tmp_path):
     started(cli, tmp_path)
     exhaust(cli)
-    before = state_file().read_bytes()
-
-    attempts = (
-        cli(
-            "writer",
-            "start",
-            "--id",
-            "degraded-bypass",
-            "--role",
-            "al-engineer",
-            "--files",
-            "svc/app.py",
-            "--degraded",
-            "--reason",
-            "continue despite pending recovery",
-        ),
-        cli("integration", "task-admit", "--task", "recovery-bypass"),
-        cli("phase", "FINALIZATION"),
-    )
-    assert all(result[0] != 0 for result in attempts)
-    assert state_file().read_bytes() == before
+    before = load(state_file)
+    assert cli("integration", "task-admit", "--task", "unknown-task")[0] != 0
+    assert cli("writer", "start", "--id", "invalid-path", "--role", "al-engineer", "--files", "../escape")[0] != 0
+    assert cli("writer", "start", "--id", "ordinary-repair", "--role", "al-engineer", "--files", "svc/app.py")[0] == 0
+    assert cli("phase", "FINALIZATION")[0] != 0  # Live writer ownership is still authoritative.
+    assert cli("writer", "finish", "--id", "ordinary-repair", "--outcome", "success")[0] == 0
+    assert cli("phase", "FINALIZATION")[0] == 0
+    assert load(state_file)['rework'] == before['rework']
+    assert load(state_file)['rework_recovery'] == before['rework_recovery']
+    assert cli("approved", "--reason", "No verification proof was supplied")[0] != 0
 
 
 def test_distinct_user_continuations_grant_two_each_and_replay_once(cli, state_file, tmp_path):

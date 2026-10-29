@@ -1,12 +1,50 @@
 "use strict";
 
 const EXECUTION_DRAFTS = new Map();
+const ACTIVE_EXECUTION_STATUSES = new Set(["Running", "Launching", "WorkerOwned"]);
 const EXECUTION_FOCUS_IDS = new Set(["execution-decision-text", "execution-decision-verdict"]);
 let executionTaskId = null;
 let executionSnapshot = null;
+const EXECUTION_ACTIONS = new Map();
+const DECISION_RETRIES = new Set();
+const DECISION_RETRY_RESULTS = new Map();
+
+function executionIdentity(execution) {
+  return viewIdentity(execution.task_id || executionTaskId, execution);
+}
+
+function currentExecution(execution) {
+  return document.getElementById("execution")?.dataset.viewIdentity === executionIdentity(execution);
+}
+
+function executionActionKey(execution, action) {
+  return JSON.stringify([executionIdentity(execution), action]);
+}
+
+function executionEpochPayload(execution) {
+  return execution.epoch_id === undefined ? {} : {
+    epoch_id: execution.epoch_id,
+    authority_generation: execution.authority_generation,
+  };
+}
+
+function developerDecisions(execution) {
+  if (!Array.isArray(execution.developer_decisions)) return execution.blockers || [];
+  return execution.developer_decisions.map((item) => typeof item === "string"
+    ? (execution.blockers || []).find((blocker) => blocker.id === item) : item).filter(Boolean);
+}
+
+function implementationLabel(execution) {
+  return {
+    ready: "Implementation ready",
+    continuing: "Implementation continuing",
+    developer_decision: "Developer decision needed",
+    technically_unavailable: "Tool repair in progress",
+  }[execution.implementation?.status] || null;
+}
 
 function executionDraftKey(execution, blocker) {
-  return `${execution.id}:${blocker.id}:${blocker.revision}`;
+  return JSON.stringify([executionIdentity(execution), blocker.id, blocker.revision]);
 }
 
 function draftFor(execution, blocker) {
@@ -54,36 +92,78 @@ function renderExecutionSummary(execution) {
   const source = el("p", `AL source: ${execution.source_status || "Unknown"}`);
   source.dataset.sourceStatus = (execution.source_status || "Unknown").toLowerCase();
   section.append(source);
+  const identityDetails = document.createElement("details");
+  identityDetails.className = "execution-identities-disclosure";
+  identityDetails.dataset.viewDisclosure = "execution-identifiers";
+  identityDetails.append(el("summary", "Execution identifiers"));
   const identity = document.createElement("dl");
   identity.className = "execution-identities";
   for (const [label, value] of [
     ["Execution", execution.id],
+    ["Runtime epoch", execution.epoch_id],
+    ["Authority generation", execution.authority_generation],
     ["Approval", execution.approval_id],
     ["AL session", execution.al_session_id],
     ["AL run", execution.al_run_id],
     ["Native conversation", execution.native_id],
   ]) identity.append(executionField(label, value).children[0], executionField(label, value).children[1]);
-  section.append(identity);
+  identityDetails.append(identity);
+  section.append(identityDetails);
   if (execution.error) section.append(alertText(`Execution issue: ${execution.error}`));
+  if (execution.status_explanation) section.append(el("p", execution.status_explanation));
+  if (execution.authored_work?.kind === "authored_work_recorded_verification_pending") {
+    const notice = el("p", execution.authored_work.message);
+    notice.className = "authored-work-notice";
+    notice.setAttribute("role", "status");
+    section.append(notice);
+  }
   if (execution.status === "Unavailable" || execution.status === "Interrupted" || execution.status === "RecoveryRequired") {
     section.append(el("p", "Review the recorded host identity and diagnostics before choosing a recovery action."));
   }
   const actions = el("div");
   actions.className = "execution-actions";
   if (execution.status !== "Completed" && execution.status !== "Failed") {
-    actions.append(executionActionButton("Reconnect", "reconnect", execution));
-    if (execution.native_id) actions.append(executionActionButton("Resume native session", "resume", execution));
+    actions.append(executionActionButton("Refresh recorded status", "reconnect", execution,
+      "Refreshes the saved run state and never continues the native agent."));
+    if (execution.native_id) actions.append(executionActionButton("Continue agent in existing session", "resume", execution,
+      "Explicitly continues the recorded native conversation, subject to current recovery checks."));
     if (execution.status === "RecoveryRequired") actions.append(renderReconcileForm(execution));
   }
-  section.append(actions);
+  const messages = el("div");
+  messages.className = "execution-action-results";
+  messages.setAttribute("aria-live", "polite");
+  for (const action of ["reconnect", "resume"]) {
+    const state = EXECUTION_ACTIONS.get(executionActionKey(execution, action));
+    if (state) {
+      const result = el("p", state.message);
+      result.setAttribute("role", state.error ? "alert" : "status");
+      messages.append(result);
+    }
+  }
+  section.append(actions, messages);
   return section;
 }
 
-function executionActionButton(label, action, execution) {
+function executionActionButton(label, action, execution, explanation) {
+  const wrap = el("div");
+  wrap.className = "execution-action";
   const button = el("button", label);
   button.type = "button";
+  const readiness = execution.readiness || {};
+  const available = readiness.actions?.[action];
+  const key = executionActionKey(execution, action);
+  const activeResume = action === "resume" && ACTIVE_EXECUTION_STATUSES.has(execution.status);
+  button.disabled = EXECUTION_ACTIONS.get(key)?.busy === true || available === false || activeResume;
+  button.setAttribute("aria-describedby", `execution-action-help-${action}`);
   button.addEventListener("click", () => sendExecutionAction(action, execution));
-  return button;
+  const unavailableReason = activeResume
+    ? "The execution is already active. Use Refresh recorded status to observe its progress."
+    : readiness.action_reasons?.[action]?.message || readiness.message;
+  const hint = el("small", activeResume || available === false
+    ? `${unavailableReason} ${explanation}` : explanation);
+  hint.id = `execution-action-help-${action}`;
+  wrap.append(button, hint);
+  return wrap;
 }
 
 function renderReconcileForm(execution) {
@@ -109,11 +189,51 @@ function renderReconcileForm(execution) {
     await postExecution("reconcile", {
       task: executionTaskId,
       execution: execution.id,
+    ...executionEpochPayload(execution),
       outcome: select.value,
       evidence: evidence.value,
     });
   });
   return form;
+}
+
+function renderVerificationState(execution) {
+  const section = el("section");
+  section.className = "execution-verification";
+  const label = implementationLabel(execution);
+  if (label) section.append(el("h4", label));
+  const verification = execution.verification;
+  if (verification) {
+    const labels = { incomplete: "Verification incomplete", running: "Checks running", complete: "Required verification complete" };
+    section.append(el("p", labels[verification.status] || "Verification status unknown"));
+    if (verification.status !== "complete") section.append(el("p",
+      "Implementation can continue within its authorized scope. Final approval still requires the remaining checks."));
+  }
+  const issues = Object.values(execution.operational_issues || {}).filter((issue) => issue.state !== "Resolved");
+  const obligations = verification?.obligation_refs || [];
+  if (issues.length || obligations.length) {
+    const details = document.createElement("details");
+    details.dataset.viewDisclosure = "verification-obligations";
+    details.append(el("summary", `Tooling and pending checks (${issues.length + obligations.length})`));
+    const list = el("ul");
+    for (const issue of issues) list.append(el("li", `${issue.capability_or_check_ref || issue.id}: ${issue.state}. ${issue.next_action}`));
+    for (const obligation of obligations) list.append(el("li", typeof obligation === "string"
+      ? obligation : obligation.message || obligation.id || "Unresolved verification obligation"));
+    details.append(list);
+    section.append(details);
+  }
+  const epochs = execution.available_history_epochs || [];
+  if (epochs.length) {
+    const history = document.createElement("details");
+    history.dataset.viewDisclosure = "runtime-history";
+    history.append(el("summary", `Previous runtime history (${epochs.length})`));
+    const list = el("ul");
+    for (const epoch of epochs) list.append(el("li", typeof epoch === "string" ? epoch
+      : `${epoch.epoch_id || epoch.id} · ${epoch.status || "Archived"}${epoch.al_session_id ? ` · ${epoch.al_session_id}` : ""}`));
+    history.append(el("p", "Previous decisions and failures remain recorded. They do not grant authority to the current runtime."), list);
+    section.append(history);
+  }
+  return section;
 }
 
 function renderProgress(execution) {
@@ -130,6 +250,8 @@ function renderProgress(execution) {
     bar.value = progress.completed;
     bar.setAttribute("aria-label", "Completed task units");
     section.append(bar);
+    const authored = (execution.tasks || []).filter((task) => task.authored_output && task.status !== "Completed").length;
+    if (authored) section.append(el("p", `Authored output is available for ${authored} task(s). Verified completion is tracked separately.`));
   }
   if (execution.phase) section.append(el("p", `AL phase: ${execution.phase.phase || execution.phase.name || "unknown"}`));
   return section;
@@ -202,6 +324,7 @@ function renderGraph(execution) {
     card.className = "execution-task-node";
     card.dataset.status = String(task.status || "Pending").toLowerCase();
     card.append(el("h5", task.title || task.id), el("p", `Status: ${task.status || "Pending"}`));
+    if (task.authored_output && task.status !== "Completed") card.append(el("p", "Authored output available · verification pending"));
     card.append(el("p", `Owner files: ${(task.files || []).join(", ") || "none assigned"}`));
     const edges = edgesByTask.get(task.id) || [];
     const relations = new Map();
@@ -266,16 +389,25 @@ function renderLogs(execution) {
   if (!execution.logs.length) section.append(el("p", "No diagnostics recorded."));
   for (const log of execution.logs) {
     const details = document.createElement("details");
+    details.dataset.viewDisclosure = JSON.stringify(["log", log.id]);
     const summary = el("summary", `${log.channel} · ${log.created_at}`);
     details.append(summary);
     const load = el("button", "Load stored log");
     load.type = "button";
     const output = el("pre");
+    output.dataset.viewLog = JSON.stringify(["log", log.id]);
     load.addEventListener("click", async () => {
+      const identity = executionIdentity(execution);
       load.disabled = true;
       const result = await getExecutionLog(execution, log.id);
-      output.textContent = result.error || result.text || "Log is empty.";
-      load.disabled = false;
+      const current = document.getElementById("execution");
+      if (current?.dataset.viewIdentity !== identity) return;
+      const next = [...current.querySelectorAll("[data-view-log]")]
+        .find((node) => node.dataset.viewLog === output.dataset.viewLog);
+      if (next) {
+        next.textContent = result.error || result.text || "Log is empty.";
+        next.previousElementSibling.disabled = false;
+      }
     });
     details.append(load, output);
     section.append(details);
@@ -302,11 +434,44 @@ function renderDecision(blocker, execution) {
   if (blocker.delivery_id) article.append(withCode("delivery: ", blocker.delivery_id));
   const matching = execution.decisions.filter((item) => item.blocker_id === blocker.id);
   for (const decision of matching) {
-    const details = el("p", `Request ${decision.id}: ${decision.state}${decision.registry_id ? ` · registry ${decision.registry_id}` : ""}`);
+    const statusText = {
+      failed: "Saved · delivery failed",
+      pending: "Saved · delivery pending",
+      awaiting_acknowledgment: "Delivered · awaiting AL acknowledgment",
+      acknowledged: "Acknowledged by AL",
+      not_delivered: "Retired invalid request · not delivered to AL",
+    }[decision.delivery_status] || `Saved · ${decision.state}`;
+    const details = document.createElement("details");
+    details.className = "saved-decision-details";
+    details.dataset.viewDisclosure = JSON.stringify(["decision", blocker.id, decision.id]);
+    details.append(el("summary", statusText));
+    details.append(withCode("Request ID: ", decision.id));
+    if (decision.registry_id) details.append(withCode("Registry record: ", decision.registry_id));
+    if (decision.outcome_notice) details.append(el("p", decision.outcome_notice));
     article.append(details);
-    if (decision.error) article.append(alertText(`Decision delivery issue: ${decision.error}`));
+    const historical = decision.delivery_status === "not_delivered";
+    if (decision.error) {
+      if (historical) details.append(el("p", `Historical delivery issue: ${decision.error}`));
+      else article.append(alertText(`Decision delivery issue: ${decision.error}`));
+    }
+    if (!historical && decision.retryable && decision.delivery_status === "failed") {
+      const retry = el("button", "Retry saved decision delivery");
+      retry.type = "button";
+      retry.disabled = DECISION_RETRIES.has(executionActionKey(execution, decision.id));
+      retry.addEventListener("click", () => retrySavedDecision(execution, decision));
+      article.append(retry);
+    }
+    const retryResult = DECISION_RETRY_RESULTS.get(executionActionKey(execution, decision.id));
+    if (retryResult && historical) details.append(el("p", retryResult.message));
+    else if (retryResult) {
+      const result = el("p", retryResult.message);
+      result.setAttribute("role", retryResult.error ? "alert" : "status");
+      article.append(result);
+    }
   }
-  if (blocker.state !== "Resolved" && !["Rejected", "Resolved"].includes(blocker.decision_state)) {
+  const savedOpenRequest = matching.some((decision) => !["Rejected", "Resolved"].includes(decision.state));
+  const actionable = developerDecisions(execution).some((item) => item.id === blocker.id);
+  if (actionable && !savedOpenRequest && blocker.state !== "Resolved" && !["Rejected", "Resolved"].includes(blocker.decision_state)) {
     article.append(renderDecisionForm(blocker, execution));
   }
   return article;
@@ -349,9 +514,9 @@ function renderDecisionForm(blocker, execution) {
 function renderDecisionsExecution(execution) {
   const section = el("section");
   section.className = "execution-decisions";
-  section.append(el("h4", "Design blockers and decisions"));
-  if (!execution.blockers.length) section.append(el("p", "No task-scoped blockers."));
-  for (const blocker of execution.blockers) section.append(renderDecision(blocker, execution));
+  section.append(el("h4", "Developer decisions"));
+  if (!developerDecisions(execution).length) section.append(el("p", "No developer decision is needed."));
+  for (const blocker of execution.blockers || []) section.append(renderDecision(blocker, execution));
   return section;
 }
 
@@ -360,8 +525,10 @@ function renderExecution(taskId, execution) {
   executionSnapshot = execution;
   const section = el("section");
   section.id = "execution";
+  section.dataset.viewIdentity = viewIdentity(taskId, execution);
   section.append(
     renderExecutionSummary(execution),
+    renderVerificationState(execution),
     renderProgress(execution),
     renderAgents(execution),
     renderGraph(execution),
@@ -373,7 +540,9 @@ function renderExecution(taskId, execution) {
 }
 
 async function postExecution(action, payload) {
+  const identity = executionSnapshot ? executionIdentity(executionSnapshot) : null;
   const { res, data, netErr } = await postJson(`/api/execution/${action}`, payload);
+  if (identity && document.getElementById("execution")?.dataset.viewIdentity !== identity) return { res, data, netErr };
   if (res && res.ok) await refreshDashboard();
   else showExecutionError(data.error || netErr || res?.statusText || "No response");
   return { res, data, netErr };
@@ -388,7 +557,58 @@ function showExecutionError(message) {
 }
 
 async function sendExecutionAction(action, execution) {
-  await postExecution(action, { task: executionTaskId, execution: execution.id });
+  if (action === "resume" && ACTIVE_EXECUTION_STATUSES.has(execution.status)) return;
+  const key = executionActionKey(execution, action);
+  if (EXECUTION_ACTIONS.get(key)?.busy) return;
+  EXECUTION_ACTIONS.set(key, {
+    busy: true,
+    message: action === "reconnect" ? "Refreshing recorded status…" : "Continuing the existing native session…",
+  });
+  repaintExecution();
+  const { res, data, netErr } = await postJson(`/api/execution/${action}`, {
+    task: executionTaskId,
+    execution: execution.id,
+    ...executionEpochPayload(execution),
+  });
+  if (!currentExecution(execution)) { EXECUTION_ACTIONS.delete(key); return; }
+  if (res?.ok) {
+    EXECUTION_ACTIONS.set(key, {
+      busy: false,
+      message: action === "reconnect"
+        ? "Recorded status refreshed. No native agent was continued."
+        : "The continuation request was accepted for the existing native session. Check recorded status for its result.",
+      error: false,
+    });
+    await refreshDashboard();
+  } else {
+    EXECUTION_ACTIONS.set(key, {
+      busy: false,
+      message: `Action failed: ${data.error || netErr || res?.statusText || "No response"}`,
+      error: true,
+    });
+    repaintExecution();
+  }
+}
+
+async function retrySavedDecision(execution, decision) {
+  if (DECISION_RETRIES.has(executionActionKey(execution, decision.id))) return;
+  const key = executionActionKey(execution, decision.id);
+  DECISION_RETRIES.add(key);
+  DECISION_RETRY_RESULTS.set(key, { message: "Retrying the saved decision request…", error: false });
+  repaintExecution();
+  const { res, data, netErr } = await postJson("/api/execution/decision-retry", {
+    task: executionTaskId,
+    execution: execution.id,
+    ...executionEpochPayload(execution),
+    delivery: decision.id,
+  });
+  DECISION_RETRIES.delete(key);
+  if (!currentExecution(execution)) return;
+  DECISION_RETRY_RESULTS.set(key, res?.ok
+    ? { message: "The saved request was retried with its original text and identity.", error: false }
+    : { message: `Retry failed: ${data.error || netErr || res?.statusText || "No response"}`, error: true });
+  if (res?.ok) await refreshDashboard();
+  else repaintExecution();
 }
 
 async function sendDecision(execution, blocker, draft) {
@@ -400,6 +620,7 @@ async function sendDecision(execution, blocker, draft) {
   const result = await postExecution("decision", {
     task: executionTaskId,
     execution: execution.id,
+    ...executionEpochPayload(execution),
     blocker: blocker.id,
     revision: blocker.revision,
     request_id: current.requestId,
@@ -409,6 +630,7 @@ async function sendDecision(execution, blocker, draft) {
     criteria: [],
     amendment: false,
   });
+  if (!currentExecution(execution)) return;
   if (!result.res?.ok) {
     saveExecutionDraft(execution, blocker, { busy: false, error: result.data.error || result.netErr || "Decision was not delivered." });
     repaintExecution();
@@ -426,14 +648,21 @@ async function getExecutionLog(execution, logId) {
 
 function repaintExecution() {
   const node = document.getElementById("execution");
-  if (node && executionTaskId && executionSnapshot) withExecutionFocus(() => node.replaceWith(renderExecution(executionTaskId, executionSnapshot)));
+  if (!node || !executionTaskId || !executionSnapshot) return;
+  const saved = captureView(node);
+  const next = renderExecution(executionTaskId, executionSnapshot);
+  const same = restoreView(next, saved);
+  withExecutionFocus(() => node.replaceWith(next));
+  if (same) window.scrollTo(saved.x, saved.y);
 }
 
 function withExecutionFocus(fn) {
   const active = document.activeElement;
+  const identity = document.getElementById("execution")?.dataset.viewIdentity;
   const id = active && EXECUTION_FOCUS_IDS.has(active.id) ? active.id : null;
   const key = active?.closest?.(".execution-blocker")?.querySelector("textarea")?.value;
   const result = fn();
+  if (identity !== document.getElementById("execution")?.dataset.viewIdentity) return result;
   if (id) {
     const next = document.getElementById(id);
     if (next) {

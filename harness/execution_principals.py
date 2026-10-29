@@ -17,12 +17,13 @@ _READ_ONLY = {
 
 
 class PrincipalRegistry:
-    def __init__(self, directory, native_root, binding, policy):
+    def __init__(self, directory, native_root, binding, policy, *, epoch_fence=None):
         self.directory = Path(directory)
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.native_root = Path(native_root)
         self.binding, self.policy = binding, policy
         self.root = None
+        self.epoch_fence = epoch_fence
         path = self.directory / "root.json"
         if path.is_file():
             value = json.loads(path.read_bytes())
@@ -38,7 +39,19 @@ class PrincipalRegistry:
         durable_file(self.directory / "root.json", canonical(value).encode())
         self.root = thread_id
 
+    def require_live(self, principal):
+        from harness.execution_contract import identity
+
+        identity(principal["thread_id"])
+        path = self.directory / "capability-releases" / (principal["thread_id"] + ".json")
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return
+        raise ValueError("stale_principal: native capability was irrevocably released")
+
     def enroll(self, thread_id, ancestry=()):
+        self.require_live({"thread_id": thread_id})
         if not self.root:
             raise ValueError("IDENTITY_NOT_READY: supervised root start not observed")
         if thread_id in ancestry or len(ancestry) > 20:
@@ -49,6 +62,26 @@ class PrincipalRegistry:
                 raise ValueError("supervised root has child provenance")
             writable, role = False, "orchestrator"
         else:
+            if self.epoch_fence is not None:
+                from datetime import datetime
+
+                try:
+                    created = datetime.fromisoformat(identity.created_at.replace("Z", "+00:00"))
+                    if created.tzinfo is None:
+                        raise ValueError("creation timestamp has no timezone")
+                    created_at = created.timestamp()
+                except (ValueError, TypeError, AttributeError):
+                    raise ValueError(
+                        "successor child lacks genuine SessionMeta creation provenance"
+                    ) from None
+                if (
+                    thread_id in self.epoch_fence["predecessor_child_ids"]
+                    or thread_id in self.epoch_fence.get("preexisting_child_ids", [])
+                    or created_at <= self.epoch_fence["activated_at"]
+                ):
+                    raise ValueError(
+                        "stale_epoch: predecessor child cannot acquire successor authority"
+                    )
             if identity.parent_thread_id is None:
                 raise ValueError("foreign native root has no supervised ancestry")
             parent = self.enroll(identity.parent_thread_id, (*ancestry, thread_id))
@@ -67,6 +100,10 @@ class PrincipalRegistry:
             "policy": self.policy,
             "metadata_digest": identity_digest(identity),
         }
+        if self.epoch_fence is not None:
+            value["epoch_id"] = self.epoch_fence["epoch_id"]
+            value["authority_generation"] = self.epoch_fence["authority_generation"]
+            value["creation_provenance"] = identity.created_at
         path = self.directory / (thread_id + ".json")
         durable_file(path, canonical(value).encode())
         return value
@@ -162,6 +199,7 @@ class PrincipalRegistry:
             "binding": self.binding,
             "policy": self.policy,
         }
+        self.require_live(principal)
         return principal, public, attestation
 
     def claim_attestation(self, attestation):

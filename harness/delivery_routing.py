@@ -97,7 +97,12 @@ def route_failure(controller, execution_id, pipeline, jobs):
             return delivery_view(controller.conn, execution_id)
         else:
             controller.conn.execute(
-                "INSERT INTO delivery_corrections VALUES (?,?,?,?,?,?,?,NULL)",
+                (
+                    "INSERT INTO "
+                    "delivery_corrections(id,execution_id,generation,candidate_sha,pipeline"
+                    "_id,request,state,acknowledgement,epoch_id) VALUES "
+                    "(?,?,?,?,?,?,?,NULL,?)"
+                ),
                 (
                     request_id,
                     execution_id,
@@ -106,6 +111,7 @@ def route_failure(controller, execution_id, pipeline, jobs):
                     pipeline["id"],
                     canonical(request),
                     "Intent",
+                    execution["epoch_id"],
                 ),
             )
     return admit_delivery_correction(controller, request_id)
@@ -124,6 +130,10 @@ def correction_request(controller, execution_id, request_id):
 def validate_correction_authority(controller, execution, request_id):
     row, request = correction_request(controller, execution["id"], request_id)
     delivery = get_delivery(controller.conn, execution["id"])
+    from harness.delivery_store import require_delivery_epoch
+
+    require_delivery_epoch(controller.conn, dict(row))
+    require_delivery_epoch(controller.conn, delivery)
     if row["state"] not in {"Admitted", "Acknowledged"}:
         raise ValueError("correction has not been admitted by supervisor")
     expected_generation = delivery["generation"] + (row["state"] != "Acknowledged")

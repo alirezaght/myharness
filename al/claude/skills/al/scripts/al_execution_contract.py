@@ -33,6 +33,9 @@ KINDS = {
     "ownership.changed",
     "handoff.created",
     "blocker.raised",
+    "issue.updated",
+    "output.authored",
+    "output.invalidated",
     "blocker.resolved",
     "decision.acknowledged",
     "test.started",
@@ -220,6 +223,9 @@ def validate_event(value):
     if kind not in KINDS or not isinstance(p, dict):
         raise ValueError("unknown event kind/payload")
     required = {
+        "issue.updated": {"id", "revision", "cause"},
+        "output.authored": {"task_id", "receipt_hash"},
+        "output.invalidated": {"task_id", "reason"},
         "delivery.correction.acknowledged": {"request_id", "request_digest", "generation", "prior_completion_digest"},
         "run.started": {"status"},
         "run.ended": {"status"},
@@ -268,6 +274,8 @@ def validate_event(value):
         if p["status"] not in STATUSES:
             raise ValueError("invalid activity status")
         progress(p.get("progress"))
+    if kind.startswith("task.") and "completion_binding" in p:
+        validate_completion(p["completion_binding"])
     if kind.startswith("task."):
         integer(p["revision"], "task revision", 1)
     if kind == "task.registered":
@@ -293,6 +301,18 @@ def validate_event(value):
         string_list(p["alternatives"], "blocker alternatives")
         for key in ("question", "context", "recommendation"):
             text(p[key], key)
+    if kind == "issue.updated":
+        validate_issue(p)
+        if p["observed_binding"] != value["binding"]:
+            raise ValueError("foreign issue binding")
+    if kind == "output.authored":
+        validate_authored(p)
+    if kind == "output.invalidated":
+        identity(p["task_id"])
+        text(p["reason"], "invalidation reason")
+    if kind == "blocker.raised" and "kind" in p:
+        if p["kind"] not in BUSINESS_KINDS:
+            raise ValueError("invalid business decision kind")
     if kind == "handoff.created":
         identity(p["from"])
         identity(p["to"])
@@ -367,4 +387,120 @@ def validate_delivery(value):
         text(value["registry"][key], "Registry " + key)
     if value["verdict"] == "reject" and value["amendment"]:
         raise ValueError("rejection cannot authorize an amendment")
+    return value
+
+
+ISSUE_CAUSES = {'coverage_unknown', 'tool_unavailable', 'provider_unavailable',
+                'check_failed', 'capability_unavailable', 'runtime_repair'}
+BUSINESS_KINDS = {'specification', 'developer_engineering_decision'}
+
+
+def validate_issue(value):
+    required = {'id', 'revision', 'cause', 'task_ids', 'paths', 'capability_or_check_ref',
+                'diagnostic_ref', 'state', 'next_action', 'observed_binding'}
+    if not isinstance(value, dict) or not required <= value.keys() or set(value) - required - {'resolution_ref'}:
+        raise ValueError('invalid operational issue fields')
+    identity(value['id'])
+    integer(value['revision'], 'issue revision', 1)
+    if value['cause'] not in ISSUE_CAUSES or value['state'] not in {'Open', 'Repairing', 'Resolved'}:
+        raise ValueError('invalid operational issue cause/state')
+    string_list(value['task_ids'], 'issue tasks', ids=True)
+    if value['paths']:
+        paths(value['paths'])
+    elif not isinstance(value['paths'], list):
+        raise ValueError('invalid issue paths')
+    for key in ('capability_or_check_ref', 'next_action'):
+        text(value[key], key)
+    validate_binding(value['observed_binding'])
+    if not isinstance(value['diagnostic_ref'], dict):
+        raise ValueError('issue requires immutable diagnostic reference')
+    text(value['diagnostic_ref'].get('sha256'), 'diagnostic hash')
+    if value['state'] == 'Resolved' and not isinstance(value.get('resolution_ref'), dict):
+        raise ValueError('resolved issue requires repair evidence')
+    return value
+
+
+def validate_authored(value):
+    fields = {'task_id', 'task_revision', 'graph_revision', 'requirement_hash',
+              'candidate_identity', 'output_refs_and_hashes', 'producer_invocation_ids',
+              'writer_ids', 'receipt_hash'}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError('invalid authored output receipt')
+    identity(value['task_id'])
+    integer(value['task_revision'], 'authored task revision', 1)
+    integer(value['graph_revision'], 'authored graph revision', 1)
+    text(value['requirement_hash'], 'requirement hash')
+    validate_candidate(value['candidate_identity'])
+    string_list(value['producer_invocation_ids'], 'authored producers', ids=True, nonempty=True)
+    string_list(value['writer_ids'], 'authored writers', ids=True)
+    rows = value['output_refs_and_hashes']
+    if not isinstance(rows, list) or not rows:
+        raise ValueError('authored outputs required')
+    for row in rows:
+        if row.get('kind') == 'source':
+            if set(row) != {'kind', 'path', 'sha256', 'mode'}:
+                raise ValueError('invalid authored source')
+            paths([row['path']])
+            integer(row['mode'], 'source mode')
+        elif row.get('kind') == 'report':
+            if set(row) != {'kind', 'resource', 'producer', 'sha256'}:
+                raise ValueError('invalid authored report')
+            text(row['resource'], 'report resource')
+            identity(row['producer'])
+        else:
+            raise ValueError('unknown authored output kind')
+        if not re.fullmatch(r'sha256:[a-f0-9]{64}', row['sha256']):
+            raise ValueError('invalid output digest')
+    body = {k: v for k, v in value.items() if k != 'receipt_hash'}
+    if digest(body) != value['receipt_hash']:
+        raise ValueError('authored receipt hash differs')
+    return value
+
+
+def dependency_ready(task, *, graph_revision, requirement_hash):
+    if task['status'] == 'Completed':
+        value = task.get('completion_binding')
+        if value is not None:
+            validate_completion(value)
+        return bool(value and value['task_revision'] == task['revision']
+                    and value['graph_revision'] == graph_revision
+                    and value['requirement_hash'] == requirement_hash)
+    receipt = task.get('authored_output')
+    if receipt is None:
+        return False
+    validate_authored(receipt)
+    return (receipt['task_id'] == task['id'] and receipt['task_revision'] == task['revision']
+            and receipt['graph_revision'] == graph_revision
+            and receipt['requirement_hash'] == requirement_hash)
+
+
+def validate_completion(value):
+    if not isinstance(value, dict) or set(value) != {'task_revision', 'graph_revision', 'requirement_hash', 'candidate_identity', 'outputs'}:
+        raise ValueError('invalid verified completion binding')
+    integer(value['task_revision'], 'completion task revision', 1)
+    integer(value['graph_revision'], 'completion graph revision', 1)
+    text(value['requirement_hash'], 'completion requirement hash')
+    validate_candidate(value['candidate_identity'])
+    if not isinstance(value['outputs'], list):
+        raise ValueError('invalid completion outputs')
+    for row in value['outputs']:
+        if not isinstance(row, dict) or set(row) != {'kind', 'path', 'sha256', 'mode'} or row['kind'] != 'source':
+            raise ValueError('invalid completion source observation')
+        paths([row['path']])
+        integer(row['mode'], 'completion source mode')
+        if not re.fullmatch(r'sha256:[a-f0-9]{64}', row['sha256']):
+            raise ValueError('invalid completion output hash')
+    return value
+
+
+def validate_candidate(value):
+    if not isinstance(value, dict) or set(value) != {'scope_fingerprint', 'dependency_receipts'}:
+        raise ValueError('invalid authored candidate identity')
+    text(value['scope_fingerprint'], 'scope fingerprint')
+    if not isinstance(value['dependency_receipts'], dict):
+        raise ValueError('invalid dependency receipt bindings')
+    for tid, sha in value['dependency_receipts'].items():
+        identity(tid)
+        if not isinstance(sha, str) or not re.fullmatch(r'sha256:[a-f0-9]{64}', sha):
+            raise ValueError('invalid dependency receipt hash')
     return value

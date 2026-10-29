@@ -13,6 +13,19 @@ from harness.execution_contract import canonical, digest
 from harness.execution_handoff import durable_file
 
 
+def presentation_page(text):
+    """Return a raw-prefix cursor and redacted text that survives outer presentation caps."""
+    from harness.execution_logs import MAX_TEXT, _redact
+
+    size = min(len(text), MAX_TEXT)
+    while size:
+        value = _redact(text[:size])
+        if len(value) <= MAX_TEXT:
+            return size, value
+        size //= 2
+    return 0, ""
+
+
 class ArtifactStore:
     def __init__(self, directory):
         self.directory = Path(directory).resolve()
@@ -84,6 +97,38 @@ class ArtifactStore:
         with self.locked() as index:
             record = self._publish(index, name, raw, "guarded-al-generated")
             return {k: record[k] for k in ("artifact_id", "sha256", "size")}
+
+    def capture_gate_manifest(self, raw, provenance):
+        from harness.execution_al_reports import REPORT_LIMIT
+
+        reference = provenance.get("canonical_reference", {})
+        if (
+            not isinstance(raw, bytes)
+            or len(raw) > REPORT_LIMIT
+            or reference.get("kind") != "gate-manifest"
+            or digest(raw) != "sha256:" + reference.get("sha256", "")
+        ):
+            raise ValueError("invalid validated gate manifest capture")
+        with self.locked() as index:
+            prior = next(
+                (
+                    r
+                    for r in index["records"].values()
+                    if r.get("provenance", {}).get("operation_id") == provenance["operation_id"]
+                ),
+                None,
+            )
+            if prior:
+                if prior["sha256"] != digest(raw) or prior["provenance"] != provenance:
+                    raise ValueError("gate report operation publication differs")
+                record = prior
+            else:
+                record = self._publish(index, "gate-manifest.json", raw, "guarded-al-gate-manifest")
+                record["provenance"] = provenance
+            result = {k: record[k] for k in ("artifact_id", "sha256", "size")}
+            return result | {
+                "resource": "artifact:" + result["artifact_id"] + ":" + result["sha256"]
+            }
 
     def submit_output(
         self, principal, name, content, expected_graph_revision, current_graph_revision
@@ -161,19 +206,45 @@ class ArtifactStore:
             return path
 
     def read(self, artifact_id, expected_sha256, *, offset=0, limit=16384):
-        if type(offset) is not int or offset < 0 or not 1 <= limit <= 65536:
+        if (
+            type(offset) is not int
+            or type(limit) is not int
+            or offset < 0
+            or not 1 <= limit <= 65536
+        ):
             raise ValueError("bounded artifact cursor required")
         path = self.resolve(artifact_id, expected_sha256)
         with path.open("rb") as stream:
+            size = os.fstat(stream.fileno()).st_size
+            if offset > size:
+                raise ValueError("artifact offset exceeds content")
             stream.seek(offset)
-            raw = stream.read(limit + 1)
+            raw = stream.read(min(limit, 16384))
+        if raw and raw[0] & 0xC0 == 0x80:
+            raise ValueError("artifact offset splits a UTF-8 character")
+        while raw:
+            try:
+                text = raw.decode("utf-8")
+                break
+            except UnicodeDecodeError as error:
+                if error.end == len(raw) and error.reason == "unexpected end of data":
+                    raw = raw[: error.start]
+                else:
+                    raise ValueError("artifact content is not valid UTF-8") from None
+        else:
+            if offset < size:
+                raise ValueError("artifact page limit is too small for UTF-8")
+            text = ""
+        consumed, rendered = presentation_page(text)
+        advanced = len(text[:consumed].encode())
         return {
-            "text": raw[:limit].decode(errors="replace"),
+            "text": rendered,
             "offset": offset,
-            "next_offset": offset + min(len(raw), limit),
-            "truncated": len(raw) > limit,
+            "next_offset": offset + advanced,
+            "truncated": offset + advanced < size,
             "artifact_id": artifact_id,
             "sha256": expected_sha256,
+            "presentation_redacted": rendered != text[:consumed],
         }
 
 

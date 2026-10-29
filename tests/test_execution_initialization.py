@@ -79,6 +79,8 @@ def test_supervisor_start_and_contained_existing_state(controller, monkeypatch, 
         )
     )
     for arguments in (
+        ("spec-gate", "SPEC_READY"),
+        ("classify", "STANDARD", "--designer", "no", "--implementers", "al-engineer"),
         ("integration", "task-register", "--file", str(task)),
         ("integration", "task-admit", "--task", "A"),
     ):

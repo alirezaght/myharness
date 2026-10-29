@@ -17,7 +17,7 @@ from .validator_origin import canonical, capture, decode, digest, repository_ide
 def storage(*, readonly=False):
     pinned = sys.modules.get("_al_run_pin_context")
     if pinned is not None:
-        return _directory(Path(pinned.storage), create=not (readonly or getattr(pinned, "readonly", False)))
+        return _directory(Path(pinned.storage), create=not (readonly or getattr(pinned, "readonly", False) or getattr(pinned, "initialization_client", None) is not None))
     trusted = sys.modules.get("_al_validator_context")
     if trusted is None or trusted.request.get("mode") != "snapshot":
         raise ValueError("runtime storage requires the protected managed launcher")
@@ -57,26 +57,50 @@ def read(path):
     return decode(raw)
 
 
+class PublicationLock:
+    def __init__(self, value, path, descriptor):
+        self.value, self.path, self.descriptor = value, path, descriptor
+        state = os.fstat(descriptor)
+        self.identity = (state.st_dev, state.st_ino)
+        self.active = True
+
+    def validate(self, value):
+        if not self.active or self.value != value:
+            raise ValueError('publication lock capability differs')
+        state = os.fstat(self.descriptor)
+        disk = self.path.with_suffix('.lock').lstat()
+        if (not stat.S_ISREG(state.st_mode) or state.st_uid != os.getuid()
+                or stat.S_IMODE(state.st_mode) != 0o600 or state.st_nlink != 1
+                or (state.st_dev, state.st_ino) != self.identity
+                or (disk.st_dev, disk.st_ino) != self.identity):
+            raise ValueError('publication lock identity changed')
+        fcntl.flock(self.descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
 @contextmanager
-def coordinated(value, *, readonly=False):
-    context = sys.modules.get("_al_run_pin_context")
-    readonly = readonly or bool(getattr(context, "readonly", False))
-    directory = _directory(storage(readonly=readonly) / "runs", create=not readonly)
-    lock = directory / (key(value) + ".lock")
+def publication_lock(value, *, readonly=False):
+    context = sys.modules.get('_al_run_pin_context')
+    readonly = readonly or bool(getattr(context, 'readonly', False))
+    directory = _directory(storage(readonly=readonly) / 'runs', create=not readonly)
+    lock = directory / (key(value) + '.lock')
     safe(lock)
     descriptor = os.open(lock, (0 if readonly else os.O_CREAT) | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    capability = None
     try:
-        state = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(state.st_mode)
-            or state.st_uid != os.getuid()
-            or state.st_mode & 0o777 != 0o600
-        ):
-            raise ValueError("unsafe runtime pin coordination lock")
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        yield directory / (key(value) + ".json")
+        capability = PublicationLock(value, directory / (key(value) + '.json'), descriptor)
+        capability.validate(value)
+        yield capability
     finally:
+        if capability is not None:
+            capability.active = False
         os.close(descriptor)
+
+
+@contextmanager
+def coordinated(value, *, readonly=False):
+    with publication_lock(value, readonly=readonly) as capability:
+        yield capability.path
 
 
 LAYOUT = "harness-session-directory-v1"
@@ -107,30 +131,36 @@ def _legacy_state_path(value):
 
 
 def reserve(value, pin, *, private_session=False):
-    with coordinated(value) as path:
-        if path.exists():
-            transaction = read(path)
-            validate(transaction, value)
-            return transaction
-        if state_path(value).exists():
-            raise ValueError("existing run requires its original issuing runtime")
-        transaction = {
-            "schema_version": 1,
-            "kind": "run-pin-binding-v1",
-            **value,
-            "run_id": secrets.token_hex(4),
-            "publication_transaction": secrets.token_hex(32),
-            "pin": pin,
-            "status": "RESERVED",
-            "initialization": None,
-        }
-        if private_session:
-            directory = Path(value["repository_identity"]["root"]) / ("." + value["platform"]) / "al-runtime" / "sessions" / value["session_id"]
-            transaction.update(schema_version=2, kind="run-pin-binding-v2",
-                               runtime_layout=LAYOUT, runtime_directory=str(safe(directory)))
-            _directory(directory)
-        write_json(path, transaction)
+    with publication_lock(value) as capability:
+        return reserve_locked(capability, pin, private_session=private_session)
+
+
+def reserve_locked(capability, pin, *, private_session=False):
+    value, path = capability.value, capability.path
+    capability.validate(value)
+    if path.exists():
+        transaction = read(path)
+        validate(transaction, value)
         return transaction
+    if state_path(value).exists():
+        raise ValueError("existing run requires its original issuing runtime")
+    transaction = {
+        "schema_version": 1,
+        "kind": "run-pin-binding-v1",
+        **value,
+        "run_id": secrets.token_hex(4),
+        "publication_transaction": secrets.token_hex(32),
+        "pin": pin,
+        "status": "RESERVED",
+        "initialization": None,
+    }
+    if private_session:
+        directory = Path(value["repository_identity"]["root"]) / ("." + value["platform"]) / "al-runtime" / "sessions" / value["session_id"]
+        transaction.update(schema_version=2, kind="run-pin-binding-v2",
+                           runtime_layout=LAYOUT, runtime_directory=str(safe(directory)))
+        _directory(directory)
+    write_json(path, transaction)
+    return transaction
 
 
 def validate(transaction, value):
@@ -165,19 +195,25 @@ def validate(transaction, value):
 
 
 def commit_run_binding(transaction):
-    value = {k: transaction[k] for k in ("repository_identity", "platform", "session_id")}
-    with coordinated(value) as path:
-        current = read(path)
-        validate(current, value)
-        if current != transaction:
-            raise ValueError("runtime transaction moved before state publication")
-        state = read_state(transaction)
-        if state is None:
-            raise ValueError("reserved runtime did not publish matching state")
-        if current["status"] == "RESERVED":
-            if not _published(transaction):
-                raise ValueError("runtime start pointer publication is incomplete")
-            write_json(path, dict(current, status="ACTIVE"))
+    value = {k: transaction[k] for k in ('repository_identity', 'platform', 'session_id')}
+    with publication_lock(value) as capability:
+        return commit_run_binding_locked(capability, transaction)
+
+
+def commit_run_binding_locked(capability, transaction):
+    value, path = capability.value, capability.path
+    capability.validate(value)
+    current = read(path)
+    validate(current, value)
+    if current != transaction:
+        raise ValueError("runtime transaction moved before state publication")
+    state = read_state(transaction)
+    if state is None:
+        raise ValueError("reserved runtime did not publish matching state")
+    if current["status"] == "RESERVED":
+        if not _published(transaction):
+            raise ValueError("runtime start pointer publication is incomplete")
+        write_json(path, dict(current, status="ACTIVE"))
 
 
 def _published(transaction):

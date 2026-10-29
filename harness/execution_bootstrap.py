@@ -8,7 +8,11 @@ from harness.execution_contract import BOOTSTRAP
 
 
 def module_argv(module):
-    if module not in {"harness.execution_authority", "harness.execution_worker"}:
+    if module not in {
+        "harness.execution_authority",
+        "harness.execution_worker",
+        "harness.execution_prepared_authority",
+    }:
         raise ValueError("unsupported trusted execution module")
     return [sys.executable, "-I", "-c", BOOTSTRAP, module]
 
@@ -110,3 +114,43 @@ def native_assets(profile, initialization, host):
                 raise ValueError("isolated native role/skill resources changed")
         else:
             shutil.copytree(source, destination)
+
+
+def prepared_authority_snapshot(directory):
+    """Record a private fixed authority endpoint and its actual interpreter identity."""
+    import hashlib
+    import json
+    import stat
+
+    from harness.execution_handoff import durable_file
+
+    base = Path(directory) / "prepared-authority"
+    root = Path(authority_snapshot(base))
+    executable = Path(sys.executable).resolve(strict=True)
+    before = executable.stat()
+    hasher = hashlib.sha256()
+    with executable.open("rb") as stream:
+        while raw := stream.read(1024 * 1024):
+            hasher.update(raw)
+    after = executable.stat()
+    if (before.st_ino, before.st_size, before.st_mtime_ns) != (
+        after.st_ino,
+        after.st_size,
+        after.st_mtime_ns,
+    ):
+        raise ValueError("prepared authority interpreter changed")
+    value = {
+        "schema_version": 1,
+        "kind": "prepared-harness-authority-v1",
+        "snapshot": str(root),
+        "manifest_sha256": hashlib.sha256((root / "manifest.json").read_bytes()).hexdigest(),
+        "interpreter": {
+            "executable": str(executable),
+            "sha256": hasher.hexdigest(),
+            "mode": stat.S_IMODE(after.st_mode),
+        },
+    }
+    raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    path = base / "authority.json"
+    durable_file(path, raw)
+    return {"stored_path": str(path), "sha256": hashlib.sha256(raw).hexdigest()}

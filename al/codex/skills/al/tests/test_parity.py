@@ -44,7 +44,7 @@ def test_manifest_is_exhaustive_and_only_names_platform_adapters():
     assert claude_reference == shared_reference | claude_reference_only | different_reference
     assert codex_reference - claude_reference == codex_reference_only
     assert claude_reference - codex_reference == claude_reference_only
-    assert different_reference == {"distribution.md", "handoffs.md", "parallelism.md", "routing.md"}
+    assert different_reference == {"distribution.md", "handoffs.md", "parallelism.md", "routing.md", "workflow.md"}
     rationales = adapters["reference_rationales"]
     assert set(rationales) == different_reference
     assert all(reason.strip() for reason in rationales.values())

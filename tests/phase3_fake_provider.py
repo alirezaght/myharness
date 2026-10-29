@@ -109,9 +109,13 @@ def run() -> int:
         "blocker",
         {
             "id": "architecture",
+            "kind": "developer_engineering_decision",
             "tasks": ["A"],
             "question": "Which storage format should be used?",
-            "context": "The approved specification leaves this architecture choice open.",
+            "context": (
+                "The approved specification permits both formats and leaves this choice "
+                "to the developer. The decision affects storage compatibility and indexing cost."
+            ),
             "alternatives": ["Keep the current format", "Add an indexed format"],
             "recommendation": "Keep the current format.",
         },

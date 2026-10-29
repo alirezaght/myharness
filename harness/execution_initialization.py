@@ -67,9 +67,12 @@ def initialize_execution(controller, execution, package, envelope):
     eid, conn = execution["id"], controller.conn
     require_execution_authority(controller, eid, operation="launch")
     conn.execute(
-        "INSERT INTO execution_initializations VALUES (?,'Intent',NULL,?) "
-        "ON CONFLICT(execution_id) DO NOTHING",
-        (eid, utcnow()),
+        (
+            "INSERT INTO "
+            "execution_initializations(execution_id,epoch_id,state,identity,updated_at) "
+            "VALUES (?, ?,'Intent',NULL,?) ON CONFLICT(execution_id,epoch_id) DO NOTHING"
+        ),
+        (eid, execution["epoch_id"], utcnow()),
     )
     source = al_source(execution, envelope)
     if source.exists():
@@ -112,8 +115,8 @@ def initialize_execution(controller, execution, package, envelope):
     identity = validate_existing_origin(execution, envelope, package["launcher"])
     conn.execute(
         "UPDATE execution_initializations SET state='Active',identity=?,updated_at=? "
-        "WHERE execution_id=?",
-        (canonical(identity), utcnow(), eid),
+        "WHERE execution_id=? AND epoch_id=?",
+        (canonical(identity), utcnow(), eid, execution["epoch_id"]),
     )
     return identity
 

@@ -89,7 +89,10 @@ def claim_run(controller, approval_id):
     if not row:
         raise LookupError("browser approval not found")
     eid = row["execution_id"]
-    with transaction(conn):
+    from harness.execution_epoch_lock import epoch_action_lock
+    from harness.execution_store import get_execution
+
+    with epoch_action_lock(get_execution(conn, eid)), transaction(conn):
         prior = existing_run(conn, approval_id)
         if prior:
             if prior["state"] in ACTIVE:

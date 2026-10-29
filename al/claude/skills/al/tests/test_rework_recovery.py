@@ -70,8 +70,11 @@ def test_invalid_authorization_never_consumes_or_mutates(cli,state_file,tmp_path
     elif mutation=='attempt':data['attempt_id']='foreign'
     elif mutation=='empty':data['next_action']=''
     elif mutation=='active':
-        # Real admission cannot create a writer while pending, including degraded tracking.
-        assert cli('writer','start','--id','blocked','--role','al-engineer','--files','svc/app.py')[0]!=0
+        # Ordinary writing continues, but an active writer cannot consume bounded credits.
+        assert cli('writer','start','--id','ordinary-repair','--role','al-engineer','--files','svc/app.py')[0]==0
+        before=state_file().read_bytes()
+        assert cli('rework-recovery','decide','--file',str(path))[0]!=0
+        assert state_file().read_bytes()==before
         return
     path.write_text(json.dumps(data));before=state_file().read_bytes()
     assert cli('rework-recovery','decide','--file',str(path))[0]!=0

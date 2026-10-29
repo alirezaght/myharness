@@ -278,6 +278,8 @@ function renderTask(task) {
   const section = el("section");
   section.id = "task";
   section.append(el("h2", `Task ${task.id}`));
+  section.append(renderStatusSummary(task));
+  section.append(renderApprovalCenter(task));
   const list = el("dl");
   const rows = [
     ["Description", task.request],
@@ -297,7 +299,11 @@ function renderTask(task) {
   directory.append(el("code", task.spec.directory));
   list.append(el("dt", "Spec directory"), directory);
   list.append(el("dt", "Latest activity"), el("dd", activityText(task.latest_activity)));
-  section.append(list, renderApprovalCenter(task));
+  const metadata = document.createElement("details");
+  metadata.className = "task-metadata";
+  metadata.dataset.viewDisclosure = "task-details";
+  metadata.append(el("summary", "Task details"), list);
+  section.append(metadata);
   if (task.execution) {
     section.append(renderExecution(task.id, task.execution));
     if (task.execution.delivery) section.append(renderDelivery(task.execution.delivery));
@@ -315,6 +321,75 @@ function renderTask(task) {
   return section;
 }
 
+function renderStatusSummary(task) {
+  const summary = el("section");
+  summary.id = "current-status";
+  summary.className = "status-summary";
+  summary.setAttribute("aria-label", "Current status and next step");
+  const execution = task.execution;
+  const openBlockers = execution ? developerDecisions(execution).filter((item) => item.state !== "Resolved") : [];
+  const checks = execution?.readiness?.checks || [];
+  const failedChecks = checks.filter((item) => item?.state === "permission_denied");
+  const final = task.approval_center?.final;
+  const approvedSpec = String(final?.status || "").toLowerCase().includes("approved")
+    || task.spec?.versions?.some((version) => version.status === "approved");
+  const approvalBlockers = approvedSpec
+    ? []
+    : (final?.blockers || []).filter((item) => item.code !== "approved");
+  const current = el("article");
+  current.append(el("h3", "Current status"));
+  const states = [];
+  if (approvedSpec) states.push("Specification approved");
+  if (!approvedSpec) states.push(`${task.status} · ${task.phase}`);
+  if (execution && implementationLabel(execution)) states.push(implementationLabel(execution));
+  if (execution) states.push(`execution ${execution.status}`);
+  current.append(el("p", states.join(" · ")));
+  const why = el("article");
+  const pendingVerification = execution?.verification?.status === "incomplete";
+  const technicalRepair = execution?.implementation?.status === "technically_unavailable";
+  why.append(el("h3", openBlockers.length ? (execution?.developer_decisions ? "Developer decision" : "Recorded blocker") : technicalRepair ? "Tool repair" : pendingVerification ? "Checks pending" : "Attention"));
+  if (openBlockers.length) {
+    for (const blocker of openBlockers) {
+      why.append(el("p", `${blocker.id}: ${blocker.question}`));
+      if (blocker.recommendation) why.append(el("p", `Recommendation: ${blocker.recommendation}`));
+    }
+  } else if (failedChecks.length) {
+    for (const check of failedChecks) why.append(el("p", `${check.capability}: ${check.message || "operator permission is unavailable"}`));
+  } else if (approvalBlockers.length) {
+    for (const blocker of approvalBlockers) why.append(el("p", blocker.text));
+  } else if (pendingVerification) {
+    why.append(el("p", "Some checks or discovery are incomplete. Defined, authorized implementation can continue."));
+  } else if (execution?.status_explanation) {
+    why.append(el("p", execution.status_explanation));
+  } else {
+    why.append(el("p", "No open execution blocker is recorded."));
+  }
+  const next = el("article");
+  next.append(el("h3", "Next step"));
+  let guidance;
+  if (failedChecks.length) {
+    guidance = `${execution?.readiness?.message || "Restart the dashboard from a trusted terminal with access to the existing project state."} Continuing a native session does not repair operator permissions.`;
+  } else if (openBlockers.length) {
+    const blocker = openBlockers[0];
+    guidance = blocker.recommendation || `Resolve the open blocker ${blocker.id} before continuing.`;
+    if (execution?.native_id) guidance += " Continuing a native session does not resolve this blocker.";
+  } else if (approvalBlockers.length) {
+    guidance = approvalBlockers[0].text;
+  } else if (technicalRepair) {
+    const issues = Object.values(execution.operational_issues || {}).filter((issue) => issue.state !== "Resolved");
+    guidance = issues[0]?.next_action || "Repair the recorded technical capability and continue authorized work.";
+  } else if (pendingVerification && ACTIVE_EXECUTION_STATUSES.has(execution?.status)) {
+    guidance = "Implementation continues while agents repair tooling and finish the remaining checks.";
+  } else if (execution?.status_explanation) {
+    guidance = "Review the recorded result before choosing whether to continue the existing native session.";
+  } else {
+    guidance = task.next || task.resume?.next || execution?.readiness?.message;
+  }
+  next.append(el("p", guidance || "Review the specification and recorded task activity."));
+  summary.append(current, why, next);
+  return summary;
+}
+
 function renderNotice(notice) {
   const section = el("section");
   section.id = "notice";
@@ -322,14 +397,55 @@ function renderNotice(notice) {
   return section;
 }
 
+function viewIdentity(taskId, execution) {
+  return JSON.stringify([taskId, execution?.id ?? null, execution?.al_session_id ?? null,
+    execution?.al_run_id ?? null, execution?.epoch_id ?? null, execution?.authority_generation ?? null]);
+}
+
+function captureView(root) {
+  if (!root) return null;
+  return {
+    identity: root.dataset.viewIdentity,
+    disclosures: new Map([...root.querySelectorAll("details[data-view-disclosure]")]
+      .map((node) => [node.dataset.viewDisclosure, node.open])),
+    logs: new Map([...root.querySelectorAll("[data-view-log]")]
+      .map((node) => [node.dataset.viewLog, { text: node.textContent, top: node.scrollTop }])),
+    x: window.scrollX, y: window.scrollY,
+  };
+}
+
+function restoreView(root, saved) {
+  if (!saved || root.dataset.viewIdentity !== saved.identity) return false;
+  for (const node of root.querySelectorAll("details[data-view-disclosure]")) {
+    if (saved.disclosures.has(node.dataset.viewDisclosure)) node.open = saved.disclosures.get(node.dataset.viewDisclosure);
+  }
+  for (const node of root.querySelectorAll("[data-view-log]")) {
+    const log = saved.logs.get(node.dataset.viewLog);
+    if (log) { node.textContent = log.text; node.scrollTop = log.top; }
+  }
+  return true;
+}
+
 function render(data) {
   rendered = true;
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
+  const saved = captureView(document.getElementById("task"));
+  const identity = viewIdentity(selected, data.task?.execution);
+  if (saved && saved.identity !== identity) approvalPreviews.delete(selected);
   const content = data.task ? renderTask(data.task) : renderNotice(data.notice);
-  withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(() =>
-    main.replaceChildren(renderNav(data.tasks, selected), content),
-  ))));
+  content.dataset.viewIdentity = identity;
+  const preview = content.querySelector("#approve-preview");
+  if (preview) preview.dataset.viewDisclosure = JSON.stringify(["approval-preview", data.task.approval_center.final.spec_hash]);
+  for (const node of content.querySelectorAll("[data-delivery-disclosure]")) {
+    node.dataset.viewDisclosure = JSON.stringify(["delivery", node.dataset.deliveryDisclosure]);
+  }
+  const same = restoreView(content, saved);
+  const replace = () => main.replaceChildren(renderNav(data.tasks, selected), content);
+  if (same) {
+    withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace))));
+    window.scrollTo(saved.x, saved.y);
+  } else replace();
 }
 
 function renderError(message) {

@@ -57,7 +57,7 @@ session. See [the v1 event contract](../../../../../docs/al-event-contract-v1.md
 for envelope, bounds, kinds and authority rules.
 
 ## Bounded recovery and task admission
-A pending `REWORK_REASSESSMENT` blocks writer starts (including degraded tracking), task admission/start, ordinary phase transitions, and generic resume. Preserve independent blockers and their task scope; a recovery credit cannot clear them. After a valid Architect allow, the runtime consumes exactly the pending first return in the new two-return batch. A decline or automatic-cap stop records a checkpoint; only an explicit bound user continuation may grant another two-return batch. Old immutable runtime issuers do not gain these commands after installation update.
+A pending internal `REWORK_REASSESSMENT` records engineering repair work and cannot by itself block otherwise authorized scoped implementation or require a developer continuation. Preserve the actual decision, budget and failure history; never reset it to simulate a grant. Final evidence and approval checks remain strict. Preserve independent blockers and their task scope; a recovery credit cannot clear them. After a valid Architect allow, the runtime consumes exactly the pending first return in the new two-return batch. A decline or automatic-cap stop records a checkpoint; only an explicit bound user continuation may grant another two-return batch. Old immutable runtime issuers do not gain these commands after installation update.
 
 ## Portable inputs and ownership audit
 
@@ -95,3 +95,21 @@ verified reference inputs for reuse. The current Architect must inspect them,
 revalidate the current approved requirements/source and author a new current
 planning report and obligations. No old admission, approval, task state, evidence
 result or native identity is copied; neither workflow is restarted.
+
+
+## Fresh invocation and authenticated capability release
+
+A terminal or replaced native invocation is never revived. For a supported fresh
+registration on an already assigned task, `integration agent-register` accepts
+`replaces` (the exact predecessor invocation ID) and a substantive `release_reason`.
+Harness validates the new observed identity, creation provenance and role, the
+exact old assignment, and settled writers, checks and owned processes before
+issuing immutable capability-release and assignment-history receipts. The old
+capability is irrevocably fenced, including cached principals.
+
+This is capability release, not evidence of host-thread termination. Preserve the
+old actual agent status and the receipt's `host_termination_observed: false` when
+no trusted host event establishes termination. An empty wait result or completed
+wait tool call does not prove that a child agent finished. Unsupported creation
+provenance is a technical capability problem; never manufacture a native event or
+ask a developer product decision to bypass it.

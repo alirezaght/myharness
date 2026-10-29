@@ -47,6 +47,7 @@ WRITES = {
     "/api/execution/resume": "resume",
     "/api/execution/reconcile": "reconcile",
     "/api/execution/decision": "decision",
+    "/api/execution/decision-retry": "decision-retry",
 }
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16

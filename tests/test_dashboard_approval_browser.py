@@ -19,7 +19,7 @@ from harness.dashboard import server as server_module
 from harness.dashboard.server import DashboardServer
 from tests.test_dashboard import needs_git, serve
 from tests.test_dashboard_approval import approval_task
-from tests.test_dashboard_browser import CHROME
+from tests.test_dashboard_browser import CHROME, _headless
 from tests.test_dashboard_comments import EDGE
 from tests.test_dashboard_comments_browser import _result
 from tests.test_dashboard_diagrams import _with
@@ -187,3 +187,162 @@ def test_headless_chrome_approves_once_every_comment_is_resolved(
     assert result["overflow"] is False
     assert _count(db_path, "approvals") == 1
     assert sorted(p.name for p in (specs / task_id).iterdir()) == ["v1.md"]
+
+
+DRIVER = r"""
+const RESULT = {};
+function finish(value) {
+  Object.assign(RESULT, value);
+  const out = document.createElement("pre");
+  out.id = "approval-scroll-result";
+  out.textContent = JSON.stringify(RESULT);
+  document.body.append(out);
+}
+function waitFor(predicate) {
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    const poll = () => predicate() ? resolve() : Date.now() - start > 8000
+      ? reject(new Error("approval preview did not render")) : setTimeout(poll, 40);
+    poll();
+  });
+}
+document.addEventListener("DOMContentLoaded", async () => {
+  try {
+    await waitFor(() => document.querySelector("#approve-preview-document"));
+    const renderCenter = renderApprovalCenter;
+    let longPreview = true;
+    renderApprovalCenter = (task) => {
+      const center = renderCenter(task);
+      const article = center.querySelector("#approve-preview-document");
+      if (longPreview && article) {
+        for (let index = 0; index < 40; index += 1) {
+          const text = `scroll fixture paragraph ${index}: ${"preview text ".repeat(12)}`;
+          article.append(el("p", text));
+        }
+      }
+      return center;
+    };
+    repaintApprovals();
+    const details = document.getElementById("approve-preview");
+    details.open = true;
+    const preview = () => document.getElementById("approve-preview-document");
+    preview().scrollTop = 240;
+    const initialScroll = { top: preview().scrollTop,
+      max: preview().scrollHeight - preview().clientHeight };
+    await refreshDashboard();
+    const repeatedRefresh = preview().scrollTop;
+    preview().scrollTop = 175;
+    repaintApprovals();
+    const approvalRepaint = preview().scrollTop;
+    preview().scrollTop = 95;
+    await refreshDashboard();
+    const userPosition = preview().scrollTop;
+
+    preview().scrollTop = 210;
+    const short = await fetch(`/api/dashboard?task=${encodeURIComponent(DRIVE.task)}`)
+      .then((response) => response.json());
+    short.task.approval_center.final.preview = [
+      { type: "paragraph", lines: [[{ text: "short" }]] }
+    ];
+    longPreview = false;
+    render(short);
+    const clamped = preview().scrollTop;
+
+    longPreview = true;
+    preview().scrollTop = 150;
+    const other = await fetch(`/api/dashboard?task=${encodeURIComponent(DRIVE.other)}`)
+      .then((response) => response.json());
+    render(other);
+    const taskChanged = { id: document.getElementById("approve-preview").dataset.taskId,
+      top: preview().scrollTop };
+
+    const current = await fetch(`/api/dashboard?task=${encodeURIComponent(DRIVE.task)}`)
+      .then((response) => response.json());
+    render(current);
+    document.getElementById("approve-preview").open = true;
+    preview().scrollTop = 105;
+    const originalFetch = window.fetch;
+    window.fetch = (input, options) => String(input).startsWith("/api/dashboard")
+      ? Promise.reject(new Error("controlled fetch failure")) : originalFetch(input, options);
+    await refreshDashboard();
+    window.fetch = originalFetch;
+    const fetchFailure = preview().scrollTop;
+
+    const center = document.getElementById("approvals");
+    document.getElementById("approve-preview").remove();
+    withApprovalFocus(() => center.replaceWith(renderApprovalCenter(approvalTask)));
+    finish({ initialScroll, repeatedRefresh, approvalRepaint, userPosition, clamped,
+      taskChanged, fetchFailure,
+      missingPreviewRepainted: !!document.getElementById("approve-preview"),
+      taskId: document.getElementById("approve-preview").dataset.taskId,
+      viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth });
+  } catch (error) { finish({ error: error.message }); }
+});
+"""
+
+
+def _install_scroll_driver(tmp_path: Path, monkeypatch, task: str, other: str) -> None:
+    copied = tmp_path / "static"
+    with as_file(server_module.STATIC_DIR) as real:
+        shutil.copytree(real, copied)
+    (copied / "driver.js").write_text(
+        f'"use strict";\nconst DRIVE = {json.dumps({"task": task, "other": other})};\n{DRIVER}',
+        encoding="utf-8",
+    )
+    page = copied / "index.html"
+    source = page.read_text(encoding="utf-8")
+    tag = '<script src="/static/app.js" defer></script>'
+    assert source.count(tag) == 1
+    page.write_text(
+        source.replace(tag, f'{tag}\n    <script src="/static/driver.js" defer></script>'),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(server_module, "STATIC_DIR", copied)
+    monkeypatch.setattr(
+        server_module,
+        "STATIC",
+        server_module.STATIC
+        | {"/static/driver.js": ("driver.js", "text/javascript; charset=utf-8")},
+    )
+
+
+def test_preview_scroll_survives_refresh_repaint_and_stays_task_scoped(
+    db_path, sample_repo, tmp_path, monkeypatch
+):
+    task = approval_task(db_path, sample_repo)
+    other = approval_task(db_path, sample_repo)
+    _install_scroll_driver(tmp_path, monkeypatch, task, other)
+    monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+    import re
+
+    captures = {}
+    with serve(db_path, task) as server:
+        for name, width, height in (("desktop", 1280, 800), ("mobile", 390, 844)):
+            url = f"{server.url}?task={task}"
+            viewport = f"--window-size={width},{height}"
+            result = _headless(
+                tmp_path / f"{name}-driver-profile",
+                viewport,
+                "--virtual-time-budget=12000",
+                "--dump-dom",
+                url,
+            )
+            assert result.returncode == 0, result.stderr
+            match = re.search(
+                r'<pre id="approval-scroll-result"[^>]*>(.*?)</pre>', result.stdout, re.S
+            )
+            assert match, result.stdout[-1500:]
+            captures[name] = json.loads(match.group(1))
+    for name, observed in captures.items():
+        assert "error" not in observed, {"viewport": name, **observed}
+        assert observed["initialScroll"]["top"] > 0
+        assert observed["initialScroll"]["max"] > 0
+        assert observed["repeatedRefresh"] == 240
+        assert observed["approvalRepaint"] == 175
+        assert observed["userPosition"] == 95
+        assert observed["clamped"] == 0
+        assert observed["taskChanged"] == {"id": other, "top": 0}
+        assert observed["fetchFailure"] == 105
+        assert observed["missingPreviewRepainted"] is True
+        assert observed["taskId"] == task
+        assert observed["documentWidth"] <= observed["viewportWidth"]

@@ -68,13 +68,20 @@ persists a read-only Architect reassessment; at most two automatic Architect
 authorizations add two returns each, for six default returns total across review
 corrections. A genuine review correction does not replenish rework credits, and
 its independent six-correction limit remains in force. Decline, no useful route,
-or the automatic cap records a stopped checkpoint.
+or the automatic cap records the bounded recovery outcome. That outcome does
+not prohibit ordinary scoped implementation when requirements and authority
+are valid. The runtime records implementation continuity without replenishing
+credits or erasing the reassessment history.
 
 The supervisor retrieves a pending packet with `rework-recovery packet`, submits
 the approved Architect's closed response with `rework-recovery decide --file
 FILE`, and handles explicit user continuation only with a bound
 `rework-recovery continue --file FILE` request. Each distinct accepted user
-request grants exactly two credits; replay returns its original receipt. Real
-permission, scope, service, and model blockers remain separate. An updated
+request grants exactly two credits; replay returns its original receipt. These
+commands govern the bounded recovery protocol, not a routine developer approval
+for continuing implementation. Tooling and incomplete checks remain operational
+issues or verification debt; only material specification or engineering choices
+require a developer decision. Real permission, identity, ownership and secret
+protections remain enforced. An updated
 installation does not migrate older runs or change their immutable runtime
 issuer; those runs retain their original command set and evidence.

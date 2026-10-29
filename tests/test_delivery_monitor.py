@@ -124,7 +124,7 @@ def test_technical_retry_budget_and_unknown_failure_are_durable(delivery):
         (canonical({"blockers": []}), eid),
     )
     controller.conn.execute(
-        "INSERT INTO execution_entities VALUES (?,?,?,?)",
+        "INSERT INTO execution_entities(execution_id,family,id,data) VALUES (?,?,?,?)",
         (eid, "task", "A", canonical({"id": "A"})),
     )
     pipeline = api.pipeline | {"status": "failed"}

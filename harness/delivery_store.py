@@ -3,6 +3,7 @@
 from harness.db import transaction, utcnow
 from harness.delivery_models import DeliveryConfig
 from harness.execution_contract import canonical, digest, loads
+from harness.execution_epoch_lock import epoch_action_lock
 from harness.execution_logs import redact_value
 from harness.execution_store import get_execution
 
@@ -17,6 +18,17 @@ def get_delivery(conn, execution_id):
     return value
 
 
+def require_delivery_epoch(conn, delivery):
+    from harness.execution_epochs import require_active_epoch
+
+    current = require_active_epoch(conn, delivery["execution_id"])
+    if delivery["epoch_id"] != current["epoch_id"]:
+        raise ValueError(
+            "stale_epoch: delivery belongs to a historical runtime; inspect its recorded epoch"
+        )
+    return current
+
+
 def configure_delivery(controller, execution_id, config):
     from harness.delivery_providers import delivery_client
     from harness.execution_authority import require_execution_authority
@@ -29,17 +41,37 @@ def configure_delivery(controller, execution_id, config):
     )
     delivery_client(config)
     execution = get_execution(controller.conn, execution_id)
-    with transaction(controller.conn):
+    with epoch_action_lock(execution), transaction(controller.conn):
+        from harness.execution_epochs import require_active_epoch
+
+        execution = require_active_epoch(
+            controller.conn,
+            execution_id,
+            expected_epoch_id=execution["epoch_id"],
+            expected_authority_generation=execution["authority_generation"],
+        )
+        require_execution_authority(controller, execution_id, operation="delivery")
         prior = controller.conn.execute(
             "SELECT 1 FROM deliveries WHERE execution_id=?", (execution_id,)
         ).fetchone()
         if prior:
+            require_delivery_epoch(controller.conn, get_delivery(controller.conn, execution_id))
             if get_delivery(controller.conn, execution_id)["config"] != config:
                 raise ValueError("delivery configuration is immutable; reconcile existing delivery")
         else:
             controller.conn.execute(
-                "INSERT INTO deliveries(execution_id,binding,config,updated_at) VALUES (?,?,?,?)",
-                (execution_id, canonical(execution["binding"]), canonical(config), utcnow()),
+                (
+                    "INSERT INTO "
+                    "deliveries(execution_id,binding,config,updated_at,epoch_id) VALUES "
+                    "(?,?,?,?,?)"
+                ),
+                (
+                    execution_id,
+                    canonical(execution["binding"]),
+                    canonical(config),
+                    utcnow(),
+                    execution["epoch_id"],
+                ),
             )
     return delivery_view(controller.conn, execution_id)
 
@@ -54,7 +86,8 @@ def claim_operation(conn, delivery, kind, candidate, request):
         "request": request,
     }
     operation_id = digest(identity)
-    with transaction(conn):
+    with epoch_action_lock(get_execution(conn, delivery["execution_id"])), transaction(conn):
+        require_delivery_epoch(conn, delivery)
         row = conn.execute(
             "SELECT * FROM delivery_operations WHERE id=?", (operation_id,)
         ).fetchone()
@@ -63,7 +96,11 @@ def claim_operation(conn, delivery, kind, candidate, request):
                 return operation_id, loads(row["result"])
             raise ValueError("external operation unresolved; reconcile before retry")
         conn.execute(
-            "INSERT INTO delivery_operations VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                "INSERT INTO "
+                "delivery_operations(id,execution_id,generation,kind,candidate_sha,request,"
+                "state,result,updated_at,epoch_id) VALUES (?,?,?,?,?,?,?,?,?,?)"
+            ),
             (
                 operation_id,
                 delivery["execution_id"],
@@ -74,16 +111,24 @@ def claim_operation(conn, delivery, kind, candidate, request):
                 "Dispatching",
                 None,
                 utcnow(),
+                delivery["epoch_id"],
             ),
         )
     return operation_id, None
 
 
 def finish_operation(conn, operation_id, state, result=None):
-    conn.execute(
-        "UPDATE delivery_operations SET state=?,result=?,updated_at=? WHERE id=?",
-        (state, canonical(redact_value(result)), utcnow(), operation_id),
-    )
+    with transaction(conn):
+        row = conn.execute(
+            "SELECT execution_id,epoch_id FROM delivery_operations WHERE id=?", (operation_id,)
+        ).fetchone()
+        if not row:
+            raise LookupError("delivery operation not found")
+        require_delivery_epoch(conn, dict(row))
+        conn.execute(
+            "UPDATE delivery_operations SET state=?,result=?,updated_at=? WHERE id=?",
+            (state, canonical(redact_value(result)), utcnow(), operation_id),
+        )
 
 
 def save_snapshot(
@@ -92,6 +137,7 @@ def save_snapshot(
     snapshot = redact_value(snapshot)
     with transaction(controller.conn):
         prior = get_delivery(controller.conn, execution_id)
+        require_delivery_epoch(controller.conn, prior)
         if (expected_candidate is not None and prior["candidate_sha"] != expected_candidate) or (
             expected_generation is not None and prior["generation"] != expected_generation
         ):

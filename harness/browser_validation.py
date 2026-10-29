@@ -50,7 +50,13 @@ def approve_browser(controller, execution_id, plan_id, *, request_id, attempt, c
     )
     if refreshed != plan["binding"]:
         raise ValueError("browser plan binding stale; propose a new plan")
-    with transaction(controller.conn):
+    from harness.execution_epoch_lock import epoch_action_lock
+    from harness.execution_store import get_execution
+
+    with (
+        epoch_action_lock(get_execution(controller.conn, execution_id)),
+        transaction(controller.conn),
+    ):
         require_execution_authority(controller, execution_id, operation="delivery")
         if local_binding(controller, execution_id, plan["target"]["mapping"])[0] != refreshed:
             raise ValueError("delivery changed during approval")

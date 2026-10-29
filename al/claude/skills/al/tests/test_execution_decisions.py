@@ -35,9 +35,11 @@ def test_real_registry_rejection_amendment_ack_and_scoped_revalidation(cli, tmp_
     from harness.execution_store import get_execution
     import json
     controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch)
+    assert cli('spec-gate', 'SPEC_READY')[0] == 0
+    assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
     assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
     assert register_task(cli, tmp_path, 'B', ['docs'])[0] == 0
-    assert report(cli, tmp_path, 'blocker', {'id':'design','tasks':['A'],'question':'Choose architecture','context':'An explicit decision is required','alternatives':['one','two'],'recommendation':'one'})[0] == 0
+    assert report(cli, tmp_path, 'blocker', {'id':'design', 'kind': 'developer_engineering_decision','tasks':['A'],'question':'Choose architecture','context':'An explicit decision is required','alternatives':['one','two'],'recommendation':'one'})[0] == 0
     def sync():
         state = al_store.load(sid)
         cursor = get_execution(controller.conn, eid)['cursor']

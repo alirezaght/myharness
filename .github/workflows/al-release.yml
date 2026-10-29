@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Successor preparation exercises the supported macOS process sandbox.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
         with:

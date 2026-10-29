@@ -75,3 +75,6 @@ def validate_state(st):
         validate(st)
     except (ValueError, KeyError, TypeError) as exc:
         refuse('invalid execution integration: ' + str(exc))
+
+    from al_implementation import validate as validate_implementation
+    validate_implementation(st)

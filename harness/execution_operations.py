@@ -87,6 +87,8 @@ COMMANDS = READ_COMMANDS | {
 class OperationController:
     def __init__(self, database, execution, envelope, package, initialization, registry, directory):
         self.database, self.execution_id = Path(database), execution["id"]
+        self.epoch_id = execution.get("epoch_id", "legacy-0")
+        self.authority_generation = execution.get("authority_generation", 0)
         self.envelope, self.package, self.initialization = envelope, package, initialization
         self.registry = registry
         self.directory = Path(directory)
@@ -95,6 +97,7 @@ class OperationController:
         self.processes = ProcessManager()
         self.check_channels = []
         self.generated = {}
+        self.active_report = None
         self.lock = threading.RLock()
         self.assignment_path = self.directory / "assignments.json"
         self.assignments = (
@@ -111,6 +114,7 @@ class OperationController:
         return value
 
     def authority(self, controller, principal, *, operation="admit"):
+        self.registry.require_live(principal)
         execution = get_execution(controller.conn, self.execution_id)
         if (
             principal["binding"] != execution["binding"]
@@ -139,8 +143,9 @@ class OperationController:
                 "graph_revision": integration["graph_revision"],
                 "amendments": [
                     a["artifact"]["sha256"]
-                    for a in state["amendments"]
-                    if task_id in a.get("affected_tasks", [])
+                    for a in __import__(
+                        "harness.execution_lineage", fromlist=["scoped_amendments"]
+                    ).scoped_amendments(state, task_id)
                 ],
             }
         )
@@ -149,8 +154,11 @@ class OperationController:
         if task.get("admission") != {
             "revision": task["revision"],
             "graph_revision": integration["graph_revision"],
-        } or any(integration["tasks"][d]["status"] != "Completed" for d in task["dependencies"]):
+        }:
             raise ValueError("task lacks current dependency admission")
+        from harness.execution_authority import require_dependency_outputs
+
+        require_dependency_outputs(state, task_id, self.envelope["repository"], execution)
         if any(
             b["state"] != "Resolved" and task_id in b.get("affected", b["tasks"])
             for b in integration["blockers"].values()
@@ -182,14 +190,51 @@ class OperationController:
 
     def profile(self, writable=(), *, al=False):
         root = Path(self.envelope["repository"])
-        execution_dir = Path(self.envelope["database"]).parent
+        database = Path(self.envelope["database"])
+        from harness.template_classification import selected_reference
+
+        with closing(connect(self.database)) as conn:
+            execution = get_execution(conn, self.execution_id)
+            epoch_directories = [
+                Path(json.loads(row["identity"])["handoff_path"]).parent
+                for row in conn.execute(
+                    "SELECT identity FROM execution_epochs WHERE execution_id=?",
+                    (self.execution_id,),
+                )
+            ]
+        execution_dir = Path(execution["handoff_path"]).parent
+        authority_dir = Path(execution.get("authority_directory") or execution_dir)
+        private_history = [
+            path / child
+            for path in epoch_directories
+            for child in ("principals", "native-profiles", "operations/private-report-spools")
+        ]
+        if self.directory.absolute() != (execution_dir / "operations").absolute():
+            raise ValueError("operation scratch must belong to the bound execution")
+        classification = selected_reference(execution, self.envelope, self.initialization)
         profile_dir = self.directory / ("sandbox-" + secrets.token_hex(8))
+        authority = [
+            database,
+            Path(self.initialization["pin_root"]),
+            Path(self.initialization["source"]).parent,
+            Path(self.initialization["coordination_lock"]),
+            execution_dir / "template-classifications",
+        ]
+        if any(profile_dir.is_relative_to(p) or p.is_relative_to(profile_dir) for p in authority):
+            raise ValueError("operation scratch collides with execution authority")
         return prepare_operation_isolation(
             root,
             writable=writable,
-            protected=[execution_dir, self.initialization["pin_root"]],
+            protected=[
+                *[str(database) + suffix for suffix in ("", "-wal", "-shm", "-journal")],
+                authority_dir,
+                execution_dir,
+                self.initialization["pin_root"],
+            ],
             hidden=[
+                *private_history,
                 self.registry.directory,
+                self.directory / "private-report-spools",
                 self.directory.parent / "native-profiles",
                 os.environ.get("CODEX_HOME", str(Path.home() / ".codex")),
                 os.environ.get("CLAUDE_CONFIG_DIR", str(Path.home() / ".claude")),
@@ -198,9 +243,21 @@ class OperationController:
             directory=profile_dir,
             session_directory=(str(Path(self.initialization["source"]).parent) if al else None),
             coordination_lock=(self.initialization["coordination_lock"] if al else None),
+            classification=classification,
+            allow_classified_read=al,
         )
 
     def dispatch(self, principal, name, arguments):
+        from harness.execution_epochs import require_active_epoch
+
+        with closing(connect(self.database)) as epoch_conn:
+            require_active_epoch(
+                epoch_conn,
+                self.execution_id,
+                expected_epoch_id=self.epoch_id,
+                expected_authority_generation=self.authority_generation,
+                mutation=True,
+            )
         if name == "await_assignment":
             return self.await_assignment(principal, arguments.get("timeout", 1))
         with self.lock, closing(connect(self.database)) as conn:
@@ -364,13 +421,13 @@ class OperationController:
             cwd = Path(root) / a["cwd"]
             if not cwd.resolve(strict=True).is_relative_to(Path(root)):
                 raise ValueError("operation cwd escapes repository")
-            decision = classify_command({"argv": a["argv"], "cwd": str(cwd)})
+            decision = classify_command({"argv": a["argv"], "cwd": str(cwd)}, {"repository": root})
             writable = ()
             if decision["decision"] != "read_only":
                 _, _, writable = self.admitted(
                     controller, principal, a["task_id"], a["expected_revision"]
                 )
-            argv = a["argv"]
+            argv = decision["request"]["argv"]
             if decision["decision"] == "read_only" and argv[0] == "git":
                 args = list(argv[1:])
                 if args[0] in {"log", "show", "diff"}:
@@ -399,6 +456,10 @@ class OperationController:
             return self.al_command(controller, principal, a, state)
         if name == "diagnostic":
             request = a["request"]
+            if request == {"kind": "attribution-compatibility"}:
+                from harness.command_discovery import attribution_compatibility
+
+                return attribution_compatibility(Path(self.initialization["pin_root"]).name)
             if set(request) <= {"kind", "path"} and request.get("kind") in {
                 "source",
                 "log",
@@ -433,7 +494,16 @@ class OperationController:
         raise ValueError("unknown operation capability")
 
     def al_command(self, controller, principal, request, state):
-        args = list(request["arguments"])
+        from harness.execution_al_reports import GateReport, report_request
+
+        original_arguments = list(request["arguments"])
+        known_report = report_request(original_arguments)
+        timeout = request.get("timeout", 900 if request.get("background") else 60)
+        if type(timeout) is not int or not 1 <= timeout <= 900:
+            raise ValueError("AL timeout must be between 1 and 900 seconds")
+        if known_report and self.active_report is not None:
+            raise ValueError("another manifest-producing operation is already active")
+        args = list(original_arguments)
         if not args or args[0] not in COMMANDS:
             raise ValueError("AL command is not available through the controller")
         if args[0] == "integration" and (
@@ -516,11 +586,19 @@ class OperationController:
                 or native.get("writable", agent["role"] in {"al-engineer", "al-builder"})
             ):
                 raise ValueError("native child assignment requires registered task")
-            if any(
-                v["task"] == agent.get("task") and k != agent["id"]
+            conflicts = [
+                k
                 for k, v in self.assignments.items()
-            ):
-                raise ValueError("task already assigned to a different native child")
+                if v["task"] == agent.get("task") and k != agent["id"]
+            ]
+            if conflicts:
+                if conflicts != [agent.get("replaces")]:
+                    raise ValueError(
+                        "task already assigned; identify the exact predecessor capability release"
+                    )
+                from harness.execution_assignments import release_for_replacement
+
+                release_for_replacement(self, state, agent, native)
         else:
             agent = None
         command = al_argv(
@@ -553,6 +631,7 @@ class OperationController:
                     "al_session": str(Path(self.initialization["source"]).parent),
                     "protected": list(profile.protected),
                     "hidden": list(profile.hidden),
+                    "classification": profile.classification,
                 }
             ).encode(),
         )
@@ -565,45 +644,77 @@ class OperationController:
                 if current["status"] != "RUNNING":
                     raise ValueError("check authority is no longer running")
 
+        report = (
+            GateReport(self, principal, original_arguments, args, state) if known_report else None
+        )
+        if report:
+            report.classification = profile.classification
+            self.active_report = report
         channel = CheckChannel(context_path, validate_check)
         self.check_channels.append(channel)
         environment["HARNESS_CHECK_FD"] = str(channel.descriptor)
         if request.get("background"):
             if agent:
                 raise ValueError("native agent registration must complete synchronously")
-            result = self.processes.start(
-                principal["thread_id"],
-                profile,
-                command,
-                self.envelope["repository"],
-                task=child_task["task"] if child_task else None,
-                revision=child_task["revision"]
-                if child_task
-                else str(state["integration"]["graph_revision"]),
-                timeout=request.get("timeout", 900),
-                environment=environment,
-                max_timeout=900,
-                pass_fds=(channel.descriptor,),
-            )
+            try:
+                result = self.processes.start(
+                    principal["thread_id"],
+                    profile,
+                    command,
+                    self.envelope["repository"],
+                    task=child_task["task"] if child_task else None,
+                    revision=child_task["revision"]
+                    if child_task
+                    else str(state["integration"]["graph_revision"]),
+                    timeout=timeout,
+                    environment=environment,
+                    max_timeout=900,
+                    pass_fds=(channel.descriptor,),
+                    completion=channel.close,
+                    report=report,
+                )
+            except (OSError, ValueError):
+                try:
+                    channel.close()
+                finally:
+                    if report:
+                        report.close()
+                raise
             channel.spawned()
             self.generated[result["handle"]] = outputs
             return result
-        proc = operation_popen(
-            profile,
-            command,
-            cwd=self.envelope["repository"],
-            env=environment,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-            pass_fds=(channel.descriptor,),
-        )
-        channel.spawned()
         try:
-            stdout, stderr = bounded_capture(proc)
+            proc = operation_popen(
+                profile,
+                command,
+                cwd=self.envelope["repository"],
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                pass_fds=(channel.descriptor,),
+            )
+            channel.spawned()
+            try:
+                stdout, stderr = bounded_capture(proc, timeout=timeout, report=report)
+            finally:
+                channel.close()
+            from harness.template_classification import validate_reference
+
+            validate_reference(profile.classification)
+            if report:
+                return report.publish(proc.returncode)
+        except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+            if report:
+                return report.failure(proc.returncode if "proc" in locals() else None, error)
+            raise
         finally:
-            channel.close()
+            try:
+                channel.close()
+            finally:
+                if report:
+                    report.close()
         if proc.returncode == 0 and agent and agent.get("task"):
             current = self.state(get_execution(controller.conn, self.execution_id))
             task = current["integration"]["tasks"][agent["task"]]
@@ -614,11 +725,14 @@ class OperationController:
                     "graph_revision": current["integration"]["graph_revision"],
                     "amendments": [
                         a["artifact"]["sha256"]
-                        for a in current["amendments"]
-                        if agent["task"] in a.get("affected_tasks", [])
+                        for a in __import__(
+                            "harness.execution_lineage", fromlist=["scoped_amendments"]
+                        ).scoped_amendments(current, agent["task"])
                     ],
                 }
             )
+            if agent.get("replaces"):
+                self.assignments.pop(agent["replaces"], None)
             self.assignments[agent["id"]] = {"task": agent["task"], "revision": revision}
             temporary = self.assignment_path.with_suffix(".new")
             temporary.write_text(canonical(self.assignments))

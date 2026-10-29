@@ -278,12 +278,7 @@ function withDeliveryFocus(callback) {
   const active = document.activeElement;
   const panel = active?.closest?.("#delivery");
   const key = panel ? active.dataset.deliveryLink || active.id || active.textContent : null;
-  const open = new Set([...document.querySelectorAll("#delivery details[data-delivery-disclosure][open]")]
-    .map((node) => node.dataset.deliveryDisclosure));
   callback();
-  for (const node of document.querySelectorAll("#delivery details[data-delivery-disclosure]")) {
-    node.open = open.has(node.dataset.deliveryDisclosure);
-  }
   if (key === null) return;
   const candidates = [...document.querySelectorAll("#delivery [data-delivery-link], #delivery [id]")];
   const restored = candidates.find((node) => (node.dataset.deliveryLink || node.id) === key || node.textContent === key);

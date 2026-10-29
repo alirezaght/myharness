@@ -43,13 +43,25 @@ from installer.execution_process import observe
 verified=verify_pin(base/'pins',pin)
 if verified['bytes']!=captured:raise ValueError('runtime pin moved before import')
 value=subject(transaction['repository_identity']['root'],platform,transaction['session_id'])
-with coordinated(value) as path:
-    if read(path)!=transaction:raise ValueError('protected run transaction changed')
+if request.get('prepared_start'):
+    from installer.runtime_successor_channel import InitializationClient,fingerprint
+    prepared=request['prepared_start']
+    if set(prepared)!={'descriptor','attempt_nonce','preparation_sha256'}:raise ValueError('invalid prepared bootstrap')
+    client=InitializationClient(prepared['descriptor'],prepared['attempt_nonce'],prepared['preparation_sha256'])
+    result=client.request('validate-start',{'transaction_sha256':fingerprint(transaction)})
+    if set(result)!={'transaction','argv','lineage_ref','authorized_start_binding'} or result['transaction']!=transaction or result['argv']!=request['argv'] or request['argv'][0]!='start':raise ValueError('prepared start identity differs')
+    run_context.initialization_client=client;run_context.prepared_start=result
+else:
+    from installer.runtime_successor_store import require_ordinary_authority
+    require_ordinary_authority(value)
+    with coordinated(value) as path:
+        if read(path)!=transaction:raise ValueError('protected run transaction changed')
 validate(transaction,value)
 validate_live(manifest['interpreter_execution_identity'],manifest['interpreter'],observe(os.getpid()))
 old=read_state(transaction)
 if run_context.readonly and (transaction['status']!='ACTIVE' or old is None):raise ValueError('existing-run requires matching ACTIVE state')
 if transaction['status']=='ACTIVE' and old is None:raise ValueError('active runtime state missing')
+if request.get('prepared_start') and old is not None:raise ValueError('prepared bootstrap cannot overwrite published state')
 if transaction['status']=='RESERVED' and old is not None:
     commit_run_binding(transaction)
     transaction=dict(transaction,status='ACTIVE');run_context.transaction=transaction
@@ -73,7 +85,7 @@ if run_context.readonly:
     with coordinated(value) as path:
         if read(path)!=request['transaction']:raise ValueError('existing-run protected binding changed')
     if read_state(transaction) is None:raise ValueError('existing-run state disappeared')
-elif read_state(transaction) is not None:commit_run_binding(transaction)
+elif not request.get('prepared_start') and read_state(transaction) is not None:commit_run_binding(transaction)
 """
 )
 

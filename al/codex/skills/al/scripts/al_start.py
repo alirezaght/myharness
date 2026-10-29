@@ -57,6 +57,8 @@ def cmd_start(a, sid):
         transaction = sys.modules["_al_run_pin_context"].transaction
         st['runtime_origin'] = {key: transaction[key] for key in
                                 ('kind', 'schema_version', 'run_id', 'publication_transaction', 'pin')}
+    from al_inherited_lineage import seed
+    seed(st)
     if getattr(a, 'handoff', None):
         from al_execution_contract import MAX_HANDOFF, loads
         from al_events import initialise

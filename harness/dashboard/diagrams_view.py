@@ -4,13 +4,14 @@ The current version is always the stored latest one; `outdated` says the design 
 since (the next view records it). Notation problems are listed, never guessed around.
 """
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
 from harness.controller import HarnessController, Task
-from harness.design_models import EntryKind
-from harness.diagram_model import relevant_types
+from harness.design_models import EntryKind, EntryStatus
+from harness.diagram_model import build_model, relevant_types
+from harness.diagram_scenes import render_scenes
 from harness.diagrams import DiagramService
 from harness.errors import TaskNotFound
 from harness.state_diagrams import DiagramVersion
@@ -45,7 +46,46 @@ def diagrams_section(
     has_prose = any(
         e.effective and e.kind == EntryKind.ELEMENT for e in service.ws.design_entries()
     )
+    proposals = []
+    for entry in service.ws.design_entries():
+        if entry.status != EntryStatus.PENDING or entry.kind != EntryKind.ELEMENT:
+            continue
+        proposed = build_model([replace(entry, status=EntryStatus.STATED)])
+        if not proposed.empty or proposed.issues:
+            proposals.append(
+                {
+                    "entry_id": entry.id,
+                    "ref": entry.ref,
+                    "status": "proposed",
+                    "diagrams": render_scenes(proposed.data),
+                    "issues": [asdict(issue) for issue in proposed.issues],
+                }
+            )
+    state = (
+        "effective"
+        if not model.empty
+        else ("proposed" if proposals else ("prose_only" if has_prose else "absent"))
+    )
+    design_phase = str(task.phase) == "design"
+    guidance = (
+        "Propose structured notation with harness design propose, "
+        "then explicitly accept it with harness design decide."
+    )
+    if not design_phase:
+        guidance = (
+            "An explicit design revision is required: return this task to the design phase "
+            "with a reason, propose notation, then obtain acceptance and repeat the review and "
+            "approval workflow. The sealed specification is not changed by viewing this panel."
+        )
     return {
+        "state": state,
+        "provenance": (
+            "Diagrams come from stated or accepted structured design notation, "
+            "independently of AL implementation planning."
+        ),
+        "proposals": proposals,
+        "guidance": guidance,
+        "design_revision_required": not design_phase,
         "unavailable": unavailable,
         "outdated": DiagramService.needs(model, latest),
         "issues": [asdict(issue) for issue in model.issues],

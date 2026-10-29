@@ -78,7 +78,7 @@ class OwnedProcess:
         self.process = None
         self.launch_identity = None
 
-    def spawn(self, argv, *, cwd, env, output):
+    def spawn(self, argv, *, cwd, env, output, pass_fds=()):
         child_env = dict(
             env, AL_VERIFICATION_LAUNCH_TOKEN=self.token, AL_VERIFICATION_ASSIGNMENT=self.assignment
         )
@@ -93,6 +93,7 @@ class OwnedProcess:
                 stdout=output,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
+                pass_fds=pass_fds,
             )
         self.capture_identity()
         return self.process
