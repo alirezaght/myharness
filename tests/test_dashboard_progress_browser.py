@@ -83,3 +83,13 @@ def test_work_is_visible_without_fake_percentages(
             directory.mkdir(parents=True, exist_ok=True)
             image = call("Page.captureScreenshot", {"format": "png"})
             (directory / f"work-progress-{width}.png").write_bytes(base64.b64decode(image["data"]))
+            state["status"] = "Interrupted"
+            evaluate(call, "refreshDashboard()")
+            wait(
+                call,
+                "document.querySelector('.execution-work-now h5').textContent"
+                " === 'Last reported work'",
+            )
+            assert "Execution is not active" in evaluate(
+                call, "document.querySelector('.execution-work-now').textContent"
+            )

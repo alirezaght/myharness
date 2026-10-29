@@ -274,9 +274,11 @@ function renderCurrentWork(execution) {
   section.setAttribute("aria-label", "What is happening");
   section.append(el("h4", "What is happening"));
   const active = (execution.agents || []).filter((agent) => agent.status === "Running");
+  const executing = ACTIVE_EXECUTION_STATUSES.has(execution.status);
   const now = el("div");
   now.className = "execution-work-now";
-  now.append(el("h5", "Working now"));
+  now.append(el("h5", executing ? "Working now" : "Last reported work"));
+  if (!executing) now.append(el("p", "Execution is not active. These are the last recorded agent descriptions."));
   if (!active.length) now.append(el("p", ACTIVE_EXECUTION_STATUSES.has(execution.status)
     ? "The supervisor is active; no running agent has been reported."
     : "No agent is currently reported as running."));
