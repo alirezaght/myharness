@@ -312,8 +312,9 @@ function renderCurrentWork(execution) {
     outputs.append(list);
     results.append(outputs);
   }
+  const checkLabels = { RUNNING: "Reported running", PASS: "Passed", FAIL: "Failed", INFRA: "Tooling issue", BLOCKED: "Check unavailable", NOT_RUN: "Not run" };
   for (const check of (activity.checks || []).slice(-3)) results.append(el("p",
-    `${check.area || check.id}: ${check.status === "RUNNING" ? "Reported running" : check.status || "Status not reported"} · ${activityTime(check.at)}`));
+    `${check.area || check.id}: ${checkLabels[check.status] || check.status || "Status not reported"} · ${activityTime(check.at)}`));
   section.append(now, latest, results);
   return section;
 }
