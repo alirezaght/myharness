@@ -264,6 +264,11 @@ class Snapshot:
             for scope in sorted(protected):
                 if scope=='.':continue
                 add(scope,True)
+                try:
+                    self.safe_file(scope)
+                    regular=stat.S_ISREG((self.root/scope).lstat().st_mode)
+                except (OSError,ValueError):regular=False
+                if regular:continue
                 for row in git_records(self.root,['ls-files','--others','-z','--',scope],LIMITS):
                     p=row.decode();add(p,not any(part in EXCLUDED for part in Path(p).parts[len(Path(scope).parts):]))
         except (OSError,ValueError,UnicodeError) as exc:self.gaps.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))

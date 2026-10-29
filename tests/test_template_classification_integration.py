@@ -143,7 +143,8 @@ def test_classified_read_grant_keeps_real_env_and_writes_denied(registered):
         + repr(str(root))
         + ")\nassert len((r/'app/.env.example').read_bytes())>0\nfor p,mo"
         "de in [(r/'.env','rb'),(r/'app/.env.example','wb')]:\n try:\n "
-        " with p.open(mode): pass\n except PermissionError: pass\n else"
+        " with p.open(mode): pass\n except OSError as e:\n"
+        "  if e.errno not in (1,13,30): raise\n else"
         ": raise SystemExit('protected effect permitted')\nprint('boun"
         "daries verified')"
     )
@@ -235,8 +236,8 @@ def test_database_parent_enclosing_repo_preserves_writer_and_db_denials(operatio
         + repr(str(root / "app/ordinary.txt"))
         + ").write_text('owned writer')\nfor name in "
         + repr(denied)
-        + ":\n try: Path(name).write_text('escape')\n except PermissionEr"
-        "ror: pass\n else: raise SystemExit('database write permitted'"
+        + ":\n try: Path(name).write_text('escape')\n except OSError as e:\n"
+        "  if e.errno not in (1,13,30): raise\n else: raise SystemExit('database write permitted'"
         ")\nprint('write matrix verified')"
     )
     proc = operation_popen(
@@ -293,8 +294,8 @@ def test_own_scratch_is_writable_inside_protected_execution_and_siblings_denied(
             [str(p) for p in denied]
             + [str(root / "app/readonly-denied"), initial["source"], initial["coordination_lock"]]
         )
-        + ":\n try: Path(name).open('ab').close()\n except PermissionErro"
-        "r: pass\n else: raise SystemExit('authority write permitted')"
+        + ":\n try: Path(name).open('ab').close()\n except OSError as e:\n"
+        "  if e.errno not in (1,13,30): raise\n else: raise SystemExit('authority write permitted')"
         "\nfor target in "
         + repr([execution["handoff_path"], initial["source"]])
         + ":\n try:\n  alias=scratch/'alias';os.link(target,alias);alias."
@@ -376,8 +377,9 @@ def test_materialized_check_child_cannot_write_classified_or_session(registered)
                 initial["coordination_lock"],
             ]
         )
-        + ":\n try: Path(name).open('ab').close()\n except PermissionErro"
-        "r: pass\n else: raise SystemExit('check write permitted')\npri"
+        + ":\n try: Path(name).open('ab').close()\n except OSError as e:\n"
+        "  if e.errno not in (1,13,30): raise\n else: raise SystemExit('check write permitted')\n"
+        "pri"
         "nt('check denial verified')"
     )
     proc = check_popen(
@@ -420,7 +422,8 @@ def test_linux_scratch_protected_descendant_effective_policy(tmp_path):
         "from pathlib import Path\ns=Path("
         + repr(profile.temporary)
         + ")\n(s/'allowed').write_text('scratch')\ntry: (s/'protected-cop"
-        "y').write_text('escape')\nexcept PermissionError: pass\nelse: "
+        "y').write_text('escape')\nexcept OSError as e:\n"
+        " if e.errno not in (1,13,30): raise\nelse: "
         "raise SystemExit('protected scratch write permitted')"
     )
     _contained(profile, root, code)

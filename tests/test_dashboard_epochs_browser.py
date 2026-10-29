@@ -2,6 +2,7 @@
 
 import base64
 import copy
+import os
 from pathlib import Path
 
 import pytest
@@ -93,8 +94,10 @@ def test_epoch_status_and_stale_actions(
                 call,
                 "document.querySelector('[data-view-disclosure=verification-obligations]').open=true",
             )
-            directory = Path("/private/tmp/harness-scroll-fix-20261028/epoch-ui-screenshots")
-            directory.mkdir(exist_ok=True)
+            directory = Path(
+                os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "screenshots")
+            )
+            directory.mkdir(parents=True, exist_ok=True)
             screenshot = call("Page.captureScreenshot", {"format": "png"})
             (directory / f"overview-{width}x{height}.png").write_bytes(
                 base64.b64decode(screenshot["data"])

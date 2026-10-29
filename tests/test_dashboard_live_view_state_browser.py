@@ -241,7 +241,9 @@ def test_live_view_state(controller, sample_repo, monkeypatch, db_path, tmp_path
             for key in ("task", "identities", "decision", "closed", "log", "text", "logCalls", "y"):
                 assert repainted[key] == after[key], repainted
             assert not after["overflow"]
-            directory = Path("/private/tmp/harness-scroll-fix-20261028/live-view-screenshots")
+            directory = Path(
+                os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "screenshots")
+            )
             directory.mkdir(parents=True, exist_ok=True)
             shot = call("Page.captureScreenshot", {"format": "png"})
             (directory / f"live-state-{width}x{height}.png").write_bytes(

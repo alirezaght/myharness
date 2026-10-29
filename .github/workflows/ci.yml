@@ -13,6 +13,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: uv python install
       - run: uv sync --locked
       - run: uv run ruff check .
@@ -27,6 +28,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - run: brew install ripgrep
       - run: uv python install
       - run: uv sync --locked
       - run: uv run ruff check .

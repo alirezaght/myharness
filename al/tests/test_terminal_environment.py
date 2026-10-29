@@ -2,8 +2,8 @@
 
 import hashlib
 import importlib.util
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -99,3 +99,80 @@ def test_unbound_or_malformed_caller_observations_refuse(monkeypatch, mutation):
     monkeypatch.setitem(sys.modules, "_al_terminal_observation", SimpleNamespace(environment=value))
     with pytest.raises(ValueError):
         module.ambient_environment()
+
+
+def test_query_uses_system_git_even_when_caller_path_prefers_other_tooling(tmp_path, monkeypatch):
+    import os
+    import subprocess
+
+    from al.installer.terminal_source import query_environment
+
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    marker = tmp_path / "caller-git-ran"
+    executable = tools / "git"
+    executable.write_text("#!/bin/sh\ntouch '" + str(marker) + "'\nexit 99\n")
+    executable.chmod(0o755)
+    caller_path = str(tools) + os.pathsep + os.defpath
+    monkeypatch.setenv("PATH", caller_path)
+    monkeypatch.setenv("GIT_EXTERNAL_DIFF", "caller-controlled")
+
+    environment = query_environment()
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    subprocess.run(["/usr/bin/git", "init", "-q", str(repository)], check=True)
+    driver = """
+import os, subprocess, sys
+sys.path.insert(0, sys.argv[1])
+from al.installer.validator_readonly import Readonly
+reader = Readonly()
+reader.start()
+result = subprocess.run(['git', 'rev-parse', '--show-toplevel'], capture_output=True, text=True)
+assert result.returncode == 0, result.stderr
+print(result.stdout.strip())
+assert os.environ['PATH'] == sys.argv[2]
+with subprocess.Popen(['git', 'rev-parse', '--show-toplevel'], -1, None,
+                      stdout=subprocess.PIPE, stderr=subprocess.PIPE) as child:
+    out, err = child.communicate(timeout=5)
+    assert child.returncode == 0, err
+    assert out.strip().decode() == result.stdout.strip()
+try:
+    subprocess.Popen(['git', 'status', '--porcelain'], -1, sys.argv[3])
+except PermissionError:
+    pass
+else:
+    raise AssertionError('explicit positional foreign executable permitted')
+for args, kwargs in [
+    (['git', 'status', '--porcelain'], {'executable': sys.argv[3]}),
+    (['git', 'config', 'test.unsafe', 'true'], {}),
+    (['git', 'status', '--porcelain'], {'env': dict(os.environ, GIT_EXTERNAL_DIFF='unsafe')}),
+]:
+    try:
+        subprocess.run(args, capture_output=True, **kwargs)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError('unapproved execution permitted')
+"""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            driver,
+            str(Path(__file__).resolve().parents[2]),
+            caller_path,
+            str(executable),
+        ],
+        cwd=repository,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(repository.resolve())
+    assert not marker.exists()
+    assert environment["PATH"] == caller_path
+    assert "GIT_EXTERNAL_DIFF" not in environment
+    assert os.environ["PATH"] == caller_path

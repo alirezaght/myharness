@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 
 
@@ -16,6 +17,19 @@ class Readonly:
         self.directories = {}
         self.pending_open = None
         self.original_open = os.open
+        self.original_popen = subprocess.Popen
+
+    def popen(self, args, *positional, **keywords):
+        # Resolve the fixed Git command without changing the environment whose
+        # hashes are part of existing evidence. The audit below still validates
+        # this executable, its complete read grammar and its Git controls.
+        if isinstance(args, (list, tuple)) and args and args[0] == 'git':
+            if len(positional) > 1:
+                if positional[1] is None and 'executable' not in keywords:
+                    positional = (positional[0], str(self.git), *positional[2:])
+            elif keywords.get('executable') is None:
+                keywords['executable'] = str(self.git)
+        return self.original_popen(args, *positional, **keywords)
 
     def open(self, path, flags, mode=0o777, *, dir_fd=None):
         """Bind fd-relative opens to their actual directory, retaining O_NOFOLLOW.
@@ -100,6 +114,7 @@ class Readonly:
         sys.addaudithook(self.audit)
         self.enabled = True
         os.open = self.open
+        subprocess.Popen = self.popen
 
     def verify(self):
         for path,state in list(self.reads.items()):

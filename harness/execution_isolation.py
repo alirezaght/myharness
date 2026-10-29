@@ -4,9 +4,11 @@ import json
 import os
 import platform
 import shutil
+import socket
 import stat
 import subprocess
 import sys
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -163,7 +165,7 @@ try:
     with open(protected,'ab') as stream:stream.write(b'ESCAPE')
 except PermissionError:pass
 else:raise SystemExit('protected write permitted')
-for family,address in [(socket.AF_INET,('127.0.0.1',9)),(socket.AF_UNIX,'/var/run/docker.sock')]:
+for family,address in [(socket.AF_INET,('127.0.0.1',9)),(socket.AF_UNIX,sys.argv[3])]:
     s=socket.socket(family,socket.SOCK_STREAM);s.settimeout(.2)
     try:s.connect(address)
     except PermissionError:pass
@@ -175,12 +177,22 @@ child_code="from pathlib import Path;Path(__import__('sys').argv[1]).write_text(
 child=subprocess.run([sys.executable,'-c',child_code,protected],capture_output=True)
 if child.returncode==0:raise SystemExit('descendant escaped')
 """
-    result = subprocess.run(
-        contained_argv(profile, [sys.executable, "-I", "-c", code, str(allowed), str(protected)]),
-        cwd=profile.repository,
-        capture_output=True,
-        timeout=10,
-    )
+    # Probe an existing endpoint: ENOENT from a missing Docker socket proves
+    # nothing about containment and varies between developer and CI hosts.
+    with tempfile.TemporaryDirectory(prefix="hprobe-", dir="/tmp") as directory:
+        endpoint = str(Path(directory) / "s")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
+            listener.bind(endpoint)
+            listener.listen()
+            result = subprocess.run(
+                contained_argv(
+                    profile,
+                    [sys.executable, "-I", "-c", code, str(allowed), str(protected), endpoint],
+                ),
+                cwd=profile.repository,
+                capture_output=True,
+                timeout=10,
+            )
     if result.returncode or protected.read_bytes() != before:
         raise ValueError(
             "native containment capability probe failed: "

@@ -286,10 +286,12 @@ def test_private_spools_are_hidden_from_operation_and_check_children(operations)
             )
         )
         checked, _ = check_profile(context, envelope["repository"])
+        assert report.paths["stdout"].is_file()
         code = (
             "from pathlib import Path\ntry:Path("
             + repr(str(report.paths["stdout"]))
-            + ").read_bytes()\nexcept PermissionError:pass\n"
+            + ").read_bytes()\nexcept OSError as e:\n"
+            " if e.errno not in (1,2,13):raise\n"
             "else:raise SystemExit('private spool readable')"
         )
         for profile in [operation.profile(), checked]:

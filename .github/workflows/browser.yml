@@ -9,8 +9,6 @@ on:
 jobs:
   browser:
     runs-on: ubuntu-latest
-    env:
-      HARNESS_BROWSER_EXECUTABLE: /usr/bin/google-chrome
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -18,6 +16,14 @@ jobs:
           enable-cache: true
       - run: uv python install
       - run: uv sync --locked
+      - name: Configure sandboxed Chrome and consistent viewport scrollbars
+        run: |
+          cat > "$RUNNER_TEMP/harness-chrome" <<'CHROME'
+          #!/bin/sh
+          exec /usr/bin/google-chrome --enable-features=OverlayScrollbar --disable-component-extensions-with-background-pages "$@"
+          CHROME
+          chmod 700 "$RUNNER_TEMP/harness-chrome"
+          echo "HARNESS_BROWSER_EXECUTABLE=$RUNNER_TEMP/harness-chrome" >> "$GITHUB_ENV"
       - name: Verify sandboxed Chrome is available
         run: |
           test -x "$HARNESS_BROWSER_EXECUTABLE"
