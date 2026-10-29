@@ -36,9 +36,9 @@ def chrome_executable():
     for candidate in [
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        shutil.which("google-chrome"),
         shutil.which("chromium"),
         shutil.which("chromium-browser"),
-        shutil.which("google-chrome"),
     ]:
         if candidate and Path(candidate).is_file():
             return candidate

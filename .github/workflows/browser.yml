@@ -9,6 +9,8 @@ on:
 jobs:
   browser:
     runs-on: ubuntu-latest
+    env:
+      HARNESS_BROWSER_EXECUTABLE: /usr/bin/google-chrome
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -16,4 +18,8 @@ jobs:
           enable-cache: true
       - run: uv python install
       - run: uv sync --locked
+      - name: Verify sandboxed Chrome is available
+        run: |
+          test -x "$HARNESS_BROWSER_EXECUTABLE"
+          timeout 30s "$HARNESS_BROWSER_EXECUTABLE" --headless=new --disable-gpu --no-first-run --disable-background-networking --disable-component-update --disable-sync --disable-extensions --user-data-dir="$RUNNER_TEMP/harness-chrome-preflight" --dump-dom about:blank > "$RUNNER_TEMP/harness-chrome-preflight.html"
       - run: uv run pytest -m browser
