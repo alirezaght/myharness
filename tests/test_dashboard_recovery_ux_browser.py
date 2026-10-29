@@ -150,7 +150,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const noFormForPending = document.querySelectorAll(".execution-decision-form").length;
     const refresh = [...document.querySelectorAll(".execution-actions button")]
       .find((button) => button.textContent === "Refresh recorded status");
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    const keyboardReady = new Promise((resolve) => {
+      const observe = (event) => {
+        if (!event.isTrusted || event.key !== "Tab") return;
+        document.removeEventListener("keydown", observe);
+        resolve();
+      };
+      document.addEventListener("keydown", observe);
+    });
+    window.recoveryKeyboardReady = true;
+    await keyboardReady;
     refresh.focus();
     const focusStyle = getComputedStyle(refresh).outlineStyle;
     refresh.click();
@@ -424,6 +433,12 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
             # Headless Chrome's native window has a platform-specific minimum
             # width. CDP sets the actual document viewport for narrow layouts.
             with chrome(tmp_path / f"{name}-driver-profile", url, width, height) as call:
+                wait(call, "window.recoveryKeyboardReady === true")
+                for kind in ("keyDown", "keyUp"):
+                    call(
+                        "Input.dispatchKeyEvent",
+                        {"type": kind, "key": "Tab", "code": "Tab", "windowsVirtualKeyCode": 9},
+                    )
                 wait(call, "Boolean(document.querySelector('#recovery-ux-result'))")
                 captures[name] = evaluate(
                     call, "JSON.parse(document.querySelector('#recovery-ux-result').textContent)"
