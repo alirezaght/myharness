@@ -17,8 +17,9 @@ from tests.test_template_classification_integration import operations, registere
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="genuine macOS successor start")
 
 
+@pytest.mark.parametrize("focus", [None, "tooling", "verification"])
 def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_guards(
-    registered, monkeypatch, tmp_path
+    registered, monkeypatch, tmp_path, focus
 ):
     _, _, controller, _, installed, execution, _ = registered[0]
     conn, eid = controller.conn, execution["id"]
@@ -54,7 +55,8 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
     provider.write_text(
         f"#!{sys.executable}\nimport json,sys\n"
         "if '--version' in sys.argv:\n print('codex-cli 0.164.0');sys.exit()\n"
-        "sys.stdin.buffer.read()\n"
+        "prompt=sys.stdin.buffer.read()\n"
+        f"open({str(tmp_path / 'prompt.txt')!r}, 'wb').write(prompt)\n"
         f"print(json.dumps({{'type':'thread.started','thread_id':{native_id!r}}}))\n"
     )
     provider.chmod(0o700)
@@ -76,7 +78,13 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
         )
 
     reserve("successor-worker")
-    supervise(conn, eid, "successor-worker", "resume")
+    supervise(conn, eid, "successor-worker", "resume", focus)
+    prompt = (tmp_path / "prompt.txt").read_text()
+    if focus:
+        assert (
+            "tooling recovery" if focus == "tooling" else "retrying pending verification"
+        ) in prompt
+    assert "Harness MCP tools" in prompt
     current = get_execution(conn, eid)
     attempt = dict(
         conn.execute("SELECT * FROM execution_attempts WHERE token='successor-worker'").fetchone()

@@ -10,8 +10,12 @@ function agentRoleLabel(role) {
   return ({ "al-architect": "Architect", "al-engineer": "Engineer", "al-builder": "Builder", "al-designer": "Designer" })[role] || "Agent";
 }
 
-function diagramNode(title, status, description, state) {
-  const node = el("article");
+function diagramNode(title, status, description, state, onClick = null) {
+  const node = el(onClick ? "button" : "article");
+  if (onClick) {
+    node.type = "button";
+    node.addEventListener("click", onClick);
+  }
   node.className = "agent-map-node";
   node.dataset.state = state;
   node.append(el("strong", title));
@@ -19,7 +23,8 @@ function diagramNode(title, status, description, state) {
   badge.className = "agent-map-badge";
   node.append(badge);
   if (description) {
-    const text = el("p", description);
+    const text = el("span", description);
+    text.className = "agent-map-description";
     text.title = description;
     node.append(text);
   }
@@ -44,18 +49,59 @@ function renderAgentDiagram(execution) {
   heading.className = "agent-map-heading";
   heading.append(el("h3", "Live work map"));
   const status = executing ? (running.length ? `${running.length} agent${running.length === 1 ? "" : "s"} working` : "Supervisor coordinating")
-    : verified ? "Verified complete" : `${execution.status} · no active execution`;
+    : verified ? "Verified complete" : "Stopped · implementation incomplete";
   heading.append(el("p", status));
   section.append(heading);
   const timeline = el("ol");
   timeline.className = "agent-map-stages";
-  timeline.setAttribute("aria-label", "Recorded workflow stage");
+  timeline.setAttribute("role", "tablist");
+  timeline.setAttribute("aria-label", "Workflow stage details");
+  const panel = el("section");
+  panel.id = "execution-stage-details";
+  panel.className = "agent-map-stage-details";
+  panel.setAttribute("role", "tabpanel");
+  const key = executionIdentity(execution);
+  let selected = EXECUTION_STAGE_VIEWS.get(key) ?? (current >= 0 ? current : 0);
+  const buttons = [];
+  function selectStage(index) {
+    selected = index;
+    EXECUTION_STAGE_VIEWS.set(key, index);
+    for (let i = 0; i < buttons.length; i++) {
+      buttons[i].setAttribute("aria-selected", String(i === selected));
+      buttons[i].tabIndex = i === selected ? 0 : -1;
+    }
+    panel.setAttribute("aria-labelledby", `execution-stage-${index}`);
+    panel.replaceChildren(renderStageDetails(execution, index, stages));
+  }
   for (let i = 0; i < stages.length; i++) {
-    const step = el("li", stages[i]);
+    const step = el("li");
+    step.setAttribute("role", "presentation");
     if (i === current) step.setAttribute("aria-current", "step");
+    const button = el("button", stages[i]);
+    button.type = "button";
+    button.id = `execution-stage-${i}`;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-controls", panel.id);
+    button.title = i === current ? `${stages[i]}: recorded execution stage` : `View ${stages[i]} details`;
+    button.addEventListener("click", () => selectStage(i));
+    button.addEventListener("keydown", event => {
+      const target = event.key === "ArrowRight" ? (i + 1) % stages.length
+        : event.key === "ArrowLeft" ? (i + stages.length - 1) % stages.length
+          : event.key === "Home" ? 0 : event.key === "End" ? stages.length - 1 : null;
+      if (target === null) return;
+      event.preventDefault();
+      selectStage(target);
+      buttons[target].focus();
+    });
+    buttons.push(button);
+    step.append(button);
     timeline.append(step);
   }
+  selectStage(selected);
   section.append(timeline);
+  const stageHint = el("p", `Current stage: ${current >= 0 ? stages[current] : "not verified"} · select a tab for details`);
+  stageHint.className = "agent-map-stage-hint";
+  section.append(stageHint);
   const map = el("div");
   map.className = "agent-map";
   const supervisor = diagramNode("Supervisor", executing ? "Active" : execution.status,
@@ -84,10 +130,17 @@ function renderAgentDiagram(execution) {
   const verificationComplete = verified;
   const checkStatus = verificationComplete ? "Verified" : unresolved.length ? `${unresolved.length} need attention`
     : pending.length ? `${pending.length} reported running` : "Pending";
-  const checkText = unresolved.length ? "Failed or unavailable checks remain unresolved"
-    : verificationComplete ? "Required checks satisfied" : "Verification is not complete";
-  branches.append(diagramNode("Checks", checkStatus, checkText,
-    verificationComplete ? "complete" : unresolved.length ? "attention" : "inactive"));
+  const checkText = verificationComplete ? "Required checks satisfied; earlier attempts remain in history"
+    : unresolved.length ? "View causes and repair actions" : "Verification is not complete";
+  const checkNode = diagramNode("Checks", checkStatus, checkText,
+    verificationComplete ? "complete" : unresolved.length ? "attention" : "inactive", () => {
+      selectStage(2);
+      buttons[2].focus();
+      panel.scrollIntoView({ block: "nearest" });
+    });
+  checkNode.setAttribute("aria-label", "Show check details");
+  checkNode.setAttribute("aria-controls", panel.id);
+  branches.append(checkNode);
   map.append(branches);
   section.append(map);
   const finished = agents.filter(agent => agent.status === "Completed");
@@ -113,5 +166,6 @@ function renderAgentDiagram(execution) {
   footer.append(el("span", developerDecisions(execution).some(d => d.state !== "Resolved")
     ? "Developer decision needed" : "No developer decision needed"));
   section.append(footer);
+  section.append(panel);
   return section;
 }

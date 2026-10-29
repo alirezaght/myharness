@@ -55,8 +55,16 @@ def worker_lock(execution, *, wait=False):
 
 
 def launch_worker(
-    conn, execution_id, *, mode="start", expected_epoch_id=None, expected_authority_generation=None
+    conn,
+    execution_id,
+    *,
+    mode="start",
+    expected_epoch_id=None,
+    expected_authority_generation=None,
+    focus=None,
 ):
+    if focus not in {None, "tooling", "verification"} or focus and mode != "resume":
+        raise ValueError("supported continuation focus required")
     execution = get_execution(conn, execution_id)
     if (expected_epoch_id, expected_authority_generation) == (None, None):
         expected_epoch_id = execution["epoch_id"]
@@ -135,6 +143,8 @@ def launch_worker(
             "--mode",
             mode,
         ]
+        if focus:
+            argv.extend(["--focus", focus])
         try:
             diagnostics = Path(execution["handoff_path"]).parent / ("worker-" + attempt + ".log")
             descriptor = os.open(diagnostics, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -278,7 +288,7 @@ def dispatch_pending(controller, execution_id, package):
             )
 
 
-def _prompt(execution, package, envelope, mode):
+def _prompt(execution, package, envelope, mode, focus=None):
     runtime = str(al_source(execution, envelope).parent)
     launcher = " ".join(
         al_argv(
@@ -289,7 +299,23 @@ def _prompt(execution, package, envelope, mode):
             existing_run=True,
         )
     )
-    return (
+    focus_note = {
+        None: "",
+        "tooling": (
+            "The developer requested tooling recovery and continuation from the dashboard. "
+            "Inspect current operational issues and the updated supported Harness capabilities. "
+            "Repair prerequisites within existing authority, then continue implementation. "
+            "Do not repeat unchanged refusals or ask for product approval to fix tooling. "
+            "Never grant yourself privileges, waive evidence, or change approved requirements. "
+        ),
+        "verification": (
+            "The developer requested retrying pending verification from the dashboard. "
+            "Use retained code and current check plans. Prepare locked isolated dependencies, "
+            "and rerun relevant checks with genuine evidence. Preserve earlier failures. "
+            "Do not repeat the specification interview or claim setup failures as product results. "
+        ),
+    }[focus]
+    return focus_note + (
         "Use Harness MCP tools for all file, command, and AL state operations. "
         "Read read_file paths harness:handoff, harness:task-package, harness:skill, "
         "and harness:al-state for the fixed approved documents. "
@@ -411,7 +437,7 @@ def _reconnect(controller, execution, token):
         )
 
 
-def supervise(conn, execution_id, token, mode="start"):
+def supervise(conn, execution_id, token, mode="start", focus=None):
     execution = get_execution(conn, execution_id)
     with worker_lock(execution, wait=True):
         execution = get_execution(conn, execution_id)
@@ -556,7 +582,7 @@ def supervise(conn, execution_id, token, mode="start"):
         failure = None
         try:
             try:
-                proc.stdin.write(_prompt(execution, package, envelope, mode).encode())
+                proc.stdin.write(_prompt(execution, package, envelope, mode, focus).encode())
             except BrokenPipeError:
                 pass  # Drain the child's actual authentication/process failure next.
             finally:
@@ -689,10 +715,11 @@ def main():
     p.add_argument("--execution", required=True)
     p.add_argument("--token", required=True)
     p.add_argument("--mode", choices=["start", "resume", "reconnect"], default="start")
+    p.add_argument("--focus", choices=["tooling", "verification"])
     a = p.parse_args()
     conn = connect(Path(a.db))
     try:
-        supervise(conn, a.execution, a.token, a.mode)
+        supervise(conn, a.execution, a.token, a.mode, a.focus)
     finally:
         conn.close()
 

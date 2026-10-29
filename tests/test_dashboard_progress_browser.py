@@ -27,6 +27,7 @@ def test_work_is_visible_without_fake_percentages(
         state = baseline["task"]["execution"]
         state.update(
             status="Running",
+            native_id="01a17dbb-6ec4-7de3-9e5e-fc8a37f4779a",
             error=None,
             phase={"phase": "IMPLEMENTATION"},
             agents=[
@@ -110,6 +111,73 @@ def test_work_is_visible_without_fake_percentages(
                 "document.querySelector('#approvals')) & Node.DOCUMENT_POSITION_FOLLOWING)",
             )
             assert not evaluate(call, "document.documentElement.scrollWidth > innerWidth")
+            # Stage navigation and check details are read-only, persistent and keyboard usable.
+            state["activity"]["checks"] = [
+                {"id": f"E{i}", "area": "email attribution", "status": "INFRA"} for i in range(1, 7)
+            ]
+            state["operational_issues"] = {
+                "runtime": {
+                    "id": "runtime",
+                    "state": "Open",
+                    "capability_or_check_ref": "E1 locked setup",
+                    "next_action": "Install the locked dependencies for E1",
+                },
+                "other": {
+                    "id": "other",
+                    "state": "Open",
+                    "capability_or_check_ref": "E10 unrelated cause",
+                    "next_action": "Repair the E10 prerequisite",
+                },
+            }
+            evaluate(call, "refreshDashboard()")
+            wait(
+                call,
+                "document.querySelector('[aria-label=\"Show check details\"]')"
+                ".textContent.includes('6 need attention')",
+            )
+            evaluate(call, "document.querySelector('[aria-label=\"Show check details\"]').click()")
+            assert (
+                evaluate(
+                    call, "document.querySelector('[role=tab][aria-selected=true]').textContent"
+                )
+                == "Check"
+            )
+            assert (
+                evaluate(call, "document.querySelectorAll('.agent-map-check-result').length") == 6
+            )
+            assert "E10 unrelated cause" not in evaluate(
+                call, "document.querySelector('.agent-map-check-result').textContent"
+            )
+            evaluate(call, "document.querySelector('.agent-map-check-result summary').click()")
+            evaluate(call, "refreshDashboard()")
+            wait(
+                call,
+                "document.querySelector('[role=tab][aria-selected=true]').textContent === 'Check'",
+            )
+            assert evaluate(call, "document.querySelector('.agent-map-check-result details').open")
+            evaluate(
+                call,
+                "document.querySelector('[role=tab][aria-selected=true]').dispatchEvent("
+                "new KeyboardEvent('keydown', {key:'ArrowRight',bubbles:true}))",
+            )
+            assert evaluate(call, "document.activeElement.textContent") == "Review"
+            assert "Formal review is not established" in evaluate(
+                call, "document.querySelector('[role=tabpanel]').textContent"
+            )
+            evaluate(call, "document.querySelector('#execution-stage-1').click()")
+            assert "Build" in evaluate(
+                call, "document.querySelector('[role=tabpanel]').textContent"
+            )
+            controls = evaluate(
+                call, "document.querySelector('.execution-run-controls').textContent"
+            )
+            assert all(
+                label in controls
+                for label in ("Resume task", "Retry checks", "Recover tooling & continue")
+            )
+            assert evaluate(
+                call, "!document.querySelector('.execution-run-controls').closest('details')"
+            )
             directory = Path(
                 os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "screenshots")
             )

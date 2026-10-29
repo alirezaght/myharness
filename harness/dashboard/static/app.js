@@ -281,6 +281,10 @@ function renderTask(task) {
   const section = el("section");
   section.id = "task";
   section.append(el("h2", `Task ${task.id}`));
+  const title = el("p", task.request.length > 110 ? `${task.request.slice(0, 107)}…` : task.request);
+  title.className = "task-purpose";
+  title.title = task.request;
+  section.append(title);
   if (task.execution) {
     section.append(renderExecution(task.id, task.execution));
     const statusDetails = document.createElement("details");
@@ -289,7 +293,13 @@ function renderTask(task) {
     statusDetails.append(el("summary", "Status and next-step details"), renderStatusSummary(task));
     section.append(statusDetails);
   } else section.append(renderStatusSummary(task));
-  section.append(renderApprovalCenter(task));
+  if (task.execution && task.approval_center?.final?.blockers?.some(item => item.code === "approved")) {
+    const approved = document.createElement("details");
+    approved.dataset.viewDisclosure = "approved-specification-record";
+    approved.className = "execution-detail-panel";
+    approved.append(el("summary", "Approved specification and approval record"), renderApprovalCenter(task));
+    section.append(approved);
+  } else section.append(renderApprovalCenter(task));
   const list = el("dl");
   const rows = [
     ["Description", task.request],

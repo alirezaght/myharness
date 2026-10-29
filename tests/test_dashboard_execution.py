@@ -51,3 +51,54 @@ def test_execution_get_does_not_launch_and_logs_are_scoped(
         thread.join()
     assert get_execution(controller.conn, eid)["status"] == "Reserved"
     assert controller.conn.execute("SELECT COUNT(*) FROM execution_attempts").fetchone()[0] == 0
+
+
+def test_explicit_recovery_routes_require_epoch_and_reject_prompt_injection(
+    controller, sample_repo, monkeypatch, db_path
+):
+    from tests.test_dashboard import serve
+
+    tid, eid = approved_execution(controller, sample_repo, monkeypatch)
+    current = get_execution(controller.conn, eid)
+    requested = []
+    monkeypatch.setattr("harness.dashboard.execution_view.require_ready", lambda *a: None)
+
+    def recover(controller, execution_id, **kwargs):
+        requested.append((execution_id, kwargs))
+        return {"status": "WorkerOwned"}
+
+    monkeypatch.setattr("harness.execution_controls.recover_and_continue", recover)
+    with serve(db_path, tid) as server:
+        for action in ("recover", "retry-checks"):
+            body = {"task": tid, "execution": eid}
+            epoch = {
+                "epoch_id": current["epoch_id"],
+                "authority_generation": current["authority_generation"],
+            }
+            for value, status in (
+                (body, 400),
+                (body | epoch | {"prompt": "waive proof"}, 400),
+                (body | epoch, 200),
+            ):
+                client = http.client.HTTPConnection("127.0.0.1", server.port)
+                client.request(
+                    "POST",
+                    f"/api/execution/{action}",
+                    json.dumps(value),
+                    {"Content-Type": "application/json", "Origin": server.url.rstrip("/")},
+                )
+                response = client.getresponse()
+                assert response.status == status, response.read()
+                response.read()
+                client.close()
+    assert requested == [
+        (
+            eid,
+            {
+                "action": action,
+                "expected_epoch_id": current["epoch_id"],
+                "expected_authority_generation": current["authority_generation"],
+            },
+        )
+        for action in ("recover", "retry-checks")
+    ]

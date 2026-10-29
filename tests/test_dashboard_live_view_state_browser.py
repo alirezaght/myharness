@@ -127,6 +127,10 @@ window.fetch = (url, options) => {
   return realFetch(url, options);
 };
 window.openViews = () => {
+  document.querySelector('[data-view-disclosure=execution-full-details]').open = true;
+  const approvalRecord = document.querySelector(
+    '[data-view-disclosure=approved-specification-record]');
+  if (approvalRecord) approvalRecord.open = true;
   document.querySelector('.task-metadata').open = true;
   document.querySelector('.execution-identities-disclosure').open = true;
   document.querySelector('.saved-decision-details').open = true;

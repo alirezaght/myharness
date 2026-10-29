@@ -40,6 +40,8 @@ def execution_action(db_path, body, action):
             fields = {"task", "execution"}
             epoch_fields = {"epoch_id", "authority_generation"}
             supplied_epoch = set(data) & epoch_fields if isinstance(data, dict) else set()
+            if action in {"recover", "retry-checks"} and not supplied_epoch:
+                raise ValueError("recovery requires the current execution epoch identity")
             if supplied_epoch and supplied_epoch != epoch_fields:
                 raise ValueError("epoch ID and authority generation must be supplied together")
             fields |= supplied_epoch
@@ -86,8 +88,17 @@ def execution_action(db_path, body, action):
             )
             if get_execution(controller.conn, data["execution"])["task_id"] != data["task"]:
                 raise LookupError("execution not found for task")
-            require_ready(get_execution(controller.conn, data["execution"]), action)
-            if action == "decision":
+            require_ready(
+                get_execution(controller.conn, data["execution"]),
+                "resume" if action in {"recover", "retry-checks"} else action,
+            )
+            if action in {"recover", "retry-checks"}:
+                from harness.execution_controls import recover_and_continue
+
+                result = recover_and_continue(
+                    controller, data["execution"], action=action, **epoch_kwargs
+                )
+            elif action == "decision":
                 result = record_execution_decision(
                     controller,
                     data["execution"],

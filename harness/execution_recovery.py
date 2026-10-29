@@ -45,7 +45,12 @@ def reconnect_execution(
 
 
 def resume_execution(
-    controller, execution_id, *, expected_epoch_id=None, expected_authority_generation=None
+    controller,
+    execution_id,
+    *,
+    expected_epoch_id=None,
+    expected_authority_generation=None,
+    focus=None,
 ):
     conn = controller.conn
     from harness.execution_epochs import require_active_epoch
@@ -79,6 +84,7 @@ def resume_execution(
         mode="resume",
         expected_epoch_id=saved["epoch_id"],
         expected_authority_generation=saved["authority_generation"],
+        **({"focus": focus} if focus else {}),
     )
     return execution_view(conn, execution_id)
 

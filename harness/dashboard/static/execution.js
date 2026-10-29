@@ -1,8 +1,9 @@
 "use strict";
 
 const EXECUTION_DRAFTS = new Map();
+const RECONCILIATION_DRAFTS = new Map();
 const ACTIVE_EXECUTION_STATUSES = new Set(["Running", "Launching", "WorkerOwned"]);
-const EXECUTION_FOCUS_IDS = new Set(["execution-decision-text", "execution-decision-verdict"]);
+const EXECUTION_FOCUS_IDS = new Set(["execution-decision-text", "execution-decision-verdict", "execution-reconcile-evidence", "execution-reconcile-outcome"]);
 let executionTaskId = null;
 let executionSnapshot = null;
 const EXECUTION_ACTIONS = new Map();
@@ -121,27 +122,49 @@ function renderExecutionSummary(execution) {
   if (execution.status === "Unavailable" || execution.status === "Interrupted" || execution.status === "RecoveryRequired") {
     section.append(el("p", "Review the recorded host identity and diagnostics before choosing a recovery action."));
   }
+  return section;
+}
+
+function renderRunControls(execution) {
+  const section = el("section");
+  section.className = "execution-run-controls";
+  section.setAttribute("aria-label", "Task controls");
+  section.append(el("h3", "Task controls"));
   const actions = el("div");
   actions.className = "execution-actions";
   if (execution.status !== "Completed" && execution.status !== "Failed") {
-    actions.append(executionActionButton("Refresh recorded status", "reconnect", execution,
-      "Refreshes the saved run state and never continues the native agent."));
-    if (execution.native_id) actions.append(executionActionButton("Continue agent in existing session", "resume", execution,
-      "Explicitly continues the recorded native conversation, subject to current recovery checks."));
-    if (execution.status === "RecoveryRequired") actions.append(renderReconcileForm(execution));
+    if (execution.native_id) {
+      actions.append(executionActionButton("Recover tooling & continue", "recover", execution,
+        "Verifies or updates the trusted Harness bridge, then asks the existing session to repair tooling and continue. It preserves approval, code and the AL pin."));
+      actions.append(executionActionButton("Resume task", "resume", execution,
+        "Continues the existing native conversation with the same approved requirements."));
+      actions.append(executionActionButton("Retry checks", "retry-checks", execution,
+        "Uses the supported bridge and existing session to retry pending verification. Earlier failures remain recorded."));
+    }
+    if (execution.status === "RecoveryRequired" || execution.status === "Interrupted") {
+      const recovery = document.createElement("details");
+      recovery.dataset.viewDisclosure = "host-reconciliation";
+      recovery.className = "execution-reconcile-disclosure";
+      recovery.append(el("summary", "Review and reconcile interrupted host"),
+        el("p", "Use this when recovery reports an unsettled attempt. Record inspected exit evidence before retrying recovery; this does not approve code or checks."),
+        renderReconcileForm(execution));
+      section.append(recovery);
+    }
   }
+  actions.append(executionActionButton("Refresh recorded status", "reconnect", execution,
+    "Refreshes saved status and never continues the native agent."));
+  section.append(actions);
   const messages = el("div");
   messages.className = "execution-action-results";
   messages.setAttribute("aria-live", "polite");
-  for (const action of ["reconnect", "resume"]) {
+  for (const action of ["recover", "resume", "retry-checks", "reconnect", "reconcile"]) {
     const state = EXECUTION_ACTIONS.get(executionActionKey(execution, action));
-    if (state) {
-      const result = el("p", state.message);
-      result.setAttribute("role", state.error ? "alert" : "status");
-      messages.append(result);
-    }
+    if (!state) continue;
+    const result = el("p", state.message);
+    result.setAttribute("role", state.error ? "alert" : "status");
+    messages.append(result);
   }
-  section.append(actions, messages);
+  section.append(messages);
   return section;
 }
 
@@ -151,10 +174,9 @@ function executionActionButton(label, action, execution, explanation) {
   const button = el("button", label);
   button.type = "button";
   const readiness = execution.readiness || {};
-  const available = readiness.actions?.[action];
-  const key = executionActionKey(execution, action);
-  const activeResume = action === "resume" && ACTIVE_EXECUTION_STATUSES.has(execution.status);
-  button.disabled = EXECUTION_ACTIONS.get(key)?.busy === true || available === false || activeResume;
+  const available = readiness.actions?.[action] ?? (["recover", "retry-checks"].includes(action) ? readiness.actions?.resume : undefined);
+  const activeResume = ["resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status);
+  button.disabled = ["recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy) || available === false || activeResume;
   button.setAttribute("aria-describedby", `execution-action-help-${action}`);
   button.addEventListener("click", () => sendExecutionAction(action, execution));
   const unavailableReason = activeResume
@@ -170,30 +192,54 @@ function executionActionButton(label, action, execution, explanation) {
 function renderReconcileForm(execution) {
   const form = el("form");
   form.className = "execution-reconcile";
+  const key = executionIdentity(execution);
+  const draft = RECONCILIATION_DRAFTS.get(key) || { outcome: "exited", evidence: "" };
+  RECONCILIATION_DRAFTS.set(key, draft);
   const select = document.createElement("select");
   select.name = "outcome";
+  select.id = "execution-reconcile-outcome";
+  select.setAttribute("aria-label", "Inspected host outcome");
   for (const [value, label] of [["not-started", "Confirmed not started"], ["exited", "Confirmed host exited"]]) {
     const option = el("option", label);
     option.value = value;
     select.append(option);
   }
+  select.value = draft.outcome;
+  select.addEventListener("change", () => { draft.outcome = select.value; });
   const evidence = document.createElement("textarea");
   evidence.name = "evidence";
+  evidence.id = "execution-reconcile-evidence";
+  evidence.value = draft.evidence;
+  evidence.addEventListener("input", () => { draft.evidence = evidence.value; });
+  evidence.setAttribute("aria-label", "Inspected host evidence");
   evidence.required = true;
   evidence.rows = 2;
   evidence.placeholder = "What did you inspect to establish this outcome?";
   const submit = el("button", "Record reconciliation");
   submit.type = "submit";
+  submit.disabled = Boolean(draft.busy);
   form.append(select, evidence, submit);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    await postExecution("reconcile", {
+    if (draft.busy) return;
+    draft.busy = true;
+    submit.disabled = true;
+    const result = await postExecution("reconcile", {
       task: executionTaskId,
       execution: execution.id,
     ...executionEpochPayload(execution),
       outcome: select.value,
       evidence: evidence.value,
     });
+    draft.busy = false;
+    submit.disabled = false;
+    if (result.res?.ok && currentExecution(execution)) {
+      EXECUTION_ACTIONS.set(executionActionKey(execution, "reconcile"), {
+        message: "Host reconciliation recorded. Choose Recover tooling & continue or Resume task.",
+        error: false,
+      });
+      repaintExecution();
+    }
   });
   return form;
 }
@@ -592,13 +638,11 @@ function renderExecution(taskId, execution) {
   const section = el("section");
   section.id = "execution";
   section.dataset.viewIdentity = viewIdentity(taskId, execution);
-  section.append(renderAgentDiagram(execution));
+  section.append(renderRunControls(execution), renderAgentDiagram(execution));
   const details = document.createElement("details");
   details.className = "execution-detail-panel";
   details.dataset.viewDisclosure = "execution-full-details";
-  details.open = !ACTIVE_EXECUTION_STATUSES.has(execution.status) && execution.status !== "Completed"
-    || developerDecisions(execution).some(item => item.state !== "Resolved");
-  details.append(el("summary", "Details, controls, and activity history"));
+  details.append(el("summary", "Diagnostics and activity history"));
   details.append(
     renderExecutionSummary(execution),
     renderVerificationState(execution),
@@ -630,9 +674,9 @@ function showExecutionError(message) {
 }
 
 async function sendExecutionAction(action, execution) {
-  if (action === "resume" && ACTIVE_EXECUTION_STATUSES.has(execution.status)) return;
+  if (["resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status)) return;
   const key = executionActionKey(execution, action);
-  if (EXECUTION_ACTIONS.get(key)?.busy) return;
+  if (["recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy)) return;
   EXECUTION_ACTIONS.set(key, {
     busy: true,
     message: action === "reconnect" ? "Refreshing recorded status…" : "Continuing the existing native session…",
@@ -649,6 +693,8 @@ async function sendExecutionAction(action, execution) {
       busy: false,
       message: action === "reconnect"
         ? "Recorded status refreshed. No native agent was continued."
+        : action === "recover" ? "Bridge verified or updated. Tooling recovery and continuation requested; follow the live status for the result."
+        : action === "retry-checks" ? "Verification retry requested in the existing session. No check has been marked passed by this request."
         : "The continuation request was accepted for the existing native session. Check recorded status for its result.",
       error: false,
     });
@@ -740,7 +786,7 @@ function withExecutionFocus(fn) {
     const next = document.getElementById(id);
     if (next) {
       next.focus({ preventScroll: true });
-      if (id === "execution-decision-text" && key !== undefined) {
+      if ((id === "execution-decision-text" && key !== undefined) || id === "execution-reconcile-evidence") {
         const start = active.selectionStart;
         const end = active.selectionEnd;
         next.setSelectionRange(start, end);

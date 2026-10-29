@@ -169,14 +169,28 @@ document.addEventListener("DOMContentLoaded", async () => {
     await refreshDashboard();
     const refreshErrorAfterRender = actionAlert()?.textContent;
     const resume = [...document.querySelectorAll(".execution-actions button")]
-      .find((button) => button.textContent === "Continue agent in existing session");
+      .find((button) => button.textContent === "Resume task");
     resume.click();
     await waitFor(() => document.querySelector(".execution-action-results [role=status]")
       ?.textContent.includes("request was accepted"));
     const resumeMessage = document.querySelector(
       ".execution-action-results [role=status]")?.textContent;
     const incomplete = document.querySelector(".execution-summary")?.textContent;
+    document.querySelector('[data-view-disclosure="host-reconciliation"]').open = true;
+    const hostEvidence = document.getElementById("execution-reconcile-evidence");
+    hostEvidence.value = "Inspected recorded host exit; preserve this draft";
+    hostEvidence.dispatchEvent(new Event("input"));
+    hostEvidence.focus({preventScroll:true});
+    hostEvidence.setSelectionRange(2, 7);
+    document.getElementById("execution-reconcile-outcome").value = "not-started";
+    document.getElementById("execution-reconcile-outcome").dispatchEvent(new Event("change"));
     await refreshDashboard();
+    const reconciliationDraft = {
+      text: document.getElementById("execution-reconcile-evidence").value,
+      outcome: document.getElementById("execution-reconcile-outcome").value,
+      focus: document.activeElement.id,
+      selection: [document.activeElement.selectionStart, document.activeElement.selectionEnd],
+    };
     const resumeAfterRender = document.querySelector(
       ".execution-action-results [role=status]")?.textContent;
     const boxes = [...document.querySelectorAll("#current-status article")].map((node) => {
@@ -186,7 +200,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const result = { buttons, actionHints, decision, outcome, duplicateFormBefore,
       retryResult, noFormForPending, refreshError, refreshErrorAfterRender,
       refreshBody, retryBody, resumeBody, resumeMessage, resumeAfterRender, incomplete,
-      diagramUi, focusStyle, boxes, viewportWidth: innerWidth,
+      diagramUi, reconciliationDraft, focusStyle, boxes, viewportWidth: innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       headings: [...document.querySelectorAll("#current-status h3")]
         .map((node) => node.textContent),
@@ -201,7 +215,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const active = activeRecoveryFixture(executionSnapshot);
     document.getElementById("execution").replaceWith(renderExecution(DRIVE.task, active));
     const activeResume = [...document.querySelectorAll(".execution-actions button")]
-      .find((button) => button.textContent === "Continue agent in existing session");
+      .find((button) => button.textContent === "Resume task");
     const beforeResume = resumeRequests;
     activeResume.click();
     await sendExecutionAction("resume", active);
@@ -479,7 +493,7 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
     for name, observed in captures.items():
         assert "error" not in observed, {"viewport": name, **observed}
         assert "Refresh recorded status" in observed["buttons"]
-        assert "Continue agent in existing session" in observed["buttons"]
+        assert "Resume task" in observed["buttons"]
         assert not any(
             label in observed["buttons"] for label in ["Reconnect", "Resume native session"]
         )
@@ -501,6 +515,12 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
         assert observed["resumeBody"] == {"task": task, "execution": execution, **epoch}
         assert "request was accepted" in observed["resumeMessage"]
         assert observed["resumeAfterRender"] == observed["resumeMessage"]
+        assert observed["reconciliationDraft"] == {
+            "text": "Inspected recorded host exit; preserve this draft",
+            "outcome": "not-started",
+            "focus": "execution-reconcile-evidence",
+            "selection": [2, 7],
+        }
         assert "without a verified implementation result" in observed["incomplete"]
         assert "complete" not in observed["resumeMessage"].lower()
         assert observed["diagramUi"]["proseState"] is True

@@ -185,3 +185,65 @@ def test_pinned_references_are_readable_but_confined(operations):
     ):
         with pytest.raises(ValueError):
             operation.dispatch(principal, "read_file", {"path": resource})
+
+
+@pytest.mark.parametrize("action,focus", [("recover", "tooling"), ("retry-checks", "verification")])
+def test_dashboard_recovery_upgrades_before_focused_resume(
+    operations, monkeypatch, tmp_path, action, focus
+):
+    from harness.execution_controls import recover_and_continue
+
+    controller, execution, initialization = candidate(operations, monkeypatch, tmp_path)
+    old = bridge_root(execution)
+    source_bytes = Path(initialization["source"]).read_bytes()
+    launched = []
+
+    def launch(conn, eid, **kwargs):
+        assert bridge_root(execution) != old
+        assert kwargs["mode"] == "resume" and kwargs["focus"] == focus
+        assert eid == execution["id"]
+        from harness.execution_epoch_lock import epoch_action_lock
+
+        with pytest.raises(ExecutionConflict, match="in progress"):
+            with epoch_action_lock(execution):
+                pytest.fail("a concurrent recovery must not enter the upgrade/resume gap")
+        launched.append(kwargs)
+
+    monkeypatch.setattr("harness.execution_recovery.launch_worker", launch)
+    result = recover_and_continue(
+        controller,
+        execution["id"],
+        action=action,
+        expected_epoch_id=execution["epoch_id"],
+        expected_authority_generation=execution["authority_generation"],
+    )
+    assert len(launched) == 1
+    assert result["control_result"] == {
+        "requested_action": action,
+        "bridge_status": "Upgraded",
+        "continuation_requested": True,
+    }
+    assert get_execution(controller.conn, execution["id"]) == execution
+    assert Path(initialization["source"]).read_bytes() == source_bytes
+
+
+def test_dashboard_recovery_rejects_stale_epoch_before_upgrade(operations, monkeypatch, tmp_path):
+    from harness.execution_controls import recover_and_continue
+
+    controller, execution, _ = candidate(operations, monkeypatch, tmp_path)
+    old = bridge_root(execution)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("stale browser must not upgrade or resume")
+
+    monkeypatch.setattr("harness.execution_bridge.upgrade_bridge", unexpected)
+    monkeypatch.setattr("harness.execution_recovery.resume_execution", unexpected)
+    with pytest.raises(ExecutionConflict):
+        recover_and_continue(
+            controller,
+            execution["id"],
+            action="recover",
+            expected_epoch_id="stale",
+            expected_authority_generation=0,
+        )
+    assert bridge_root(execution) == old

@@ -131,6 +131,38 @@ def transform(text, edit):
     return text
 
 
+MAX_EDIT_TARGET = 8 * 1024 * 1024
+
+
+def _file_version(info):
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _read_edit_target(root, path):
+    # Patch payloads and ordinary reads keep their existing bounds. A small
+    # patch may target a larger file, observed through one stable no-follow fd.
+    with parent_descriptor(root, path) as (directory, name):
+        descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        try:
+            before = os.fstat(descriptor)
+            _ordinary(before)
+            if before.st_size > MAX_EDIT_TARGET:
+                raise ValueError("patch target exceeds 8 MiB bounded edit limit")
+            chunks, size = [], 0
+            while size <= MAX_EDIT_TARGET:
+                chunk = os.read(descriptor, min(65536, MAX_EDIT_TARGET + 1 - size))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+            after = os.fstat(descriptor)
+            if size > MAX_EDIT_TARGET or _file_version(before) != _file_version(after):
+                raise ValueError("patch target moved or exceeded bounded edit limit")
+            return b"".join(chunks).decode("utf-8"), _file_version(after)
+        finally:
+            os.close(descriptor)
+
+
 def apply_patch(root, patch, authorize_paths):
     edits = parse_patch(patch)
     authorize_paths([e["path"] for e in edits])
@@ -146,21 +178,15 @@ def apply_patch(root, patch, authorize_paths):
                 pass
             prepared.append((edit, transform("", edit), None))
         else:
-            value = read_file(root, edit["path"], limit=65536)
-            if value["truncated"]:
-                raise ValueError("patch target exceeds bounded edit limit")
-            with parent_descriptor(root, edit["path"]) as (directory, name):
-                info = os.stat(name, dir_fd=directory, follow_symlinks=False)
-            prepared.append(
-                (edit, transform(value["text"], edit), (info.st_dev, info.st_ino, info.st_mtime_ns))
-            )
+            text, version = _read_edit_target(root, edit["path"])
+            prepared.append((edit, transform(text, edit), version))
     authorize_paths([e["path"] for e in edits])
     for edit, content, expected in prepared:
         with parent_descriptor(root, edit["path"], create=True) as (directory, name):
             if expected:
                 info = os.stat(name, dir_fd=directory, follow_symlinks=False)
                 _ordinary(info)
-                if expected != (info.st_dev, info.st_ino, info.st_mtime_ns):
+                if expected != _file_version(info):
                     raise ValueError("patch target changed before commit")
             elif _exists(directory, name):
                 raise ValueError("add-file target appeared before commit")
