@@ -235,10 +235,6 @@ def upgrade_bridge(controller, execution_id, *, reason):
             or state.get("session_id") != execution["al_session_id"]
         ):
             raise ExecutionConflict("bridge upgrade AL identity differs")
-        if any(
-            w["state"] in {"ACTIVE", "UNRESOLVED"} for w in state.get("writers", {}).values()
-        ) or any(e["status"] == "RUNNING" for e in state.get("evidence", {}).get("entries", [])):
-            raise ExecutionConflict("bridge upgrade requires settled product writers and checks")
         directory = Path(execution["handoff_path"]).parent
         old = selected_bridge(directory, execution)
         old_digest = verify_snapshot(old)
@@ -246,6 +242,17 @@ def upgrade_bridge(controller, execution_id, *, reason):
         new_digest = verify_snapshot(candidate)
         if old_digest == new_digest:
             return {"status": "Current", "bridge": str(old), "fingerprint": old_digest}
+        # An unchanged verified bridge needs no lifecycle settlement. Keep the
+        # writing/check barrier on actual authority replacement only; continuation
+        # still enforces native-process ownership and normal AL admission.
+        if any(
+            w["state"] in {"ACTIVE", "UNRESOLVED"} for w in state.get("writers", {}).values()
+        ) or any(e["status"] == "RUNNING" for e in state.get("evidence", {}).get("entries", [])):
+            raise ExecutionConflict(
+                "bridge upgrade requires settled product writers and checks; "
+                "use Resume task to reconcile unfinished work in the existing session, "
+                "then retry recovery"
+            )
         if source.read_bytes() != before:
             raise ExecutionConflict("AL source moved during bridge upgrade")
         value = {

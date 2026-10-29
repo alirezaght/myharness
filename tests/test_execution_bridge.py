@@ -247,3 +247,49 @@ def test_dashboard_recovery_rejects_stale_epoch_before_upgrade(operations, monke
             expected_authority_generation=0,
         )
     assert bridge_root(execution) == old
+
+
+@pytest.mark.parametrize("pending", ["ACTIVE", "UNRESOLVED", "RUNNING"])
+@pytest.mark.parametrize("already_current", [True, False])
+def test_pending_work_only_blocks_actual_bridge_replacement(
+    operations, monkeypatch, tmp_path, pending, already_current
+):
+    controller, execution, initialization = candidate(operations, monkeypatch, tmp_path)
+    reason = "Verify same bridge without settling or approving unfinished product work"
+    if already_current:
+        assert upgrade_bridge(controller, execution["id"], reason=reason)["status"] == "Upgraded"
+    directory = Path(execution["handoff_path"]).parent
+    pointer = directory / "bridge-selection.json"
+    prior = pointer.read_bytes() if pointer.exists() else None
+    source = Path(initialization["source"])
+    # Inject an interrupted lifecycle in this isolated fixture, preserving real
+    # protected origin and selected bridge validation. No live task is modified.
+    state = json.loads(source.read_bytes())
+    if pending == "RUNNING":
+        state["evidence"]["seq"] = 1
+        state["evidence"]["entries"].append(
+            {
+                "id": "E1",
+                "status": "RUNNING",
+                "run": state["run_id"],
+                "reservation": "synthetic-interrupted-reservation",
+                "area": "fixture",
+                "argv": ["python", "-m", "pytest"],
+                "scope": ["app"],
+            }
+        )
+    else:
+        state["writers"]["pending-writer"] = {"id": "pending-writer", "state": pending}
+    source.write_text(canonical(state))
+    before = source.read_bytes()
+    events = controller.workspace(execution["task_id"]).events()
+    if already_current:
+        result = upgrade_bridge(controller, execution["id"], reason=reason)
+        assert result["status"] == "Current"
+        assert Path(result["bridge"]) == bridge_root(execution)
+    else:
+        with pytest.raises(ExecutionConflict, match="settled product writers and checks"):
+            upgrade_bridge(controller, execution["id"], reason=reason)
+    assert source.read_bytes() == before
+    assert (pointer.read_bytes() if pointer.exists() else None) == prior
+    assert controller.workspace(execution["task_id"]).events() == events
