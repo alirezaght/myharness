@@ -68,3 +68,10 @@ button.agent-map-node:hover { background: color-mix(in srgb, #dba83e 8%, Canvas)
 .execution-run-controls .execution-actions { margin: 0; }
 .execution-run-controls .execution-action:first-child button { background: #2465b5; color: white; border-color: #3d8bea; }
 .execution-action-results:empty { display: none; }
+
+.execution-run-controls h3 { margin: 0 0 .75rem; font-size: 1rem; }
+.execution-run-controls .execution-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem 1rem; }
+.execution-run-controls .execution-action { max-width: none; min-width: 0; }
+.execution-run-controls button { width: 100%; }
+.execution-reconcile-disclosure { margin-bottom: .85rem; font-size: .85rem; }
+@media (max-width: 32rem) { .execution-run-controls .execution-actions { grid-template-columns: 1fr; } }

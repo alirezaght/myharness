@@ -135,11 +135,11 @@ function renderRunControls(execution) {
   if (execution.status !== "Completed" && execution.status !== "Failed") {
     if (execution.native_id) {
       actions.append(executionActionButton("Recover tooling & continue", "recover", execution,
-        "Verifies or updates the trusted Harness bridge, then asks the existing session to repair tooling and continue. It preserves approval, code and the AL pin."));
+        "Repair tooling, then continue the same approved task."));
       actions.append(executionActionButton("Resume task", "resume", execution,
-        "Continues the existing native conversation with the same approved requirements."));
+        "Continue the existing native conversation."));
       actions.append(executionActionButton("Retry checks", "retry-checks", execution,
-        "Uses the supported bridge and existing session to retry pending verification. Earlier failures remain recorded."));
+        "Retry pending verification; retain earlier failures."));
     }
     if (execution.status === "RecoveryRequired" || execution.status === "Interrupted") {
       const recovery = document.createElement("details");
@@ -180,9 +180,9 @@ function executionActionButton(label, action, execution, explanation) {
   button.setAttribute("aria-describedby", `execution-action-help-${action}`);
   button.addEventListener("click", () => sendExecutionAction(action, execution));
   const unavailableReason = activeResume
-    ? "The execution is already active. Use Refresh recorded status to observe its progress."
+    ? "The execution is already active. Refresh to observe progress."
     : readiness.action_reasons?.[action]?.message || readiness.message;
-  const hint = el("small", activeResume || available === false
+  const hint = el("small", activeResume ? unavailableReason : available === false
     ? `${unavailableReason} ${explanation}` : explanation);
   hint.id = `execution-action-help-${action}`;
   wrap.append(button, hint);
@@ -677,6 +677,9 @@ async function sendExecutionAction(action, execution) {
   if (["resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status)) return;
   const key = executionActionKey(execution, action);
   if (["recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy)) return;
+  for (const prior of ["recover", "resume", "retry-checks", "reconnect", "reconcile"]) {
+    EXECUTION_ACTIONS.delete(executionActionKey(execution, prior));
+  }
   EXECUTION_ACTIONS.set(key, {
     busy: true,
     message: action === "reconnect" ? "Refreshing recorded status…" : "Continuing the existing native session…",
