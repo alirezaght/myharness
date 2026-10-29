@@ -1118,3 +1118,32 @@ figure.diagram figcaption {
   margin: 0.25rem 0;
   overflow-wrap: anywhere;
 }
+
+.execution-current-work {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.85rem;
+  margin: 1rem 0;
+}
+
+.execution-current-work > h4 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.execution-current-work > div {
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.65rem;
+  overflow-wrap: anywhere;
+}
+
+.execution-current-work h5 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+
+.execution-current-work p {
+  margin: 0.5rem 0;
+}

@@ -92,6 +92,7 @@ function renderExecutionSummary(execution) {
   const source = el("p", `AL source: ${execution.source_status || "Unknown"}`);
   source.dataset.sourceStatus = (execution.source_status || "Unknown").toLowerCase();
   section.append(source);
+  section.append(renderCurrentWork(execution));
   const identityDetails = document.createElement("details");
   identityDetails.className = "execution-identities-disclosure";
   identityDetails.dataset.viewDisclosure = "execution-identifiers";
@@ -239,12 +240,13 @@ function renderVerificationState(execution) {
 function renderProgress(execution) {
   const section = el("section");
   section.className = "execution-progress";
-  section.append(el("h4", "Progress"));
+  section.append(el("h4", "Verified completion"));
   const progress = execution.progress;
   if (!progress) {
-    section.append(el("p", "Progress unknown: no measurable task units have been registered."));
+    section.append(el("p", "No measurable task breakdown has been reported."));
   } else {
     section.append(el("p", `${progress.completed} of ${progress.total} ${progress.unit} completed`));
+    section.append(el("p", "This counts verified tasks, not the amount of work performed. A percentage estimate has not been inferred."));
     const bar = document.createElement("progress");
     bar.max = Math.max(1, progress.total);
     bar.value = progress.completed;
@@ -254,6 +256,63 @@ function renderProgress(execution) {
     if (authored) section.append(el("p", `Authored output is available for ${authored} task(s). Verified completion is tracked separately.`));
   }
   if (execution.phase) section.append(el("p", `AL phase: ${execution.phase.phase || execution.phase.name || "unknown"}`));
+  return section;
+}
+
+function activityTime(value) {
+  const at = new Date(value);
+  if (!value || !Number.isFinite(at.getTime())) return "time not reported";
+  const age = Math.max(0, Math.floor((Date.now() - at.getTime()) / 60000));
+  const relative = age < 1 ? "less than a minute ago" : age < 60 ? `${age} min ago`
+    : age < 1440 ? `${Math.floor(age / 60)} hours ago` : `${Math.floor(age / 1440)} days ago`;
+  return `${relative} · ${age >= 1440 ? at.toLocaleString() : at.toLocaleTimeString()}`;
+}
+
+function renderCurrentWork(execution) {
+  const section = el("section");
+  section.className = "execution-current-work";
+  section.setAttribute("aria-label", "What is happening");
+  section.append(el("h4", "What is happening"));
+  const active = (execution.agents || []).filter((agent) => agent.status === "Running");
+  const now = el("div");
+  now.className = "execution-work-now";
+  now.append(el("h5", "Working now"));
+  if (!active.length) now.append(el("p", ACTIVE_EXECUTION_STATUSES.has(execution.status)
+    ? "The supervisor is active; no running agent has been reported."
+    : "No agent is currently reported as running."));
+  for (const agent of active) {
+    now.append(el("p", agent.activity || "The agent has not described its current work."));
+    now.append(el("small", `${agent.name} · ${agent.role}`));
+  }
+  const activity = execution.activity || {};
+  const latest = el("div");
+  latest.append(el("h5", "Latest recorded activity"));
+  const actions = activity.recent_actions || [];
+  for (const action of actions.slice(0, 3)) latest.append(el("p",
+    `${action.action} · ${action.agent_name} · ${activityTime(action.at)}${action.outcome ? ` · ${action.outcome}` : ""}`));
+  if (!actions.length) latest.append(el("p", activity.last_activity_at
+    ? `Last AL work update: ${activityTime(activity.last_activity_at)}`
+    : "No work activity has been recorded yet."));
+  const last = new Date(activity.last_activity_at);
+  if (activity.last_activity_at && Date.now() - last.getTime() > 120000) {
+    latest.append(el("p", "No newer work update has been recorded. Progress is unconfirmed until the next agent update."));
+  }
+  const results = el("div");
+  results.append(el("h5", "Recorded results"));
+  results.append(el("p", `${activity.finished_agent_runs || 0} agent runs finished · ${activity.report_count ?? execution.reports?.length ?? 0} reports recorded`));
+  results.append(el("small", "Agent completion and reports do not mean the feature is verified complete."));
+  if (execution.reports?.length) {
+    const outputs = document.createElement("details");
+    outputs.dataset.viewDisclosure = "current-output-reports";
+    outputs.append(el("summary", `View recorded reports (${execution.reports.length})`));
+    const list = el("ul");
+    for (const report of execution.reports.slice(-5)) list.append(el("li", `${report.name} · ${report.role}`));
+    outputs.append(list);
+    results.append(outputs);
+  }
+  for (const check of (activity.checks || []).slice(-3)) results.append(el("p",
+    `${check.area || check.id}: ${check.status === "RUNNING" ? "Reported running" : check.status || "Status not reported"} · ${activityTime(check.at)}`));
+  section.append(now, latest, results);
   return section;
 }
 
@@ -268,7 +327,7 @@ function renderAgent(agent) {
     ["Duration", agent.duration === undefined ? null : formatElapsed(agent.duration * 1000)],
     ["Dependencies", (agent.dependencies || []).join(", ") || "none"],
     ["Blockers", (agent.blockers || []).join(", ") || "none"],
-    ["Latest output", agent.latest_output],
+    ...(agent.latest_output ? [["Latest output", agent.latest_output]] : []),
   ];
   const list = document.createElement("dl");
   for (const [label, value] of fields) {
@@ -276,7 +335,7 @@ function renderAgent(agent) {
     list.append(row.children[0], row.children[1]);
   }
   item.append(list);
-  item.append(renderAgentProgress(agent.progress));
+  if (agent.progress) item.append(renderAgentProgress(agent.progress));
   return item;
 }
 
@@ -378,6 +437,10 @@ function renderFeed(execution) {
 
 function eventSummary(event) {
   const payload = event.payload || {};
+  if (event.kind === "writer.updated") return `${payload.role || "Writer"}: ${payload.state || "updated"} · ${(payload.files || []).length} assigned paths${payload.handoffs?.length ? ` · ${payload.handoffs.length} handoffs recorded` : ""}`;
+  if (event.kind === "phase.changed") return `Stage: ${payload.phase || "not reported"}`;
+  if (event.kind === "test.started" || event.kind === "test.result") return `${payload.area || payload.id || "Check"}: ${payload.status || "updated"}${payload.counts?.passed !== undefined ? ` · ${payload.counts.passed} passed` : ""}`;
+  if (event.kind === "issue.updated") return `${payload.capability_or_check_ref || payload.id}: ${payload.state || "updated"}`;
   return payload.name || payload.title || payload.question || payload.activity || payload.status ||
     payload.text || `sequence ${event.sequence}`;
 }

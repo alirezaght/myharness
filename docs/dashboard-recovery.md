@@ -1,5 +1,19 @@
 # Dashboard recovery and status guide
 
+## Read implementation progress
+
+Once execution exists, its current work appears before the approval history.
+**What is happening** separates the running agent's reported work, recent guarded
+tool activity with timestamps, recorded reports, and the latest reported check
+results. Tool arguments, source text and command output are not included in this
+activity projection. Observations belong to known agents in the selected epoch.
+
+**Verified completion** counts completed task units. A single registered task can
+cover substantial implementation, so `0 of 1` is not an effort estimate. Completed
+agent runs and saved reports are shown separately. A running check is labeled as
+reported running until a result arrives; a quiet period is explicitly shown.
+The status feed being current does not establish that work is advancing.
+
 ## Start the dashboard with operator permissions
 
 Run the public `harness dashboard` command from a trusted, ordinary terminal session that can access the existing Harness project state. A dashboard started inside a restricted native agent may still show read-only task data while its process cannot open the worker lock, Registry lock, decision destination, or inbox. The dashboard checks those destinations and shows which operator actions are unavailable. Restart the public dashboard command from the trusted terminal after a permission failure; do not change native-agent containment or remove a lock file.

@@ -443,6 +443,10 @@ def execution_view(conn, execution_id):
         if saved["status"] in {"Running", "Launching", "WorkerOwned"}
         else "ready"
     )
+    from harness.execution_activity import activity_view
+
+    feed = event_page(conn, execution_id, max(0, saved["cursor"] - 50), 50)["events"]
+    activity = activity_view(conn, saved, agents, reports, feed)
     return {
         k: saved[k]
         for k in (
@@ -466,6 +470,7 @@ def execution_view(conn, execution_id):
         )
     } | {
         "authored_work": recorded_work,
+        "activity": activity,
         "implementation": {"status": implementation_status, "issue_refs": issue_refs},
         "verification": {
             "status": "complete"
@@ -499,7 +504,7 @@ def execution_view(conn, execution_id):
         if tasks
         else None,
         "phase": entity(conn, execution_id, "run", "phase"),
-        "feed": event_page(conn, execution_id, max(0, saved["cursor"] - 50), 50)["events"],
+        "feed": feed,
         "logs": logs,
         "source_status": "Unknown"
         if contact is None

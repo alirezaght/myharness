@@ -282,6 +282,7 @@ function renderTask(task) {
   section.id = "task";
   section.append(el("h2", `Task ${task.id}`));
   section.append(renderStatusSummary(task));
+  if (task.execution) section.append(renderExecution(task.id, task.execution));
   section.append(renderApprovalCenter(task));
   const list = el("dl");
   const rows = [
@@ -308,7 +309,6 @@ function renderTask(task) {
   metadata.append(el("summary", "Task details"), list);
   section.append(metadata);
   if (task.execution) {
-    section.append(renderExecution(task.id, task.execution));
     if (task.execution.delivery) section.append(renderDelivery(task.execution.delivery));
   }
   section.append(renderResume(task.resume));
