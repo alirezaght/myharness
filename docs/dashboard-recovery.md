@@ -3,6 +3,13 @@
 ## Read implementation progress
 
 Once execution exists, its current work appears before the approval history.
+The **Live work map** highlights the recorded Plan → Build → Check → Review → Done
+stage and connects the supervisor to the reported agents and checks. Working
+agents are blue, checks needing attention are amber, and finished agent runs are
+in a separate expandable list. An active supervisor with no running agents says
+so explicitly. A Done highlight requires verified completion. The detailed
+status, controls, counters and history remain available below the diagram.
+
 **What is happening** separates the running agent's reported work, recent guarded
 tool activity with timestamps, recorded reports, and the latest reported check
 results. Tool arguments, source text and command output are not included in this

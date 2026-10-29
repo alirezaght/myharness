@@ -281,8 +281,14 @@ function renderTask(task) {
   const section = el("section");
   section.id = "task";
   section.append(el("h2", `Task ${task.id}`));
-  section.append(renderStatusSummary(task));
-  if (task.execution) section.append(renderExecution(task.id, task.execution));
+  if (task.execution) {
+    section.append(renderExecution(task.id, task.execution));
+    const statusDetails = document.createElement("details");
+    statusDetails.className = "execution-detail-panel";
+    statusDetails.dataset.viewDisclosure = "task-status-details";
+    statusDetails.append(el("summary", "Status and next-step details"), renderStatusSummary(task));
+    section.append(statusDetails);
+  } else section.append(renderStatusSummary(task));
   section.append(renderApprovalCenter(task));
   const list = el("dl");
   const rows = [

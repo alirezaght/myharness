@@ -28,6 +28,7 @@ def test_work_is_visible_without_fake_percentages(
         state.update(
             status="Running",
             error=None,
+            phase={"phase": "IMPLEMENTATION"},
             agents=[
                 {
                     "id": "engineer",
@@ -57,6 +58,38 @@ def test_work_is_visible_without_fake_percentages(
         )
         with chrome(tmp_path / "chrome", server.url + f"?task={task}", width, height) as call:
             wait(call, "Boolean(document.querySelector('.execution-current-work'))")
+            assert evaluate(
+                call,
+                "document.querySelector('.execution-diagram').getBoundingClientRect().height > 0",
+            )
+            assert (
+                evaluate(
+                    call,
+                    "document.querySelector('[data-agent-id=engineer] .agent-map-badge')"
+                    ".textContent",
+                )
+                == "Working"
+            )
+            assert "Implementing signed provider callbacks" in evaluate(
+                call, "document.querySelector('.execution-diagram').textContent"
+            )
+            assert "Supervisor" in evaluate(
+                call, "document.querySelector('.execution-diagram').textContent"
+            )
+            assert (
+                evaluate(
+                    call,
+                    "document.querySelector('.agent-map-stages [aria-current=step]').textContent",
+                )
+                == "Build"
+            )
+            assert not evaluate(
+                call, "document.querySelector('[data-view-disclosure=execution-full-details]').open"
+            )
+            evaluate(
+                call,
+                "document.querySelector('[data-view-disclosure=execution-full-details]').open=true",
+            )
             text = evaluate(call, "document.querySelector('.execution-current-work').textContent")
             assert "Implementing signed provider callbacks" in text
             assert "Updating source" in text and "Feature Engineer" in text
@@ -84,6 +117,7 @@ def test_work_is_visible_without_fake_percentages(
             image = call("Page.captureScreenshot", {"format": "png"})
             (directory / f"work-progress-{width}.png").write_bytes(base64.b64decode(image["data"]))
             state["status"] = "Interrupted"
+            state["phase"] = {"phase": "DONE"}
             evaluate(call, "refreshDashboard()")
             wait(
                 call,
@@ -93,3 +127,30 @@ def test_work_is_visible_without_fake_percentages(
             assert "Execution is not active" in evaluate(
                 call, "document.querySelector('.execution-work-now').textContent"
             )
+            assert evaluate(
+                call, "document.querySelector('.agent-map-stages [aria-current=step]') === null"
+            )
+            assert (
+                evaluate(
+                    call,
+                    "document.querySelector('[data-agent-id=engineer] .agent-map-badge')"
+                    ".textContent",
+                )
+                == "Last reported work"
+            )
+            state["status"] = "Running"
+            state["agents"][0]["status"] = "Completed"
+            evaluate(call, "refreshDashboard()")
+            wait(
+                call,
+                "document.querySelector('.agent-map-heading p').textContent"
+                " === 'Supervisor coordinating'",
+            )
+            assert "None active" in evaluate(
+                call, "document.querySelector('.agent-map-branches').textContent"
+            )
+            assert "1 finished agent runs" in evaluate(
+                call, "document.querySelector('.agent-map-finished').textContent"
+            )
+            evaluate(call, "document.querySelector('.agent-map-finished summary').click()")
+            assert evaluate(call, "document.querySelector('.agent-map-finished').open")

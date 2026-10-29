@@ -66,6 +66,8 @@ STATIC = {
     "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
     "/static/approvals.js": ("approvals.js", "text/javascript; charset=utf-8"),
     "/static/execution.js": ("execution.js", "text/javascript; charset=utf-8"),
+    "/static/execution_diagram.js": ("execution_diagram.js", "text/javascript; charset=utf-8"),
+    "/static/execution_diagram.css": ("execution_diagram.css", "text/css; charset=utf-8"),
     "/static/delivery.js": ("delivery.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
 }

@@ -592,16 +592,23 @@ function renderExecution(taskId, execution) {
   const section = el("section");
   section.id = "execution";
   section.dataset.viewIdentity = viewIdentity(taskId, execution);
-  section.append(
+  section.append(renderAgentDiagram(execution));
+  const details = document.createElement("details");
+  details.className = "execution-detail-panel";
+  details.dataset.viewDisclosure = "execution-full-details";
+  details.open = !ACTIVE_EXECUTION_STATUSES.has(execution.status) && execution.status !== "Completed"
+    || developerDecisions(execution).some(item => item.state !== "Resolved");
+  details.append(el("summary", "Details, controls, and activity history"));
+  details.append(
     renderExecutionSummary(execution),
     renderVerificationState(execution),
     renderProgress(execution),
     renderAgents(execution),
     renderGraph(execution),
     renderFeed(execution),
-    renderDecisionsExecution(execution),
     renderLogs(execution),
   );
+  section.append(details, renderDecisionsExecution(execution));
   return section;
 }
 
