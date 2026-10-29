@@ -72,7 +72,10 @@ function renderNav(tasks, selected) {
     const link = el("a", t.id);
     link.href = `/?task=${encodeURIComponent(t.id)}`;
     if (t.id === selected) link.setAttribute("aria-current", "page");
-    item.append(link, el("p", `${t.phase} · ${t.status}`), el("p", t.request));
+    const request = el("p", t.request);
+    request.className = "task-request";
+    request.title = t.request;
+    item.append(link, el("p", `${t.phase} · ${t.status}`), request);
     if (t.next) item.append(withCode("next: ", t.next));
     list.append(item);
   }
