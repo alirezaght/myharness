@@ -2,7 +2,6 @@
 
 import json
 import os
-import re
 import shutil
 import subprocess
 from importlib.resources import as_file
@@ -19,8 +18,9 @@ from harness.execution_decisions import record_execution_decision
 from harness.execution_projection import ingest_event
 from tests.execution_helpers import approved_execution, event, started
 from tests.test_dashboard import api, serve
-from tests.test_dashboard_browser import CHROME, _headless
+from tests.test_dashboard_browser import CHROME
 from tests.test_dashboard_execution_browser import _cdp_capture
+from tests.test_dashboard_live_view_state_browser import chrome, evaluate, wait
 
 pytestmark = [
     pytest.mark.browser,
@@ -420,19 +420,14 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
         captures = {}
         screenshots = {}
         for name, width, height in (("desktop", 1280, 800), ("mobile", 390, 844)):
-            viewport = f"--window-size={width},{height}"
             url = server.url + f"?task={task}"
-            result = _headless(
-                tmp_path / f"{name}-driver-profile",
-                viewport,
-                "--virtual-time-budget=12000",
-                "--dump-dom",
-                url,
-            )
-            assert result.returncode == 0
-            match = re.search(r'<pre id="recovery-ux-result"[^>]*>(.*?)</pre>', result.stdout, re.S)
-            assert match, result.stdout[-1500:]
-            captures[name] = json.loads(match.group(1))
+            # Headless Chrome's native window has a platform-specific minimum
+            # width. CDP sets the actual document viewport for narrow layouts.
+            with chrome(tmp_path / f"{name}-driver-profile", url, width, height) as call:
+                wait(call, "Boolean(document.querySelector('#recovery-ux-result'))")
+                captures[name] = evaluate(
+                    call, "JSON.parse(document.querySelector('#recovery-ux-result').textContent)"
+                )
         _install_capture_driver(tmp_path, monkeypatch)
         monkeypatch.setattr(DashboardServer, "stream_lifetime", 30.0)
         screenshots["desktop"] = _cdp_capture(

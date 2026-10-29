@@ -4,15 +4,30 @@ This roadmap is kept **separate from the design spec** ([SPEC.md](SPEC.md)). Han
 
 **Guiding principle:** the harness should run on a real task from Phase 1 onward. Each phase adds a capability without breaking the earlier ones.
 
-## Current status — 23 October 2026
+## Current status — 29 October 2026
 
 [Current and future AL, Harness and interaction diagrams](https://chatgpt.com/space/page_11adcd18b4ac8191904172a708044954) are available in the private roadmap page.
 
-Phases 1 and 2 were implemented before this work. Phase 3 is implemented and verified: AL execution and monitoring, the mandatory managed launcher with active-runtime pinning, artifact consumer routing, declared review-hook state and baseline exceptions are complete, and complete AL verification passes every collected test (see docs/handoffs/2026-10-23-phase3-status.md). The former 360-second complete-suite target was dropped by decision: `release_verify --full` takes about 12 minutes and its status reflects test results only, and the 13 slowest end-to-end proofs run as a separate acceptance tier (`--tier acceptance`) at release time.
+Phases 1 through 5 are implemented. Phase 5's developer-approved static petshop
+and dashboard browser acceptance have passed locally, including desktop/mobile
+layout, cart behavior, navigation interception and recovery. This substitutes for
+the requested external staging example; it does not establish a live external
+deployment or provider pipeline. Published CI and complete AL release verification
+are separate checks and must be reported with their actual results.
 
-Live native runs on Claude and Codex reach an approved AL result. AL is installed globally and repository-local AL copies were removed; the guarded single installation entrypoint exists but was bypassed for this install, so global updates are currently a manual copy.
+AL and Harness are installed globally. AL updates use the ownership-aware managed
+installer. Existing runs retain immutable runtime pins; supported preparation and
+activation can recover an old execution while preserving its approved requirements
+and native conversation. The recovered AR-2301 task has reached implementation.
 
-Phase 3 needs no further implementation estimate; Phases 4 and 5 remain future work. All phase and component estimates below are the original planning estimates, not a new remaining-work commitment.
+The [AL operating contract](al-operating-contract.md) separates developer decisions,
+authorized implementation and pending verification. Tooling and discovery gaps
+create repair work rather than repeated specification approval questions. See the
+[recovery guide](dashboard-recovery.md) for supported operator actions.
+
+All phase and component estimates below are the original planning estimates, not
+a new remaining-work commitment. Historical verification snapshots remain in the
+dated handoffs; they are not current whole-suite claims.
 
 ```
  ┌────────┐   ┌────────┐   ┌────────┐   ┌──────────┐   ┌────────────┐

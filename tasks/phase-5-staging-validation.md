@@ -80,3 +80,30 @@ arrows cross their labels. The petshop and dashboard interaction/viewport checks
 passed. The complete browser log is `/private/tmp/phase5-complete-native-browser.log`;
 original screenshots and the derived detail are retained with the visual review
 in `/private/tmp/phase5-visual-review.md`.
+
+## 2026-10-29 recovery and acceptance update
+
+All **24 browser-marked tests passed locally**, including the static petshop,
+desktop/mobile dashboard, live scroll/disclosure preservation, recovery controls,
+stale runtime responses and navigation interception. The log is
+`/private/tmp/harness-scroll-fix-20261028/browser-portability-local.log`.
+The Chrome extension also displayed the recovered AR-2301 execution in
+IMPLEMENTATION with no developer decision needed; Task details remained expanded
+during live updates. The current screenshot is
+`/private/tmp/harness-scroll-fix-20261028/live-dashboard.jpg`.
+
+The related portability regression passed **56 tests with one Linux-only skip**
+on macOS; protected planning adoption separately passed both tests after the final
+system-Git correction. The skip is not a passing Linux result. Published Linux
+and macOS CI, and the complete AL release suite, retain their own outcomes;
+neither local browser acceptance nor a global installation substitutes for them.
+
+The previously timing-out genuine workspace installer acceptance test now passes
+in **496.24 seconds**, including plan, apply and verification of both AL variants.
+The original operation timeouts and guards are unchanged. Its retained log is
+`/private/tmp/harness-scroll-fix-20261028/workspace-acceptance-fixed2.log`.
+
+The developer-approved petshop is the acceptance example for this implementation.
+External staging, signed-in provider pipeline and production readiness remain
+explicitly unverified; they do not require another staging URL from the developer
+to complete the approved local example.
