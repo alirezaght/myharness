@@ -20,7 +20,7 @@ jobs:
         run: |
           cat > "$RUNNER_TEMP/harness-chrome" <<'CHROME'
           #!/bin/sh
-          exec /usr/bin/google-chrome --enable-features=OverlayScrollbar --disable-component-extensions-with-background-pages "$@"
+          exec /usr/bin/google-chrome --enable-features=OverlayScrollbar:mode/overlay --disable-features=WebUIOmniboxPopup,WebUIOmniboxAimPopup,WebUIOmniboxFullPopup --disable-component-extensions-with-background-pages "$@"
           CHROME
           chmod 700 "$RUNNER_TEMP/harness-chrome"
           echo "HARNESS_BROWSER_EXECUTABLE=$RUNNER_TEMP/harness-chrome" >> "$GITHUB_ENV"

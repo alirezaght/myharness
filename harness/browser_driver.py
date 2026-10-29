@@ -79,6 +79,7 @@ class BrowserDriver:
                         "--no-default-browser-check",
                         "--disable-extensions",
                         "--disable-component-extensions-with-background-pages",
+                        "--disable-features=WebUIOmniboxPopup,WebUIOmniboxAimPopup,WebUIOmniboxFullPopup",
                         "--disable-background-networking",
                         "--disable-sync",
                         "--disable-component-update",
