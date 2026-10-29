@@ -446,8 +446,9 @@ def supervise(conn, execution_id, token, mode="start"):
                 )
             previous_package = conn.execute(
                 "SELECT package FROM execution_attempts "
-                "WHERE execution_id=? AND package IS NOT NULL ORDER BY rowid DESC LIMIT 1",
-                (execution_id,),
+                "WHERE execution_id=? AND epoch_id=? AND package IS NOT NULL "
+                "ORDER BY rowid DESC LIMIT 1",
+                (execution_id, execution["epoch_id"]),
             ).fetchone()
             if (
                 previous_package
