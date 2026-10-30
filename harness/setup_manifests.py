@@ -53,7 +53,7 @@ def node_manifest(raw, root, filename):
 def node_lock(raw):
     text = raw.decode()
     if (
-        re.search(r"(?<![\w])(?:file:|git\+|git@)", text)
+        re.search(r"(?<![\w/-])(?:file:|git\+|git@)", text)
         or re.search(r"(?:[{\s])directory\s*:", text)
     ):
         raise ValueError("local archives and Git dependencies require a setup adapter")

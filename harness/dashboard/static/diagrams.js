@@ -401,11 +401,29 @@ function renderChangeIllustration(view) {
       item.setAttribute("aria-pressed", String(item.dataset.changeElement === id));
   }
   for (const scene of view.scenes) {
-    const figure = renderScene(scene, null,
+    const flows = scene.items.filter(item => item.shape === "arrow");
+    const numbered = new Map(flows.map((item, i) => [item.id, String(i + 1)]));
+    const readable = {...scene, items: scene.items.map(item => item.shape === "arrow"
+      ? {...item, text: numbered.get(item.id)} : item)};
+    const figure = renderScene(readable, null,
       {marks, onSelect: choose, idAttr: "data-change-element", markerPrefix: "implementation-"});
     for (const item of figure.querySelectorAll("[data-change-element]"))
       item.dataset.inferred = String(Boolean(view.elements[item.dataset.changeElement]?.inferred));
     section.append(figure);
+    if (flows.length) {
+      const key = el("ol");
+      key.className = "change-flow-key";
+      key.setAttribute("aria-label", "Logical flows");
+      for (const flow of flows) {
+        const item = el("li"), button = el("button");
+        button.type = "button";
+        button.append(el("strong", numbered.get(flow.id) + ". "),
+          `${flow.label.replace(" -> ", " → ")}: ${flow.text || "connection"}`);
+        button.addEventListener("click", () => choose(flow.id));
+        item.append(button); key.append(item);
+      }
+      section.append(key);
+    }
   }
   section.append(detail);
   if (CHANGE_MAP_SELECTIONS.has(selectionKey)) choose(CHANGE_MAP_SELECTIONS.get(selectionKey));

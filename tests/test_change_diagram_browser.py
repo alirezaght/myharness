@@ -29,6 +29,14 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
             assert "Signed callback changes" in evaluate(
                 call, "document.querySelector('#diagrams').textContent"
             )
+            assert evaluate(
+                call,
+                "[...document.querySelectorAll('.change-illustration .edge-label')]"
+                ".every(node => /^\\d+$/.test(node.textContent))",
+            )
+            assert "daily import" in evaluate(
+                call, "document.querySelector('.change-flow-key').textContent"
+            )
             evaluate(
                 call,
                 "document.querySelector('[data-change-element=\\\"flow:notification-service->warehouse\\\"]')"

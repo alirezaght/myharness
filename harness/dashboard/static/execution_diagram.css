@@ -80,3 +80,7 @@ button.agent-map-node:hover { background: color-mix(in srgb, #dba83e 8%, Canvas)
 .change-illustration > p { font-size: .9rem; line-height: 1.5; }
 .change-illustration-detail { padding: .8rem; border-radius: .4rem; background: color-mix(in srgb, #3d8bea 7%, Canvas); overflow-wrap: anywhere; }
 .change-illustration [data-inferred=true] polyline, .change-illustration [data-inferred=true] rect { stroke-dasharray: 6 4; }
+.change-illustration .diagram-canvas svg { margin-inline: auto; }
+.change-illustration .edge-label { paint-order: stroke; stroke: Canvas; stroke-width: 4px; stroke-linejoin: round; font-weight: 700; }
+.change-flow-key { padding: 0; list-style: none; display: grid; gap: .35rem; }
+.change-flow-key button { text-align: left; width: 100%; font-size: .85rem; overflow-wrap: anywhere; }

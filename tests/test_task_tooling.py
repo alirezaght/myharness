@@ -326,6 +326,8 @@ def test_setup_manifest_read_never_blocks_on_fifo_or_follows_alias(tmp_path):
 def test_registry_setup_rejects_local_secrets_and_executable_git_dependencies(tmp_path):
     from harness.setup_manifests import node_lock, node_manifest, python_lock
 
+    node_lock(b"settings:\n  excludeLinksFromLockfile: false\nget-caller-file: 2.0.5\n")
+
     for version in (
         "/private/credentials",
         "../other",

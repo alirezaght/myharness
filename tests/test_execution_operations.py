@@ -327,6 +327,59 @@ def test_owned_read_process_and_revision_rejection(operations):
         operation.dispatch(principal | {"policy": "old"}, "read_file", {"path": "README.md"})
 
 
+def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(operations):
+    operation, principal, _, initialization, _, _, _ = operations
+    from harness.task_environment import context_revision
+
+    root = Path(operation.envelope["repository"])
+    unit = root / "setup-app"
+    unit.mkdir()
+    (unit / "pyproject.toml").write_text(
+        '[project]\nname="setup-app"\nversion="0.1.0"\nrequires-python=">=3.11"\ndependencies=[]\n'
+    )
+    (unit / "uv.lock").write_text(
+        'version=1\nrevision=3\nrequires-python=">=3.11"\n'
+        '[[package]]\nname="setup-app"\nversion="0.1.0"\nsource={virtual="."}\n'
+    )
+    path = Path(initialization["source"])
+    state = json.loads(path.read_bytes())
+    state["integration"].update(
+        tasks={"setup-task": {"revision": 1, "files": ["setup-app"]}}, graph_revision=1
+    )
+    path.write_text(json.dumps(state))
+    result = operation.dispatch(
+        principal,
+        "environment_operation",
+        {
+            "operation": "prepare",
+            "cwd": "setup-app",
+            "task_id": "setup-task",
+            "expected_revision": context_revision(state, "setup-task"),
+        },
+    )
+    with pytest.raises(ValueError, match="owned"):
+        operation.dispatch(
+            principal | {"thread_id": "other"},
+            "poll_process",
+            {
+                "handle": result["handle"],
+            },
+        )
+    deadline = time.monotonic() + 25
+    while time.monotonic() < deadline:
+        observed = operation.dispatch(principal, "poll_process", {"handle": result["handle"]})
+        if observed["status"] != "Running":
+            break
+        time.sleep(0.05)
+    assert observed["result"]["status"] == "Ready", observed
+    assert observed["result"]["test_evidence"] is False
+    assert not json.loads(path.read_bytes())["writers"]
+    state["integration"]["tasks"]["setup-task"]["revision"] = 2
+    path.write_text(json.dumps(state))
+    with pytest.raises(ValueError, match="revision"):
+        operation.dispatch(principal, "poll_process", {"handle": result["handle"]})
+
+
 def test_native_auth_selection_and_profile_tamper(operations, monkeypatch):
     operation, _, _, initialization, package, execution, envelope = operations
     from tests.native_model_fixture import native_executable

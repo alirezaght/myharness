@@ -610,7 +610,11 @@ class OperationController:
             )
         if name in {"poll_process", "cancel_process"}:
             record = self.processes._owned(owner, a["handle"])
-            if record["task"]:
+            from harness.task_environment import SetupReport, task_unit
+
+            if isinstance(record.get("report"), SetupReport):
+                task_unit(self, controller, state, principal, record["report"].request)
+            elif record["task"]:
                 self.admitted(controller, principal, record["task"], record["revision"])
             if name == "poll_process":
                 result = self.processes.poll(owner, a["handle"], limit=a.get("limit", 16384))
