@@ -93,9 +93,32 @@ class OperationController:
         self.registry = registry
         self.directory = Path(directory)
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        from harness.task_tooling import TaskTooling
+
+        self.tooling = TaskTooling(
+            Path(execution["handoff_path"]).parent / "task-tooling",
+            envelope["repository"],
+            {
+                "execution_id": execution["id"],
+                "epoch_id": self.epoch_id,
+                "authority_generation": self.authority_generation,
+                "approval": execution["binding"],
+                "setup_retry": execution.get("setup_retry"),
+                "bridge": json.loads(
+                    (
+                        __import__(
+                            "harness.execution_bridge", fromlist=["bridge_root"]
+                        ).bridge_root(execution)
+                        / "manifest.json"
+                    ).read_bytes()
+                )["fingerprint"],
+            },
+        )
         self.artifacts = ArtifactStore(self.directory / "drafts")
         self.processes = ProcessManager()
         self.check_channels = []
+        self.setup_pending = {}
+        self.setup_outcomes = {}
         self.generated = {}
         self.active_report = None
         self.lock = threading.RLock()
@@ -103,6 +126,94 @@ class OperationController:
         self.assignments = (
             json.loads(self.assignment_path.read_bytes()) if self.assignment_path.exists() else {}
         )
+
+    def tooling_status(self):
+        from harness.task_environment import SetupReport, context_revision
+
+        with closing(connect(self.database)) as conn:
+            current = self.state(get_execution(conn, self.execution_id))
+        return self.tooling.inspect() | {
+            "tasks": [
+                {
+                    "task_id": task_id,
+                    "expected_revision": context_revision(current, task_id),
+                    "files": row["files"],
+                }
+                for task_id, row in current["integration"]["tasks"].items()
+            ],
+            "setup": [
+                {
+                    "handle": handle,
+                    "unit": record["report"].unit,
+                    "status": record["status"],
+                    "result": record.get("result"),
+                }
+                for handle, record in self.processes.records.items()
+                if isinstance(record.get("report"), SetupReport)
+            ],
+            "queued_units": [unit for _, unit in self.setup_pending],
+        }
+
+    def dependency_readiness(self, paths, argv):
+        from harness.task_environment import SetupReport
+
+        if len(argv) == 2 and argv[1] in {"--version", "-V"}:
+            return None
+        name = Path(argv[0]).name if argv else ""
+        kind = (
+            "python"
+            if name in {"uv", "python", "python3"}
+            else "node"
+            if name in {"node", "pnpm", "npm", "npx"}
+            else None
+        )
+        states = {}
+        for unit, result in self.setup_outcomes.items():
+            if result.get("status") == "Unavailable" and (
+                not kind or result.get("runtime_kind") in {None, kind}
+            ):
+                states[unit] = result
+        for record in self.processes.records.values():
+            report = record.get("report")
+            if not isinstance(report, SetupReport) or kind and report.record["kind"] != kind:
+                continue
+            states[report.unit] = (
+                {"status": "SetupPending"}
+                if record["status"] == "Running"
+                else record.get("result") or {"status": "Unavailable"}
+            )
+        for _, unit in self.setup_pending:
+            root = Path(self.envelope["repository"])
+            queued_kind = "python" if (root / unit / "pyproject.toml").is_file() else "node"
+            if kind is None or kind == queued_kind:
+                states[unit] = {"status": "SetupPending"}
+        relevant = [
+            value | {"unit": unit}
+            for unit, value in states.items()
+            if any(
+                unit == "."
+                or path == "."
+                or path == unit
+                or path.startswith(unit.rstrip("/") + "/")
+                or unit.startswith(path.rstrip("/") + "/")
+                for path in paths
+            )
+            and value.get("status") not in {"Ready"}
+        ]
+        if not relevant:
+            return None
+        pending = any(value["status"] == "SetupPending" for value in relevant)
+        return {
+            "status": "SetupPending" if pending else "SetupUnavailable",
+            "returncode": None,
+            "test_started": False,
+            "dependency_setup": relevant,
+            "stdout": "",
+            "stderr": (
+                "Dependency setup is pending or unavailable; inspect environment_operation "
+                "before retrying this check."
+            ),
+        }
 
     def state(self, execution):
         path = al_source(execution, self.envelope)
@@ -311,7 +422,57 @@ class OperationController:
 
     def _dispatch(self, controller, principal, name, a, state):
         root, owner = self.envelope["repository"], principal["thread_id"]
+        if name == "environment_operation":
+            if a.get("operation") == "inspect" and set(a) == {"operation"}:
+                return self.tooling_status()
+            if a.get("operation") != "prepare" or set(a) != {
+                "operation",
+                "cwd",
+                "task_id",
+                "expected_revision",
+            }:
+                raise ValueError("closed environment preparation request required")
+            from harness.task_environment import prepare
+
+            result = prepare(self, controller, principal, state, a)
+            self.setup_outcomes[a["cwd"]] = result
+            return result
+        if name == "diagram_operation":
+            from harness.change_diagrams import diagram_operation
+
+            return diagram_operation(self, controller, principal, state, a)
         if name == "read_file":
+            resources = {
+                "harness:tooling": self.tooling_status,
+                "harness:capabilities": lambda: {
+                    "file_operations": {
+                        "max_edit_target_bytes": 8 * 1024 * 1024,
+                        "max_patch_bytes": 65536,
+                        "max_read_bytes": 65536,
+                    },
+                    "tools": list(
+                        __import__("harness.native_tool_policy", fromlist=["TOOLS"]).TOOLS
+                    ),
+                    "environment": self.tooling_status(),
+                },
+                "harness:assignment": lambda: self.await_assignment(principal, 1),
+                "harness:operational-issues": lambda: state.get("operational_issues", {}),
+            }
+            if a["path"] in resources:
+                raw = canonical(resources[a["path"]]()).encode()
+                offset, limit = a.get("offset", 0), a.get("limit", 16384)
+                if (
+                    type(offset) is not int
+                    or type(limit) is not int
+                    or offset < 0
+                    or not 1 <= limit <= 65536
+                ):
+                    raise ValueError("bounded capability resource cursor required")
+                return {
+                    "text": raw[offset : offset + limit].decode(),
+                    "offset": offset,
+                    "truncated": offset + limit < len(raw),
+                }
             if a["path"] == "harness:planning-adoptions":
                 from harness.execution_adoption import adoptions
 
@@ -433,14 +594,19 @@ class OperationController:
                 if args[0] in {"log", "show", "diff"}:
                     args[1:1] = ["--no-ext-diff", "--no-textconv"]
                 argv = git_argv(args)
+            readiness = self.dependency_readiness([a["cwd"]], argv)
+            if readiness and decision["decision"] != "read_only":
+                return readiness
+            profile = self.profile(writable)
             return self.processes.start(
                 owner,
-                self.profile(writable),
+                profile,
                 argv,
                 str(cwd),
                 task=(a["task_id"] if writable else None),
                 revision=a["expected_revision"],
                 timeout=a.get("timeout", 30),
+                environment=self.tooling.environment(cwd, profile.temporary),
             )
         if name in {"poll_process", "cancel_process"}:
             record = self.processes._owned(owner, a["handle"])
@@ -510,6 +676,15 @@ class OperationController:
             len(args) < 2 or args[1] in {"decision", "delivery-correction"}
         ):
             raise ValueError("only supervisor delivers developer decisions and corrections")
+        if args[:2] == ["evidence", "run"] and "--area" in args:
+            area = args[args.index("--area") + 1]
+            plan = state["evidence"]["plan"].get(area)
+            if plan and plan.get("kind") != "preflight":
+                readiness = self.dependency_readiness(
+                    plan.get("scope", [plan.get("cwd", ".")]), plan["argv"]
+                )
+                if readiness:
+                    return readiness
         child_task = None
         if principal["role"] != "orchestrator" and args[0] not in READ_COMMANDS:
             assignment = self.assignments.get(principal["thread_id"])
@@ -632,6 +807,7 @@ class OperationController:
                     "protected": list(profile.protected),
                     "hidden": list(profile.hidden),
                     "classification": profile.classification,
+                    "tooling_directory": str(self.tooling.directory),
                 }
             ).encode(),
         )
@@ -715,6 +891,7 @@ class OperationController:
             finally:
                 if report:
                     report.close()
+        setup = None
         if proc.returncode == 0 and agent and agent.get("task"):
             current = self.state(get_execution(controller.conn, self.execution_id))
             task = current["integration"]["tasks"][agent["task"]]
@@ -738,6 +915,10 @@ class OperationController:
             temporary.write_text(canonical(self.assignments))
             temporary.chmod(0o600)
             os.replace(temporary, self.assignment_path)
+            if native.get("writable"):
+                from harness.task_environment import auto_prepare
+
+                setup = auto_prepare(self, controller, principal, current, agent["task"])
         result = {
             "returncode": proc.returncode,
             "stdout": stdout.decode(errors="replace")[:16384],
@@ -748,6 +929,8 @@ class OperationController:
                 "al-output.json" if stdout.lstrip().startswith(b"{") else "al-output.md", stdout
             )
         result["generated"] = self.capture_outputs(outputs)
+        if setup is not None:
+            result["dependency_setup"] = setup
         return result
 
     def capture_outputs(self, outputs):
@@ -797,6 +980,21 @@ class OperationController:
             time.sleep(0.1)
 
     def tick(self):
+        if self.setup_pending:
+            from harness.task_environment import prepare
+
+            with self.lock, closing(connect(self.database)) as conn:
+                controller = HarnessController(conn)
+                for key, (principal, request) in list(self.setup_pending.items()):
+                    try:
+                        _, state = self.authority(controller, principal)
+                        result = prepare(self, controller, principal, state, request)
+                        self.setup_outcomes[request["cwd"]] = result
+                        if result.get("status") != "Queued":
+                            self.setup_pending.pop(key, None)
+                    except (OSError, ValueError, LookupError):
+                        self.setup_pending.pop(key, None)
+
         def validate(record):
             with closing(connect(self.database)) as conn:
                 principal = {
@@ -805,7 +1003,15 @@ class OperationController:
                     "policy": self.registry.policy,
                 }
                 require_execution_authority(HarnessController(conn), self.execution_id)
-                if record["task"]:
+                if record["task"] and record.get("report") and hasattr(record["report"], "request"):
+                    from harness.task_environment import task_unit
+
+                    report = record["report"]
+                    execution, current = self.authority(HarnessController(conn), report.principal)
+                    task_unit(
+                        self, HarnessController(conn), current, report.principal, report.request
+                    )
+                elif record["task"]:
                     actual = (
                         self.registry.enroll(record["owner"])
                         if self.envelope["host"] == "codex"

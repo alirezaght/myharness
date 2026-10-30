@@ -29,8 +29,17 @@ Permission checks describe the dashboard operator's filesystem access. They do n
 
 ## Refresh status or continue the native session
 
+- **Continue task** is the normal recovery action. It verifies the current bridge, settles eligible exited writer lifecycles through audited AL reconciliation, then continues the same approved native conversation. It retains failed outcomes and does not approve code or unknown checks. Live or uncertain process ownership still prevents a competing continuation.
 - **Refresh recorded status** reconnects to the saved execution and replays recorded state. It does not continue a native model session. It remains available when a live worker owns the execution lock, because replay is observational.
-- **Continue agent in existing session** explicitly requests continuation of the recorded native conversation. The existing execution identity, task binding, lock checks, and uncertain-process checks still apply. It never starts automatically after a page refresh or decision delivery.
+- **Continue agent in existing session**, under Advanced session recovery, explicitly requests continuation without the normal bridge-recovery step. The existing execution identity, task binding, lock checks, and uncertain-process checks still apply. It never starts automatically after a page refresh or decision delivery.
+
+Registered writers automatically receive scoped locked dependency preparation. Harness selects the operator's existing runtimes through a verified private tool directory. Python dependencies use a private environment; pnpm uses frozen dependencies with installation hooks disabled. Only the fixed installer gets network access; ordinary agent commands retain their sandbox. Setup has its own result and never counts as a passing test. A failed setup remains a tooling issue, with bounded retries rather than a product approval question.
+
+## Understand the logical change
+
+The **Diagrams** section describes the system being changed, separately from the live agent work map. It appears before the long specification. Prose design entries produce an initial scope map; the orchestrator publishes a detailed logical illustration early, showing components and flows as existing, changed or new. Select a box or arrow to see its explanation and specification sources. Inferred relationships are explicitly labelled. The view describes planned behavior and does not assert that implementation or tests are complete.
+
+Illustrations are bound to the exact specification, design and execution epoch. Stale illustrations are hidden. Publishing one does not amend or approve the specification. An operator can publish a source-bound illustration for an existing run with `harness execution illustrate TASK EXECUTION --file PATH`; native agents use `diagram_operation` to inspect its current sources and publication schema.
 
 An agent process that exits with code zero without a guarded AL implementation result remains incomplete. If validated source-output receipts exist, the dashboard shows the recorded source work and pending verification. Otherwise it reports “The agent stopped without a verified implementation result.” A zero process exit is not a product result.
 

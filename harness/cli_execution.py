@@ -79,6 +79,15 @@ def cmd_execution(args):
                             preparation_sha256=args.preparation_sha256,
                             **kwargs,
                         )
+            elif args.action == "illustrate":
+                from pathlib import Path
+
+                from harness.change_diagrams import publish
+                from harness.execution_contract import loads
+
+                result = publish(
+                    controller, execution, loads(Path(args.file).read_bytes(), max_bytes=65536)
+                )
             elif args.action == "upgrade-bridge":
                 from harness.execution_bridge import upgrade_bridge
 
@@ -166,6 +175,7 @@ def add_execution_parser(subparsers):
         "reconcile",
         "decision",
         "upgrade-bridge",
+        "illustrate",
         "adopt-planning",
         "classify-templates",
         "retire-invalid-decision",
@@ -203,6 +213,8 @@ def add_execution_parser(subparsers):
                 p.add_argument("--reason", required=True)
             elif action == "runtime-activate":
                 p.add_argument("--preparation-sha256", required=True)
+        elif action == "illustrate":
+            p.add_argument("--file", required=True)
         elif action == "upgrade-bridge":
             p.add_argument("--reason", required=True)
         elif action == "retire-invalid-decision":

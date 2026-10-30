@@ -79,7 +79,7 @@ def _task_view(
             "complexity_source": task.complexity_source,
             "spec": spec_section(store),
             "decisions": decisions_section(controller, task),
-            "diagrams": diagrams_section(controller, task, sync_error),
+            "diagrams": diagrams_section(controller, task, sync_error, execution),
             "comments": comments_section(controller, task),
         }
         | shown

@@ -317,6 +317,14 @@ def _prompt(execution, package, envelope, mode, focus=None):
     }[focus]
     return focus_note + (
         "Use Harness MCP tools for all file, command, and AL state operations. "
+        "Read harness:capabilities and harness:tooling first. Before dispatching a writer, "
+        "inspect environment_operation; prepare required locked dependencies for its registered "
+        "task and poll the setup handle. Setup is not test evidence. Use the supplied tools "
+        "and prepared environment, without bypassing containment or repeating a failed "
+        "download until capability changes. Environment issues are not product decisions. "
+        "Publish a source-bound logical change diagram early through diagram_operation, "
+        "showing affected components, flows and existing/changed/new elements. Use inspect "
+        "to obtain its exact approval/design binding and publication schema. "
         "Read read_file paths harness:handoff, harness:task-package, harness:skill, "
         "and harness:al-state for the fixed approved documents. "
         "Read harness:skill/index to enumerate the exact protected pin. Resolve every "
@@ -527,7 +535,13 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             initialization = initialize_execution(controller, execution, package, envelope)
             replay_source(conn, execution_id, token)
             runtime = NativeRuntime(
-                database_path(conn), execution, envelope, package, initialization, native_id
+                database_path(conn),
+                execution
+                | {"setup_retry": token if focus in {"tooling", "verification"} else None},
+                envelope,
+                package,
+                initialization,
+                native_id,
             )
             isolation_stack.callback(runtime.close)
             env = native_auth_environment()
@@ -636,7 +650,17 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 proc.wait(timeout=5)
             append_log(conn, execution_id, "worker", failure)
         finally:
+            # This exact native process was launched in its own session. Reap
+            # remaining descendants even when the immediate native host exited.
+            try:
+                os.killpg(proc.pid, __import__("signal").SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=5)
             isolation_stack.close()
+            from harness.execution_settlement import record_closed_context
+
+            record_closed_context(get_execution(conn, execution_id), token, proc, runtime)
             try:
                 for _ in range(100):
                     if replay_source(conn, execution_id, token):
@@ -677,6 +701,12 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             )
     # Release worker ownership before admitting a recorded-session correction.
     # A new generation's worker owns its own publication and monitoring loop.
+    try:
+        from harness.execution_settlement import settle_exited_work
+
+        settle_exited_work(controller, execution_id)
+    except (OSError, ValueError, LookupError) as error:
+        append_log(conn, execution_id, "recovery", str(error))
     monitor_completed_delivery(controller, execution_id, token)
 
 

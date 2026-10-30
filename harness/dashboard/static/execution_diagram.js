@@ -2,7 +2,7 @@
 
 function agentDisplayName(agent) {
   const name = String(agent.name || agent.role || "Agent")
-    .replace(/^(successor|continuation)_/, "").replace(/_/g, " ");
+    .split("/").filter(Boolean).pop() || "Agent";
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
@@ -37,7 +37,7 @@ function renderAgentDiagram(execution) {
   section.setAttribute("aria-label", "Agent activity diagram");
   const executing = ACTIVE_EXECUTION_STATUSES.has(execution.status);
   const agents = execution.agents || [];
-  const live = agents.filter(agent => agent.status !== "Completed");
+  const live = agents.filter(agent => !["Completed", "Failed"].includes(agent.status));
   const running = live.filter(agent => agent.status === "Running");
   const phase = String(execution.phase?.phase || "").toUpperCase();
   const verified = execution.status === "Completed" && execution.verification?.status === "complete";
@@ -105,7 +105,7 @@ function renderAgentDiagram(execution) {
   const map = el("div");
   map.className = "agent-map";
   const supervisor = diagramNode("Supervisor", executing ? "Active" : execution.status,
-    executing ? (running.length ? "Coordinating assigned work" : "No agent is currently reported as running")
+    executing ? (execution.activity?.supervisor_operation?.action || (running.length ? "Coordinating assigned work" : "No agent is currently reported as running"))
       : "Native execution is not active", executing ? "running" : "inactive");
   supervisor.classList.add("agent-map-supervisor");
   map.append(supervisor);
@@ -143,7 +143,7 @@ function renderAgentDiagram(execution) {
   branches.append(checkNode);
   map.append(branches);
   section.append(map);
-  const finished = agents.filter(agent => agent.status === "Completed");
+  const finished = agents.filter(agent => ["Completed", "Failed"].includes(agent.status));
   if (finished.length) {
     const history = document.createElement("details");
     history.dataset.viewDisclosure = "agent-map-finished";
@@ -153,7 +153,7 @@ function renderAgentDiagram(execution) {
     for (const agent of finished) {
       const item = el("li");
       item.append(el("strong", `${agentDisplayName(agent)} · ${agentRoleLabel(agent.role)}`),
-        el("span", "Run finished"), el("p", agent.activity || "No work summary reported"));
+        el("span", agent.status === "Failed" ? "Run failed · work remains unverified" : "Run finished"), el("p", agent.activity || "No work summary reported"));
       list.append(item);
     }
     history.append(list);

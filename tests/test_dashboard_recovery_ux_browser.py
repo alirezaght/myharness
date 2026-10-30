@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         return Promise.resolve(new Response(JSON.stringify({ state: "Delivered" }),
           { status: 200, headers: { "Content-Type": "application/json" } }));
       }
-      if (url === "/api/execution/resume") {
+      if (url === "/api/execution/recover") {
         resumeRequests += 1;
         resumeBody = JSON.parse(options.body);
         return Promise.resolve(new Response(JSON.stringify({ status: "Accepted" }),
@@ -127,10 +127,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelector("main").append(diagramFixtures);
     const [prosePanel, effectivePanel] = diagramFixtures.querySelectorAll("#diagrams");
     const diagramUi = {
-      proseState: prosePanel.textContent.includes("prose only"),
-      proseGuidance: prosePanel.textContent.includes("does not wait for AL planning"),
-      independentProvenance: prosePanel.textContent.includes(
-        "independently of AL implementation planning"),
+      proseState: Boolean(prosePanel.querySelector('.change-illustration svg')),
+      proseGuidance: prosePanel.textContent.includes("What this task changes"),
+      independentProvenance: !prosePanel.textContent.includes("no structured notation"),
       effectiveState: effectivePanel.textContent.includes("Design state: effective"),
       currentDiagramCount: effectivePanel.querySelectorAll(".diagram-canvas svg").length,
       pendingProposal: effectivePanel.textContent.includes("Pending diagram proposals (1)"),
@@ -169,7 +168,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await refreshDashboard();
     const refreshErrorAfterRender = actionAlert()?.textContent;
     const resume = [...document.querySelectorAll(".execution-actions button")]
-      .find((button) => button.textContent === "Resume task");
+      .find((button) => button.textContent === "Continue task");
     resume.click();
     await waitFor(() => document.querySelector(".execution-action-results [role=status]")
       ?.textContent.includes("request was accepted"));
@@ -215,10 +214,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     const active = activeRecoveryFixture(executionSnapshot);
     document.getElementById("execution").replaceWith(renderExecution(DRIVE.task, active));
     const activeResume = [...document.querySelectorAll(".execution-actions button")]
-      .find((button) => button.textContent === "Resume task");
+      .find((button) => button.textContent === "Continue task");
     const beforeResume = resumeRequests;
     activeResume.click();
-    await sendExecutionAction("resume", active);
+    await sendExecutionAction("recover", active);
     const retired = [...document.querySelectorAll(".saved-decision-details")]
       .find((node) => node.textContent.includes("retired-request"));
     const verified = [...document.querySelectorAll(".saved-decision-details")]
@@ -493,7 +492,7 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
     for name, observed in captures.items():
         assert "error" not in observed, {"viewport": name, **observed}
         assert "Refresh recorded status" in observed["buttons"]
-        assert "Resume task" in observed["buttons"]
+        assert "Continue task" in observed["buttons"]
         assert not any(
             label in observed["buttons"] for label in ["Reconnect", "Resume native session"]
         )

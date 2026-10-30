@@ -75,3 +75,8 @@ button.agent-map-node:hover { background: color-mix(in srgb, #dba83e 8%, Canvas)
 .execution-run-controls button { width: 100%; }
 .execution-reconcile-disclosure { margin-bottom: .85rem; font-size: .85rem; }
 @media (max-width: 32rem) { .execution-run-controls .execution-actions { grid-template-columns: 1fr; } }
+
+.change-illustration { margin: .8rem 0 1.3rem; padding: 1rem; border: 1px solid color-mix(in srgb, #3d8bea 35%, Canvas); border-radius: .6rem; min-width: 0; }
+.change-illustration > p { font-size: .9rem; line-height: 1.5; }
+.change-illustration-detail { padding: .8rem; border-radius: .4rem; background: color-mix(in srgb, #3d8bea 7%, Canvas); overflow-wrap: anywhere; }
+.change-illustration [data-inferred=true] polyline, .change-illustration [data-inferred=true] rect { stroke-dasharray: 6 4; }

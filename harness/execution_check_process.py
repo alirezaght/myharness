@@ -49,6 +49,16 @@ def check_profile(context_path, cwd):
         "UV_CACHE_DIR": profile.temporary + "/uv-cache",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
+    if context.get("tooling_directory"):
+        from harness.task_tooling import TaskTooling
+
+        # A disposable checkout uses the corresponding original unit's prepared
+        # dependencies, while its source remains in that disposable checkout.
+        relative = cwd.relative_to(checkout)
+        tooling = TaskTooling(context["tooling_directory"], original)
+        environment.update(
+            tooling.environment(original / relative, profile.temporary, source_root=checkout)
+        )
     return profile, environment
 
 

@@ -100,6 +100,24 @@ def validate_arguments(name, arguments):
             raise ValueError("unsupported operation")
 
 
+SCHEMAS["environment_operation"] = _schema(
+    {
+        "operation": {"type": "string", "enum": ["inspect", "prepare"]},
+        "cwd": STRING,
+        "task_id": STRING,
+        "expected_revision": STRING,
+    },
+    ["operation"],
+)
+SCHEMAS["diagram_operation"] = _schema(
+    {
+        "operation": {"type": "string", "enum": ["inspect", "publish"]},
+        "content": STRING,
+        "expected_graph_revision": INTEGER,
+    },
+    ["operation"],
+)
+
 SCHEMAS["write_artifact"] = _schema(
     {
         "name": STRING,

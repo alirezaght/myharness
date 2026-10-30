@@ -9,6 +9,7 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 const DIAGRAMS_API = "/api/diagrams";
 const VERSION_RE = /^[1-9][0-9]*$/;
+const CHANGE_MAP_SELECTIONS = new Map();
 const OUTDATED = "the design changed since the latest diagram version; the next update records it";
 
 let lastTaskId = null;
@@ -207,7 +208,7 @@ async function fetchVersion(taskId, version, key) {
 function rerenderDiagrams() {
   const section = document.getElementById("diagrams");
   if (!section || !lastDiagrams) return;
-  withCommentFocus(() => section.replaceWith(renderDiagrams(lastTaskId, lastDiagrams)));
+  withChangeDiagramFocus(() => withCommentFocus(() => section.replaceWith(renderDiagrams(lastTaskId, lastDiagrams))));
 }
 
 function showVersion(version) {
@@ -257,13 +258,14 @@ function renderDiagrams(taskId, diagrams) {
   const section = el("section");
   section.id = "diagrams";
   section.append(el("h3", "Diagrams"));
-  if (diagrams.state) {
+  if (diagrams.implementation) section.append(renderChangeIllustration(diagrams.implementation));
+  if (diagrams.state && !diagrams.implementation) {
     const state = el("p", `Design state: ${diagrams.state.replaceAll("_", " ")}`);
     state.className = "diagram-provenance";
     section.append(state);
   }
-  if (diagrams.provenance) section.append(el("p", diagrams.provenance));
-  if (diagrams.state === "prose_only") {
+  if (diagrams.provenance && !diagrams.implementation) section.append(el("p", diagrams.provenance));
+  if (diagrams.state === "prose_only" && !diagrams.implementation) {
     section.append(el("p", "The design contains prose but no structured notation. Diagram data does not wait for AL planning."));
   }
   if (diagrams.proposals?.length) {
@@ -282,7 +284,7 @@ function renderDiagrams(taskId, diagrams) {
     proposals.append(list);
     section.append(proposals);
   }
-  if (diagrams.guidance) {
+  if (diagrams.guidance && !diagrams.implementation) {
     const guidance = el("p", diagrams.guidance);
     guidance.className = "diagram-guidance";
     section.append(guidance);
@@ -306,12 +308,13 @@ function renderDiagrams(taskId, diagrams) {
   if (error) section.append(alertText(`version ${wanted} could not be loaded: ${error}`));
   if (loading) section.append(el("p", `loading version ${wanted}…`));
   if (!view || !view.diagrams.length) {
-    if (!loading) {
+    if (!loading && !diagrams.implementation) {
       section.append(el("p", diagrams.notice || "no diagrams yet"));
       if (diagrams.hint) section.append(el("p", diagrams.hint));
     }
   }
   const cur = diagrams.current;
+  if (diagrams.implementation && !view?.diagrams.length && !diagrams.history.length) return section;
   if (view) {
     const isCurrent = cur !== null && view.version === cur.version;
     const status = el("p", `showing: version ${view.version} (${isCurrent ? "current" : "not current"})`);
@@ -330,7 +333,8 @@ function renderDiagrams(taskId, diagrams) {
   panel.id = "diagram-selection";
   panel.setAttribute("aria-live", "polite");
   fillSelection(panel, view, hash.element);
-  section.append(panel, renderHistoryList(diagrams, view ? view.version : null));
+  section.append(panel);
+  if (diagrams.history.length || !diagrams.implementation) section.append(renderHistoryList(diagrams, view ? view.version : null));
   return section;
 }
 
@@ -362,4 +366,64 @@ function diagramHashChanged() {
   } else {
     refreshSelection(hash.element);
   }
+}
+
+
+function renderChangeIllustration(view) {
+  const section = el("section");
+  section.className = "change-illustration";
+  section.append(el("h4", view.caption), el("p", view.notice));
+  section.append(el("p", "Select a component or arrow to see its explanation and approved sources. New · Changed · Existing; inferred links are identified in the details."));
+  if (view.affected_paths?.length) {
+    const scope = document.createElement("details");
+    scope.dataset.viewDisclosure = "change-map-affected-paths";
+    scope.append(el("summary", "Affected code areas"));
+    const list = el("ul");
+    for (const path of view.affected_paths) list.append(el("li", path));
+    scope.append(list); section.append(scope);
+  }
+  const detail = el("div");
+  detail.className = "change-illustration-detail";
+  detail.setAttribute("aria-live", "polite");
+  detail.append(el("p", "Select an element for details."));
+  const marks = Object.fromEntries(Object.entries(view.elements).map(([id, part]) =>
+    [id, part.change === "new" ? "added" : part.change === "changed" ? "changed" : "unchanged"]));
+  const selectionKey = JSON.stringify([view.binding, view.caption]);
+  function choose(id) {
+    CHANGE_MAP_SELECTIONS.set(selectionKey, id);
+    const part = view.elements[id];
+    detail.replaceChildren();
+    if (!part) { detail.append(el("p", "This endpoint is defined by its connected flow.")); return; }
+    detail.append(el("strong", `${part.change}${part.inferred ? " · inferred relationship" : " · source-backed illustration"}`),
+      el("p", part.explanation));
+    for (const ref of part.sources) detail.append(el("p", `${ref}: ${view.sources[ref]}`));
+    for (const item of section.querySelectorAll("[data-change-element]"))
+      item.setAttribute("aria-pressed", String(item.dataset.changeElement === id));
+  }
+  for (const scene of view.scenes) {
+    const figure = renderScene(scene, null,
+      {marks, onSelect: choose, idAttr: "data-change-element", markerPrefix: "implementation-"});
+    for (const item of figure.querySelectorAll("[data-change-element]"))
+      item.dataset.inferred = String(Boolean(view.elements[item.dataset.changeElement]?.inferred));
+    section.append(figure);
+  }
+  section.append(detail);
+  if (CHANGE_MAP_SELECTIONS.has(selectionKey)) choose(CHANGE_MAP_SELECTIONS.get(selectionKey));
+  return section;
+}
+
+
+function withChangeDiagramFocus(fn) {
+  const identity = document.querySelector("#task")?.dataset.viewIdentity;
+  const focused = document.activeElement?.getAttribute("data-change-element");
+  const pans = new Map([...document.querySelectorAll(".change-illustration .diagram-canvas")]
+    .map(node => [node.closest("figure").dataset.diagram, [node.scrollLeft, node.scrollTop]]));
+  const result = fn();
+  if (identity !== document.querySelector("#task")?.dataset.viewIdentity) return result;
+  for (const node of document.querySelectorAll(".change-illustration .diagram-canvas")) {
+    const pan = pans.get(node.closest("figure").dataset.diagram);
+    if (pan) { node.scrollLeft = pan[0]; node.scrollTop = pan[1]; }
+  }
+  if (focused) document.querySelector(`[data-change-element="${CSS.escape(focused)}"]`)?.focus({preventScroll:true});
+  return result;
 }

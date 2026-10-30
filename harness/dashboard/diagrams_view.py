@@ -34,7 +34,7 @@ def version_meta(version: DiagramVersion, latest: DiagramVersion | None) -> dict
 
 
 def diagrams_section(
-    controller: HarnessController, task: Task, unavailable: str | None
+    controller: HarnessController, task: Task, unavailable: str | None, execution=None
 ) -> dict[str, Any]:
     service = DiagramService(controller, task.id)
     model, versions = service.model(), service.versions()
@@ -77,7 +77,10 @@ def diagrams_section(
             "with a reason, propose notation, then obtain acceptance and repeat the review and "
             "approval workflow. The sealed specification is not changed by viewing this panel."
         )
+    from harness.change_diagrams import reference_view
+
     return {
+        "implementation": reference_view(controller, task, execution),
         "state": state,
         "provenance": (
             "Diagrams come from stated or accepted structured design notation, "

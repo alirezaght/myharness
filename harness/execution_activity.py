@@ -13,6 +13,8 @@ _ACTIONS = {
     "cancel_process": "Stopping an owned command",
     "submit_output": "Recording an output report",
     "diagnostic": "Recording a diagnostic",
+    "environment_operation": "Preparing task environment",
+    "diagram_operation": "Updating logical change diagram",
 }
 
 
@@ -31,6 +33,9 @@ def activity_view(conn, execution, agents, reports, feed):
         (execution["id"], execution["epoch_id"]),
     ).fetchone()
     current = {agent["id"]: agent for agent in agents}
+    supervisor = {"name": "Supervisor"}
+    if execution.get("native_id"):
+        current[execution["native_id"]] = supervisor
     recent = []
     if epoch and current:
         # Extract only allowlisted metadata in SQL, not source text, argv, stdout,
@@ -41,7 +46,8 @@ def activity_view(conn, execution, agents, reports, feed):
                 "SELECT created_at, "
                 "substr(json_extract(request,'$.principal'),1,128) AS principal, "
                 "substr(json_extract(request,'$.tool'),1,80) AS tool, "
-                "json_extract(outcome,'$.error') IS NOT NULL AS failed "
+                "json_extract(outcome,'$.error') IS NOT NULL AS failed, "
+                "substr(json_extract(outcome,'$.status'),1,40) AS setup_status "
                 "FROM operation_audit WHERE execution_id=? AND created_at>=? "
                 "AND json_valid(request) AND (outcome IS NULL OR json_valid(outcome)) "
                 "ORDER BY rowid DESC LIMIT 50",
@@ -60,7 +66,13 @@ def activity_view(conn, execution, agents, reports, feed):
             item = {
                 "agent_id": row["principal"],
                 "agent_name": current[row["principal"]]["name"],
-                "action": _ACTIONS[row["tool"]],
+                "action": (
+                    "Waiting for task environment"
+                    if row["setup_status"] == "SetupPending"
+                    else "Task environment unavailable"
+                    if row["setup_status"] == "SetupUnavailable"
+                    else _ACTIONS[row["tool"]]
+                ),
                 "at": at,
                 "outcome": "Tool request failed" if row["failed"] else None,
             }
@@ -85,11 +97,14 @@ def activity_view(conn, execution, agents, reports, feed):
             }
     return {
         "recent_actions": recent,
+        "supervisor_operation": supervisor.get("last_operation"),
         "last_activity_at": max(
             [row["at"] for row in recent] + ([last_event_at] if last_event_at else []),
             default=None,
         ),
         "checks": list(checks.values()),
         "report_count": len(reports),
-        "finished_agent_runs": sum(agent.get("status") == "Completed" for agent in agents),
+        "finished_agent_runs": sum(
+            agent.get("status") in {"Completed", "Failed"} for agent in agents
+        ),
     }

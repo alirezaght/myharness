@@ -173,7 +173,7 @@ def test_work_is_visible_without_fake_percentages(
             )
             assert all(
                 label in controls
-                for label in ("Resume task", "Retry checks", "Recover tooling & continue")
+                for label in ("Continue task", "Retry checks", "Refresh recorded status")
             )
             assert evaluate(
                 call, "!document.querySelector('.execution-run-controls').closest('details')"

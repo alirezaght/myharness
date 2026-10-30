@@ -18,6 +18,8 @@ TOOLS = (
     "al_command",
     "diagnostic",
     "delivery_operation",
+    "environment_operation",
+    "diagram_operation",
     "write_artifact",
     "await_assignment",
     "submit_output",

@@ -1,0 +1,15 @@
+# Automatic task environment recovery and logical change diagrams
+
+The developer requested that Harness/AL handle execution prerequisites internally, preserve guards, and show the logical change being implemented. This extends the approved dashboard recovery design; no specification amendment, provider switch, secret access or AL ceremony is introduced.
+
+## Behavior
+
+- Before native dispatch, discover the operator's existing Python, uv, Node and pnpm executables. Publish a private, execution-bound, integrity-checked tool directory. Give commands and checks this curated PATH rather than the ambient host PATH or system-only PATH. Do not forward credentials or grant source writes to read-only roles.
+- Expose capability and assignment resources and a closed environment operation. It inspects prerequisites or prepares locked dependencies for a registered task's declared unit. Python uses a private environment, verified unchanged lock, no local package installation, and no builds. Node setup uses frozen pnpm, disabled lifecycle/pnpm hooks, copy imports, and only ignored dependency directories. Only this fixed installer capability receives network access; normal commands/checks remain isolated. Record setup separately from test evidence and distinguish setup failure from test failure.
+- Reconcile failed/abandoned writer lifecycles only after a recorded, exact native invocation exited and its registered agent completed, with no competing child. Use AL's existing audited reconciliation commands; retain failed outcomes, original receipts and verification obligations. Uncertain live processes or unknown check outcomes remain unverified. Reuse an unchanged verified bridge without imposing replacement barriers.
+- The diagrams panel shows an initial change scope derived from effective design and actual registered task ownership, even when the approved specification contains prose only. A source-bound illustration can describe components and flows, tagged as existing/changed/new or inferred. It is a reference view, never a specification amendment or approval. The native orchestrator publishes it early, and the trusted operator can publish one for an existing run. Bind illustrations to the exact approved spec/design and current execution epoch; reject stale submissions and hide stale illustrations.
+- Keep the architecture/change diagram separate from the agent work map. Put it before long specification/history content. Clickable elements show their source and explanation. Existing accepted diagram versions and comments retain their meaning.
+
+## Verification
+
+Exercise missing-tool discovery, curated environment propagation, executable/lock tampering, task/epoch ownership, setup process cleanup and failure handling, normal network denial, audited failed-writer settlement and refusal of uncertain/living work. Verify diagrams from prose, exact source binding, inferred relationships, stale illustration handling, keyboard selection, mobile layout and live-update stability. Validate the existing AR-2301 run without altering its approved requirements or marking unrun checks passed.

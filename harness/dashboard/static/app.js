@@ -327,6 +327,7 @@ function renderTask(task) {
   if (task.execution) {
     if (task.execution.delivery) section.append(renderDelivery(task.execution.delivery));
   }
+  section.append(renderDiagrams(task.id, task.diagrams));
   section.append(renderResume(task.resume));
   section.append(
     renderSpec(task.spec, task.phase),
@@ -334,7 +335,6 @@ function renderTask(task) {
     renderHistory(task.id, task.spec.history),
   );
   rememberComments(task);
-  section.append(renderDiagrams(task.id, task.diagrams));
   section.append(renderComparison(task.id, task.diagrams));
   section.append(renderCommentsSection(task.comments, task.diagrams));
   return section;
@@ -462,7 +462,7 @@ function render(data) {
   const same = restoreView(content, saved);
   const replace = () => main.replaceChildren(renderNav(data.tasks, selected), content);
   if (same) {
-    withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace))));
+    withChangeDiagramFocus(() => withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace)))));
     window.scrollTo(saved.x, saved.y);
   } else replace();
 }

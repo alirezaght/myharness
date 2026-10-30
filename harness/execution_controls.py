@@ -15,7 +15,9 @@ def recover_and_continue(controller, execution_id, *, action, **epoch):
             raise ValueError("terminal execution cannot be continued")
         from harness.execution_bridge import upgrade_bridge
         from harness.execution_recovery import resume_execution
+        from harness.execution_settlement import settle_exited_work
 
+        settlement = settle_exited_work(controller, execution_id)
         bridge = upgrade_bridge(
             controller,
             execution_id,
@@ -28,6 +30,7 @@ def recover_and_continue(controller, execution_id, *, action, **epoch):
                 "epoch_id": current["epoch_id"],
                 "action": action,
                 "bridge_status": bridge["status"],
+                "settlement": settlement,
             },
         )
         result = resume_execution(

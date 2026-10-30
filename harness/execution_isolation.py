@@ -224,6 +224,7 @@ class OperationIsolation:
     system: str
     classification: dict | None = None
     scratch_identity: tuple[int, int] = ()
+    provisioning_network: bool = False
 
 
 def prepare_operation_isolation(
@@ -380,6 +381,19 @@ def prepare_operation_isolation(
     return profile
 
 
+def provisioning_profile(profile):
+    """Only the closed installer broker uses this fresh profile, never run_command."""
+    from dataclasses import replace
+
+    if profile.system == "Darwin":
+        path = Path(profile.policy)
+        # Dependency installers get network/DNS access; their existing source,
+        # secret, authority and write boundaries remain exactly the same.
+        with path.open("a") as stream:
+            stream.write("(allow network-outbound)\n(allow mach-lookup)\n")
+    return replace(profile, provisioning_network=True)
+
+
 def operation_argv(profile, argv):
     if profile.system == "Darwin":
         return ["/usr/bin/sandbox-exec", "-f", profile.policy, *argv]
@@ -404,6 +418,8 @@ def operation_argv(profile, argv):
         "--dev",
         "/dev",
     ]
+    if profile.provisioning_network:
+        command.remove("--unshare-net")
     for path in profile.writable:
         if not Path(path).exists():
             raise ValueError("Linux operation write target must exist before containment")

@@ -134,10 +134,14 @@ function renderRunControls(execution) {
   actions.className = "execution-actions";
   if (execution.status !== "Completed" && execution.status !== "Failed") {
     if (execution.native_id) {
-      actions.append(executionActionButton("Recover tooling & continue", "recover", execution,
-        "Repair tooling, then continue the same approved task."));
-      actions.append(executionActionButton("Resume task", "resume", execution,
-        "Continue the existing native conversation."));
+      actions.append(executionActionButton("Continue task", "recover", execution,
+        "Checks prerequisites automatically and continues the approved task."));
+      const advanced = document.createElement("details");
+      advanced.dataset.viewDisclosure = "advanced-session-recovery";
+      advanced.append(el("summary", "Advanced session recovery"),
+        executionActionButton("Resume existing session", "resume", execution,
+          "Continue using the currently selected tools without requesting an update."));
+      section.append(advanced);
       actions.append(executionActionButton("Retry checks", "retry-checks", execution,
         "Retry pending verification; retain earlier failures."));
     }
@@ -154,6 +158,9 @@ function renderRunControls(execution) {
   actions.append(executionActionButton("Refresh recorded status", "reconnect", execution,
     "Refreshes saved status and never continues the native agent."));
   section.append(actions);
+  const diagramLink = el("a", "View logical change diagram");
+  diagramLink.href = "#diagrams";
+  section.append(diagramLink);
   const messages = el("div");
   messages.className = "execution-action-results";
   messages.setAttribute("aria-live", "polite");
@@ -235,7 +242,7 @@ function renderReconcileForm(execution) {
     submit.disabled = false;
     if (result.res?.ok && currentExecution(execution)) {
       EXECUTION_ACTIONS.set(executionActionKey(execution, "reconcile"), {
-        message: "Host reconciliation recorded. Choose Recover tooling & continue or Resume task.",
+        message: "Host reconciliation recorded. Choose Continue task.",
         error: false,
       });
       repaintExecution();
@@ -696,7 +703,7 @@ async function sendExecutionAction(action, execution) {
       busy: false,
       message: action === "reconnect"
         ? "Recorded status refreshed. No native agent was continued."
-        : action === "recover" ? "Bridge verified or updated. Tooling recovery and continuation requested; follow the live status for the result."
+        : action === "recover" ? "The continuation request was accepted. Follow live status for environment preparation and task progress."
         : action === "retry-checks" ? "Verification retry requested in the existing session. No check has been marked passed by this request."
         : "The continuation request was accepted for the existing native session. Check recorded status for its result.",
       error: false,
