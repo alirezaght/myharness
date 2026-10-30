@@ -185,7 +185,10 @@ def diagram_operation(operation, controller, principal, state, request):
                 "parts": [
                     {
                         "sources": [next(iter(source_notes), "source-ref")],
-                        "notation": "component Example",
+                        "notation": (
+                            "component Existing service\ncomponent New behavior\n"
+                            "flow Existing service -> New behavior: changed data"
+                        ),
                         "change": "changed",
                         "inferred": False,
                         "explanation": "How this relates to the approved source",

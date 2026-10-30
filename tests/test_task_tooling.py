@@ -327,6 +327,7 @@ def test_registry_setup_rejects_local_secrets_and_executable_git_dependencies(tm
     from harness.setup_manifests import node_lock, node_manifest, python_lock
 
     node_lock(b"settings:\n  excludeLinksFromLockfile: false\nget-caller-file: 2.0.5\n")
+    node_manifest('{"dependencies":{"pkg":"~1.2.3"}}', tmp_path, "package.json")
 
     for version in (
         "/private/credentials",

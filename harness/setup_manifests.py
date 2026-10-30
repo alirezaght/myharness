@@ -41,7 +41,7 @@ def node_manifest(raw, root, filename):
             elif version.startswith("https:"):
                 public_url(version, {"registry.npmjs.org"})
             elif (
-                version.startswith(("/", "./", "../", "~", "\\"))
+                version.startswith(("/", "./", "../", "\\"))
                 or "/" in version
                 and not version.startswith("npm:")
                 or ":" in version
