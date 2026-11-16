@@ -57,6 +57,9 @@ function renderStageDetails(execution, stage, stages) {
     ? "Answer the recorded developer decision below."
     : complete ? "None. Verified completion has been recorded."
       : active ? "None requested. Agents or the supervisor are responsible for the next work."
+        : !execution.native_id ? (execution.startup?.retry_eligible
+          ? "Choose Retry startup above. It checks current host readiness and retries the same approved run. No native conversation has started."
+          : "Inspect the startup diagnostic and current readiness above. No native conversation is available to continue; unknown startup outcomes require inspection.")
         : "Choose Continue task above; Harness checks prerequisites and recovers interrupted work automatically. Choose Retry checks to focus on verification. No new product approval is requested."));
   panel.append(action);
   if (stage === 2) {

@@ -64,7 +64,18 @@ def start_execution(
             if saved["host"] != host or saved["binding"] != binding:
                 raise ExecutionConflict("approval already reserved with another host/binding")
             created = False
+            if launch and saved["status"] == "Reserved":
+                from harness.launch_readiness import LaunchReadinessError, require_launch_ready
+
+                try:
+                    require_launch_ready(root, host)
+                except LaunchReadinessError as error:
+                    raise LaunchReadinessError(str(error), execution_id=saved["id"]) from error
         else:
+            if launch:
+                from harness.launch_readiness import require_launch_ready
+
+                require_launch_ready(root, host)
             eid = "exec-" + secrets.token_hex(12)
             binding["execution_id"] = eid
             # Uses the existing per-repository private state root, regardless of DB placement.

@@ -17,11 +17,13 @@ function renderImplementationStart(task) {
     option.value = value;
     host.append(option);
   }
-  host.value = state.payload?.host || state.host || "";
-  host.disabled = !!state.sending || !!state.retry;
+  host.value = state.host || state.payload?.host || "";
+  host.disabled = !!state.sending || (!!state.retry && !state.preflight);
   host.addEventListener("change", () => {
-    implementationStarts.set(task.id, { ...state, host: host.value });
-    button.disabled = !host.value || !!state.sending || !!state.reload;
+    implementationStarts.set(task.id, { ...state, host: host.value,
+      ...(state.preflight ? { payload: null, retry: false, preflight: false, message: null, error: false } : {}) });
+    if (state.preflight) repaintStart(task.id);
+    else button.disabled = !host.value || !!state.sending || !!state.reload;
   });
   const button = el("button", state.sending ? "Starting…" : state.retry ? "Retry same start request" : "Start implementation");
   button.id = "implementation-start-button";
@@ -63,10 +65,15 @@ async function sendImplementationStart(task, payload) {
     implementationStarts.delete(task.id);
     await refreshDashboard();
   } else {
+    const readinessFailure = res?.status === 409 && data.retry === true && data.reload === false;
+    const preflight = readinessFailure && data.host_switchable === true;
+    const reserved = readinessFailure && !preflight;
     const uncertain = !res || res.status === 503;
-    implementationStarts.set(task.id, { payload, host: payload.host, error: true,
-      retry: uncertain, reload: !uncertain,
-      message: uncertain ? `${data.error || netErr || "Response unavailable"}. Retry keeps the same host and approval and reuses its reservation.`
+    implementationStarts.set(task.id, { payload, host: payload.host, error: true, preflight,
+      retry: uncertain || readinessFailure, reload: !uncertain && !readinessFailure,
+      message: preflight ? `${data.error}. No new run was reserved by this request. Repair this host or choose another host, then retry.`
+        : reserved ? `${data.error}. Execution ${data.execution_id} remains reserved for ${payload.host}. Repair this host and retry the same request; the host and approval stay bound.`
+        : uncertain ? `${data.error || netErr || "Response unavailable"}. Retry keeps the same host and approval and reuses its reservation.`
         : `${data.error || res.statusText}. Reload before explicitly starting again.` });
     repaintStart(task.id);
   }

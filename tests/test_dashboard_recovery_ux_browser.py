@@ -203,9 +203,9 @@ document.addEventListener("DOMContentLoaded", async () => {
       documentWidth: document.documentElement.scrollWidth,
       headings: [...document.querySelectorAll("#current-status h3")]
         .map((node) => node.textContent),
-      currentStatus: document.querySelector("#current-status article:first-child")?.textContent,
-      whyBlocked: document.querySelector("#current-status article:nth-child(2)")?.textContent,
-      nextStep: document.querySelector("#current-status article:last-child")?.textContent,
+      currentStatus: document.querySelector("#current-status")?.textContent,
+      whyBlocked: document.querySelector(".execution-decisions")?.textContent,
+      nextStep: document.querySelector("#current-status a")?.textContent,
       detailsCollapsed: !document.querySelector(".task-metadata").open,
       statusBeforeMetadata: !!(document.querySelector("#current-status")
         .compareDocumentPosition(document.querySelector(".task-metadata"))
@@ -530,11 +530,11 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
         assert observed["diagramUi"]["pendingProposal"] is True
         assert observed["diagramUi"]["proposalControls"] == 0
         assert observed["diagramUi"]["unchangedPhase"] == "design"
-        assert observed["headings"] == ["Current status", "Developer decision", "Next step"]
-        assert "Specification approved" in observed["currentStatus"]
-        assert "Interrupted" in observed["currentStatus"]
+        assert observed["headings"] == ["Your decision needed"]
+        assert "developer decision" in observed["currentStatus"].lower()
+        assert "Your decision needed" in observed["currentStatus"]
         assert "Keep the current format" in observed["whyBlocked"]
-        assert "Continuing a native session does not resolve this blocker" in observed["nextStep"]
+        assert observed["nextStep"] == "Review the decision"
         assert observed["detailsCollapsed"] and observed["statusBeforeMetadata"]
         assert observed["focusStyle"] != "none"
         assert observed["viewportWidth"] == (1280 if name == "desktop" else 390)

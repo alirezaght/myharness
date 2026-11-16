@@ -3,6 +3,7 @@
 import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -16,6 +17,10 @@ def native_executable(host):
     import pytest
 
     version = {"claude": "2.1.310", "codex": "0.164.0"}[host]
+    if host == "claude":
+        version = os.environ.get("HARNESS_TEST_CLAUDE_VERSION", version)
+        if version not in {"2.1.310", "2.1.325"}:
+            pytest.fail("unsupported native qualification candidate: " + version)
     clean_path = os.pathsep.join(
         p
         for p in os.environ.get("PATH", "").split(os.pathsep)
@@ -30,7 +35,12 @@ def native_executable(host):
         if not path or not Path(path).is_file():
             continue
         result = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10)
-        if result.returncode == 0 and version in result.stdout:
+        if result.returncode == 0 and re.fullmatch(
+            (r"(?:codex-cli )?" if host == "codex" else "")
+            + re.escape(version)
+            + r"(?: \([^()\r\n]+\))?",
+            result.stdout.strip(),
+        ):
             return path
     message = f"installed {host} {version} unavailable; native integration check not run"
     if os.environ.get("HARNESS_REQUIRE_NATIVE_TESTS") == "1":

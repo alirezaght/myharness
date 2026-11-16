@@ -25,7 +25,7 @@ def record_not_started(execution, token, *, stage):
     atomic_file(path, canonical(receipt).encode())
 
 
-def _not_started(execution, attempt):
+def _not_started(execution, attempt, *, required_stage=None):
     path = (
         Path(execution["handoff_path"]).parent
         / "settlements"
@@ -36,8 +36,13 @@ def _not_started(execution, attempt):
     except FileNotFoundError:
         return False
     value = json.loads(raw)
+    if not isinstance(value, dict):
+        return False
     return (
         mode == 0o600
+        and value.get("native_started") is False
+        and type(value.get("authority_generation")) is int
+        and (required_stage is None or value.get("stage") == required_stage)
         and value
         == {
             "kind": "native-not-started-v1",

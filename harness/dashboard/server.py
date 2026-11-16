@@ -44,6 +44,7 @@ WRITES = {
     REOPEN_PATH: "reopen",
     APPROVE_PATH: "approve",
     "/api/execution/start": "start",
+    "/api/execution/retry-start": "retry-start",
     "/api/execution/reconnect": "reconnect",
     "/api/execution/resume": "resume",
     "/api/execution/recover": "recover",

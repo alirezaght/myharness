@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from pathlib import Path
 
 from harness.controller import HarnessController
@@ -27,7 +27,7 @@ from harness.execution_hosts import (
     native_identity,
     package_fingerprint,
 )
-from harness.execution_logs import append_log
+from harness.execution_logs import append_log, redact
 from harness.execution_models import TERMINAL, ExecutionConflict
 from harness.execution_projection import ingest_event
 from harness.execution_store import bind_host, get_execution, process_alive, update_owned
@@ -70,7 +70,32 @@ def launch_worker(
     if (expected_epoch_id, expected_authority_generation) == (None, None):
         expected_epoch_id = execution["epoch_id"]
         expected_authority_generation = execution["authority_generation"]
-    with worker_lock(execution):
+    from harness.execution_epoch_lock import epoch_action_lock
+
+    with (
+        worker_lock(execution),
+        epoch_action_lock(execution, exclusive=True) if mode == "retry-start" else nullcontext(),
+    ):
+        if mode == "retry-start":
+            from harness.execution_bridge import _upgrade_locked
+            from harness.execution_epochs import require_active_epoch
+
+            require_active_epoch(
+                conn,
+                execution_id,
+                mutation=True,
+                expected_epoch_id=expected_epoch_id,
+                expected_authority_generation=expected_authority_generation,
+            )
+            _upgrade_locked(
+                HarnessController(conn),
+                execution_id,
+                reason=(
+                    "Explicit startup retry: select qualified Harness startup "
+                    "and native policy support."
+                ),
+                startup_retry=True,
+            )
         with transaction(conn):
             from harness.execution_epochs import require_active_epoch
 
@@ -116,11 +141,15 @@ def launch_worker(
                     }
             if execution["status"] in TERMINAL:
                 return {"status": execution["status"]}
-            require_execution_authority(
+            envelope = require_execution_authority(
                 HarnessController(conn),
                 execution_id,
                 operation="resume" if mode == "resume" else "admit",
             )
+            if mode == "retry-start":
+                from harness.execution_start_retry import require_startup_retry
+
+                require_startup_retry(HarnessController(conn), execution, envelope)
             if mode == "resume":
                 if not execution["native_id"]:
                     raise ExecutionConflict(
@@ -218,13 +247,19 @@ def launch_worker(
                 execution_id,
                 token,
                 status="Unavailable",
-                error="worker creation failed: " + str(error),
+                error="worker creation failed: " + redact(str(error)),
             )
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE id=?",
                 (utcnow(), attempt),
             )
-            return {"status": "Unavailable", "error": str(error)}
+            append_log(
+                conn,
+                execution_id,
+                "worker",
+                "Startup failed before native spawn: worker creation failed: " + str(error),
+            )
+            return {"status": "Unavailable", "error": redact(str(error))}
     return {"status": "WorkerOwned", "attempt_id": attempt}
 
 
@@ -495,13 +530,24 @@ def _reconnect(controller, execution, token):
                 execution_id,
                 token,
                 status="RecoveryRequired",
-                error="replayed committed events; explicit recorded-session resume or "
-                "reconciliation required",
+                error=execution.get("error")
+                or "replayed committed events; inspect startup evidence "
+                "and current readiness before choosing an available recovery action",
             )
     except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
         current = get_execution(conn, execution_id)
         if current["status"] not in TERMINAL and current["worker_token"] == token:
-            update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
+            update_owned(
+                conn,
+                execution_id,
+                token,
+                status="Unavailable",
+                error=(
+                    execution.get("error")
+                    if not execution["native_id"] and execution.get("error")
+                    else redact(str(error))
+                ),
+            )
         append_log(conn, execution_id, "worker", str(error))
     finally:
         from harness.execution_recovery_settlement import record_not_started
@@ -573,12 +619,14 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             from harness.execution_recovery_settlement import record_not_started
 
             record_not_started(execution, token, stage="native-setup")
-            update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
+            update_owned(conn, execution_id, token, status="Unavailable", error=redact(str(error)))
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
-            append_log(conn, execution_id, "worker", str(error))
+            append_log(
+                conn, execution_id, "worker", "Startup failed before native spawn: " + str(error)
+            )
             return
         if mode == "resume":
             from harness.execution_store import process_alive
@@ -639,7 +687,10 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
-            update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
+            update_owned(conn, execution_id, token, status="Unavailable", error=redact(str(error)))
+            append_log(
+                conn, execution_id, "worker", "Startup failed before native spawn: " + str(error)
+            )
             return
         with transaction(conn):
             update_owned(
@@ -671,12 +722,15 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             from harness.execution_recovery_settlement import record_not_started
 
             record_not_started(execution, token, stage="native-spawn")
-            update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
+            update_owned(conn, execution_id, token, status="Unavailable", error=redact(str(error)))
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
             isolation_stack.close()
+            append_log(
+                conn, execution_id, "worker", "Startup failed before native spawn: " + str(error)
+            )
             return
         conn.execute(
             "UPDATE execution_attempts SET status='Running',child_pid=?,updated_at=? WHERE token=?",
@@ -841,7 +895,9 @@ def main():
     p.add_argument("--db", required=True)
     p.add_argument("--execution", required=True)
     p.add_argument("--token", required=True)
-    p.add_argument("--mode", choices=["start", "resume", "reconnect"], default="start")
+    p.add_argument(
+        "--mode", choices=["start", "resume", "reconnect", "retry-start"], default="start"
+    )
     p.add_argument("--focus", choices=["tooling", "verification"])
     a = p.parse_args()
     conn = connect(Path(a.db))

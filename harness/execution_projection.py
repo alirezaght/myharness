@@ -412,7 +412,9 @@ def execution_view(conn, execution_id):
         if isinstance(pin_root, str):
             pin_identity = Path(pin_root).name
 
+    from harness.controller import HarnessController
     from harness.execution_epochs import history_epochs
+    from harness.execution_start_retry import startup_disposition
     from harness.execution_work_notice import authored_work_notice
 
     recorded_work = (
@@ -481,6 +483,7 @@ def execution_view(conn, execution_id):
         "developer_decisions": decisions_pending,
         "available_history_epochs": history_epochs(conn, execution_id),
         "readiness": last_readiness(execution_id, pin_identity),
+        "startup": startup_disposition(HarnessController(conn), saved),
         "status_explanation": "The agent stopped without a verified implementation result."
         if saved["status"] == "Interrupted"
         and saved["error"]

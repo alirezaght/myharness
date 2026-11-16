@@ -50,6 +50,12 @@ def isolated_provider_environment(env: dict[str, str], root: Path) -> dict[str, 
     """Return a child env with a temp home and our only allowed Claude executable."""
     bin_dir = root / "native-provider-bin"
     install_fake_claude(bin_dir)
+    codex = bin_dir / "codex"
+    codex.write_text(
+        "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'codex-cli 0.164.0'; exit 0; fi\n"
+        "echo 'Unexpected synthetic Codex invocation' >&2\nexit 1\n"
+    )
+    codex.chmod(0o700)
     result = dict(env)
     result["HOME"] = str(root / "native-provider-home")
     result["PATH"] = os.pathsep.join((str(bin_dir), result.get("PATH", "")))

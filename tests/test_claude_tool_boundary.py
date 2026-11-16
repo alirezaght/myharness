@@ -77,7 +77,7 @@ def test_actual_claude_hidden_handlers(tmp_path):
         assert observed, (result.returncode, result.stdout[-3000:], result.stderr[-2000:])
         assert result.returncode == 0, (result.stdout[-3000:], result.stderr[-3000:])
         names = [t["name"] for t in observed[0]["tools"]]
-        print("actual Claude2.1.310 complete root tools", names)
+        print("actual selected Claude complete root tools", names)
         assert "Agent" in names
         assert any("harness" in n for n in names)
         assert not {"Bash", "Write", "Edit", "WebFetch"} & set(names)

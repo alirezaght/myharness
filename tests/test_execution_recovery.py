@@ -180,6 +180,15 @@ def test_replay_accepts_legacy_path_aliases_but_refuses_other_targets(
     _, eid = approved_execution(controller, sample_repo, monkeypatch)
     execution = get_execution(controller.conn, eid)
     handoff = Path(execution["handoff_path"]).resolve()
+    # Model a sealed historical v2 handoff; durable v3 initialization forbids aliases.
+    from harness.execution_contract import canonical, digest
+
+    legacy = json.loads(handoff.read_bytes())
+    legacy["runtime_layout"] = "harness-session-directory-v1"
+    handoff.write_text(canonical(legacy))
+    controller.conn.execute(
+        "UPDATE executions SET handoff_hash=? WHERE id=?", (digest(handoff.read_bytes()), eid)
+    )
     original_bytes = handoff.read_bytes()
     alias = tmp_path / "legacy-runtime-alias"
     alias.symlink_to(handoff.parent, target_is_directory=True)

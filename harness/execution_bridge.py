@@ -126,7 +126,7 @@ def verify_snapshot(root):
     return fingerprint
 
 
-def selected_bridge(directory, execution=None):
+def selected_bridge(directory, execution=None, *, conn=None):
     directory = Path(directory)
     pointer = directory / "bridge-selection.json"
     if not pointer.exists():
@@ -155,16 +155,40 @@ def selected_bridge(directory, execution=None):
     if (
         not isinstance(value, dict)
         or type(value.get("schema_version")) is not int
-        or value["schema_version"] != 1
-        or value.get("kind") != "execution-bridge-upgrade-v1"
+        or (value["schema_version"], value.get("kind"))
+        not in {(1, "execution-bridge-upgrade-v1"), (2, "execution-bridge-upgrade-v2")}
         or not all(_fingerprint(value.get(key)) for key in ("from", "to"))
     ):
         raise ExecutionConflict("unsupported bridge upgrade receipt")
-    if execution is not None and any(
-        value.get(key) != execution[key]
-        for key in ["id", "binding", "handoff_hash", "al_run_id", "al_session_id", "native_id"]
+    if value["schema_version"] == 2 and (
+        value.get("native_id") is not None
+        or value.get("native_binding_mode") != "first-start-pending"
+        or not isinstance(value.get("epoch_id"), str)
+        or type(value.get("authority_generation")) is not int
+        or not isinstance(value.get("settlement"), dict)
     ):
-        raise ExecutionConflict("bridge upgrade execution/approval/native binding changed")
+        raise ExecutionConflict("invalid pending first-native bridge")
+    if execution is not None:
+        keys = ["id", "binding", "handoff_hash", "al_run_id", "al_session_id"]
+        if value["schema_version"] == 1:
+            keys.append("native_id")
+        else:
+            keys.extend(["epoch_id", "authority_generation"])
+            if (
+                value.get("native_id") is not None
+                or value.get("native_binding_mode") != "first-start-pending"
+            ):
+                raise ExecutionConflict("invalid pending first-native bridge")
+            from harness.execution_bridge_binding import (
+                validate_first_binding,
+                validate_settlement_ref,
+            )
+
+            validate_settlement_ref(directory, value)
+            if execution["native_id"] is not None:
+                validate_first_binding(directory, value, selected["sha256"], execution, conn=conn)
+        if any(value.get(key) != execution[key] for key in keys):
+            raise ExecutionConflict("bridge upgrade execution/approval/native binding changed")
     root = directory / "bridge-revisions" / value["to"] / "trusted"
     if verify_snapshot(root) != value["to"]:
         raise ExecutionConflict("selected bridge differs")
@@ -193,123 +217,168 @@ def _select(directory, ref):
         Path(name).unlink(missing_ok=True)
 
 
-def upgrade_bridge(controller, execution_id, *, reason):
+def upgrade_bridge(
+    controller,
+    execution_id,
+    *,
+    reason,
+    startup_retry=False,
+    expected_epoch_id=None,
+    expected_authority_generation=None,
+):
+    from contextlib import nullcontext
+
+    from harness.execution_epoch_lock import epoch_action_lock
+    from harness.execution_epochs import require_active_epoch
+    from harness.execution_store import get_execution
+    from harness.execution_worker import worker_lock
+
+    execution = get_execution(controller.conn, execution_id)
+    with (
+        worker_lock(execution),
+        epoch_action_lock(execution, exclusive=True) if startup_retry else nullcontext(),
+    ):
+        if startup_retry:
+            require_active_epoch(
+                controller.conn,
+                execution_id,
+                mutation=True,
+                expected_epoch_id=expected_epoch_id,
+                expected_authority_generation=expected_authority_generation,
+            )
+        return _upgrade_locked(controller, execution_id, reason=reason, startup_retry=startup_retry)
+
+
+def _upgrade_locked(controller, execution_id, *, reason, startup_retry=False):
     from harness.db import transaction
     from harness.execution_authority import require_execution_authority
     from harness.execution_bootstrap import authority_snapshot
     from harness.execution_hosts import al_source, managed_launcher
     from harness.execution_initialization import validate_existing_origin
     from harness.execution_store import get_execution, process_alive
-    from harness.execution_worker import worker_lock
 
     if not isinstance(reason, str) or len(reason.strip()) < 20:
         raise ValueError("bridge upgrade requires a substantive tool-maintenance reason")
     execution = get_execution(controller.conn, execution_id)
-    with worker_lock(execution):
-        execution = get_execution(controller.conn, execution_id)
-        envelope = require_execution_authority(controller, execution_id, operation="read")
-        rows = controller.conn.execute(
-            "SELECT child_pid,status FROM execution_attempts WHERE execution_id=?", (execution_id,)
-        ).fetchall()
-        if any(
-            row["status"] not in {"Exited", "Reconciled", "PreSpawnFailed"}
-            or process_alive(row["child_pid"])
-            for row in rows
-        ):
-            raise ExecutionConflict(
-                "settle recorded native attempts before a bridge upgrade; "
-                "no live or uncertain child may be replaced"
+    envelope = require_execution_authority(controller, execution_id, operation="read")
+    rows = controller.conn.execute(
+        "SELECT child_pid,status FROM execution_attempts WHERE execution_id=?", (execution_id,)
+    ).fetchall()
+    if any(
+        row["status"] not in {"Exited", "Reconciled", "PreSpawnFailed"}
+        or process_alive(row["child_pid"])
+        for row in rows
+    ):
+        raise ExecutionConflict(
+            "settle recorded native attempts before a bridge upgrade; "
+            "no live or uncertain child may be replaced"
+        )
+    settlement = None
+    if startup_retry:
+        from harness.execution_recovery_settlement import require_recovery_settlement
+        from harness.execution_start_retry import require_startup_retry
+
+        require_startup_retry(controller, execution, envelope)
+        settlement = require_recovery_settlement(controller, execution)
+    if not execution["al_run_id"] or (not execution["native_id"] and not startup_retry):
+        raise ExecutionConflict(
+            "bridge upgrade requires the exact initialized AL run and recorded native identity"
+        )
+    identity = validate_existing_origin(execution, envelope, managed_launcher())
+    if identity["al_run_id"] != execution["al_run_id"]:
+        raise ExecutionConflict("protected AL origin differs from the recorded execution")
+    source = al_source(execution, envelope)
+    before = source.read_bytes()
+    state = json.loads(before)
+    if (
+        state.get("run_id") != execution["al_run_id"]
+        or state.get("session_id") != execution["al_session_id"]
+    ):
+        raise ExecutionConflict("bridge upgrade AL identity differs")
+    directory = Path(execution["handoff_path"]).parent
+    old = selected_bridge(directory, execution)
+    old_digest = verify_snapshot(old)
+    candidate = Path(authority_snapshot(directory, versioned=True))
+    new_digest = verify_snapshot(candidate)
+    if old_digest == new_digest and not startup_retry:
+        return {"status": "Current", "bridge": str(old), "fingerprint": old_digest}
+    # An unchanged verified bridge needs no lifecycle settlement. Keep the
+    # writing/check barrier on actual authority replacement only; continuation
+    # still enforces native-process ownership and normal AL admission.
+    if any(
+        w["state"] in {"ACTIVE", "UNRESOLVED"} for w in state.get("writers", {}).values()
+    ) or any(e["status"] == "RUNNING" for e in state.get("evidence", {}).get("entries", [])):
+        raise ExecutionConflict(
+            "bridge upgrade requires settled product writers and checks; "
+            "use Resume task to reconcile unfinished work in the existing session, "
+            "then retry recovery"
+        )
+    if old_digest == new_digest:
+        return {"status": "Current", "bridge": str(old), "fingerprint": old_digest}
+    if source.read_bytes() != before:
+        raise ExecutionConflict("AL source moved during bridge upgrade")
+    value = {
+        "schema_version": 1,
+        "kind": "execution-bridge-upgrade-v1",
+        **{
+            key: execution[key]
+            for key in ["id", "binding", "handoff_hash", "al_run_id", "native_id"]
+        },
+        "al_session_id": execution["al_session_id"],
+        "from": old_digest,
+        "to": new_digest,
+        "prior_bridge": str(old),
+        "al_source_sha256": hashlib.sha256(before).hexdigest(),
+        "reason": reason.strip(),
+        "at": time.time(),
+        "preserved": [
+            "approval",
+            "product scope",
+            "native identity",
+            "AL run and pin",
+            "proof history",
+            "original bridge",
+            "reports",
+        ],
+    }
+    if startup_retry:
+        value.update(
+            schema_version=2,
+            kind="execution-bridge-upgrade-v2",
+            epoch_id=execution["epoch_id"],
+            authority_generation=execution["authority_generation"],
+            native_binding_mode="first-start-pending",
+            settlement=settlement,
+        )
+    raw = canonical(value).encode()
+    sha = digest(raw)
+    path = directory / "bridge-upgrades" / (sha.removeprefix("sha256:") + ".json")
+    durable_file(path, raw)
+    pointer = directory / "bridge-selection.json"
+    prior = _read(pointer) if pointer.exists() else None
+    try:
+        with transaction(controller.conn):
+            require_execution_authority(controller, execution_id, operation="read")
+            _select(directory, {"receipt": path.relative_to(directory).as_posix(), "sha256": sha})
+            controller.workspace(execution["task_id"]).record_event(
+                "execution.bridge_upgraded", value | {"receipt_sha256": sha}
             )
-        if not execution["al_run_id"] or not execution["native_id"]:
-            raise ExecutionConflict(
-                "bridge upgrade requires the exact initialized AL run and recorded native identity"
-            )
-        identity = validate_existing_origin(execution, envelope, managed_launcher())
-        if identity["al_run_id"] != execution["al_run_id"]:
-            raise ExecutionConflict("protected AL origin differs from the recorded execution")
-        source = al_source(execution, envelope)
-        before = source.read_bytes()
-        state = json.loads(before)
-        if (
-            state.get("run_id") != execution["al_run_id"]
-            or state.get("session_id") != execution["al_session_id"]
-        ):
-            raise ExecutionConflict("bridge upgrade AL identity differs")
-        directory = Path(execution["handoff_path"]).parent
-        old = selected_bridge(directory, execution)
-        old_digest = verify_snapshot(old)
-        candidate = Path(authority_snapshot(directory, versioned=True))
-        new_digest = verify_snapshot(candidate)
-        if old_digest == new_digest:
-            return {"status": "Current", "bridge": str(old), "fingerprint": old_digest}
-        # An unchanged verified bridge needs no lifecycle settlement. Keep the
-        # writing/check barrier on actual authority replacement only; continuation
-        # still enforces native-process ownership and normal AL admission.
-        if any(
-            w["state"] in {"ACTIVE", "UNRESOLVED"} for w in state.get("writers", {}).values()
-        ) or any(e["status"] == "RUNNING" for e in state.get("evidence", {}).get("entries", [])):
-            raise ExecutionConflict(
-                "bridge upgrade requires settled product writers and checks; "
-                "use Resume task to reconcile unfinished work in the existing session, "
-                "then retry recovery"
-            )
-        if source.read_bytes() != before:
-            raise ExecutionConflict("AL source moved during bridge upgrade")
-        value = {
-            "schema_version": 1,
-            "kind": "execution-bridge-upgrade-v1",
-            **{
-                key: execution[key]
-                for key in ["id", "binding", "handoff_hash", "al_run_id", "native_id"]
-            },
-            "al_session_id": execution["al_session_id"],
-            "from": old_digest,
-            "to": new_digest,
-            "prior_bridge": str(old),
-            "al_source_sha256": hashlib.sha256(before).hexdigest(),
-            "reason": reason.strip(),
-            "at": time.time(),
-            "preserved": [
-                "approval",
-                "product scope",
-                "native identity",
-                "AL run and pin",
-                "proof history",
-                "original bridge",
-                "reports",
-            ],
-        }
-        raw = canonical(value).encode()
-        sha = digest(raw)
-        path = directory / "bridge-upgrades" / (sha.removeprefix("sha256:") + ".json")
-        durable_file(path, raw)
-        pointer = directory / "bridge-selection.json"
-        prior = _read(pointer) if pointer.exists() else None
-        try:
-            with transaction(controller.conn):
-                require_execution_authority(controller, execution_id, operation="read")
-                _select(
-                    directory, {"receipt": path.relative_to(directory).as_posix(), "sha256": sha}
-                )
-                controller.workspace(execution["task_id"]).record_event(
-                    "execution.bridge_upgraded", value | {"receipt_sha256": sha}
-                )
-        except BaseException:
-            # Receipts/snapshots are append-only; a failed publication may leave an
-            # unselected candidate, but must restore the previously active bridge.
-            if controller.conn.in_transaction:
-                controller.conn.execute("ROLLBACK")
-            if prior is None:
-                pointer.unlink(missing_ok=True)
-            else:
-                _select(directory, prior)
-            raise
-        return {
-            "status": "Upgraded",
-            "receipt": str(path),
-            "sha256": sha,
-            "bridge": str(candidate),
-            "al_run_id": execution["al_run_id"],
-            "native_id": execution["native_id"],
-            "resume_required": True,
-        }
+    except BaseException:
+        # Receipts/snapshots are append-only; a failed publication may leave an
+        # unselected candidate, but must restore the previously active bridge.
+        if controller.conn.in_transaction:
+            controller.conn.execute("ROLLBACK")
+        if prior is None:
+            pointer.unlink(missing_ok=True)
+        else:
+            _select(directory, prior)
+        raise
+    return {
+        "status": "Upgraded",
+        "receipt": str(path),
+        "sha256": sha,
+        "bridge": str(candidate),
+        "al_run_id": execution["al_run_id"],
+        "native_id": execution["native_id"],
+        "resume_required": True,
+    }

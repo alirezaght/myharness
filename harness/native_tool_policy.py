@@ -3,6 +3,7 @@
 import gzip
 import hashlib
 import json
+import re
 import subprocess
 import tomllib
 from pathlib import Path
@@ -69,9 +70,14 @@ def executable_identity(executable, host):
             / "bin/codex"
         ).resolve(strict=True)
     result = subprocess.run([str(path), "--version"], capture_output=True, text=True, timeout=10)
-    version = {"codex": "0.164.0", "claude": "2.1.310"}[host]
-    if result.returncode or version not in result.stdout:
-        raise ValueError("unsupported native executable version: " + host)
+    pattern = (r"codex-cli " if host == "codex" else "") + r"(\d+\.\d+\.\d+)(?: \([^()\r\n]+\))?"
+    match = re.fullmatch(pattern, result.stdout.strip())
+    supported = {"codex": {"0.164.0"}, "claude": {"2.1.310", "2.1.325"}}[host]
+    if result.returncode or match is None or match[1] not in supported:
+        raise ValueError(
+            "unsupported native executable version: " + host + " " + result.stdout.strip()
+        )
+    version = match[1]
     return {
         "path": str(path),
         "version": version,

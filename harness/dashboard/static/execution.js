@@ -135,6 +135,23 @@ function renderRunControls(execution) {
   const actions = el("div");
   actions.className = "execution-actions";
   if (execution.status !== "Completed" && execution.status !== "Failed") {
+    if (!execution.native_id) {
+      const startup = execution.startup || {};
+      section.append(el("p", startup.diagnostic || "Original startup diagnostic unavailable."));
+      if (startup.current_readiness) {
+        const failed = (startup.current_readiness.checks || []).filter(check => check.status !== "PASS");
+        section.append(el("p", startup.current_readiness.ready ? "Current selected-host readiness: ready. Provider authentication remains unverified."
+          : "Current selected-host readiness: " + failed.map(check => check.reason || check.resolution || check.id).join("; ")));
+      }
+      if (startup.retry_eligible) {
+        const retry = executionActionButton("Retry startup", "retry-start", execution,
+          "Rechecks the selected host and retries this approved run only when every attempt is proven not started.");
+        const button = retry.querySelector("button");
+        if (button && startup.current_readiness?.ready === false) button.disabled = true;
+        actions.append(retry);
+      }
+      else section.append(el("p", "Startup retry is unavailable. Inspect recorded attempt evidence and current readiness; no native conversation is available to continue."));
+    }
     if (execution.native_id) {
       actions.append(executionActionButton("Continue task", "recover", execution,
         "Checks prerequisites automatically and continues the approved task."));
@@ -168,7 +185,7 @@ function renderRunControls(execution) {
   const messages = el("div");
   messages.className = "execution-action-results";
   messages.setAttribute("aria-live", "polite");
-  for (const action of ["recover", "resume", "retry-checks", "reconnect", "reconcile"]) {
+  for (const action of ["retry-start", "recover", "resume", "retry-checks", "reconnect", "reconcile"]) {
     const state = EXECUTION_ACTIONS.get(executionActionKey(execution, action));
     if (!state) continue;
     const result = el("p", state.message);
@@ -527,8 +544,8 @@ function executionActionButton(label, action, execution, explanation) {
   button.type = "button";
   const readiness = execution.readiness || {};
   const available = readiness.actions?.[action] ?? (["recover", "retry-checks"].includes(action) ? readiness.actions?.resume : undefined);
-  const activeResume = ["resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status);
-  button.disabled = ["recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy) || available === false || activeResume;
+  const activeResume = ["retry-start", "resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status);
+  button.disabled = ["retry-start", "recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy) || available === false || activeResume;
   button.setAttribute("aria-describedby", `execution-action-help-${action}`);
   button.addEventListener("click", () => sendExecutionAction(action, execution));
   const unavailableReason = activeResume
@@ -1027,15 +1044,15 @@ function showExecutionError(message) {
 }
 
 async function sendExecutionAction(action, execution) {
-  if (["resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status)) return;
+  if (["retry-start", "resume", "recover", "retry-checks"].includes(action) && ACTIVE_EXECUTION_STATUSES.has(execution.status)) return;
   const key = executionActionKey(execution, action);
-  if (["recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy)) return;
-  for (const prior of ["recover", "resume", "retry-checks", "reconnect", "reconcile"]) {
+  if (["retry-start", "recover", "resume", "retry-checks", "reconnect"].some(name => EXECUTION_ACTIONS.get(executionActionKey(execution, name))?.busy)) return;
+  for (const prior of ["retry-start", "recover", "resume", "retry-checks", "reconnect", "reconcile"]) {
     EXECUTION_ACTIONS.delete(executionActionKey(execution, prior));
   }
   EXECUTION_ACTIONS.set(key, {
     busy: true,
-    message: action === "reconnect" ? "Refreshing recorded status…" : "Continuing the existing native session…",
+    message: action === "reconnect" ? "Refreshing recorded status…" : action === "retry-start" ? "Rechecking prerequisites and retrying startup…" : "Continuing the existing native session…",
   });
   repaintExecution();
   const { res, data, netErr } = await postJson(`/api/execution/${action}`, {
@@ -1049,6 +1066,7 @@ async function sendExecutionAction(action, execution) {
       busy: false,
       message: action === "reconnect"
         ? "Recorded status refreshed. No native agent was continued."
+        : action === "retry-start" ? "Startup retry accepted for the same approved execution. Follow recorded status for its result."
         : action === "recover" ? "The continuation request was accepted. Follow live status for environment preparation and task progress."
         : action === "retry-checks" ? "Verification retry requested in the existing session. No check has been marked passed by this request."
         : "The continuation request was accepted for the existing native session. Check recorded status for its result.",

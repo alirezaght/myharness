@@ -55,6 +55,13 @@ def task_guidance(
             "execution-decisions",
         )
     status = execution["status"]
+    if execution.get("startup", {}).get("retry_eligible"):
+        return shown(
+            "Agent did not start",
+            execution["startup"]["diagnostic"],
+            "Review readiness and retry startup",
+            "execution",
+        )
     if status == "Completed" and execution.get("verification", {}).get("status") == "complete":
         return shown(
             "Verified complete",

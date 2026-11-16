@@ -95,3 +95,22 @@ def readiness(root, host):
         "product_acceptance": "NOT_ASSESSED",
         "approval_required_for_implementation": True,
     }
+
+
+class LaunchReadinessError(ValueError):
+    def __init__(self, message, *, execution_id=None):
+        super().__init__(message)
+        self.execution_id = execution_id
+
+
+def require_launch_ready(root, host):
+    result = readiness(root, host)
+    failures = [check for check in result["checks"] if check["status"] != "PASS"]
+    if failures:
+        raise LaunchReadinessError(
+            "Selected host is not ready: "
+            + "; ".join(
+                check.get("reason") or check.get("resolution") or check["id"] for check in failures
+            )
+        )
+    return result

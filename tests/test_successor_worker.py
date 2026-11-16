@@ -1,8 +1,10 @@
 # ruff: noqa: F811
 """Real successor authority and supervisor startup across historical package records."""
 
+import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -92,16 +94,28 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
     assert current["epoch_id"] == epoch and current["native_id"] == native_id
     assert current["status"] == "Interrupted" and "no guarded AL" in current["error"]
     assert attempt["status"] == "Exited" and attempt["child_pid"] is not None
-    assert attempt["package"] == canonical(package)
+    from harness.execution_handoff import read_handoff
+    from harness.execution_initialization import initialization_identity
+
+    protected = initialization_identity(current, read_handoff(current["handoff_path"]))
+    pinned = Path(protected["pin_root"]) / "payload/codex/skills/al"
+    selected_package = dict(
+        package,
+        package=str(pinned),
+        script=str(pinned / "scripts/al_state.py"),
+        sha256=package_fingerprint(pinned),
+    )
+    assert json.loads(attempt["package"]) == selected_package
     assert (
         conn.execute("SELECT package FROM execution_attempts WHERE id='legacy'").fetchone()[0]
         == legacy_package
     )
 
-    # Same-epoch history remains authoritative: changing the installed bytes is refused.
-    monkeypatch.setattr(
-        "harness.execution_worker.installed_package",
-        lambda *args: dict(package, sha256=digest("unexpected package drift")),
+    # Current-epoch selected-pin history remains authoritative; global installation
+    # metadata is not the runtime package selected by protected initialization.
+    conn.execute(
+        "UPDATE execution_attempts SET package=? WHERE token='successor-worker'",
+        (canonical(dict(selected_package, sha256=digest("unexpected selected-pin drift"))),),
     )
     reserve("drift-worker")
     supervise(conn, eid, "drift-worker", "resume")
@@ -113,6 +127,10 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
         is None
     )
 
+    conn.execute(
+        "UPDATE execution_attempts SET package=? WHERE token='successor-worker'",
+        (canonical(selected_package),),
+    )
     # The process-settlement fence deliberately spans epochs; a live old child still blocks.
     monkeypatch.setattr("harness.execution_worker.installed_package", lambda *args: package)
     conn.execute(

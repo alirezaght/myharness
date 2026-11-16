@@ -92,11 +92,13 @@ def latest_activity(controller: HarnessController, task: Task) -> dict[str, str]
 
 def presentation(controller, task, store, point, pending):
     from harness.dashboard.execution_start import launch_descriptor
-    from harness.dashboard.execution_view import task_execution
     from harness.dashboard.guidance import task_guidance
+    from harness.execution_projection import execution_view
+    from harness.execution_store import latest_execution
 
     launch = launch_descriptor(controller, task.id, store)
-    execution = task_execution(controller, task.id)
+    latest = latest_execution(controller.conn, task.id)
+    execution = execution_view(controller.conn, latest["id"]) if latest else None
     return {
         "launch": launch,
         "guidance": task_guidance(

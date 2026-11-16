@@ -15,7 +15,22 @@ from harness.execution_store import get_execution, latest_execution
 
 def task_execution(controller, task_id):
     latest = latest_execution(controller.conn, task_id)
-    return execution_view(controller.conn, latest["id"]) if latest else None
+    if latest is None:
+        return None
+    view = execution_view(controller.conn, latest["id"])
+    if not latest["native_id"] and view["startup"]["state"] == "proven-not-started":
+        from harness.execution_handoff import read_handoff
+        from harness.launch_readiness import readiness
+
+        try:
+            envelope = read_handoff(latest["handoff_path"], latest["handoff_hash"])
+            view["startup"]["current_readiness"] = readiness(envelope["repository"], latest["host"])
+        except (OSError, ValueError) as error:
+            view["startup"]["current_readiness"] = {
+                "ready": False,
+                "checks": [{"status": "BLOCKED", "reason": str(error)}],
+            }
+    return view
 
 
 def read_execution(
@@ -40,7 +55,7 @@ def execution_action(db_path, body, action):
             fields = {"task", "execution"}
             epoch_fields = {"epoch_id", "authority_generation"}
             supplied_epoch = set(data) & epoch_fields if isinstance(data, dict) else set()
-            if action in {"recover", "retry-checks"} and not supplied_epoch:
+            if action in {"recover", "retry-checks", "retry-start"} and not supplied_epoch:
                 raise ValueError("recovery requires the current execution epoch identity")
             if supplied_epoch and supplied_epoch != epoch_fields:
                 raise ValueError("epoch ID and authority generation must be supplied together")
@@ -92,7 +107,13 @@ def execution_action(db_path, body, action):
                 get_execution(controller.conn, data["execution"]),
                 "resume" if action in {"recover", "retry-checks"} else action,
             )
-            if action in {"recover", "retry-checks"}:
+            if action == "retry-start":
+                from harness.execution_worker import launch_worker
+
+                result = launch_worker(
+                    controller.conn, data["execution"], mode="retry-start", **epoch_kwargs
+                )
+            elif action in {"recover", "retry-checks"}:
                 from harness.execution_controls import recover_and_continue
 
                 result = recover_and_continue(

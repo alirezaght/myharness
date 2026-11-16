@@ -7,6 +7,7 @@ from harness.approval import require_approval
 from harness.cli_commands import task_repo_root
 from harness.dashboard.bodies import busy_failure, parse_body
 from harness.execution import approval_binding, start_execution
+from harness.launch_readiness import LaunchReadinessError
 
 
 def launch_descriptor(controller, task_id, store):
@@ -66,6 +67,14 @@ def start_task(db_path, body, specs=None):
         return 200, result
     except LookupError as error:
         return 404, {"error": str(error)}
+    except LaunchReadinessError as error:
+        return 409, {
+            "error": str(error),
+            "retry": True,
+            "reload": False,
+            "host_switchable": error.execution_id is None,
+            "execution_id": error.execution_id,
+        }
     except (ValueError, TypeError) as error:
         return 409, {"error": str(error), "reload": True}
     except sqlite3.OperationalError as error:

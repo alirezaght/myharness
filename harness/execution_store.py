@@ -97,13 +97,24 @@ def reserve_execution(
 
 
 def bind_host(conn, execution_id, native_id, token):
-    row = get_execution(conn, execution_id)
-    if row["worker_token"] != token or row["native_id"] not in (None, native_id):
-        raise ExecutionConflict("worker/native identity conflict")
-    conn.execute(
-        "UPDATE executions SET native_id=?,updated_at=? WHERE id=? AND worker_token=?",
-        (native_id, utcnow(), execution_id, token),
-    )
+    from contextlib import nullcontext
+
+    from harness.db import transaction
+    from harness.execution_bridge_binding import record_first_binding
+
+    with nullcontext() if conn.in_transaction else transaction(conn):
+        row = get_execution(conn, execution_id)
+        if row["worker_token"] != token or row["native_id"] not in (None, native_id):
+            raise ExecutionConflict("worker/native identity conflict")
+        record_first_binding(conn, row, native_id, token)
+        conn.execute(
+            "UPDATE executions SET native_id=?,updated_at=? WHERE id=? AND worker_token=?",
+            (native_id, utcnow(), execution_id, token),
+        )
+        conn.execute(
+            "UPDATE execution_attempts SET native_id=? WHERE execution_id=? AND token=?",
+            (native_id, execution_id, token),
+        )
 
 
 def bind_al_run(conn, execution_id, session_id, run_id):
