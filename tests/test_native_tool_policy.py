@@ -11,8 +11,7 @@ from tests.native_model_fixture import native_executable
 @pytest.mark.native
 @pytest.mark.parametrize("host,version", [("codex", "0.164.0"), ("claude", "2.1.310")])
 def test_installed_native_profile_prerequisites(host, version):
-    if host == "claude":
-        version = os.environ.get("HARNESS_TEST_CLAUDE_VERSION", version)
+    version = os.environ.get("HARNESS_TEST_" + host.upper() + "_VERSION", version)
     executable = native_executable(host)
     assert executable, host
     found = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=10)

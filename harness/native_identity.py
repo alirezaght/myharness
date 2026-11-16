@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from harness.execution_contract import digest
-from harness.native_tool_policy import ROLES
+from harness.native_tool_policy import ROLES, SUPPORTED_NATIVE_VERSIONS
 
 
 class IdentityNotReady(ValueError):
@@ -50,7 +50,11 @@ def read_native_identity(native_root, thread_id):
     if record.get("type") != "session_meta" or not isinstance(record.get("payload"), dict):
         raise ValueError("canonical first native record is not SessionMeta")
     value = record["payload"]
-    if value.get("id") != thread_id or value.get("cli_version") != "0.164.0":
+    if (
+        value.get("id") != thread_id
+        or not isinstance(value.get("cli_version"), str)
+        or value.get("cli_version") not in SUPPORTED_NATIVE_VERSIONS["codex"]
+    ):
         raise ValueError("native metadata identity/version mismatch")
     session = value.get("session_id")
     if not isinstance(session, str):

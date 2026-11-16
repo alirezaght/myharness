@@ -10,7 +10,8 @@ from harness.execution_principals import PrincipalRegistry
 from harness.native_runtime import native_auth_environment
 
 
-def test_successor_root_resume_and_fresh_child_metadata_boundary(tmp_path, monkeypatch):
+@pytest.mark.parametrize("version", ["0.164.0", "0.165.0"])
+def test_successor_root_resume_and_fresh_child_metadata_boundary(tmp_path, monkeypatch, version):
     native = tmp_path / "original-native-home"
     root, old, fresh, missing = [str(uuid.uuid4()) for _ in range(4)]
     records = native / "sessions/2026/10/29"
@@ -18,7 +19,7 @@ def test_successor_root_resume_and_fresh_child_metadata_boundary(tmp_path, monke
     cutoff = datetime(2026, 10, 29, 10, tzinfo=UTC).timestamp()
 
     def emit(tid, source, created):
-        payload = {"id": tid, "session_id": tid, "cli_version": "0.164.0", "source": source}
+        payload = {"id": tid, "session_id": tid, "cli_version": version, "source": source}
         if created is not None:
             payload["timestamp"] = datetime.fromtimestamp(created, UTC).isoformat()
         # A newly emitted old record still has an old payload creation timestamp.
@@ -64,6 +65,31 @@ def test_successor_root_resume_and_fresh_child_metadata_boundary(tmp_path, monke
         registry.enroll(old)
     monkeypatch.setenv("CODEX_HOME", str(native))
     assert native_auth_environment()["CODEX_HOME"] == str(native)
+
+
+@pytest.mark.parametrize("version", ["0.166.0", ["0.165.0"], None])
+def test_native_metadata_unknown_version_remains_refused(tmp_path, version):
+    from harness.native_identity import read_native_identity
+
+    tid = str(uuid.uuid4())
+    records = tmp_path / "sessions/2026/11/17"
+    records.mkdir(parents=True)
+    (records / ("rollout-" + tid + ".jsonl")).write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {
+                    "id": tid,
+                    "session_id": tid,
+                    "cli_version": version,
+                    "source": "exec",
+                },
+            }
+        )
+        + "\n"
+    )
+    with pytest.raises(ValueError, match="identity/version mismatch"):
+        read_native_identity(tmp_path, tid)
 
 
 from tests.test_execution_operations import operations  # noqa: E402,F401
