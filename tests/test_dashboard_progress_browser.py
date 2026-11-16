@@ -222,3 +222,95 @@ def test_work_is_visible_without_fake_percentages(
             )
             evaluate(call, "document.querySelector('.agent-map-finished summary').click()")
             assert evaluate(call, "document.querySelector('.agent-map-finished').open")
+
+
+@pytest.mark.parametrize("width,height", [(1280, 800), (390, 844)])
+def test_missing_work_description_shows_assignment_operations_and_uncertainty(
+    controller, sample_repo, monkeypatch, db_path, tmp_path, width, height
+):
+    task, execution = approved_execution(controller, sample_repo, monkeypatch)
+    started(controller.conn, execution)
+    with serve(db_path, task) as server:
+        baseline = api(server, f"?task={task}")
+        state = baseline["task"]["execution"]
+        state.update(
+            status="Running",
+            error=None,
+            agents=[
+                {
+                    "id": "engineer",
+                    "name": "Feature Engineer",
+                    "role": "al-engineer",
+                    "status": "Running",
+                    "activity": "  ",
+                    "task": "snapshot-protocol",
+                },
+                {
+                    "id": "builder",
+                    "name": "Verification Builder",
+                    "role": "al-builder",
+                    "status": "Running",
+                    "activity": "",
+                },
+            ],
+            tasks=[{"id": "snapshot-protocol", "title": "Implement context snapshots"}],
+            activity={
+                "recent_actions": [
+                    {
+                        "agent_id": "engineer",
+                        "agent_name": "Feature Engineer",
+                        "action": "Running a command",
+                        "at": "2026-01-01T00:00:00+00:00",
+                        "outcome": "Tool request failed <script>window.untrusted=true</script>",
+                    }
+                ],
+            },
+        )
+        monkeypatch.setattr(
+            server_module, "dashboard_view", lambda *a, **kw: copy.deepcopy(baseline)
+        )
+        with chrome(tmp_path / "chrome", server.url + f"?task={task}", width, height) as call:
+            wait(call, "Boolean(document.querySelector('.execution-current-work'))")
+            evaluate(
+                call,
+                "document.querySelector('[data-view-disclosure=execution-full-details]').open=true",
+            )
+            text = evaluate(call, "document.querySelector('.execution-work-now').textContent")
+            assert "The agent has not described" not in text
+            assert "Reported agent work" in text and "Working now" not in text
+            engineer = ".execution-work-agent[data-agent-id=engineer]"
+            builder = ".execution-work-agent[data-agent-id=builder]"
+            observed = evaluate(call, f"document.querySelector('{engineer}').textContent")
+            assert "Assigned task: Implement context snapshots" in observed
+            assert "Latest operation: Running a command" in observed
+            assert "Result: Tool request failed" in observed
+            assert "current progress is unconfirmed" in observed
+            assert "time not reported" not in observed
+            assert not evaluate(call, "Boolean(window.untrusted)")
+            unreported = evaluate(call, f"document.querySelector('{builder}').textContent")
+            assert "Assigned task not recorded" in unreported
+            assert "No tool activity recorded" in unreported
+            assert "Running a command" not in unreported
+            # A current per-agent observation takes precedence over the old feed.
+            state["agents"][0]["last_operation"] = {
+                "action": "Updating source",
+                "at": "2026-01-02T00:00:00+00:00",
+                "outcome": None,
+            }
+            evaluate(call, "refreshDashboard()")
+            wait(
+                call,
+                f"document.querySelector('{engineer}').textContent.includes('Updating source')",
+            )
+            observed = evaluate(call, f"document.querySelector('{engineer}').textContent")
+            assert "Tool request failed" not in observed
+            assert not evaluate(call, "document.documentElement.scrollWidth > innerWidth")
+            evaluate(call, "document.querySelector('.execution-current-work').scrollIntoView()")
+            directory = Path(
+                os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "screenshots")
+            )
+            directory.mkdir(parents=True, exist_ok=True)
+            image = call("Page.captureScreenshot", {"format": "png"})
+            (directory / f"work-description-{width}.png").write_bytes(
+                base64.b64decode(image["data"])
+            )

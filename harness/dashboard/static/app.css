@@ -1148,6 +1148,12 @@ figure.diagram figcaption {
   margin: 0.5rem 0;
 }
 
+.execution-work-agent + .execution-work-agent {
+  margin-top: 0.85rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+}
+
 .knowledge-panel {
   min-width: 0;
   margin: 1rem 0;
