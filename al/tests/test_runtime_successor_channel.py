@@ -116,3 +116,14 @@ def test_oversized_frame_and_eof_refuse():
         finally:
             parent.close()
             child.close()
+
+
+def test_safe_preparation_error_has_closed_schema_and_bounded_text():
+    from al.installer.runtime_successor_channel import preparation_error
+
+    value = preparation_error("original-request", 1, "preparation", "REFUSED")
+    assert set(value) == {"version", "sequence", "phase", "payload"}
+    assert set(value["payload"]) == {"request_id", "stage", "code", "diagnostic"}
+    assert len(value["payload"]["diagnostic"]) <= 128
+    with pytest.raises(ValueError):
+        preparation_error("original-request", 3, "raw secret", "unknown")

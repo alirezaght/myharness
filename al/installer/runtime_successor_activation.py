@@ -41,9 +41,11 @@ def require_active(subject):
     }:
         raise ValueError("active successor selector differs from protected transition")
     plan = read(directory / "plan.json")
-    handoff = (plan["authority_handoff_ref"]["path"]
-               if plan["kind"] == "missing-state-successor-start-plan-v1"
-               else Store.read_reference(plan["predecessor_state_ref"])["integration"]["handoff"])
+    handoff = (
+        plan["authority_handoff_ref"]["path"]
+        if plan["kind"] == "missing-state-successor-start-plan-v1"
+        else Store.read_reference(plan["predecessor_state_ref"])["integration"]["handoff"]
+    )
     _authority(
         plan["request"]["authority_snapshot_ref"],
         handoff,
@@ -109,7 +111,6 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
         for transaction in sorted([prior, successor], key=lambda t: str(state_path(t))):
             if not recovery or transaction != prior:
                 locks.enter_context(_session_lock(transaction))
-        require_quiescent(repository)
         journal_path = directory / "activation-journal.json"
         current_prior = read(prior_lock.path)
         if read(successor_lock.path) != successor:
@@ -117,10 +118,19 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
         if digest(capture(state_path(successor))[0]) != receipt["successor_state_ref"]["sha256"]:
             raise ValueError("prepared successor state changed before activation")
         old = None if recovery else Store.read_reference(plan["predecessor_state_ref"])
-        handoff = plan["authority_handoff_ref"]["path"] if recovery else old["integration"]["handoff"]
+        handoff = (
+            plan["authority_handoff_ref"]["path"] if recovery else old["integration"]["handoff"]
+        )
+        from .runtime_successor_payload import requested_distribution
+
+        requested_distribution(
+            platform, original, distribution(platform), predecessor=prior, reservation=successor
+        )
+        require_quiescent(repository, transaction=prior, state=old, related=(successor,))
         if current_prior == prior:
             if recovery:
                 from .runtime_successor_recovery import require_absent
+
                 require_absent(prior)
             authorization = _authority(
                 original["authority_snapshot_ref"],
@@ -135,7 +145,8 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
             )
             if (
                 candidate != receipt["candidate_identity"]
-                or not recovery and capture(state_path(prior))[0]
+                or not recovery
+                and capture(state_path(prior))[0]
                 != capture(Path(plan["predecessor_state_ref"]["stored_path"]))[0]
             ):
                 raise ValueError("predecessor inputs changed before activation")
@@ -246,6 +257,9 @@ def activate_successor(repository, platform, identifier, coordinator_fd):
     except BaseException as error:
         path = Store.directory(identifier) / "activation-journal.json"
         journal = read(path) if path.exists() else {"state": "REFUSED"}
-        journal.update(error_type=type(error).__name__, safe_diagnostic=str(error)[:512])
+        journal.update(
+            error_type=type(error).__name__,
+            safe_diagnostic="Successor activation refused; protected progress retained",
+        )
         write_json(path, journal)
         raise

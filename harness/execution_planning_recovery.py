@@ -321,6 +321,8 @@ def finish_planning(controller, execution_id, *, request_id, preview_sha256):
     if not row:
         raise LookupError("planning recovery request not found")
     request = json.loads(row["request"])
+    if row["request_hash"] != digest(row["request"].encode()):
+        raise ExecutionConflict("saved planning request hash differs")
     if (
         request.get("transition_mode")
         not in {"fresh-planning-missing-state", "fresh-planning-intact"}
@@ -332,34 +334,115 @@ def finish_planning(controller, execution_id, *, request_id, preview_sha256):
     if not row["preparation"]:
         execution = get_execution(controller.conn, execution_id)
         with _locks(execution):
+            from harness.execution_epochs import require_active_epoch
+            from harness.execution_handoff import read_handoff
+            from harness.execution_initialization_channel import PreparationFailure
+            from harness.execution_preparation_receipts import validate_preparation
+            from harness.execution_recovery_settlement import require_recovery_settlement
+
+            require_active_epoch(
+                controller.conn,
+                execution_id,
+                expected_epoch_id=request["expected_epoch_id"],
+                expected_authority_generation=request["expected_authority_generation"],
+                mutation=True,
+            )
+            require_recovery_settlement(controller, execution)
 
             def persist(receipt):
+                observation = {
+                    "state": "PREPARED",
+                    "receipt": receipt,
+                    "receipt_ref": {
+                        "stored_path": receipt["lineage_ref"]["stored_path"].rsplit("/", 1)[0]
+                        + "/receipt.json",
+                        "sha256": hashlib.sha256((canonical(receipt) + "\n").encode()).hexdigest(),
+                    },
+                }
+                receipt = validate_preparation(controller, execution, request, observation)
                 with transaction(controller.conn):
-                    controller.conn.execute(
+                    require_active_epoch(
+                        controller.conn,
+                        execution_id,
+                        expected_epoch_id=request["expected_epoch_id"],
+                        expected_authority_generation=request["expected_authority_generation"],
+                        mutation=True,
+                    )
+                    require_recovery_settlement(controller, execution)
+                    changed = controller.conn.execute(
                         "UPDATE execution_runtime_transitions SET "
                         "preparation=?,state='PREPARED',updated_at=? "
-                        "WHERE request_id=? AND state='PREPARING'",
-                        (canonical(receipt), utcnow(), request_id),
+                        "WHERE request_id=? AND execution_id=? AND state='PREPARING' "
+                        "AND request=? AND request_hash=?",
+                        (
+                            canonical(receipt),
+                            utcnow(),
+                            request_id,
+                            execution_id,
+                            row["request"],
+                            row["request_hash"],
+                        ),
                     )
-
-            channel = InitializationChannel(
-                request,
-                lambda notice: build_start_resources(
-                    controller, execution, notice["plan_ref"], notice
-                ),
-                persist,
-                Path(execution["handoff_path"]).parent / "runtime-preparations" / request_id,
-            )
-            # The issuer reuses the same reservation and validates unchanged inputs.
-            from harness.execution_handoff import read_handoff
+                    if changed.rowcount != 1:
+                        raise ExecutionConflict("planning preparation journal changed")
 
             envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
-            channel.run(
+            observation = _launcher_call(
                 managed_launcher(),
                 envelope["repository"],
+                "inspect",
+                "--platform",
                 execution["host"],
-                environment=execution_environment(),
+                "--request-id",
+                request_id,
             )
+            if observation.get("state") == "PREPARED":
+                persist(validate_preparation(controller, execution, request, observation))
+            else:
+                channel = InitializationChannel(
+                    request,
+                    lambda notice: build_start_resources(
+                        controller, execution, notice["plan_ref"], notice
+                    ),
+                    persist,
+                    Path(execution["handoff_path"]).parent / "runtime-preparations" / request_id,
+                )
+                # The issuer reuses the same reservation and validates unchanged inputs.
+                from harness.execution_handoff import read_handoff
+
+                envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
+                try:
+                    channel.run(
+                        managed_launcher(),
+                        envelope["repository"],
+                        execution["host"],
+                        environment=execution_environment(),
+                    )
+                except BaseException as error:
+                    diagnostic = (
+                        error.diagnostic
+                        if isinstance(error, PreparationFailure)
+                        else {
+                            "code": "PREPARATION_FAILED",
+                            "stage": "preparation",
+                            "diagnostic": "Preparation failed; inspect protected progress.",
+                        }
+                    )
+                    with transaction(controller.conn):
+                        controller.conn.execute(
+                            "UPDATE execution_runtime_transitions SET diagnostic=?,updated_at=? "
+                            "WHERE request_id=? AND execution_id=? AND state='PREPARING' "
+                            "AND request=? AND request_hash=?",
+                            (
+                                canonical(diagnostic),
+                                utcnow(),
+                                request_id,
+                                execution_id,
+                                row["request"],
+                                row["request_hash"],
+                            ),
+                        )
+                    raise
     recover_runtime_transition(controller, execution_id, request_id=request_id)
     return dispatch_fresh_planning(controller, execution_id, request_id=request_id)
 

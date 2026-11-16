@@ -17,7 +17,7 @@ from tests.conftest import conn, controller, db_path, isolated_home  # noqa: F40
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 
-def prepare(registered, *, change=None):
+def prepare(registered, *, change=None, saved_request=None, after_request=None):
     operation, principal, controller, initialization, package, execution, envelope = registered[0]
     root = Path(envelope["repository"])
     old = json.loads(Path(initialization["source"]).read_bytes())
@@ -47,6 +47,11 @@ def prepare(registered, *, change=None):
         "authority_snapshot_ref": authority,
         "reason": "Repair implementation continuity without changing approved requirements",
     }
+
+    if saved_request is not None:
+        request = saved_request
+    if after_request is not None:
+        after_request(request)
 
     def resources(notification):
         value = build_start_resources(controller, execution, notification["plan_ref"], notification)
@@ -126,7 +131,7 @@ def test_prepared_response_retry_reuses_reservation_and_receipt(registered):
     assert retried == request and second == first
 
 
-def test_kernel_census_refuses_a_genuine_managed_session_waiter(registered):
+def test_kernel_census_refuses_a_genuine_managed_session_waiter(registered, monkeypatch):
     import fcntl
     import os
     import signal
@@ -136,6 +141,18 @@ def test_kernel_census_refuses_a_genuine_managed_session_waiter(registered):
     from harness.execution_hosts import al_argv
 
     _, _, _, initial, package, execution, envelope = registered[0]
+    from types import SimpleNamespace
+
+    monkeypatch.setitem(
+        sys.modules, "_al_validator_context", SimpleNamespace(request={"mode": "snapshot"})
+    )
+    state = json.loads(Path(initial["source"]).read_bytes())
+    transaction = {
+        "repository_identity": {"root": envelope["repository"]},
+        "session_id": execution["al_session_id"],
+        "platform": "codex",
+        "run_id": state["run_id"],
+    }
     lock = Path(initial["source"]).parent / ("." + execution["al_session_id"] + ".lock")
     with lock.open("a") as stream:
         fcntl.flock(stream, fcntl.LOCK_EX)
@@ -158,12 +175,50 @@ def test_kernel_census_refuses_a_genuine_managed_session_waiter(registered):
             while True:
                 assert process.poll() is None
                 try:
-                    require_quiescent(envelope["repository"])
+                    require_quiescent(envelope["repository"], transaction=transaction, state=state)
                 except ValueError as error:
-                    assert "settled repository processes" in str(error)
+                    assert "managed operation" in str(error)
                     break
                 assert time.monotonic() < deadline
                 time.sleep(0.05)
         finally:
             os.killpg(process.pid, signal.SIGKILL)
             process.communicate(timeout=5)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS prepared-start containment")
+def test_repaired_coordinator_retains_original_payload_and_reservation(registered, launched):
+    source, home, repo, launcher, environment = launched
+    prior = Path(registered[0][3]["source"]).read_bytes()
+
+    def replace_coordinator(request):
+        module = source / "installer/runtime_successor_payload.py"
+        module.write_bytes(module.read_bytes() + b"\n# Fixture coordinator replacement.\n")
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-S",
+                "-B",
+                str(source / "alctl.py"),
+                "bootstrap",
+                "--source-root",
+                str(source),
+                "--destination",
+                str(launcher),
+                "--state-root",
+                str(home / "installer"),
+            ],
+            cwd=repo,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stderr[-1000:]
+
+    first, request = prepare(registered, after_request=replace_coordinator)
+    second, replay = prepare(registered, saved_request=request)
+    assert second == first and replay == request
+    assert Path(registered[0][3]["source"]).read_bytes() == prior
+    assert first["distribution_identity"] == request["distribution_identity"]

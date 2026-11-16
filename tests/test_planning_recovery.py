@@ -402,3 +402,37 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
             expected_authority_generation=current["authority_generation"],
         )
         assert second["epoch_id"] != current["epoch_id"]
+
+
+@pytest.mark.parametrize("operation", ["planning", "runtime"])
+def test_changed_saved_request_hash_refuses_before_any_coordinator_call(
+    controller, sample_repo, monkeypatch, operation
+):
+    from harness.execution_contract import canonical
+    from harness.execution_planning_recovery import finish_planning
+    from harness.execution_runtime_recovery import recover_runtime_transition
+
+    _, eid = approved_execution(controller, sample_repo, monkeypatch)
+    request = {"transition_mode": "fresh-planning-intact", "preview_sha256": "sha256:" + "a" * 64}
+    controller.conn.execute(
+        "INSERT INTO execution_runtime_transitions "
+        "(request_id,execution_id,request,request_hash,state,created_at,updated_at) "
+        "VALUES ('immutable-request',?,?,?,'PREPARING','now','now')",
+        (eid, canonical(request), "sha256:" + "b" * 64),
+    )
+    with pytest.raises(ExecutionConflict, match="request hash differs"):
+        if operation == "planning":
+            finish_planning(
+                controller,
+                eid,
+                request_id="immutable-request",
+                preview_sha256=request["preview_sha256"],
+            )
+        else:
+            recover_runtime_transition(controller, eid, request_id="immutable-request")
+    row = controller.conn.execute(
+        "SELECT request,request_hash,state,preparation FROM execution_runtime_transitions "
+        "WHERE request_id='immutable-request'"
+    ).fetchone()
+    assert row["state"] == "PREPARING" and row["preparation"] is None
+    assert row["request"] == canonical(request)
