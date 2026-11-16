@@ -69,14 +69,15 @@ function renderNav(tasks, selected) {
   const list = el("ul");
   for (const t of tasks) {
     const item = el("li");
-    const link = el("a", t.id);
+    const link = el("a", t.request.length > 80 ? `${t.request.slice(0, 77)}…` : t.request);
     link.href = `/?task=${encodeURIComponent(t.id)}`;
     if (t.id === selected) link.setAttribute("aria-current", "page");
     const request = el("p", t.request);
     request.className = "task-request";
     request.title = t.request;
-    item.append(link, el("p", `${t.phase} · ${t.status}`), request);
-    if (t.next) item.append(withCode("next: ", t.next));
+    item.append(link, el("small", t.id), el("p", t.guidance?.status || t.status));
+    if (t.guidance) item.append(el("p", t.guidance.next_action));
+
     list.append(item);
   }
   nav.append(list);
@@ -280,24 +281,16 @@ function renderDecisions(decisions) {
 function renderTask(task) {
   const section = el("section");
   section.id = "task";
-  section.append(el("h2", `Task ${task.id}`));
-  const title = el("p", task.request.length > 110 ? `${task.request.slice(0, 107)}…` : task.request);
-  title.className = "task-purpose";
+  const title = el("h2", task.request.length > 110 ? `${task.request.slice(0, 107)}…` : task.request);
   title.title = task.request;
-  section.append(title);
-  if (task.execution) {
-    section.append(renderExecution(task.id, task.execution));
-    const statusDetails = document.createElement("details");
-    statusDetails.className = "execution-detail-panel";
-    statusDetails.dataset.viewDisclosure = "task-status-details";
-    statusDetails.append(el("summary", "Status and next-step details"), renderStatusSummary(task));
-    section.append(statusDetails);
-    section.append(renderKnowledgePanel(task.id));
-  } else {
-    section.append(renderStatusSummary(task));
-    section.append(renderKnowledgePanel(task.id));
-  }
-  if (task.execution && task.approval_center?.final?.blockers?.some(item => item.code === "approved")) {
+  section.append(title, el("small", `Task ${task.id}`));
+  section.append(renderStatusSummary(task));
+  if (task.execution) section.append(renderExecution(task.id, task.execution));
+  const knowledge = el("details");
+  knowledge.dataset.viewDisclosure = "knowledge";
+  knowledge.append(el("summary", "Project knowledge"), renderKnowledgePanel(task.id));
+  section.append(knowledge);
+  if (task.launch?.binding || (task.execution && task.approval_center?.final?.blockers?.some(item => item.code === "approved"))) {
     const approved = document.createElement("details");
     approved.dataset.viewDisclosure = "approved-specification-record";
     approved.className = "execution-detail-panel";
@@ -331,13 +324,23 @@ function renderTask(task) {
   if (task.execution) {
     if (task.execution.delivery) section.append(renderDelivery(task.execution.delivery));
   }
-  section.append(renderDiagrams(task.id, task.diagrams));
-  section.append(renderResume(task.resume));
-  section.append(
-    renderSpec(task.spec, task.phase),
-    renderDecisions(task.decisions),
-    renderHistory(task.id, task.spec.history),
-  );
+  const diagrams = renderDiagrams(task.id, task.diagrams);
+  const designDetails = el("details");
+  designDetails.dataset.viewDisclosure = "design-diagnostics";
+  designDetails.append(el("summary", "Design notation details"));
+  for (const node of [...diagrams.children]) {
+    if (node.matches(".diagram-provenance, .diagram-guidance") ||
+        (task.diagrams.provenance && node.textContent === task.diagrams.provenance)) {
+      designDetails.append(node);
+    }
+  }
+  if (designDetails.children.length > 1) diagrams.insertBefore(designDetails, diagrams.children[1]);
+  section.append(diagrams);
+  const records = el("details");
+  records.dataset.viewDisclosure = "task-records";
+  records.append(el("summary", "Specification, decisions and history"), renderResume(task.resume),
+    renderSpec(task.spec, task.phase), renderDecisions(task.decisions), renderHistory(task.id, task.spec.history));
+  section.append(records);
   rememberComments(task);
   section.append(renderComparison(task.id, task.diagrams));
   section.append(renderCommentsSection(task.comments, task.diagrams));
@@ -347,69 +350,22 @@ function renderTask(task) {
 function renderStatusSummary(task) {
   const summary = el("section");
   summary.id = "current-status";
-  summary.className = "status-summary";
+  summary.className = "task-hero";
   summary.setAttribute("aria-label", "Current status and next step");
-  const execution = task.execution;
-  const openBlockers = execution ? developerDecisions(execution).filter((item) => item.state !== "Resolved") : [];
-  const checks = execution?.readiness?.checks || [];
-  const failedChecks = checks.filter((item) => item?.state === "permission_denied");
-  const final = task.approval_center?.final;
-  const approvedSpec = String(final?.status || "").toLowerCase().includes("approved")
-    || task.spec?.versions?.some((version) => version.status === "approved");
-  const approvalBlockers = approvedSpec
-    ? []
-    : (final?.blockers || []).filter((item) => item.code !== "approved");
-  const current = el("article");
-  current.append(el("h3", "Current status"));
-  const states = [];
-  if (approvedSpec) states.push("Specification approved");
-  if (!approvedSpec) states.push(`${task.status} · ${task.phase}`);
-  if (execution && implementationLabel(execution)) states.push(implementationLabel(execution));
-  if (execution) states.push(`execution ${execution.status}`);
-  current.append(el("p", states.join(" · ")));
-  const why = el("article");
-  const pendingVerification = execution?.verification?.status === "incomplete";
-  const technicalRepair = execution?.implementation?.status === "technically_unavailable";
-  why.append(el("h3", openBlockers.length ? (execution?.developer_decisions ? "Developer decision" : "Recorded blocker") : technicalRepair ? "Tool repair" : pendingVerification ? "Checks pending" : "Attention"));
-  if (openBlockers.length) {
-    for (const blocker of openBlockers) {
-      why.append(el("p", `${blocker.id}: ${blocker.question}`));
-      if (blocker.recommendation) why.append(el("p", `Recommendation: ${blocker.recommendation}`));
-    }
-  } else if (failedChecks.length) {
-    for (const check of failedChecks) why.append(el("p", `${check.capability}: ${check.message || "operator permission is unavailable"}`));
-  } else if (approvalBlockers.length) {
-    for (const blocker of approvalBlockers) why.append(el("p", blocker.text));
-  } else if (pendingVerification) {
-    why.append(el("p", "Some checks or discovery are incomplete. Defined, authorized implementation can continue."));
-  } else if (execution?.status_explanation) {
-    why.append(el("p", execution.status_explanation));
-  } else {
-    why.append(el("p", "No open execution blocker is recorded."));
+  const guidance = task.guidance || { status: task.status, activity: "Inspect the recorded task state.", next_action: "Review task controls", target: "execution" };
+  summary.append(el("h3", guidance.status), el("p", guidance.activity));
+  if (guidance.target === "start" || implementationStarts.get(task.id)?.retry || implementationStarts.get(task.id)?.sending) summary.append(renderImplementationStart(task));
+  else {
+    const action = el("a", guidance.next_action);
+    action.href = `#${guidance.target}`;
+    action.addEventListener("click", () => {
+      const target = document.getElementById(guidance.target);
+      for (let parent = target?.parentElement; parent; parent = parent.parentElement) {
+        if (parent.tagName === "DETAILS") parent.open = true;
+      }
+    });
+    summary.append(action);
   }
-  const next = el("article");
-  next.append(el("h3", "Next step"));
-  let guidance;
-  if (failedChecks.length) {
-    guidance = `${execution?.readiness?.message || "Restart the dashboard from a trusted terminal with access to the existing project state."} Continuing a native session does not repair operator permissions.`;
-  } else if (openBlockers.length) {
-    const blocker = openBlockers[0];
-    guidance = blocker.recommendation || `Resolve the open blocker ${blocker.id} before continuing.`;
-    if (execution?.native_id) guidance += " Continuing a native session does not resolve this blocker.";
-  } else if (approvalBlockers.length) {
-    guidance = approvalBlockers[0].text;
-  } else if (technicalRepair) {
-    const issues = Object.values(execution.operational_issues || {}).filter((issue) => issue.state !== "Resolved");
-    guidance = issues[0]?.next_action || "Repair the recorded technical capability and continue authorized work.";
-  } else if (pendingVerification && ACTIVE_EXECUTION_STATUSES.has(execution?.status)) {
-    guidance = "Implementation continues while agents repair tooling and finish the remaining checks.";
-  } else if (execution?.status_explanation) {
-    guidance = "Review the recorded result before choosing whether to continue the existing native session.";
-  } else {
-    guidance = task.next || task.resume?.next || execution?.readiness?.message;
-  }
-  next.append(el("p", guidance || "Review the specification and recorded task activity."));
-  summary.append(current, why, next);
   return summary;
 }
 
@@ -466,7 +422,7 @@ function render(data) {
   const same = restoreView(content, saved);
   const replace = () => main.replaceChildren(renderNav(data.tasks, selected), content);
   if (same) {
-    withChangeDiagramFocus(() => withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace)))));
+    withStartFocus(() => withChangeDiagramFocus(() => withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace))))));
     window.scrollTo(saved.x, saved.y);
   } else replace();
 }

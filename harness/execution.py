@@ -24,7 +24,21 @@ def database_path(conn):
     return Path(name).resolve()
 
 
-def start_execution(controller, task_id, *, host="claude", specs=None, launch=True):
+def approval_binding(task_id, approval):
+    return {
+        "task_id": task_id,
+        "approval_id": approval.id,
+        **{
+            key: value
+            for key, value in asdict(approval).items()
+            if key in {"spec_version", "content_hash", "revision", "review_state_hash"}
+        },
+    }
+
+
+def start_execution(
+    controller, task_id, *, host="claude", specs=None, launch=True, expected_approval_binding=None
+):
     if host not in {"claude", "codex"}:
         raise ValueError("host must be claude or codex")
     conn = controller.conn
@@ -35,16 +49,12 @@ def start_execution(controller, task_id, *, host="claude", specs=None, launch=Tr
         plan = TestPlanner(controller, task_id).document()
         if not plan.review.current:
             raise ExecutionConflict("current approved test plan is required")
-        binding = {
-            "execution_id": "",
-            "task_id": task_id,
-            **{
-                k: v
-                for k, v in asdict(approval).items()
-                if k in {"spec_version", "content_hash", "revision", "review_state_hash"}
-            },
-            "approval_id": approval.id,
-        }
+        current_binding = approval_binding(task_id, approval)
+        if expected_approval_binding is not None and expected_approval_binding != current_binding:
+            raise ExecutionConflict(
+                "The displayed approval changed. Reload and explicitly start again."
+            )
+        binding = {"execution_id": "", **current_binding}
         old = conn.execute(
             "SELECT id FROM executions WHERE approval_id=?", (approval.id,)
         ).fetchone()

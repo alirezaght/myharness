@@ -43,6 +43,7 @@ WRITES = {
     RESOLVE_PATH: "resolve",
     REOPEN_PATH: "reopen",
     APPROVE_PATH: "approve",
+    "/api/execution/start": "start",
     "/api/execution/reconnect": "reconnect",
     "/api/execution/resume": "resume",
     "/api/execution/recover": "recover",
@@ -68,6 +69,7 @@ KEEPALIVE_SECONDS = 15.0
 STATIC_DIR = files("harness.dashboard") / "static"
 STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
+    "/static/start.js": ("start.js", "text/javascript; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
     "/static/diagrams.js": ("diagrams.js", "text/javascript; charset=utf-8"),
     "/static/comments.js": ("comments.js", "text/javascript; charset=utf-8"),
@@ -311,6 +313,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(*add_comment(db_path, body))
         elif action == "approve":
             self._json(*approve_task(db_path, body, self.server.specs))
+        elif action == "start":
+            from harness.dashboard.execution_start import start_task
+
+            self._json(*start_task(db_path, body, self.server.specs))
         elif path.startswith("/api/execution/"):
             from harness.dashboard.execution_view import execution_action
 

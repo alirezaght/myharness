@@ -1281,3 +1281,13 @@ figure.diagram figcaption {
   border-radius: 0.375rem;
   background: color-mix(in srgb, currentColor 6%, transparent);
 }
+
+.task-hero { border-left: 4px solid #3674c9 !important; }
+.task-hero h3 { margin-top: 0; font-size: 1.2rem; }
+#implementation-start { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; }
+#implementation-start p { flex-basis: 100%; margin-bottom: 0; }
+#implementation-start select, #implementation-start button { padding: .6rem .8rem; max-width: 100%; }
+#task, #tasks li, #task details { min-width: 0; overflow-wrap: anywhere; }
+#task > details { margin: .8rem 0; }
+#tasks a { display: block; }
+#tasks small { color: GrayText; }

@@ -721,7 +721,7 @@ function renderAgent(agent) {
   const item = el("article");
   item.className = "execution-agent";
   item.dataset.status = String(agent.status || "Idle").toLowerCase();
-  item.append(el("h5", `${agent.name} · ${agent.role}`), el("p", `Status: ${agent.status || "Idle"}`));
+  item.append(el("h5", `${agent.name} · ${agent.role}`), el("p", `${ACTIVE_EXECUTION_STATUSES.has(executionSnapshot?.status) ? "Status" : "Last recorded status"}: ${agent.status || "Idle"}`));
   const fields = [
     ["Assigned task", agent.task],
     ["Activity", agent.activity],
@@ -978,6 +978,7 @@ function renderDecisionForm(blocker, execution) {
 function renderDecisionsExecution(execution) {
   const section = el("section");
   section.className = "execution-decisions";
+  section.id = "execution-decisions";
   section.append(el("h4", "Developer decisions"));
   if (!developerDecisions(execution).length) section.append(el("p", "No developer decision is needed."));
   for (const blocker of execution.blockers || []) section.append(renderDecision(blocker, execution));

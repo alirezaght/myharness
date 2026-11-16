@@ -254,7 +254,16 @@ def test_no_or_unknown_active_task_lists_the_tasks(db_path, tmp_path):
     assert unknown["task"] is None and unknown["notice"] == "unknown task: t-00000000"
     assert [t["id"] for t in unknown["tasks"]] == [newest, *sorted(tied)]
     assert unknown["tasks"][0]["phase"] == "interview"
-    assert set(unknown["tasks"][0]) == {"id", "phase", "request", "updated_at", "status", "next"}
+    assert set(unknown["tasks"][0]) == {
+        "id",
+        "phase",
+        "request",
+        "updated_at",
+        "status",
+        "next",
+        "guidance",
+        "launch",
+    }
     assert none["notice"] == NO_ACTIVE_TASK and none["tasks"] == unknown["tasks"]
 
     empty_db = tmp_path / "empty" / "state.db"

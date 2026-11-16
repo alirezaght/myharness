@@ -38,7 +38,7 @@ function renderAgentDiagram(execution) {
   const executing = ACTIVE_EXECUTION_STATUSES.has(execution.status);
   const agents = execution.agents || [];
   const live = agents.filter(agent => !["Completed", "Failed"].includes(agent.status));
-  const running = live.filter(agent => agent.status === "Running");
+  const running = executing ? live.filter(agent => agent.status === "Running") : [];
   const phase = String(execution.phase?.phase || "").toUpperCase();
   const verified = execution.status === "Completed" && execution.verification?.status === "complete";
   const current = verified ? 4 : phase === "DONE" ? -1 : phase.includes("REVIEW") ? 3

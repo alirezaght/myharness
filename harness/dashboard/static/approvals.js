@@ -132,7 +132,7 @@ function renderFinalSpec(taskId, items, final) {
   if (approved) {
     section.id = "approvals-final";
     section.append(el("h4", "Current approval"));
-    section.append(el("p", "The specification is approved. Follow execution progress below."));
+    section.append(el("p", "The specification is approved. Use the task guidance above to start or inspect a Harness run."));
   }
   const state = approvalState.get(taskId) || {};
   if (final.status && !approved) section.append(el("p", `approval: ${final.status}`));

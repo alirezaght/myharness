@@ -90,6 +90,26 @@ def latest_activity(controller: HarnessController, task: Task) -> dict[str, str]
     return None if event is None else {"kind": event.kind, "at": event.created_at}
 
 
+def presentation(controller, task, store, point, pending):
+    from harness.dashboard.execution_start import launch_descriptor
+    from harness.dashboard.execution_view import task_execution
+    from harness.dashboard.guidance import task_guidance
+
+    launch = launch_descriptor(controller, task.id, store)
+    execution = task_execution(controller, task.id)
+    return {
+        "launch": launch,
+        "guidance": task_guidance(
+            execution,
+            launch,
+            pending=bool(pending),
+            question=point.pending_question is not None,
+            phase=str(task.phase),
+            has_approval=controller.workspace(task.id).latest_approval() is not None,
+        ),
+    }
+
+
 def overview(controller: HarnessController, task: Task, store: SpecStore) -> dict[str, Any]:
     point = resume_for(controller, task, store)
     pending = pending_approvals(controller, task, point)
@@ -103,6 +123,7 @@ def overview(controller: HarnessController, task: Task, store: SpecStore) -> dic
         "pending_approvals": pending,
         "latest_activity": latest_activity(controller, task),
         "resume": point.to_dict(),
+        **presentation(controller, task, store, point, pending),
     }
 
 
@@ -124,6 +145,22 @@ def task_row(controller: HarnessController, task: Task, specs: str | None) -> di
             if execution
             else task_status(point, pending_approvals(controller, task, point))
         )
+        shown = presentation(
+            controller,
+            task,
+            spec_store(controller, task.id, specs),
+            point,
+            pending_approvals(controller, task, point),
+        )
     except ROW_ERRORS as error:
-        return row | {"status": f"{UNAVAILABLE}: {error}", "next": None}
-    return row | {"status": status, "next": point.next_command}
+        return row | {
+            "status": f"{UNAVAILABLE}: {error}",
+            "next": None,
+            "guidance": {
+                "status": "Status unavailable",
+                "activity": str(error),
+                "next_action": "Inspect task diagnostics",
+                "target": "approvals",
+            },
+        }
+    return row | {"status": status, "next": point.next_command} | shown

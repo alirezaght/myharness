@@ -195,7 +195,16 @@ def test_task_list_switching_and_resume_rows(db_path):
     assert (garbage["task"], garbage["notice"]) == (None, "unknown task: ../x")
     rows = default["tasks"]
     assert [r["id"] for r in rows] == [other, launch]
-    assert set(rows[0]) == {"id", "request", "phase", "updated_at", "status", "next"}
+    assert set(rows[0]) == {
+        "id",
+        "request",
+        "phase",
+        "updated_at",
+        "status",
+        "next",
+        "guidance",
+        "launch",
+    }
     for listed in (switched, unknown, garbage):
         assert listed["tasks"] == rows
     for row in rows:
