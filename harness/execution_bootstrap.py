@@ -6,6 +6,18 @@ from pathlib import Path
 
 from harness.execution_contract import BOOTSTRAP
 
+_KNOWLEDGE_MODULES = (
+    "__init__.py",
+    "extract.py",
+    "integration.py",
+    "models.py",
+    "policy.py",
+    "query.py",
+    "refresh.py",
+    "sources.py",
+    "store.py",
+)
+
 
 def module_argv(module):
     if module not in {
@@ -43,6 +55,8 @@ def authority_snapshot(directory, *, versioned=False):
             and p.suffix == ".sql"
         )
     }
+    for name in _KNOWLEDGE_MODULES:
+        files["knowledge/" + name] = (source / "knowledge" / name).read_bytes()
     fingerprint = hashlib.sha256(
         b"".join(k.encode() + v for k, v in sorted(files.items()))
     ).hexdigest()
