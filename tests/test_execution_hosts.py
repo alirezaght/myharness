@@ -71,9 +71,7 @@ def test_fixed_native_argv_and_explicit_resume():
                 "isApiErrorMessage": True,
                 "error": "rate_limit",
                 "message": {
-                    "content": [
-                        {"type": "text", "text": "Usage limit reached; resets at 21:10"}
-                    ]
+                    "content": [{"type": "text", "text": "Usage limit reached; resets at 21:10"}]
                 },
             },
             "Claude usage limit: Usage limit reached; resets at 21:10",
