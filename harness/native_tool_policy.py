@@ -251,7 +251,15 @@ def build_claude_policy(package, directory, channels, hook, session_id):
             "--tools",
             "Agent,SendMessage,TaskStop",
             "--allowedTools",
-            "Agent,SendMessage,TaskStop," + ",".join("mcp__harness__" + n for n in TOOLS),
+            ",".join(
+                [
+                    "Agent",
+                    "SendMessage",
+                    "TaskStop",
+                    *("mcp__harness__" + name for name in TOOLS),
+                    *(name for profile in roles.values() for name in profile["tools"]),
+                ]
+            ),
             "--disable-slash-commands",
         ],
         "session_id": session_id,
