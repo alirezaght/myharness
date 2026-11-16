@@ -27,12 +27,21 @@ FIELDS = {
 }
 
 
-def invoking(source):
+def invoking(source, state_root=None):
     identity = repository_identity(source["identity"]["root"])
     if any(source["identity"][key] != identity[key] for key in ("root", "git_dir", "common_dir")):
         raise ValueError("workspace invoking worktree identity differs")
     approval = source["approval"]
     runtime = Path(identity["root"]) / ("." + source["platform"]) / "al-runtime"
+    if state_root is not None:
+        from .runtime_durable_layout import discover
+        candidates = [r for r in discover(Path(state_root) / 'al-run-pins')
+                      if r['repository'] == identity and r['platform'] == source['platform']
+                      and (Path(r['runtime_root']) / (approval['session_id'] + '.json')).is_file()]
+        if len(candidates) > 1:
+            raise ValueError('ambiguous durable invoking runtime')
+        if candidates:
+            runtime = Path(candidates[0]['runtime_root'])
     state_path = runtime / (approval["session_id"] + ".json")
     private = runtime / "sessions" / approval["session_id"] / (approval["session_id"] + ".json")
     if private.is_file():
@@ -103,7 +112,7 @@ def plan_activity(
     revalidate_source(source)
     scope = derive_scope(source["identity"]["root"], home, state_root, explicit=explicit)
     inventory = inventory_activity(
-        scope["roots"], invoking_run=invoking(source), orphan_review=orphan_review
+        scope["roots"], invoking_run=invoking(source, state_root), orphan_review=orphan_review
     )
     profile = select_profile(inventory)
     directory = namespace(state_root) / "workspace-activity"
@@ -164,7 +173,7 @@ def _fresh(binding, source, state_root, *, revalidate=True):
         revalidate_source(source)
     revalidate_scope(binding["scope"], state_root)
     stored = validate_seal(read_reference(binding["inventory"]), "workspace-activity-inventory")
-    if stored["invoking_run"] != invoking(source):
+    if stored["invoking_run"] != invoking(source, state_root):
         raise ValueError("foreign workspace invoking run")
     current = inventory_activity(
         binding["scope"]["roots"],

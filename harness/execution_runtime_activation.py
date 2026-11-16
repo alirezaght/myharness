@@ -191,6 +191,19 @@ def _select_database(controller, previous, activation):
     from harness.execution_store import get_execution
 
     selector, receipt = activation["selector"], activation["receipt"]
+    transition = controller.conn.execute(
+        "SELECT request FROM execution_runtime_transitions WHERE execution_id=? AND request_id=?",
+        (previous["id"], activation["request_id"]),
+    ).fetchone()
+    if not transition:
+        raise ExecutionConflict("epoch selection requires its recorded transition")
+    request = json.loads(transition["request"])
+    fresh = request.get("transition_mode") in {
+        "fresh-planning-intact",
+        "fresh-planning-missing-state",
+    }
+    if fresh and receipt.get("transition_mode") != request["transition_mode"]:
+        raise ExecutionConflict("fresh planning mode is not bound by the protected receipt")
     identity = {
         "al_session_id": receipt["successor_subject"]["session_id"],
         "al_run_id": receipt["successor_run_id"],
@@ -222,9 +235,33 @@ def _select_database(controller, previous, activation):
             previous["authority_generation"],
         ):
             raise ExecutionConflict("stale_epoch: database selection changed")
+        archived = controller.conn.execute(
+            "SELECT identity FROM execution_epochs WHERE execution_id=? AND epoch_id=?",
+            (current["id"], current["epoch_id"]),
+        ).fetchone()
+        historical = json.loads(archived["identity"])
+        historical["historical_execution"] = {
+            key: current[key]
+            for key in (
+                "status",
+                "result",
+                "error",
+                "native_id",
+                "heartbeat",
+                "source_contact",
+                "worker_token",
+            )
+        }
         controller.conn.execute(
-            "UPDATE execution_epochs SET cursor=?,state=? WHERE execution_id=? AND epoch_id=?",
-            (current["cursor"], "ARCHIVED", current["id"], current["epoch_id"]),
+            "UPDATE execution_epochs SET cursor=?,state=?,identity=? "
+            "WHERE execution_id=? AND epoch_id=?",
+            (
+                current["cursor"],
+                "ARCHIVED",
+                canonical(historical),
+                current["id"],
+                current["epoch_id"],
+            ),
         )
         controller.conn.execute(
             (
@@ -246,7 +283,8 @@ def _select_database(controller, previous, activation):
                 "UPDATE executions SET "
                 "epoch_id=?,authority_generation=?,al_session_id=?,al_run_id=?,handoff_path"
                 "=?,handoff_hash=?,cursor=0,status=?,worker_token=NULL,error=NULL,result=NU"
-                "LL WHERE id=? AND epoch_id=? AND authority_generation=?"
+                "LL,native_id=?,heartbeat=?,source_contact=? "
+                "WHERE id=? AND epoch_id=? AND authority_generation=?"
             ),
             (
                 selector["epoch_id"],
@@ -255,7 +293,10 @@ def _select_database(controller, previous, activation):
                 identity["al_run_id"],
                 identity["handoff_path"],
                 identity["handoff_hash"],
-                "Interrupted",
+                "Reserved" if fresh else "Interrupted",
+                None if fresh else current["native_id"],
+                None if fresh else current["heartbeat"],
+                None if fresh else current["source_contact"],
                 current["id"],
                 current["epoch_id"],
                 current["authority_generation"],

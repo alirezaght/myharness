@@ -9,6 +9,8 @@ let executionSnapshot = null;
 const EXECUTION_ACTIONS = new Map();
 const DECISION_RETRIES = new Set();
 const DECISION_RETRY_RESULTS = new Map();
+const PLANNING_RECOVERY = new Map();
+const SPEC_RESTORATION = new Map();
 
 function executionIdentity(execution) {
   return viewIdentity(execution.task_id || executionTaskId, execution);
@@ -158,6 +160,8 @@ function renderRunControls(execution) {
   actions.append(executionActionButton("Refresh recorded status", "reconnect", execution,
     "Refreshes saved status and never continues the native agent."));
   section.append(actions);
+  section.append(renderPlanningRecovery(execution));
+  section.append(renderSpecRestoration(execution));
   const diagramLink = el("a", "View logical change diagram");
   diagramLink.href = "#diagrams";
   section.append(diagramLink);
@@ -173,6 +177,347 @@ function renderRunControls(execution) {
   }
   section.append(messages);
   return section;
+}
+
+function planningRecoveryKey(execution) {
+  return JSON.stringify([execution.task_id || executionTaskId, execution.id]);
+}
+
+function savePlanningRecovery(execution, draft) {
+  try {
+    sessionStorage.setItem(`planning-recovery:${planningRecoveryKey(execution)}`, JSON.stringify({
+      preview: draft.preview, requestId: draft.requestId, confirmation: draft.confirmation,
+      message: draft.message,
+    }));
+  } catch (_error) { /* The active page still retains the exact request in memory. */ }
+}
+
+function planningRecoveryDraft(execution) {
+  const key = planningRecoveryKey(execution);
+  if (!PLANNING_RECOVERY.has(key)) {
+    let saved = {};
+    try { saved = JSON.parse(sessionStorage.getItem(`planning-recovery:${key}`) || "{}"); } catch (_error) { saved = {}; }
+    PLANNING_RECOVERY.set(key, { preview: saved.preview || null, requestId: saved.requestId || null,
+      confirmation: saved.confirmation || "", message: saved.message || null, busy: false });
+  }
+  return PLANNING_RECOVERY.get(key);
+}
+
+function renderPlanningRecovery(execution) {
+  const details = document.createElement("details");
+  details.className = "execution-detail-panel planning-recovery";
+  details.dataset.viewDisclosure = "planning-recovery";
+  details.append(el("summary", "Start a new planning run"));
+  details.append(el("p", "Preview a same-task fresh planning transition. The action preserves available history and approval, but transfers no prior writer, review, agent, or PASS authority. It does not restore source files or repair missing seals."));
+  const draft = planningRecoveryDraft(execution);
+  const previewButton = el("button", draft.busy ? "Loading preview…" : "Preview planning recovery");
+  previewButton.type = "button";
+  previewButton.disabled = draft.busy;
+  previewButton.addEventListener("click", () => loadPlanningPreview(execution));
+  details.append(previewButton);
+  if (draft.preview) {
+    const preview = draft.preview.preview;
+    const info = el("div");
+    info.className = "planning-preview";
+    info.append(el("p", `Readiness: ${preview.readiness} · state: ${preview.state_condition} · history: ${preview.history_completeness}`));
+    info.append(el("p", `Approval ${preview.approval_binding?.approval_id || "retained"} · epoch ${preview.expected_epoch_id} · generation ${preview.expected_authority_generation}`));
+    for (const item of preview.source_limitations || []) info.append(el("p", item));
+    for (const item of preview.obligations || []) info.append(el("p", `Outstanding: ${item}`));
+    if (preview.readiness === "investigation-only") info.append(el("p", "This new run may investigate only. Implementation remains unavailable until approved requirements and runtime prerequisites are independently satisfied."));
+    if (preview.readiness === "unavailable") info.append(alertText("Planning recovery is unavailable. Resolve the listed authority, source, or settlement prerequisites first."));
+    info.append(el("p", `Preview SHA-256: ${draft.preview.preview_sha256}`));
+    details.append(info);
+    const confirmation = document.createElement("input");
+    confirmation.type = "text";
+    confirmation.autocomplete = "off";
+    confirmation.setAttribute("aria-label", 'Type “Start new planning” to confirm');
+    confirmation.placeholder = "Type Start new planning";
+    confirmation.value = draft.confirmation;
+    confirmation.addEventListener("input", () => { draft.confirmation = confirmation.value; savePlanningRecovery(execution, draft); start.disabled = confirmation.value !== "Start new planning" || preview.readiness === "unavailable" || draft.busy; });
+    const start = el("button", draft.busy ? "Starting planning…" : "Start new planning");
+    start.type = "button";
+    start.disabled = draft.confirmation !== "Start new planning" || preview.readiness === "unavailable" || draft.busy;
+    start.addEventListener("click", () => startPlanningRecovery(execution));
+    details.append(confirmation, start);
+  }
+  if (draft.requestId && draft.preview) {
+    details.append(el("p", `Recovery request ${draft.requestId} · preview ${draft.preview.preview_sha256}`));
+    const finish = el("button", draft.busy ? "Finishing recovery…" : "Finish recovery");
+    finish.type = "button";
+    finish.disabled = draft.busy;
+    finish.addEventListener("click", () => finishPlanningRecovery(execution));
+    details.append(finish);
+    const inspect = el("button", "Refresh recovery progress");
+    inspect.type = "button";
+    inspect.disabled = draft.busy;
+    inspect.addEventListener("click", () => inspectPlanningRecovery(execution));
+    details.append(inspect);
+  }
+  if (draft.message) {
+    const message = el("p", draft.message.text);
+    message.setAttribute("role", draft.message.error ? "alert" : "status");
+    details.append(message);
+  }
+  if (draft.preview && execution.epoch_id !== draft.preview.preview.expected_epoch_id) {
+    details.append(el("p", "The selected execution has moved to a newer epoch. This request remains bound to its original preview; use Finish recovery to inspect or continue that exact transition."));
+  }
+  return details;
+}
+
+async function loadPlanningPreview(execution) {
+  const draft = planningRecoveryDraft(execution);
+  if (draft.busy) return;
+  draft.busy = true;
+  draft.message = null;
+  repaintExecution();
+  const params = new URLSearchParams({ task: executionTaskId, execution: execution.id,
+    epoch_id: execution.epoch_id, authority_generation: String(execution.authority_generation) });
+  try {
+    const response = await fetch(`/api/planning-recovery?${params}`, { cache: "no-store" });
+    const data = await response.json();
+    if (!currentExecution(execution)) return;
+    draft.busy = false;
+    if (!response.ok) {
+      draft.message = { text: data.error || response.statusText || "Preview failed", error: true };
+    } else {
+      draft.preview = data;
+      draft.requestId = null;
+      draft.confirmation = "";
+      savePlanningRecovery(execution, draft);
+    }
+    repaintExecution();
+  } catch (error) {
+    draft.busy = false;
+    draft.message = { text: `Preview failed: ${error.message}`, error: true };
+    repaintExecution();
+  }
+}
+
+async function planningRecoveryPost(execution, action, payload, successMessage) {
+  const draft = planningRecoveryDraft(execution);
+  draft.busy = true;
+  draft.message = null;
+  repaintExecution();
+  const { res, data, netErr } = await postJson(`/api/planning-recovery/${action}`, payload);
+  if (!currentExecution(execution)) return;
+  draft.busy = false;
+  if (res?.ok) {
+    draft.message = { text: successMessage(data), error: false };
+    savePlanningRecovery(execution, draft);
+    await refreshDashboard();
+  } else {
+    const message = data.error || netErr || res?.statusText || "No response";
+    if (String(message).includes("stale planning preview")) {
+      draft.preview = null;
+      draft.confirmation = "";
+      draft.requestId = null;
+    }
+    draft.message = { text: `Recovery action failed: ${message}${String(message).includes("stale planning preview") ? ". Review a new preview and confirm again." : ""}`, error: true };
+    savePlanningRecovery(execution, draft);
+    repaintExecution();
+  }
+}
+
+async function startPlanningRecovery(execution) {
+  const draft = planningRecoveryDraft(execution);
+  if (!draft.preview || draft.confirmation !== "Start new planning" || draft.preview.preview.readiness === "unavailable") return;
+  draft.requestId ||= window.crypto?.randomUUID?.() || `planning-${Date.now()}-${Math.random()}`;
+  savePlanningRecovery(execution, draft);
+  await planningRecoveryPost(execution, "start", {
+    task: executionTaskId, execution: execution.id, epoch_id: draft.preview.preview.expected_epoch_id,
+    authority_generation: draft.preview.preview.expected_authority_generation,
+    request_id: draft.requestId, preview_sha256: draft.preview.preview_sha256,
+    confirmation: "Start new planning",
+  }, result => `Planning transition recorded. Dispatch: ${JSON.stringify(result.fresh_dispatch || result)}. This progress is separate from historical child status.`);
+}
+
+async function inspectPlanningRecovery(execution) {
+  const draft = planningRecoveryDraft(execution);
+  if (!draft.requestId || !draft.preview) return;
+  await planningRecoveryPost(execution, "inspect", {
+    task: executionTaskId, execution: execution.id,
+    epoch_id: draft.preview.preview.expected_epoch_id,
+    authority_generation: draft.preview.preview.expected_authority_generation,
+    request_id: draft.requestId, preview_sha256: draft.preview.preview_sha256,
+  }, result => `Recovery progress: ${result.state || "recorded"}; dispatch ${JSON.stringify(result.fresh_dispatch || null)}.`);
+}
+
+async function finishPlanningRecovery(execution) {
+  const draft = planningRecoveryDraft(execution);
+  if (!draft.requestId || !draft.preview) return;
+  await planningRecoveryPost(execution, "finish", {
+    task: executionTaskId, execution: execution.id,
+    epoch_id: draft.preview.preview.expected_epoch_id,
+    authority_generation: draft.preview.preview.expected_authority_generation,
+    request_id: draft.requestId, preview_sha256: draft.preview.preview_sha256,
+  }, result => `Recovery continued for the same request. Dispatch: ${JSON.stringify(result.fresh_dispatch || result)}.`);
+}
+
+function specRestorationKey(execution) {
+  return JSON.stringify([execution.task_id || executionTaskId, execution.id]);
+}
+
+function saveSpecRestoration(execution, draft) {
+  try {
+    sessionStorage.setItem(`spec-restoration:${specRestorationKey(execution)}`, JSON.stringify({
+      preview: draft.preview,
+      requestId: draft.requestId,
+      confirmation: draft.confirmation,
+      receipt: draft.receipt,
+      message: draft.message,
+    }));
+  } catch (_error) { /* The active page retains the exact request in memory. */ }
+}
+
+function specRestorationDraft(execution) {
+  const key = specRestorationKey(execution);
+  if (!SPEC_RESTORATION.has(key)) {
+    let saved = {};
+    try { saved = JSON.parse(sessionStorage.getItem(`spec-restoration:${key}`) || "{}"); }
+    catch (_error) { saved = {}; }
+    SPEC_RESTORATION.set(key, {
+      preview: saved.preview || null,
+      requestId: saved.requestId || null,
+      confirmation: saved.confirmation || "",
+      receipt: saved.receipt || null,
+      message: saved.message || null,
+      busy: false,
+    });
+  }
+  return SPEC_RESTORATION.get(key);
+}
+
+function renderSpecRestoration(execution) {
+  const details = document.createElement("details");
+  details.className = "execution-detail-panel spec-restoration";
+  details.dataset.viewDisclosure = "sealed-spec-restoration";
+  details.append(el("summary", "Recover approved specification"));
+  details.append(el("p", "Preview the exact approved bytes retained for this execution. Restoration writes only when the recorded original file is missing; it never overwrites an existing file, creates a new approval, or starts a native session."));
+  const draft = specRestorationDraft(execution);
+  const previewButton = el("button", draft.busy ? "Loading restoration preview…" : "Preview approved specification recovery");
+  previewButton.type = "button";
+  previewButton.disabled = draft.busy;
+  previewButton.addEventListener("click", () => loadSpecRestorationPreview(execution));
+  details.append(previewButton);
+  if (draft.preview) {
+    const preview = draft.preview.preview;
+    const info = el("div");
+    info.className = "spec-restoration-preview";
+    info.append(el("p", `State: ${preview.state_condition} · readiness: ${preview.readiness} · ${preview.byte_count} retained bytes`));
+    info.append(el("p", `Original approved path: ${preview.target}`));
+    info.append(el("p", `Retained SHA-256: ${preview.sealed_sha256} · preview SHA-256: ${draft.preview.preview_sha256}`));
+    info.append(el("p", "The explicit action restores only the exact retained specification bytes at that original path and does not grant implementation authority."));
+    for (const issue of preview.provenance_obligations || []) info.append(el("p", `Authority revalidation may remain unavailable: ${issue}`));
+    if (preview.readiness === "unavailable") {
+      info.append(alertText(`Safe restoration is unavailable for this file state (${preview.state_condition}). Inspect the original path and authority diagnostics before retrying.`));
+      info.append(el("p", "Next step: repair the specific path or retained approval provenance, then request a fresh preview."));
+    }
+    details.append(info);
+    if (preview.readiness === "ready" && !draft.receipt) {
+      const confirmation = document.createElement("input");
+      confirmation.type = "text";
+      confirmation.autocomplete = "off";
+      confirmation.setAttribute("aria-label", 'Type “Restore approved specification” to confirm');
+      confirmation.placeholder = "Type Restore approved specification";
+      confirmation.value = draft.confirmation;
+      const restore = el("button", draft.busy ? "Restoring…" : "Restore approved specification");
+      restore.type = "button";
+      restore.disabled = draft.confirmation !== "Restore approved specification" || draft.busy;
+      confirmation.addEventListener("input", () => {
+        draft.confirmation = confirmation.value;
+        saveSpecRestoration(execution, draft);
+        restore.disabled = draft.confirmation !== "Restore approved specification" || draft.busy;
+      });
+      restore.addEventListener("click", () => restoreApprovedSpecification(execution));
+      details.append(confirmation, restore);
+    }
+    if (draft.requestId) details.append(el("p", `Request ${draft.requestId} remains bound to the displayed preview and original epoch.`));
+  }
+  if (draft.receipt) {
+    details.append(el("p", draft.receipt.restored
+      ? "Approved specification bytes restored at the original path."
+      : "The approved specification bytes were already present; no file was written."));
+    details.append(el("p", `Authority revalidation: ${draft.receipt.authority_revalidation?.status || "unavailable"}${draft.receipt.authority_revalidation?.diagnostic ? ` · ${draft.receipt.authority_revalidation.diagnostic}` : ""}`));
+    details.append(el("p", "Implementation authority granted: no. No native session was started."));
+  }
+  if (draft.message) {
+    const message = el("p", draft.message.text);
+    message.setAttribute("role", draft.message.error ? "alert" : "status");
+    details.append(message);
+  }
+  return details;
+}
+
+async function loadSpecRestorationPreview(execution) {
+  const draft = specRestorationDraft(execution);
+  if (draft.busy) return;
+  draft.busy = true;
+  draft.message = null;
+  repaintExecution();
+  const params = new URLSearchParams({
+    task: executionTaskId,
+    execution: execution.id,
+    epoch_id: execution.epoch_id,
+    authority_generation: String(execution.authority_generation),
+  });
+  try {
+    const response = await fetch(`/api/spec-restoration?${params}`, { cache: "no-store" });
+    const data = await response.json();
+    draft.busy = false;
+    if (!currentExecution(execution)) return;
+    if (!response.ok) {
+      draft.message = { text: `Preview unavailable: ${data.error || response.statusText}. Check retained approval, authority and original path details before retrying.`, error: true };
+    } else {
+      const changed = draft.preview?.preview_sha256 !== data.preview_sha256;
+      draft.preview = data;
+      if (changed) {
+        draft.requestId = null;
+        draft.receipt = null;
+        draft.confirmation = "";
+      }
+    }
+    saveSpecRestoration(execution, draft);
+    repaintExecution();
+  } catch (error) {
+    draft.busy = false;
+    draft.message = { text: `Preview unavailable: ${error.message}`, error: true };
+    saveSpecRestoration(execution, draft);
+    repaintExecution();
+  }
+}
+
+async function restoreApprovedSpecification(execution) {
+  const draft = specRestorationDraft(execution);
+  if (!draft.preview || draft.preview.preview.readiness !== "ready"
+      || draft.confirmation !== "Restore approved specification" || draft.busy) return;
+  draft.requestId ||= window.crypto?.randomUUID?.() || `spec-restore-${Date.now()}-${Math.random()}`;
+  draft.busy = true;
+  draft.message = null;
+  saveSpecRestoration(execution, draft);
+  repaintExecution();
+  const preview = draft.preview.preview;
+  const { res, data, netErr } = await postJson("/api/spec-restoration/restore", {
+    task: executionTaskId,
+    execution: execution.id,
+    epoch_id: preview.expected_epoch_id,
+    authority_generation: preview.expected_authority_generation,
+    request_id: draft.requestId,
+    preview_sha256: draft.preview.preview_sha256,
+    confirmation: "Restore approved specification",
+  });
+  if (!currentExecution(execution)) return;
+  draft.busy = false;
+  if (res?.ok) {
+    draft.receipt = data;
+    draft.message = { text: "File restoration is complete. Authority was revalidated separately; no native work was started.", error: false };
+    saveSpecRestoration(execution, draft);
+    await refreshDashboard();
+  } else {
+    const reason = data.error || netErr || res?.statusText || "No response";
+    draft.message = { text: `Restoration failed: ${reason}. The request ID and preview are retained for a safe retry.`, error: true };
+    saveSpecRestoration(execution, draft);
+    repaintExecution();
+  }
 }
 
 function executionActionButton(label, action, execution, explanation) {

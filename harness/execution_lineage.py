@@ -31,6 +31,28 @@ def scoped_amendments(state, task_id):
     ]
 
 
+def inherited_requirements(conn, execution, state):
+    """Authenticate a retained prefix without inventing new delivery acknowledgments."""
+    if "inherited_lineage" not in state:
+        return None
+    epoch = get_epoch(conn, execution["id"])
+    receipt = epoch["identity"].get("preparation")
+    if not receipt:
+        raise ExecutionConflict("inherited requirement prefix lacks its protected epoch receipt")
+    storage = Path(receipt["successor_transaction"]["initialization"]["stored_path"]).parent.parent
+    lineage = _read(receipt["lineage_ref"], storage)
+    requirements = _read(lineage["requirements_ref"], storage)
+    prefix = requirements["successor_amendments"]
+    if (
+        state["inherited_lineage"]
+        != {"reference": receipt["lineage_ref"], "prefix_length": len(prefix)}
+        or state["amendments"][: len(prefix)] != prefix
+        or state["task_package"]["sha256"] != requirements["original_package"]["sha256"]
+    ):
+        raise ExecutionConflict("inherited requirement prefix differs from its protected receipt")
+    return requirements
+
+
 def validate_inherited_scope(conn, execution, state, task_id):
     if execution["epoch_id"] == "legacy-0":
         if state.get("inherited_lineage"):
@@ -53,6 +75,8 @@ def validate_inherited_scope(conn, execution, state, task_id):
     cursor = lineage
     seen = set()
     while True:
+        if cursor["kind"] == "missing-state-successor-source-lineage-v1":
+            break
         previous = _read(cursor["predecessor_state_ref"], storage)
         if previous["run_id"] in seen or len(seen) >= 16:
             raise ExecutionConflict("cyclic inherited source lineage")
@@ -69,6 +93,34 @@ def validate_inherited_scope(conn, execution, state, task_id):
     mapped = []
     for amendment in requirements["amendments"]:
         if not amendment.get("scoped"):
+            continue
+        if cursor["kind"] == "missing-state-successor-source-lineage-v1" and not any(
+            amendment["id"] in layer["integration"]["deliveries"] for layer in layers
+        ):
+            recovery = _read(cursor["recovery_lineage_ref"], storage)
+            scope = next(
+                (r for r in recovery["historical_scopes"] if r["id"] == amendment["id"]), None
+            )
+            if (
+                scope is None
+                or set(scope["tasks"]) != set(amendment["affected_tasks"])
+                or requirements["scoped_acceptance"].get(amendment["id"])
+                != amendment["artifact"]["sha256"]
+            ):
+                raise ExecutionConflict("recovery inherited scope lacks authenticated history")
+            paths = sorted({p for record in scope["tasks"].values() for p in record["files"]})
+            if set(task["criteria"]) & set(amendment["affected_criteria"]) or any(
+                overlaps(a, b) for a in task["files"] for b in paths
+            ):
+                mapped.append(
+                    {
+                        "id": amendment["id"],
+                        "artifact_sha256": amendment["artifact"]["sha256"],
+                        "predecessor_tasks": amendment["affected_tasks"],
+                        "paths": paths,
+                        "criteria": amendment["affected_criteria"],
+                    }
+                )
             continue
         origin = next(
             (layer for layer in layers if amendment["id"] in layer["integration"]["deliveries"]),

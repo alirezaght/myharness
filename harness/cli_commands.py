@@ -7,7 +7,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from harness.analyzer import analyze
 from harness.classification import Complexity, interview_depth
 from harness.controller import SOURCE_PROPOSED, HarnessController, Task, TaskNotFound
 from harness.db import connect, default_db_path, repo_root
@@ -145,8 +144,10 @@ def cmd_investigate(args: argparse.Namespace) -> int:
         task = controller.get_task(args.task_id)
         root = Path(args.repo) if args.repo else repo_root()
         decisions = Path(args.decisions) if args.decisions else None
-        report = analyze(root, task.request, decisions)
-        controller.record_investigation(task.id, report)
+        from harness.knowledge.integration import investigate_with_context
+
+        result = investigate_with_context(controller, task.id, root, decisions=decisions)
+        report = result["report"]
     if args.json:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     else:

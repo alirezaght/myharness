@@ -133,7 +133,7 @@ def prepare_runtime(
         _settled(controller, execution)
         envelope = require_execution_authority(controller, execution_id, operation="read")
         directory = Path(execution["authority_directory"])
-        authority = prepared_authority_snapshot(directory)
+        authority = prepared_authority_snapshot(Path(execution["handoff_path"]).parent)
         launcher = managed_launcher()
         inputs = _launcher_call(
             launcher,
@@ -174,6 +174,19 @@ def prepare_runtime(
             ):
                 raise ExecutionConflict("runtime recovery request ID reused with changed content")
             if not previous:
+                for pending in controller.conn.execute(
+                    "SELECT request FROM execution_runtime_transitions WHERE execution_id=? "
+                    "AND state != 'ACTIVE'",
+                    (execution_id,),
+                ):
+                    selected = json.loads(pending["request"])
+                    if (
+                        selected["expected_epoch_id"],
+                        selected["expected_authority_generation"],
+                    ) == (expected_epoch_id, expected_authority_generation):
+                        raise ExecutionConflict(
+                            "another runtime transition owns this predecessor; finish its request"
+                        )
                 now = utcnow()
                 controller.conn.execute(
                     (
@@ -267,8 +280,48 @@ def recover_runtime_transition(controller, execution_id, *, request_id):
         ),
         (request_id, execution_id),
     ).fetchone()
-    if not row or not row["preparation"]:
-        raise ExecutionConflict("recovery requires a completed immutable preparation")
+    if not row:
+        raise ExecutionConflict("runtime recovery request not found")
+    if not row["preparation"]:
+        from harness.db import transaction, utcnow
+        from harness.execution_contract import canonical
+        from harness.execution_handoff import read_handoff
+        from harness.execution_hosts import managed_launcher
+        from harness.execution_preparation_receipts import validate_preparation
+        from harness.execution_store import get_execution
+
+        execution = get_execution(controller.conn, execution_id)
+        request = json.loads(row["request"])
+        with _locks(execution):
+            envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
+            observation = _launcher_call(
+                managed_launcher(),
+                envelope["repository"],
+                "inspect",
+                "--platform",
+                execution["host"],
+                "--request-id",
+                request_id,
+            )
+            receipt = validate_preparation(controller, execution, request, observation)
+            with transaction(controller.conn):
+                current = controller.conn.execute(
+                    "SELECT request,preparation,state FROM execution_runtime_transitions "
+                    "WHERE request_id=? AND execution_id=?",
+                    (request_id, execution_id),
+                ).fetchone()
+                if current["request"] != row["request"] or current["state"] != "PREPARING":
+                    raise ExecutionConflict("preparation journal changed during reconciliation")
+                controller.conn.execute(
+                    "UPDATE execution_runtime_transitions SET preparation=?,state='PREPARED',"
+                    "updated_at=? WHERE request_id=?",
+                    (canonical(receipt), utcnow(), request_id),
+                )
+        row = controller.conn.execute(
+            "SELECT request,preparation FROM execution_runtime_transitions "
+            "WHERE request_id=? AND execution_id=?",
+            (request_id, execution_id),
+        ).fetchone()
     request, receipt = json.loads(row["request"]), json.loads(row["preparation"])
     return activate_runtime(
         controller,

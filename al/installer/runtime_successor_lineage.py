@@ -293,3 +293,44 @@ def _candidate_member(parent, leaf, name, classified, limitations):
     ):
         raise ValueError("candidate moved during preparation")
     return {"path": name, "kind": "file", "mode": mode, "sha256": h.hexdigest()}
+
+
+def recovery_requirements(plan, successor, destination):
+    """Copy authenticated retained bytes; no operational predecessor state is synthesized."""
+    from .runtime_successor_store import read_reference
+
+    recovery = read_reference(plan["recovery_lineage_ref"])
+    originals = [recovery["original_package_ref"], *[a["artifact"] for a in recovery["amendments"]]]
+    runtime = runtime_directory(successor) / successor["session_id"] / "artifacts"
+    runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
+    copied = []
+    for ref in originals:
+        raw, info = capture(ref["stored_path"])
+        if info["mode"] != 0o600 or digest(raw) != ref["sha256"]:
+            raise ValueError("retained recovery requirement bytes changed")
+        path = runtime / ref["sha256"]
+        if path.exists():
+            if capture(path)[0] != raw:
+                raise ValueError("recovery artifact collision")
+        else:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        copied.append(dict(ref, stored_path=str(path), captured_at=path.stat().st_mtime,
+                           source="authenticated missing-state recovery lineage"))
+    amendments = copy.deepcopy(recovery["amendments"])
+    for amendment, ref in zip(amendments, copied[1:]):
+        amendment["artifact"] = ref
+    previous = plan["predecessor_transaction"]
+    result = {
+        "schema_version": 1, "kind": "successor-requirement-lineage-v1",
+        "predecessor": {k: previous[k] for k in ("repository_identity", "platform", "session_id",
+                                               "run_id", "pin", "initialization")},
+        "successor": {k: successor[k] for k in ("repository_identity", "platform", "session_id", "run_id", "pin")},
+        "original_package": originals[0], "successor_package": copied[0],
+        "amendments": recovery["amendments"], "successor_amendments": amendments,
+        "revision_hashes": recovery["revision_hashes"],
+        "requirement_lineage_hash": recovery["revision_hashes"][-1],
+        "scoped_acceptance": {a["id"]: a["artifact"]["sha256"] for a in recovery["amendments"]},
+    }
+    return immutable(Path(destination) / "requirements.json", result)

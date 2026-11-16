@@ -156,6 +156,9 @@ def derive_scope(source, home, state_root, *, explicit=()):
             )
     for item in supplied:
         add(item)
+    from .runtime_durable_layout import discover
+    for item in discover(Path(state_root) / 'al-run-pins'):
+        add(item)
     global_roots = []
     for platform in ("codex", "claude"):
         path = safe(home / ("." + platform) / "al-runtime")

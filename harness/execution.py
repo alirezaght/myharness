@@ -103,7 +103,7 @@ def start_execution(controller, task_id, *, host="claude", specs=None, launch=Tr
                 }
             envelope = {
                 "schema_version": 1,
-                "runtime_layout": "harness-session-directory-v1",
+                "runtime_layout": "harness-durable-epoch-v1",
                 "execution_id": eid,
                 "task_id": task_id,
                 "approval": {**binding, "path": approval.path},
@@ -124,6 +124,9 @@ def start_execution(controller, task_id, *, host="claude", specs=None, launch=Tr
             from harness.execution_bootstrap import authority_snapshot
 
             authority_snapshot(runtime)
+            from harness.execution_bootstrap import prepared_authority_snapshot
+
+            envelope["runtime_authority_ref"] = prepared_authority_snapshot(runtime)
             hh = publish(handoff, envelope)
             publish(runtime / "task-package.json", package)
             saved, created = reserve_execution(

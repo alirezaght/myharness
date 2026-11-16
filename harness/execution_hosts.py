@@ -25,6 +25,16 @@ def al_runtime(host, repository):
 
 
 def al_source(execution, envelope):
+    if envelope.get("runtime_layout") == "harness-durable-epoch-v1":
+        from harness.execution_runtime_layout import durable_runtime, selected_runtime_binding
+
+        root = durable_runtime(
+            selected_runtime_binding(execution, envelope),
+            envelope["repository"],
+            session_id=execution["al_session_id"],
+            run_id=execution["al_run_id"],
+        )
+        return root / (execution["al_session_id"] + ".json")
     root = al_runtime(execution["host"], envelope["repository"])
     if envelope.get("runtime_layout") == "harness-session-directory-v1":
         root = root / "sessions" / execution["al_session_id"]

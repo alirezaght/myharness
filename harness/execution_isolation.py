@@ -235,6 +235,7 @@ def prepare_operation_isolation(
     hidden,
     directory,
     session_directory=None,
+    runtime_binding=None,
     coordination_lock=None,
     classification=None,
     allow_classified_read=False,
@@ -322,8 +323,17 @@ def prepare_operation_isolation(
     session = None
     if session_directory is not None:
         session_path = Path(session_directory).resolve(strict=True)
-        runtime = repository / session_path.parts[len(repository.parts)] / "al-runtime"
-        if session_path.parent.parent != runtime or session_path.parent.name != "sessions":
+        if runtime_binding is not None:
+            from harness.execution_runtime_layout import durable_runtime
+
+            if durable_runtime(runtime_binding, str(repository)) != session_path:
+                raise ValueError("operation durable runtime differs from protected binding")
+            runtime = session_path.parent.parent
+        else:
+            runtime = repository / session_path.parts[len(repository.parts)] / "al-runtime"
+        if runtime_binding is None and (
+            session_path.parent.parent != runtime or session_path.parent.name != "sessions"
+        ):
             raise ValueError("legacy flat runtime requires migration before operation enrollment")
         session = str(session_path)
     profile = OperationIsolation(
@@ -569,7 +579,7 @@ def describe_prepared_start(context, resources, notification):
         )
     )
     successor = context["successor"]
-    runtime = root / ("." + successor["platform"]) / "al-runtime/sessions" / successor["session_id"]
+    runtime = Path(successor["runtime_directory"])
     return {
         "schema_version": 1,
         "repository": str(root),

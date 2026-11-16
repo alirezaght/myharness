@@ -20,6 +20,10 @@ from harness.template_classification import (
 
 def validate_plan(controller, execution_id, context):
     plan = prepared_context(context)
+    if plan["kind"] == "missing-state-successor-start-plan-v1":
+        from harness.execution_recovery_authority import validate_recovery_plan
+
+        return validate_recovery_plan(controller, execution_id, context)
     execution = get_execution(controller.conn, execution_id)
     envelope = require_execution_authority(controller, execution_id, operation="read")
     prior = context["predecessor"]
@@ -52,12 +56,47 @@ def validate_plan(controller, execution_id, context):
     raw, _ = _ordinary(plan["predecessor_state_ref"]["stored_path"], 16 * 1024 * 1024)
     if hashlib.sha256(raw).hexdigest() != plan["predecessor_state_ref"]["sha256"]:
         raise ValueError("prepared-start predecessor archive differs")
+    if plan["request"].get("transition_mode") == "fresh-planning-intact":
+        from harness.execution_hosts import al_source
+        from harness.execution_recovery_settlement import observe_recovery_settlement
+        from harness.execution_runtime_fences import _reference
+
+        request = plan["request"]
+        recorded = controller.conn.execute(
+            "SELECT request FROM execution_runtime_transitions "
+            "WHERE execution_id=? AND request_id=?",
+            (execution_id, request["request_id"]),
+        ).fetchone()
+        settlement = observe_recovery_settlement(controller, execution)
+        if (
+            not recorded
+            or json.loads(recorded["request"]) != request
+            or request["expected_epoch_id"] != execution["epoch_id"]
+            or request["expected_authority_generation"] != execution["authority_generation"]
+            or hashlib.sha256(raw).hexdigest() != request["expected_predecessor_state_sha256"]
+            or _ordinary(al_source(execution, envelope), 16 * 1024 * 1024)[0] != raw
+            or settlement["obligations"]
+            or _reference(request["settlement_ref"]) != settlement
+        ):
+            raise ValueError("intact fresh-planning preview or native settlement changed")
     state = loads(raw, max_bytes=16 * 1024 * 1024)
     if state.get("integration", {}).get("binding", {}).get("execution_id") != execution_id:
         raise ValueError("prepared-start source binding differs")
+    from harness.execution_lineage import inherited_requirements
+
+    inherited = inherited_requirements(controller.conn, execution, state)
+    prefix_length = state.get("inherited_lineage", {}).get("prefix_length", 0)
     scoped = {}
-    for amendment in state["amendments"]:
+    for index, amendment in enumerate(state["amendments"]):
         if not amendment.get("scoped"):
+            continue
+        if index < prefix_length:
+            if (
+                inherited["scoped_acceptance"].get(amendment["id"])
+                != amendment["artifact"]["sha256"]
+            ):
+                raise ValueError("inherited scoped amendment lacks protected acceptance")
+            scoped[amendment["id"]] = amendment["artifact"]["sha256"]
             continue
         row = controller.conn.execute(
             "SELECT delivery,registry_path,registry_hash FROM execution_decisions "
@@ -94,13 +133,23 @@ def validate_start(controller, execution_id, context, resources):
     expected = dict(
         old,
         al_session_id=context["successor"]["session_id"],
-        runtime_layout="harness-session-directory-v1",
+        runtime_layout=context["successor"].get("runtime_layout", "harness-session-directory-v1"),
+        **(
+            {
+                "runtime_binding": {
+                    "storage": prepared_context(context)["storage"],
+                    "transaction": context["successor"],
+                }
+            }
+            if context["successor"]["schema_version"] == 3
+            else {}
+        ),
     )
     if handoff != expected or json.loads(package_raw) != old["task_package"]:
         raise ValueError("prepared handoff changed approved execution")
     classified = validate_prepared_classification(resources["classification_ref"], context)
     binding = dict(
-        state["integration"]["binding"],
+        state["integration"]["binding"] if state is not None else execution["binding"],
         handoff_hash=resources["handoff_ref"]["sha256"],
         al_session_id=context["successor"]["session_id"],
         al_run_id=context["successor"]["run_id"],
@@ -165,6 +214,35 @@ def validate_inputs(controller, execution_id, value):
 
     execution = get_execution(controller.conn, execution_id)
     envelope = require_execution_authority(controller, execution_id, operation="read")
+    if value.get("kind") == "initial-harness-runtime-inputs-v1":
+        expected = {"kind", "subject", "execution_id", "authority_handoff_ref"}
+        subject = value["subject"]
+        if (
+            set(value) != expected
+            or value["execution_id"] != execution_id
+            or value["authority_handoff_ref"]
+            != {"path": execution["handoff_path"], "sha256": execution["handoff_hash"]}
+            or subject["repository_identity"]["root"] != envelope["repository"]
+            or subject["platform"] != execution["host"]
+            or subject["session_id"] != execution["al_session_id"]
+            or execution["al_run_id"] is not None
+            or (execution["epoch_id"], execution["authority_generation"]) != ("legacy-0", 0)
+            or envelope.get("runtime_layout") != "harness-durable-epoch-v1"
+        ):
+            raise ValueError("initial durable runtime authority differs")
+        return {
+            "harness_binding": {
+                "authority_identity": digest(
+                    {"database": envelope["database"], "approval": execution["binding"]}
+                ).split(":")[1],
+                "execution_id": execution_id,
+                "authority_generation": 0,
+            }
+        }
+    if value.get("kind") == "missing-state-recovery-inputs-v1":
+        from harness.execution_recovery_authority import validate_recovery_inputs
+
+        return validate_recovery_inputs(controller, execution, envelope, value)
     previous = value["predecessor"]
     if (
         set(value) != {"predecessor", "execution_id"}
@@ -177,7 +255,19 @@ def validate_inputs(controller, execution_id, value):
     storage = Path(previous["initialization"]["stored_path"]).parent.parent
     initial = {"pin_root": str(storage / "pins" / previous["pin"]["pin_identity"])}
     reference = selected_reference(execution, envelope, initial)
-    return {"classified_paths": validate_reference(reference)}
+    return {
+        "classified_paths": validate_reference(reference),
+        "harness_binding": {
+            "authority_identity": digest(
+                {
+                    "database": envelope["database"],
+                    "approval": execution["binding"],
+                }
+            ).split(":")[1],
+            "execution_id": execution_id,
+            "authority_generation": execution["authority_generation"] + 1,
+        },
+    }
 
 
 def main():

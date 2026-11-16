@@ -62,6 +62,7 @@ def launch_worker(
     expected_epoch_id=None,
     expected_authority_generation=None,
     focus=None,
+    planning_request_id=None,
 ):
     if focus not in {None, "tooling", "verification"} or focus and mode != "resume":
         raise ValueError("supported continuation focus required")
@@ -80,6 +81,39 @@ def launch_worker(
                 expected_authority_generation=expected_authority_generation,
                 mutation=True,
             )
+            planning = None
+            if planning_request_id is not None:
+                if mode != "start" or focus is not None:
+                    raise ExecutionConflict("fresh planning requires an unfocused native start")
+                row = conn.execute(
+                    "SELECT request,preparation,activation,state "
+                    "FROM execution_runtime_transitions "
+                    "WHERE execution_id=? AND request_id=?",
+                    (execution_id, planning_request_id),
+                ).fetchone()
+                if not row or row["state"] != "ACTIVE" or not row["preparation"]:
+                    raise ExecutionConflict(
+                        "fresh planning requires active protected epoch selection"
+                    )
+                request, receipt = loads(row["request"]), loads(row["preparation"])
+                planning = loads(row["activation"])
+                if (
+                    request.get("transition_mode")
+                    not in {"fresh-planning-missing-state", "fresh-planning-intact"}
+                    or receipt.get("transition_mode") != request["transition_mode"]
+                    or receipt["successor_subject"]["session_id"] != execution["al_session_id"]
+                    or receipt["successor_run_id"] != execution["al_run_id"]
+                ):
+                    raise ExecutionConflict(
+                        "fresh native dispatch does not match selected recovery"
+                    )
+                if planning.get("fresh_dispatch"):
+                    return {
+                        "status": execution["status"],
+                        "request_id": planning_request_id,
+                        "fresh_dispatch": planning["fresh_dispatch"],
+                        "native_resumed": False,
+                    }
             if execution["status"] in TERMINAL:
                 return {"status": execution["status"]}
             require_execution_authority(
@@ -133,6 +167,29 @@ def launch_worker(
                 ),
                 (attempt, execution_id, token, mode, "Reserved", now, now, execution["epoch_id"]),
             )
+            if planning is not None:
+                from harness.execution_recovery_settlement import observe_recovery_settlement
+
+                # Exclude this transaction's new, unspawned reservation. Historical
+                # attempts must all have independently authenticated closure.
+                observation = observe_recovery_settlement(HarnessController(conn), execution)
+                unresolved = [
+                    a
+                    for a in observation["attempts"]
+                    if a["attempt_id"] != attempt and a["disposition"] in {"unknown", "live"}
+                ]
+                if unresolved:
+                    raise ExecutionConflict("fresh planning historical native settlement changed")
+                planning["fresh_dispatch"] = {
+                    "state": "reserved",
+                    "attempt_id": attempt,
+                    "token": token,
+                }
+                conn.execute(
+                    "UPDATE execution_runtime_transitions SET activation=?,updated_at=? "
+                    "WHERE execution_id=? AND request_id=?",
+                    (canonical(planning), now, execution_id, planning_request_id),
+                )
         argv = module_argv("harness.execution_worker") + [
             "--db",
             str(database_path(conn)),
@@ -146,27 +203,16 @@ def launch_worker(
         if focus:
             argv.extend(["--focus", focus])
         try:
-            diagnostics = Path(execution["handoff_path"]).parent / ("worker-" + attempt + ".log")
-            descriptor = os.open(diagnostics, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            with open(os.devnull, "rb") as stdin, os.fdopen(descriptor, "ab") as output:
-                subprocess.Popen(
-                    argv,
-                    stdin=stdin,
-                    stdout=output,
-                    stderr=output,
-                    close_fds=True,
-                    start_new_session=True,
-                    env=dict(
-                        execution_environment(),
-                        HARNESS_AUTHORITY_ROOT=str(
-                            __import__(
-                                "harness.execution_bridge", fromlist=["bridge_root"]
-                            ).bridge_root(execution)
-                        ),
-                    ),
-                )
+            _spawn_worker(argv, execution, attempt)
+            if planning is not None:
+                from harness.execution_planning_dispatch import observe_dispatch
+
+                observe_dispatch(conn, execution_id, token, "launching")
         except OSError as error:
             # Popen failed before creation; no native host was attempted by this worker.
+            from harness.execution_recovery_settlement import record_not_started
+
+            record_not_started(execution, token, stage="worker-spawn")
             update_owned(
                 conn,
                 execution_id,
@@ -180,6 +226,28 @@ def launch_worker(
             )
             return {"status": "Unavailable", "error": str(error)}
     return {"status": "WorkerOwned", "attempt_id": attempt}
+
+
+def _spawn_worker(argv, execution, attempt):
+    diagnostics = Path(execution["handoff_path"]).parent / ("worker-" + attempt + ".log")
+    descriptor = os.open(diagnostics, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with open(os.devnull, "rb") as stdin, os.fdopen(descriptor, "ab") as output:
+        subprocess.Popen(
+            argv,
+            stdin=stdin,
+            stdout=output,
+            stderr=output,
+            close_fds=True,
+            start_new_session=True,
+            env=dict(
+                execution_environment(),
+                HARNESS_AUTHORITY_ROOT=str(
+                    __import__("harness.execution_bridge", fromlist=["bridge_root"]).bridge_root(
+                        execution
+                    )
+                ),
+            ),
+        )
 
 
 def _drain(stream, channel, output):
@@ -436,6 +504,9 @@ def _reconnect(controller, execution, token):
             update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
         append_log(conn, execution_id, "worker", str(error))
     finally:
+        from harness.execution_recovery_settlement import record_not_started
+
+        record_not_started(execution, token, stage="reconnect")
         conn.execute(
             "UPDATE execution_attempts SET status='Exited',updated_at=? "
             "WHERE execution_id=? AND token=? AND mode='reconnect' "
@@ -443,6 +514,28 @@ def _reconnect(controller, execution, token):
             "AND EXISTS (SELECT 1 FROM executions WHERE id=? AND worker_token=?)",
             (utcnow(), execution_id, token, execution_id, token),
         )
+
+
+def package_for_native(execution, envelope, package, *, initialization=None):
+    """Use the verified run pin whenever initialization has selected the runtime."""
+    marker = Path(execution["handoff_path"]).parent / "bridge-selection.json"
+    if initialization is None:
+        if not execution["al_run_id"] and not marker.exists():
+            return package
+        if marker.exists():
+            from harness.execution_bridge import bridge_root
+
+            bridge_root(execution)
+        from harness.execution_initialization import initialization_identity
+
+        initialization = initialization_identity(execution, envelope)
+    pinned = Path(initialization["pin_root"]) / "payload" / execution["host"] / "skills/al"
+    return dict(
+        package,
+        package=str(pinned),
+        script=str(pinned / "scripts/al_state.py"),
+        sha256=package_fingerprint(pinned),
+    )
 
 
 def supervise(conn, execution_id, token, mode="start", focus=None):
@@ -462,22 +555,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 controller, execution_id, operation="resume" if mode == "resume" else "launch"
             )
             package = installed_package(execution["host"], envelope["repository"])
-            if (
-                mode == "resume"
-                and (Path(execution["handoff_path"]).parent / "bridge-selection.json").exists()
-            ):
-                from harness.execution_bridge import bridge_root
-                from harness.execution_initialization import initialization_identity
-
-                bridge_root(execution)
-                existing = initialization_identity(execution, envelope)
-                pinned = Path(existing["pin_root"]) / "payload" / execution["host"] / "skills/al"
-                package = dict(
-                    package,
-                    package=str(pinned),
-                    script=str(pinned / "scripts/al_state.py"),
-                    sha256=package_fingerprint(pinned),
-                )
+            package = package_for_native(execution, envelope, package)
             previous_package = conn.execute(
                 "SELECT package FROM execution_attempts "
                 "WHERE execution_id=? AND epoch_id=? AND package IS NOT NULL "
@@ -492,6 +570,9 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                     "installed AL package changed since launch; explicit reconciliation required"
                 )
         except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+            from harness.execution_recovery_settlement import record_not_started
+
+            record_not_started(execution, token, stage="native-setup")
             update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
@@ -533,6 +614,9 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             from harness.native_runtime import NativeRuntime, native_auth_environment
 
             initialization = initialize_execution(controller, execution, package, envelope)
+            package = package_for_native(
+                execution, envelope, package, initialization=initialization
+            )
             replay_source(conn, execution_id, token)
             runtime = NativeRuntime(
                 database_path(conn),
@@ -548,6 +632,13 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             argv = runtime.argv(envelope["repository"], resume=mode == "resume")
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             isolation_stack.close()
+            from harness.execution_recovery_settlement import record_not_started
+
+            record_not_started(execution, token, stage="native-setup")
+            conn.execute(
+                "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
+                (utcnow(), token),
+            )
             update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
             return
         with transaction(conn):
@@ -577,6 +668,9 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 start_new_session=True,
             )
         except (OSError, ValueError) as error:
+            from harness.execution_recovery_settlement import record_not_started
+
+            record_not_started(execution, token, stage="native-spawn")
             update_owned(conn, execution_id, token, status="Unavailable", error=str(error))
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
@@ -621,6 +715,9 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                     if found:
                         bind_host(conn, execution_id, found, token)
                         runtime.observe(found)
+                        from harness.execution_planning_dispatch import observe_dispatch
+
+                        observe_dispatch(conn, execution_id, token, "observed", native_id=found)
                     # Native content may contain reasoning; retain only process/session facts.
                 elif channel == "stderr":
                     append_log(conn, execution_id, "stderr", raw.decode(errors="replace"))

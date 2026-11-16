@@ -75,8 +75,8 @@ def initialize(st):
         "verifier_policy": policy(),
         "planning_occurrence": occurrence(st),
     }
-    if transaction["schema_version"] == 2:
-        supplied.update(runtime_layout=transaction["runtime_layout"], runtime_directory=transaction["runtime_directory"])
+    from installer.runtime_pin_transaction import layout_fields
+    supplied.update({k: transaction[k] for k in layout_fields(transaction)})
     try:
         transaction, initial = publish(transaction, supplied)
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -95,8 +95,7 @@ def initialize(st):
             "initialization",
         )
     }
-    if transaction["schema_version"] == 2:
-        st["runtime_origin"].update(runtime_layout=transaction["runtime_layout"], runtime_directory=transaction["runtime_directory"])
+    st["runtime_origin"].update({k: transaction[k] for k in layout_fields(transaction)})
     st["proof_admission"] = {
         "schema_version": 1,
         "kind": "proof-admission-v1",
@@ -167,6 +166,8 @@ def validate(st):
 
 
 def require_admitted(st):
+    from al_inherited_lineage import require_recovery_complete
+    require_recovery_complete(st)
     validate(st)
     if st.get("proof_admission", {}).get("status") == "pending":
         from al_recovery_guidance import refuse_guided

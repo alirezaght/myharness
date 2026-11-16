@@ -50,6 +50,13 @@ WRITES = {
     "/api/execution/reconcile": "reconcile",
     "/api/execution/decision": "decision",
     "/api/execution/decision-retry": "decision-retry",
+    "/api/knowledge/refresh": "knowledge-refresh",
+    "/api/knowledge/query": "knowledge-query",
+    "/api/knowledge/explain": "knowledge-explain",
+    "/api/planning-recovery/start": "planning-start",
+    "/api/planning-recovery/inspect": "planning-inspect",
+    "/api/planning-recovery/finish": "planning-finish",
+    "/api/spec-restoration/restore": "spec-restoration",
 }
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16
@@ -68,6 +75,7 @@ STATIC = {
     "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
     "/static/approvals.js": ("approvals.js", "text/javascript; charset=utf-8"),
     "/static/execution.js": ("execution.js", "text/javascript; charset=utf-8"),
+    "/static/knowledge.js": ("knowledge.js", "text/javascript; charset=utf-8"),
     "/static/execution_diagram.js": ("execution_diagram.js", "text/javascript; charset=utf-8"),
     "/static/execution_stage_details.js": (
         "execution_stage_details.js",
@@ -201,6 +209,71 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(error)})
             except (sqlite3.Error, OSError) as error:
                 self._json(503, {"error": str(error)})
+        elif url.path in {
+            "/api/knowledge",
+            "/api/knowledge/evidence",
+            "/api/planning-recovery",
+            "/api/spec-restoration",
+        }:
+            try:
+                query = parse_qs(url.query, keep_blank_values=True)
+                expected = (
+                    {"task"}
+                    if url.path == "/api/knowledge"
+                    else (
+                        {"task", "bundle_hash", "assertion_id"}
+                        if url.path == "/api/knowledge/evidence"
+                        else {"task", "execution", "epoch_id", "authority_generation"}
+                    )
+                )
+                if set(query) != expected or any(len(values) != 1 for values in query.values()):
+                    raise ValueError("invalid scoped query fields")
+                if url.path == "/api/knowledge":
+                    from harness.dashboard.knowledge_view import read_knowledge
+
+                    data = read_knowledge(self.server.db_path, query["task"][0])
+                elif url.path == "/api/knowledge/evidence":
+                    from harness.dashboard.knowledge_view import read_knowledge_evidence
+
+                    data = read_knowledge_evidence(
+                        self.server.db_path,
+                        query["task"][0],
+                        query["bundle_hash"][0],
+                        query["assertion_id"][0],
+                    )
+                elif url.path == "/api/spec-restoration":
+                    from harness.dashboard.knowledge_view import spec_restoration_preview
+
+                    generation = int(query["authority_generation"][0])
+                    if generation < 0:
+                        raise ValueError("invalid authority generation")
+                    data = spec_restoration_preview(
+                        self.server.db_path,
+                        query["task"][0],
+                        query["execution"][0],
+                        query["epoch_id"][0],
+                        generation,
+                    )
+                else:
+                    from harness.dashboard.knowledge_view import planning_preview
+
+                    generation = int(query["authority_generation"][0])
+                    if generation < 0:
+                        raise ValueError("invalid authority generation")
+                    data = planning_preview(
+                        self.server.db_path,
+                        query["task"][0],
+                        query["execution"][0],
+                        query["epoch_id"][0],
+                        generation,
+                    )
+                self._json(200, data)
+            except LookupError as error:
+                self._json(404, {"error": str(error)})
+            except (ValueError, TypeError) as error:
+                self._json(409, {"error": str(error)})
+            except (sqlite3.Error, OSError) as error:
+                self._json(503, {"error": str(error)})
         elif url.path in STATIC:
             name, content_type = STATIC[url.path]
             self._send(200, (STATIC_DIR / name).read_bytes(), content_type)
@@ -223,6 +296,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/execution/") and int(self.headers["Content-Length"]) > 65536:
             self._json(413, {"error": "execution request exceeds 65536 bytes"})
             return
+        if (
+            path.startswith("/api/spec-restoration/")
+            and int(self.headers["Content-Length"]) > 16384
+        ):
+            self._json(413, {"error": "specification restoration request exceeds 16384 bytes"})
+            return
         body = self._body(int(self.headers["Content-Length"]))
         if body is None:
             self._json(400, {"error": "request body is incomplete"})
@@ -236,6 +315,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             from harness.dashboard.execution_view import execution_action
 
             self._json(*execution_action(db_path, body, action))
+        elif path.startswith("/api/knowledge/"):
+            from harness.dashboard.knowledge_view import knowledge_action
+
+            self._json(*knowledge_action(db_path, body, action.removeprefix("knowledge-")))
+        elif path.startswith("/api/planning-recovery/"):
+            from harness.dashboard.knowledge_view import planning_action
+
+            self._json(*planning_action(db_path, body, action))
+        elif path.startswith("/api/spec-restoration/"):
+            from harness.dashboard.knowledge_view import spec_restoration_action
+
+            self._json(*spec_restoration_action(db_path, body))
         else:
             self._json(*move_comment(db_path, body, action))
 

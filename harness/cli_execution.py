@@ -32,6 +32,24 @@ def _epoch_args(args):
     )
 
 
+def _validate_planning_request(controller, args):
+    row = controller.conn.execute(
+        "SELECT request FROM execution_runtime_transitions WHERE execution_id=? AND request_id=?",
+        (args.execution_id, args.request_id),
+    ).fetchone()
+    if not row:
+        raise LookupError("planning recovery request not found for this execution")
+    request = json.loads(row["request"])
+    if (
+        request.get("transition_mode")
+        not in {"fresh-planning-missing-state", "fresh-planning-intact"}
+        or request.get("preview_sha256") != args.preview_sha256
+        or request.get("expected_epoch_id") != args.expected_epoch
+        or request.get("expected_authority_generation") != args.expected_authority_generation
+    ):
+        raise ValueError("planning recovery request is bound to another preview or epoch")
+
+
 def cmd_execution(args):
     with _controller(args) as controller:
         if args.action == "readiness":
@@ -45,7 +63,72 @@ def cmd_execution(args):
             execution = get_execution(controller.conn, args.execution_id)
             if execution["task_id"] != args.task_id:
                 raise ValueError("execution belongs to a different harness task")
-            if args.action == "status":
+            if args.action in {"spec-preview", "spec-restore"}:
+                from harness.execution_spec_recovery import (
+                    preview_spec_restoration,
+                    restore_specification,
+                )
+
+                if args.action == "spec-preview":
+                    result = preview_spec_restoration(
+                        controller,
+                        args.execution_id,
+                        expected_epoch_id=args.expected_epoch,
+                        expected_authority_generation=args.expected_authority_generation,
+                    )
+                else:
+                    if args.confirm != "Restore approved specification":
+                        raise ValueError(
+                            'confirmation must exactly equal "Restore approved specification"'
+                        )
+                    result = restore_specification(
+                        controller,
+                        args.execution_id,
+                        request_id=args.request_id,
+                        preview_sha256=args.preview_sha256,
+                        expected_epoch_id=args.expected_epoch,
+                        expected_authority_generation=args.expected_authority_generation,
+                    )
+            elif args.action.startswith("planning-"):
+                from harness.execution_planning_recovery import (
+                    finish_planning,
+                    inspect_planning,
+                    preview_planning,
+                    start_planning,
+                )
+
+                if args.action == "planning-preview":
+                    result = preview_planning(
+                        controller,
+                        args.execution_id,
+                        expected_epoch_id=args.expected_epoch,
+                        expected_authority_generation=args.expected_authority_generation,
+                    )
+                elif args.action == "planning-start":
+                    if args.confirm != "Start new planning":
+                        raise ValueError('confirmation must exactly equal "Start new planning"')
+                    result = start_planning(
+                        controller,
+                        args.execution_id,
+                        request_id=args.request_id,
+                        preview_sha256=args.preview_sha256,
+                        expected_epoch_id=args.expected_epoch,
+                        expected_authority_generation=args.expected_authority_generation,
+                    )
+                elif args.action == "planning-inspect":
+                    _validate_planning_request(controller, args)
+                    result = inspect_planning(
+                        controller, args.execution_id, request_id=args.request_id
+                    )
+                else:
+                    _validate_planning_request(controller, args)
+                    result = finish_planning(
+                        controller,
+                        args.execution_id,
+                        request_id=args.request_id,
+                        preview_sha256=args.preview_sha256,
+                    )
+            elif args.action == "status":
                 result = execution_view(controller.conn, args.execution_id)
             elif args.action == "events":
                 result = event_page(controller.conn, args.execution_id, args.after, args.limit)
@@ -182,6 +265,12 @@ def add_execution_parser(subparsers):
         "runtime-prepare",
         "runtime-inspect",
         "runtime-activate",
+        "planning-preview",
+        "planning-start",
+        "planning-inspect",
+        "planning-finish",
+        "spec-preview",
+        "spec-restore",
     ):
         p = actions.add_parser(action)
         p.add_argument("task_id")
@@ -195,6 +284,22 @@ def add_execution_parser(subparsers):
             p.add_argument("--specs")
             continue
         p.add_argument("execution_id")
+        if action in {"planning-preview", "planning-start", "planning-inspect", "planning-finish"}:
+            p.add_argument("--expected-epoch", required=True)
+            p.add_argument("--expected-authority-generation", required=True, type=int)
+        if action in {"planning-start", "planning-inspect", "planning-finish"}:
+            p.add_argument("--request-id", required=True)
+        if action in {"planning-start", "planning-inspect", "planning-finish"}:
+            p.add_argument("--preview-sha256", required=True)
+        if action in {"spec-preview", "spec-restore"}:
+            p.add_argument("--expected-epoch", required=True)
+            p.add_argument("--expected-authority-generation", required=True, type=int)
+        if action == "spec-restore":
+            p.add_argument("--request-id", required=True)
+            p.add_argument("--preview-sha256", required=True)
+            p.add_argument("--confirm", required=True)
+        if action == "planning-start":
+            p.add_argument("--confirm", required=True)
         if action in {
             "reconnect",
             "resume",

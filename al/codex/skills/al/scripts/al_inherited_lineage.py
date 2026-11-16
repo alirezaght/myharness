@@ -86,6 +86,11 @@ def predecessor_layers(st, seen=()):
     if reference['sha256'] in seen or len(seen) >= 16:
         refuse('cyclic inherited source lineage')
     lineage = read_reference(reference)
+    if lineage['kind'] == 'missing-state-successor-source-lineage-v1':
+        recovery = read_reference(lineage['recovery_lineage_ref'])
+        if recovery['kind'] != 'missing-state-recovery-lineage-v1':
+            refuse('invalid typed missing-state recovery lineage')
+        return []
     previous = read_reference(lineage['predecessor_state_ref'])
     prior_binding = read_reference(lineage['predecessor_binding_ref'])
     if (previous['run_id'] != prior_binding['run_id'] or previous['session_id'] != prior_binding['session_id']
@@ -95,6 +100,15 @@ def predecessor_layers(st, seen=()):
 
 
 def classify(st, current_capture=None):
+    if 'inherited_lineage' in st:
+        _, lineage = current(st)
+        if historical_recovery(st):
+            import al_task_attribution as T
+            paths = T.S.changed_paths(st['identity']['merge_base'])
+            return {'attributed': False, 'task_owned': [], 'unchanged_preexisting': [],
+                    'externally_changed': paths, 'ambiguous': [], 'overlapping_or_ambiguous': [],
+                    'discovery_paths': paths, 'limitations': [
+                        'predecessor source baseline/ownership unavailable; conservative recovery observation']}
     return compose([*predecessor_layers(st), st], st, current_capture)
 
 
@@ -142,6 +156,18 @@ def map_scope(st, task):
     for amendment in requirements['amendments']:
         if not amendment.get('scoped'):
             continue
+        recovery = historical_recovery(st)
+        inherited_origin = next((layer for layer in reversed(layers) if amendment['id'] in layer['integration']['deliveries']),None)
+        if recovery and inherited_origin is None:
+            scope = next((r for r in recovery['historical_scopes'] if r['id'] == amendment['id']), None)
+            if scope is None or set(scope['tasks']) != set(amendment['affected_tasks']):
+                refuse('recovery amendment historical scope is unavailable')
+            paths = sorted({p for record in scope['tasks'].values() for p in record['files']})
+            if (set(task['criteria']) & set(amendment['affected_criteria'])
+                    or any(overlaps(a,b) for a in task['files'] for b in paths)):
+                mapped.append({'id':amendment['id'],'artifact_sha256':amendment['artifact']['sha256'],
+                    'predecessor_tasks':amendment['affected_tasks'],'paths':paths,'criteria':amendment['affected_criteria']})
+            continue
         origin = next((layer for layer in reversed(layers) if amendment['id'] in layer['integration']['deliveries']),None)
         if origin is None or any(t not in origin['integration']['tasks'] for t in amendment['affected_tasks']):
             refuse('inherited amendment scope provenance missing')
@@ -167,3 +193,36 @@ def verification_debt(st):
     debt=lineage['source_anchors']['verification_obligations']
     return debt['required'] + ['fresh verification of predecessor check obligation: '+area for area in debt['predecessor_check_areas']] + [
         'fresh observation of predecessor operational issue: '+issue for issue in debt['predecessor_open_issues']]
+
+
+def historical_recovery(st):
+    from installer.runtime_successor_store import read_reference
+    seen = set()
+    while 'inherited_lineage' in st:
+        ref = st['inherited_lineage']['reference']
+        if ref['sha256'] in seen or len(seen) >= 16:
+            refuse('cyclic inherited recovery lineage')
+        seen.add(ref['sha256'])
+        lineage = read_reference(ref)
+        if lineage['kind'] == 'missing-state-successor-source-lineage-v1':
+            return read_reference(lineage['recovery_lineage_ref'])
+        st = read_reference(lineage['predecessor_state_ref'])
+    return None
+
+
+def require_recovery_complete(st):
+    """Fresh current specification authorship resolves admission, never historical gaps."""
+    if not historical_recovery(st):
+        return
+    import al_planning as P
+    import al_proof_json as J
+    current = st.get('planning_authorship', {})
+    if not {'packet', 'attempt', 'report', 'obligations'} <= current.keys():
+        refuse('recovered planning needs a fresh current Architect planning report before implementation; '
+               'use planning packet, the actual Architect invocation, then planning report')
+    # A publicly saved report already validated its fresh observation. Subsequent
+    # authorized implementation changes do not turn past ownership into known history.
+    current, contents, attempt = P.packet(st, current_source=False)
+    authored = P.validate_report(st, J.read(current['report']), current, contents, attempt, current['report'])
+    if J.raw(J.read(current['obligations'])) != J.raw(authored):
+        refuse('recovered current scope differs from its saved Architect obligations')

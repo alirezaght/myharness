@@ -37,6 +37,8 @@ def validate(st):
 
 
 def require_ready(st, *, task_id=None, paths=()):
+    from al_inherited_lineage import require_recovery_complete
+    require_recovery_complete(st)
     from al_new_origin import validate as origin
     from al_rework_recovery_contract import guard
     from al_scope import validate_identity

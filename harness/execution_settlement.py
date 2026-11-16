@@ -6,7 +6,7 @@ from pathlib import Path
 
 from harness.execution_bootstrap import execution_environment
 from harness.execution_contract import canonical, digest
-from harness.execution_handoff import durable_file
+from harness.execution_handoff import atomic_file, durable_file
 from harness.execution_hosts import al_argv, al_source, managed_launcher
 from harness.execution_initialization import validate_existing_origin
 from harness.execution_models import ExecutionConflict
@@ -35,7 +35,7 @@ def record_closed_context(execution, token, process, runtime):
         "tool_transport_closed": True,
     }
     path = Path(execution["handoff_path"]).parent / "settlements" / ("native-" + token + ".json")
-    durable_file(path, canonical(observation).encode())
+    atomic_file(path, canonical(observation).encode())
 
 
 def closed_context(execution, native):
@@ -44,11 +44,15 @@ def closed_context(execution, native):
         / "settlements"
         / ("native-" + native["token"] + ".json")
     )
-    if not path.exists():
+    from harness.template_classification import _ordinary
+
+    try:
+        raw, mode = _ordinary(path, 65536)
+    except FileNotFoundError:
         return False
-    if path.is_symlink() or path.stat().st_nlink != 1 or path.stat().st_size > 65536:
-        raise ExecutionConflict("invalid native teardown receipt")
-    value = json.loads(path.read_bytes())
+    if mode != 0o600:
+        raise ExecutionConflict("invalid native teardown receipt permissions")
+    value = json.loads(raw)
     if type(value.get("native_returncode")) is not int:
         raise ExecutionConflict("native teardown has no verified exit result")
     return value == {

@@ -86,7 +86,7 @@ def ready(st):
         refuse("; ".join(missing))
 
 
-def packet(st):
+def packet(st, *, current_source=True):
     current = st.get("planning_authorship")
     if not isinstance(current, dict) or not {"packet", "attempt"} <= current.keys():
         refuse("no issued Architect planning packet")
@@ -108,7 +108,7 @@ def packet(st):
     if value["schema_version"] != 1 or value["kind"] != "architect-planning-packet-v1":
         refuse("unsupported Architect planning packet")
     observed = J.read(value["source_observation"])
-    historical = st["proof_admission"]["status"] == "admitted"
+    historical = st["proof_admission"]["status"] == "admitted" or not current_source
     if not historical:
         from al_task_attribution import observe
 

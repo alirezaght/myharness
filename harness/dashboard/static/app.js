@@ -292,7 +292,11 @@ function renderTask(task) {
     statusDetails.dataset.viewDisclosure = "task-status-details";
     statusDetails.append(el("summary", "Status and next-step details"), renderStatusSummary(task));
     section.append(statusDetails);
-  } else section.append(renderStatusSummary(task));
+    section.append(renderKnowledgePanel(task.id));
+  } else {
+    section.append(renderStatusSummary(task));
+    section.append(renderKnowledgePanel(task.id));
+  }
   if (task.execution && task.approval_center?.final?.blockers?.some(item => item.code === "approved")) {
     const approved = document.createElement("details");
     approved.dataset.viewDisclosure = "approved-specification-record";

@@ -41,10 +41,12 @@ def require_active(subject):
     }:
         raise ValueError("active successor selector differs from protected transition")
     plan = read(directory / "plan.json")
-    old = Store.read_reference(plan["predecessor_state_ref"])
+    handoff = (plan["authority_handoff_ref"]["path"]
+               if plan["kind"] == "missing-state-successor-start-plan-v1"
+               else Store.read_reference(plan["predecessor_state_ref"])["integration"]["handoff"])
     _authority(
         plan["request"]["authority_snapshot_ref"],
-        old["integration"]["handoff"],
+        handoff,
         directory / "context.json",
         activation_path=directory / "activation-plan.json",
     )
@@ -103,8 +105,10 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
         successor = receipt["successor_transaction"]
         prior_lock = capabilities[fingerprint(subjects[1])]
         successor_lock = capabilities[fingerprint(subjects[0])]
+        recovery = plan["kind"] == "missing-state-successor-start-plan-v1"
         for transaction in sorted([prior, successor], key=lambda t: str(state_path(t))):
-            locks.enter_context(_session_lock(transaction))
+            if not recovery or transaction != prior:
+                locks.enter_context(_session_lock(transaction))
         require_quiescent(repository)
         journal_path = directory / "activation-journal.json"
         current_prior = read(prior_lock.path)
@@ -112,11 +116,15 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
             raise ValueError("successor protected binding changed")
         if digest(capture(state_path(successor))[0]) != receipt["successor_state_ref"]["sha256"]:
             raise ValueError("prepared successor state changed before activation")
-        old = Store.read_reference(plan["predecessor_state_ref"])
+        old = None if recovery else Store.read_reference(plan["predecessor_state_ref"])
+        handoff = plan["authority_handoff_ref"]["path"] if recovery else old["integration"]["handoff"]
         if current_prior == prior:
+            if recovery:
+                from .runtime_successor_recovery import require_absent
+                require_absent(prior)
             authorization = _authority(
                 original["authority_snapshot_ref"],
-                old["integration"]["handoff"],
+                handoff,
                 directory / "context.json",
                 directory / "resources.json",
             )
@@ -127,7 +135,7 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
             )
             if (
                 candidate != receipt["candidate_identity"]
-                or capture(state_path(prior))[0]
+                or not recovery and capture(state_path(prior))[0]
                 != capture(Path(plan["predecessor_state_ref"]["stored_path"]))[0]
             ):
                 raise ValueError("predecessor inputs changed before activation")
@@ -145,7 +153,7 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
             Store.immutable(clock_path, clock)
         selector = {
             "activated_at": clock["activated_at"],
-            "predecessor_child_ids": sorted(old["integration"]["agents"]),
+            "predecessor_child_ids": [] if recovery else sorted(old["integration"]["agents"]),
             "schema_version": 1,
             "kind": "active-successor-epoch-v1",
             "execution_id": original["execution_id"],
@@ -193,7 +201,7 @@ def _activate_successor(repository, platform, identifier, coordinator_fd):
             raise ValueError("activation database acknowledgement differs")
         selected_authority = _authority(
             original["authority_snapshot_ref"],
-            old["integration"]["handoff"],
+            handoff,
             directory / "context.json",
             activation_path=directory / "activation-plan.json",
         )

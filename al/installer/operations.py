@@ -207,7 +207,7 @@ def run_operation(request, state_root):
                       'pending': None, 'runtime_roots': []}
         reject_pending(row, state_root)
         check_current(row, state_root)
-        roots = activity_roots(rows, target, [*row.get('runtime_roots', []), *request.get('runtime_roots', [])], request.get('invoking'))
+        roots = activity_roots(rows, target, [*row.get('runtime_roots', []), *request.get('runtime_roots', [])], request.get('invoking'), state_root=state_root)
         activity = require_inactive(roots)
         reviews, adoption = request.get('reviews') or {}, request.get('adoption') or {}
         reviewed = check_instructions(target, reviews)

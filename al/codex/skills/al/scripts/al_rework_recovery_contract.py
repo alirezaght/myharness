@@ -44,8 +44,8 @@ def require_current(st):
     transaction=context().transaction
     protected={key:transaction[key] for key in (
         'kind','schema_version','run_id','publication_transaction','pin','initialization')}
-    if transaction['schema_version']==2:
-        protected.update({key:transaction[key] for key in ('runtime_layout','runtime_directory')})
+    from installer.runtime_pin_transaction import layout_fields
+    protected.update({key:transaction[key] for key in layout_fields(transaction)})
     if (st.get('session_id')!=transaction['session_id'] or st.get('run_id')!=transaction['run_id']
             or st.get('runtime_origin')!=protected
             or any(st.get('identity',{}).get(key)!=value for key,value in transaction['repository_identity'].items())):

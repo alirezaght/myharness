@@ -11,6 +11,8 @@ from harness.execution_contract import canonical, digest
 
 TOOLS = (
     "read_file",
+    "knowledge_query",
+    "knowledge_explain",
     "apply_patch",
     "run_command",
     "poll_process",

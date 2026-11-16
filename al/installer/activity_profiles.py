@@ -195,7 +195,7 @@ def _modern(value, path, provenance):
     # New pinned runs bind their state to an independently protected launcher transaction.
     origin = value.get('runtime_origin')
     if origin is not None:
-        if (not isinstance(origin, dict) or origin.get('schema_version') not in {1, 2} or origin.get('kind') != 'run-pin-binding-v' + str(origin.get('schema_version'))
+        if (not isinstance(origin, dict) or origin.get('schema_version') not in {1, 2, 3} or origin.get('kind') != 'run-pin-binding-v' + str(origin.get('schema_version'))
                 or origin.get('run_id') != value['run_id'] or not isinstance(origin.get('pin'), dict)
                 or not re.fullmatch(r'[0-9a-f]{64}', str(origin.get('publication_transaction')))):
             raise ValueError('invalid pinned runtime origin')
@@ -204,6 +204,19 @@ def _modern(value, path, provenance):
             if (origin.get('runtime_layout') != 'harness-session-directory-v1'
                     or origin.get('runtime_directory') != str(expected) or path.parent != expected):
                 raise ValueError('private runtime identity/layout differs')
+        if origin['schema_version'] == 3:
+            from .runtime_durable_layout import directory
+            from .runtime_pin_transaction import key, read
+            initial = origin['initialization']
+            storage_root = Path(initial['stored_path']).parent.parent
+            subject = {'repository_identity': provenance['repository'], 'platform': provenance['platform'],
+                       'session_id': value['session_id']}
+            transaction = read(storage_root / 'runs' / (key(subject) + '.json'))
+            if (transaction.get('status') != 'ACTIVE'
+                    or transaction.get('run_id') != value['run_id']
+                    or any(origin.get(k) != transaction.get(k) for k in origin)
+                    or path.parent != directory(transaction, storage_root)):
+                raise ValueError('durable runtime activity identity differs')
         admission = value.get('proof_admission')
         if not isinstance(admission, dict) or admission.get('status') not in {'pending', 'admitted'}:
             raise ValueError('pinned run lacks a valid proof admission')

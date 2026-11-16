@@ -26,18 +26,21 @@ def parser():
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
     successor = sub.add_parser('runtime-successor', help='trusted operator successor preparation only')
     child = successor.add_subparsers(dest='successor_action', required=True)
-    for action in ('prepare', 'activate', 'inputs', 'inspect', 'distribution'):
+    for action in ('prepare', 'activate', 'inputs', 'recovery-inputs', 'origin', 'inspect', 'distribution'):
         command = child.add_parser(action)
         command.add_argument('--platform', choices=('codex', 'claude'), required=True)
-        if action != 'distribution':
+        if action not in {'distribution', 'origin'}:
             command.add_argument('--request-id', required=True)
-        if action in {'prepare', 'activate', 'inputs'}:
+        if action in {'prepare', 'activate', 'inputs', 'recovery-inputs', 'origin'}:
             command.add_argument('--repository', required=True)
-            if action != 'inputs':
+            if action not in {'inputs', 'recovery-inputs', 'origin'}:
                 command.add_argument('--coordinator-fd', type=int, required=True)
             else:
                 command.add_argument('--session', required=True)
-                command.add_argument('--authority-ref', required=True)
+                if action != 'origin':
+                    command.add_argument('--authority-ref', required=True)
+                if action == 'recovery-inputs':
+                    command.add_argument('--handoff-ref', required=True)
     for name in ('source-proof','planning-proof','replan-proof','compatibility-readiness'):
         proof = sub.add_parser(name, help='read-only protected source policy validation')
         proof.add_argument('--repository', required=True)
@@ -108,6 +111,13 @@ def main(argv=None):
             elif args.successor_action == 'inputs':
                 from .runtime_successor import preparation_inputs
                 result = preparation_inputs(args.repository,args.platform,args.session,args.request_id,json.loads(args.authority_ref))
+            elif args.successor_action == 'recovery-inputs':
+                from .runtime_successor_recovery import recovery_inputs
+                result = recovery_inputs(args.repository,args.platform,args.session,args.request_id,
+                    json.loads(args.authority_ref),json.loads(args.handoff_ref))
+            elif args.successor_action == 'origin':
+                from .runtime_harness_start import inspect_origin
+                result = inspect_origin(args.repository, args.platform, args.session)
             elif args.successor_action == 'activate':
                 from .runtime_successor_activation import activate_successor
                 result = activate_successor(args.repository, args.platform, args.request_id, args.coordinator_fd)

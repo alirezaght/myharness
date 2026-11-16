@@ -15,6 +15,7 @@ from harness.cli_design import add_design_parser
 from harness.cli_diagnostics import add_diagnostics_parser
 from harness.cli_execution import add_execution_parser
 from harness.cli_interview import add_interview_parser
+from harness.cli_knowledge import add_knowledge_parser
 from harness.cli_resume import add_resume_parser
 from harness.cli_review import add_review_parser
 from harness.cli_spec import add_spec_parser
@@ -89,6 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_resume_parser(subparsers)
     add_approve_parser(subparsers)
     add_execution_parser(subparsers)
+    add_knowledge_parser(subparsers)
     add_delivery_parser(subparsers)
     add_browser_parser(subparsers)
     add_diagnostics_parser(subparsers)

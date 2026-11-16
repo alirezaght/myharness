@@ -400,7 +400,7 @@ def prepared_context(value):
     if (
         Path(reference["stored_path"]) != expected
         or expected.is_relative_to(Path(value["repository"]))
-        or plan["kind"] != "successor-start-plan-v1"
+        or plan["kind"] not in {"successor-start-plan-v1", "missing-state-successor-start-plan-v1"}
         or plan["request"]["request_id"] != value["request_id"]
         or plan["successor_transaction"] != value["successor"]
         or plan["predecessor_transaction"] != value["predecessor"]

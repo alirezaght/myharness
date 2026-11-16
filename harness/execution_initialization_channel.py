@@ -78,8 +78,16 @@ def build_start_resources(controller, execution, plan_ref, notification):
         Path(execution["handoff_path"]).parent / "runtime-preparations" / context["request_id"]
     )
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    old_state = json.loads(Path(notification["predecessor_state_ref"]["stored_path"]).read_bytes())
-    package_ref = old_state["task_package"]
+    if "recovery_lineage_ref" in notification:
+        from harness.execution_runtime_fences import _reference
+
+        recovery = _reference(notification["recovery_lineage_ref"])
+        package_ref = recovery["original_package_ref"]
+    else:
+        old_state = json.loads(
+            Path(notification["predecessor_state_ref"]["stored_path"]).read_bytes()
+        )
+        package_ref = old_state["task_package"]
     raw = Path(package_ref["stored_path"]).read_bytes()
     if hashlib.sha256(raw).hexdigest() != package_ref["sha256"]:
         raise ValueError("original approved package changed")
@@ -89,7 +97,17 @@ def build_start_resources(controller, execution, plan_ref, notification):
     handoff = dict(
         envelope,
         al_session_id=context["successor"]["session_id"],
-        runtime_layout="harness-session-directory-v1",
+        runtime_layout=context["successor"].get("runtime_layout", "harness-session-directory-v1"),
+        **(
+            {
+                "runtime_binding": {
+                    "storage": notification["storage"],
+                    "transaction": context["successor"],
+                }
+            }
+            if context["successor"]["schema_version"] == 3
+            else {}
+        ),
     )
     handoff_raw = canonical(handoff).encode()
     durable_file(handoff_path, handoff_raw)

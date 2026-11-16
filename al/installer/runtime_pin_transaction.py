@@ -107,7 +107,17 @@ LAYOUT = "harness-session-directory-v1"
 LAYOUT_FIELDS = {"runtime_layout", "runtime_directory"}
 
 
+def layout_fields(value):
+    if value.get("schema_version") == 3:
+        from .runtime_durable_layout import FIELDS
+        return FIELDS
+    return LAYOUT_FIELDS if value.get("schema_version") == 2 else set()
+
+
 def runtime_directory(value):
+    if value.get("schema_version") == 3:
+        from .runtime_durable_layout import directory
+        return directory(value, storage(readonly=True))
     base = Path(value["repository_identity"]["root"]) / ("." + value["platform"]) / "al-runtime"
     if value.get("schema_version") == 2:
         expected = base / "sessions" / value["session_id"]
@@ -135,12 +145,16 @@ def reserve(value, pin, *, private_session=False):
         return reserve_locked(capability, pin, private_session=private_session)
 
 
-def reserve_locked(capability, pin, *, private_session=False):
+def reserve_locked(capability, pin, *, private_session=False, harness_binding=None):
     value, path = capability.value, capability.path
     capability.validate(value)
     if path.exists():
         transaction = read(path)
         validate(transaction, value)
+        if harness_binding is not None and (
+                transaction["schema_version"] != 3 or any(
+                    transaction["harness_binding"].get(k) != v for k, v in harness_binding.items())):
+            raise ValueError("reserved durable Harness authority changed")
         return transaction
     if state_path(value).exists():
         raise ValueError("existing run requires its original issuing runtime")
@@ -154,7 +168,16 @@ def reserve_locked(capability, pin, *, private_session=False):
         "status": "RESERVED",
         "initialization": None,
     }
-    if private_session:
+    if harness_binding is not None:
+        from .runtime_durable_layout import LAYOUT as durable_layout, directory as durable_directory
+        if not private_session or set(harness_binding) != {"authority_identity", "execution_id", "authority_generation"}:
+            raise ValueError("durable runtime requires verified closed Harness authority")
+        binding = dict(harness_binding, epoch_id=("legacy-0" if harness_binding["authority_generation"] == 0 else "epoch-" + transaction["run_id"]))
+        directory = storage() / "harness-runtimes" / binding["authority_identity"] / binding["execution_id"] / binding["epoch_id"]
+        transaction.update(schema_version=3, kind="run-pin-binding-v3", runtime_layout=durable_layout,
+                           runtime_directory=str(directory), harness_binding=binding)
+        durable_directory(transaction, storage(), create=True)
+    elif private_session:
         directory = Path(value["repository_identity"]["root"]) / ("." + value["platform"]) / "al-runtime" / "sessions" / value["session_id"]
         transaction.update(schema_version=2, kind="run-pin-binding-v2",
                            runtime_layout=LAYOUT, runtime_directory=str(safe(directory)))
@@ -177,11 +200,11 @@ def validate(transaction, value):
         "initialization",
     }
     version = transaction.get("schema_version") if isinstance(transaction, dict) else None
-    expected_fields = fields | LAYOUT_FIELDS if version == 2 else fields
+    expected_fields = fields | layout_fields(transaction)
     if (
         not isinstance(transaction, dict)
         or set(transaction) != expected_fields
-        or version not in {1, 2}
+        or version not in {1, 2, 3}
         or transaction["kind"] != "run-pin-binding-v" + str(version)
         or transaction["status"] not in {"RESERVED", "ACTIVE"}
         or any(transaction.get(k) != v for k, v in value.items())
@@ -252,8 +275,7 @@ def read_state(transaction):
             "initialization",
         )
     }
-    if transaction["schema_version"] == 2:
-        expected.update({k: transaction[k] for k in LAYOUT_FIELDS})
+    expected.update({k: transaction[k] for k in layout_fields(transaction)})
     if (
         state.get("session_id") != transaction["session_id"]
         or state.get("run_id") != transaction["run_id"]

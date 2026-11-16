@@ -74,8 +74,11 @@ def initialize_execution(controller, execution, package, envelope):
         ),
         (eid, execution["epoch_id"], utcnow()),
     )
-    source = al_source(execution, envelope)
-    if source.exists():
+    try:
+        source = al_source(execution, envelope)
+    except FileNotFoundError:
+        source = None
+    if source is not None and source.exists():
         # ACTIVE is reused. RESERVED is repaired only by the same managed start below.
         try:
             identity = initialization_identity(execution, envelope)
@@ -94,7 +97,8 @@ def initialize_execution(controller, execution, package, envelope):
             str(Path(execution["handoff_path"]).parent / "task-package.json"),
             "--handoff",
             execution["handoff_path"],
-            session_directory=envelope.get("runtime_layout") == "harness-session-directory-v1",
+            session_directory=envelope.get("runtime_layout")
+            in {"harness-session-directory-v1", "harness-durable-epoch-v1"},
         )
         from harness.execution_bootstrap import execution_environment
 
@@ -110,6 +114,31 @@ def initialize_execution(controller, execution, package, envelope):
             raise ExecutionConflict(
                 "guarded AL initialization refused; exact run requires reconciliation: "
                 + redact((result.stderr + result.stdout).decode(errors="replace")[-4096:])
+            )
+        if (
+            envelope.get("runtime_layout") == "harness-durable-epoch-v1"
+            and "runtime_binding" not in envelope
+        ):
+            from harness.execution_handoff import atomic_file
+            from harness.execution_runtime_layout import durable_runtime
+            from harness.execution_runtime_recovery import _launcher_call
+
+            origin = _launcher_call(
+                package["launcher"],
+                envelope["repository"],
+                "origin",
+                "--repository",
+                envelope["repository"],
+                "--platform",
+                execution["host"],
+                "--session",
+                execution["al_session_id"],
+            )
+            binding = {k: origin[k] for k in ("storage", "transaction")}
+            durable_runtime(binding, envelope["repository"], session_id=execution["al_session_id"])
+            atomic_file(
+                Path(execution["handoff_path"]).parent / "runtime-binding.json",
+                canonical(binding).encode(),
             )
         identity = initialization_identity(execution, envelope)
     identity = validate_existing_origin(execution, envelope, package["launcher"])

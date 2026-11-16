@@ -21,6 +21,16 @@ def _schema(properties, required):
 STRING = {"type": "string", "maxLength": 65536}
 INTEGER = {"type": "integer", "minimum": 0, "maximum": 1048576}
 SCHEMAS = {
+    "knowledge_query": _schema(
+        {
+            "query": {"type": "string", "maxLength": 4096},
+            "entity_refs": {"type": "array", "items": STRING, "maxItems": 40},
+        },
+        [],
+    ),
+    "knowledge_explain": _schema(
+        {"bundle_hash": STRING, "assertion_id": STRING}, ["bundle_hash", "assertion_id"]
+    ),
     "read_file": _schema({"path": STRING, "offset": INTEGER, "limit": INTEGER}, ["path"]),
     "apply_patch": _schema(
         {"patch": STRING, "task_id": STRING, "expected_revision": STRING},

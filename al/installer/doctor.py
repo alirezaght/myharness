@@ -52,7 +52,7 @@ def doctor(selection=None, state_root=None, *, runtime_roots=(), invoking=None):
             except (ValueError, OSError, KeyError, TypeError) as exc:
                 checks.append({'target_id': row['target_id'], 'status': 'FAIL', 'error': str(exc)})
                 errors.append(str(exc))
-        activity = scan_activity(activity_roots(rows, explicit=runtime_roots, invoking=invoking))
+        activity = scan_activity(activity_roots(rows, explicit=runtime_roots, invoking=invoking, state_root=state_root))
         errors.extend(item['path'] + ': ' + item['reason'] for item in activity['blockers'])
     except (ValueError, OSError, KeyError, TypeError) as exc:
         errors.append(str(exc))

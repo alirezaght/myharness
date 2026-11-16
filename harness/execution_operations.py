@@ -333,6 +333,13 @@ class OperationController:
         ]
         if any(profile_dir.is_relative_to(p) or p.is_relative_to(profile_dir) for p in authority):
             raise ValueError("operation scratch collides with execution authority")
+        from harness.execution_runtime_layout import selected_runtime_binding
+
+        runtime_binding = (
+            selected_runtime_binding(execution, self.envelope)
+            if self.envelope.get("runtime_layout") == "harness-durable-epoch-v1"
+            else None
+        )
         return prepare_operation_isolation(
             root,
             writable=writable,
@@ -354,6 +361,7 @@ class OperationController:
             directory=profile_dir,
             session_directory=(str(Path(self.initialization["source"]).parent) if al else None),
             coordination_lock=(self.initialization["coordination_lock"] if al else None),
+            runtime_binding=(runtime_binding if al else None),
             classification=classification,
             allow_classified_read=al,
         )
@@ -384,7 +392,11 @@ class OperationController:
                             {
                                 "principal": principal["thread_id"],
                                 "tool": name,
-                                "arguments": arguments,
+                                "arguments": (
+                                    {"request_sha256": digest(canonical(arguments).encode())}
+                                    if name in {"knowledge_query", "knowledge_explain"}
+                                    else arguments
+                                ),
                             }
                         )
                     ),
@@ -400,6 +412,8 @@ class OperationController:
                     mode = "delivery"
                 if name in {
                     "read_file",
+                    "knowledge_query",
+                    "knowledge_explain",
                     "poll_process",
                     "cancel_process",
                     "diagnostic",
@@ -416,12 +430,38 @@ class OperationController:
                 raise ValueError(str(error)) from None
             result = redact_value(result)
             conn.execute(
-                "UPDATE operation_audit SET outcome=? WHERE id=?", (canonical(result), audit)
+                "UPDATE operation_audit SET outcome=? WHERE id=?",
+                (
+                    canonical(
+                        {"bundle_hash": result.get("bundle_hash"), "status": "returned"}
+                        if name in {"knowledge_query", "knowledge_explain"}
+                        else result
+                    ),
+                    audit,
+                ),
             )
             return result
 
     def _dispatch(self, controller, principal, name, a, state):
         root, owner = self.envelope["repository"], principal["thread_id"]
+        if name in {"knowledge_query", "knowledge_explain"}:
+            from harness.knowledge.models import ContextRequest
+            from harness.knowledge.policy import derive_scope
+            from harness.knowledge.query import explain, query
+
+            execution = get_execution(controller.conn, self.execution_id)
+            scope = derive_scope(controller, execution, principal, state, Path(root))
+            if name == "knowledge_query":
+                if set(a) - {"query", "entity_refs"}:
+                    raise ValueError("closed knowledge query required")
+                return query(
+                    controller.conn,
+                    scope,
+                    ContextRequest(a.get("query", ""), tuple(a.get("entity_refs", ()))),
+                ).to_dict()
+            if set(a) != {"bundle_hash", "assertion_id"}:
+                raise ValueError("closed knowledge explanation required")
+            return explain(controller.conn, scope, a["bundle_hash"], a["assertion_id"])
         if name == "environment_operation":
             if a.get("operation") == "inspect" and set(a) == {"operation"}:
                 return self.tooling_status()

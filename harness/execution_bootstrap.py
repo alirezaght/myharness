@@ -125,7 +125,7 @@ def prepared_authority_snapshot(directory):
     from harness.execution_handoff import durable_file
 
     base = Path(directory) / "prepared-authority"
-    root = Path(authority_snapshot(base))
+    root = Path(authority_snapshot(base, versioned=True))
     executable = Path(sys.executable).resolve(strict=True)
     before = executable.stat()
     hasher = hashlib.sha256()
@@ -151,6 +151,6 @@ def prepared_authority_snapshot(directory):
         },
     }
     raw = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
-    path = base / "authority.json"
+    path = root.parent / "authority.json"
     durable_file(path, raw)
     return {"stored_path": str(path), "sha256": hashlib.sha256(raw).hexdigest()}

@@ -12,7 +12,7 @@ from .interpreter_execution import validate_live
 from .execution_process import observe
 from .runtime_pin import _directory, prepare_pin, verify_pin
 from .runtime_pin_boot import program
-from .runtime_pin_transaction import coordinated, read, reserve, storage, subject, validate
+from .runtime_pin_transaction import coordinated, publication_lock, read, reserve_locked, storage, subject, validate
 from .validator_origin import verify_snapshot
 
 
@@ -69,7 +69,7 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
         transaction = read(path) if path.exists() else None
         if transaction:
             validate(transaction, value)
-    if private_session and transaction is not None and transaction["schema_version"] != 2:
+    if private_session and transaction is not None and transaction["schema_version"] not in {2, 3}:
         raise ValueError("legacy flat AL run requires explicit migration before session-directory enrollment")
     if existing_run and (transaction is None or transaction["status"] != "ACTIVE"):
         raise ValueError("existing-run requires ACTIVE protected binding")
@@ -86,7 +86,12 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
         else:
             raise ValueError("new runtime requires its protected managed launcher")
         pin = prepare_pin(Path(trusted["snapshot"]), platform, _directory(storage() / "pins"))
-        transaction = reserve(value, pin, private_session=private_session)
+        harness_binding = None
+        if private_session:
+            from .runtime_harness_start import binding_for_start
+            harness_binding = binding_for_start(value, argv)
+        with publication_lock(value) as capability:
+            transaction = reserve_locked(capability, pin, private_session=private_session, harness_binding=harness_binding)
     if list(argv) == ["clear"] and not implicit:
         # Clearing the active pointer reads no run state, so the current launcher does it itself: a run
         # whose pinned runtime can no longer read its own state can still be put aside.

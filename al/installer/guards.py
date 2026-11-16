@@ -87,7 +87,7 @@ def scan_activity(roots):
     return {'roots': inspected, 'blockers': blockers, 'limitation': LIMITATION}
 
 
-def activity_roots(rows, target=None, explicit=(), invoking=None):
+def activity_roots(rows, target=None, explicit=(), invoking=None, *, state_root=None):
     repos = {row['target']['root'] for row in rows if row['target']['scope'] == 'repo'}
     if target and target['scope'] == 'repo':
         repos.add(target['root'])
@@ -99,6 +99,10 @@ def activity_roots(rows, target=None, explicit=(), invoking=None):
     roots.extend((Path(path), None) for path in explicit)
     if os.environ.get('AL_RUNTIME_DIR'):
         roots.append((Path(os.environ['AL_RUNTIME_DIR']), None))
+    if state_root is not None:
+        from .runtime_durable_layout import discover
+        roots.extend((Path(item['runtime_root']), item['repository']['root'])
+                     for item in discover(Path(state_root) / 'al-run-pins'))
     return roots
 
 

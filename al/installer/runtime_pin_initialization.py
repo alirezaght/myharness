@@ -5,7 +5,7 @@ import re
 
 from .registry import write_json
 from .runtime_pin import _directory, _sync
-from .runtime_pin_transaction import LAYOUT_FIELDS, coordinated, read, storage, validate, runtime_directory
+from .runtime_pin_transaction import layout_fields, coordinated, read, storage, validate, runtime_directory
 from .validator_origin import canonical, capture, digest
 
 
@@ -54,7 +54,7 @@ def read_initialization(transaction, *, storage_root=None):
 
     value = decode(raw)
     if (
-        set(value) != (KEYS | LAYOUT_FIELDS if version == 2 else KEYS)
+        set(value) != (KEYS | layout_fields(transaction))
         or value["schema_version"] != version
         or value["kind"] != "proof-admission-initialization-v" + str(version)
     ):
@@ -64,9 +64,9 @@ def read_initialization(transaction, *, storage_root=None):
         or value["runtime_pin"] != transaction["pin"]
     ):
         raise ValueError("proof initialization and protected run binding differ")
-    if version == 2:
+    if version in {2, 3}:
         runtime_directory(transaction)
-        if any(value[k] != transaction[k] for k in LAYOUT_FIELDS):
+        if any(value[k] != transaction[k] for k in layout_fields(transaction)):
             raise ValueError("proof initialization runtime layout differs")
     return value
 
@@ -82,7 +82,7 @@ def initialize(transaction, supplied):
 
 
 def initialize_locked(capability, transaction, supplied):
-    if set(supplied) != (KEYS | LAYOUT_FIELDS if transaction['schema_version'] == 2 else KEYS):
+    if set(supplied) != (KEYS | layout_fields(transaction)):
         raise ValueError('incomplete new-run proof initialization')
     subject = {k: transaction[k] for k in ('repository_identity', 'platform', 'session_id')}
     capability.validate(subject)
