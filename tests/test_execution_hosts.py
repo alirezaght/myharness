@@ -12,6 +12,27 @@ from harness.execution_worker import supervise
 from tests.execution_helpers import approved_execution
 
 
+@pytest.mark.parametrize("inherited_ceiling", [None, "600000"])
+def test_supervised_claude_waits_for_background_agents_without_changing_auth(
+    monkeypatch, inherited_ceiling
+):
+    from harness.native_runtime import native_auth_environment
+
+    key = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+    if inherited_ceiling is None:
+        monkeypatch.delenv(key, raising=False)
+    else:
+        monkeypatch.setenv(key, inherited_ceiling)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-auth-selection")
+    environment = native_auth_environment("claude")
+    assert environment[key] == "0"
+    assert environment["ANTHROPIC_AUTH_TOKEN"] == "synthetic-auth-selection"
+    assert environment["HOME"] == os.environ["HOME"]
+    for host in (None, "codex"):
+        assert native_auth_environment(host).get(key) == inherited_ceiling
+    assert os.environ.get(key) == inherited_ceiling
+
+
 def test_fixed_native_argv_and_explicit_resume():
     for host in ("claude", "codex"):
         start = start_argv(host, host, "/tmp/repo", "123")
@@ -86,8 +107,11 @@ def test_real_external_host_exit_zero_is_incomplete(
         children = {}
 
         def capture_child(argv, *args, **kwargs):
+            native_launch = argv[0] == str(executable) and "--version" not in argv
+            if native_launch:
+                assert kwargs["env"]["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] == "0"
             child = popen(argv, *args, **kwargs)
-            if argv[0] == str(executable):
+            if native_launch:
                 children[child.pid] = child
             return child
 

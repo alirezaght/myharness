@@ -676,7 +676,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 native_id,
             )
             isolation_stack.callback(runtime.close)
-            env = native_auth_environment()
+            env = native_auth_environment(execution["host"])
             argv = runtime.argv(envelope["repository"], resume=mode == "resume")
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             isolation_stack.close()

@@ -22,12 +22,17 @@ from harness.native_tool_policy import (
 )
 
 
-def native_auth_environment():
+def native_auth_environment(host=None):
     """Do not relocate HOME or override the provider's auth selection or credentials."""
     env = dict(os.environ)
     # These select the trusted Harness bridge, not a provider credential backend.
     for key in ("PYTHONPATH", "PYTHONHOME", "HARNESS_AUTHORITY_ROOT", "AL_RUNTIME_DIR"):
         env.pop(key, None)
+    if host == "claude":
+        # The Harness worker owns cancellation, authority checks and process
+        # cleanup. Claude's print-mode default otherwise kills background AL
+        # agents ten minutes after the supervisor's last turn, even during work.
+        env["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
     return env
 
 
