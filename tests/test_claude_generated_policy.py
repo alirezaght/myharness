@@ -62,6 +62,9 @@ def test_generated_policy_background_child_permissions(tmp_path, role):
     sibling = "al-scout" if role == "al-architect" else "al-architect"
 
     def dispatch(principal, name, arguments):
+        if principal["role"] == "orchestrator" and name == "read_file":
+            assert arguments == {"path": "harness:pending-work"}
+            return {"pending": [], "queued_setup": 0}
         attempted.append((principal["role"], name))
         assert principal["role"] == role, (
             "root or sibling operation escaped generated role isolation"
@@ -129,6 +132,8 @@ def test_generated_policy_background_child_permissions(tmp_path, role):
             )
             for key, name in channel_names.items()
         }
+        context["stop_transport"] = channels["orchestrator"]
+        context_path.write_text(json.dumps(context))
         package = {
             "package": str(Path(__file__).resolve().parents[1] / "al/claude/skills/al"),
             "executable": native_executable("claude"),

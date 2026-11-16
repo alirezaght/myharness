@@ -80,6 +80,7 @@ def test_generated_claude_permissions_cover_exact_declared_channels(tmp_path, mo
         "SessionStart",
         "SubagentStart",
         "PreToolUse",
+        "Stop",
         "WorktreeCreate",
         "WorktreeRemove",
     } == set(settings["hooks"])

@@ -152,9 +152,6 @@ class NativeRuntime:
                     },
                 }
                 context_path = profile / "context.json"
-                context_path.write_text(canonical(context))
-                context_path.chmod(0o600)
-
                 def verifier(channel, name, arguments):
                     return self.registry.resolve_claude(channel, name, arguments, context)
 
@@ -172,6 +169,9 @@ class NativeRuntime:
                             channel=channel,
                         )
                     )
+                context["stop_transport"] = channels["orchestrator"]
+                context_path.write_text(canonical(context))
+                context_path.chmod(0o600)
                 program = (
                     "import sys,runpy;sys.path.insert(0,"
                     + repr(trusted)

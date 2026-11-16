@@ -115,3 +115,20 @@ Malformed AL integration inputs return a structured `input_schema` diagnostic
 with operation, missing/unexpected fields and recovery reference without saving
 reporting state. The pinned `reference/schemas/blocker.json` documents blocker
 input.
+
+## Supervised native completion
+
+Claude profiles include a Stop hook that reads `harness:pending-work` through the
+existing attested supervisor MCP channel. It asks the supervisor to continue while
+owned commands run, setup is queued, or terminal command results remain uncollected.
+This resource contains handles and lifecycle status, never command output. Child
+roles cannot inspect other agents' pending work. Only an owning principal's final
+`poll_process` page acknowledges a command result; cancellation still requires
+collecting its terminal outcome. Stopping a turn never constitutes AL completion.
+
+Provider errors and user interruption retain their normal exit and cleanup paths.
+The hook does not grant execution authority, bypass an AL gate, retry a provider
+failure, or prevent an operator from cancelling the execution. Claude's own
+consecutive-stop-continuation cap remains enabled; normal polling tool calls reset
+that counter. An unresponsive or incapable native agent can still terminate and
+must be reported as interrupted rather than completed.

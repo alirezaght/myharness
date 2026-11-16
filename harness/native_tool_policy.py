@@ -219,7 +219,7 @@ def build_claude_policy(package, directory, channels, hook, session_id):
         "settings.json": {
             "disableAllHooks": False,
             "enabledPlugins": {},
-            "hooks": required_hooks(hook[0], hook[1:]),
+            "hooks": required_hooks(hook[0], hook[1:], supervise_stop=True),
         },
         "agents.json": roles,
         "mcp.json": {

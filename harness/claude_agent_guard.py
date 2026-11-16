@@ -91,7 +91,7 @@ def guard_message(event, context):
     return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": value}}
 
 
-def required_hooks(command, arguments):
+def required_hooks(command, arguments, *, supervise_stop=False):
     hook = {
         "type": "command",
         "command": command,
@@ -99,7 +99,7 @@ def required_hooks(command, arguments):
         "timeout": 10,
         "onFailure": "block",
     }
-    return {
+    hooks = {
         "SessionStart": [{"hooks": [dict(hook)]}],
         "SubagentStart": [{"hooks": [dict(hook)]}],
         "PreToolUse": [
@@ -109,3 +109,6 @@ def required_hooks(command, arguments):
         "WorktreeCreate": [{"hooks": [dict(hook)]}],
         "WorktreeRemove": [{"hooks": [dict(hook)]}],
     }
+    if supervise_stop:
+        hooks["Stop"] = [{"hooks": [dict(hook)]}]
+    return hooks

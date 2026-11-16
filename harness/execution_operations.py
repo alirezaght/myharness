@@ -482,6 +482,13 @@ class OperationController:
 
             return diagram_operation(self, controller, principal, state, a)
         if name == "read_file":
+            if a["path"] == "harness:pending-work":
+                if principal["role"] != "orchestrator":
+                    raise ValueError("only the supervisor may inspect all pending work")
+                return {
+                    "pending": self.processes.pending(),
+                    "queued_setup": len(self.setup_pending),
+                }
             resources = {
                 "harness:tooling": self.tooling_status,
                 "harness:capabilities": lambda: {
