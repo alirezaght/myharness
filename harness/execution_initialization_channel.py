@@ -14,6 +14,16 @@ from harness.execution_handoff import durable_file
 from harness.owned_subprocess import run_owned
 
 LIMIT = 1024 * 1024
+OWNERSHIP_DIAGNOSTICS = {
+    "OWNERSHIP_ARGV_UNAVAILABLE": (
+        "Process arguments unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+    "OWNERSHIP_CWD_UNAVAILABLE": (
+        "Process cwd unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+}
 
 
 class PreparationFailure(ValueError):
@@ -179,11 +189,15 @@ class InitializationChannel:
                     "DISCONNECTED",
                     "INTERNAL",
                     "OWNERSHIP_UNAVAILABLE",
+                    *OWNERSHIP_DIAGNOSTICS,
                     "TASK_ACTIVITY",
                     "PAYLOAD_MISMATCH",
                 }
                 or payload["diagnostic"]
-                != "Successor preparation refused; inspect the protected request before retry."
+                != OWNERSHIP_DIAGNOSTICS.get(
+                    payload["code"],
+                    "Successor preparation refused; inspect the protected request before retry.",
+                )
             ):
                 raise ValueError("prepared coordinator error response refused")
             raise PreparationFailure(payload)

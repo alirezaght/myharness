@@ -117,3 +117,30 @@ def test_generated_codex_roles_await_assignment_before_reading_complete_handoff(
         )
         assert "next_offset until truncated is false" in instructions
         assert "complete managed evidence block" in instructions
+
+
+@pytest.mark.parametrize(
+    "reported",
+    [
+        "2.1.326 (Claude Code)",
+        "2.1.327 (Claude Code)",
+        "2.1.3260 (Claude Code)",
+        "prefix 2.1.326",
+        "2.1.326\n2.1.327",
+    ],
+)
+def test_claude_qualification_accepts_only_exact_version(tmp_path, monkeypatch, reported):
+    from types import SimpleNamespace
+
+    from harness.native_tool_policy import executable_identity
+
+    executable = tmp_path / "synthetic-claude"
+    executable.write_text("synthetic executable identity")
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=reported)
+    )
+    if reported == "2.1.326 (Claude Code)":
+        assert executable_identity(executable, "claude")["version"] == "2.1.326"
+    else:
+        with pytest.raises(ValueError, match="unsupported native executable version"):
+            executable_identity(executable, "claude")

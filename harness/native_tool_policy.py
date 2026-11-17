@@ -38,7 +38,7 @@ ROLES = (
 )
 SUPPORTED_NATIVE_VERSIONS = {
     "codex": frozenset({"0.164.0", "0.165.0"}),
-    "claude": frozenset({"2.1.310", "2.1.325"}),
+    "claude": frozenset({"2.1.310", "2.1.325", "2.1.326"}),
 }
 DISABLED = (
     "shell_tool shell_snapshot shell_snapshot_v2 unified_exec apply_patch_freeform "

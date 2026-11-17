@@ -384,7 +384,7 @@ def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(oper
         if observed["status"] != "Running":
             break
         time.sleep(0.05)
-    assert observed["result"]["status"] == "Ready", observed
+    assert observed["result"]["status"] == "Ready", json.dumps(observed, indent=2, sort_keys=True)
     assert observed["result"]["test_evidence"] is False
     assert not json.loads(path.read_bytes())["writers"]
     state["integration"]["tasks"]["setup-task"]["revision"] = 2

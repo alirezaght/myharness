@@ -404,7 +404,21 @@ def provisioning_profile(profile):
     return replace(profile, provisioning_network=True)
 
 
-def operation_argv(profile, argv):
+def _operation_cwd(profile, cwd):
+    path = Path(cwd).absolute()
+    repository = Path(profile.repository)
+    if (
+        ".." in path.parts
+        or not path.is_relative_to(repository)
+        or any(p.is_symlink() for p in (path, *path.parents) if p.is_relative_to(repository))
+        or not path.is_dir()
+    ):
+        raise ValueError("operation cwd must be an existing unaliased repository directory")
+    return str(path.resolve(strict=True))
+
+
+def operation_argv(profile, argv, *, cwd=None):
+    directory = profile.repository if cwd is None else _operation_cwd(profile, cwd)
     if profile.system == "Darwin":
         return ["/usr/bin/sandbox-exec", "-f", profile.policy, *argv]
     command = [
@@ -454,15 +468,15 @@ def operation_argv(profile, argv):
                     "Linux scratch protected descendant is absent; refusing write grant"
                 )
             command.extend(["--ro-bind", path, path])
-    command.extend(["--chdir", profile.repository, "--", *argv])
+    command.extend(["--chdir", directory, "--", *argv])
     return command
 
 
 @contextmanager
-def operation_command(profile, argv):
+def operation_command(profile, argv, *, cwd=None):
     """Keep the Linux syscall filter descriptor alive until spawn or exec consumes it."""
     if profile.system != "Linux":
-        yield operation_argv(profile, argv), ()
+        yield operation_argv(profile, argv, cwd=cwd), ()
         return
     import struct
 
@@ -500,7 +514,7 @@ def operation_command(profile, argv):
     path.chmod(0o600)
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
-        command = operation_argv(profile, argv)
+        command = operation_argv(profile, argv, cwd=cwd)
         command[1:1] = ["--seccomp", str(descriptor)]
         yield command, (descriptor,)
     finally:
@@ -522,14 +536,17 @@ def _validate_scratch(profile):
 
 def operation_popen(profile, argv, **kwargs):
     _validate_scratch(profile)
-    with operation_command(profile, argv) as (command, descriptors):
+    cwd = kwargs.get("cwd")
+    if cwd is not None:
+        kwargs["cwd"] = _operation_cwd(profile, cwd)
+    with operation_command(profile, argv, cwd=cwd) as (command, descriptors):
         extra = kwargs.pop("pass_fds", ())
         return subprocess.Popen(command, pass_fds=(*descriptors, *extra), **kwargs)
 
 
 def operation_exec(profile, argv, environment):
     _validate_scratch(profile)
-    with operation_command(profile, argv) as (command, descriptors):
+    with operation_command(profile, argv, cwd=os.getcwd()) as (command, descriptors):
         for descriptor in descriptors:
             os.set_inheritable(descriptor, True)
         os.execvpe(command[0], command, environment)
