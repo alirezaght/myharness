@@ -71,7 +71,11 @@
     "al_ledger.py",
     "al_new_origin.py",
     "al_operational_issues.py",
+    "al_package_checks.py",
+    "al_package_contracts.py",
+    "al_package_output.py",
     "al_package_policy.py",
+    "al_package_profiles.py",
     "al_parallel.py",
     "al_phases.py",
     "al_planning.py",
@@ -198,7 +202,8 @@
     "schemas/rework-recovery-receipt.json",
     "schemas/service-coverage.json",
     "schemas/task-package.json",
-    "service-coverage.md"
+    "service-coverage.md",
+    "schemas/package-script.json"
   ],
   "platform_adapters": {
     "codex_only": [],

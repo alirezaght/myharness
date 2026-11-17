@@ -13,19 +13,27 @@ import shlex
 from al_checkout_paths import MaterializationError, validate
 from al_gate_process import stop
 from al_verification_inputs import executable
+from al_package_output import InspectionError,inspect_call
 
 
 class SetupError(MaterializationError):
     pass
 
 
-def plan(root, cwd='.'):
+def plan(root, cwd='.', *, package_root=None):
     root = Path(root).resolve()
     current = root / cwd
     if root != current and root not in current.parents:
         raise SetupError('setup working directory escapes checkout')
     # A workspace lock at an ancestor governs its member packages.
     ancestors = list(reversed([current, *current.parents[:len(current.parts)-len(root.parts)]]))
+    if package_root is not None:
+        selected=Path(package_root)
+        if selected.is_absolute() or '..' in selected.parts or selected.as_posix()!=package_root:
+            raise SetupError('package setup root must be canonical and repository-relative')
+        directory=root/selected
+        if directory not in ancestors or directory.is_symlink():raise SetupError('package setup root is outside the member ancestry')
+        ancestors=[directory]
     for directory in ancestors:
         if directory != root and root not in directory.parents:
             continue
@@ -100,10 +108,10 @@ def needs_setup(root, argv):
     return bool(set(tokens)&{'uv','npm','pnpm','npx','yarn','pytest','ruff','eslint','turbo','pre-commit'})
 
 
-def execute(root, cwd, owner, log, timeout, records, argv=None):
+def execute(root, cwd, owner, log, timeout, records, argv=None, *, package_root=None, private_output=None):
     root = Path(root)
     if argv is not None and not needs_setup(root,argv):return
-    try:recipe = plan(root,cwd)
+    try:recipe = plan(root,cwd) if package_root is None else plan(root,cwd,package_root=package_root)
     except (OSError,ValueError) as exc:raise SetupError('invalid locked setup: '+str(exc)) from exc
     if recipe is None:return
     row = dict(recipe, stage='setup', status='RUNNING', started_at=time.time(), hook='NOT_RUN')
@@ -114,8 +122,14 @@ def execute(root, cwd, owner, log, timeout, records, argv=None):
             declared = json.loads((root/recipe['cwd']/'package.json').read_text()).get('packageManager')
             if declared:
                 requested = declared.split('@',1)[1]
-                version = owner.spawn([row['executable']['path'],'--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                try:stdout,_=version.communicate(timeout=10)
+                version = owner.spawn([row['executable']['path'],'--version'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT if private_output else subprocess.PIPE)
+                try:
+                    if private_output:
+                        _,stdout,metadata=inspect_call(owner,Path(log),'setup-version',private_output.run,version,10)
+                        if not metadata['complete']:raise SetupError('package manager version output/time budget exceeded')
+                        from al_package_output import write_metadata
+                        write_metadata(Path(log),'SETUP-VERSION',metadata)
+                    else:stdout,_=version.communicate(timeout=10)
                 finally:stop(version)
                 if version.returncode or stdout.decode().strip()!=requested:
                     raise SetupError('installed package manager does not match packageManager '+declared)
@@ -130,18 +144,30 @@ def execute(root, cwd, owner, log, timeout, records, argv=None):
         # Never inherit a working-tree dependency path into the disposable hook.
         env.pop('NODE_PATH',None)
         argv = [row['executable']['path'],*recipe['argv'][1:]]
-        with Path(log).open('ab') as out:
-            out.write(('setup: '+json.dumps(recipe,sort_keys=True)+'\n').encode());out.flush()
-            proc = owner.spawn(argv,cwd=root/recipe['cwd'],env=env,stdout=out,stderr=subprocess.STDOUT)
-            row['pid'] = proc.pid
-            try:code = proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                stop(proc);raise SetupError('locked dependency setup timed out')
-            finally:
-                stop(proc)
-                row['cleanup'] = owner.completion()
-            row['exit'] = code
+        if private_output:
+            from al_package_output import write_metadata
+            write_metadata(Path(log),'SETUP',{'schema_version':1,'manager':recipe['manager'],'cwd':recipe['cwd'],'inputs':recipe['inputs']})
+            proc=owner.spawn(argv,cwd=root/recipe['cwd'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+            row['pid']=proc.pid
+            code,raw,metadata=inspect_call(owner,Path(log),'setup-output',private_output.run,proc,timeout)
+            del raw
+            row['output']=metadata;row['cleanup']=owner.completion();row['exit']=code
+            write_metadata(Path(log),'SETUP-OUTPUT',metadata)
+            if not metadata['complete']:raise SetupError('locked dependency setup output/time budget exceeded')
             if code:raise SetupError('locked dependency setup failed with exit '+str(code))
+        else:
+            with Path(log).open('ab') as out:
+                out.write(('setup: '+json.dumps(recipe,sort_keys=True)+'\n').encode());out.flush()
+                proc = owner.spawn(argv,cwd=root/recipe['cwd'],env=env,stdout=out,stderr=subprocess.STDOUT)
+                row['pid'] = proc.pid
+                try:code = proc.wait(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    stop(proc);raise SetupError('locked dependency setup timed out')
+                finally:
+                    stop(proc)
+                    row['cleanup'] = owner.completion()
+                row['exit'] = code
+                if code:raise SetupError('locked dependency setup failed with exit '+str(code))
         if recipe['manager']=='uv':
             interpreter=root/recipe['cwd']/'.venv/bin/python'
             if interpreter.is_symlink():
@@ -160,6 +186,9 @@ def execute(root, cwd, owner, log, timeout, records, argv=None):
         if _tracked(root)!=before:raise SetupError('locked dependency setup changed repository inputs')
         if not row['cleanup']['complete']:raise SetupError('locked dependency setup cleanup is unresolved')
         row['status'] = 'PASS'
+    except InspectionError as exc:
+        row['status']='INFRA';row['reason']=exc.metadata['reason'];row['cleanup']=exc.metadata['cleanup']
+        raise
     except (OSError,ValueError,SetupError) as exc:
         row['status'] = 'INFRA';row['reason'] = str(exc)
         raise SetupError(str(exc)) from exc

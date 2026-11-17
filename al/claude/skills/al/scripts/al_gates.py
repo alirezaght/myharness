@@ -13,6 +13,7 @@ import al_checkouts
 import al_gate_reuse as R
 import al_gate_continuation as Continuation
 from al_gate_process import Owner,stop
+from al_package_output import InspectionError,inspect_call,write_metadata
 import al_evidence as E
 import al_gate_discovery as D
 import al_gate_inventory as V
@@ -121,6 +122,9 @@ def gate_result(st,m,g,stage,fp):
         import al_execution_receipts as Receipts
         valid=not Receipts.validate_association(st,e)
     if valid:valid=not ReviewState.gaps(st,g,e,fp)
+    if valid and g.get('package_script'):
+        import al_package_checks
+        valid=not al_package_checks.result_gaps(g['package_script'],e)
     if valid and stage=='candidate':
         valid=(e.get('kind')=='check' and e.get('gate_stage')=='candidate' and e.get('gate_manifest')==r['manifest']
                and e['argv']==g['argv'] and e['cwd']==g['cwd'] and e['scope']==g['scope']
@@ -191,7 +195,8 @@ def status(st):
         entry = L.find(st, run['evidence'])
         if entry:
             runs.append({'gate': run['gate'], 'stage': run['stage'], 'evidence': entry['id'],
-                         'status': entry['status'], 'reason': entry.get('note', ''), 'log': entry.get('log')})
+                         'status': entry['status'], 'reason': entry.get('note', ''), 'log': entry.get('log'),
+                         **({'package_script_result':entry['package_script_result']} if entry.get('package_script_result') else {})})
     return {'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),'evidence':runs,
             'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st),
             'coverage_blockers':__import__('al_service_coverage').admission_gaps(st),
@@ -283,8 +288,18 @@ def cmd_run(a,sid):
             note='isolated '+a.stage+' gate';dirty=None
             preparation=projection=receipt=None
             entry['invocation']=invocation
-            with Owner(log) as owner:
+            if g.get('package_script'):
+                from al_package_output import PrivateOwner, Capture
+                owner_type=PrivateOwner;private_output=Capture()
+            else:owner_type=Owner;private_output=None
+            with owner_type(log) as owner:
                 try:
+                    package_preflight=None
+                    if g.get('package_script'):
+                        import al_package_checks
+                        if g.get('review_state'):raise al_checkouts.MaterializationError('package review-state capture is unsupported')
+                        package_preflight=al_package_checks.preflight(al_store.REPO_ROOT,g['package_script'])
+                        entry['package_environment']=package_preflight['metadata']
                     current=al_store.load(sid)
                     if current['run_id']!=st['run_id'] or current['gate_manifests'][-1]['sha256']!=ref:
                         raise al_checkouts.MaterializationError('run or manifest changed before execution')
@@ -308,25 +323,32 @@ def cmd_run(a,sid):
                     gaps+=Sources.capability_gaps(g['scope'],g.get('sources',[]),S.source_rows(root),g['cwd'],root=root)
                     if gaps:raise al_checkouts.MaterializationError('; '.join(gaps))
                     if env_fingerprint!=L.scope_fingerprint([],g['env_names']):raise CandidateChanged('declared environment changed before execution')
-                    if g['category']=='pre-commit' and g['execution_kind']=='local':
+                    if (g['category']=='pre-commit' or g.get('package_script')) and g['execution_kind']=='local':
                         import al_check_setup
                         entry['execution_stage']='setup'
                         entry['hook_status']='NOT_RUN'
                         entry['setup']=[]
                         try:
-                            al_check_setup.execute(root,g['cwd'],owner,log,a.timeout,entry['setup'],argv=g['argv'])
+                            if g.get('package_script'):
+                                import al_package_checks
+                                al_package_checks.prepare_setup(root,g['package_script'])
+                            al_check_setup.execute(root,g['cwd'],owner,log,a.timeout,entry['setup'],argv=g['argv'],
+                                **({'package_root':g['package_script']['manager']['cwd'],'private_output':private_output} if g.get('package_script') else {}))
                         finally:E._commit(sid,entry)
                         # Setup output belongs to the disposable checkout; hooks are checked
                         # against this prepared state, with source/locks already verified.
                         initial=R.scratch_state(root)
                         before_state=initial
+                    if g.get('package_script'):
+                        import al_package_checks
+                        entry['package_runtime_tools']=al_package_checks.probe_runtime(root,g['package_script'],owner,private_output,log)
                     entry['execution_stage']='check'
                     cwd=al_checkouts.gate_cwd(root,g['cwd'])
                     fp=checkout['capture']['fingerprint'] if a.stage=='candidate' else m['base_oid']
                     key=R.execution_key(st,m,ref,g,a.stage,checkout['capture'],env_fingerprint,a.timeout)
                     entry['execution_key']=key
                     # Declared review-hook state is produced fresh by each execution, never by a receipt.
-                    if 'task_attribution' in current and g['execution_kind']=='local' and not g.get('review_state'):
+                    if 'task_attribution' in current and g['execution_kind']=='local' and not g.get('review_state') and not g.get('package_script'):
                         import al_execution_receipts as Receipts
                         import al_verification_prepare as Preparation
                         try:
@@ -347,6 +369,21 @@ def cmd_run(a,sid):
                         from al_remote_gates import execute_remote
                         status,code,provenance=execute_remote(st,g,a.stage,log,a.timeout,sid,entry,owner)
                         entry['remote_provenance']=provenance
+                    elif g.get('package_script'):
+                        import al_package_checks
+                        proc=owner.spawn(g['argv'],cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+                        entry['pid']=proc.pid;E._commit(sid,entry)
+                        code,raw,output=inspect_call(owner,log,'capture',private_output.run,proc,a.timeout)
+                        result=inspect_call(owner,log,'parse',al_package_checks.observed_result,g['package_script'],code,raw,output);del raw
+                        entry['package_script_result']=result;entry['counts']=result['counts']
+                        tools_after=inspect_call(owner,log,'recheck',al_package_checks.runtime_tools,root,g['package_script'])
+                        tools_before={k:v for k,v in entry['package_runtime_tools'].items() if k not in {'node_version','manager_version'}}
+                        if result['semantic_verdict']=='VERIFIED' and (entry['package_runtime_tools']['qualification_reasons'] or tools_before!=tools_after or not al_package_checks.preflight_current(package_preflight)):
+                            result['semantic_verdict']='UNVERIFIED';result['reasons']=['runtime/configuration qualification is unavailable or changed']
+                        entry['package_script_result']=result;entry['counts']=result['counts']
+                        verdict=result['semantic_verdict'];status='PASS' if verdict=='VERIFIED' else verdict if verdict in {'FAIL','EMPTY','INFRA'} else 'INFRA'
+                        note='package execution '+result['execution']+'; semantic coverage '+verdict
+                        write_metadata(log,'RESULT',result)
                     else:
                         state_top=ReviewState.prepare(root,g['review_state']) if g.get('review_state') else None
                         try:
@@ -386,7 +423,7 @@ def cmd_run(a,sid):
                     after_state=R.scratch_state(root,before_state,post_execution=True)
                     dirty=R.drift(before_state,after_state,root)
                     # Only an undeclared gate gets this; a declared review_state names its one location exactly.
-                    inferred=R.hook_state(before_state,after_state) if dirty=='FAIL' and status=='PASS' and not g.get('review_state') else None
+                    inferred=R.hook_state(before_state,after_state) if dirty=='FAIL' and status=='PASS' and not g.get('review_state') and not g.get('package_script') else None
                     if inferred:
                         # A hook's own new `.git/<name>` state is removed and noted, like a declared review state.
                         target=root/'.git'/inferred
@@ -398,10 +435,23 @@ def cmd_run(a,sid):
                             note=(note+'; ' if note else '')+'hook state .git/'+inferred+' removed'
                             log.write_bytes(log.read_bytes()+('\nhook state .git/'+inferred+' removed after execution\n').encode())
                     if dirty=='FAIL' and status=='PASS':
-                        report='\n'.join(R.drift_report(before_state,after_state))
+                        report='package checkout drift; raw path details suppressed' if g.get('package_script') else '\n'.join(R.drift_report(before_state,after_state))
                         status='FAIL';log.write_bytes(log.read_bytes()+('\nGenerated/checkout metadata drift detected\n'+report+'\n').encode())
                     if S.capture_candidate(st)['fingerprint']!=checkout['capture']['fingerprint']:
                         status='TORN';note='source candidate changed during gate execution'
+                except InspectionError as exc:
+                    entry['package_failure']=exc.metadata
+                    entry['cleanup']=dict(exc.metadata['cleanup'])
+                    if Continuation._uncertain(entry):entry['interrupted']=True
+                    observed=entry.get('package_script_result')
+                    negative=observed and observed.get('semantic_verdict') in {'FAIL','EMPTY'}
+                    status=observed['semantic_verdict'] if negative else 'INFRA'
+                    code=observed['exit'] if negative else 126
+                    note=('package observed '+status+'; ' if negative else '')+exc.metadata['reason']
+                    if observed:
+                        if observed['semantic_verdict']=='VERIFIED':
+                            observed['semantic_verdict']='UNVERIFIED';observed['reasons']=[exc.metadata['reason']]
+                        write_metadata(log,'RESULT',observed)
                 except CandidateChanged as exc:
                     status='TORN';code=126;note=str(exc);log.write_text(str(exc)+'\n')
                 except al_checkouts.MaterializationError as exc:
