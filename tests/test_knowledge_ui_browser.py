@@ -3,7 +3,6 @@
 import base64
 import json
 import re
-from pathlib import Path
 
 import pytest
 
@@ -13,8 +12,6 @@ pytestmark = [
     pytest.mark.browser,
     pytest.mark.skipif(CHROME is None, reason="Chrome/Chromium not installed"),
 ]
-
-ARTIFACTS = Path("/private/tmp/al-knowledge-platform-20261116/browser-artifacts")
 
 
 def _json_for_script(value):
@@ -103,7 +100,8 @@ def test_graph_is_bounded_keyboard_linked_safe_and_screenshot_ready(tmp_path):
     )
     html = tmp_path / "knowledge-graph.html"
     html.write_text(_page(STATIC_DIR, script), encoding="utf-8")
-    ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    artifacts = tmp_path / "browser-artifacts"
+    artifacts.mkdir()
     captures = []
     from tests.test_dashboard_live_view_state_browser import chrome, evaluate, wait
 
@@ -111,7 +109,7 @@ def test_graph_is_bounded_keyboard_linked_safe_and_screenshot_ready(tmp_path):
         (1280, 800, "knowledge-graph-desktop.png"),
         (390, 844, "knowledge-graph-narrow.png"),
     ):
-        artifact = ARTIFACTS / name
+        artifact = artifacts / name
         with chrome(tmp_path / f"graph-profile-{width}", html.as_uri(), width, height) as call:
             wait(call, "document.readyState === 'complete'")
             wait(call, "document.body.textContent.includes('GRAPH_UI_')")
@@ -370,8 +368,8 @@ def test_partial_snapshot_long_observation_accessibility_and_refresh_poll(tmp_pa
     )
     html = tmp_path / "knowledge-long-observation.html"
     html.write_text(_page(STATIC_DIR, script), encoding="utf-8")
-    artifacts = Path("/private/tmp/knowledge-completion-inputs-20261116/ui-polish-artifacts")
-    artifacts.mkdir(parents=True, exist_ok=True)
+    artifacts = tmp_path / "ui-polish-artifacts"
+    artifacts.mkdir()
 
     for width, height, name in (
         (1280, 800, "knowledge-ui-polish-desktop.png"),
@@ -537,7 +535,10 @@ def test_partial_snapshot_long_observation_accessibility_and_refresh_poll(tmp_pa
                 "window.scrollTo(0,summary.getBoundingClientRect().top+window.scrollY-380);",
             )
             shot = call("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": False})
-            (artifacts / name).write_bytes(base64.b64decode(shot["data"]))
+            artifact = artifacts / name
+            artifact.write_bytes(base64.b64decode(shot["data"]))
+        assert artifact.is_file() and artifact.stat().st_size > 0
+        print("knowledge UI polish screenshot: " + str(artifact))
 
 
 def test_execution_script_loads_and_seal_recovery_ui_retries_same_preview(tmp_path):
