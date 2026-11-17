@@ -1,56 +1,97 @@
-"""Fresh kernel census includes managed -c bootstraps and queued lock waiters."""
+"""Fresh task-attributed kernel census, independent of ambient working directories."""
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from .activity_process import identity, process_cwd
-from .execution_process import parent_pid, process_arguments
+from .execution_process import process_arguments
+from .runtime_successor_activity import recorded_processes, require_operations
 
 
-def require_quiescent(repository, *, excluded=()):
+def require_quiescent(repository, *, transaction, state, related=()):
     root = Path(repository).resolve(strict=True)
-    ignored = {os.getpid(), *excluded}
-    cursor = os.getpid()
-    while cursor > 1:
-        cursor = parent_pid(cursor)
-        ignored.add(cursor)
+    if transaction["repository_identity"]["root"] != str(root):
+        raise ValueError("successor census task identity differs")
+    require_operations(transaction, state)
+    subjects = [transaction, *related]
+    if any(t["repository_identity"] != transaction["repository_identity"] for t in subjects):
+        raise ValueError("successor census related task differs")
+    context = sys.modules.get("_al_validator_context")
+    if context is None or context.request.get("mode") != "snapshot":
+        raise ValueError("successor census requires authenticated coordinator")
+    coordinator = identity(os.getpid())
+    coordinator_argv = process_arguments(os.getpid())
     result = subprocess.run(["/bin/ps", "-axo", "pid=,uid="], capture_output=True, timeout=5)
     if result.returncode or len(result.stdout) > 4 * 1024 * 1024:
         raise ValueError("successor process census unavailable")
-    relevant = []
+    known = {pid: metadata for pid, metadata in recorded_processes(state)}
+    observed = set()
     for line in result.stdout.splitlines():
         values = line.split()
         if len(values) != 2 or not all(v.isdigit() for v in values):
             raise ValueError("successor process census malformed")
         pid, uid = map(int, values)
-        if uid != os.getuid() or pid in ignored:
+        if uid != os.getuid():
             continue
+        observed.add(pid)
         before = identity(pid)
-        if before is None or before["zombie"]:
+        if before is None:
+            if identity(pid) is not None:
+                raise ValueError("successor process absence unstable")
+            continue
+        if before["zombie"]:
             continue
         try:
-            cwd = process_cwd(pid)
-            if cwd is None:
-                if identity(pid) is not None:
-                    raise ValueError("successor process cwd unavailable")
-                continue
-            if cwd != root and not cwd.is_relative_to(root):
-                continue
             argv = process_arguments(pid)
-            if identity(pid) != before:
-                raise ValueError("successor process identity changed")
-        except (FileNotFoundError, ProcessLookupError):
+        except (OSError, ValueError):
+            if identity(pid) is not None:
+                raise ValueError("successor process ownership unavailable") from None
             continue
-        # Do not identify a Python -c bootstrap by a literal al_state.py token.
-        # Every other live process rooted in this worktree prevents preparation.
-        relevant.append(
-            {
-                "pid": pid,
-                "start": before["start"],
-                "managed_bootstrap": any("_al_run_pin_context" in a for a in argv),
-            }
+        managed = any(
+            "_al_run_pin_context" in a
+            or "_al_validator_context" in a
+            or Path(a).name in {"al_state.py", "alctl", "alctl.py"}
+            for a in argv
         )
-    if relevant:
-        raise ValueError("successor preparation requires settled repository processes")
-    return {"kind": "kernel-worktree-census-v1", "repository": str(root), "relevant_processes": []}
+        try:
+            cwd = process_cwd(pid)
+        except OSError:
+            raise ValueError("task process cwd unavailable") from None
+        if identity(pid) != before:
+            raise ValueError("successor process identity changed")
+        if cwd is None:
+            raise ValueError("task process cwd unavailable")
+        if pid in known:
+            recorded = known[pid]
+            if not recorded.get("start") or recorded.get("pid") != pid:
+                raise ValueError("task-owned process identity unresolved")
+            if recorded["start"] == before["start"]:
+                raise ValueError("task-owned process is live")
+        # This is protocol attribution under the already verified snapshot context,
+        # not a caller/ancestor PID exclusion or evidence of task settlement.
+        if before == coordinator and argv == coordinator_argv:
+            continue
+        managed = any(
+            "_al_run_pin_context" in a
+            or "_al_validator_context" in a
+            or Path(a).name in {"al_state.py", "alctl", "alctl.py"}
+            for a in argv
+        )
+        text = "\n".join(argv)
+        attributed = any(
+            t["session_id"] in text
+            or t["run_id"] in text
+            or t.get("runtime_directory", "\0") in text
+            for t in subjects
+        )
+        within = cwd is not None and (cwd == root or cwd.is_relative_to(root))
+        if managed and (attributed or str(root) in text or within):
+            raise ValueError("live or queued task-managed operation")
+        if within:
+            raise ValueError("unproven repository process ownership")
+    for pid in set(known) - observed:
+        if identity(pid) is not None:
+            raise ValueError("recorded task process omitted from census")
+    return {"kind": "kernel-task-census-v2", "repository": str(root), "relevant_processes": []}

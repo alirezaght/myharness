@@ -6,6 +6,7 @@ from harness.knowledge.integration import investigate_with_context
 from harness.knowledge.models import ContextRequest
 from harness.knowledge.policy import operator_scope
 from harness.knowledge.query import query
+from tests.test_knowledge_lifecycle import graph as graph
 
 
 def test_native_investigation_records_persistent_shared_context(tmp_path):
@@ -29,3 +30,30 @@ def test_native_investigation_records_persistent_shared_context(tmp_path):
     assert later.payload["assertions"]
     assert conn.execute("SELECT count(*) FROM knowledge_bundle_pins").fetchone()[0] == 1
     conn.close()
+
+
+def test_record_augmentation_withholds_purged_versions(graph):
+    from dataclasses import replace
+
+    from harness.knowledge.integration import refresh_with_records
+    from harness.knowledge.policy import current_operator_scope
+    from harness.knowledge.retention import purge
+
+    conn, scope = graph
+    controller = HarnessController(conn)
+    task = controller.create_task("Investigate imports")
+    controller.workspace(task.id).checkpoint("purge-fixture", {})
+    scope = replace(scope, task_id=task.id)
+    refresh_with_records(controller, scope)
+    version = conn.execute(
+        "SELECT v.version_id FROM knowledge_source_versions v "
+        "JOIN knowledge_sources s USING(source_id) WHERE s.kind='checkpoint' LIMIT 1"
+    ).fetchone()[0]
+    purge(conn, scope, [version])
+    scope = current_operator_scope(conn, scope.repository, task_id=task.id)
+    result = refresh_with_records(controller, scope)
+    assert result.status == "published-partial"
+    assert any(c.get("reason") == "purged" for c in result.coverage)
+    assert not conn.execute(
+        "SELECT * FROM knowledge_extraction_cache WHERE version_id=?", (version,)
+    ).fetchall()

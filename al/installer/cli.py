@@ -29,6 +29,8 @@ def parser():
     for action in ('prepare', 'activate', 'inputs', 'recovery-inputs', 'origin', 'inspect', 'distribution'):
         command = child.add_parser(action)
         command.add_argument('--platform', choices=('codex', 'claude'), required=True)
+        if action == 'origin':
+            command.add_argument('--allow-absent', action='store_true')
         if action not in {'distribution', 'origin'}:
             command.add_argument('--request-id', required=True)
         if action in {'prepare', 'activate', 'inputs', 'recovery-inputs', 'origin'}:
@@ -79,6 +81,10 @@ def parser():
             p.add_argument('--status-line', action='store_true', help='explicitly install the optional Claude status line')
         if command == 'update':
             p.add_argument('--all', action='store_true')
+            p.add_argument('--documentation-only', action='store_true',
+                           help='reviewed, hash-bound documentation update of an enrolled global target')
+            p.add_argument('--reviewed-runtime-update', action='store_true',
+                           help='exact independently reviewed global 0.1.7 to 0.1.8 payload update for future runs')
         if command == 'rollback':
             p.add_argument('--previous', action='store_true', required=True)
         if command == 'bootstrap':
@@ -117,7 +123,9 @@ def main(argv=None):
                     json.loads(args.authority_ref),json.loads(args.handoff_ref))
             elif args.successor_action == 'origin':
                 from .runtime_harness_start import inspect_origin
-                result = inspect_origin(args.repository, args.platform, args.session)
+                result = inspect_origin(
+                    args.repository, args.platform, args.session, allow_absent=args.allow_absent,
+                )
             elif args.successor_action == 'activate':
                 from .runtime_successor_activation import activate_successor
                 result = activate_successor(args.repository, args.platform, args.request_id, args.coordinator_fd)
@@ -171,6 +179,18 @@ def main(argv=None):
             reviews = read_json(args.reviews) if args.reviews else {}
             adoption = read_json(args.adopt) if args.adopt else {}
             options = {'reviews': reviews, 'adoption': adoption, 'runtime_roots': args.runtime_root}
+            if args.command == 'update' and args.reviewed_runtime_update:
+                if not args.global_scope or args.all or args.repo or args.adopt or args.documentation_only or not args.reviews:
+                    raise ValueError('--reviewed-runtime-update requires --global/--reviews and forbids batch, repo, adoption and mixed modes')
+                from .registry import digest
+                from .validator_origin import capture
+                review_path = Path(args.reviews).expanduser().absolute()
+                options.update(reviewed_runtime_update=True,
+                               runtime_review_artifact={'path': str(review_path), 'sha256': digest(capture(review_path)[0])})
+            if args.command == 'update' and args.documentation_only:
+                if not args.global_scope or args.all or args.repo or args.adopt:
+                    raise ValueError('--documentation-only requires --global and forbids --all, --repo and --adopt')
+                options['documentation_only'] = True
             if args.command in {'install', 'update'}:
                 options.update(source=args.source, source_subdir=args.source_subdir, version=args.version,
                                policy=args.policy, status_line=args.status_line)

@@ -212,15 +212,48 @@ def native_diagnostic(host, raw):
         raise ValueError("native diagnostic must be an object")
     if (
         host == "claude"
+        and record.get("type") == "assistant"
+        and record.get("isApiErrorMessage") is True
+        and record.get("error") == "rate_limit"
+    ):
+        # Claude emits this provider error before a terminal result whose subtype
+        # can still be "success". Only retain text from the marked error message;
+        # ordinary assistant output and thinking blocks are not diagnostics.
+        message = record.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        details = []
+        if isinstance(content, list):
+            details = [
+                block["text"]
+                for block in content
+                if isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+                and block["text"].strip()
+            ]
+        return "Claude usage limit: " + (
+            "; ".join(details)[:4096] or "provider reported rate_limit"
+        )
+    if (
+        host == "claude"
         and record.get("type") == "result"
         and (record.get("is_error") is True or str(record.get("subtype", "")).startswith("error"))
     ):
-        errors = record.get("errors", [])
+        errors = record.get("errors")
+        detail = (
+            "; ".join(e for e in errors if isinstance(e, str) and e.strip())
+            if isinstance(errors, list)
+            else ""
+        )
+        if not detail and isinstance(record.get("result"), str):
+            detail = record["result"].strip()
+        subtype = str(record.get("subtype", ""))
+        label = subtype if subtype.startswith("error") else "failed"
         return (
             "Claude "
-            + str(record.get("subtype", "failed"))
+            + label
             + ": "
-            + "; ".join(str(e) for e in errors)[:4096]
+            + (detail[:4096] or "native host reported an error without diagnostic details")
         )
     if host == "codex" and record.get("type") in {"error", "thread.failed", "turn.failed"}:
         error = record.get("error", record.get("message", "native host failed"))

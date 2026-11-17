@@ -34,8 +34,11 @@ pytestmark = needs_git
 
 
 @pytest.fixture(autouse=True)
-def fast_polling(monkeypatch):
+def fast_polling(monkeypatch, tmp_path):
+    from tests.execution_helpers import isolated_launch_environment
+
     monkeypatch.setattr(DashboardServer, "poll_seconds", 0.05)
+    isolated_launch_environment(monkeypatch, tmp_path / "launch-fixture")
 
 
 def approval_task(db_path: Path, repo: Path, design: bool = True, enter: bool = True) -> str:

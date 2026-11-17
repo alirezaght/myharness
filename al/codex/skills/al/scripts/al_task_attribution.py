@@ -7,6 +7,7 @@ import al_artifacts as A
 import al_scope as S
 import al_store
 import al_task
+import al_writer_progress as progress
 from al_schema import refuse
 
 
@@ -34,9 +35,13 @@ def observe(st, *, retain_content=False, expected=None):
     A re-observation compared against an `expected` capture that was itself stable needs one
     read: equality with a stable observation is the stability proof, and any difference is
     refused by the caller's comparison."""
+    progress.report('attribution-first', count=0)
     first = _rows(st)
+    progress.report('attribution-first', count=len(first), force=True)
     if expected is None or retain_content or first != expected.get('files'):
+        progress.report('attribution-second', count=0)
         second = _rows(st)
+        progress.report('attribution-second', count=len(second), force=True)
         if first != second:
             refuse('unstable task attribution observation')
     else:
@@ -44,15 +49,20 @@ def observe(st, *, retain_content=False, expected=None):
     capture = {'schema_version': 1, 'kind': 'task-content-capture-v1',
                'binding': _binding(st), 'files': second}
     if retain_content:
+        progress.report('attribution-retain', count=0)
         capture['contents'] = {}
-        for row in second:
+        for count,row in enumerate(second,1):
             work = row['worktree']; path = al_store.REPO_ROOT / S.safe_path(row['path'])
             if work['type'] not in {'file', 'symlink'}:continue
             raw = os.fsencode(os.readlink(path)) if work['type'] == 'symlink' else path.read_bytes()
             expected = hashlib.sha256(os.fsencode(work['text'])).hexdigest() if work['type'] == 'symlink' else work['sha256']
             if hashlib.sha256(raw).hexdigest() != expected:refuse('source moved during attribution retention')
             capture['contents'][row['path']] = A.snapshot_bytes(st['session_id'], raw, 'task-source-content-v1', row['path'])
+            progress.report('attribution-retain', count=count)
+        progress.report('attribution-retain', count=len(second), force=True)
+        progress.report('attribution-final', count=0)
         if _rows(st) != second:refuse('source moved during attribution retention')
+        progress.report('attribution-final', count=len(second), force=True)
     return capture
 
 
@@ -79,11 +89,14 @@ def _capture(st, ref):
     contents = value.get('contents')
     retained = {r['path']: r['worktree'] for r in rows if r['worktree']['type'] in {'file', 'symlink'}}
     if not isinstance(contents, dict) or set(contents) != set(retained):refuse('incomplete retained attribution content')
-    for path, work in retained.items():
+    progress.report('attribution-history', count=0)
+    for count,(path, work) in enumerate(retained.items(),1):
         try:raw = A.read(contents[path])
         except (OSError, ValueError, KeyError, TypeError):refuse('unreadable retained attribution content')
         expected = hashlib.sha256(os.fsencode(work['text'])).hexdigest() if work['type'] == 'symlink' else work['sha256']
         if A.digest(raw) != expected:refuse('retained attribution content differs')
+        progress.report('attribution-history', count=count)
+    progress.report('attribution-history', count=len(retained), force=True)
     return value
 
 
@@ -169,6 +182,7 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False):
     from al_task_reconciliation import Replay
     replay = Replay(st, expected, owned, ambiguous)
     revisions = set(al_task.revision_hashes(st))
+    progress.report('attribution-replay', count=0)
     for index, ref in enumerate(st['task_attribution']['contributions']):
         replay.apply(index)
         c = _read(st, ref, 'task-contribution-v1')
@@ -192,8 +206,10 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False):
                 owned.add(path)
             if path in after: expected[path] = after[path]
             else: expected.pop(path, None)
+        progress.report('attribution-replay', count=index+1)
     replay.apply(len(st['task_attribution']['contributions']))
     replay.finish()
+    progress.report('attribution-replay', count=len(st['task_attribution']['contributions']), force=True)
     return replay.external
 
 

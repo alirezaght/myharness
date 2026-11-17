@@ -441,7 +441,10 @@ def _prompt(execution, package, envelope, mode, focus=None):
         "planning proof. Old approval, admission and evidence are never transferred. "
         "al_command accepts structured AL arguments. Use write_artifact for JSON/Markdown drafts. "
         "Set al_command background=true for long checks "
-        "and poll the returned owned process handle. "
+        "and poll the returned owned process handle until its terminal result is collected. "
+        "Do not send a final response while a Harness command is running or has an uncollected "
+        "result: doing so ends the native host and tears down its tools. Keep polling and "
+        "continue from the actual result. Use harness:pending-work to inspect outstanding work. "
         "pass inputs as artifact:<artifact_id>:<sha256> and outputs as output:<name.json>. "
         "Register actual native child IDs with integration agent-register; never invent IDs. "
         "For explicit task capability replacement, agent-register may name replaces and a "
@@ -676,7 +679,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 native_id,
             )
             isolation_stack.callback(runtime.close)
-            env = native_auth_environment()
+            env = native_auth_environment(execution["host"])
             argv = runtime.argv(envelope["repository"], resume=mode == "resume")
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             isolation_stack.close()

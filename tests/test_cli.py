@@ -6,7 +6,6 @@ import sys
 
 import pytest
 
-from harness import cli_commands
 from harness.classification import INTERVIEW_TOPICS
 from harness.cli import main
 from harness.controller import HarnessController
@@ -267,14 +266,43 @@ def test_investigate_command_leaves_repo_untouched(run, sample_repo):
     assert tree_snapshot(sample_repo) == before
 
 
-def test_investigate_unknown_task_scans_nothing(run, task_id, sample_repo, monkeypatch):
+def test_investigate_unknown_task_scans_nothing(run, db_path, task_id, sample_repo, monkeypatch):
     def fail(*args, **kwargs):
         raise AssertionError("analyze must not run for an unknown task")
 
-    monkeypatch.setattr(cli_commands, "analyze", fail)
+    from harness.knowledge import integration
+
+    monkeypatch.setattr(integration, "investigate_with_context", fail)
+    conn = connect(db_path)
+    try:
+        before = tuple(
+            conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in (
+                "tasks",
+                "checkpoints",
+                "knowledge_projects",
+                "knowledge_refresh_attempts",
+            )
+        )
+    finally:
+        conn.close()
     code, out, err = run("investigate", "t-deadbeef", "--repo", str(sample_repo))
     assert (code, out) == (1, "")
     assert "t-deadbeef" in err
+    conn = connect(db_path)
+    try:
+        after = tuple(
+            conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+            for table in (
+                "tasks",
+                "checkpoints",
+                "knowledge_projects",
+                "knowledge_refresh_attempts",
+            )
+        )
+    finally:
+        conn.close()
+    assert after == before
 
 
 def test_investigate_on_missing_db_creates_nothing(run, db_path, sample_repo):

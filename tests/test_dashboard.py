@@ -144,6 +144,77 @@ def test_cli_change_is_visible_on_reload(db_path):
 
 
 @needs_git
+def test_knowledge_dashboard_http_refresh_query_explain_and_source(db_path, sample_repo):
+    marker = "dashboard_http_knowledge_marker"
+    source = sample_repo / "demo" / "export.py"
+    source.write_text(
+        source.read_text(encoding="utf-8") + f"\ndef {marker}():\n    return '{marker}'\n",
+        encoding="utf-8",
+    )
+    task_id = start_task(db_path, "inspect", "knowledge")
+    conn = connect(db_path)
+    try:
+        HarnessController(conn).workspace(task_id).checkpoint(
+            "investigation", {"repo_root": str(sample_repo)}
+        )
+    finally:
+        conn.close()
+
+    def post(server, route, payload):
+        body = json.dumps(payload).encode()
+        conn = http.client.HTTPConnection(LOCALHOST, server.port, timeout=10)
+        try:
+            conn.request(
+                "POST",
+                route,
+                body,
+                {
+                    "Host": f"{LOCALHOST}:{server.port}",
+                    "Origin": f"http://{LOCALHOST}:{server.port}",
+                    "Content-Type": "application/json",
+                },
+            )
+            response = conn.getresponse()
+            return response.status, json.loads(response.read())
+        finally:
+            conn.close()
+
+    with serve(db_path, task_id) as server:
+        status, _, initial = fetch(server, f"/api/knowledge?task={task_id}")
+        assert status == 200 and json.loads(initial)["status"] == "not-indexed"
+        status, refreshed = post(server, "/api/knowledge/refresh", {"task": task_id})
+        assert status == 200 and refreshed["status"] == "published"
+        status, bundle = post(
+            server,
+            "/api/knowledge/query",
+            {"task": task_id, "query": marker},
+        )
+        assert status == 200 and bundle["assertions"]
+        assertion = bundle["assertions"][0]
+        status, explanation = post(
+            server,
+            "/api/knowledge/explain",
+            {
+                "task": task_id,
+                "bundle_hash": bundle["bundle_hash"],
+                "assertion_id": assertion["assertion_id"],
+            },
+        )
+        assert status == 200 and explanation["citations"]
+        citation = explanation["citations"][0]
+        status, _, source = fetch(
+            server,
+            "/api/knowledge/evidence?"
+            + f"task={task_id}&bundle_hash={bundle['bundle_hash']}"
+            + f"&assertion_id={assertion['assertion_id']}",
+        )
+        assert status == 200
+        evidence = json.loads(source)["citations"]
+        assert marker in evidence[0]["text"]
+        assert evidence[0]["locator"] == citation["locator"] == "demo/export.py"
+
+
+@needs_git
 def test_reads_the_same_specs_as_the_cli(db_path, sample_repo, tmp_path):
     task_id = start_task(db_path, "csv", "export")
     cli(db_path, "investigate", task_id, "--repo", str(sample_repo))

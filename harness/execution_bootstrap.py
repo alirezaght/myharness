@@ -8,9 +8,17 @@ from harness.execution_contract import BOOTSTRAP
 
 _KNOWLEDGE_MODULES = (
     "__init__.py",
+    "adapters.py",
+    "contributions.py",
+    "review_projection.py",
+    "identity.py",
+    "receipts.py",
     "extract.py",
     "integration.py",
     "models.py",
+    "commit_sources.py",
+    "lessons.py",
+    "retention.py",
     "policy.py",
     "query.py",
     "refresh.py",

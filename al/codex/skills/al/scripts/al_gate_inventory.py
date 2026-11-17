@@ -16,6 +16,7 @@ import al_ci_inventory as CI
 import al_ci_context as CC
 import al_gate_coverage as C
 from al_schema import refuse
+import al_writer_progress as progress
 
 PATTERNS=('AGENTS.md','CLAUDE.md','.husky/pre-commit','.githooks/pre-commit','Makefile','package.json','.gitlab-ci.yml',
           'ci/**/*.yml','.al/repository.json','scripts/check-loc.py','scripts/check-loc.allowlist')
@@ -93,6 +94,27 @@ def classify_unit(path,opaque,facts=None):
     return '.' if any(Sources.contains(child,unit) for child in opaque) else unit
 
 
+def _walk_reaches(parent, child):
+    """A parent walk does not traverse nested .git or symlink directory roots."""
+    parts=Path(child).parts
+    for length in range(len(Path(parent).parts)+1,len(parts)+1):
+        if parts[length-1]=='.git' or (al_store.REPO_ROOT/Path(*parts[:length])).is_symlink():
+            return False
+    return True
+
+
+def _instruction_frontier(paths):
+    """Cover each ordinary directory once, preserving separately declared walk boundaries."""
+    selected=set()
+    for path in sorted(set(paths),key=lambda p:(len(Path(p).parts),p)):
+        parts=Path(path).parts
+        ancestors=[Path(*parts[:length]).as_posix() for length in range(len(parts))]
+        if any(parent in selected and _walk_reaches(parent,path) for parent in ancestors):
+            continue
+        selected.add(path)
+    return sorted(selected)
+
+
 def inventory(st,anticipated=(),ci_context=None):
     context=CC.profile(st,ci_context)
     paths=set(anticipated)
@@ -114,13 +136,14 @@ def inventory(st,anticipated=(),ci_context=None):
         paths=sorted(set(paths)|{p.rstrip('/') for p in expanded.members if any(C.contains(d,p.rstrip('/')) for d in paths if (al_store.REPO_ROOT/d).is_dir())})
     paths=sorted({'.' if p=='.' else S.safe_path(p).as_posix() for p in paths})
     paths=[p for p in paths if not any(p!=child and Sources.contains(child,p) for child in opaque)]
-    units={classify_unit(p,opaque) for p in paths}
     facts=al_affected_services.select(al_store.REPO_ROOT,paths,opaque,base_oid=st['identity']['merge_base'],required_adapter=required_adapter)
     facts['enumeration']['gaps'].extend(expansion_gaps)
     assessment=Coverage.assess(facts)
     services=assessment['selected_services']
     dependencies=sorted({p['path'] for p in facts['scan_inputs']}|{p['path'] for p in facts['rule_sources']})
     units={classify_unit(p,opaque,facts) for p in paths};units.update(services);names={p['path'] for p in facts['rule_sources']}
+    directories=set()
+    progress.report('inventory-rules', count=0)
     for p in paths+services:
         if inside(p):continue
         current=Path(p) if (al_store.REPO_ROOT/p).is_dir() else Path(p).parent
@@ -130,9 +153,15 @@ def inventory(st,anticipated=(),ci_context=None):
             current=current.parent
         target=al_store.REPO_ROOT/p
         if target.is_dir():
-            for directory,dirs,files in os.walk(target,followlinks=False):
-                dirs[:]=[d for d in dirs if d!='.git' and not inside((Path(directory)/d).relative_to(al_store.REPO_ROOT).as_posix())]
-                names.update((Path(directory)/name).relative_to(al_store.REPO_ROOT).as_posix() for name in ('AGENTS.md','CLAUDE.md') if name in files)
+            directories.add(p)
+    visited=0
+    for p in _instruction_frontier(directories):
+        for directory,dirs,files in os.walk(al_store.REPO_ROOT/p,followlinks=False):
+            dirs[:]=[d for d in dirs if d!='.git' and not inside((Path(directory)/d).relative_to(al_store.REPO_ROOT).as_posix())]
+            names.update((Path(directory)/name).relative_to(al_store.REPO_ROOT).as_posix() for name in ('AGENTS.md','CLAUDE.md') if name in files)
+            visited+=1
+            progress.report('inventory-rules', count=visited)
+    progress.report('inventory-rules', count=visited, force=True)
     names.update(str(Path(u)/name) for u in units for name in MANIFESTS if not inside(str(Path(u)/name)) and (al_store.REPO_ROOT/u/name).is_file())
     service_inputs=set()
     for service in services:

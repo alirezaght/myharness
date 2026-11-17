@@ -80,6 +80,7 @@ class ProcessManager:
                 "completion": completion,
                 "report": report,
                 "result": None,
+                "exit_observed": False,
             }
             self.records[handle] = record
             thread = threading.Thread(target=self._drain, args=(record, timeout), daemon=True)
@@ -191,15 +192,31 @@ class ProcessManager:
                 else presentation_page(record["output"][cursor : cursor + min(limit, MAX_TEXT)])
             )
             record["cursor"] += consumed
+            more = False if withheld else record["cursor"] < len(record["output"])
+            if record["status"] != "Running" and not more:
+                record["exit_observed"] = True
             return {
                 "handle": handle,
                 "status": record["status"],
                 "output": output,
-                "more": False if withheld else record["cursor"] < len(record["output"]),
+                "more": more,
                 "returncode": record["returncode"],
                 "error": record["error"],
                 **({"result": record["result"]} if record.get("report") else {}),
             }
+
+    def pending(self):
+        """Observation only: include terminal results until their owner collects them."""
+        with self.lock:
+            return [
+                {
+                    "handle": handle,
+                    "owner": record["owner"],
+                    "status": record["status"],
+                }
+                for handle, record in self.records.items()
+                if record["status"] == "Running" or not record.get("exit_observed", False)
+            ]
 
     def cancel(self, owner, handle):
         with self.lock:

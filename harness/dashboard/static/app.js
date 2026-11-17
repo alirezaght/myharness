@@ -278,8 +278,8 @@ function renderDecisions(decisions) {
   return section;
 }
 
-function renderTask(task) {
-  return renderWorkspaceTask(task);
+function renderTask(task, existingKnowledge = null) {
+  return renderWorkspaceTask(task, existingKnowledge);
 }
 
 function renderStatusSummary(task) {
@@ -347,10 +347,23 @@ function render(data) {
   rendered = true;
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
-  const saved = captureView(document.getElementById("task"));
+  const previousTask = document.getElementById("task");
+  const saved = captureView(previousTask);
   const identity = viewIdentity(selected, data.task?.execution);
   if (saved && saved.identity !== identity) approvalPreviews.delete(selected);
-  const content = data.task ? renderTask(data.task) : renderNotice(data.notice);
+  const previousKnowledge = saved && saved.identity === identity
+    ? previousTask.querySelector('details[data-view-disclosure="knowledge"]')
+    : null;
+  if (saved && saved.identity !== identity) {
+    const oldPanel = previousTask.querySelector(".knowledge-panel");
+    if (oldPanel?._statusTimer) window.clearInterval(oldPanel._statusTimer);
+  }
+  const knowledgeFocus = previousKnowledge?.contains(document.activeElement) ? document.activeElement : null;
+  const knowledgeSelection = knowledgeFocus && typeof knowledgeFocus.selectionStart === "number"
+    ? [knowledgeFocus.selectionStart, knowledgeFocus.selectionEnd, knowledgeFocus.selectionDirection] : null;
+  const content = data.task
+    ? renderTask(data.task, previousKnowledge)
+    : renderNotice(data.notice);
   content.dataset.viewIdentity = identity;
   const preview = content.querySelector("#approve-preview");
   if (preview) preview.dataset.viewDisclosure = JSON.stringify(["approval-preview", data.task.approval_center.final.spec_hash]);
@@ -363,6 +376,10 @@ function render(data) {
     withWorkspaceFocus(() => withStartFocus(() => withChangeDiagramFocus(() => withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace)))))));
     window.scrollTo(saved.x, saved.y);
   } else replace();
+  if (knowledgeFocus?.isConnected) {
+    knowledgeFocus.focus({ preventScroll: true });
+    if (knowledgeSelection) knowledgeFocus.setSelectionRange(...knowledgeSelection);
+  }
 }
 
 function renderError(message) {

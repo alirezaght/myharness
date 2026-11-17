@@ -14,7 +14,7 @@ def require_running(st):
 
 def checkpoint(st,sid,reason,instructions,recipient=None,artifact=None):
     data={'schema_version':1,'run_id':st['run_id'],'identity':st['identity'],'task_hash':al_task.task_hash(st),
-          'candidate_hash':S.capture_candidate(st)['fingerprint'],'prior_phase':st['phase'],
+          'candidate_hash':S.candidate_fingerprint(st),'prior_phase':st['phase'],
           'outstanding':operation_gaps(st),'reason':reason,'resume_instructions':instructions,'recipient':recipient,'transfer_artifact':artifact,'at':time.time()}
     ref=A.snapshot_bytes(sid,json.dumps(data,sort_keys=True).encode(),'checkpoint','runtime')
     st.setdefault('checkpoints',[]).append(ref)
@@ -30,7 +30,7 @@ def apply_checkpoint(st,data,checkpoint_id):
     if data['run_id']!=st['run_id'] or data['identity']!=st['identity'] or data['task_hash']!=al_task.task_hash(st):refuse('checkpoint identity/task mismatch')
     from al_gate_refresh import refresh
     currency=refresh(st)
-    changed=data['candidate_hash']!=S.capture_candidate(st)['fingerprint']
+    changed=data['candidate_hash']!=S.candidate_fingerprint(st)
     phase=data['prior_phase']
     if (changed or not currency['current']) and phase in {'REVIEW','FINAL_VERIFICATION','VERIFICATION'}:
         from al_transitions import structural_gaps

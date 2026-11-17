@@ -9,6 +9,7 @@ import stat
 import time
 import tomllib
 from al_profile import measured
+import al_writer_progress as progress
 
 SOURCE_SUFFIXES=('.py','.js','.jsx','.ts','.tsx','.go','.rs','.java','.kt','.c','.cc','.cpp','.rb','.php','.swift','.cs')
 LIMITS={'files':50000,'bytes':64*1024*1024,'file_bytes':2*1024*1024,'depth':32}
@@ -98,13 +99,16 @@ class Snapshot:
         if path_overflow:self.gaps.append(gap('file-limit','.', 'explicit path membership limit'))
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
         self.members=self.listing()
-        for p in sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))):
+        progress.report('inventory-current', count=0)
+        for count,p in enumerate(sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))),1):
             if not p.endswith('/') and self.relevant(p) and (self.root/p).exists():
                 try:
                     data=self.read(p)
                     self.files[p]=data;self.modes[p]=(self.root/p).lstat().st_mode&0o7777
                     if Path(p).name=='.gitignore':self.rules.add(p)
                 except (OSError,ValueError) as exc:self.gaps.append(gap('unreadable-input',p,str(exc)))
+            progress.report('inventory-current', count=count)
+        progress.report('inventory-current', count=len(self.members), force=True)
         self.read_base()
 
     @staticmethod
@@ -144,6 +148,7 @@ class Snapshot:
         finally:os.close(fd)
 
     def listing(self):
+        progress.report('inventory-membership', count=0)
         result=set();exclusions=[];before_gaps=len(self.gaps);base_rows=[];rule_bytes=0;priority_inputs=set()
         def declaration_bytes(p):
             nonlocal rule_bytes
@@ -167,6 +172,7 @@ class Snapshot:
                 if len(result)>=LIMITS['files']:
                     self.gaps.append(gap('file-limit','.', 'coverage membership limit exceeded'));return
                 result.add(entry)
+                progress.report('inventory-membership', count=len(result))
         # Reserve root and supported member manifests before ordinary enumeration.
         roots=['.'];root_set={'.'};protected=set(self.paths)
         def add_root(p):
@@ -286,11 +292,13 @@ class Snapshot:
         exclusions.append({'path':'.','reason':'repository .gitignore and generated/cache directory exclusions','provenance':sorted(p for p in result if Path(p).name=='.gitignore')+sorted(EXCLUDED)})
         self.membership_observation={'exclusions':sorted(exclusions,key=lambda e:(e['path'],e['reason'])),'base_rows_sha256':digest([r.hex() for r in base_rows]),'complete':len(self.gaps)==before_gaps}
         self.base_rows=base_rows;self.priority_inputs=priority_inputs
+        progress.report('inventory-membership', count=len(result), force=True)
         return sorted(result)
 
     @measured('base-enumeration')
     def read_base(self):
         if not self.base_oid:return
+        progress.report('inventory-base', count=0)
         try:
             rows=[];total=0
             for row in sorted(self.base_rows,key=lambda row:(row.split(b'\t',1)[1].decode() not in self.priority_inputs,priority(row.split(b'\t',1)[1].decode()))):
@@ -303,6 +311,7 @@ class Snapshot:
             from al_git_cache import blobs
             values=blobs(self.root,[oid.decode() for _,oid in rows],max_bytes=LIMITS['bytes'],file_bytes=LIMITS['file_bytes'])
             self.base={p:values[oid.decode()] for p,oid in rows}
+            progress.report('inventory-base', count=len(self.base), force=True)
         except (OSError,ValueError,subprocess.CalledProcessError) as exc:self.gaps.append(gap('base-unavailable','.',str(exc)))
 
     def text(self,p,required=False,rule=False):
@@ -317,9 +326,18 @@ class Snapshot:
             self.gaps.append(gap('invalid-encoding',p,'required source is not UTF-8'));return ''
 
     def stable(self):
+        progress.report('inventory-stability', count=0)
         observation=self.membership_observation;count=len(self.gaps)
         if self.listing()!=self.members or observation!=self.membership_observation or len(self.gaps)!=count:return False
-        try:return all(self.read(p,False)==data for p,data in self.files.items()) and all(not (self.root/p).exists() for p in self.absent)
+        progress.report('inventory-stability', count=0)
+        def unchanged(index,p,data):
+            same=self.read(p,False)==data
+            progress.report('inventory-stability', count=index)
+            return same
+        try:
+            stable=all(unchanged(index,p,data) for index,(p,data) in enumerate(self.files.items(),1)) and all(not (self.root/p).exists() for p in self.absent)
+            progress.report('inventory-stability', count=len(self.files) if stable else None, force=True)
+            return stable
         except (OSError,ValueError):return False
 
 
@@ -332,7 +350,9 @@ def membership_digest(members):
 def collect(root,*,base_oid,paths,opaque,required_adapter=None):
     import al_repo_adapters as adapters
     import al_python_imports as imports
-    scan=Snapshot(root,base_oid,paths,opaque,required_adapter);adapter=adapters.select(scan);facts=adapter.observe(scan)
+    scan=Snapshot(root,base_oid,paths,opaque,required_adapter)
+    progress.report('inventory-analysis')
+    adapter=adapters.select(scan);facts=adapter.observe(scan)
     facts.update(schema_version=1,repository={'root':str(scan.root),'base_oid':base_oid},adapter={'id':adapter.ID,'version':adapter.VERSION},policy_version=1)
     facts['enumeration']['gaps'].extend(scan.gaps)
     facts['enumeration']['exclusions'].extend(e for e in scan.membership_observation['exclusions'] if e['reason']!='repository ignore/generated output exclusion')

@@ -1,0 +1,17 @@
+{
+  "encoding": "UTF-8 exact source bytes",
+  "files": {
+    "harness/__init__.py": "058e9ddf36cb192dc85e6530b81390dc74005f95a87c8baadda6c135f8e5ba72",
+    "harness/db.py": "09e41bfdddc2f7e9733160dcd71af0c22e5a696d0636661d7469bc153adec224",
+    "harness/knowledge/__init__.py": "433f073bfacacc80fc2af7bf23df379b50e5167120f5118af11fbcbf83af51c2",
+    "harness/knowledge/extract.py": "dd9fea260137ccd9d2ed24e926fcaedd6e4efab226eb73dc7587f54ca753077e",
+    "harness/knowledge/models.py": "98dbf82f98e9b7173a53f28a453655c951950c98567398f92da7bbd537ae5179",
+    "harness/knowledge/policy.py": "74e3f7ec5a13afdf000e59cf7738b3b81464fdf48fb7c79c583770adc04fd273",
+    "harness/knowledge/query.py": "78dc37f23ae0b3fd0b29c3755d4f304182e6c485b6a0e70c4c78d078258bfdcb",
+    "harness/knowledge/refresh.py": "bc05498c1fc66cafc5d0a6acf05262e40230d1645f3a4e0bdf4af882319b5a41",
+    "harness/knowledge/sources.py": "04c7e3b7b2b9fd7e7348648e0d3818c91f6250ea70379c477dc7de352b96eaa1",
+    "harness/knowledge/store.py": "52ef595ec84e857d3ec10aa80c563f5a0c64ec4da421c72ecf5b2b429d306249",
+    "harness/md_record.py": "f0ca8d7dfdc54494fb532117f6cdd7802fea234bc8082ca07f852b054718a7ec"
+  },
+  "source_commit": "0b7eb3288ea188e494df424010e6cbbd8c67efa0"
+}

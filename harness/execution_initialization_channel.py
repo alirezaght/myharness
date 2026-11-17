@@ -4,6 +4,7 @@ import array
 import hashlib
 import json
 import os
+import secrets
 import socket
 import struct
 from pathlib import Path
@@ -13,6 +14,22 @@ from harness.execution_handoff import durable_file
 from harness.owned_subprocess import run_owned
 
 LIMIT = 1024 * 1024
+OWNERSHIP_DIAGNOSTICS = {
+    "OWNERSHIP_ARGV_UNAVAILABLE": (
+        "Process arguments unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+    "OWNERSHIP_CWD_UNAVAILABLE": (
+        "Process cwd unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+}
+
+
+class PreparationFailure(ValueError):
+    def __init__(self, diagnostic):
+        self.diagnostic = diagnostic
+        super().__init__(canonical(diagnostic))
 
 
 def receive(sock):
@@ -138,14 +155,62 @@ class InitializationChannel:
         self.parent, self.child = socket.socketpair()
         self.parent.settimeout(timeout)
         self.result = None
+        self.phase = "request"
+        self.process = None
+
+    def _response(self, sequence, process):
+        try:
+            value = receive(self.parent)
+        except EOFError:
+            raise PreparationFailure(
+                {
+                    "request_id": self.request["request_id"],
+                    "stage": self.phase,
+                    "code": "UNEXPECTED_EOF",
+                    "observed_exit": process.poll(),
+                    "diagnostic": "Coordinator disconnected; protected preparation may exist.",
+                }
+            ) from None
+        if isinstance(value, dict) and value.get("phase") == "error":
+            payload = value.get("payload")
+            if (
+                set(value) != {"version", "sequence", "phase", "payload"}
+                or type(value["version"]) is not int
+                or value["version"] != 1
+                or type(value["sequence"]) is not int
+                or value["sequence"] != sequence
+                or not isinstance(payload, dict)
+                or set(payload) != {"request_id", "stage", "code", "diagnostic"}
+                or payload["request_id"] != self.request["request_id"]
+                or payload["stage"] not in {"request", "preparation", "start"}
+                or payload["code"]
+                not in {
+                    "REFUSED",
+                    "DISCONNECTED",
+                    "INTERNAL",
+                    "OWNERSHIP_UNAVAILABLE",
+                    *OWNERSHIP_DIAGNOSTICS,
+                    "TASK_ACTIVITY",
+                    "PAYLOAD_MISMATCH",
+                }
+                or payload["diagnostic"]
+                != OWNERSHIP_DIAGNOSTICS.get(
+                    payload["code"],
+                    "Successor preparation refused; inspect the protected request before retry.",
+                )
+            ):
+                raise ValueError("prepared coordinator error response refused")
+            raise PreparationFailure(payload)
+        return value
 
     def serve(self, process):
+        self.process = process
         self.child.close()
         send(
             self.parent,
             {"version": 1, "sequence": 1, "operation": "prepare", "payload": self.request},
         )
-        reserved = receive(self.parent)
+        reserved = self._response(1, process)
         if (
             set(reserved) != {"version", "sequence", "phase", "payload"}
             or reserved["version"] != 1
@@ -153,12 +218,14 @@ class InitializationChannel:
             or reserved["phase"] != "reserved"
         ):
             raise ValueError("prepared reservation response refused")
+        self.phase = "reserved"
         response = self.resources(reserved["payload"])
         send(
             self.parent,
             {"version": 1, "sequence": 2, "operation": "resources", "payload": response},
         )
-        completed = receive(self.parent)
+        self.phase = "resources"
+        completed = self._response(2, process)
         if (
             set(completed) != {"version", "sequence", "phase", "payload"}
             or completed["version"] != 1
@@ -166,6 +233,7 @@ class InitializationChannel:
             or completed["phase"] != "prepared"
         ):
             raise ValueError("prepared completion response refused")
+        self.phase = "prepared"
         receipt = completed["payload"]
         raw = canonical(receipt).encode()
         self.receipt_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -211,6 +279,28 @@ class InitializationChannel:
                     "managed successor preparation failed; inspect protected preparation"
                 )
             return self.result
+        except BaseException as error:
+            diagnostic = (
+                dict(error.diagnostic)
+                if isinstance(error, PreparationFailure)
+                else {
+                    "request_id": self.request["request_id"],
+                    "stage": self.phase,
+                    "code": "PROTOCOL_REFUSED",
+                    "diagnostic": "Managed preparation failed; inspect protected progress.",
+                }
+            )
+            diagnostic["owned_child_exit"] = self.process.poll() if self.process else None
+            self.receipt_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            durable_file(
+                self.receipt_directory / ("attempt-diagnostic-" + secrets.token_hex(16) + ".json"),
+                canonical(diagnostic).encode(),
+            )
+            if isinstance(error, PreparationFailure):
+                error.diagnostic = diagnostic
+                error.args = (canonical(diagnostic),)
+                raise
+            raise PreparationFailure(diagnostic) from None
         finally:
             self.parent.close()
             self.child.close()

@@ -64,6 +64,12 @@ def parse_decision(path: Path) -> DecisionRecord:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise DecisionParseError(path, f"cannot be read ({error})") from error
+    return parse_decision_text(text, path)
+
+
+def parse_decision_text(text: str, path: Path) -> DecisionRecord:
+    """Parse retained bytes without reopening a potentially changed source path."""
+    path = Path(path)
     title, fields, sections = scan_record(text.splitlines())
     for name in ("id", "status", "version", "timestamp"):
         if not fields.get(name):

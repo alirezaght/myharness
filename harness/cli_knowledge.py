@@ -3,10 +3,10 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from harness.knowledge.models import MAX_SOURCE_BYTES, ContextRequest, RefreshRequest, digest
-from harness.knowledge.policy import operator_scope
-from harness.knowledge.query import explain, query
-from harness.knowledge.refresh import refresh
+from harness.knowledge.integration import refresh_with_records
+from harness.knowledge.models import ContextRequest, RefreshRequest
+from harness.knowledge.policy import current_operator_scope
+from harness.knowledge.query import explain, query, visible_coverage
 
 
 def repository_for_task(controller, task_id):
@@ -16,8 +16,8 @@ def repository_for_task(controller, task_id):
     return Path(task_repo_root(controller, task_id)).resolve()
 
 
-def inspect_knowledge(controller, repository):
-    scope = operator_scope(repository)
+def inspect_knowledge(controller, repository, *, task_id=None):
+    scope = current_operator_scope(controller.conn, repository, task_id=task_id)
     row = controller.conn.execute(
         "SELECT * FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
     ).fetchone()
@@ -49,29 +49,30 @@ def inspect_knowledge(controller, repository):
     snapshot_coverage = []
     counts = {"source_count": 0, "entity_count": 0, "relationship_count": 0}
     if snapshot:
+        from harness.knowledge.query import _partition
+
+        _partition(controller.conn, scope, snapshot)
         counts["source_count"] = controller.conn.execute(
-            "SELECT COUNT(*) FROM knowledge_snapshot_sources WHERE snapshot_id=? "
-            "AND membership_state='present'",
-            (snapshot,),
+            "SELECT count(*) FROM temp.k_versions"
         ).fetchone()[0]
         counts["entity_count"] = controller.conn.execute(
-            "SELECT COUNT(*) FROM ("
-            "SELECT a.subject_id AS entity_id FROM knowledge_assertions a "
-            "JOIN knowledge_snapshot_assertions m ON m.assertion_id=a.assertion_id "
-            "WHERE m.snapshot_id=? UNION "
-            "SELECT a.object_id AS entity_id FROM knowledge_assertions a "
-            "JOIN knowledge_snapshot_assertions m ON m.assertion_id=a.assertion_id "
-            "WHERE m.snapshot_id=? AND a.object_id IS NOT NULL)",
-            (snapshot, snapshot),
+            "SELECT count(*) FROM (SELECT a.subject_id FROM knowledge_assertions a JOIN "
+            "temp.k_eligible e USING(assertion_id) "
+            "UNION SELECT a.object_id FROM knowledge_assertions a JOIN temp.k_eligible e "
+            "USING(assertion_id) WHERE a.object_id IS NOT NULL)"
         ).fetchone()[0]
         counts["relationship_count"] = controller.conn.execute(
-            "SELECT COUNT(*) FROM knowledge_snapshot_assertions WHERE snapshot_id=?", (snapshot,)
+            "SELECT count(*) FROM temp.k_eligible"
         ).fetchone()[0]
         snapshot_coverage = json.loads(
             controller.conn.execute(
-                "SELECT coverage_json FROM knowledge_snapshots WHERE snapshot_id=?",
-                (snapshot,),
+                "SELECT coverage_json FROM knowledge_snapshots WHERE snapshot_id=?", (snapshot,)
             ).fetchone()[0]
+        )
+    snapshot_coverage = visible_coverage(controller.conn, scope, snapshot_coverage, snapshot)
+    if latest_refresh:
+        latest_refresh["coverage"] = visible_coverage(
+            controller.conn, scope, latest_refresh["coverage"], snapshot
         )
     return {
         "status": "indexed" if snapshot else "not-indexed",
@@ -82,63 +83,147 @@ def inspect_knowledge(controller, repository):
     }
 
 
-def refresh_knowledge(controller, repository, *, task_id=None):
+def refresh_knowledge(controller, repository, *, task_id=None, commit=None, included_paths=()):
     return asdict(
-        refresh(controller.conn, operator_scope(repository, task_id=task_id), RefreshRequest())
+        refresh_with_records(
+            controller,
+            current_operator_scope(controller.conn, repository, task_id=task_id),
+            RefreshRequest(included_paths=tuple(sorted(set(included_paths))), commit=commit),
+        )
     )
 
 
-def query_knowledge(controller, repository, text="", *, entity_refs=(), snapshot_id=None):
+def query_knowledge(
+    controller, repository, text="", *, entity_refs=(), snapshot_id=None, task_id=None
+):
     return query(
         controller.conn,
-        operator_scope(repository),
+        current_operator_scope(controller.conn, repository, task_id=task_id),
         ContextRequest(text, tuple(entity_refs), snapshot_id),
     ).to_dict()
 
 
-def explain_knowledge(controller, repository, bundle_hash, assertion_id):
-    return explain(controller.conn, operator_scope(repository), bundle_hash, assertion_id)
+def explain_knowledge(controller, repository, bundle_hash, assertion_id, *, task_id=None):
+    return explain(
+        controller.conn,
+        current_operator_scope(controller.conn, repository, task_id=task_id),
+        bundle_hash,
+        assertion_id,
+    )
 
 
-def evidence_knowledge(controller, repository, bundle_hash, assertion_id):
-    """Return a bounded, current cited span after the service revalidates its bundle."""
-    from harness.knowledge.sources import read_source
-
-    scope = operator_scope(repository)
-    explanation = explain(controller.conn, scope, bundle_hash, assertion_id)
-    spans = []
-    for citation in explanation["citations"]:
-        raw = read_source(scope.repository, citation["locator"], MAX_SOURCE_BYTES)
-        start, end = citation["start_byte"], citation["end_byte"]
-        excerpt = raw[start:end]
-        if digest(raw) != citation["content_sha256"] or digest(excerpt) != citation["span_sha256"]:
-            raise ValueError("bundle evidence changed during source retrieval")
-        spans.append(
-            {
-                "locator": citation["locator"],
-                "start_byte": start,
-                "end_byte": end,
-                "text": excerpt[:4096].decode("utf-8", errors="replace"),
-                "truncated": len(excerpt) > 4096,
-            }
-        )
-    return {"authority": explanation["authority"], "citations": spans}
+def evidence_knowledge(controller, repository, bundle_hash, assertion_id, *, task_id=None):
+    """Use the service's kind-aware, authorized resolver for bounded cited excerpts."""
+    scope = current_operator_scope(controller.conn, repository, task_id=task_id)
+    explanation = explain(controller.conn, scope, bundle_hash, assertion_id, include_evidence=True)
+    keys = ("locator", "start_byte", "end_byte", "text", "truncated")
+    return {
+        "authority": explanation["authority"],
+        "citations": [{k: ref[k] for k in keys} for ref in explanation["citations"]],
+    }
 
 
 def add_knowledge_parser(subparsers):
     root = subparsers.add_parser("knowledge", help="inspect and query the sourced project graph")
     actions = root.add_subparsers(dest="knowledge_action", required=True)
-    for name in ("inspect", "refresh", "query", "explain"):
-        action = actions.add_parser(name)
+    for name in (
+        "inspect",
+        "refresh",
+        "query",
+        "explain",
+        "export",
+        "grant",
+        "import",
+        "revoke",
+        "purge",
+        "retain",
+    ):
+        action = actions.add_parser(name, allow_abbrev=False)
         action.add_argument(
             "task_id", help="Harness task whose investigated repository is selected"
         )
         if name == "query":
-            action.add_argument("text", nargs="*", help="search the current knowledge snapshot")
+            action.add_argument("text", nargs="*", help="search the selected knowledge snapshot")
+            action.add_argument("--entity", action="append", default=[])
+            action.add_argument("--as-of", dest="snapshot_id")
+        elif name == "refresh":
+            action.add_argument("--commit")
+            action.add_argument("--include", action="append", default=[])
         elif name == "explain":
             action.add_argument("bundle_hash")
             action.add_argument("assertion_id")
+        elif name == "export":
+            action.add_argument(
+                "--body-file", required=True, help="repository-relative exact portable Markdown"
+            )
+            action.add_argument(
+                "--decision", required=True, help="current repository-relative approval record"
+            )
+        elif name in {"grant", "revoke"}:
+            action.add_argument("--destination-db", required=True, type=Path)
+            action.add_argument("--destination-task", required=True)
+            action.add_argument(
+                "--grant-id", required=True, help="explicit action identity; reuse for retries"
+            )
+            if name == "grant":
+                action.add_argument("--lesson", required=True)
+                action.add_argument("--version", type=int, required=True)
+        elif name == "import":
+            action.add_argument("locator", help="tracked docs/knowledge/imports/ portable Markdown")
+        elif name == "purge":
+            action.add_argument("--version", action="append", required=True, dest="version_ids")
+        elif name == "retain":
+            action.add_argument("--limit", type=int, default=500)
         action.set_defaults(handler=cmd_knowledge)
+
+
+def _mutation(controller, repository, args):
+    from harness.knowledge.lessons import export_lesson, grant, import_lesson, revoke
+    from harness.knowledge.retention import purge, retain
+    from harness.knowledge.sources import read_source
+
+    scope = current_operator_scope(controller.conn, repository, task_id=args.task_id)
+    name = args.knowledge_action
+    if name == "export":
+        from harness.knowledge.models import MAX_SOURCE_BYTES
+
+        return export_lesson(
+            controller.conn,
+            scope,
+            read_source(repository, args.body_file, MAX_SOURCE_BYTES),
+            args.decision,
+        )
+    if name == "import":
+        return import_lesson(controller.conn, scope, args.locator)
+    if name == "purge":
+        return purge(controller.conn, scope, args.version_ids)
+    if name == "retain":
+        return retain(controller.conn, scope, limit=args.limit)
+    from harness.controller import HarnessController
+    from harness.db import connect
+
+    # Both databases are explicitly selected local existing files; never scan neighbors.
+    destination = args.destination_db.expanduser()
+    if not destination.is_file() or destination.is_symlink():
+        raise ValueError("explicit existing local destination database required")
+    conn = connect(destination)
+    try:
+        other = HarnessController(conn)
+        root = repository_for_task(other, args.destination_task)
+        target = current_operator_scope(conn, root, task_id=args.destination_task)
+        if name == "grant":
+            return grant(
+                controller.conn,
+                scope,
+                conn,
+                target,
+                args.lesson,
+                args.version,
+                grant_id=args.grant_id,
+            )
+        return revoke(controller.conn, scope, conn, target, args.grant_id)
+    finally:
+        conn.close()
 
 
 def cmd_knowledge(args: argparse.Namespace) -> int:
@@ -147,12 +232,34 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
     with _controller(args) as controller:
         repository = repository_for_task(controller, args.task_id)
         if args.knowledge_action == "inspect":
-            result = inspect_knowledge(controller, repository)
+            result = inspect_knowledge(controller, repository, task_id=args.task_id)
         elif args.knowledge_action == "refresh":
-            result = refresh_knowledge(controller, repository, task_id=args.task_id)
+            result = refresh_knowledge(
+                controller,
+                repository,
+                task_id=args.task_id,
+                commit=args.commit,
+                included_paths=args.include,
+            )
         elif args.knowledge_action == "query":
-            result = query_knowledge(controller, repository, " ".join(args.text))
+            result = query_knowledge(
+                controller,
+                repository,
+                " ".join(args.text),
+                task_id=args.task_id,
+                entity_refs=args.entity,
+                snapshot_id=args.snapshot_id,
+            )
+        elif args.knowledge_action == "explain":
+            result = explain_knowledge(
+                controller, repository, args.bundle_hash, args.assertion_id, task_id=args.task_id
+            )
         else:
-            result = explain_knowledge(controller, repository, args.bundle_hash, args.assertion_id)
+            result = _mutation(controller, repository, args)
     print(json.dumps(result, indent=2, sort_keys=True, default=str))
-    return 0
+    return (
+        1
+        if result.get("status")
+        in {"source-only", "revocation-not-enforced", "revoked-destination-only"}
+        else 0
+    )

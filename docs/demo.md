@@ -155,7 +155,7 @@ t-xxxxxxxx · phase interview · complexity trivial · updated <timestamp>
 $ harness resume t-xxxxxxxx
 task t-xxxxxxxx · phase interview · complexity trivial (developer)
 request: [demo] Add a CSV export of items in app/export.py
-checkpoint: interview <timestamp> (#11)
+checkpoint: interview <timestamp> (#12)
 Q5 [acceptance_criteria] What are the acceptance criteria for calling this done?
 next: harness interview next t-xxxxxxxx
 $ harness interview next t-xxxxxxxx
@@ -355,7 +355,7 @@ $ cat docs/specs/t-xxxxxxxx/v1.md
 $ harness resume t-xxxxxxxx
 task t-xxxxxxxx · phase approval · complexity trivial (developer)
 request: [demo] Add a CSV export of items in app/export.py
-checkpoint: approval <timestamp> (#32)
+checkpoint: approval <timestamp> (#33)
 approval: spec v1 sha256:<hash> (current)
 next: harness execution start t-xxxxxxxx
 ```

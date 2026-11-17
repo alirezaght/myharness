@@ -36,6 +36,10 @@ ROLES = (
     "al-builder",
     "al-scout",
 )
+SUPPORTED_NATIVE_VERSIONS = {
+    "codex": frozenset({"0.164.0", "0.165.0"}),
+    "claude": frozenset({"2.1.310", "2.1.325", "2.1.326"}),
+}
 DISABLED = (
     "shell_tool shell_snapshot shell_snapshot_v2 unified_exec apply_patch_freeform "
     "code_mode code_mode_only code_mode_host js_repl js_repl_tools_only apps connectors "
@@ -47,6 +51,15 @@ DISABLED = (
     "remote_models responses_websockets responses_websockets_v2 daemon_auto_start "
     "guardian_ext guardianv2"
 ).split()
+
+
+_ASSIGNMENT_HANDOFF_INSTRUCTIONS = (
+    "\nWhen Harness tools are available, first call await_assignment. "
+    "For a writable assignment, read every page of its authenticated handoff.resource "
+    "with read_file before work. Use the returned resource and next_offset until truncated "
+    "is false; retain the complete managed evidence block. A changed binding requires a new "
+    "await_assignment. An unavailable handoff grants no new authority.\n"
+)
 
 
 def executable_identity(executable, host):
@@ -72,7 +85,7 @@ def executable_identity(executable, host):
     result = subprocess.run([str(path), "--version"], capture_output=True, text=True, timeout=10)
     pattern = (r"codex-cli " if host == "codex" else "") + r"(\d+\.\d+\.\d+)(?: \([^()\r\n]+\))?"
     match = re.fullmatch(pattern, result.stdout.strip())
-    supported = {"codex": {"0.164.0"}, "claude": {"2.1.310", "2.1.325"}}[host]
+    supported = SUPPORTED_NATIVE_VERSIONS[host]
     if result.returncode or match is None or match[1] not in supported:
         raise ValueError(
             "unsupported native executable version: " + host + " " + result.stdout.strip()
@@ -151,6 +164,9 @@ def build_native_policy(execution, package, auth_selection, *, mcp_url, token, d
                     if k in value
                 },
             }
+            sanitized["developer_instructions"] = (
+                sanitized.get("developer_instructions", "") + _ASSIGNMENT_HANDOFF_INSTRUCTIONS
+            )
             role_path = directory / (role + ".toml")
             role_path.write_text("\n".join(k + "=" + _toml(v) for k, v in sanitized.items()))
             options.extend(
@@ -199,7 +215,8 @@ def build_claude_policy(package, directory, channels, hook, session_id):
         roles[role] = {
             "description": metadata["description"].strip().strip('"'),
             "prompt": prompt + "\nUse only Harness controller tools. First call await_assignment. "
-            "Native identity is supplied by the runtime. Never self-assign another task.",
+            "Native identity is supplied by the runtime. Never self-assign another task."
+            + _ASSIGNMENT_HANDOFF_INSTRUCTIONS,
             "model": metadata["model"].strip(),
             "effort": metadata["effort"].strip(),
             "tools": tools,
@@ -219,7 +236,7 @@ def build_claude_policy(package, directory, channels, hook, session_id):
         "settings.json": {
             "disableAllHooks": False,
             "enabledPlugins": {},
-            "hooks": required_hooks(hook[0], hook[1:]),
+            "hooks": required_hooks(hook[0], hook[1:], supervise_stop=True),
         },
         "agents.json": roles,
         "mcp.json": {

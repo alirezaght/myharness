@@ -102,6 +102,8 @@ def state_path(sid):
 
 
 def load(sid):
+    from al_writer_progress import report
+    report('state-load', force=True)
     p = state_path(sid)
     if not p.exists():
         sys.exit(f"al_state: no AL run for session {sid} (run `start` first)")
@@ -127,6 +129,8 @@ def load(sid):
 
 
 def save(sid, st):
+    from al_writer_progress import report
+    report('state-save', force=True)
     from al_schema import validate_state
     from al_events import prepare_commit
     _ensure_runtime_dir()
@@ -160,16 +164,20 @@ def save(sid, st):
     finally:
         if os.path.exists(tmp):
             os.unlink(tmp)
+    report('state-saved', force=True)
 
 
 @contextlib.contextmanager
 def locked(sid):
     """Exclusive lock for a load-modify-save that may race a long-running
     `evidence run` in another process."""
+    from al_writer_progress import report
+    report('state-lock', force=True)
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     with open(RUNTIME_DIR / f".{sid}.lock", "w") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         try:
+            report('state-locked', force=True)
             yield
         finally:
             fcntl.flock(fh, fcntl.LOCK_UN)

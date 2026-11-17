@@ -445,23 +445,46 @@ class OperationController:
     def _dispatch(self, controller, principal, name, a, state):
         root, owner = self.envelope["repository"], principal["thread_id"]
         if name in {"knowledge_query", "knowledge_explain"}:
+            import sqlite3
+
             from harness.knowledge.models import ContextRequest
-            from harness.knowledge.policy import derive_scope
+            from harness.knowledge.policy import derive_scope, policy_digest
             from harness.knowledge.query import explain, query
 
-            execution = get_execution(controller.conn, self.execution_id)
-            scope = derive_scope(controller, execution, principal, state, Path(root))
-            if name == "knowledge_query":
-                if set(a) - {"query", "entity_refs"}:
-                    raise ValueError("closed knowledge query required")
-                return query(
-                    controller.conn,
-                    scope,
-                    ContextRequest(a.get("query", ""), tuple(a.get("entity_refs", ()))),
-                ).to_dict()
-            if set(a) != {"bundle_hash", "assertion_id"}:
+            if name == "knowledge_query" and set(a) - {"query", "entity_refs"}:
+                raise ValueError("closed knowledge query required")
+            if name == "knowledge_explain" and set(a) != {"bundle_hash", "assertion_id"}:
                 raise ValueError("closed knowledge explanation required")
-            return explain(controller.conn, scope, a["bundle_hash"], a["assertion_id"])
+            execution = get_execution(controller.conn, self.execution_id)
+            try:
+                scope = derive_scope(
+                    controller, execution, principal, state, Path(root), operation=self
+                )
+                result = (
+                    query(
+                        controller.conn,
+                        scope,
+                        ContextRequest(a.get("query", ""), tuple(a.get("entity_refs", ()))),
+                    ).to_dict()
+                    if name == "knowledge_query"
+                    else explain(controller.conn, scope, a["bundle_hash"], a["assertion_id"])
+                )
+                current_execution, current_state = self.authority(
+                    controller, principal, operation="read"
+                )
+                current = derive_scope(
+                    controller,
+                    current_execution,
+                    principal,
+                    current_state,
+                    Path(root),
+                    operation=self,
+                )
+                if policy_digest(current) != policy_digest(scope):
+                    raise PermissionError("knowledge scope changed before delivery")
+                return result
+            except sqlite3.OperationalError:
+                raise ValueError("knowledge:busy-or-unavailable") from None
         if name == "environment_operation":
             if a.get("operation") == "inspect" and set(a) == {"operation"}:
                 return self.tooling_status()
@@ -482,6 +505,24 @@ class OperationController:
 
             return diagram_operation(self, controller, principal, state, a)
         if name == "read_file":
+            from harness.assignment_handoff import RESOURCE, page
+
+            if a["path"] == RESOURCE or a["path"].startswith(RESOURCE + ":"):
+                return page(
+                    self,
+                    controller,
+                    principal,
+                    a["path"],
+                    offset=a.get("offset", 0),
+                    limit=a.get("limit", 16384),
+                )
+            if a["path"] == "harness:pending-work":
+                if principal["role"] != "orchestrator":
+                    raise ValueError("only the supervisor may inspect all pending work")
+                return {
+                    "pending": self.processes.pending(),
+                    "queued_setup": len(self.setup_pending),
+                }
             resources = {
                 "harness:tooling": self.tooling_status,
                 "harness:capabilities": lambda: {
@@ -753,6 +794,14 @@ class OperationController:
             child_task = assignment
         if any(x in {"--repository", "--platform", "--session", "--handoff", "--db"} for x in args):
             raise ValueError("AL origin cannot be overridden")
+        if args[:2] == ["writer", "handoff"] and any(
+            value.startswith("--")
+            and len(value) > 2
+            and "--body-file".startswith(value)
+            and value != "--body-file"
+            for value in args
+        ):
+            raise ValueError("writer handoff body requires the exact --body-file option")
         # File inputs must be immutable execution artifacts, never model-selected host paths.
         file_flags = {
             "--file",
@@ -766,6 +815,7 @@ class OperationController:
             "--packet",
             "--output",
             "--paths-file",
+            "--body-file",
             "--recovery-file",
             "--claims",
         }
@@ -973,6 +1023,41 @@ class OperationController:
                 "al-output.json" if stdout.lstrip().startswith(b"{") else "al-output.md", stdout
             )
         result["generated"] = self.capture_outputs(outputs)
+        if (
+            proc.returncode == 0
+            and args[:2] == ["integration", "agent-update"]
+            and principal["role"] == "orchestrator"
+        ):
+            from harness.knowledge.contributions import ingest
+
+            current = self.state(get_execution(controller.conn, self.execution_id))
+            completed = [
+                agent
+                for agent in current["integration"]["agents"].values()
+                if agent["status"] == "Completed"
+                and agent.get("latest_output")
+                and agent.get("task")
+            ]
+            contributions = []
+            for completed_agent in completed:
+                try:
+                    contributions.append(
+                        ingest(
+                            self,
+                            controller,
+                            principal,
+                            completed_agent["task"],
+                            completed_agent["latest_output"],
+                        )
+                    )
+                except (ValueError, OSError, LookupError):
+                    contributions.append(
+                        {
+                            "status": "unavailable",
+                            "reason": "completed report knowledge unavailable",
+                        }
+                    )
+            result["knowledge_contributions"] = contributions
         if setup is not None:
             result["dependency_setup"] = setup
         return result
@@ -1014,10 +1099,26 @@ class OperationController:
                     }
                 value = self.assignments.get(principal["thread_id"])
                 if value:
+                    from harness.assignment_handoff import descriptor
+
+                    try:
+                        handoff = descriptor(self, HarnessController(conn), principal)
+                    except (ValueError, OSError, LookupError):
+                        handoff = {
+                            "status": "unavailable",
+                            "reason": "current generated handoff unavailable",
+                        }
+                    context = {"status": "unavailable"}
+                    if handoff["status"] == "available":
+                        from harness.knowledge.integration import assignment_context
+
+                        context = assignment_context(self, HarnessController(conn), principal)
                     return {
                         "status": "Assigned",
                         **value,
                         "graph_revision": state["integration"]["graph_revision"],
+                        "handoff": handoff,
+                        "knowledge_context": context,
                     }
             if time.monotonic() >= deadline:
                 return {"status": "Pending"}

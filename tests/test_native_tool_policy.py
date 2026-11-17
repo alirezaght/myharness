@@ -11,8 +11,7 @@ from tests.native_model_fixture import native_executable
 @pytest.mark.native
 @pytest.mark.parametrize("host,version", [("codex", "0.164.0"), ("claude", "2.1.310")])
 def test_installed_native_profile_prerequisites(host, version):
-    if host == "claude":
-        version = os.environ.get("HARNESS_TEST_CLAUDE_VERSION", version)
+    version = os.environ.get("HARNESS_TEST_" + host.upper() + "_VERSION", version)
     executable = native_executable(host)
     assert executable, host
     found = subprocess.run([executable, "--version"], capture_output=True, text=True, timeout=10)
@@ -80,6 +79,68 @@ def test_generated_claude_permissions_cover_exact_declared_channels(tmp_path, mo
         "SessionStart",
         "SubagentStart",
         "PreToolUse",
+        "Stop",
         "WorktreeCreate",
         "WorktreeRemove",
     } == set(settings["hooks"])
+
+
+def test_generated_codex_roles_await_assignment_before_reading_complete_handoff(
+    tmp_path, monkeypatch
+):
+    import tomllib
+    from pathlib import Path
+
+    from harness.native_tool_policy import ROLES, build_native_policy
+
+    monkeypatch.setattr(
+        "harness.native_tool_policy.executable_identity",
+        lambda *_: {"path": "synthetic-unit-executable", "version": "0.164.0", "sha256": "fixture"},
+    )
+    build_native_policy(
+        {"host": "codex"},
+        {
+            "package": str(Path(__file__).resolve().parents[1] / "al/codex/skills/al"),
+            "executable": "synthetic-unit-executable",
+        },
+        {},
+        mcp_url="http://127.0.0.1:1/mcp",
+        token="synthetic-unit-token",
+        directory=tmp_path,
+    )
+    for role in ROLES:
+        instructions = tomllib.loads((tmp_path / (role + ".toml")).read_text())[
+            "developer_instructions"
+        ]
+        assert instructions.index("first call await_assignment") < instructions.index(
+            "handoff.resource"
+        )
+        assert "next_offset until truncated is false" in instructions
+        assert "complete managed evidence block" in instructions
+
+
+@pytest.mark.parametrize(
+    "reported",
+    [
+        "2.1.326 (Claude Code)",
+        "2.1.327 (Claude Code)",
+        "2.1.3260 (Claude Code)",
+        "prefix 2.1.326",
+        "2.1.326\n2.1.327",
+    ],
+)
+def test_claude_qualification_accepts_only_exact_version(tmp_path, monkeypatch, reported):
+    from types import SimpleNamespace
+
+    from harness.native_tool_policy import executable_identity
+
+    executable = tmp_path / "synthetic-claude"
+    executable.write_text("synthetic executable identity")
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=reported)
+    )
+    if reported == "2.1.326 (Claude Code)":
+        assert executable_identity(executable, "claude")["version"] == "2.1.326"
+    else:
+        with pytest.raises(ValueError, match="unsupported native executable version"):
+            executable_identity(executable, "claude")

@@ -286,6 +286,14 @@ def _main():
         if not a.session:al_schema.refuse('inspect requires explicit --session')
         a.fn(a, a.session)
         return
+    from al_writer_progress import command_progress
+    with command_progress(a.cmd, getattr(a, 'action', None)):
+        _dispatch(a, al_recovery_guidance)
+
+
+def _dispatch(a, al_recovery_guidance):
+    from al_writer_progress import report
+    report('command-preflight', force=True)
     from al_new_origin import require_dispatch
     require_dispatch()
     sid = session_id(a.session, allow_new=(a.cmd == "start"))

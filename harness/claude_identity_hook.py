@@ -24,6 +24,8 @@ def signature(context, value):
 
 def handle_hook(event, context):
     kind = event.get("hook_event_name")
+    if kind == "Stop":
+        return stop_hook(event, context)
     if kind in {"WorktreeCreate", "WorktreeRemove"}:
         raise ValueError("native worktree lifecycle is unavailable")
     if kind == "PreToolUse" and event.get("tool_name") in {"Agent", "Task"}:
@@ -113,6 +115,83 @@ def handle_hook(event, context):
             "updatedInput": public | {"__harness_attestation": attestation},
         }
     }
+
+
+def stop_hook(event, context):
+    """Use the existing attested read channel, never model prose, to decide to wait."""
+    from urllib.parse import urlparse
+    from urllib.request import ProxyHandler, Request, build_opener
+
+    from harness.claude_agent_guard import require_root
+
+    require_root(event, context)
+    transport = context["stop_transport"]
+    url = urlparse(transport["url"])
+    if (
+        url.scheme != "http"
+        or url.hostname != "127.0.0.1"
+        or not url.port
+        or url.path != "/mcp"
+        or url.username
+        or url.password
+        or url.query
+        or url.fragment
+    ):
+        raise ValueError("stop observation requires the supervised loopback channel")
+    headers = {
+        "Authorization": "Bearer " + transport["token"],
+        "Content-Type": "application/json",
+    }
+    opener = build_opener(ProxyHandler({}))
+
+    def call(message):
+        request = Request(transport["url"], canonical(message).encode(), headers=headers)
+        with opener.open(request, timeout=3) as response:
+            raw = response.read(65537)
+            if len(raw) > 65536:
+                raise ValueError("stop observation exceeds bounded response")
+            headers["Mcp-Session-Id"] = response.headers["Mcp-Session-Id"]
+        value = json.loads(raw)
+        if value.get("error") or "result" not in value:
+            raise ValueError("stop observation failed")
+        return value["result"]
+
+    call({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    attested = handle_hook(
+        {
+            "hook_event_name": "PreToolUse",
+            "session_id": context["session_id"],
+            "tool_name": "mcp__harness__read_file",
+            "mcp_server": {"name": "harness", "source": "dynamic"},
+            "tool_input": {"path": "harness:pending-work"},
+        },
+        context,
+    )["hookSpecificOutput"]["updatedInput"]
+    result = call(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "read_file", "arguments": attested},
+        }
+    )
+    if result.get("isError"):
+        raise ValueError("pending work could not be verified")
+    work = json.loads(result["content"][0]["text"])
+    pending = work["pending"]
+    if not pending and not work["queued_setup"]:
+        return {}
+    own = [row["handle"] for row in pending if row["owner"] == context["session_id"]]
+    reason = (
+        "Harness still owns pending command work or uncollected results. "
+        "Keep supervising this run; do not return a final response while work is pending. "
+        "Poll your handles with poll_process until terminal results are fully collected; "
+        "wait for child owners to collect theirs. Cancel only work that is no longer needed, "
+        "then poll its terminal result. No additional execution authority is granted."
+    )
+    if own:
+        reason += " Your handles: " + ", ".join(own)
+    return {"decision": "block", "reason": reason}
 
 
 def main():

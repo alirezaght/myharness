@@ -275,13 +275,15 @@ def activate_runtime(
 def recover_runtime_transition(controller, execution_id, *, request_id):
     row = controller.conn.execute(
         (
-            "SELECT request,preparation FROM execution_runtime_transitions WHERE "
+            "SELECT request,request_hash,preparation FROM execution_runtime_transitions WHERE "
             "request_id=? AND execution_id=?"
         ),
         (request_id, execution_id),
     ).fetchone()
     if not row:
         raise ExecutionConflict("runtime recovery request not found")
+    if row["request_hash"] != digest(row["request"].encode()):
+        raise ExecutionConflict("saved runtime request hash differs")
     if not row["preparation"]:
         from harness.db import transaction, utcnow
         from harness.execution_contract import canonical
@@ -293,6 +295,17 @@ def recover_runtime_transition(controller, execution_id, *, request_id):
         execution = get_execution(controller.conn, execution_id)
         request = json.loads(row["request"])
         with _locks(execution):
+            from harness.execution_epochs import require_active_epoch
+            from harness.execution_recovery_settlement import require_recovery_settlement
+
+            require_active_epoch(
+                controller.conn,
+                execution_id,
+                expected_epoch_id=request["expected_epoch_id"],
+                expected_authority_generation=request["expected_authority_generation"],
+                mutation=True,
+            )
+            require_recovery_settlement(controller, execution)
             envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
             observation = _launcher_call(
                 managed_launcher(),
@@ -306,17 +319,40 @@ def recover_runtime_transition(controller, execution_id, *, request_id):
             receipt = validate_preparation(controller, execution, request, observation)
             with transaction(controller.conn):
                 current = controller.conn.execute(
-                    "SELECT request,preparation,state FROM execution_runtime_transitions "
+                    "SELECT request,request_hash,preparation,state "
+                    "FROM execution_runtime_transitions "
                     "WHERE request_id=? AND execution_id=?",
                     (request_id, execution_id),
                 ).fetchone()
-                if current["request"] != row["request"] or current["state"] != "PREPARING":
+                if (
+                    current["request"] != row["request"]
+                    or current["request_hash"] != row["request_hash"]
+                    or current["state"] != "PREPARING"
+                ):
                     raise ExecutionConflict("preparation journal changed during reconciliation")
-                controller.conn.execute(
-                    "UPDATE execution_runtime_transitions SET preparation=?,state='PREPARED',"
-                    "updated_at=? WHERE request_id=?",
-                    (canonical(receipt), utcnow(), request_id),
+                require_active_epoch(
+                    controller.conn,
+                    execution_id,
+                    expected_epoch_id=request["expected_epoch_id"],
+                    expected_authority_generation=request["expected_authority_generation"],
+                    mutation=True,
                 )
+                require_recovery_settlement(controller, execution)
+                changed = controller.conn.execute(
+                    "UPDATE execution_runtime_transitions SET preparation=?,state='PREPARED',"
+                    "updated_at=? WHERE request_id=? AND execution_id=? AND state='PREPARING' "
+                    "AND request=? AND request_hash=?",
+                    (
+                        canonical(receipt),
+                        utcnow(),
+                        request_id,
+                        execution_id,
+                        row["request"],
+                        row["request_hash"],
+                    ),
+                )
+                if changed.rowcount != 1:
+                    raise ExecutionConflict("runtime reconciliation journal changed")
         row = controller.conn.execute(
             "SELECT request,preparation FROM execution_runtime_transitions "
             "WHERE request_id=? AND execution_id=?",

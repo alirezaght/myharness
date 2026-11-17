@@ -32,7 +32,7 @@ REASON = (
 
 @pytest.fixture
 def execution_fixture(controller, sample_repo, monkeypatch, tmp_path):
-    tid, eid = approved_execution(controller, sample_repo, monkeypatch)
+    tid, eid = approved_execution(controller, sample_repo, monkeypatch, legacy=True)
     started(controller.conn, eid)
     task = {
         "id": "A",

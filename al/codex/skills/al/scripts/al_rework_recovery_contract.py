@@ -58,7 +58,7 @@ def history(st):
     return J.digest({k:r[k] for k in ('grants','decisions','continuations')} | {'history':st['rework']['history']})
 
 def binding(st, occurrence=None):
-    return {'origin':origin(st),'candidate_hash':S.capture_candidate(st)['fingerprint'],
+    return {'origin':origin(st),'candidate_hash':S.candidate_fingerprint(st),
             'task_hash':al_task.task_hash(st),'history_hash':history(st),
             'occurrence_id':occurrence['id'] if occurrence else None}
 

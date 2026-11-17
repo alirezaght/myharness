@@ -195,6 +195,8 @@ def test_headless_chrome_shows_the_overview_and_switches_tasks(db_path, sample_r
     assert f"Task {other}" in switched and "<dd>investigation</dd>" in switched
     assert _workspace_task_link(switched, other, current=True)
     assert _workspace_task_link(switched, task_id)
+    assert "Your decision needed" in dom
+    assert "Specification in progress" in switched
 
     assert "<p>unknown task: t-00000000</p>" in unknown and "<h2>Task " not in unknown
     assert _workspace_task_link(unknown, task_id) and _workspace_task_link(unknown, other)

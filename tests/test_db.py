@@ -122,6 +122,7 @@ def test_existing_0001_database_upgrades_keeping_rows(tmp_path):
             "0013_browser_validation.sql",
             "0014_execution_epochs.sql",
             "0015_knowledge.sql",
+            "0016_knowledge_index.sql",
             "0017_workspace_proposals.sql",
         ]
         controller = HarnessController(conn)
@@ -157,6 +158,7 @@ def test_upgrade_applies_only_the_new_migration(tmp_path, monkeypatch):
             "0013_browser_validation.sql",
             "0014_execution_epochs.sql",
             "0015_knowledge.sql",
+            "0016_knowledge_index.sql",
             "0017_workspace_proposals.sql",
         ]
     finally:
@@ -240,6 +242,7 @@ def test_0002_database_upgrades_questions_with_interview_columns(tmp_path, monke
             "0013_browser_validation.sql",
             "0014_execution_epochs.sql",
             "0015_knowledge.sql",
+            "0016_knowledge_index.sql",
             "0017_workspace_proposals.sql",
         ]
         upgraded = HarnessController(conn).workspace(task.id).question(question_id)

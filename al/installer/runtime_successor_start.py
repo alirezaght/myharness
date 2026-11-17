@@ -121,8 +121,9 @@ def start_locked(
     context_ref = Store.immutable(directory / "context.json", context)
     recovery = plan["kind"] == "missing-state-successor-start-plan-v1"
     fresh = request["schema_version"] == 2
-    authority_handoff = (plan["authority_handoff_ref"]["path"] if recovery
-                         else state["integration"]["handoff"])
+    authority_handoff = (
+        plan["authority_handoff_ref"]["path"] if recovery else state["integration"]["handoff"]
+    )
     # This fixed endpoint verifies accepted scoped amendments under the old authority.
     authorization = _authority(
         request["authority_snapshot_ref"],
@@ -131,6 +132,7 @@ def start_locked(
     )
     if recovery:
         from .runtime_successor_lineage import recovery_requirements
+
         requirements_ref = recovery_requirements(plan, successor, directory)
     else:
         requirements_ref = requirement_lineage(
@@ -144,8 +146,11 @@ def start_locked(
             "plan_ref": plan_ref,
             "scratch": str(scratch),
             "storage": str(storage()),
-            **({"recovery_lineage_ref": plan["recovery_lineage_ref"]} if recovery else
-               {"predecessor_state_ref": plan["predecessor_state_ref"]}),
+            **(
+                {"recovery_lineage_ref": plan["recovery_lineage_ref"]}
+                if recovery
+                else {"predecessor_state_ref": plan["predecessor_state_ref"]}
+            ),
             "protected_paths": protected,
             "lineage_path": str(directory / "lineage.json"),
             "requirements_path": requirements_ref["stored_path"],
@@ -164,6 +169,14 @@ def start_locked(
             context_ref["stored_path"],
             resources_ref["stored_path"],
         )
+        from .runtime_successor_census import require_quiescent
+
+        require_quiescent(
+            prior["repository_identity"]["root"],
+            transaction=prior,
+            state=state,
+            related=(successor,),
+        )
         classified = authority["classified_paths"]
         observed = observe_candidate(
             anchors["repository_identity"]["root"], anchors["baseline_head_oid"], classified
@@ -172,12 +185,17 @@ def start_locked(
             raise ValueError("candidate changed before prepared capture")
         lineage = {
             "schema_version": 1,
-            "kind": "missing-state-successor-source-lineage-v1" if recovery else "successor-source-lineage-v1",
+            "kind": "missing-state-successor-source-lineage-v1"
+            if recovery
+            else "successor-source-lineage-v1",
             "request_id": request["request_id"],
             "preparation_sha256": plan_ref["sha256"],
             "requirements_ref": requirements_ref,
-            **({"recovery_lineage_ref": plan["recovery_lineage_ref"]} if recovery else
-               {"predecessor_state_ref": plan["predecessor_state_ref"]}),
+            **(
+                {"recovery_lineage_ref": plan["recovery_lineage_ref"]}
+                if recovery
+                else {"predecessor_state_ref": plan["predecessor_state_ref"]}
+            ),
             "predecessor_binding_ref": plan["predecessor_binding_ref"],
             "source_anchors": anchors,
             "settled_candidate_identity": observed,
@@ -257,7 +275,11 @@ def start_locked(
                 "planning_occurrence": 0,
                 "runtime_layout": successor["runtime_layout"],
                 "runtime_directory": successor["runtime_directory"],
-                **({"harness_binding": successor["harness_binding"]} if successor["schema_version"] == 3 else {}),
+                **(
+                    {"harness_binding": successor["harness_binding"]}
+                    if successor["schema_version"] == 3
+                    else {}
+                ),
             }
             if any(supplied[k] != value for k, value in expected.items()):
                 raise ValueError("prepared initialization identity differs")
@@ -292,6 +314,12 @@ def start_locked(
             if not journal.get("cleanup", {}).get("complete"):
                 raise ValueError("partial prepared start lacks settled owned child proof")
         # The child has released its session lock and its group is positively settled.
+        require_quiescent(
+            prior["repository_identity"]["root"],
+            transaction=prior,
+            state=state,
+            related=(successor,),
+        )
         with _session_lock(successor):
             _authority(
                 request["authority_snapshot_ref"],
@@ -317,8 +345,11 @@ def start_locked(
                 "request_sha256": fingerprint(request),
                 "preparation_sha256": plan_ref["sha256"],
                 "predecessor_binding_ref": plan["predecessor_binding_ref"],
-                **({"recovery_lineage_ref": plan["recovery_lineage_ref"]} if recovery else
-               {"predecessor_state_ref": plan["predecessor_state_ref"]}),
+                **(
+                    {"recovery_lineage_ref": plan["recovery_lineage_ref"]}
+                    if recovery
+                    else {"predecessor_state_ref": plan["predecessor_state_ref"]}
+                ),
                 "lineage_ref": lineage_ref,
                 "successor_subject": successor_lock.value,
                 "successor_run_id": current["run_id"],
@@ -332,8 +363,14 @@ def start_locked(
                 "distribution_identity": verified["manifest"]["closure_digest"],
                 "native_resumed": False,
                 "product_authority": False,
-                **({"transition_mode": request["transition_mode"],
-                    "preview_sha256": request["preview_sha256"]} if fresh else {}),
+                **(
+                    {
+                        "transition_mode": request["transition_mode"],
+                        "preview_sha256": request["preview_sha256"],
+                    }
+                    if fresh
+                    else {}
+                ),
             }
             receipt_ref = Store.immutable(directory / "receipt.json", receipt)
             journal.update(state="PREPARED", receipt_ref=receipt_ref)

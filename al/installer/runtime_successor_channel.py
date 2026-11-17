@@ -146,3 +146,82 @@ class InitializationClient:
         ):
             raise ValueError(ERROR)
         return response["result"]
+
+
+PREPARATION_DIAGNOSTIC = (
+    "Successor preparation refused; inspect the protected request before retry."
+)
+
+
+PREPARATION_OWNERSHIP_DIAGNOSTICS = {
+    "OWNERSHIP_ARGV_UNAVAILABLE": (
+        "Process arguments unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+    "OWNERSHIP_CWD_UNAVAILABLE": (
+        "Process cwd unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+}
+
+
+def preparation_error(identifier, sequence, stage, code):
+    if (
+        sequence not in {1, 2}
+        or stage not in {"request", "preparation", "start"}
+        or code
+        not in {
+            "REFUSED",
+            "DISCONNECTED",
+            "INTERNAL",
+            "OWNERSHIP_UNAVAILABLE",
+            *PREPARATION_OWNERSHIP_DIAGNOSTICS,
+            "TASK_ACTIVITY",
+            "PAYLOAD_MISMATCH",
+        }
+    ):
+        raise ValueError(ERROR)
+    return {
+        "version": 1,
+        "sequence": sequence,
+        "phase": "error",
+        "payload": {
+            "request_id": identifier,
+            "stage": stage,
+            "code": code,
+            "diagnostic": PREPARATION_OWNERSHIP_DIAGNOSTICS.get(code, PREPARATION_DIAGNOSTIC),
+        },
+    }
+
+
+class PreparationTransport:
+    def __init__(self, sock):
+        self.sock, self.sequence = sock, 1
+
+    def __getattr__(self, name):
+        return getattr(self.sock, name)
+
+    def sendall(self, raw):
+        self.sock.sendall(raw)
+        value = decode(raw[4:])
+        if value.get("phase") == "reserved":
+            self.sequence = 2
+
+
+def classify_preparation_error(error):
+    code = (
+        "DISCONNECTED"
+        if isinstance(error, (EOFError, OSError))
+        else "REFUSED"
+        if isinstance(error, ValueError)
+        else "INTERNAL"
+    )
+    code = {
+        "successor process ownership unavailable": "OWNERSHIP_ARGV_UNAVAILABLE",
+        "task process cwd unavailable": "OWNERSHIP_CWD_UNAVAILABLE",
+        "live or queued task-managed operation": "TASK_ACTIVITY",
+        "task-owned process is live": "TASK_ACTIVITY",
+        "requested successor interpreter differs": "PAYLOAD_MISMATCH",
+        "requested successor payload unavailable through protected references": "PAYLOAD_MISMATCH",
+    }.get(str(error), code)
+    return code

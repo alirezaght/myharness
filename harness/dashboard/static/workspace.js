@@ -244,7 +244,15 @@ async function workspaceSave(task, state) {
   }
 }
 
-function workspaceRunPanel(task, state, inspector) {
+function workspaceKnowledge(task, state, existingKnowledge) {
+  if (existingKnowledge?.querySelector(".knowledge-panel")?.dataset.task === task.id) return existingKnowledge;
+  const knowledge = el("details");
+  knowledge.dataset.viewDisclosure = "knowledge";
+  knowledge.append(workspaceSummary(state, knowledge, "Project knowledge"), renderKnowledgePanel(task.id));
+  return knowledge;
+}
+
+function workspaceRunPanel(task, state, inspector, existingKnowledge = null) {
   const panel = el("section");
   const execution = task.execution;
   executionTaskId = task.id;
@@ -258,10 +266,7 @@ function workspaceRunPanel(task, state, inspector) {
     }
     else panel.append(el("h2", "No execution recorded"), renderResume(task.resume));
     inspector.append(el("small", "Run inspector"), el("h2", "Decisions & controls"), renderApprovalCenter(task));
-    const knowledge = el("details");
-    knowledge.dataset.viewDisclosure = "knowledge";
-    knowledge.append(workspaceSummary(state, knowledge, "Project knowledge"), renderKnowledgePanel(task.id));
-    inspector.append(knowledge);
+    inspector.append(workspaceKnowledge(task, state, existingKnowledge));
     const diagnostics = el("details");
     diagnostics.dataset.viewDisclosure = "design-diagnostics";
     diagnostics.append(workspaceSummary(state, diagnostics, "Design notation details"), renderDiagrams(task.id, task.diagrams));
@@ -308,7 +313,7 @@ function workspaceRunPanel(task, state, inspector) {
     const records = el("details");
     records.dataset.viewDisclosure = "workspace-task-records";
     records.append(workspaceSummary(state, records, "Task records and existing tools"), renderResume(task.resume),
-      renderSpec(task.spec, task.phase), renderApprovalCenter(task), renderKnowledgePanel(task.id),
+      renderSpec(task.spec, task.phase), renderApprovalCenter(task), workspaceKnowledge(task, state, existingKnowledge),
       ...(execution ? [renderExecution(task.id, execution)] : []),
       renderDiagrams(task.id, task.diagrams), renderComparison(task.id, task.diagrams),
       renderCommentsSection(task.comments, task.diagrams));
@@ -339,7 +344,7 @@ function workspaceTaskDetails(task) {
   return metadata;
 }
 
-function renderWorkspaceTask(task) {
+function renderWorkspaceTask(task, existingKnowledge = null) {
   const state = workspaceState(task);
   const root = el("section"); root.id = "task"; root.className = "workspace-task";
   const top = el("div"); top.className = "workspace-top";
@@ -373,7 +378,7 @@ function renderWorkspaceTask(task) {
   const inspector = el("aside"); inspector.className = "workspace-inspector";
   inspector.setAttribute("aria-label", "Contextual inspector"); inspector.dataset.workspaceScroll = "inspector";
   let panel;
-  if (state.mode === "run") panel = workspaceRunPanel(task, state, inspector);
+  if (state.mode === "run") panel = workspaceRunPanel(task, state, inspector, existingKnowledge);
   else panel = ({ requirements: workspaceRequirements, plan: workspacePlan, diagram: workspaceDiagram, review: workspaceReview })[state.tab](task, state, inspector);
   panel.id = "workspace-panel"; panel.classList.add("workspace-panel"); panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", `workspace-tab-${state.tab}`);

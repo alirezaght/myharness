@@ -93,7 +93,9 @@ def _frame(value, sequence, label, field):
     return value["payload"]
 
 
-def _authority(record_ref, handoff, context_path, resources_path=None, activation_path=None, inputs_path=None):
+def _authority(
+    record_ref, handoff, context_path, resources_path=None, activation_path=None, inputs_path=None
+):
     raw, metadata = capture(record_ref["stored_path"])
     record = decode(raw)
     if metadata["mode"] != 0o600 or digest(raw) != record_ref["sha256"]:
@@ -102,13 +104,13 @@ def _authority(record_ref, handoff, context_path, resources_path=None, activatio
     base = Path(handoff).parent / "prepared-authority"
     legacy = base / "authority.json"
     import re
-    versioned = (expected.name == "authority.json"
-                 and expected.parent.parent == base / "bridge-revisions"
-                 and re.fullmatch(r"[0-9a-f]{64}", expected.parent.name))
-    if (
-        expected != legacy and not versioned
-        or record["kind"] != "prepared-harness-authority-v1"
-    ):
+
+    versioned = (
+        expected.name == "authority.json"
+        and expected.parent.parent == base / "bridge-revisions"
+        and re.fullmatch(r"[0-9a-f]{64}", expected.parent.name)
+    )
+    if expected != legacy and not versioned or record["kind"] != "prepared-harness-authority-v1":
         raise ValueError("prepared Harness authority location differs")
     root = safe(record["snapshot"])
     if root != expected.parent / "trusted":
@@ -237,37 +239,81 @@ def _request(value, identifier):
         raise ValueError("invalid successor preparation request")
     if recovery:
         import re
-        if (value["transition_mode"] not in {MODE, "fresh-planning-intact"}
-                or not re.fullmatch(r"sha256:[0-9a-f]{64}", value["preview_sha256"])):
+
+        if value["transition_mode"] not in {MODE, "fresh-planning-intact"} or not re.fullmatch(
+            r"sha256:[0-9a-f]{64}", value["preview_sha256"]
+        ):
             raise ValueError("invalid missing-state recovery request")
         for name in ("recovery_lineage_ref", "settlement_ref"):
-            if name == "recovery_lineage_ref" and value["transition_mode"] == "fresh-planning-intact":
-                if value[name] is not None or not re.fullmatch(r"[0-9a-f]{64}", str(value["expected_predecessor_state_sha256"])):
+            if (
+                name == "recovery_lineage_ref"
+                and value["transition_mode"] == "fresh-planning-intact"
+            ):
+                if value[name] is not None or not re.fullmatch(
+                    r"[0-9a-f]{64}", str(value["expected_predecessor_state_sha256"])
+                ):
                     raise ValueError("invalid intact fresh-planning source binding")
                 continue
             ref = value[name]
-            if (not isinstance(ref, dict) or set(ref) != {"stored_path", "sha256"}
-                    or not re.fullmatch(r"[0-9a-f]{64}", ref.get("sha256", ""))):
+            if (
+                not isinstance(ref, dict)
+                or set(ref) != {"stored_path", "sha256"}
+                or not re.fullmatch(r"[0-9a-f]{64}", ref.get("sha256", ""))
+            ):
                 raise ValueError("invalid missing-state recovery reference")
-        if (not isinstance(value["authority_handoff_ref"], dict)
-                or set(value["authority_handoff_ref"]) != {"path", "sha256"}):
+        if not isinstance(value["authority_handoff_ref"], dict) or set(
+            value["authority_handoff_ref"]
+        ) != {"path", "sha256"}:
             raise ValueError("invalid missing-state recovery handoff")
     Store.request_id(identifier)
     return value
 
 
 def prepare_successor(repository, platform, identifier, coordinator_fd):
-    pin, verified = distribution(platform)
-    coordinator = socket.socket(fileno=coordinator_fd)
+    from .runtime_successor_channel import (
+        PreparationTransport,
+        classify_preparation_error,
+        preparation_error,
+        send,
+    )
+
+    coordinator = PreparationTransport(socket.socket(fileno=coordinator_fd))
     os.set_inheritable(coordinator_fd, False)
     coordinator.settimeout(300)
+    try:
+        return _prepare_successor(repository, platform, identifier, coordinator)
+    except BaseException as error:
+        directory = Store.directory(identifier)
+        sequence = coordinator.sequence
+        code = classify_preparation_error(error)
+        diagnostic = preparation_error(
+            identifier, sequence, "start" if sequence == 2 else "preparation", code
+        )
+        try:
+            Store.immutable(
+                directory / ("diagnostic-" + secrets.token_hex(16) + ".json"), diagnostic
+            )
+        except (OSError, ValueError):
+            pass
+        try:
+            send(coordinator, diagnostic)
+        except (OSError, ValueError):
+            pass
+        raise
+    finally:
+        coordinator.close()
+
+
+def _prepare_successor(repository, platform, identifier, coordinator):
+    current = distribution(platform)
     request = _request(_frame(receive(coordinator), 1, "operation", "prepare"), identifier)
-    if request["distribution_identity"] != verified["manifest"]["closure_digest"]:
-        raise ValueError("successor distribution identity changed")
-    if request["schema_version"] == 2 and request["transition_mode"] == "fresh-planning-missing-state":
+    if (
+        request["schema_version"] == 2
+        and request["transition_mode"] == "fresh-planning-missing-state"
+    ):
         from .runtime_successor_recovery import prepare_recovery
 
-        return prepare_recovery(repository, platform, identifier, coordinator, request, pin, verified)
+        return prepare_recovery(repository, platform, identifier, coordinator, request, *current)
     prior_subject = subject(repository, platform, request["predecessor_subject"]["session_id"])
     directory = Store.directory(identifier)
     request_ref = Store.immutable(directory / "request.json", request)
@@ -309,39 +355,43 @@ def prepare_successor(repository, platform, identifier, coordinator_fd):
         ):
             raise ValueError("predecessor protected identity differs")
         locks.enter_context(_session_lock(prior))
-        require_quiescent(repository)
         state = read_state(prior)
-        if request.get("transition_mode") != "fresh-planning-intact" and (any(w["state"] in {"ACTIVE", "UNRESOLVED"} for w in state["writers"].values()) or any(
-            e["status"] == "RUNNING" or e.get("interrupted") and not e.get("reconciliation")
-            for e in state["evidence"]["entries"]
-        )):
-            raise ValueError("predecessor operations are unsettled")
+        require_quiescent(repository, transaction=prior, state=state)
+        from .runtime_successor_payload import requested_distribution
+
+        reservation = read(successor_lock.path) if successor_lock.path.exists() else None
+        if reservation is not None:
+            validate(reservation, successor_subject)
+        pin, verified = requested_distribution(
+            platform, request, current, predecessor=prior, reservation=reservation
+        )
         anchors = source_anchors(prior, state)
         if (
             revisions(state["task_package"]["sha256"], state["amendments"])[-1]
             != request["approved_requirement_hash"]
         ):
             raise ValueError("accepted requirement lineage changed")
-        input_ref = Store.immutable(directory / "inputs.json", {
-            "predecessor": prior, "execution_id": request["execution_id"],
-        })
-        authorization = _authority(request["authority_snapshot_ref"],
-            state["integration"]["handoff"], input_ref["stored_path"], inputs_path=input_ref["stored_path"])
-        successor = reserve_locked(successor_lock, pin, private_session=True,
-                                   harness_binding=authorization["harness_binding"])
+        input_ref = Store.immutable(
+            directory / "inputs.json",
+            {
+                "predecessor": prior,
+                "execution_id": request["execution_id"],
+            },
+        )
+        authorization = _authority(
+            request["authority_snapshot_ref"],
+            state["integration"]["handoff"],
+            input_ref["stored_path"],
+            inputs_path=input_ref["stored_path"],
+        )
+        successor = reserve_locked(
+            successor_lock,
+            pin,
+            private_session=True,
+            harness_binding=authorization["harness_binding"],
+        )
         if successor["pin"] != pin:
-            retained = verify_pin(storage() / "pins", successor["pin"])
-            stable_fields = (
-                "distribution_identity",
-                "platform",
-                "complete_file_manifest",
-                "resource_map",
-                "interpreter",
-                "closure_digest",
-            )
-            if any(retained["manifest"][k] != verified["manifest"][k] for k in stable_fields):
-                raise ValueError("reserved successor distribution or interpreter differs")
-            verified = retained
+            raise ValueError("reserved successor pin differs")
         ignored = runtime_directory(successor) / ".gitignore"
         if ignored.exists():
             if capture(ignored)[0] != b"*\n":
@@ -398,17 +448,16 @@ def prepare_successor(repository, platform, identifier, coordinator_fd):
 
             journal.update(
                 state="PREPARATION_FAILED",
-                safe_diagnostic=str(error)[:512],
+                safe_diagnostic="Successor preparation refused; protected progress retained",
                 error_type=type(error).__name__,
             )
             write_json(journal_path, journal)
             raise
-        finally:
-            coordinator.close()
 
 
 def preparation_inputs(repository, platform, session, identifier, authority_ref):
     from .runtime_successor_lineage import git, observe_candidate
+
     _, verified = distribution(platform)
     previous_subject = subject(repository, platform, session)
     with publication_lock(previous_subject) as capability:
@@ -416,15 +465,36 @@ def preparation_inputs(repository, platform, session, identifier, authority_ref)
         validate(previous, previous_subject)
         with _session_lock(previous):
             state = read_state(previous)
-            if previous['status'] != 'ACTIVE' or not state:
-                raise ValueError('predecessor is not active')
-            request = {'predecessor': previous, 'execution_id': state['integration']['binding']['execution_id']}
-            ref = Store.immutable(Store.directory(identifier) / 'inputs.json', request)
-            authorization = _authority(authority_ref,state['integration']['handoff'],ref['stored_path'],inputs_path=ref['stored_path'])
-            return {'candidate_identity': observe_candidate(repository,state['baseline_head'],authorization['classified_paths']),
-                'approved_requirement_hash':revisions(state['task_package']['sha256'],state['amendments'])[-1],
-                'predecessor_subject':{'session_id':session,'run_id':previous['run_id']},
-                'distribution_identity':verified['manifest']['closure_digest'],
-                'predecessor':previous, 'initialization_ref':previous['initialization'],
-                'predecessor_state_sha256':digest(capture(state_path(previous))[0]),
-                'source_inventory':{'missing_tracked_files':[os.fsdecode(p) for p in git(repository,'ls-files','--deleted','-z').split(b'\0') if p]}}
+            if previous["status"] != "ACTIVE" or not state:
+                raise ValueError("predecessor is not active")
+            request = {
+                "predecessor": previous,
+                "execution_id": state["integration"]["binding"]["execution_id"],
+            }
+            ref = Store.immutable(Store.directory(identifier) / "inputs.json", request)
+            authorization = _authority(
+                authority_ref,
+                state["integration"]["handoff"],
+                ref["stored_path"],
+                inputs_path=ref["stored_path"],
+            )
+            return {
+                "candidate_identity": observe_candidate(
+                    repository, state["baseline_head"], authorization["classified_paths"]
+                ),
+                "approved_requirement_hash": revisions(
+                    state["task_package"]["sha256"], state["amendments"]
+                )[-1],
+                "predecessor_subject": {"session_id": session, "run_id": previous["run_id"]},
+                "distribution_identity": verified["manifest"]["closure_digest"],
+                "predecessor": previous,
+                "initialization_ref": previous["initialization"],
+                "predecessor_state_sha256": digest(capture(state_path(previous))[0]),
+                "source_inventory": {
+                    "missing_tracked_files": [
+                        os.fsdecode(p)
+                        for p in git(repository, "ls-files", "--deleted", "-z").split(b"\0")
+                        if p
+                    ]
+                },
+            }

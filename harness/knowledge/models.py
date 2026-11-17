@@ -6,7 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-EXTRACTOR_VERSION = "1"
+PROJECTION_CONTRACT_VERSION = 2
+PROJECTION_READER_NOTICE = (
+    "This project's knowledge projection requires the current reader. "
+    "The pinned execution remains authorized; its older knowledge capability is unavailable."
+)
+EXTRACTOR_VERSION = "2"
 MAX_SOURCE_BYTES = 1_048_576
 MAX_REFRESH_BYTES = 67_108_864
 
@@ -23,6 +28,17 @@ def identity(*parts: str) -> str:
     return digest(canonical(parts).encode())
 
 
+def projection_identity(repository: Path) -> str:
+    """Version the derived projection contract without rekeying project/history/authority IDs.
+
+    Older sealed readers require a raw path identity, and refuse this representation.
+    Their execution remains authorized; only incompatible knowledge access is unavailable.
+    """
+    return canonical(
+        ["harness-knowledge-projection", PROJECTION_CONTRACT_VERSION, str(repository.resolve())]
+    )
+
+
 @dataclass(frozen=True)
 class KnowledgeScope:
     project_id: str
@@ -37,6 +53,9 @@ class KnowledgeScope:
     role: str = "operator"
     permitted_source_versions: frozenset[str] | None = None
     packet_hash: str | None = None
+    snapshot_id: str | None = None
+    permitted_digest: str | None = None
+    review_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,6 +63,7 @@ class RefreshRequest:
     max_files: int = 10000
     max_file_bytes: int = MAX_SOURCE_BYTES
     included_paths: tuple[str, ...] = ()
+    commit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +75,8 @@ class SourceVersion:
     content_sha256: str
     raw: bytes
     observation: dict
+    material_class: str = "repository"
+    visibility: str = "project"
 
 
 @dataclass(frozen=True)
@@ -63,6 +85,8 @@ class SourceInventory:
     complete: bool
     coverage: tuple[dict, ...]
     observation: dict
+    names: frozenset[str] | None = None
+    names_complete: bool = True
 
 
 @dataclass(frozen=True)
@@ -78,6 +102,7 @@ class Assertion:
     verification: str = "source-backed"
     confidence: float = 1.0
     applicability: dict = field(default_factory=dict)
+    derivation_parents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,6 +117,14 @@ class PreparedSnapshot:
     inventory: SourceInventory
     extractions: tuple[Extraction, ...]
     expected_policy_generation: int
+    unknown: tuple[dict, ...] = ()
+    names: frozenset[str] | None = None
+    names_complete: bool = True
+    cursor: dict | None = None
+    rows: tuple | None = None
+    reused: frozenset[str] = frozenset()
+    carry_forward: bool = False
+    contribution: tuple | None = None
 
 
 @dataclass(frozen=True)

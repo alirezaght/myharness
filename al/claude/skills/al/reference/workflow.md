@@ -29,6 +29,60 @@ $ARGUMENTS
 
 If the block above is empty: print `AL · no task given — usage: /al <task specification>` and stop.
 
+## Role-host readiness before writer admission
+
+Check the current host's actually advertised agent-launch tool, named role
+availability and delegation/depth restrictions before starting an AL run or
+admitting a writer. Recheck before a required role dispatch if the host changes.
+A role definition on disk, `show --models`, or a printed invocation is not proof
+that this host can launch that role. Do not infer capability from a background or
+foreground label, invent an environment flag, or start a test writer to find out.
+
+For Claude Code, inspect the advertised `Agent` tool and its selected
+`subagent_type` availability. Preserve the role definition's model/effort pair
+(Fable for Architect/Designer, Opus for Engineer, Sonnet for Builder, subject to
+the existing recorded fallback policy). AL role definitions do not expose `Agent`
+as a role tool; a background fork or subagent without usable named-role dispatch
+must hand supervision back to the main capable session.
+
+If a required capability is absent or a fork/depth restriction prevents dispatch,
+return the **Role-host handback** in `reference/handoffs.md` to the main capable
+supervisor immediately. If the advertised host contract cannot establish the
+capability, record `UNKNOWN` and request parent/main dispatch rather than guessing.
+Use the host's supported return/message mechanism; do not recursively launch
+another supervisor or background process. Keep the affected AL work and required
+plan/review pending, never AL APPROVED. Preserve existing authored work and its
+actual checks so the main supervisor can perform the missing roles and reuse it.
+Do not silently impersonate a role, switch models or bypass required plan/review
+because this host cannot launch agents. Continue other independently authorized
+work within its actual guards; a missing role is not a product approval question.
+The developer's explicit authorization to repair AL/Harness outside AL remains
+valid. This check is a supervisor instruction, not universal runtime fork
+detection or CLI enforcement; real execution guards and authority remain separate.
+
+## Shell argv and path lists (bash and zsh)
+
+Use quoted arrays for multiple arguments in bash and zsh; these examples do not
+target POSIX `sh`. A scalar containing several paths is one argument in zsh, and
+unquoted splitting in other shells loses paths containing spaces. Keep a single
+executable path in a scalar only when it is invoked as `"$EXECUTABLE"`.
+
+```sh
+FILES=("src/cart.py" "tests/cart cases.py")
+git diff -- "${FILES[@]}"
+FILES_CSV=$(IFS=,; printf '%s' "${FILES[*]}")
+"${STATE[@]}" writer start --id cart-writer --role al-engineer --files "$FILES_CSV"
+```
+
+The `writer start --files`, `rework --files` and evidence `--scope` options each
+consume **one comma-separated string**, not several argv elements. Derive that
+string with the local `IFS` join above; do not pass `"${FILES[@]}"` to those
+options. Commas in path names cannot be represented by this CSV interface;
+report that limitation rather than silently changing a path or its scope. Do not
+use `eval`, enable `SH_WORD_SPLIT`, or change global shell options to split argv.
+The writer command still requires normal admission; the example grants no scope
+or execution authority.
+
 ## Constants
 
 - `MAX_CORRECTION_ITERATIONS = 6` (also enforced mechanically: `"${STATE[@]}" correction` exit 3).
@@ -44,7 +98,7 @@ If the block above is empty: print `AL · no task given — usage: /al <task spe
   `scripts/al_models.py`; `"${STATE[@]}" show --models` prints it.
 - State script: every new run goes through the protected managed launcher that the
   AL installation provides:
-  `STATE="$HOME/.local/bin/alctl run --repository <repo-root> --platform claude --"`.
+  `STATE=("$HOME/.local/bin/alctl" run --repository "<repo-root>" --platform claude --)`.
   `<repo-root>` is `git rev-parse --show-toplevel` (it must equal
   `$CLAUDE_PROJECT_DIR` when that is set); run every command from that directory.
   Inside this Claude conversation the launcher mints the AL run id at `start` and
@@ -368,6 +422,19 @@ review and approval. Planning metadata is never a developer approval question:
 3. Save it and run `"${STATE[@]}" planning report --file <report.json>`. A report that still
    contains `FILL:` is refused. The output names `materialized_obligations`.
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
+
+Packet and report authoring may overlap a normal registered ACTIVE writer. Their
+`authoring` response labels the source as an issued observation and grants no
+admission or approval. The template marks begun writer work as `partially_built`;
+that label is implementation context, not proof that changes are complete. A
+moving source can still fail the existing stable-observation publication check.
+
+`planning report` preserves the Architect's exact issued packet, attempt and
+report even when source has since moved. It does not rebind that report to newer
+source. Admission still requires settled operations and current source; source
+movement requires a fresh packet and actual Architect revalidation before proof
+is admitted. UNRESOLVED writers, interrupted checks and uncertain cleanup remain
+operational repair work. They are never evidence of approval.
 
 ### Record behavior observations (before review)
 

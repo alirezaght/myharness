@@ -162,6 +162,7 @@ def test_migrations_are_tracked_and_idempotent(conn):
         (13, "0013_browser_validation.sql"),
         (14, "0014_execution_epochs.sql"),
         (15, "0015_knowledge.sql"),
+        (16, "0016_knowledge_index.sql"),
         (17, "0017_workspace_proposals.sql"),
     ]
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -187,6 +188,7 @@ def test_fresh_connect_reports_applied_migration(tmp_path):
             "0013_browser_validation.sql",
             "0014_execution_epochs.sql",
             "0015_knowledge.sql",
+            "0016_knowledge_index.sql",
             "0017_workspace_proposals.sql",
         ]
         assert apply_migrations(raw) == []

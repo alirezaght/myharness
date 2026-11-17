@@ -90,3 +90,76 @@ def test_inspect_counts_only_entities_reachable_from_active_assertions(graph):
     historical_entities = conn.execute("SELECT count(*) FROM knowledge_entities").fetchone()[0]
     assert view["entity_count"] == historical_entities - 1
     assert conn.execute("SELECT count(*) FROM knowledge_snapshots").fetchone()[0] == 2
+
+
+def test_cli_evidence_uses_structured_resolver_with_matching_task_scope(graph, monkeypatch):
+    from dataclasses import replace
+
+    from harness.cli_knowledge import evidence_knowledge, query_knowledge
+    from harness.knowledge.integration import refresh_with_records
+
+    conn, scope = graph
+    controller = HarnessController(conn)
+    task = controller.create_task("structured knowledge")
+    controller.workspace(task.id).checkpoint(
+        "context_accepted", {"requirements": {"criteria": [{"id": "AC-01"}], "invariants": []}}
+    )
+    refresh_with_records(controller, replace(scope, task_id=task.id))
+    bundle = query_knowledge(
+        controller, scope.repository, entity_refs=(f"task:{task.id}",), task_id=task.id
+    )
+    assertion = next(a for a in bundle["assertions"] if a["predicate"] == "governed-by")
+    from harness.knowledge.sources import read_source
+
+    def confined(root, locator, limit):
+        assert not locator.startswith(("harness:", "contribution:"))
+        return read_source(root, locator, limit)
+
+    from importlib import import_module
+
+    monkeypatch.setattr(import_module("harness.knowledge.query"), "read_source", confined)
+    evidence = evidence_knowledge(
+        controller,
+        scope.repository,
+        bundle["bundle_hash"],
+        assertion["assertion_id"],
+        task_id=task.id,
+    )
+    assert any("AC-01" in c["text"] for c in evidence["citations"])
+
+
+def test_lifecycle_cli_options_are_closed_and_task_selected():
+    import pytest
+
+    from harness.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["knowledge", "refresh", "t-test", "--commit", "HEAD", "--include", "private.py"]
+    )
+    assert args.commit == "HEAD" and args.include == ["private.py"]
+    args = parser.parse_args(
+        ["knowledge", "query", "t-test", "--entity", "module:api", "--as-of", "snapshot"]
+    )
+    assert args.entity == ["module:api"] and args.snapshot_id == "snapshot"
+    for name in ("export", "grant", "revoke", "purge"):
+        with pytest.raises(SystemExit):
+            parser.parse_args(["knowledge", name, "t-test"])
+    with pytest.raises(SystemExit):
+        parser.parse_args(["knowledge", "retain", "t-test", "--project", "arbitrary"])
+
+
+def test_current_operator_cli_survives_purge_generation_bump(graph):
+    from harness.cli_knowledge import query_knowledge, refresh_knowledge
+    from harness.knowledge.models import ContextRequest
+    from harness.knowledge.query import query
+    from harness.knowledge.retention import purge
+
+    conn, scope = graph
+    controller = HarnessController(conn)
+    refresh_knowledge(controller, scope.repository)
+    old = query(conn, scope, ContextRequest("consumer"))
+    version = old.payload["citations"][0]["version_id"]
+    purge(conn, scope, [version])
+    assert query_knowledge(controller, scope.repository, "service")["snapshot_id"]
+    assert refresh_knowledge(controller, scope.repository)["snapshot_id"]

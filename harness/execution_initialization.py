@@ -77,15 +77,61 @@ def initialize_execution(controller, execution, package, envelope):
     try:
         source = al_source(execution, envelope)
     except FileNotFoundError:
+        if envelope.get("runtime_layout") == "harness-durable-epoch-v1" and (
+            "runtime_binding" in envelope
+            or (Path(execution["handoff_path"]).parent / "runtime-binding.json").exists()
+        ):
+            raise ExecutionConflict(
+                "selected durable runtime is unavailable; reconcile its protected origin"
+            ) from None
         source = None
-    if source is not None and source.exists():
-        # ACTIVE is reused. RESERVED is repaired only by the same managed start below.
+    identity = None
+    if (
+        envelope.get("runtime_layout") == "harness-durable-epoch-v1"
+        and "runtime_binding" not in envelope
+        and source is None
+    ):
+        from harness.execution_runtime_recovery import _launcher_call
+
         try:
-            identity = initialization_identity(execution, envelope)
-        except ExecutionConflict:
-            identity = None
-    else:
-        identity = None
+            origin = _launcher_call(
+                package["launcher"],
+                envelope["repository"],
+                "origin",
+                "--repository",
+                envelope["repository"],
+                "--platform",
+                execution["host"],
+                "--session",
+                execution["al_session_id"],
+                "--allow-absent",
+            )
+        except ExecutionConflict as error:
+            raise ExecutionConflict(
+                "Runtime origin observation refused; ensure the AL coordinator supports "
+                "--allow-absent (upgrade AL if needed), then reconcile its protected origin. "
+                "No initialization was started."
+            ) from error
+        absent = {
+            "schema_version": 1,
+            "kind": "runtime-origin-absence-v1",
+            "state": "ABSENT",
+            "repository": envelope["repository"],
+            "platform": execution["host"],
+            "session_id": execution["al_session_id"],
+        }
+        if isinstance(origin, dict) and origin.get("state") == "ABSENT":
+            if origin != absent or type(origin.get("schema_version")) is not int:
+                raise ExecutionConflict(
+                    "runtime origin absence observation differs from exact subject"
+                )
+        elif not isinstance(origin, dict) or set(origin) != {"storage", "transaction", "source"}:
+            raise ExecutionConflict("unsupported runtime origin observation")
+        else:
+            identity = _publish_initial_binding(execution, envelope, package["launcher"], origin)
+    if identity is None and source is not None and source.exists():
+        # Never initialize over an existing source, including a corrupt source.
+        identity = initialization_identity(execution, envelope)
     if identity is None:
         argv = al_argv(
             package["launcher"],
@@ -119,8 +165,6 @@ def initialize_execution(controller, execution, package, envelope):
             envelope.get("runtime_layout") == "harness-durable-epoch-v1"
             and "runtime_binding" not in envelope
         ):
-            from harness.execution_handoff import atomic_file
-            from harness.execution_runtime_layout import durable_runtime
             from harness.execution_runtime_recovery import _launcher_call
 
             origin = _launcher_call(
@@ -134,12 +178,7 @@ def initialize_execution(controller, execution, package, envelope):
                 "--session",
                 execution["al_session_id"],
             )
-            binding = {k: origin[k] for k in ("storage", "transaction")}
-            durable_runtime(binding, envelope["repository"], session_id=execution["al_session_id"])
-            atomic_file(
-                Path(execution["handoff_path"]).parent / "runtime-binding.json",
-                canonical(binding).encode(),
-            )
+            _publish_initial_binding(execution, envelope, package["launcher"], origin)
         identity = initialization_identity(execution, envelope)
     identity = validate_existing_origin(execution, envelope, package["launcher"])
     conn.execute(
@@ -173,3 +212,27 @@ def validate_existing_origin(execution, envelope, launcher):
     if verified.returncode:
         raise ExecutionConflict("protected existing AL origin validation refused")
     return initialization_identity(execution, envelope)
+
+
+def _publish_initial_binding(execution, envelope, launcher, origin):
+    from harness.execution_handoff import atomic_file
+    from harness.execution_runtime_layout import durable_runtime, selected_runtime_binding
+
+    binding = {key: origin[key] for key in ("storage", "transaction")}
+    if binding["transaction"].get("status") != "ACTIVE":
+        raise ExecutionConflict("runtime binding requires an initialized protected origin")
+    observed = dict(envelope, runtime_binding=binding)
+    selected_runtime_binding(execution, observed)
+    directory = durable_runtime(
+        binding,
+        envelope["repository"],
+        session_id=execution["al_session_id"],
+        run_id=execution["al_run_id"],
+    )
+    if origin["source"] != str(directory / (execution["al_session_id"] + ".json")):
+        raise ExecutionConflict("initialized runtime source differs from protected origin")
+    identity = validate_existing_origin(execution, observed, launcher)
+    atomic_file(
+        Path(execution["handoff_path"]).parent / "runtime-binding.json", canonical(binding).encode()
+    )
+    return identity

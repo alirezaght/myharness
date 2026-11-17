@@ -116,3 +116,34 @@ def test_oversized_frame_and_eof_refuse():
         finally:
             parent.close()
             child.close()
+
+
+def test_safe_preparation_error_has_closed_schema_and_bounded_text():
+    from al.installer.runtime_successor_channel import preparation_error
+
+    value = preparation_error("original-request", 1, "preparation", "REFUSED")
+    assert set(value) == {"version", "sequence", "phase", "payload"}
+    assert set(value["payload"]) == {"request_id", "stage", "code", "diagnostic"}
+    assert len(value["payload"]["diagnostic"]) <= 128
+    with pytest.raises(ValueError):
+        preparation_error("original-request", 3, "raw secret", "unknown")
+
+
+@pytest.mark.parametrize(
+    "message,code",
+    [
+        ("successor process ownership unavailable", "OWNERSHIP_ARGV_UNAVAILABLE"),
+        ("task process cwd unavailable", "OWNERSHIP_CWD_UNAVAILABLE"),
+    ],
+)
+def test_ownership_error_has_static_actionable_reason(message, code):
+    from al.installer.runtime_successor_channel import classify_preparation_error, preparation_error
+
+    assert classify_preparation_error(ValueError(message)) == code
+    value = preparation_error("original-request", 1, "preparation", code)
+    assert set(value["payload"]) == {"request_id", "stage", "code", "diagnostic"}
+    diagnostic = value["payload"]["diagnostic"]
+    assert len(diagnostic) <= 128
+    assert "retry the same protected request" in diagnostic
+    assert "No settlement is implied" in diagnostic
+    assert classify_preparation_error(ValueError("secret unrecognized details")) == "REFUSED"

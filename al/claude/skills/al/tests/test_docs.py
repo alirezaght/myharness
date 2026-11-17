@@ -25,6 +25,17 @@ def test_review_docs_require_clean_fresh_context_and_separate_comparison():
     assert "one optional notes pass" in SKILL.lower()
 
 
+def test_handoffs_preserve_sourced_knowledge_without_granting_authority():
+    handoff_text = " ".join(HANDOFFS.split())
+    for needle in (
+        "bundle hash, task, snapshot and purpose",
+        "first await assignment",
+        "Clean-review knowledge remains unavailable",
+        "existing execution authority",
+    ):
+        assert needle in handoff_text, needle
+
+
 def test_comparison_protocol_names_typed_inputs_and_inspection_hashes():
     roles = role_dir(__file__)
     architect = (roles / "al-architect.md").read_text()
@@ -56,6 +67,31 @@ def test_every_documented_state_command_exists():
                          capture_output=True, text=True).stdout
     for cmd in set(re.findall(r"\$STATE (?:--session \S+ )?([a-z][a-z-]+)", SKILL)):
         assert cmd in out, f"SKILL.md uses `$STATE {cmd}`, which al_state.py does not provide"
+
+
+def test_entry_show_options_match_this_platform_cli():
+    result = subprocess.run(
+        [sys.executable, str(AL / "scripts" / "al_state.py"), "show", "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    supported = set(re.findall(r"--[a-z][a-z-]*", result.stdout))
+    for invocation in re.findall(r"`show ([^`]+)`", ENTRY):
+        assert set(re.findall(r"--[a-z][a-z-]*", invocation)) <= supported
+
+
+def test_entry_role_labels_match_this_platform_policy():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("entry_role_policy", AL / "scripts/al_models.py")
+    models = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(models)
+    state = models.initial_state()
+    for role in models.ROLES:
+        expected = role.removeprefix("al-").capitalize() + " " + models.label(
+            models.resolve(state, role)
+        )
+        assert expected in ENTRY, expected
 
 
 def test_guarded_workflow_refuses_count_only_and_prose_approval():

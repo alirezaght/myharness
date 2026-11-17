@@ -72,6 +72,15 @@ engineering details internally. Do not add agents or approval rounds “to be sa
 
 ## 3. Start through the protected launcher
 
+Before starting a run or admitting any writer, check **role-host readiness** in
+[the workflow](reference/workflow.md#role-host-readiness-before-writer-admission).
+The current host must advertise the named AL role-launch capability needed by
+this route. If it is absent, restricted by fork/depth, or UNKNOWN, return the
+structured [host handback](reference/handoffs.md#role-host-handback) to the main
+capable supervisor. Keep required planning/review pending; do not substitute a
+persona, generic agent or model, or build the task while silently omitting them.
+This is operational dispatch recovery, not a developer specification question.
+
 Use one explicit session and repository for every command:
 
 ```sh
@@ -94,8 +103,12 @@ check planning. Preserve actual changed paths and root/shared obligations.
 
 ## 4. Implement with the right agents
 
-Use the fixed role/model/effort slots from `show --models` and `show --spawn ROLE`:
-Architect Astra/MEDIUM, Designer Astra/LOW, Engineer Sol/MEDIUM, Builder Luna/HIGH.
+Use the fixed role/model/effort slots from `show --models`:
+Architect Fable/MEDIUM, Designer Fable/LOW, Engineer Opus/MEDIUM, Builder Sonnet/HIGH.
+Dispatch with the Agent tool's `subagent_type` for the selected role. Its agent
+definition pins model and effort together; use the selected fallback definition
+when the recorded model policy requires it. The detailed Claude workflow gives
+the invocation contract, including for existing pinned runs.
 Only genuine model unavailability enables the documented fallback; never silently
 downgrade or invent availability. See the detailed workflow for that failure path.
 A role that cannot run is a technical capability problem, not a specification

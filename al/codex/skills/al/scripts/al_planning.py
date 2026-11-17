@@ -49,7 +49,7 @@ def binding(st, source_sha256, planning_occurrence=None, document=None):
     }
 
 
-def ready(st):
+def ready(st, *, authoring=False):
     N.validate(st)
     if st["proof_admission"]["status"] != "pending":
         refuse("planning provenance is already admitted; use a current substantive revision")
@@ -77,6 +77,12 @@ def ready(st):
     from al_gate_continuation import _uncertain as cleanup_uncertain
 
     missing = operation_gaps(st)
+    if authoring:
+        # Only normal, registered work may overlap non-authorizing authorship.
+        # Every other operation/cleanup gap remains a refusal, including unknown gaps.
+        active = {"writer " + writer["id"] + " is ACTIVE"
+                  for writer in st.get("writers", {}).values() if writer["state"] == "ACTIVE"}
+        missing = [gap for gap in missing if gap not in active]
     missing += [
         "owned cleanup unresolved: " + entry["id"]
         for entry in st["evidence"]["entries"]
@@ -133,6 +139,17 @@ def routing(st):
     return {"classification": st["classification"], "designer_required": st["designer_required"]}
 
 
+def authoring_view(st):
+    """Response metadata only; the closed immutable proof packet is unchanged."""
+    return {
+        "authority": "none",
+        "current_admission": "pending",
+        "source_currency": "issued-observation-only",
+        "active_writer_ids": sorted(writer["id"] for writer in st.get("writers", {}).values()
+                                    if writer["state"] == "ACTIVE"),
+    }
+
+
 def validate_report(st, report, current, contents, attempt, report_ref):
     J.closed(report, REPORT, "Architect planning report")
     if Template.placeholders(report):
@@ -178,8 +195,11 @@ def validate_report(st, report, current, contents, attempt, report_ref):
 
 def cmd_packet(a, sid):
     st = al_store.load(sid)
-    ready(st)
-    partially_built = any(w.get('degraded') for w in st.get('writers', {}).values())
+    ready(st, authoring=True)
+    # This marks begun implementation context, never completed or verified changes.
+    partially_built = bool(st.get("writers")) or bool(
+        st.get("task_attribution", {}).get("contributions")
+    )
     from al_task_attribution import observe
 
     observed = observe(st)
@@ -189,6 +209,7 @@ def cmd_packet(a, sid):
         old = J.read(previous["packet"])
         if old["binding"] == target:
             print(J.raw({"packet": previous["packet"], "content": old,
+                         "authoring": authoring_view(st),
                          "report_template": Template.template(previous["packet"], old, partially_built=partially_built)}).decode())
             return
     if previous:
@@ -220,13 +241,16 @@ def cmd_packet(a, sid):
         refuse("planning source moved before packet publication")
     al_store.save(sid, st)
     print(J.raw({"packet": reference, "content": value,
+                 "authoring": authoring_view(st),
                  "report_template": Template.template(reference, value, partially_built=partially_built)}).decode())
 
 
 def cmd_report(a, sid):
     st = al_store.load(sid)
-    ready(st)
-    current, contents, attempt = packet(st)
+    ready(st, authoring=True)
+    # Preserve what the Architect actually authored against its issued observation.
+    # Only admission may attest that this observation still matches current source.
+    current, contents, attempt = packet(st, current_source=False)
     if "report" in current:
         refuse("saved Architect planning report cannot be replaced")
     report = J.loads(Path(a.file).read_bytes())
@@ -238,7 +262,8 @@ def cmd_report(a, sid):
     )
     current.update(report=reference, obligations=obligations)
     al_store.save(sid, st)
-    print(J.raw({"report": reference, "materialized_obligations": obligations}).decode())
+    print(J.raw({"report": reference, "materialized_obligations": obligations,
+                 "authoring": authoring_view(st)}).decode())
 
 
 def validate_admitted(st):

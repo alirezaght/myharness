@@ -29,6 +29,52 @@ PRE-EXISTING WORKING-TREE CHANGES (user's, not AL's — do not touch or revert):
 
 ```
 
+## Role-host handback
+
+Return this through the host's supported message/return channel when the current
+host cannot establish required AL role dispatch. This is an operational handoff,
+not a product decision request, new approval, or runtime authority token. Include
+source artifacts themselves or their existing immutable references; do not create
+a new AL run, reset a pin, or claim a role invocation that did not happen.
+
+```text
+AL ROLE-HOST HANDBACK
+Status: PENDING_HOST_DISPATCH (not AL APPROVED)
+Repository / checkout: <exact existing repository and checkout>
+Original task: <verbatim original request or immutable task-package reference>
+Accepted specification: <exact version/hash/reference and accepted amendments>
+Existing run: <AL session ID and Harness execution/task IDs, or not started>
+Current artifacts: <plans, authored changes, reports and actual check references>
+Required roles pending: <role + purpose, e.g. Architect plan or fresh review>
+Host readiness: <UNAVAILABLE | UNKNOWN>
+Observed capability / restriction: <advertised tool/role contract or exact refusal;
+  say unknown when no supported evidence exists>
+Existing writers/checks: <actual IDs/states and reconciliation needs, or none>
+Requested main-supervisor action: <dispatch missing roles under existing guards,
+  reuse current authored work, then continue the same accepted task>
+```
+
+The main supervisor verifies its own role-host readiness and current run state,
+then completes the required planning/review with actual role invocations. Keep
+implementation, verification and AL approval statuses separate. Preserve original
+specification authority, model policy, writer ownership and unresolved evidence;
+this handback does not waive any of them.
+
+## Knowledge bundle references
+
+When a Harness handoff contains a knowledge bundle reference, preserve its exact
+bundle hash, task, snapshot and purpose in the handoff. Treat retrieved claims as
+sourced context with their verification and freshness labels; they do not approve
+decisions, change execution authority, or replace the immutable specification,
+plan, pseudocode or required direct artifacts. Use authenticated Harness read
+tools only when the current host exposes them; otherwise continue from the complete
+standalone handoff and mark unavailable knowledge context plainly. Native profiles
+first await assignment, then read every authenticated handoff page before work.
+Normal packet-local AL review remains supported. Clean-review knowledge remains
+unavailable because native metadata cannot establish absence of inherited context.
+An older bridge that loses compatible knowledge access retains its existing
+execution authority; do not silently upgrade its pin.
+
 The ID in an EVIDENCE block is the immutable AL run ID the supervisor chose for
 `"${STATE[@]}" start` and passes to the launcher on every call. Native harness or
 conversation IDs are attribution only and must never be passed as `--session`.

@@ -690,21 +690,41 @@ function renderCurrentWork(execution) {
   section.append(el("h4", "What is happening"));
   const active = (execution.agents || []).filter((agent) => agent.status === "Running");
   const executing = ACTIVE_EXECUTION_STATUSES.has(execution.status);
+  const activity = execution.activity || {};
+  const actions = activity.recent_actions || [];
+  const tasks = new Map((execution.tasks || []).map((task) => [task.id, task]));
   const now = el("div");
   now.className = "execution-work-now";
-  now.append(el("h5", executing ? "Working now" : "Last reported work"));
+  now.append(el("h5", executing ? "Reported agent work" : "Last reported work"));
   if (!executing) now.append(el("p", "Execution is not active. These are the last recorded agent descriptions."));
   if (!active.length) now.append(el("p", ACTIVE_EXECUTION_STATUSES.has(execution.status)
     ? "The supervisor is active; no running agent has been reported."
     : "No agent is currently reported as running."));
   for (const agent of active) {
-    now.append(el("p", agent.activity || "The agent has not described its current work."));
-    now.append(el("small", `${agent.name} · ${agent.role}`));
+    const card = el("article");
+    card.className = "execution-work-agent";
+    card.dataset.agentId = agent.id;
+    card.append(el("p", `${agent.name} · ${agent.role}`));
+    const task = tasks.get(agent.task);
+    card.append(el("p", agent.task
+      ? `Assigned task: ${task?.title || agent.task}`
+      : "Assigned task not recorded."));
+    if (agent.activity?.trim()) card.append(el("p", agent.activity));
+    const operation = agent.last_operation || actions.find((action) => action.agent_id === agent.id);
+    if (operation) {
+      card.append(el("p", `Latest operation: ${operation.action} · ${activityTime(operation.at)}`));
+      if (operation.outcome) card.append(el("p", `Result: ${operation.outcome}`));
+      const at = new Date(operation.at);
+      if (executing && (!operation.at || !Number.isFinite(at.getTime()) || Date.now() - at.getTime() > 120000)) {
+        card.append(el("p", "No recent operation recorded for this agent; current progress is unconfirmed."));
+      }
+    } else {
+      card.append(el("p", "No tool activity recorded for this agent; current progress is unconfirmed."));
+    }
+    now.append(card);
   }
-  const activity = execution.activity || {};
   const latest = el("div");
   latest.append(el("h5", "Latest recorded activity"));
-  const actions = activity.recent_actions || [];
   for (const action of actions.slice(0, 3)) latest.append(el("p",
     `${action.action} · ${action.agent_name} · ${activityTime(action.at)}${action.outcome ? ` · ${action.outcome}` : ""}`));
   if (!actions.length) latest.append(el("p", activity.last_activity_at
