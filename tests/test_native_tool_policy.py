@@ -84,3 +84,37 @@ def test_generated_claude_permissions_cover_exact_declared_channels(tmp_path, mo
         "WorktreeCreate",
         "WorktreeRemove",
     } == set(settings["hooks"])
+
+
+def test_generated_codex_roles_await_assignment_before_reading_complete_handoff(
+    tmp_path, monkeypatch
+):
+    import tomllib
+    from pathlib import Path
+
+    from harness.native_tool_policy import ROLES, build_native_policy
+
+    monkeypatch.setattr(
+        "harness.native_tool_policy.executable_identity",
+        lambda *_: {"path": "synthetic-unit-executable", "version": "0.164.0", "sha256": "fixture"},
+    )
+    build_native_policy(
+        {"host": "codex"},
+        {
+            "package": str(Path(__file__).resolve().parents[1] / "al/codex/skills/al"),
+            "executable": "synthetic-unit-executable",
+        },
+        {},
+        mcp_url="http://127.0.0.1:1/mcp",
+        token="synthetic-unit-token",
+        directory=tmp_path,
+    )
+    for role in ROLES:
+        instructions = tomllib.loads((tmp_path / (role + ".toml")).read_text())[
+            "developer_instructions"
+        ]
+        assert instructions.index("first call await_assignment") < instructions.index(
+            "handoff.resource"
+        )
+        assert "next_offset until truncated is false" in instructions
+        assert "complete managed evidence block" in instructions

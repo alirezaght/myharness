@@ -226,6 +226,19 @@ def test_root_fixed_documents_guarded_al_and_no_unadmitted_writes(operations):
                 ]
             },
         ),
+        (
+            "al_command",
+            {
+                "arguments": [
+                    "writer",
+                    "handoff",
+                    "--id",
+                    "absent",
+                    "--b",
+                    operation.initialization["source"],
+                ]
+            },
+        ),
         ("diagnostic", {"request": {"kind": "source", "root": "/", "path": "etc/passwd"}}),
     ):
         with pytest.raises(ValueError):
@@ -538,3 +551,141 @@ def test_child_write_requires_its_exact_current_writer(operations):
     )
     with pytest.raises(ValueError):
         operation.admitted(controller, child, "A", revision, paths=["source/good.py"])
+
+
+def generated_handoff_fixture(operations, child_id="handoff-child", body=None):
+    """Synthetic admission fixture; handoff generation uses the actual protected AL command."""
+    operation, principal, controller, initialization, _, execution, _ = operations
+    path = Path(initialization["source"])
+    state = json.loads(path.read_bytes())
+    task_id = "handoff-task"
+    task = {
+        "id": task_id,
+        "title": "bounded fixture",
+        "revision": 1,
+        "status": "Running",
+        "dependencies": [],
+        "files": ["source"],
+        "criteria": ["AC-01"],
+        "progress": None,
+        "registration": "fixture",
+        "admission": {"revision": 1, "graph_revision": 1},
+    }
+    state["status"] = "RUNNING"
+    state["integration"].update(tasks={task_id: task}, graph_revision=1)
+    state["integration"]["agents"][child_id] = {
+        "id": child_id,
+        "name": "Fixture",
+        "task": task_id,
+        "role": "al-engineer",
+        "status": "Running",
+        "started_at": time.time() - 20,
+        "registration": "fixture",
+    }
+    state["writers"] = {
+        "handoff-writer": {
+            "id": "handoff-writer",
+            "role": "al-engineer",
+            "task": task_id,
+            "agent": child_id,
+            "state": "ACTIVE",
+            "phase": state["phase"],
+            "files": ["source"],
+            "commands": [],
+            "started_at": time.time() - 10,
+        }
+    }
+    state["evidence"]["plan"]["handoff-proof"] = {
+        "area": "handoff-proof",
+        "tier": "focused",
+        "kind": "check",
+        "argv": [sys.executable, "-c", "pass"],
+        "scope": ["source"],
+        "cwd": ".",
+        "env": [],
+        "sources": [],
+        "preflight": None,
+        "needs": [],
+    }
+    path.write_text(json.dumps(state))
+    revision = digest({"task": task_id, "revision": 1, "graph_revision": 1, "amendments": []})
+    operation.assignments[child_id] = {"task": task_id, "revision": revision}
+    child = principal | {"thread_id": child_id, "role": "al-engineer", "writable": True}
+    body = body or "ORIGINAL SPEC\n" + "bounded α🧭 text\n" * 1900 + "TAIL_SENTINEL\n"
+    draft = operation.artifacts.write_artifact(principal, "handoff-body.md", body, 1, 1)
+    resource = "artifact:" + draft["artifact_id"] + ":" + draft["sha256"]
+    generated = operation.dispatch(
+        principal,
+        "al_command",
+        {
+            "arguments": [
+                "writer",
+                "handoff",
+                "--id",
+                "handoff-writer",
+                "--body-file",
+                resource,
+                "--area",
+                "handoff-proof",
+            ]
+        },
+    )
+    assert generated["returncode"] == 0, generated
+    current = operation.state(get_execution(controller.conn, execution["id"]))
+    artifact = current["writers"]["handoff-writer"]["handoffs"][-1]["artifact"]
+    from harness.assignment_handoff import descriptor
+
+    descriptor(operation, controller, child)
+    return child, Path(artifact["stored_path"]).read_bytes()
+
+
+def test_authenticated_generated_handoff_pages_and_current_binding(operations):
+    operation, _, _, initialization, _, _, _ = operations
+    child, expected = generated_handoff_fixture(operations)
+    assigned = operation.dispatch(child, "await_assignment", {"timeout": 1})
+    descriptor = assigned["handoff"]
+    assert descriptor["status"] == "available" and descriptor["size"] == len(expected)
+    resource, offset, pieces = descriptor["resource"], 0, []
+    while True:
+        page = operation.dispatch(
+            child, "read_file", {"path": resource, "offset": offset, "limit": 10001}
+        )
+        assert page["sha256"] == descriptor["sha256"]
+        pieces.append(page["text"].encode())
+        offset = page["next_offset"]
+        if not page["truncated"]:
+            break
+    assert b"".join(pieces) == expected
+    assert b"AL MANAGED WRITER EVIDENCE END" in b"".join(pieces)
+    for bad in (child | {"thread_id": "foreign"}, child | {"writable": False}):
+        with pytest.raises(ValueError):
+            operation.dispatch(bad, "read_file", {"path": resource})
+    state_path = Path(initialization["source"])
+    state = json.loads(state_path.read_bytes())
+    state["evidence"]["plan"]["handoff-proof"]["argv"] = [sys.executable, "-c", "print('changed')"]
+    state_path.write_text(json.dumps(state))
+    with pytest.raises(ValueError):
+        operation.dispatch(child, "read_file", {"path": resource, "offset": 10001})
+    assert (
+        operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]["status"]
+        == "unavailable"
+    )
+
+
+def test_handoff_redacts_before_paging_and_uses_presentation_cursors(operations):
+    operation, _, _, _, _, _, _ = operations
+    secret = "cross_boundary_private_value"
+    body = "SAFE\n" + "x" * 16290 + "\npassword=" + secret + "\nEND\n"
+    child, _ = generated_handoff_fixture(operations, body=body)
+    resource = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]["resource"]
+    offset, chunks = 0, []
+    while True:
+        page = operation.dispatch(
+            child, "read_file", {"path": resource, "offset": offset, "limit": 16300}
+        )
+        chunks.append(page["text"])
+        assert page["presentation_redacted"]
+        offset = page["next_offset"]
+        if not page["truncated"]:
+            break
+    assert secret not in "".join(chunks) and "[redacted]" in "".join(chunks)

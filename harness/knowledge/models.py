@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-EXTRACTOR_VERSION = "1"
+EXTRACTOR_VERSION = "2"
 MAX_SOURCE_BYTES = 1_048_576
 MAX_REFRESH_BYTES = 67_108_864
 
@@ -37,6 +37,9 @@ class KnowledgeScope:
     role: str = "operator"
     permitted_source_versions: frozenset[str] | None = None
     packet_hash: str | None = None
+    snapshot_id: str | None = None
+    permitted_digest: str | None = None
+    review_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,8 @@ class SourceVersion:
     content_sha256: str
     raw: bytes
     observation: dict
+    material_class: str = "repository"
+    visibility: str = "project"
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,8 @@ class SourceInventory:
     complete: bool
     coverage: tuple[dict, ...]
     observation: dict
+    names: frozenset[str] | None = None
+    names_complete: bool = True
 
 
 @dataclass(frozen=True)
@@ -78,6 +85,7 @@ class Assertion:
     verification: str = "source-backed"
     confidence: float = 1.0
     applicability: dict = field(default_factory=dict)
+    derivation_parents: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,6 +100,14 @@ class PreparedSnapshot:
     inventory: SourceInventory
     extractions: tuple[Extraction, ...]
     expected_policy_generation: int
+    unknown: tuple[dict, ...] = ()
+    names: frozenset[str] | None = None
+    names_complete: bool = True
+    cursor: dict | None = None
+    rows: tuple | None = None
+    reused: frozenset[str] = frozenset()
+    carry_forward: bool = False
+    contribution: tuple | None = None
 
 
 @dataclass(frozen=True)

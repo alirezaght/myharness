@@ -90,3 +90,39 @@ def test_inspect_counts_only_entities_reachable_from_active_assertions(graph):
     historical_entities = conn.execute("SELECT count(*) FROM knowledge_entities").fetchone()[0]
     assert view["entity_count"] == historical_entities - 1
     assert conn.execute("SELECT count(*) FROM knowledge_snapshots").fetchone()[0] == 2
+
+
+def test_cli_evidence_uses_structured_resolver_with_matching_task_scope(graph, monkeypatch):
+    from dataclasses import replace
+
+    from harness.cli_knowledge import evidence_knowledge, query_knowledge
+    from harness.knowledge.integration import refresh_with_records
+
+    conn, scope = graph
+    controller = HarnessController(conn)
+    task = controller.create_task("structured knowledge")
+    controller.workspace(task.id).checkpoint(
+        "context_accepted", {"requirements": {"criteria": [{"id": "AC-01"}], "invariants": []}}
+    )
+    refresh_with_records(controller, replace(scope, task_id=task.id))
+    bundle = query_knowledge(
+        controller, scope.repository, entity_refs=(f"task:{task.id}",), task_id=task.id
+    )
+    assertion = next(a for a in bundle["assertions"] if a["predicate"] == "governed-by")
+    from harness.knowledge.sources import read_source
+
+    def confined(root, locator, limit):
+        assert not locator.startswith(("harness:", "contribution:"))
+        return read_source(root, locator, limit)
+
+    from importlib import import_module
+
+    monkeypatch.setattr(import_module("harness.knowledge.query"), "read_source", confined)
+    evidence = evidence_knowledge(
+        controller,
+        scope.repository,
+        bundle["bundle_hash"],
+        assertion["assertion_id"],
+        task_id=task.id,
+    )
+    assert any("AC-01" in c["text"] for c in evidence["citations"])

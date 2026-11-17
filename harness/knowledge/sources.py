@@ -130,11 +130,13 @@ def inventory_names(root: Path, request: RefreshRequest) -> tuple[list[str], dic
         sorted(set(request.included_paths))
     ):
         raise ValueError("explicit inclusions must be sorted and unique")
+    private = set(request.included_paths) - names
     names.update(request.included_paths)
     revision = _git(root, "rev-parse", "HEAD")
     branch = _git(root, "symbolic-ref", "--quiet", "HEAD")
     return sorted(name for name in names if eligible(name)), {
         "kind": "working-tree-observation",
+        "task_private_paths": sorted(private),
         "head": revision.stdout.decode().strip() if not revision.returncode else None,
         "branch": branch.stdout.decode().strip() if not branch.returncode else None,
         "inventory_sha256": digest(canonical(sorted(names)).encode()),
@@ -158,6 +160,8 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
                 "limit": request.max_files,
             }
         )
+    for name in names[request.max_files :]:
+        coverage.append({"locator": name, "status": "capped", "reason": "file-count-capped"})
     for name in names[: request.max_files]:
         remaining_bytes = MAX_REFRESH_BYTES - retained_bytes
         read_limit = min(request.max_file_bytes, remaining_bytes)
@@ -187,28 +191,94 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
                 }
             )
             continue
-        except (OSError, UnicodeError, ValueError) as error:
+        except (OSError, UnicodeError, ValueError):
             coverage.append(
-                {"locator": name, "status": "unreadable", "reason": str(error), "limit": read_limit}
+                {
+                    "locator": name,
+                    "status": "unreadable",
+                    "reason": "source-read-failed",
+                    "limit": read_limit,
+                }
             )
             continue
         retained_bytes += len(raw)
         source_id = identity(scope.project_id, name)
         sha = digest(raw)
+        visibility = (
+            "task:" + scope.task_id
+            if name in observation.get("task_private_paths", [])
+            else "project"
+        )
+        kind = "python" if name.endswith(".py") else "text"
+        version_parts = (source_id, sha, EXTRACTOR_VERSION, kind)
+        version = (
+            identity(*version_parts, visibility)
+            if visibility != "project"
+            else identity(*version_parts)
+        )
         sources.append(
             SourceVersion(
                 source_id,
-                identity(source_id, sha, EXTRACTOR_VERSION),
+                version,
                 name,
-                "python" if name.endswith(".py") else "text",
+                kind,
                 sha,
                 raw,
-                observation,
+                dict(observation, visibility=visibility),
+                visibility=visibility,
             )
         )
+    coverage = [
+        dict(c, visibility="task:" + scope.task_id)
+        if c.get("locator") in observation.get("task_private_paths", [])
+        else c
+        for c in coverage
+    ]
     return SourceInventory(
         tuple(sources),
         all(c["status"] == "excluded-sensitive" for c in coverage),
         tuple(coverage),
         observation,
+        frozenset(names),
+        True,
     )
+
+
+def read_artifact(root: Path, reference: dict, *, maximum=16 * MAX_SOURCE_BYTES) -> bytes:
+    """Read a hash-bound ordinary artifact directly under its server-selected issuing root."""
+    root = Path(root)
+    if any(parent.is_symlink() for parent in (root, *root.parents)):
+        raise ValueError("artifact issuing root alias refused")
+    root = root.resolve(strict=True)
+    path = Path(reference.get("stored_path", reference.get("path", "")))
+    if not path.is_absolute() or path.parent != root or path.name in {"", ".", ".."}:
+        raise ValueError("artifact outside issuing root")
+    expected = reference.get("sha256", "").removeprefix("sha256:")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        raise ValueError("artifact hash binding required")
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        try:
+            before = os.fstat(fd)
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > maximum:
+                raise ValueError("bounded ordinary artifact required")
+            raw = b""
+            while len(raw) <= maximum:
+                block = os.read(fd, min(65536, maximum + 1 - len(raw)))
+                if not block:
+                    break
+                raw += block
+            after = os.fstat(fd)
+            if (
+                len(raw) > maximum
+                or (before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                or digest(raw) != expected
+            ):
+                raise ValueError("artifact content binding differs")
+            return raw
+        finally:
+            os.close(fd)
+    finally:
+        os.close(directory)

@@ -49,6 +49,15 @@ DISABLED = (
 ).split()
 
 
+_ASSIGNMENT_HANDOFF_INSTRUCTIONS = (
+    "\nWhen Harness tools are available, first call await_assignment. "
+    "For a writable assignment, read every page of its authenticated handoff.resource "
+    "with read_file before work. Use the returned resource and next_offset until truncated "
+    "is false; retain the complete managed evidence block. A changed binding requires a new "
+    "await_assignment. An unavailable handoff grants no new authority.\n"
+)
+
+
 def executable_identity(executable, host):
     path = Path(executable).resolve(strict=True)
     if host == "codex" and path.suffix == ".js":
@@ -151,6 +160,9 @@ def build_native_policy(execution, package, auth_selection, *, mcp_url, token, d
                     if k in value
                 },
             }
+            sanitized["developer_instructions"] = (
+                sanitized.get("developer_instructions", "") + _ASSIGNMENT_HANDOFF_INSTRUCTIONS
+            )
             role_path = directory / (role + ".toml")
             role_path.write_text("\n".join(k + "=" + _toml(v) for k, v in sanitized.items()))
             options.extend(
@@ -199,7 +211,8 @@ def build_claude_policy(package, directory, channels, hook, session_id):
         roles[role] = {
             "description": metadata["description"].strip().strip('"'),
             "prompt": prompt + "\nUse only Harness controller tools. First call await_assignment. "
-            "Native identity is supplied by the runtime. Never self-assign another task.",
+            "Native identity is supplied by the runtime. Never self-assign another task."
+            + _ASSIGNMENT_HANDOFF_INSTRUCTIONS,
             "model": metadata["model"].strip(),
             "effort": metadata["effort"].strip(),
             "tools": tools,

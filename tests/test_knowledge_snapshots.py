@@ -202,3 +202,25 @@ def test_failed_source_revalidation_preserves_snapshot(graph, monkeypatch, failu
         ).fetchone()[0]
         == 0
     )
+
+
+def test_0016_is_additive_schema_only(tmp_path):
+    conn = connect(tmp_path / "schema.db")
+    assert (
+        conn.execute("SELECT name FROM schema_migrations WHERE version=16").fetchone()[0]
+        == "0016_knowledge_index.sql"
+    )
+    for table in (
+        "knowledge_extraction_cache",
+        "knowledge_extraction_members",
+        "knowledge_assertion_fts",
+        "knowledge_source_class",
+        "knowledge_snapshot_cursor",
+        "knowledge_source_cursor",
+        "knowledge_contributions",
+        "knowledge_review_projections",
+        "knowledge_receipts",
+    ):
+        assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    conn.close()

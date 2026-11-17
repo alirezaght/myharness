@@ -33,7 +33,7 @@ scope = operator_scope(root)
 raw = (root / 'service.py').read_bytes()
 source_id = identity(scope.project_id, 'service.py')
 sha = digest(raw)
-source = SourceVersion(source_id, identity(source_id, sha, EXTRACTOR_VERSION),
+source = SourceVersion(source_id, identity(source_id, sha, EXTRACTOR_VERSION, "python"),
                        'service.py', 'python', sha, raw, {'fixture': True})
 with connect(root / 'fixture.db') as conn:
     publish_snapshot(conn, PreparedSnapshot(

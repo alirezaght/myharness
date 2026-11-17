@@ -2,13 +2,16 @@
 
 import ast
 import re
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
+from harness.decisions import DecisionParseError, parse_decision_text
+from harness.knowledge.adapters import extract_record
 from harness.knowledge.models import Assertion, Extraction, SourceVersion
-from harness.md_record import scan_record
 
 
 def extract_source(source: SourceVersion) -> Extraction:
+    if source.kind in {"requirements", "design", "checkpoint", "task-event", "execution-event"}:
+        return extract_record(source)
     raw, locator = source.raw, source.locator
     text = raw.decode("utf-8")
     module = ".".join(PurePosixPath(locator).with_suffix("").parts)
@@ -110,15 +113,32 @@ def extract_source(source: SourceVersion) -> Extraction:
             ):
                 coverage.append({"locator": locator, "status": "dynamic-reference-unresolved"})
     elif PurePosixPath(locator).name.startswith("DEC-") and locator.endswith(".md"):
-        title, fields, sections = scan_record(text.splitlines())
-        if fields.get("id") and fields.get("version") and sections.get("Decision"):
-            decision = f"decision:{fields['id']}:v{fields['version']}"
+        try:
+            record = parse_decision_text(text, Path(locator))
+        except DecisionParseError:
+            coverage.append({"locator": locator, "status": "malformed-decision"})
+        else:
+            stable = f"decision:{record.id}"
+            decision = f"{stable}:v{record.version}"
+            applicability = {"historical": "/history/" in locator}
+            assertions.append(
+                Assertion(
+                    decision,
+                    "version-of",
+                    stable,
+                    record.version,
+                    record.id,
+                    0,
+                    len(raw),
+                    applicability=applicability,
+                )
+            )
             for predicate, value in [
-                ("title", title),
-                ("status", fields.get("status", "unknown")),
-                ("scope", fields.get("scope", "")),
-                ("rationale", sections.get("Rationale", "")),
-                ("decision", sections["Decision"]),
+                ("title", record.title),
+                ("status", record.status.value),
+                ("scope", record.scope),
+                ("rationale", record.rationale),
+                ("decision", record.decision),
             ]:
                 assertions.append(
                     Assertion(
@@ -129,23 +149,22 @@ def extract_source(source: SourceVersion) -> Extraction:
                         str(value),
                         0,
                         len(raw),
-                        applicability={"historical": "/history/" in locator},
+                        applicability=applicability,
                     )
                 )
-            for ref in re.findall(r"\bDEC-\d+\b", fields.get("supersedes", "")):
+            for ref in re.findall(r"\bDEC-\d+\b", record.supersedes or ""):
                 assertions.append(
                     Assertion(
                         decision,
                         "supersedes",
                         f"decision:{ref}",
                         None,
-                        fields["supersedes"],
+                        record.supersedes,
                         0,
                         len(raw),
+                        applicability=applicability,
                     )
                 )
-        else:
-            coverage.append({"locator": locator, "status": "malformed-decision"})
     elif not locator.endswith(".md"):
         coverage.append({"locator": locator, "status": "text-only-no-dependency-analysis"})
     # Explicit document references are observations, never semantic entailments.
@@ -157,4 +176,11 @@ def extract_source(source: SourceVersion) -> Extraction:
             assertions.append(
                 Assertion(subject, "references", f"{kind}:{match[0]}", None, match[0], start, end)
             )
+    if source.kind == "python" and any(
+        isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute)
+        and n.func.attr == "import_module"
+        for n in ast.walk(tree)
+    ):
+        coverage.append({"locator": locator, "status": "dynamic-reference-unresolved"})
     return Extraction(tuple(assertions), tuple(coverage))
