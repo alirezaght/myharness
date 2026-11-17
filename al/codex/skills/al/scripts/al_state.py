@@ -269,10 +269,11 @@ def _main():
     al_preflight.register(sub)
     argv = sys.argv[1:]
     command_argv = []
-    if "--" in argv:  # everything after `--` is the command a check runs, verbatim
+    command_separator = "--" in argv
+    if command_separator:  # everything after `--` is the command a check runs, verbatim
         i = argv.index("--")
         argv, command_argv = argv[:i], argv[i + 1:]
-    a = ap.parse_args(argv)
+    a = al_evidence.parse_arguments(ap, argv, command_argv, command_separator=command_separator)
     a.command_argv = command_argv
     local_recovery=getattr(a,"operation_recovery_file",None)
     if local_recovery and a.recovery_file:al_schema.refuse("supply one exact recovery descriptor")

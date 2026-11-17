@@ -15,6 +15,11 @@ def connection_class(base):
 
     class Connection(base):
         def request(self, message):
+            adapter = self.dispatcher.__self__
+            if adapter.budget:
+                from .budget import request
+
+                return request(adapter, self, super().request, message)
             result = super().request(message)
             if message.get("method") == "tools/list":
                 adapter = self.dispatcher.__self__
@@ -54,8 +59,23 @@ def run(package_path, admission_path, bridge_path):
     from .package import load
 
     package, admission = load(Path(package_path)), json.loads(Path(admission_path).read_bytes())
+    from .method import validate_method
+
+    validate_method(package)
     bridge = Path(bridge_path).resolve(strict=True)
     output = Path(package["output_directory"])
+    evaluator_hashes = None
+    if package["schema_version"] == 2:
+        from scripts.knowledge_native_eval import adapter_hashes
+
+        evaluator_hashes = adapter_hashes()
+        isolation = json.loads((output / "isolation.json").read_bytes())
+        if (
+            isolation["adapter_hashes"] != evaluator_hashes
+            or isolation.get("method") != package["method"]
+            or admission.get("evaluation_method") != package["method"]
+        ):
+            raise ValueError("M2 evaluator source/method binding changed before dispatch")
     captured, adapters, telemetry, ingestion_refusals = [], [], [], []
     original_connection, original_serve = mcp.MCPConnection, native_runtime.serve_mcp
     original_runtime = native_runtime.NativeRuntime
@@ -245,11 +265,54 @@ def run(package_path, admission_path, bridge_path):
                 else "unavailable: no completed producer/supervisor transfer demonstrated"
             ),
         }
+        if package["schema_version"] == 2:
+            from harness.execution_settlement import closed_context
+
+            from .method import participant_profile
+            from .observer import observe_return
+            from .usage import usage_receipt
+
+            if adapter_hashes() != evaluator_hashes:
+                raise ValueError("M2 evaluator source changed during execution")
+            receipt["evaluator_hashes"] = evaluator_hashes
+            receipt["prompt_sha256"] = sha(
+                prompt(package, admission.get("evaluation_stage")).encode()
+            )
+            receipt["child_returns"] = []
+            for answer in adapters[0].answers if adapters else []:
+                try:
+                    observed = observe_return(
+                        adapters[0].operation.registry.native_root,
+                        actual["native_id"],
+                        answer["principal"],
+                        answer["role"],
+                        expected_profile=participant_profile(package),
+                    )
+                except (ValueError, OSError, KeyError, TypeError) as exc:
+                    observed = {"status": "unavailable", "reason": str(exc)[:256]}
+                receipt["child_returns"].append(observed)
+            receipt["method"] = package["method"]
+            receipt["usage"] = usage_receipt(adapters[0] if adapters else None)
+            attempts = conn.execute(
+                "SELECT * FROM execution_attempts WHERE execution_id=?", (eid,)
+            ).fetchall()
+            receipt["settlement"] = {
+                "execution_status": actual["status"],
+                "attempts": [
+                    {
+                        **{k: a[k] for k in ("id", "status", "worker_pid", "child_pid")},
+                        "closed_context": closed_context(actual, a),
+                    }
+                    for a in attempts
+                ],
+                "limits": "native invocation teardown only; not completed/verified AL work",
+            }
         write_once(output / "native-result.json", receipt)
 
 
 def prompt(package, stage=None):
     extra = ""
+    child_policy = ""
     if stage and stage["action"] == "donor":
         extra = (
             "After the real child returns, while still supervising, call read_file with "
@@ -261,6 +324,13 @@ def prompt(package, stage=None):
             "The child may explicitly read evaluation:donor-report for the exact authorized "
             "same-task historical report. Do not inject prior conversation or donor prose. "
         )
+    if package["schema_version"] == 2:
+        from .method import INSTRUCTIONS
+
+        child_policy = INSTRUCTIONS + "\n"
+        if stage and stage["action"] == "recipient":
+            child_policy += extra
+        extra += INSTRUCTIONS + "\n"
     return extra + (
         "This is a read-only evaluation under prior mission authorization. "
         "First call await_assignment to authenticate the supervisor. "
@@ -268,7 +338,9 @@ def prompt(package, stage=None):
         "conversation. Use that actual named role, its installed model and effort; no fallback. "
         "Send only the following evaluation instructions and question. Wait for its authored "
         "answer, then stop. Do not implement changes or claim AL/mission completion.\n"
-        "Child instructions: use only evaluator Harness tools. First await_assignment; "
+        "Child instructions: "
+        + child_policy
+        + "use only evaluator Harness tools. First await_assignment; "
         "ReadOnly, Pending, or Assigned with unavailable handoff/context are expected; "
         "there is no admitted writer. Baseline resources via read_file: evaluation:analyze, "
         "evaluation:audit, evaluation:decisions, evaluation:suggest, "

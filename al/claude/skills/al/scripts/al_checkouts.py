@@ -22,6 +22,8 @@ def run(root,*args):
 
 def overlay_candidate(root, capture, *, stage_files=True):
     validate(root)
+    gaps=S.unresolved_index_gaps(capture)
+    if gaps: raise MaterializationError('; '.join(gaps))
     rows=capture['files']
     for row in rows:
         kind=row['worktree']['type']
@@ -59,6 +61,9 @@ def overlay_candidate(root, capture, *, stage_files=True):
 def materialize(st,stage,base=None):
     started=time.monotonic()
     capture=S.capture_candidate(st)
+    if stage=='candidate':
+        gaps=S.unresolved_index_gaps(capture)
+        if gaps: raise MaterializationError('; '.join(gaps))
     with tempfile.TemporaryDirectory(prefix='al-gate-') as tmp:
         root=Path(tmp).resolve()/'checkout';root.mkdir()
         revision=capture['base'] if stage=='candidate' else (base or st['identity']['merge_base'])

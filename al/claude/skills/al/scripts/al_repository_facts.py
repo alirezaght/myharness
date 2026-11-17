@@ -1,5 +1,7 @@
 """Bounded read-only snapshots and semantic coverage provenance."""
 import hashlib
+from collections import OrderedDict
+from collections.abc import Mapping
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,9 @@ from al_profile import measured
 import al_writer_progress as progress
 
 SOURCE_SUFFIXES=('.py','.js','.jsx','.ts','.tsx','.go','.rs','.java','.kt','.c','.cc','.cpp','.rb','.php','.swift','.cs')
+# `bytes` bounds retained Snapshot payload, not cumulative source volume. One
+# capture pass is bounded by files * file_bytes for each of current/base; parser
+# work remains separately bounded per source. No cross-command stat cache is used.
 LIMITS={'files':50000,'bytes':64*1024*1024,'file_bytes':2*1024*1024,'depth':32}
 EXCLUDED={'.git','.codex','.claude','.venv','node_modules','__pycache__','.pytest_cache','.ruff_cache','dist','build','.next','.turbo'}
 
@@ -86,6 +91,61 @@ def git_records(root,args,limits):
         proc.wait()
 
 
+class CapturedContent(Mapping):
+    """Exact captured versions; ordinary payloads are streamed, not retained en masse.
+
+    Only the Snapshot's bounded, process-local byte cache retains payloads. Current
+    reads must still match the initial no-follow identity and hash; immutable base
+    bytes are verified against their Git OID and captured SHA256. Keys/metadata are
+    complete even when aggregate source size exceeds the retained-byte allowance.
+    """
+    def __init__(self,scan,snapshot):
+        self.scan=scan;self.snapshot=snapshot;self.records={}
+
+    def __iter__(self):return iter(self.records)
+    def __len__(self):return len(self.records)
+    def __contains__(self,path):return path in self.records
+
+    def __getitem__(self,path):
+        record=self.records[path]
+        if self.snapshot=='current':
+            self.scan.safe_file(path)
+            if file_identity((self.scan.root/path).lstat())!=record['identity']:
+                raise ValueError('captured coverage input changed: '+path)
+        cached=self.scan.cached((self.snapshot,path))
+        if cached is not None:
+            self.verify(path,cached);return cached
+        if self.snapshot=='current':
+            data,identity=self.scan.read_observed(path)
+            if identity!=record['identity']:raise ValueError('captured coverage input changed: '+path)
+        else:
+            from al_git_cache import blobs
+            data=blobs(self.scan.root,[record['oid']],max_bytes=LIMITS['file_bytes'],file_bytes=LIMITS['file_bytes'])[record['oid']]
+        self.verify(path,data)
+        self.scan.retain((self.snapshot,path),data)
+        return data
+
+    def verify(self,path,data):
+        if hashlib.sha256(data).hexdigest()!=self.records[path]['sha256']:
+            raise ValueError('captured coverage content changed: '+path)
+
+    def items(self):return self.content_items(list(self))
+
+    def content_items(self,paths):
+        if self.snapshot=='current':
+            for path in paths:yield path,self[path]
+        else:
+            from al_git_cache import blobs
+            for batch in self.scan.base_batches(paths):
+                values=blobs(self.scan.root,[self.records[p]['oid'] for p in batch],max_bytes=self.scan.batch_bytes,file_bytes=LIMITS['file_bytes'])
+                for path in batch:
+                    data=values[self.records[path]['oid']];self.verify(path,data)
+                    self.scan.retain((self.snapshot,path),data)
+                    yield path,data
+
+    def hashes(self):return {p:r['sha256'] for p,r in self.records.items()}
+
+
 class Snapshot:
     def __init__(self,root,base_oid,paths,opaque,required_adapter=None):
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
@@ -95,7 +155,9 @@ class Snapshot:
             if len(self.paths)>=LIMITS['files']:path_overflow=True;break
             self.paths.append(safe(path))
         self.paths=sorted(set(self.paths));self.opaque=sorted(opaque)
-        self.gaps=[];self.files={};self.base={};self.modes={};self.base_modes={};self.rules=set();self.absent=set();self.total=0
+        self.gaps=[];self.files=CapturedContent(self,'current');self.base=CapturedContent(self,'base');self.modes={};self.base_modes={};self.rules=set();self.absent=set();self.total=0
+        self.cache=OrderedDict();self.retained_bytes=0;self.peak_retained_bytes=0
+        self.batch_bytes=max(LIMITS['file_bytes'],min(LIMITS['bytes'],4*1024*1024))
         if path_overflow:self.gaps.append(gap('file-limit','.', 'explicit path membership limit'))
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
         self.members=self.listing()
@@ -103,8 +165,10 @@ class Snapshot:
         for count,p in enumerate(sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))),1):
             if not p.endswith('/') and self.relevant(p) and (self.root/p).exists():
                 try:
-                    data=self.read(p)
-                    self.files[p]=data;self.modes[p]=(self.root/p).lstat().st_mode&0o7777
+                    data,identity=self.read_observed(p)
+                    self.total+=len(data)
+                    self.files.records[p]={'sha256':hashlib.sha256(data).hexdigest(),'identity':identity,'size':len(data)}
+                    self.retain(('current',p),data);self.modes[p]=identity[2]&0o7777
                     if Path(p).name=='.gitignore':self.rules.add(p)
                 except (OSError,ValueError) as exc:self.gaps.append(gap('unreadable-input',p,str(exc)))
             progress.report('inventory-current', count=count)
@@ -125,10 +189,32 @@ class Snapshot:
             if ancestor.is_symlink():raise ValueError('symlink source boundary')
             if ancestor.is_dir() and (ancestor/'.git').exists():raise ValueError('nested repository/gitlink source boundary')
 
+    def cached(self,key):
+        data=self.cache.get(key)
+        if data is not None:self.cache.move_to_end(key)
+        return data
+
+    def retain(self,key,data):
+        old=self.cache.pop(key,None)
+        if old is not None:self.retained_bytes-=len(old)
+        # A valid per-file input need not fit the retained-byte allowance.
+        if len(data)>LIMITS['bytes']:return
+        while self.cache and self.retained_bytes+len(data)>LIMITS['bytes']:
+            _,old=self.cache.popitem(last=False);self.retained_bytes-=len(old)
+        self.cache[key]=data;self.retained_bytes+=len(data)
+        self.peak_retained_bytes=max(self.peak_retained_bytes,self.retained_bytes)
+
     def read(self,p,charge=True):
+        # Compatibility read API: the byte limit bounds retained payload, not the
+        # aggregate size of independent ordinary source observations.
+        data,_=self.read_observed(p)
+        if charge:self.total+=len(data)
+        return data
+
+    def read_observed(self,p):
         self.safe_file(p)
         before=(self.root/p).lstat()
-        allowance=min(LIMITS['file_bytes'],LIMITS['bytes']-self.total if charge else LIMITS['file_bytes'])
+        allowance=LIMITS['file_bytes']
         if not stat.S_ISREG(before.st_mode):raise ValueError('nonregular coverage input')
         if before.st_size>allowance:raise ValueError('coverage byte limit')
         directory=os.open(self.root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
@@ -142,19 +228,17 @@ class Snapshot:
             opened=os.fstat(fd)
             if file_identity(opened)!=file_identity(before):raise ValueError('coverage input identity changed')
             with os.fdopen(fd,'rb',closefd=False) as stream:data=stream.read(allowance+1)
-            if charge:self.total+=len(data)
             if len(data)>allowance or file_identity(os.fstat(fd))!=file_identity(opened) or file_identity((self.root/p).lstat())!=file_identity(before):raise ValueError('coverage input changed/byte limit')
-            return data
+            return data,file_identity(opened)
         finally:os.close(fd)
 
     def listing(self):
         progress.report('inventory-membership', count=0)
-        result=set();exclusions=[];before_gaps=len(self.gaps);base_rows=[];rule_bytes=0;priority_inputs=set()
+        result=set();exclusions=[];before_gaps=len(self.gaps);base_rows=[];priority_inputs=set()
         def declaration_bytes(p):
-            nonlocal rule_bytes
-            size=(self.root/p).lstat().st_size
-            if rule_bytes+size>LIMITS['bytes']:raise ValueError('declaration aggregate byte limit')
-            data=self.read(p,False);rule_bytes+=len(data);return data
+            # Declarations are parsed one at a time, before ordinary content.
+            # Their aggregate size cannot starve later priority manifests.
+            return self.read(p,False)
         def add(p,protected=False):
             p=p.rstrip('/')
             if not p or p=='.':return
@@ -295,22 +379,39 @@ class Snapshot:
         progress.report('inventory-membership', count=len(result), force=True)
         return sorted(result)
 
+    def base_batches(self,paths):
+        batch=[];total=0
+        for path in paths:
+            size=self.base.records[path]['size']
+            if batch and total+size>self.batch_bytes:
+                yield batch;batch=[];total=0
+            batch.append(path);total+=size
+        if batch:yield batch
+
     @measured('base-enumeration')
     def read_base(self):
         if not self.base_oid:return
         progress.report('inventory-base', count=0)
         try:
-            rows=[];total=0
             for row in sorted(self.base_rows,key=lambda row:(row.split(b'\t',1)[1].decode() not in self.priority_inputs,priority(row.split(b'\t',1)[1].decode()))):
                 meta,path=row.split(b'\t',1);mode,kind,oid,size=meta.split();p=path.decode()
                 if kind!=b'blob' or not self.relevant(p) or any(within(o,p) for o in self.opaque):continue
                 if mode==b'120000':self.gaps.append(gap('base-symlink',p,'base source is a symlink'));continue
-                if int(size)>LIMITS['file_bytes'] or total+int(size)>LIMITS['bytes']:
-                    self.gaps.append(gap('base-byte-limit',p,'base content byte limit'));continue
-                total+=int(size);rows.append((p,oid));self.base_modes[p]=mode.decode()
+                if int(size)>LIMITS['file_bytes']:
+                    self.gaps.append(gap('base-byte-limit',p,'base per-file content byte limit'));continue
+                self.base.records[p]={'oid':oid.decode(),'size':int(size)};self.base_modes[p]=mode.decode()
             from al_git_cache import blobs
-            values=blobs(self.root,[oid.decode() for _,oid in rows],max_bytes=LIMITS['bytes'],file_bytes=LIMITS['file_bytes'])
-            self.base={p:values[oid.decode()] for p,oid in rows}
+            for batch in self.base_batches(list(self.base)):
+                try:
+                    values=blobs(self.root,[self.base.records[p]['oid'] for p in batch],max_bytes=self.batch_bytes,file_bytes=LIMITS['file_bytes'])
+                    for p in batch:
+                        data=values[self.base.records[p]['oid']]
+                        self.base.records[p]['sha256']=hashlib.sha256(data).hexdigest();self.retain(('base',p),data)
+                except (OSError,ValueError,subprocess.CalledProcessError) as exc:
+                    for p in batch:
+                        del self.base.records[p];self.base_modes.pop(p,None)
+                        self.gaps.append(gap('base-unavailable',p,str(exc)))
+                progress.report('inventory-base', count=len(self.base))
             progress.report('inventory-base', count=len(self.base), force=True)
         except (OSError,ValueError,subprocess.CalledProcessError) as exc:self.gaps.append(gap('base-unavailable','.',str(exc)))
 
@@ -330,12 +431,13 @@ class Snapshot:
         observation=self.membership_observation;count=len(self.gaps)
         if self.listing()!=self.members or observation!=self.membership_observation or len(self.gaps)!=count:return False
         progress.report('inventory-stability', count=0)
-        def unchanged(index,p,data):
-            same=self.read(p,False)==data
+        def unchanged(index,p,record):
+            data,identity=self.read_observed(p)
+            same=identity==record['identity'] and hashlib.sha256(data).hexdigest()==record['sha256']
             progress.report('inventory-stability', count=index)
             return same
         try:
-            stable=all(unchanged(index,p,data) for index,(p,data) in enumerate(self.files.items(),1)) and all(not (self.root/p).exists() for p in self.absent)
+            stable=all(unchanged(index,p,record) for index,(p,record) in enumerate(self.files.records.items(),1)) and all(not (self.root/p).exists() for p in self.absent)
             progress.report('inventory-stability', count=len(self.files) if stable else None, force=True)
             return stable
         except (OSError,ValueError):return False
@@ -361,8 +463,8 @@ def collect(root,*,base_oid,paths,opaque,required_adapter=None):
     facts['enumeration']['membership_rules']=sorted(p for p in scan.files if Path(p).name=='.gitignore')
     facts['dependencies']=imports.analyze(facts,scan)
     facts['unsupported_boundaries']=[gap('opaque-boundary',p,'opaque child content cannot be enumerated') for p in sorted(opaque)]
-    facts['rule_sources']=[{'path':p,'sha256':hashlib.sha256(scan.files[p]).hexdigest()} for p in sorted(scan.rules) if p in scan.files]
-    facts['scan_inputs']=[{'path':p,'snapshot':which,'sha256':hashlib.sha256(data).hexdigest()} for which,files in [('base',scan.base),('current',scan.files)] for p,data in sorted(files.items()) if p.endswith(SOURCE_SUFFIXES) and any((p.endswith('.py') and any(within(r,p) for r in u['source_roots'])) or (not p.endswith('.py') and within(u['path'],p)) for u in facts['units'])]
+    facts['rule_sources']=[{'path':p,'sha256':scan.files.records[p]['sha256']} for p in sorted(scan.rules) if p in scan.files]
+    facts['scan_inputs']=[{'path':p,'snapshot':which,'sha256':record['sha256']} for which,files in [('base',scan.base),('current',scan.files)] for p,record in sorted(files.records.items()) if p.endswith(SOURCE_SUFFIXES) and any((p.endswith('.py') and any(within(r,p) for r in u['source_roots'])) or (not p.endswith('.py') and within(u['path'],p)) for u in facts['units'])]
     facts['enumeration']['absent_paths']=sorted(scan.absent)
     facts['scan']={'stable':scan.stable(),'limits':LIMITS,'membership_digest':digest(scan.members),'provenance_digest':digest(facts['scan_inputs'])}
     validate_facts(facts);return facts

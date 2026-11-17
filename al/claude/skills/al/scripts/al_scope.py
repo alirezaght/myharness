@@ -78,6 +78,7 @@ def _source_rows(root=None, base='HEAD'):
     try:
         index=G.index_entries(root);head=G.tree_entries(root,'HEAD')
         baseline=head if base=='HEAD' else G.tree_entries(root,base)
+        _validate_conflict_types(root, index, baseline, head)
         out=[]
         for raw in sorted(G.paths(baseline,head,index)):
             obs=G.observe(root,raw,baseline.get(raw),head.get(raw),index.get(raw))
@@ -221,16 +222,20 @@ def _records(base,root=None):
         index = G.index_entries(root)
         base_entries = G.tree_entries(root, base)
         head = G.tree_entries(root, 'HEAD')
+        _validate_conflict_types(root, index, base_entries, head)
         observations = {raw: G.observe(root, raw, base_entries.get(raw), head.get(raw), index.get(raw))
                         for raw in G.paths(base_entries, head, index)}
     except G.GitlinkError as exc:
         refuse(str(exc))
-    hashes = _blob_hashes(root, (e['oid'] for e in index.values() if e['mode'] != '160000'))
+    hashes = _blob_hashes(root, (e['oid'] for entry in index.values() for e in entry.get('stages', [entry]) if e['mode'] != '160000'))
     indexed = {}
     for count,(raw, entry) in enumerate(index.items(),1):
-        indexed[raw] = dict(entry)
-        if entry['mode'] != '160000':
-            indexed[raw]['sha256'] = hashes[entry['oid']]
+        if 'stages' in entry:
+            indexed[raw] = {'stages': [{**e, 'sha256': hashes[e['oid']]} for e in entry['stages']]}
+        else:
+            indexed[raw] = dict(entry)
+            if entry['mode'] != '160000':
+                indexed[raw]['sha256'] = hashes[entry['oid']]
         progress.report('scope-index', count=count)
     progress.report('scope-index', count=len(index), force=True)
     opaque = {raw for raw, obs in observations.items() if G.opaque(obs)}
@@ -262,10 +267,37 @@ def _records(base,root=None):
         elif p.is_file(): row['worktree'] = {'type':'file','executable':bool(p.stat().st_mode & 0o111),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
         elif not p.exists() or (obs and p.is_dir()): row['worktree'] = {'type':'deleted'}
         else: refuse('unsupported candidate file type: ' + str(rel))
+        if row['index'] and 'stages' in row['index'] and row['worktree']['type'] not in {'file', 'deleted'}:
+            refuse('unmerged worktree type is unsupported')
         out.append(row)
         progress.report('scope-worktree', count=len(out))
     progress.report('scope-worktree', count=len(out), force=True)
     return out
+
+
+def _validate_conflict_types(root, index, baseline, head):
+    """Only ordinary file stages and an ordinary/deleted parent path are representable."""
+    for raw, entry in index.items():
+        if 'stages' not in entry:
+            continue
+        rel = safe_path(raw)
+        ancestors = {os.fsencode(str(Path(*rel.parts[:i]))) for i in range(1, len(rel.parts))}
+        if any(tree.get(parent, {}).get('mode') in {'120000', '160000'}
+               for tree in (baseline, head, index) for parent in ancestors):
+            refuse('unmerged index beneath opaque or symlink type boundary is unsupported')
+        if any((root / Path(*rel.parts[:i])).is_symlink() for i in range(1, len(rel.parts))):
+            refuse('unmerged candidate path traverses symlink')
+        if any(e and e.get('mode') not in {'100644', '100755'} for e in (baseline.get(raw), head.get(raw))):
+            refuse('unmerged index type transition is unsupported')
+        path = root / rel
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            refuse('unmerged worktree type is unsupported')
+
+
+def unresolved_index_gaps(capture):
+    """Observable conflict inputs are never a resolved final candidate."""
+    return ['unresolved index conflict: ' + row['path'] for row in capture['files']
+            if row.get('index') and 'stages' in row['index']]
 
 
 def parent_representation(rows):
@@ -332,8 +364,12 @@ def _capture_candidate(st):
     sha = hashlib.sha256(json.dumps(content,sort_keys=True).encode()).hexdigest()
     from al_writer_progress import report
     report('candidate-materialization', force=True)
-    diff = parent_diff(base,'--binary',rows=rows).decode(errors='replace')
+    unresolved = unresolved_index_gaps({'files': rows})
+    # Git's combined unmerged diff can refresh the source index. These inputs are
+    # recorded exactly but intentionally have no resolved patch to materialize.
+    diff = '' if unresolved else parent_diff(base,'--binary',rows=rows).decode(errors='replace')
     diff_limitations = [r['path']+': '+r['child']['error'] for r in rows if r.get('child',{}).get('state')=='inspection-failed']
+    diff_limitations += unresolved
     import base64
     untracked = {}
     for row in rows:

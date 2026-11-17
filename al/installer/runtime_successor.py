@@ -455,6 +455,33 @@ def _prepare_successor(repository, platform, identifier, coordinator):
             raise
 
 
+class UnsupportedRuntimeSuccessorMode(ValueError):
+    """The existing successor protocol requires a Harness-integrated predecessor."""
+
+    code = "UNSUPPORTED_RUNTIME_SUCCESSOR_MODE"
+
+    def __init__(self):
+        super().__init__(
+            self.code + ": runtime-successor inputs requires a Harness integration with "
+            "binding.execution_id and handoff; standalone pin migration is unsupported. "
+            "Use runtime-successor origin to inspect the existing pin. For a Harness execution, "
+            "use execution runtime-prepare/runtime-inspect/runtime-activate through the trusted "
+            "Harness operator. For standalone AL, settle existing work and start a fresh run "
+            "from the preserved accepted package; revalidate all verification and approval credit. "
+            "See reference/implementation-continuity.md and reference/distribution.md."
+        )
+
+
+def _successor_integration(state):
+    integration = state.get("integration")
+    binding = integration.get("binding") if isinstance(integration, dict) else None
+    if (not isinstance(binding, dict)
+            or not isinstance(binding.get("execution_id"), str) or not binding["execution_id"]
+            or not isinstance(integration.get("handoff"), str) or not integration["handoff"]):
+        raise UnsupportedRuntimeSuccessorMode()
+    return integration
+
+
 def preparation_inputs(repository, platform, session, identifier, authority_ref):
     from .runtime_successor_lineage import git, observe_candidate
 
@@ -467,14 +494,15 @@ def preparation_inputs(repository, platform, session, identifier, authority_ref)
             state = read_state(previous)
             if previous["status"] != "ACTIVE" or not state:
                 raise ValueError("predecessor is not active")
+            integration = _successor_integration(state)
             request = {
                 "predecessor": previous,
-                "execution_id": state["integration"]["binding"]["execution_id"],
+                "execution_id": integration["binding"]["execution_id"],
             }
             ref = Store.immutable(Store.directory(identifier) / "inputs.json", request)
             authorization = _authority(
                 authority_ref,
-                state["integration"]["handoff"],
+                integration["handoff"],
                 ref["stored_path"],
                 inputs_path=ref["stored_path"],
             )

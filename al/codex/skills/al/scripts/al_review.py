@@ -42,7 +42,7 @@ def review_gaps(st):
 def approval_gaps(st):
     from al_service_coverage import admission_gaps
     from al_acceptance import completion_gaps
-    return completion_gaps(st)+admission_gaps(st,current=True)+S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)+review_gaps(st)
+    return completion_gaps(st)+admission_gaps(st,current=True)+S.unresolved_index_gaps(S.capture_candidate(st))+S.child_content_gaps(S.capture_candidate(st))+operation_gaps(st)+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)+review_gaps(st)
 
 def prior_findings(st):
     return al_review_history.findings(st)
@@ -50,7 +50,7 @@ def prior_findings(st):
 
 def cmd_review_start(a,sid):
     st=al_store.load(sid); require_transition(st,'review-start','REVIEW')
-    missing=S.child_content_gaps(S.capture_candidate(st))+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)
+    missing=S.unresolved_index_gaps(S.capture_candidate(st))+S.child_content_gaps(S.capture_candidate(st))+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)
     if st.get('gate_manifests'):
         # The one full inventory between planning and approval: the candidate's obligations must
         # still match the planned manifest.

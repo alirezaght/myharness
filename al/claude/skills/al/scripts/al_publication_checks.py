@@ -34,7 +34,7 @@ def binding(entry):
 
 
 def checks(st, areas):
-    gaps = list(W.operation_gaps(st))
+    gaps = S.unresolved_index_gaps(S.capture_candidate(st)) + list(W.operation_gaps(st))
     currency = Currency.check(st)
     if not currency["current"]:
         gaps.append("publication requires current gate inventory")

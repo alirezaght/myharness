@@ -151,9 +151,11 @@ def test_repository_snapshot_progress_preserves_data_and_stability(repo, capsys)
     import al_writer_progress as progress
 
     baseline = facts.Snapshot(repo, None, ["svc"], [])
+    payloads = {name: dict(getattr(baseline, name).items()) for name in ("files", "base")}
     capsys.readouterr()
     with progress.writer_progress():
         observed = facts.Snapshot(repo, None, ["svc"], [])
+        assert {name: dict(getattr(observed, name).items()) for name in payloads} == payloads
         assert observed.stable()
         (repo / "svc/app.py").write_text("moved = True\n")
         assert not observed.stable()
@@ -163,8 +165,12 @@ def test_repository_snapshot_progress_preserves_data_and_stability(repo, capsys)
     assert "reading current repository inputs" in captured.err
     assert "checking repository snapshot stability" in captured.err
     assert "svc/app.py" not in captured.err and str(repo) not in captured.err
-    for name in ["members", "files", "base", "modes", "base_modes", "gaps", "total"]:
+    for name in ["members", "modes", "base_modes", "gaps", "total"]:
         assert getattr(observed, name) == getattr(baseline, name)
+    for name in ("files", "base"):
+        assert getattr(observed, name).records == getattr(baseline, name).records
+    with pytest.raises(ValueError, match="captured coverage input changed"):
+        observed.files["svc/app.py"]
 
 
 def test_scope_rows_are_identical_with_enabled_progress(repo, capsys):

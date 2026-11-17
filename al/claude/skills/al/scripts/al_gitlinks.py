@@ -1,5 +1,6 @@
 """Read-only identity and worktree validation for opaque Git submodules."""
 import os
+import copy
 import hashlib
 import re
 from pathlib import Path
@@ -28,9 +29,24 @@ def entries(raw, index=False):
                 continue
             meta, path = record.split(b'\t', 1)
             mode, middle, last = meta.split()
+            oid = middle if index else last
+            if not HEX.fullmatch(oid):
+                raise GitlinkError('invalid object id')
+            entry = {'mode': mode.decode(), 'oid': oid.decode()}
             if index and last != b'0':
-                raise GitlinkError('unmerged index is unsupported')
-            out[path] = {'mode': mode.decode(), 'oid': (middle if index else last).decode()}
+                if last not in {b'1', b'2', b'3'} or mode not in {b'100644', b'100755'}:
+                    raise GitlinkError('unmerged index type is unsupported')
+                current = out.setdefault(path, {'stages': []})
+                if 'stages' not in current or any(e['stage'] == int(last) for e in current['stages']):
+                    raise GitlinkError('duplicate or mixed index stages')
+                current['stages'].append({'stage': int(last), **entry})
+            else:
+                if path in out:
+                    raise GitlinkError('duplicate or mixed Git entry')
+                out[path] = entry
+        for entry in out.values():
+            if 'stages' in entry:
+                entry['stages'].sort(key=lambda value: value['stage'])
     except (ValueError, UnicodeError) as exc:
         raise GitlinkError('invalid Git entry metadata: ' + str(exc)) from exc
     return out
@@ -60,7 +76,7 @@ def index_entries(root):
         if len(_INDEXES) >= 8:
             _INDEXES.clear()
         _INDEXES[key] = value
-    return {path: dict(entry) for path, entry in _INDEXES[key].items()}
+    return copy.deepcopy(_INDEXES[key])
 
 
 _TREES = {}
@@ -177,7 +193,7 @@ def tree_entries(root, revision):
 
 
 def paths(*maps):
-    return {path for items in maps for path, entry in items.items() if entry['mode'] == '160000'}
+    return {path for items in maps for path, entry in items.items() if entry.get('mode') == '160000'}
 
 
 def observe(root, raw, base_entry, head_entry, index_entry):
@@ -187,7 +203,7 @@ def observe(root, raw, base_entry, head_entry, index_entry):
     root = Path(root).resolve()
     if any((root / Path(*rel.parts[:i])).is_symlink() for i in range(1, len(rel.parts))):
         raise GitlinkError('submodule path traverses symlink: ' + str(rel))
-    indexed = bool(index_entry and index_entry['mode'] == '160000')
+    indexed = bool(index_entry and index_entry.get('mode') == '160000')
     child = {'state': 'uninitialized' if indexed else 'replaced', 'head': None,
              'dirty': False, 'status_sha256': None, 'error': None, 'contents_captured': False}
     effective = {'type': 'gitlink', **index_entry} if indexed else None

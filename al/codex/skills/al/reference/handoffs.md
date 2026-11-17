@@ -154,6 +154,10 @@ Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.
   `INTERFACE_STABILITY`, `SHARED_STATE_COMMANDS`, `PARALLEL_SAFE`, `REASON`),
   `TEST_PLAN` (with `VERIFICATION_COMMANDS`), `EVIDENCE_PLAN`,
   `RUNTIME_PREREQUISITES`, `ACCEPTANCE_CRITERIA`.
+Delivery: return the complete plan verbatim through authenticated `submit_output`
+when available, otherwise in the final response, following **Named report output**.
+The supervisor or host captures the complete content verbatim and records the
+artifact; the read-only Architect does not create a plan file.
 
 ## al-architect · PLANNING REPORT
 After `classify` and `gates plan`, continue the same Architect agent with the
@@ -163,8 +167,11 @@ example states, transitions, outcomes, failures and scenarios rewritten to descr
 this task's observable behavior. Keep every identity, binding and routing field
 exactly as given. Set invocation_id to your actual invocation.`
 Required output: the completed `architect-planning-report-v1` JSON and nothing else.
-The supervisor runs `planning report --file` and `planning admit --file`; a report
-still containing `FILL:` is refused.
+Deliver it through authenticated `submit_output` when available, otherwise as the
+final response. The supervisor captures the exact JSON using its own Write or host
+final-message capture and records the artifact. The Architect returns content; it
+does not write the report file or run a generator. The supervisor runs `planning
+report --file` and `planning admit --file`; a report still containing `FILL:` is refused.
 ## al-architect · MODE: RESOLVE_CONFLICT
 Add: `MODE: RESOLVE_CONFLICT`, `APPROVED PLAN: <plan>`, `INVARIANTS`,
 `ACCEPTANCE_CRITERIA`, and either `PLAN_CONFLICT REPORTED BY AL-DESIGNER:
@@ -346,14 +353,23 @@ VERIFICATION_COMMANDS at the barrier.
 ## Named report output
 
 OUTPUT_ARTIFACT: <unique JSON/Markdown filename for this invocation>
-For Harness-native agents, call `submit_output` with this name, final content and
-the current graph revision; return only its artifact reference. This permits a
-report outbox, not source edits by read-only agents. Otherwise use an explicitly
-authorized report file outside the repository or the host final-message capture
-(for Codex CLI, `--output-last-message FILE`). If the host cannot save it, return
-`OUTPUT_BLOCKED` and the exact final report; never claim the file exists or scrape
-a matching prompt from transcript text. The supervisor records it with `artifact
-output --name NAME --file FILE` and retrieves it with `artifact show --name NAME`.
+Return the complete plan or report verbatim through authenticated `submit_output`
+when available, with this name and the current graph revision; after success,
+return only its immutable artifact reference. Otherwise return the complete raw
+content in the final response. The supervisor or host captures that exact content
+using its own Write or final-message capture (for Codex CLI,
+`--output-last-message FILE`) and records the artifact. A read-only Architect never
+needs filesystem Write, scratch files, heredocs, inline Python or a generator;
+this report outbox grants no filesystem write authority. Writing agents may use an
+explicitly authorized report file outside the repository.
+
+Missing content or a failed submission/capture is an `OUTPUT_BLOCKED` operational
+issue, not approval or a specification decision. Retain any complete content and
+report the capture failure separately; missing filesystem Write alone is not
+`OUTPUT_BLOCKED`. Never claim a file exists without successful capture or scrape
+a matching prompt from transcript text. The supervisor records the captured file
+with `artifact output --name NAME --file FILE` and retrieves it with `artifact show
+--name NAME`.
 
 ## Generate every writer handoff
 

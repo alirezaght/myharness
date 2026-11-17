@@ -309,6 +309,33 @@ reported session/journal and backups before any manual recovery. Do not remove
 pending metadata or restore backups by hand unless the complete journal proves
 which exact preimage should be restored.
 
+### Existing run pins and successor guidance
+
+Installing a release and bootstrapping a coordinator do not replace an existing
+run's immutable pin. `alctl runtime-successor origin --repository REPOSITORY
+--platform PLATFORM --session SESSION` inspects its protected origin; it does
+not migrate it. Standalone `runtime-successor inputs` reports
+`UNSUPPORTED_RUNTIME_SUCCESSOR_MODE` because that protocol requires a real
+Harness integration binding and handoff.
+
+For an existing Harness execution, use the trusted operator's supported
+`harness execution runtime-prepare`, `runtime-inspect` and `runtime-activate`
+flow, with its actual control store, current epoch/generation, exact request and
+preparation digest, settled operations and supported containment. Preparation
+has no product authority; activation fences the predecessor and never resumes
+the native session automatically. See the complete array-based commands and
+prerequisites in [distribution.md](codex/skills/al/reference/distribution.md#existing-runtime-pins)
+([Claude copy](claude/skills/al/reference/distribution.md#existing-runtime-pins)).
+
+Standalone users can inspect the old origin and, after actual settlement, start
+a genuinely fresh run from the preserved accepted package and requirements.
+Keep old history and artifacts as references and revalidate all evidence,
+planning, contribution and approval credit. This is a new run, not an in-place
+upgrade. See [implementation-continuity.md](codex/skills/al/reference/implementation-continuity.md#inspect-a-pin-and-choose-the-supported-route)
+([Claude copy](claude/skills/al/reference/implementation-continuity.md#inspect-a-pin-and-choose-the-supported-route)).
+No supported route edits a retained pin/state/index or invents standalone
+successor authority, coordinator tokens or transferred PASS results.
+
 ## Releasing
 
 Ordinary installation uses fixed structural smoke and integrity checks. Release

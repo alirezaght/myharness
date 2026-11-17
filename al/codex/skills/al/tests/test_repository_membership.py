@@ -35,7 +35,8 @@ def test_content_budget_prioritizes_manifests(repo, monkeypatch):
     monkeypatch.setitem(LIMITS, "bytes", 4096)
     scan = Snapshot(repo, None, [], [])
     assert {"apps/web/package.json", "services/a/pyproject.toml", "services/b/pyproject.toml"} <= scan.files.keys()
-    assert scan.gaps
+    assert not scan.gaps
+    assert scan.total > LIMITS['bytes'] >= scan.peak_retained_bytes
 
 
 @pytest.mark.parametrize("protection", ["tracked", "base", "explicit", "declared"])
@@ -179,7 +180,8 @@ def test_unknown_manifest_named_data_cannot_starve_supported_manifest_bytes(repo
     monkeypatch.setitem(LIMITS,'bytes',4096)
     scan=Snapshot(repo,None,[],[])
     assert {'apps/web/package.json','services/a/pyproject.toml','services/b/pyproject.toml'}<=scan.files.keys()
-    assert scan.gaps
+    assert not scan.gaps
+    assert scan.total > LIMITS['bytes'] >= scan.peak_retained_bytes
 
 
 

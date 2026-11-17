@@ -163,7 +163,7 @@ def test_actual_mutation_during_read_is_a_torn_scan(cli,repo,tmp_path,monkeypatc
     from hook_regression_helpers import invoke
     p=tmp_path/'race-paths.json';p.write_text(json.dumps(['services/a/src/app.py']));before=state_file().read_bytes()
     result=invoke(cli,'gates','discover','--paths-file',str(p),ok=False)
-    assert 'service coverage requirements changed' in str(result)
+    assert result[0]=='al_run: captured coverage input changed: services/b/src/app.py'
     assert state_file().read_bytes()==before
     _,m=discover(cli,tmp_path,['services/a/src/app.py'])
     assert m['service_coverage']['assessment']['outcome']=='identified'

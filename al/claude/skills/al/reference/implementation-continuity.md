@@ -66,3 +66,55 @@ failure history, while creating fresh execution authority under repaired code.
 Preparation alone grants no product authority. Activation must reject stale
 epochs, principals, events and delayed decisions. Never hand-edit an old pin,
 pretend a tooling blocker was resolved, or import old evidence as a new pass.
+
+### Inspect a pin and choose the supported route
+
+`alctl runtime-successor inputs` requires a Harness-bound run with its real
+integration binding and handoff. A standalone run has no supported in-place
+pin migration; it reports `UNSUPPORTED_RUNTIME_SUCCESSOR_MODE`. Never construct
+a handoff, authority reference or coordinator descriptor to make it appear
+Harness-bound. The trusted operator Harness route is documented in
+[distribution.md](distribution.md#existing-runtime-pins).
+
+Use the actual protected launcher and the original run's repository, platform
+(`codex` or `claude`) and session. Origin inspection identifies the protected
+transaction, pin and state location; it does not select a new runtime or migrate
+the run:
+
+```sh
+ALCTL=("$HOME/.local/bin/alctl")
+"${ALCTL[@]}" runtime-successor origin --repository "$REPOSITORY" \
+  --platform "$PLATFORM" --session "$OLD_SESSION"
+```
+
+For standalone AL, after existing work and its owned processes/checks are
+settled, a genuinely new run can use the preserved accepted package through
+the repaired managed launcher:
+
+```sh
+"${ALCTL[@]}" run --repository "$REPOSITORY" --platform "$PLATFORM" \
+  --session "$NEW_SESSION" -- start --package-file "$ACCEPTED_PACKAGE"
+```
+
+Set `NEW_SESSION` to an unused run identity. `ACCEPTED_PACKAGE` is the preserved
+accepted task-package JSON with its original request, acceptance provenance,
+criteria and constraints. Start does not copy the predecessor amendment ledger.
+Preserve accepted amendments and decisions as requirements; use exact retained
+user text and source through the fresh standalone run's supported amendment
+command before its specification gate, once per applicable accepted amendment:
+
+```sh
+"${ALCTL[@]}" run --repository "$REPOSITORY" --platform "$PLATFORM" \
+  --session "$NEW_SESSION" --existing-run -- task amend --file "$ACCEPTED_AMENDMENT"
+```
+
+Do not reconstruct missing acceptance from a summary or invent approval. If the
+exact accepted requirements cannot be recovered, retain that technical gap
+before starting implementation.
+
+This creates a new baseline, session, run and proof ledger. The predecessor
+state, immutable pin and artifacts remain historical references. Re-run the
+specification gate, classification and relevant checks against the current
+source. Earlier PASS results, agent identities, writer contributions, planning
+admission and approvals do not become fresh credit. A standalone start does
+not acquire a Harness execution's task or epoch authority.

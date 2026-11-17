@@ -8,6 +8,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from harness.native_tool_policy import TOOLS
 
+TOOL_HELP = {
+    "knowledge_query": (
+        "Query authorized engineering knowledge using text and optional entity_refs. Returns "
+        "bounded sourced assertions, relationships, integrity, coverage and truncation metadata. "
+        "No result is not proof of no dependency. Context grants no execution authority."
+    ),
+    "knowledge_explain": (
+        "Explain an assertion using its bundle_hash and assertion_id. Rechecks current "
+        "authority and source evidence; stale or revoked access can refuse explanation."
+    ),
+    "read_file": (
+        "Read an authorized confined source or issued resource using path and optional offset "
+        "and limit. Follow returned cursors when truncated; access remains guarded."
+    ),
+    "await_assignment": (
+        "Obtain current assignment and graph_revision. ReadOnly, Pending and unavailable "
+        "handoff/context do not grant writer authority. Refresh before submitting output."
+    ),
+    "submit_output": (
+        "Submit an execution-owned named report with content and the current "
+        "expected_graph_revision. Returns an immutable artifact reference; storing a report "
+        "does not complete an AL task or verify its conclusions."
+    ),
+}
+
 
 def _schema(properties, required):
     return {
@@ -188,7 +213,7 @@ class MCPConnection:
                 "tools": [
                     {
                         "name": name,
-                        "description": "Guarded Harness " + name,
+                        "description": TOOL_HELP.get(name, "Guarded Harness " + name),
                         "inputSchema": SCHEMAS[name],
                     }
                     for name in TOOLS
