@@ -163,11 +163,30 @@ def ingest(operation, controller, principal, task_id, resource):
             )
     else:
         if isinstance(document, dict):
-            summary = "\n".join(
+            parts = [
                 str(document[k])
                 for k in ("finding", "summary", "conclusion", "observations")
                 if k in document
-            )
+            ]
+            answer = document.get("answer")
+            if isinstance(answer, str) and answer.strip():
+                parts.append(answer)
+            facts = document.get("facts")
+            if (
+                isinstance(facts, list)
+                and facts
+                and all(
+                    isinstance(fact, dict)
+                    and not set(fact) - {"claim", "sources"}
+                    and isinstance(fact.get("claim"), str)
+                    and fact["claim"].strip()
+                    and isinstance(fact.get("sources", []), list)
+                    and all(isinstance(ref, str) and ref.strip() for ref in fact.get("sources", []))
+                    for fact in facts
+                )
+            ):
+                parts.append(json.dumps(facts, sort_keys=True, ensure_ascii=False))
+            summary = "\n".join(parts)
         else:
             summary = text
         if not summary.strip():
