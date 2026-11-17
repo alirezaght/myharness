@@ -13,7 +13,7 @@ from harness.knowledge.lessons import (
     lesson_body,
     revoke,
 )
-from harness.knowledge.models import ContextRequest, PreparedSnapshot, SourceInventory
+from harness.knowledge.models import ContextRequest, PreparedSnapshot, SourceInventory, canonical
 from harness.knowledge.policy import current_operator_scope, operator_scope
 from harness.knowledge.query import explain, query
 from harness.knowledge.refresh import refresh
@@ -278,3 +278,84 @@ def test_same_portable_bytes_in_third_project_are_not_authorized(sharing, tmp_pa
             install(third, selected, exported["payload"])
     finally:
         third.close()
+
+
+def test_lesson_citations_project_only_observation_with_private_inventory(sharing):
+    import json
+    from dataclasses import replace
+
+    from harness.knowledge.models import RefreshRequest
+
+    conn, scope, other, target, _, _, exported = sharing
+    grant(conn, scope, other, target, "portable", 1, grant_id="observation")
+    locator = "docs/knowledge/imports/portable.md"
+    path = target.repository / locator
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(exported["payload"])
+    git(target.repository, "add", locator)
+    private = "private-acquisition.md"
+    (target.repository / private).write_text("PRIVATE_INVENTORY")
+    a, b = replace(target, task_id="A"), replace(target, task_id="B")
+    first = refresh(other, a, RefreshRequest(included_paths=(private,)))
+    for _ in range(2):
+        bundle = query(other, b, ContextRequest("bounded"))
+        assert bundle.payload["assertions"]
+        assert private not in json.dumps(bundle.payload)
+        observation = json.loads(bundle.payload["citations"][0]["observation_json"])
+        assert observation["grant_id"] == "observation"
+        assert observation["lesson_sha256"] == exported["material_sha256"]
+        assert observation["source_project"] == scope.project_id
+        assert observation["destination_project"] == target.project_id
+        aid = bundle.payload["assertions"][0]["assertion_id"]
+        assert private not in json.dumps(
+            explain(other, b, bundle.bundle_hash, aid, include_evidence=True)
+        )
+        refresh(other, a, RefreshRequest(included_paths=(private,)))
+    assert private not in json.dumps(
+        query(other, b, ContextRequest("bounded", as_of_snapshot=first.snapshot_id)).payload
+    )
+    git(
+        target.repository,
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-qm",
+        "lesson",
+    )
+    refresh(other, b, RefreshRequest(commit="HEAD"))
+    bundle = query(other, b, ContextRequest("bounded"))
+    assert bundle.payload["assertions"]
+    assert private not in json.dumps(bundle.payload)
+    aid = bundle.payload["assertions"][0]["assertion_id"]
+    assert private not in json.dumps(
+        explain(other, b, bundle.bundle_hash, aid, include_evidence=True)
+    )
+
+
+def test_pre_fix_lesson_bundle_explanation_reprojects_citation_metadata(sharing, monkeypatch):
+    import importlib
+    import json
+
+    conn, scope, other, target, _, _, exported = sharing
+    grant(conn, scope, other, target, "portable", 1, grant_id="retained")
+    install(other, target, exported["payload"])
+    module = importlib.import_module("harness.knowledge.commit_sources")
+    original = module.snapshot_observation
+
+    def legacy_observation(db, ref):
+        return dict(original(db, ref), task_private_paths=["private-old-acquisition.md"])
+
+    # Issue authentic immutable bundle bytes using the old citation projection shape.
+    with monkeypatch.context() as patch:
+        patch.setattr(module, "snapshot_observation", legacy_observation)
+        bundle = query(other, target, ContextRequest("bounded"))
+    assert "private-old-acquisition.md" in json.dumps(bundle.payload)
+    aid = bundle.payload["assertions"][0]["assertion_id"]
+    for include in (False, True):
+        result = explain(other, target, bundle.bundle_hash, aid, include_evidence=include)
+        assert "private-old-acquisition.md" not in json.dumps(result)
+    assert other.execute(
+        "SELECT payload FROM knowledge_bundles WHERE bundle_hash=?", (bundle.bundle_hash,)
+    ).fetchone()[0] == canonical(bundle.payload)

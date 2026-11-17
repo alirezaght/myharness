@@ -396,3 +396,83 @@ def test_private_source_requires_nonempty_approved_task_scope(graph):
             PreparedSnapshot(scope, inventory, (extract_source(private),), 0),
             expected_active=None,
         )
+
+
+@pytest.mark.parametrize("commit", [False, True])
+def test_completed_report_retains_repository_memberships_and_coverage(operations, commit):
+    from harness.cli_knowledge import inspect_knowledge
+    from harness.db import connect
+    from harness.knowledge.contributions import ingest
+    from tests.test_execution_operations import generated_handoff_fixture
+    from tests.test_knowledge_lifecycle import git
+
+    operation, supervisor, controller, initialization, _, execution, _ = operations
+    root = Path(operation.envelope["repository"])
+    (root / "unsupported.js").write_text("public limitation")
+    (root / "private-malformed.py").write_text("{")
+    git(root, "add", "unsupported.js")
+    if commit:
+        git(
+            root,
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "coverage",
+        )
+    scoped = current_operator_scope(controller.conn, root, task_id=execution["task_id"])
+    initial = refresh(
+        controller.conn,
+        scoped,
+        RefreshRequest(commit="HEAD")
+        if commit
+        else RefreshRequest(included_paths=("private-malformed.py",)),
+    )
+    child, _ = generated_handoff_fixture(operations)
+    report = operation.artifacts.submit_output(
+        child, "report.json", json.dumps({"summary": "COMPLETED_REPORT_COVERAGE"}), 1, 1
+    )
+    resource = "artifact:" + report["artifact_id"] + ":" + report["sha256"]
+    path = Path(initialization["source"])
+    state = json.loads(path.read_bytes())
+    state["integration"]["agents"][child["thread_id"]].update(
+        status="Completed", ended_at=time.time(), latest_output=resource
+    )
+    path.write_text(json.dumps(state))
+    ingest(operation, controller, supervisor, "handoff-task", resource)
+    database = controller.conn.execute("PRAGMA database_list").fetchone()[2]
+    with connect(Path(database)) as reopened:
+        reader = HarnessController(reopened)
+        status = inspect_knowledge(reader, root, task_id=execution["task_id"])
+        old = {
+            r[0]
+            for r in reopened.execute(
+                "SELECT source_id FROM knowledge_snapshot_sources WHERE snapshot_id=?",
+                (initial.snapshot_id,),
+            )
+        }
+        active = {
+            r[0]
+            for r in reopened.execute(
+                "SELECT source_id FROM knowledge_snapshot_sources WHERE snapshot_id=?",
+                (status["active_snapshot_id"],),
+            )
+        }
+        assert old <= active
+        assert any(c.get("locator") == "unsupported.js" for c in status["snapshot_coverage"])
+        if not commit:
+            assert "private-malformed.py" in json.dumps(status)
+            assert "private-malformed.py" not in json.dumps(
+                inspect_knowledge(reader, root, task_id="B")
+            )
+        bundle = query(reopened, scoped, ContextRequest("COMPLETED_REPORT_COVERAGE"))
+        assert bundle.payload["assertions"]
+        assert any(c.get("locator") == "unsupported.js" for c in bundle.payload["coverage"])
+    # Explicit commit refresh is a repository-only projection, not a report augmentation.
+    if commit:
+        refresh(controller.conn, scoped, RefreshRequest(commit="HEAD"))
+        assert not query(
+            controller.conn, scoped, ContextRequest("COMPLETED_REPORT_COVERAGE")
+        ).payload["assertions"]

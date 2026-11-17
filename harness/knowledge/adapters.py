@@ -203,7 +203,7 @@ def task_sources(controller, scope, task_id, *, max_records=200):
             coverage.append({"status": "structured-source-unavailable", "kind": kind})
     if len(selections) > max_records:
         coverage.append({"status": "structured-record-cap", "limit": max_records})
-    return tuple(sources), tuple(coverage)
+    return tuple(sources), tuple(dict(gap, visibility="task:" + task_id) for gap in coverage)
 
 
 def current_bytes(conn, scope, kind, observation):

@@ -251,7 +251,7 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
     coverage = [
         dict(c, visibility="task:" + scope.task_id)
         if c.get("locator") in observation.get("task_private_paths", [])
-        else c
+        else dict(c, visibility="project")
         for c in coverage
     ]
     return SourceInventory(

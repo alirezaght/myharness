@@ -49,7 +49,7 @@ def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
         source for source in sources if not version_purged(controller.conn, source.version_id)
     )
     coverage = (*coverage, *blocked)
-    if not sources and not blocked:
+    if not sources and not coverage:
         return result
     project = validate_scope(controller.conn, scope)
     parent = controller.conn.execute(
@@ -64,7 +64,7 @@ def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
             (project["active_snapshot_id"],),
         )
     }
-    if not blocked and all(s.version_id in old for s in sources):
+    if not coverage and all(s.version_id in old for s in sources):
         return result
     inventory = SourceInventory(sources, True, coverage, json.loads(parent[0]))
     snapshot = publish_snapshot(

@@ -102,12 +102,19 @@ def snapshot_observation(conn, ref):
 
     observation = json.loads(row[0]) if row else {}
     if ref["kind"] in {"python", "text", "lesson"}:
+        from harness.knowledge.lessons import import_observation
+
+        lesson = (
+            import_observation(json.loads(ref["observation_json"]))
+            if ref["kind"] == "lesson"
+            else {}
+        )
         if observation.get("mode") == "commit":
             entry = observation.get("git_entries", {}).get(ref["locator"])
             if not entry:
                 raise ValueError("source absent from pinned commit")
             return {
-                **(json.loads(ref["observation_json"]) if ref["kind"] == "lesson" else {}),
+                **lesson,
                 **entry,
                 "file_mode": entry["mode"],
                 "mode": "commit",
@@ -117,7 +124,7 @@ def snapshot_observation(conn, ref):
             dict(
                 {
                     k: v
-                    for k, v in json.loads(ref["observation_json"]).items()
+                    for k, v in lesson.items()
                     if k not in {"mode", "commit", "blob", "file_mode", "type"}
                 },
                 mode="working-tree",

@@ -39,6 +39,59 @@ _ROW = (
 )
 
 
+def visible_coverage(conn, scope, coverage, snapshot):
+    """Project diagnostics using source bindings, including retained pre-fix rows."""
+    bindings = {}
+    for row in conn.execute(
+        "SELECT s.locator,s.visibility,v.version_id,v.observation_json,v.extraction_status,"
+        "t.detail_json FROM knowledge_snapshot_sources m JOIN knowledge_sources s USING(source_id) "
+        "JOIN knowledge_source_versions v USING(version_id) LEFT JOIN "
+        "knowledge_snapshot_source_state t ON t.snapshot_id=m.snapshot_id "
+        "AND t.source_id=m.source_id WHERE m.snapshot_id=? AND s.project_id=?",
+        (snapshot, scope.project_id),
+    ):
+        observed = json.loads(row["observation_json"])
+        detail = json.loads(row["detail_json"]) if row["detail_json"] else {}
+        visibility = detail.get("visibility", observed.get("visibility", row["visibility"]))
+        # Old deferred placeholders defaulted to public without recording their owner.
+        # A new source-bound gap records visibility explicitly in its state detail.
+        if (
+            row["extraction_status"] == "unread"
+            and visibility == "project"
+            and ("visibility" not in detail)
+        ):
+            visibility = None
+        bindings[row["locator"]] = (visibility, row["version_id"])
+    allowed = {"project", "task:" + scope.task_id} if scope.task_id else {"project"}
+    visible = []
+    for gap in coverage:
+        name = gap.get("locator")
+        binding = bindings.get(name)
+        visibility = gap.get("visibility")
+        if name:
+            if binding:
+                bound_visibility, version = binding
+                if bound_visibility not in allowed:
+                    continue
+                if scope.permitted_source_versions is not None and (
+                    version not in scope.permitted_source_versions
+                ):
+                    continue
+                if visibility is None:
+                    visibility = bound_visibility
+            elif visibility is None or scope.permitted_source_versions is not None:
+                # Unbound legacy locators have no trustworthy public/private classification.
+                continue
+        if visibility is None and not name:
+            if gap.get("status") in {"structured-source-unavailable", "structured-record-cap"}:
+                # Retained task-record diagnostics did not record a trustworthy task owner.
+                continue
+            visibility = "project"
+        if visibility in allowed:
+            visible.append(gap)
+    return visible
+
+
 def _partition(conn, scope, snapshot):
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS k_snapshot(snapshot_id TEXT)")
     conn.execute("DELETE FROM temp.k_snapshot")
@@ -517,11 +570,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
         "ambiguities": ambiguities,
         "conflicts": _integrity(rows),
         "staleness": [],
-        "coverage": [
-            c
-            for c in json.loads(snap["coverage_json"])
-            if c.get("visibility", "project") in {"project", "task:" + (scope.task_id or "")}
-        ],
+        "coverage": visible_coverage(conn, scope, json.loads(snap["coverage_json"]), snapshot),
         "exclusions": {},
         "truncation": False,
         "budget": {
@@ -544,35 +593,37 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     else:
         if not historical or immutable:
             payload["staleness"].extend(_head_observation(conn, scope, snapshot))
-        for row in conn.execute(
-            "SELECT m.membership_state,s.locator,t.reason FROM knowledge_snapshot_sources m "
-            "JOIN knowledge_sources s USING(source_id) JOIN knowledge_source_versions v "
-            "USING(version_id) "
-            "LEFT JOIN knowledge_snapshot_source_state t "
-            "ON t.snapshot_id=m.snapshot_id AND t.source_id=m.source_id WHERE m.snapshot_id=? "
-            "AND m.membership_state!='present' AND "
-            "coalesce(json_extract(t.detail_json,'$.visibility'),"
-            "json_extract(v.observation_json,'$.visibility'),'project') IN ('project',?) "
-            "ORDER BY s.locator LIMIT 200",
-            (snapshot, "task:" + (scope.task_id or "")),
-        ):
-            payload["coverage"].append(
-                {
-                    "status": "source-removed" if row[0] == "deleted" else "source-unknown",
-                    "locator": row[1],
-                    "reason": row[2],
-                }
+        state_coverage = [
+            {
+                "status": "source-removed" if row[0] == "deleted" else "source-unknown",
+                "locator": row[1],
+                "reason": row[2],
+            }
+            for row in conn.execute(
+                "SELECT m.membership_state,s.locator,t.reason FROM knowledge_snapshot_sources m "
+                "JOIN knowledge_sources s USING(source_id) LEFT JOIN "
+                "knowledge_snapshot_source_state t "
+                "ON t.snapshot_id=m.snapshot_id AND t.source_id=m.source_id WHERE m.snapshot_id=? "
+                "AND m.membership_state!='present' ORDER BY s.locator",
+                (snapshot,),
             )
+        ]
+        payload["coverage"].extend(visible_coverage(conn, scope, state_coverage, snapshot)[:200])
         attempt = conn.execute(
-            "SELECT coverage_json FROM knowledge_refresh_attempts WHERE project_id=? "
-            "AND created_at>? AND status='incomplete' ORDER BY created_at DESC LIMIT 1",
-            (scope.project_id, snap["created_at"]),
+            "SELECT status,coverage_json,created_at FROM knowledge_refresh_attempts "
+            "WHERE project_id=? ORDER BY rowid DESC LIMIT 1",
+            (scope.project_id,),
         ).fetchone()
-        if attempt:
+        if (
+            attempt
+            and attempt["status"] == "incomplete"
+            and (attempt["created_at"] >= snap["created_at"])
+        ):
             payload["coverage"].extend(
                 dict(c, since_snapshot=True)
-                for c in json.loads(attempt[0])
-                if c.get("visibility", "project") in {"project", "task:" + (scope.task_id or "")}
+                for c in visible_coverage(
+                    conn, scope, json.loads(attempt["coverage_json"]), snapshot
+                )
             )
     cache, emitted, visiting = {}, set(), set()
 
@@ -827,7 +878,12 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
                 for ref in _evidence(conn, item["assertion_id"])
             ):
                 raise ValueError("bundle evidence is stale")
-    citations = [dict(c) for c in payload["citations"] if c["assertion_id"] == assertion_id]
+    current_refs = {ref["version_id"]: ref for ref in _evidence(conn, assertion_id)}
+    citations = [
+        dict(c, observation_json=current_refs[c["version_id"]]["observation_json"])
+        for c in payload["citations"]
+        if c["assertion_id"] == assertion_id
+    ]
     if include_evidence:
         for ref in _evidence(conn, assertion_id):
             if not _citation_current(scope, ref, conn=conn, cache=cache, reads=reads):

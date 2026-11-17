@@ -196,7 +196,7 @@ def _memberships(conn, prepared, expected):
     for name, old in previous.items():
         if name in members:
             continue
-        if prepared.inventory.observation.get("mode") == "commit":
+        if prepared.inventory.observation.get("mode") == "commit" and not prepared.carry_forward:
             continue
         if prepared.carry_forward:
             prior = conn.execute(
@@ -221,16 +221,58 @@ def _memberships(conn, prepared, expected):
     return members
 
 
+def _coverage(conn, prepared, expected, members):
+    sources = {source.locator: source for source in prepared.inventory.sources}
+    coverage = list(prepared.inventory.coverage)
+    for source, extraction in zip(prepared.inventory.sources, prepared.extractions, strict=True):
+        coverage.extend(
+            dict(gap, visibility=source.visibility, version_id=source.version_id)
+            for gap in extraction.coverage
+        )
+    for index, gap in enumerate(coverage):
+        source = sources.get(gap.get("locator"))
+        if source:
+            coverage[index] = dict(gap, visibility=source.visibility, version_id=source.version_id)
+    if not expected:
+        return coverage
+    prior = {
+        row["locator"]: row
+        for row in conn.execute(
+            "SELECT s.locator,m.version_id,v.observation_json FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) JOIN knowledge_source_versions v "
+            "USING(version_id) WHERE m.snapshot_id=?",
+            (expected,),
+        )
+    }
+    parent = conn.execute(
+        "SELECT coverage_json FROM knowledge_snapshots WHERE snapshot_id=?", (expected,)
+    ).fetchone()
+    replaced = set(sources) | {gap["locator"] for gap in prepared.unknown}
+    for gap in json.loads(parent[0]):
+        name = gap.get("locator")
+        old, member = prior.get(name), members.get(name)
+        if not name:
+            if prepared.carry_forward and gap not in coverage:
+                coverage.append(gap)
+        elif (
+            name not in replaced
+            and old
+            and member
+            and member[1] == old["version_id"]
+            and member[2] != "deleted"
+        ):
+            visibility = json.loads(old["observation_json"]).get("visibility", "project")
+            coverage.append(dict(gap, visibility=visibility, version_id=old["version_id"]))
+    return coverage
+
+
 def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str | None) -> str:
     rows = prepare_rows(prepared) if prepared.rows is None else prepared.rows
     ensure_project(conn, prepared.scope)
     project = prepared.scope.project_id
     members = _memberships(conn, prepared, expected_active)
     snapshot, now = secrets.token_hex(16), utcnow()
-    coverage = [
-        *prepared.inventory.coverage,
-        *(g for extraction in prepared.extractions for g in extraction.coverage),
-    ]
+    coverage = _coverage(conn, prepared, expected_active, members)
     previous_sources = {
         r[0]
         for r in conn.execute(
@@ -259,7 +301,9 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
     unknown_count = sum(m[2] == "unknown" for m in members.values())
     deleted_count = sum(m[2] == "deleted" for m in members.values())
     status = "published-partial" if unknown_count or not prepared.names_complete else "published"
-    observation = prepared.inventory.observation
+    observation = dict(prepared.inventory.observation)
+    if prepared.carry_forward:
+        observation["augmented"] = True
     cursor = prepared.cursor or {}
     snapshot_row = (
         snapshot,

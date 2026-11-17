@@ -140,6 +140,7 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
                 "locator": source.locator,
                 "status": "deferred",
                 "reason": "publish-batch-deferred",
+                "visibility": source.visibility,
             }
             coverage.append(gap)
             unknown.append(gap)
@@ -161,10 +162,22 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
                     Extraction((), tuple(json.loads(cache[0]))) if cache else extract_source(source)
                 )
         except (OSError, ValueError, SyntaxError):
-            gap = {"locator": source.locator, "status": "failed", "reason": "extraction-failed"}
+            gap = {
+                "locator": source.locator,
+                "status": "failed",
+                "reason": "extraction-failed",
+                "visibility": source.visibility,
+            }
             coverage.append(gap)
             unknown.append(gap)
             continue
+        extraction = replace(
+            extraction,
+            coverage=tuple(
+                dict(gap, visibility=source.visibility, version_id=source.version_id)
+                for gap in extraction.coverage
+            ),
+        )
         if cache:
             reused.add(source.version_id)
         stable.append(source)

@@ -307,6 +307,26 @@ def exact_grant(conn, project_id, value, material):
     ).fetchone()
 
 
+def import_observation(observation):
+    """Only source-bound evidence and exact grant provenance travel with a lesson."""
+    allowed = {
+        "mode",
+        "commit",
+        "file_mode",
+        "blob",
+        "type",
+        "visibility",
+        "source_project",
+        "destination_project",
+        "lesson_sha256",
+        "lesson_id",
+        "lesson_version",
+        "grant_id",
+        "approval_ref",
+    }
+    return {key: value for key, value in observation.items() if key in allowed}
+
+
 def admit_import(conn, scope, source):
     body, value = parse_portable(source.raw)
     row = exact_grant(conn, scope.project_id, value, digest(body))
@@ -318,7 +338,7 @@ def admit_import(conn, scope, source):
         identity(*parts, source.visibility) if source.visibility != "project" else identity(*parts)
     )
     observation = dict(
-        source.observation,
+        import_observation(source.observation),
         source_project=value["source_project"],
         destination_project=scope.project_id,
         lesson_sha256=digest(body),

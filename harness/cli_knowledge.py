@@ -6,7 +6,7 @@ from pathlib import Path
 from harness.knowledge.integration import refresh_with_records
 from harness.knowledge.models import ContextRequest, RefreshRequest
 from harness.knowledge.policy import current_operator_scope
-from harness.knowledge.query import explain, query
+from harness.knowledge.query import explain, query, visible_coverage
 
 
 def repository_for_task(controller, task_id):
@@ -69,16 +69,11 @@ def inspect_knowledge(controller, repository, *, task_id=None):
                 "SELECT coverage_json FROM knowledge_snapshots WHERE snapshot_id=?", (snapshot,)
             ).fetchone()[0]
         )
-    permitted_visibility = {"project", "task:" + (task_id or "")}
-    snapshot_coverage = [
-        c for c in snapshot_coverage if c.get("visibility", "project") in permitted_visibility
-    ]
+    snapshot_coverage = visible_coverage(controller.conn, scope, snapshot_coverage, snapshot)
     if latest_refresh:
-        latest_refresh["coverage"] = [
-            c
-            for c in latest_refresh["coverage"]
-            if c.get("visibility", "project") in permitted_visibility
-        ]
+        latest_refresh["coverage"] = visible_coverage(
+            controller.conn, scope, latest_refresh["coverage"], snapshot
+        )
     return {
         "status": "indexed" if snapshot else "not-indexed",
         **dict(row),
