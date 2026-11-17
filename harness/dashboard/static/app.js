@@ -279,72 +279,7 @@ function renderDecisions(decisions) {
 }
 
 function renderTask(task) {
-  const section = el("section");
-  section.id = "task";
-  const title = el("h2", task.request.length > 110 ? `${task.request.slice(0, 107)}…` : task.request);
-  title.title = task.request;
-  section.append(title, el("small", `Task ${task.id}`));
-  section.append(renderStatusSummary(task));
-  if (task.execution) section.append(renderExecution(task.id, task.execution));
-  const knowledge = el("details");
-  knowledge.dataset.viewDisclosure = "knowledge";
-  knowledge.append(el("summary", "Project knowledge"), renderKnowledgePanel(task.id));
-  section.append(knowledge);
-  if (task.launch?.binding || (task.execution && task.approval_center?.final?.blockers?.some(item => item.code === "approved"))) {
-    const approved = document.createElement("details");
-    approved.dataset.viewDisclosure = "approved-specification-record";
-    approved.className = "execution-detail-panel";
-    approved.append(el("summary", "Approved specification and approval record"), renderApprovalCenter(task));
-    section.append(approved);
-  } else section.append(renderApprovalCenter(task));
-  const list = el("dl");
-  const rows = [
-    ["Description", task.request],
-    ["Phase", task.phase],
-    ["Status", task.status],
-  ];
-  for (const [label, value] of rows) list.append(el("dt", label), el("dd", value));
-  const elapsed = el("time", formatElapsed(Date.now() - Date.parse(task.created_at)));
-  elapsed.dateTime = task.created_at;
-  elapsed.dataset.since = task.created_at;
-  const since = el("dd");
-  since.append(elapsed);
-  list.append(el("dt", "Elapsed"), since);
-  list.append(el("dt", "Complexity"), el("dd", `${task.complexity} (${task.complexity_source})`));
-  list.append(el("dt", "Specification"), el("dd", specText(task.spec)));
-  const directory = el("dd");
-  directory.append(el("code", task.spec.directory));
-  list.append(el("dt", "Spec directory"), directory);
-  list.append(el("dt", "Latest activity"), el("dd", activityText(task.latest_activity)));
-  const metadata = document.createElement("details");
-  metadata.className = "task-metadata";
-  metadata.dataset.viewDisclosure = "task-details";
-  metadata.append(el("summary", "Task details"), list);
-  section.append(metadata);
-  if (task.execution) {
-    if (task.execution.delivery) section.append(renderDelivery(task.execution.delivery));
-  }
-  const diagrams = renderDiagrams(task.id, task.diagrams);
-  const designDetails = el("details");
-  designDetails.dataset.viewDisclosure = "design-diagnostics";
-  designDetails.append(el("summary", "Design notation details"));
-  for (const node of [...diagrams.children]) {
-    if (node.matches(".diagram-provenance, .diagram-guidance") ||
-        (task.diagrams.provenance && node.textContent === task.diagrams.provenance)) {
-      designDetails.append(node);
-    }
-  }
-  if (designDetails.children.length > 1) diagrams.insertBefore(designDetails, diagrams.children[1]);
-  section.append(diagrams);
-  const records = el("details");
-  records.dataset.viewDisclosure = "task-records";
-  records.append(el("summary", "Specification, decisions and history"), renderResume(task.resume),
-    renderSpec(task.spec, task.phase), renderDecisions(task.decisions), renderHistory(task.id, task.spec.history));
-  section.append(records);
-  rememberComments(task);
-  section.append(renderComparison(task.id, task.diagrams));
-  section.append(renderCommentsSection(task.comments, task.diagrams));
-  return section;
+  return renderWorkspaceTask(task);
 }
 
 function renderStatusSummary(task) {
@@ -406,6 +341,9 @@ function restoreView(root, saved) {
 }
 
 function render(data) {
+  workspaceData = data;
+  if (workspaceDragging) { workspaceRenderPending = true; return; }
+  workspaceRenderPending = false;
   rendered = true;
   const main = document.getElementById("main");
   const selected = data.task ? data.task.id : null;
@@ -420,9 +358,9 @@ function render(data) {
     node.dataset.viewDisclosure = JSON.stringify(["delivery", node.dataset.deliveryDisclosure]);
   }
   const same = restoreView(content, saved);
-  const replace = () => main.replaceChildren(renderNav(data.tasks, selected), content);
+  const replace = () => main.replaceChildren(workspaceNavigation(data.tasks, selected), content);
   if (same) {
-    withStartFocus(() => withChangeDiagramFocus(() => withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace))))));
+    withWorkspaceFocus(() => withStartFocus(() => withChangeDiagramFocus(() => withApprovalFocus(() => withCommentFocus(() => withExecutionFocus(() => withDeliveryFocus(replace)))))));
     window.scrollTo(saved.x, saved.y);
   } else replace();
 }

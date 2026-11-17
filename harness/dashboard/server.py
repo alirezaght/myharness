@@ -39,6 +39,7 @@ REOPEN_PATH = "/api/comments/reopen"
 COMPARE_PATH = "/api/diagrams/compare"
 APPROVE_PATH = "/api/approve"
 WRITES = {
+    "/api/workspace/proposals": "workspace-proposal",
     COMMENTS_PATH: None,
     RESOLVE_PATH: "resolve",
     REOPEN_PATH: "reopen",
@@ -69,6 +70,11 @@ RETRY_MS = 2000
 KEEPALIVE_SECONDS = 15.0
 STATIC_DIR = files("harness.dashboard") / "static"
 STATIC = {
+    **{
+        f"/static/{name}": (name, "text/javascript; charset=utf-8")
+        for name in ("workspace.js", "workspace_plan.js", "workspace_diagram.js")
+    },
+    "/static/workspace.css": ("workspace.css", "text/css; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/static/start.js": ("start.js", "text/javascript; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -305,6 +311,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         ):
             self._json(413, {"error": "specification restoration request exceeds 16384 bytes"})
             return
+        if path == "/api/workspace/proposals" and int(self.headers["Content-Length"]) > 131072:
+            self._json(413, {"error": "proposal request exceeds 131072 bytes"})
+            return
         body = self._body(int(self.headers["Content-Length"]))
         if body is None:
             self._json(400, {"error": "request body is incomplete"})
@@ -312,6 +321,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
         action, db_path = WRITES[path], self.server.db_path
         if action is None:
             self._json(*add_comment(db_path, body))
+        elif action == "workspace-proposal":
+            from harness.dashboard.workspace_actions import add_proposal
+
+            self._json(*add_proposal(db_path, body, self.server.specs))
         elif action == "approve":
             self._json(*approve_task(db_path, body, self.server.specs))
         elif action == "start":

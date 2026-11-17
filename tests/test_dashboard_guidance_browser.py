@@ -222,7 +222,7 @@ def test_inflight_start_cannot_repaint_other_task(
         evaluate(call, f'history.replaceState(null, "", "/?task={other}"); refreshDashboard()')
         wait(
             call,
-            'document.querySelector("#current-status").innerText'
+            'document.querySelector(".workspace-heading").innerText'
             '.includes("Specification in progress")',
         )
         evaluate(call, "window.releaseStart()")

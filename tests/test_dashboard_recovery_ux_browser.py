@@ -442,7 +442,7 @@ def test_recovery_and_decision_controls_are_truthful_and_responsive(
         captures = {}
         screenshots = {}
         for name, width, height in (("desktop", 1280, 800), ("mobile", 390, 844)):
-            url = server.url + f"?task={task}"
+            url = server.url + f"?task={task}&workspace=run&tab=overview"
             # Headless Chrome's native window has a platform-specific minimum
             # width. CDP sets the actual document viewport for narrow layouts.
             with chrome(tmp_path / f"{name}-driver-profile", url, width, height) as call:

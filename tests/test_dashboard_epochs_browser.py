@@ -78,7 +78,7 @@ def test_epoch_status_and_stale_actions(
             ) == ("Scoped source work is recorded; verification remains pending.")
             assert evaluate(
                 call,
-                "document.querySelector('#current-status').textContent"
+                "document.querySelector('.execution-verification').textContent"
                 ".includes('Implementation continuing')",
             )
             assert evaluate(
@@ -88,11 +88,17 @@ def test_epoch_status_and_stale_actions(
             )
             assert evaluate(
                 call,
-                "!document.querySelector('#current-status').textContent.includes('Why blocked')",
+                (
+                    "!document.querySelector('.execution-verification').textC"
+                    "ontent.includes('Why blocked')"
+                ),
             )
             evaluate(
                 call,
-                "document.querySelector('[data-view-disclosure=verification-obligations]').open=true",
+                (
+                    "document.querySelector('[data-view-disclosure=verificati"
+                    "on-obligations]').open=true"
+                ),
             )
             directory = Path(
                 os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "screenshots")

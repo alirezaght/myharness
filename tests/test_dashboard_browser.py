@@ -8,6 +8,7 @@ The live stream is recycled after half a second so the page goes quiet for --dum
 """
 
 import os
+import re
 import subprocess
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -115,6 +116,8 @@ def test_headless_capture_timeout_propagates_and_closes_files(monkeypatch, tmp_p
 
 
 def _dom(server: DashboardServer, profile: Path, query: str = "") -> str:
+    if not query:
+        query = "?workspace=run&tab=history&details=records"
     result = _headless(profile, "--dump-dom", f"{server.url}{query}")
     assert result.returncode == 0, result.stderr
     return result.stdout
@@ -128,6 +131,20 @@ def _created(db_path: Path, task_id: str, created_at: str) -> None:
         conn.close()
 
 
+def _workspace_task_link(html: str, task_id: str, *, current: bool = False) -> bool:
+    current_attribute = (
+        r'(?=[^>]*\baria-current="page")' if current else r'(?![^>]*\baria-current="page")'
+    )
+    pattern = (
+        r'<a\b(?=[^>]*\bhref="/\?task='
+        + re.escape(task_id)
+        + r'")(?=[^>]*\bclass="workspace-task-link")'
+        + current_attribute
+        + r"[^>]*>"
+    )
+    return re.search(pattern, html) is not None
+
+
 def _screenshots(server: DashboardServer, profile: Path) -> None:
     directory = os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR")
     if not directory:
@@ -137,7 +154,7 @@ def _screenshots(server: DashboardServer, profile: Path) -> None:
         shot = Path(directory) / f"overview-{width}x{height}.png"
         result = _headless(
             profile / f"{width}", f"--window-size={width},{height}", f"--screenshot={shot}",
-            server.url,
+            f"{server.url}?workspace=run&tab=history&details=records",
         )  # fmt: skip
         assert result.returncode == 0 and shot.is_file(), result.stderr
 
@@ -153,26 +170,34 @@ def test_headless_chrome_shows_the_overview_and_switches_tasks(db_path, sample_r
     _created(db_path, task_id, since)
     resume = _resume(db_path, task_id)
     with serve(db_path, task_id) as server:
-        dom = _dom(server, tmp_path / "profile")
-        switched = _dom(server, tmp_path / "profile-b", f"?task={other}")
+        dom = _dom(
+            server,
+            tmp_path / "profile",
+            f"?task={task_id}&workspace=run&tab=history&details=records",
+        )
+        switched = _dom(
+            server,
+            tmp_path / "profile-b",
+            f"?task={other}&workspace=run&tab=history&details=records",
+        )
         unknown = _dom(server, tmp_path / "profile-c", "?task=t-00000000")
         _screenshots(server, tmp_path / "profile-shots")
-    assert f"<h2>Task {task_id}</h2>" in dom and "<dd>csv export</dd>" in dom
+    assert f"Task {task_id}" in dom and "Task details" in dom and "csv export" in dom
     assert f'<time datetime="{since}" data-since="{since}">2d 03h</time>' in dom
     assert "<dd>awaiting approval</dd>" in dom and "<dd>proposal.created at " in dom
     assert "<p>P1 · interview recommendation: Export access</p>" in dom
     assert f"<code>harness interview decide {task_id} 1 accept|reject|modify</code>" in dom
     assert f"<p>next: <code>{resume['next']}</code></p>" in dom
-    assert f'<a href="/?task={task_id}" aria-current="page">{task_id}</a>' in dom
-    assert f'<a href="/?task={other}">{other}</a>' in dom
-    assert f"<p>next: <code>harness investigate {other}</code></p>" in dom
+    assert _workspace_task_link(dom, task_id, current=True)
+    assert _workspace_task_link(dom, other)
+    assert f"<p>next: <code>harness investigate {other}</code></p>" in switched
 
-    assert f"<h2>Task {other}</h2>" in switched and "<dd>investigation</dd>" in switched
-    assert f'<a href="/?task={other}" aria-current="page">{other}</a>' in switched
-    assert f'<a href="/?task={task_id}">{task_id}</a>' in switched
+    assert f"Task {other}" in switched and "<dd>investigation</dd>" in switched
+    assert _workspace_task_link(switched, other, current=True)
+    assert _workspace_task_link(switched, task_id)
 
     assert "<p>unknown task: t-00000000</p>" in unknown and "<h2>Task " not in unknown
-    assert f'<a href="/?task={task_id}">' in unknown and f'<a href="/?task={other}">' in unknown
+    assert _workspace_task_link(unknown, task_id) and _workspace_task_link(unknown, other)
     assert "aria-current" not in unknown
 
 
@@ -188,7 +213,7 @@ def _spec_shots(server: DashboardServer, profile: Path) -> None:
         shot = Path(directory) / f"spec-{width}w.png"
         result = _headless(
             profile / f"{width}", f"--window-size={width},{height}", f"--screenshot={shot}",
-            server.url,
+            f"{server.url}?workspace=run&tab=history&details=records",
         )  # fmt: skip
         assert result.returncode == 0 and shot.is_file(), result.stderr
 

@@ -198,7 +198,7 @@ def _shots(server: DashboardServer, profile: Path, fragment: str) -> None:
         shot = Path(directory) / f"comments-{width}w.png"
         result = _headless(
             profile / f"{width}", f"--window-size={width},{height}", f"--screenshot={shot}",
-            f"{server.url}{fragment}",
+            f"{server.url}?workspace=design&tab=diagram{fragment}",
         )  # fmt: skip
         assert result.returncode == 0 and shot.is_file(), result.stderr
 
@@ -209,12 +209,22 @@ def test_headless_chrome_shows_every_comment_state_and_old_version_comments(db_p
     with serve(db_path, task_id) as server:
         api(server)
         _comment_states(db_path, task_id)
-        current = _dom(server, tmp_path / "profile", f"#element={edge}")
-        _shots(server, tmp_path / "profile-shots", f"#element={edge}")
+        current = _dom(
+            server, tmp_path / "profile", f"?workspace=design&tab=diagram#element={edge}"
+        )
+        _shots(server, tmp_path / "profile-shots", f"?workspace=design&tab=diagram#element={edge}")
         _state(db_path, task_id, "component Exporter")
         assert api(server)["task"]["diagrams"]["current"]["version"] == 2
-        later = _dom(server, tmp_path / "profile-b", "#element=component%3Aexporter")
-        old = _dom(server, tmp_path / "profile-c", f"#version=1&element={edge}")
+        later = _dom(
+            server,
+            tmp_path / "profile-b",
+            "?workspace=design&tab=diagram#element=component%3Aexporter",
+        )
+        old = _dom(
+            server,
+            tmp_path / "profile-c",
+            f"?workspace=design&tab=diagram#version=1&element={edge}",
+        )
     assert "<h3>Comments (open 1 · addressed 1 · resolved 1)</h3>" in current
     for status in ("open", "addressed", "resolved"):
         assert f'<li data-status="{status}"><p>#' in current
@@ -227,7 +237,8 @@ def test_headless_chrome_shows_every_comment_state_and_old_version_comments(db_p
     for kind in ("clarification", "correction", "redesign"):
         assert f'<option value="{kind}">{kind}</option>' in current
     assert '<textarea id="comment-text" rows="4"></textarea>' in current
-    assert "maxlength" not in current
+    comment_textarea = current.split('<textarea id="comment-text"', 1)[1].split(">", 1)[0]
+    assert "maxlength" not in comment_textarea
     assert '<p class="diagram-status">showing: version 1 (current)</p>' in current
 
     assert "· version 1 (not current)" in later
