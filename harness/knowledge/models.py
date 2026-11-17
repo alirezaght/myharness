@@ -6,6 +6,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+PROJECTION_CONTRACT_VERSION = 2
+PROJECTION_READER_NOTICE = (
+    "This project's knowledge projection requires the current reader. "
+    "The pinned execution remains authorized; its older knowledge capability is unavailable."
+)
 EXTRACTOR_VERSION = "2"
 MAX_SOURCE_BYTES = 1_048_576
 MAX_REFRESH_BYTES = 67_108_864
@@ -21,6 +26,17 @@ def digest(value: bytes) -> str:
 
 def identity(*parts: str) -> str:
     return digest(canonical(parts).encode())
+
+
+def projection_identity(repository: Path) -> str:
+    """Version the derived projection contract without rekeying project/history/authority IDs.
+
+    Older sealed readers require a raw path identity, and refuse this representation.
+    Their execution remains authorized; only incompatible knowledge access is unavailable.
+    """
+    return canonical(
+        ["harness-knowledge-projection", PROJECTION_CONTRACT_VERSION, str(repository.resolve())]
+    )
 
 
 @dataclass(frozen=True)

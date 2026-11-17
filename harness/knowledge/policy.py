@@ -3,7 +3,15 @@
 from dataclasses import asdict, replace
 
 from harness.db import transaction, utcnow
-from harness.knowledge.models import KnowledgeScope, canonical, digest, identity
+from harness.knowledge.models import (
+    PROJECTION_CONTRACT_VERSION,
+    PROJECTION_READER_NOTICE,
+    KnowledgeScope,
+    canonical,
+    digest,
+    identity,
+    projection_identity,
+)
 
 _PURPOSES = {
     "operator",
@@ -46,8 +54,11 @@ def validate_scope(conn, scope):
     project = conn.execute(
         "SELECT * FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
     ).fetchone()
-    if not project or project["repository_identity"] != str(scope.repository.resolve()):
-        raise PermissionError("knowledge project mismatch")
+    if not project or project["repository_identity"] not in {
+        str(scope.repository.resolve()),
+        projection_identity(scope.repository),
+    }:
+        raise PermissionError("knowledge project mismatch. " + PROJECTION_READER_NOTICE)
     if project["policy_generation"] != scope.policy_generation:
         raise PermissionError("knowledge policy revoked or stale")
     if scope.execution_id:
@@ -87,6 +98,7 @@ def validate_scope(conn, scope):
 
 def policy_digest(scope):
     data = asdict(scope)
+    data["projection_contract_version"] = PROJECTION_CONTRACT_VERSION
     data["repository"] = str(scope.repository.resolve())
     allowed = scope.permitted_source_versions
     data["permitted_source_versions"] = scope.permitted_digest or (

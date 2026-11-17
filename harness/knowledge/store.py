@@ -2,16 +2,19 @@
 
 import json
 import secrets
+from contextlib import nullcontext
 
 from harness.db import transaction, utcnow
 from harness.knowledge.models import (
     EXTRACTOR_VERSION,
     MAX_REFRESH_BYTES,
     MAX_SOURCE_BYTES,
+    PROJECTION_READER_NOTICE,
     PreparedSnapshot,
     canonical,
     digest,
     identity,
+    projection_identity,
 )
 
 
@@ -28,17 +31,32 @@ def record_refresh_attempt(conn, project_id, status, coverage):
 
 
 def ensure_project(conn, scope):
-    root = str(scope.repository.resolve())
-    conn.execute(
-        "INSERT OR IGNORE INTO knowledge_projects(project_id,repository_identity) VALUES (?,?)",
-        (scope.project_id, root),
-    )
-    row = conn.execute(
-        "SELECT * FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
-    ).fetchone()
-    if not row or row["repository_identity"] != root:
-        raise ValueError("knowledge project repository mismatch")
-    return row
+    """Install the reader barrier before any protected write, preserving immutable IDs."""
+    legacy = str(scope.repository.resolve())
+    expected = projection_identity(scope.repository)
+    # The caller may already own the mutation transaction; never commit it here.
+    with nullcontext() if conn.in_transaction else transaction(conn):
+        conn.execute(
+            "INSERT OR IGNORE INTO knowledge_projects(project_id,repository_identity) VALUES (?,?)",
+            (scope.project_id, expected),
+        )
+        row = conn.execute(
+            "SELECT * FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
+        ).fetchone()
+        if row and row["repository_identity"] == legacy:
+            changed = conn.execute(
+                "UPDATE knowledge_projects SET repository_identity=? WHERE project_id=? "
+                "AND repository_identity=?",
+                (expected, scope.project_id, legacy),
+            )
+            if changed.rowcount != 1:
+                raise SnapshotConflict("knowledge projection identity changed during upgrade")
+            row = conn.execute(
+                "SELECT * FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
+            ).fetchone()
+        if not row or row["repository_identity"] != expected:
+            raise ValueError("knowledge project repository mismatch. " + PROJECTION_READER_NOTICE)
+        return row
 
 
 def prepare_rows(prepared):
@@ -288,6 +306,8 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
         current = conn.execute(
             "SELECT * FROM knowledge_projects WHERE project_id=?", (project,)
         ).fetchone()
+        if current["repository_identity"] != projection_identity(prepared.scope.repository):
+            raise SnapshotConflict("knowledge projection reader contract changed")
         if current["active_snapshot_id"] != expected_active or (
             current["policy_generation"] != prepared.expected_policy_generation
         ):

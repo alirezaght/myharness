@@ -9,10 +9,12 @@ from harness.knowledge.policy import validate_scope
 
 
 def require_operator(conn, scope):
-    project = validate_scope(conn, scope)
+    validate_scope(conn, scope)
     if scope.role != "operator" or scope.purpose != "operator" or scope.execution_id:
         raise PermissionError("knowledge mutation requires a local operator scope")
-    return project
+    from harness.knowledge.store import ensure_project
+
+    return ensure_project(conn, scope)
 
 
 def version_purged(conn, version_id):

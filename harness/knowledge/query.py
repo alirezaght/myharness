@@ -708,6 +708,9 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
         encoded = canonical(payload)
         bundle_hash = digest(encoded.encode())
     with transaction(conn):
+        from harness.knowledge.store import ensure_project
+
+        ensure_project(conn, scope)
         current = validate_scope(conn, scope)
         if (
             not scope.snapshot_id
