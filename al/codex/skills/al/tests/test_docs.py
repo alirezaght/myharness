@@ -69,6 +69,31 @@ def test_every_documented_state_command_exists():
         assert cmd in out, f"SKILL.md uses `$STATE {cmd}`, which al_state.py does not provide"
 
 
+def test_entry_show_options_match_this_platform_cli():
+    result = subprocess.run(
+        [sys.executable, str(AL / "scripts" / "al_state.py"), "show", "--help"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    supported = set(re.findall(r"--[a-z][a-z-]*", result.stdout))
+    for invocation in re.findall(r"`show ([^`]+)`", ENTRY):
+        assert set(re.findall(r"--[a-z][a-z-]*", invocation)) <= supported
+
+
+def test_entry_role_labels_match_this_platform_policy():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("entry_role_policy", AL / "scripts/al_models.py")
+    models = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(models)
+    state = models.initial_state()
+    for role in models.ROLES:
+        expected = role.removeprefix("al-").capitalize() + " " + models.label(
+            models.resolve(state, role)
+        )
+        assert expected in ENTRY, expected
+
+
 def test_guarded_workflow_refuses_count_only_and_prose_approval():
     for needle in ("count-only", "old report", "structured JSON"):
         assert needle in SKILL, needle

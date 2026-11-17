@@ -94,8 +94,12 @@ check planning. Preserve actual changed paths and root/shared obligations.
 
 ## 4. Implement with the right agents
 
-Use the fixed role/model/effort slots from `show --models` and `show --spawn ROLE`:
-Architect Astra/MEDIUM, Designer Astra/LOW, Engineer Sol/MEDIUM, Builder Luna/HIGH.
+Use the fixed role/model/effort slots from `show --models`:
+Architect Fable/MEDIUM, Designer Fable/LOW, Engineer Opus/MEDIUM, Builder Sonnet/HIGH.
+Dispatch with the Agent tool's `subagent_type` for the selected role. Its agent
+definition pins model and effort together; use the selected fallback definition
+when the recorded model policy requires it. The detailed Claude workflow gives
+the invocation contract, including for existing pinned runs.
 Only genuine model unavailability enables the documented fallback; never silently
 downgrade or invent availability. See the detailed workflow for that failure path.
 A role that cannot run is a technical capability problem, not a specification

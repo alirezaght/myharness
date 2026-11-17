@@ -5,6 +5,7 @@ from . import journal as J
 from .adapters import platform_resources
 from .config import get, parse, plan_config, rollback_desired, same
 from .engine import D, R, T, Roles
+from .documentation_update import DocumentationGuard, activity as documentation_activity, validate_request
 from .guards import (ActiveRuns, activity_roots, check_instructions, require_inactive,
                      resource_adoption, strict_package)
 from .manifest import cache_release
@@ -196,6 +197,9 @@ def run_operation(request, state_root):
         rows = records(state_root)
         check_target_overlap(target, rows)
         row = load_record(state_root, target['target_id'])
+        documentation_only = request.get('documentation_only', False)
+        if documentation_only:
+            validate_request(request, row)
         if row and row['target'] != target:
             raise ValueError('registered target/platform identity differs')
         if kind != 'install' and not row:
@@ -208,7 +212,7 @@ def run_operation(request, state_root):
         reject_pending(row, state_root)
         check_current(row, state_root)
         roots = activity_roots(rows, target, [*row.get('runtime_roots', []), *request.get('runtime_roots', [])], request.get('invoking'), state_root=state_root)
-        activity = require_inactive(roots)
+        activity = documentation_activity(roots) if documentation_only else require_inactive(roots)
         reviews, adoption = request.get('reviews') or {}, request.get('adoption') or {}
         reviewed = check_instructions(target, reviews)
         rollback = None
@@ -224,7 +228,7 @@ def run_operation(request, state_root):
             if kind == 'update' and row['policy'] == 'pinned' and not request.get('version') and request.get('policy') != 'follow':
                 return {'target_id': target['target_id'], 'status': 'pinned', 'version': display_version(row['current']['release']), 'activity': activity}
             cache, manifest, source = _source(request, row, state_root)
-            policy = request.get('policy') or ('pinned' if request.get('version') else row['policy'])
+            policy = row['policy'] if documentation_only else request.get('policy') or ('pinned' if request.get('version') else row['policy'])
         validate_target(target, state_root, source['identity'])
         if policy not in {'follow', 'pinned'}:
             raise ValueError('invalid update policy')
@@ -233,22 +237,30 @@ def run_operation(request, state_root):
         smoke_release(cache, manifest, target['platforms'])
         row_for_plan = dict(row, _state_root=str(state_root))
         prepared = _prepare(target, cache, manifest, row_for_plan, policy, reviews, adoption, rollback, status_line)
+        documentation_guard = (DocumentationGuard(request, row, prepared, cache, manifest, state_root, reviewed)
+                               if documentation_only else None)
         if (kind == 'update' and row['current']['release']['digest'] == manifest['digest']
                 and row['policy'] == policy and not request.get('status_line')):
             return {'target_id': target['target_id'], 'status': 'unchanged', 'version': display_version(manifest), 'activity': activity}
         return _execute(request, state_root, row, prepared, cache, manifest, source, policy,
-                        roots, reviewed, reviews, adoption, status_line)
+                        roots, reviewed, reviews, adoption, status_line, documentation_guard=documentation_guard)
 
 
 def _execute(request, state_root, row, prepared, cache, manifest, source, policy,
-             roots, reviewed, reviews, adoption, status_line, *, workspace_guard=None):
+             roots, reviewed, reviews, adoption, status_line, *, workspace_guard=None, documentation_guard=None):
     target = row['target']
+    if documentation_guard is not None:
+        if type(documentation_guard) is not DocumentationGuard or workspace_guard is not None:
+            raise ValueError('invalid documentation compatibility guard')
     if workspace_guard is not None:
         from .workspace_payload import validate_payload
         validate_payload(manifest)
         if target['scope'] != 'global' or target['platforms'] != ['codex', 'claude']:
             raise ValueError('workspace guard requires both global platform targets')
     def activity_check():
+        if documentation_guard is not None:
+            receipt = documentation_guard.revalidate()
+            return receipt['activity']
         return workspace_guard() if workspace_guard is not None else require_inactive(roots)
     directory, path, journal = J.allocate(state_root, row['target_id'], request.get('kind', 'install'), row)
     candidate = {'operation': journal['id'], 'journal': str(path), 'cache': str(cache), 'release': manifest,
@@ -295,6 +307,8 @@ def _execute(request, state_root, row, prepared, cache, manifest, source, policy
         if check_instructions(target, reviews) != reviewed:
             raise ValueError('instruction reviews changed')
         activity = activity_check()
+        if documentation_guard is not None:
+            journal['documentation_compatibility'] = documentation_guard.revalidate()
         verify_expected(cache, manifest)
         J.checkpoint(journal, path, 'APPLYING')
         for platform, resource in prepared['plans'].items():
@@ -349,6 +363,16 @@ def _execute(request, state_root, row, prepared, cache, manifest, source, policy
                 raise ValueError('ownership generation changed during verification')
         if workspace_guard is not None:
             activity_check()
+        if documentation_guard is not None:
+            if check_instructions(target, reviews) != reviewed:
+                raise ValueError('instruction reviews changed before publication')
+            for role in candidate['roles'].values():
+                sentinel = role.get('sentinel')
+                if sentinel and T.state(R.safe_absolute(sentinel['path'])) != sentinel['state']:
+                    raise ValueError('role ownership sentinel changed before publication')
+            journal['documentation_compatibility'] = documentation_guard.revalidate(installed=True)
+            activity = journal['documentation_compatibility']['activity']
+            journal['verification']['activity'] = activity
         J.publish_completed(pending, candidate, journal, path, state_root)
         return {'target_id': row['target_id'], 'status': 'updated', 'version': display_version(manifest),
                 'operation': journal['id'], 'activity': activity}
@@ -372,6 +396,8 @@ def rollback_previous(target, state_root, **options):
 
 
 def update_registered(selection, state_root, **options):
+    if options.get('documentation_only'):
+        raise ValueError('documentation-only requires a single explicit global update; batch updates are forbidden')
     rows = records(state_root)
     if selection is not None:
         rows = [row for row in rows if row['target_id'] in selection]
