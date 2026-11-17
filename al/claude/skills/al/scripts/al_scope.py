@@ -298,17 +298,40 @@ def changed_paths(base, root=None):
             changed.add(row['path'])
     return sorted(changed)
 
+def _candidate_key(st):
+    return [_decision_base(st), st['identity']['target_oid'], st.get('preexisting_changes', [])]
+
+
+@measured('candidate-hashing')
+def candidate_fingerprint(st):
+    """The exact candidate digest without a discarded diff or untracked byte payload."""
+    key = _candidate_key(st)
+    return _observed('candidate-fingerprint', key, lambda: _candidate_fingerprint(st))
+
+
+def _candidate_content(st):
+    base = _decision_base(st)
+    return {'base': base, 'target': st['identity']['target_oid'], 'files': records(base)}
+
+
+def _candidate_fingerprint(st):
+    from al_writer_progress import report
+    report('candidate-fingerprint', force=True)
+    return hashlib.sha256(json.dumps(_candidate_content(st),sort_keys=True).encode()).hexdigest()
+
+
 @measured('candidate-hashing')
 def capture_candidate(st):
-    key = [_decision_base(st), st['identity']['target_oid'], st.get('preexisting_changes', [])]
+    key = _candidate_key(st)
     return _observed('candidate', key, lambda: _capture_candidate(st))
 
 
 def _capture_candidate(st):
-    base = _decision_base(st)
-    rows = records(base)
-    content = {'base':base,'target':st['identity']['target_oid'],'files':rows}
+    content = _candidate_content(st)
+    base, rows = content['base'], content['files']
     sha = hashlib.sha256(json.dumps(content,sort_keys=True).encode()).hexdigest()
+    from al_writer_progress import report
+    report('candidate-materialization', force=True)
     diff = parent_diff(base,'--binary',rows=rows).decode(errors='replace')
     diff_limitations = [r['path']+': '+r['child']['error'] for r in rows if r.get('child',{}).get('state')=='inspection-failed']
     import base64

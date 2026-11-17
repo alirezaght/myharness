@@ -14,7 +14,6 @@ COMPLETION_EDGES = {
 }
 
 def structural_gaps(st):
-    from al_artifacts import read
     out=[]
     if st.get('spec_status')!='SPEC_READY': out.append('SPEC_READY planning verdict missing')
     if st.get('classification') not in {'SMALL','STANDARD','COMPLEX'}: out.append('classification missing')
@@ -46,16 +45,9 @@ def workflow_gaps(st):
     return structural_gaps(st)+base_gaps(st)+completion_gaps(st)+['unreconciled task attribution overlap: '+p for p in ambiguous]
 
 
-def require_transition(st, command, destination):
-    from al_rework_recovery_contract import guard
-    from al_new_origin import require_admitted, require_implementation_ready
-    implementation_edge = destination in WRITING or command == 'phase' and destination in {'VERIFICATION', 'PSEUDOCODE', 'PLAN_CONFLICT'}
-    guard(st,implementation=implementation_edge)
-    if implementation_edge:
-        require_implementation_ready(st)
-    elif destination in BARRIERS or command in {'review-start', 'approved'}:
-        require_admitted(st)
-    src = st['phase'];guarded=False
+def _transition_preflight(st, command, destination, implementation_edge):
+    """Reject impossible edges before collecting repository-wide verification debt."""
+    src = st['phase']
     if st['status'] != 'RUNNING':
         refuse('run is ' + st['status'] + '; use explicit recovery')
     if command == 'phase':
@@ -74,33 +66,56 @@ def require_transition(st, command, destination):
         if src == 'PLANNING':
             if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
                 refuse('planning requires SPEC_READY and classification')
+        if destination == 'VERIFICATION' and st.get('classification') == 'COMPLEX' and src == 'IMPLEMENTATION':
+            refuse('COMPLEX requires finalization')
+    else:
+        allowed = {'review-start': {'VERIFICATION'}, 'correction': {'REVIEW'},
+                   'rework': {'FINALIZATION','VERIFICATION'}, 'approved': {'FINAL_VERIFICATION'}}
+        if src not in allowed.get(command, set()):
+            if command == 'rework':
+                refuse(f'rework is not allowed from {src}; it is a pre-review return after FINALIZATION or VERIFICATION. '
+                       'Continue already-authorized scoped implementation through the writer workflow '
+                       '(degraded tracking when proof is pending); do not manufacture a phase advance.')
+            refuse(f'{command} is not allowed from {src}')
+    if implementation_edge and (st.get('spec_status') != 'SPEC_READY'
+            or st.get('classification') not in {'SMALL', 'STANDARD', 'COMPLEX'}):
+        refuse('implementation requires running SPEC_READY and classification')
+    if destination in BARRIERS or src in BARRIERS or (command=='phase' and src!=destination):
+        from al_writers import operation_gaps
+        missing = operation_gaps(st)
+        if missing: refuse('; '.join(missing))
+    return src
+
+
+def require_transition(st, command, destination):
+    from al_rework_recovery_contract import guard
+    from al_new_origin import require_admitted, require_implementation_ready
+    implementation_edge = destination in WRITING or command == 'phase' and destination in {'VERIFICATION', 'PSEUDOCODE', 'PLAN_CONFLICT'}
+    # Recovery may legitimately restore defined implementation; preserve it before preflight.
+    guard(st,implementation=implementation_edge)
+    src = _transition_preflight(st, command, destination, implementation_edge)
+    if implementation_edge:
+        require_implementation_ready(st)
+    elif destination in BARRIERS or command in {'review-start', 'approved'}:
+        require_admitted(st)
+    guarded=False
+    if command == 'phase':
         from al_gate_recovery import ready,RETAINED
         if src in RETAINED:
             if not implementation_edge: ready(st);guarded=True
         if src == 'PLAN_CONFLICT':
             from al_conflicts import require_resolution
             require_resolution(st)
-        if destination == 'VERIFICATION' and st.get('classification') == 'COMPLEX' and src == 'IMPLEMENTATION':
-            refuse('COMPLEX requires finalization')
         if destination == 'FINAL_VERIFICATION':
             from al_review import review_gaps
             missing = review_gaps(st)
             if missing: refuse('; '.join(missing))
-    else:
-        allowed = {'review-start': {'VERIFICATION'}, 'correction': {'REVIEW'},
-                   'rework': {'FINALIZATION','VERIFICATION'}, 'approved': {'FINAL_VERIFICATION'}}
-        if src not in allowed.get(command, set()):
-            refuse(f'{command} is not allowed from {src}')
     if st.get('gate_recovery') and not guarded and not implementation_edge:
         from al_gate_recovery import ready
         ready(st);guarded=True
     if command in {'review-start','approved'} or destination=='FINAL_VERIFICATION':
         gaps=workflow_gaps(st)
         if gaps: refuse('; '.join(gaps))
-    if destination in BARRIERS or src in BARRIERS or (command=='phase' and src!=destination):
-        from al_writers import operation_gaps
-        missing = operation_gaps(st)
-        if missing: refuse('; '.join(missing))
 
     if implementation_edge and st.get('gate_recovery'):
         from al_gate_recovery import continue_phase

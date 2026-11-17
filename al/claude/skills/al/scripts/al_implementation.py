@@ -1,8 +1,8 @@
 """Implementation authority is independent of verification completeness."""
 import copy
 
-import al_artifacts as A
 import al_task
+import al_scope as S
 from al_schema import refuse
 
 
@@ -70,8 +70,13 @@ def require_preflight(st, *, task_id=None, paths=()):
     return owned
 
 
-def require_ready(st, *, task_id=None, paths=()):
-    owned = require_preflight(st, task_id=task_id, paths=paths)
+@S.decision
+def _assessment(st, owned):
+    """Share a stable view, or fall back to the original independent guarded reads.
+
+    No state is published here. S.decision discards its shared view on movement or
+    unavailability before recomputing this pure body through the existing nested guards.
+    """
     from al_writer_progress import report
     report('readiness', force=True)
     from al_gate_currency import check
@@ -92,6 +97,16 @@ def require_ready(st, *, task_id=None, paths=()):
         from al_gate_coverage import prospective_gaps
         report('prospective-coverage', force=True)
         obligations += prospective_gaps(st, owned)
+    return obligations
+
+
+def require_ready(st, *, task_id=None, paths=()):
+    owned = require_preflight(st, task_id=task_id, paths=paths)
+    before = copy.deepcopy(st)
+    observed = copy.deepcopy(before)
+    obligations = _assessment(observed, owned)
+    if observed != before or st != before:
+        refuse('implementation state changed during read-only readiness assessment')
     previous = st.get('implementation_readiness', {})
     # Debt is cumulative; only proof admission/repair observations can discharge it.
     obligations = sorted(set(obligations + previous.get('obligations', [])))

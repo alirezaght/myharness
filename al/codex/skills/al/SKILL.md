@@ -71,6 +71,15 @@ engineering details internally. Do not add agents or approval rounds “to be sa
 
 ## 3. Start through the protected launcher
 
+Before starting a run or admitting any writer, check **role-host readiness** in
+[the workflow](reference/workflow.md#role-host-readiness-before-writer-admission).
+The current host must advertise the named AL role-launch capability needed by
+this route. If it is absent, restricted by fork/depth, or UNKNOWN, return the
+structured [host handback](reference/handoffs.md#role-host-handback) to the main
+capable supervisor. Keep required planning/review pending; do not substitute a
+persona, generic agent or model, or build the task while silently omitting them.
+This is operational dispatch recovery, not a developer specification question.
+
 Use one explicit session and repository for every command:
 
 ```sh
