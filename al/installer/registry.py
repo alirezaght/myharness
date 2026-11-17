@@ -106,10 +106,11 @@ def legacy_records(state_root):
 
 class Held:
     """Proof that this thread currently holds one state root's coordination lock."""
-    __slots__ = ('root', 'pid', 'thread', 'active')
+    __slots__ = ('root', 'pid', 'thread', 'active', 'fd')
 
-    def __init__(self, root):
+    def __init__(self, root, fd=None):
         self.root, self.pid, self.thread, self.active = root, os.getpid(), threading.get_ident(), True
+        self.fd = fd
 
 
 @contextlib.contextmanager
@@ -128,7 +129,7 @@ def coordination(state_root, *, held=None):
     lock = R.safe_absolute(root / 'coordination.lock')
     with lock.open('a+') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX)
-        token = Held(root)
+        token = Held(root, handle.fileno())
         try:
             yield token
         finally:

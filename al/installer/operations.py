@@ -7,6 +7,7 @@ from .config import get, parse, plan_config, rollback_desired, same
 from .engine import D, R, T, Roles
 from .documentation_update import DocumentationGuard, activity as documentation_activity, validate_request
 from .reviewed_runtime_update import ReviewedRuntimeGuard, validate_request as validate_runtime_request
+from .operator_update import OperatorGlobalUpdate, observe as operator_activity, validate_request as validate_operator_request
 from .guards import (ActiveRuns, activity_roots, check_instructions, require_inactive,
                      resource_adoption, strict_package)
 from .manifest import cache_release
@@ -194,12 +195,23 @@ def run_operation(request, state_root):
     target = request['target']
     kind = request.get('kind', 'install')
     validate_target(target, state_root, request.get('source'))
-    with coordination(state_root):
+    operator_registry = None
+    if request.get('allow_running'):
+        from .operator_registry import preflight
+        operator_registry = preflight(state_root)
+    with coordination(state_root) as held:
+        if operator_registry is not None:
+            from .operator_registry import lock_identity
+            if lock_identity(state_root, held) != operator_registry['lock']:
+                raise ValueError('operator coordination lock changed before acquisition')
         rows = records(state_root)
         check_target_overlap(target, rows)
         row = load_record(state_root, target['target_id'])
         documentation_only = request.get('documentation_only', False)
         reviewed_runtime = request.get('reviewed_runtime_update', False)
+        operator_update = request.get('allow_running', False)
+        if operator_update:
+            validate_operator_request(request, row)
         if reviewed_runtime:
             validate_runtime_request(request, row)
         if documentation_only:
@@ -213,9 +225,16 @@ def run_operation(request, state_root):
         row = row or {'schema_version': 1, 'target_id': target['target_id'], 'target': target,
                       'policy': 'follow', 'source': None, 'current': None, 'previous': None,
                       'pending': None, 'runtime_roots': []}
+        if operator_update:
+            from .operator_registry import installation_metadata
+            installation_metadata(state_root, row)
         reject_pending(row, state_root)
         check_current(row, state_root)
-        if reviewed_runtime:
+        if operator_update:
+            activity = operator_activity(state_root, rows, target,
+                                         [*row.get('runtime_roots', []), *request.get('runtime_roots', [])], request.get('invoking'))
+            roots = []
+        elif reviewed_runtime:
             from .reviewed_runtime_pins import observe
             observation = observe(state_root, rows, target,
                                   [*row.get('runtime_roots', []), *request.get('runtime_roots', [])], request.get('invoking'))
@@ -238,7 +257,7 @@ def run_operation(request, state_root):
             if kind == 'update' and row['policy'] == 'pinned' and not request.get('version') and request.get('policy') != 'follow':
                 return {'target_id': target['target_id'], 'status': 'pinned', 'version': display_version(row['current']['release']), 'activity': activity}
             cache, manifest, source = _source(request, row, state_root)
-            policy = row['policy'] if documentation_only or reviewed_runtime else request.get('policy') or ('pinned' if request.get('version') else row['policy'])
+            policy = row['policy'] if documentation_only or reviewed_runtime or operator_update else request.get('policy') or ('pinned' if request.get('version') else row['policy'])
         validate_target(target, state_root, source['identity'])
         if policy not in {'follow', 'pinned'}:
             raise ValueError('invalid update policy')
@@ -251,18 +270,24 @@ def run_operation(request, state_root):
                                if documentation_only else None)
         runtime_guard = (ReviewedRuntimeGuard(request, row, prepared, cache, manifest, state_root, reviewed)
                          if reviewed_runtime else None)
+        operator_guard = (OperatorGlobalUpdate(request, row, prepared, cache, manifest, state_root, reviewed, held, operator_registry)
+                          if operator_update else None)
         if (kind == 'update' and row['current']['release']['digest'] == manifest['digest']
                 and row['policy'] == policy and not request.get('status_line')):
             return {'target_id': target['target_id'], 'status': 'unchanged', 'version': display_version(manifest), 'activity': activity}
         return _execute(request, state_root, row, prepared, cache, manifest, source, policy,
                         roots, reviewed, reviews, adoption, status_line, documentation_guard=documentation_guard,
-                        reviewed_runtime_guard=runtime_guard)
+                        reviewed_runtime_guard=runtime_guard, operator_update_guard=operator_guard)
 
 
 def _execute(request, state_root, row, prepared, cache, manifest, source, policy,
              roots, reviewed, reviews, adoption, status_line, *, workspace_guard=None, documentation_guard=None,
-             reviewed_runtime_guard=None):
+             reviewed_runtime_guard=None, operator_update_guard=None):
     target = row['target']
+    if operator_update_guard is not None:
+        if (type(operator_update_guard) is not OperatorGlobalUpdate or workspace_guard is not None
+                or documentation_guard is not None or reviewed_runtime_guard is not None):
+            raise ValueError('invalid operator global update guard')
     if reviewed_runtime_guard is not None:
         if type(reviewed_runtime_guard) is not ReviewedRuntimeGuard or workspace_guard is not None or documentation_guard is not None:
             raise ValueError('invalid reviewed runtime compatibility guard')
@@ -275,6 +300,11 @@ def _execute(request, state_root, row, prepared, cache, manifest, source, policy
         if target['scope'] != 'global' or target['platforms'] != ['codex', 'claude']:
             raise ValueError('workspace guard requires both global platform targets')
     def activity_check(*, applied=(), barrier='pre-apply'):
+        if operator_update_guard is not None:
+            receipt = operator_update_guard.revalidate(applied=applied, operation=journal['id'])
+            receipt.update(barrier=barrier, applied_platforms=sorted(applied))
+            journal.setdefault('operator_update_barriers', []).append(receipt)
+            return receipt['activity']
         if reviewed_runtime_guard is not None:
             receipt = reviewed_runtime_guard.revalidate(applied=applied)
             receipt.update(barrier=barrier, applied_platforms=sorted(applied))
@@ -336,7 +366,7 @@ def _execute(request, state_root, row, prepared, cache, manifest, source, policy
         for platform, resource in prepared['plans'].items():
             if workspace_guard is not None:
                 activity_check()
-            if reviewed_runtime_guard is not None:
+            if reviewed_runtime_guard is not None or operator_update_guard is not None:
                 activity = activity_check(applied=candidate['packages'], barrier='before-platform:' + platform)
             # Engine repo_identity needs real directories; these creations remain journaled under pending.
             J.ensure_directory(package_path(target, platform), journal, path)
@@ -371,6 +401,8 @@ def _execute(request, state_root, row, prepared, cache, manifest, source, policy
                 activity_check()
             if reviewed_runtime_guard is not None:
                 raise ValueError('reviewed runtime update cannot apply ancillary configuration/lock actions')
+            if operator_update_guard is not None:
+                raise ValueError('operator update cannot apply ancillary configuration/lock actions')
             J.execute_ancillary(item, journal, path)
         J.checkpoint(journal, path, 'VERIFYING')
         for step in journal['engine_steps']:
@@ -409,6 +441,14 @@ def _execute(request, state_root, row, prepared, cache, manifest, source, policy
             activity = activity_check(applied=candidate['packages'], barrier='before-completed-publication')
             journal['reviewed_runtime_compatibility'] = journal['reviewed_runtime_barriers'][-1]
             journal['verification']['activity'] = activity
+        if operator_update_guard is not None:
+            activity = activity_check(applied=candidate['packages'], barrier='before-completed-publication')
+            journal['operator_update'] = journal['operator_update_barriers'][-1]
+            journal['verification']['activity'] = activity
+            for role in candidate['roles'].values():
+                sentinel = role.get('sentinel')
+                if sentinel and T.state(R.safe_absolute(sentinel['path'])) != sentinel['state']:
+                    raise ValueError('role ownership sentinel changed before operator update publication')
         J.publish_completed(pending, candidate, journal, path, state_root)
         return {'target_id': row['target_id'], 'status': 'updated', 'version': display_version(manifest),
                 'operation': journal['id'], 'activity': activity}
@@ -432,6 +472,8 @@ def rollback_previous(target, state_root, **options):
 
 
 def update_registered(selection, state_root, **options):
+    if options.get('allow_running'):
+        raise ValueError('--allow-running requires a single explicit global update; batch updates are forbidden')
     if options.get('reviewed_runtime_update'):
         raise ValueError('reviewed-runtime-update requires a single explicit global update; batch updates are forbidden')
     if options.get('documentation_only'):

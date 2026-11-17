@@ -81,6 +81,8 @@ def parser():
             p.add_argument('--status-line', action='store_true', help='explicitly install the optional Claude status line')
         if command == 'update':
             p.add_argument('--all', action='store_true')
+            p.add_argument('--allow-running', action='store_true',
+                           help='explicit disruptive global package update with exact operator/source reviews')
             p.add_argument('--documentation-only', action='store_true',
                            help='reviewed, hash-bound documentation update of an enrolled global target')
             p.add_argument('--reviewed-runtime-update', action='store_true',
@@ -179,6 +181,19 @@ def main(argv=None):
             reviews = read_json(args.reviews) if args.reviews else {}
             adoption = read_json(args.adopt) if args.adopt else {}
             options = {'reviews': reviews, 'adoption': adoption, 'runtime_roots': args.runtime_root}
+            if args.command == 'update' and args.allow_running:
+                if (not args.global_scope or args.all or args.repo or args.adopt or args.documentation_only
+                        or args.reviewed_runtime_update or not args.reviews):
+                    raise ValueError('--allow-running requires --global/--reviews and forbids batch, repo, adoption and mixed modes')
+                from .operator_update import reference
+                from .registry import digest
+                from .validator_origin import capture, decode
+                review_path = Path(args.reviews)
+                if not review_path.is_absolute():
+                    raise ValueError('--allow-running --reviews must be an absolute path')
+                artifact = {'path': str(review_path), 'sha256': digest(capture(review_path)[0])}
+                reviews = decode(reference(artifact))
+                options.update(allow_running=True, reviews=reviews, operator_review_artifact=artifact)
             if args.command == 'update' and args.reviewed_runtime_update:
                 if not args.global_scope or args.all or args.repo or args.adopt or args.documentation_only or not args.reviews:
                     raise ValueError('--reviewed-runtime-update requires --global/--reviews and forbids batch, repo, adoption and mixed modes')

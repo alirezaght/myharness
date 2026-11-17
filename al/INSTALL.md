@@ -286,6 +286,87 @@ coordinator snapshot, so the operator must separately publish and verify the
 intended reviewed bootstrap snapshot through the existing owned bootstrap path.
 This command does not claim an atomic switch across those publications.
 
+## Explicit operator update with running or unknown consumers
+
+An operator who has authorized disruption may replace an enrolled global package
+while runs are active or historical metadata cannot be fully inspected:
+
+```sh
+ALCTL=(/absolute/path/to/owned/alctl)
+"${ALCTL[@]}" update --global --version 0.1.9 --allow-running --reviews /absolute/operator-reviews.json
+```
+
+Use the actual published numeric version and the genuine managed launcher with
+its enrolled registry. This mode preserves the selected source/subdirectory,
+platforms, policy, host configuration and status line. It rejects installation,
+rollback, repository/batch targets, adoption, source overrides, implicit latest,
+policy/configuration changes and combinations with the other special modes.
+The ordinary update guard is unchanged.
+The explicit mode refuses direct source invocation and a different `--state-root`:
+the genuine isolated managed snapshot selects its registry. Installation records,
+source observations, ownership records, role sentinels and the actual held
+coordination-lock descriptor must remain owned, regular, non-symlinked and free
+of hardlink aliases. This does not require or create a runtime pin directory.
+
+Activity is a bounded metadata warning in this explicit mode. Active writers,
+unsettled evidence, oversized/unreadable/unsupported histories and discovery gaps
+are reported without claiming process settlement, complete census, legacy
+independence, pin integrity, current epoch authority or AL approval. Existing
+states, pins, indexes and immutable snapshots are not migrated, archived, deleted
+or rewritten. Do not reuse this warning receipt as run/resume/writer/check authority.
+
+The review JSON contains one closed `global_package_update` object, plus existing
+applicable `instructions`/`config` reviews. Its schema is version 1, kind
+`operator-global-package-update-v1`, operation `global-update-allow-running`.
+It binds the exact enrolled `target`/`source`, complete `old_release`/`new_release`
+identities (version, tag, tag object, commit, digest, source identity, subdirectory),
+`manifests` references for both exact cached manifest files, the complete computed
+`resources` delta (before/after SHA256, mode, platform, kind; null for additions or
+removals), `unchanged_resource_set_sha256`, and versioned `projection` digests for
+`authority_sha256` and `configuration_sha256`. All values must match the actual
+resolved caches and prepared transaction; supplying hashes cannot change its plan.
+
+The object also requires substantive `reason` and `provenance`, hash-bound absolute
+`operator_authorization`, `instruction_review` and `source_review` references,
+and the exact `accepted_limits` list:
+
+```json
+["running-or-unknown-consumers-may-be-disrupted",
+ "legacy-independence-and-settlement-not-assessed",
+ "no-execution-or-approval-authority", "bootstrap-is-a-separate-publication",
+ "partial-visibility-and-manual-reconciliation"]
+```
+
+Each reference is exactly `{ "path": "/absolute/file", "sha256": "<SHA256>" }`.
+The independent source-review JSON has exactly `schema_version: 1`, kind
+`operator-global-package-source-review-v1`, `reviewed: true`, the same
+`old_release`, `new_release`, complete `resources` and `projection`, plus substantive
+`reviewer` and `reason`. It must reflect an actual independent review of the code
+and instruction delta. Authorization provenance records the real operator request;
+it must not invent exact-hash user consent. These are operator review artifacts,
+not cryptographic proof of a reviewer or an agent authority token. The whole
+reviews file and every reference are re-read and hash-checked at all barriers.
+
+Codex role files preserve the entire parsed TOML object except the string
+`developer_instructions` body. Claude role and both SKILL frontmatters preserve
+all bytes through the closing delimiter. Role names, paths, modes and retirement
+remain identical. Actual model policies, named hook resources and their local
+Python implementation dependencies remain unchanged. Reviewed instruction bodies
+and supported package resources may change only within the computed reviewed
+delta. Missing/invalid envelopes, host wiring changes, unsafe destinations,
+symlinks/hardlink aliases, collisions, drift, corrupt caches/tags/registry,
+changed ownership generations and pending journals remain hard refusals.
+
+Preparation, pre-apply, each platform and completed publication recheck reviews,
+source, authority/config projections, plan identity and appropriate resource
+preimages/postimages. Activity may legitimately progress between these barriers.
+Package and role file replacement uses the existing recoverable multi-file
+transaction: legacy readers may see partial/intermediate files. Failure retains
+the pending journal/backups for manual reconciliation; do not retry, claim an
+automatic rollback or report completion. Bootstrap is a separate explicit supported
+publication. Existing protected pins retain their original bytes; unknown legacy
+invocations may still be disrupted by this mutable package replacement.
+
 ## Inspect and recover
 
 ```sh
