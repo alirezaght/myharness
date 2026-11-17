@@ -31,8 +31,12 @@ def test_private_runtime_atomic_saves(controller, monkeypatch, launched, tmp_pat
     envelope = read_handoff(execution["handoff_path"])
     identity = initialize_execution(controller, execution, {"launcher": str(launcher)}, envelope)
     source = Path(identity["source"])
-    assert source.parent.name == execution["al_session_id"]
-    assert source.parent.parent.name == "sessions"
+    from harness.execution_runtime_layout import durable_runtime, selected_runtime_binding
+
+    selected = selected_runtime_binding(execution, envelope)
+    assert source.parent == durable_runtime(selected, repo, session_id=execution["al_session_id"])
+    assert source.parent.name == execution["epoch_id"] == "legacy-0"
+    assert selected["transaction"]["harness_binding"]["execution_id"] == eid
     sibling = source.parent.parent / "another"
     sibling.mkdir()
     sibling_state = sibling / "another.json"
@@ -50,6 +54,7 @@ def test_private_runtime_atomic_saves(controller, monkeypatch, launched, tmp_pat
         hidden=[],
         directory=tmp_path / "operation",
         session_directory=source.parent,
+        runtime_binding=selected,
         coordination_lock=identity["coordination_lock"],
     )
     env = safe_environment() | {"TMPDIR": profile.temporary}

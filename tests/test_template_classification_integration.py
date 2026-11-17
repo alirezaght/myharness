@@ -5,7 +5,9 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -39,7 +41,16 @@ def operations(controller, monkeypatch, launched, request):
     git(repo, "add", "app/.env.example", ".gitignore", ".claude", ".codex")
     git(repo, "commit", "-qm", "synthetic classified template fixture")
     (repo / ".env").write_text("STAGING_SECRET=NEVER_PRINT_SYNTHETIC_SECRET\n")
-    yield from operation_fixture.__wrapped__(controller, monkeypatch, launched, request)
+    if getattr(request, "param", None) == "enclosing-database":
+        from harness.controller import HarnessController
+        from harness.db import connect
+
+        with closing(connect(repo.parent / "enclosing-state.db")) as conn:
+            yield from operation_fixture.__wrapped__(
+                HarnessController(conn), monkeypatch, launched, SimpleNamespace(param="codex")
+            )
+    else:
+        yield from operation_fixture.__wrapped__(controller, monkeypatch, launched, request)
 
 
 @pytest.fixture
@@ -221,15 +232,16 @@ def test_unsettled_attempt_refuses_operator_registration(registered):
         register_classification(*request)
 
 
+@pytest.mark.parametrize("operations", ["enclosing-database"], indirect=True)
 def test_database_parent_enclosing_repo_preserves_writer_and_db_denials(operations):
     operation, _, _, _, _, _, envelope = operations
     root = Path(envelope["repository"])
-    database = root.parent / "enclosing-state.db"
-    database.write_text("synthetic private state")
-    operation.envelope["database"] = str(database)
+    database = Path(envelope["database"])
+    assert database.parent == root.parent
     denied = [str(database) + suffix for suffix in ("", "-wal", "-shm", "-journal")]
     for path in denied[1:]:
-        Path(path).write_text("synthetic private sidecar")
+        if not Path(path).exists():
+            Path(path).touch()
     profile = operation.profile(["app"])
     code = (
         "from pathlib import Path\nPath("

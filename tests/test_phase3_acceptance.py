@@ -403,9 +403,15 @@ def _run_phase3_scenario_in_repo(tmp_path: Path, repo: Path) -> dict:
         diagnostic_summary = [
             {"channel": row["channel"], "text": redact(row["text"])} for row in logs
         ]
-        source_path = repo / ".claude/al-runtime/sessions" / session / f"{session}.json"
+        from harness.execution_handoff import read_handoff
+        from harness.execution_hosts import al_source
+
+        try:
+            source_path = al_source(current, read_handoff(current["handoff_path"]))
+        except (OSError, ValueError):
+            source_path = None
         source_identity = {}
-        if source_path.is_file():
+        if source_path is not None and source_path.is_file():
             source_state = json.loads(source_path.read_text(encoding="utf-8"))
             source_identity = {
                 "state_root": source_state.get("identity", {}).get("root"),

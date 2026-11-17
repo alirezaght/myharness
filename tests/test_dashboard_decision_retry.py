@@ -18,7 +18,7 @@ from tests.execution_helpers import approved_execution, event, started
 def decision_fixture(controller, sample_repo, monkeypatch):
     import harness.execution_decisions as service
 
-    tid, eid = approved_execution(controller, sample_repo, monkeypatch)
+    tid, eid = approved_execution(controller, sample_repo, monkeypatch, legacy=True)
     started(controller.conn, eid)
     ingest_event(
         controller.conn,

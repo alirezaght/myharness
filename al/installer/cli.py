@@ -29,6 +29,8 @@ def parser():
     for action in ('prepare', 'activate', 'inputs', 'recovery-inputs', 'origin', 'inspect', 'distribution'):
         command = child.add_parser(action)
         command.add_argument('--platform', choices=('codex', 'claude'), required=True)
+        if action == 'origin':
+            command.add_argument('--allow-absent', action='store_true')
         if action not in {'distribution', 'origin'}:
             command.add_argument('--request-id', required=True)
         if action in {'prepare', 'activate', 'inputs', 'recovery-inputs', 'origin'}:
@@ -117,7 +119,9 @@ def main(argv=None):
                     json.loads(args.authority_ref),json.loads(args.handoff_ref))
             elif args.successor_action == 'origin':
                 from .runtime_harness_start import inspect_origin
-                result = inspect_origin(args.repository, args.platform, args.session)
+                result = inspect_origin(
+                    args.repository, args.platform, args.session, allow_absent=args.allow_absent,
+                )
             elif args.successor_action == 'activate':
                 from .runtime_successor_activation import activate_successor
                 result = activate_successor(args.repository, args.platform, args.request_id, args.coordinator_fd)

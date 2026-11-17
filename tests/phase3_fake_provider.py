@@ -202,7 +202,27 @@ def run() -> int:
         "B completed with real pytest evidence", encoding="utf-8"
     )
 
-    source = repo / ".claude/al-runtime/sessions" / session / f"{session}.json"
+    origin = subprocess.run(
+        [
+            os.environ["PHASE3_PROVIDER_ALCTL"],
+            "runtime-successor",
+            "origin",
+            "--repository",
+            str(repo),
+            "--platform",
+            "claude",
+            "--session",
+            session,
+        ],
+        cwd=repo,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if origin.returncode:
+        raise RuntimeError("synthetic provider could not verify its exact runtime origin")
+    source = Path(json.loads(origin.stdout)["source"])
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         state = json.loads(source.read_text(encoding="utf-8"))

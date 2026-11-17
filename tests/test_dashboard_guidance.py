@@ -17,6 +17,9 @@ from tests.test_dashboard import api, serve
 
 @pytest.fixture
 def approved(controller, sample_repo, monkeypatch):
+    from tests.execution_helpers import isolated_launch_environment
+
+    isolated_launch_environment(monkeypatch, sample_repo.parent / "launch-fixture")
     monkeypatch.chdir(sample_repo)
     tid = controller.create_task(
         "Implement safe <script>alert(1)</script> fixture changes " + "unbroken" * 30, "trivial"
