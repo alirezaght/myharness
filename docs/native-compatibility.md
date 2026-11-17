@@ -42,3 +42,36 @@ selector, the historical default remains Codex 0.164.0 / Claude 2.1.310; missing
 optional binaries skip, while `HARNESS_REQUIRE_NATIVE_TESTS=1` makes them fail.
 Older versions were not reinstalled or rerun in this qualification. No provider
 credentials, runtime permissions, approvals, or existing session pins change.
+
+## Claude 2.1.326 qualification — 2026-11-17
+
+Claude 2.1.326 is accepted as an exact qualified version. The installed binary
+passed 29 actual native checks against local synthetic Anthropic services:
+restricted root tools, all seven protected roles on fresh start and resume,
+child-channel isolation, attested identity hooks, and forbidden Agent effects.
+
+After adding the exact production binding, 17 further checks passed with no
+skips: production-generated background-child permissions on fresh start and
+resume, owned-command Stop lifecycle, installed Claude prerequisites, exact
+version parsing and existing epoch/revocation negatives. One Codex prerequisite
+was deliberately deselected. Unknown 2.1.327, 2.1.3260 and malformed version
+outputs remain refused; no floating version range is admitted.
+
+Reproduce with locked dependencies and an explicit installed binary:
+
+```sh
+HARNESS_TEST_CLAUDE_VERSION=2.1.326 HARNESS_REQUIRE_NATIVE_TESTS=1 \
+  .venv/bin/python -m pytest -q \
+  tests/test_claude_tool_boundary.py tests/test_claude_child_boundary.py \
+  tests/test_claude_native_attestation.py tests/test_claude_agent_effects.py
+
+HARNESS_TEST_CLAUDE_VERSION=2.1.326 HARNESS_REQUIRE_NATIVE_TESTS=1 \
+  .venv/bin/python -m pytest -q \
+  tests/test_claude_generated_policy.py tests/test_claude_stop_native.py \
+  tests/test_native_tool_policy.py tests/test_epoch_principals.py -k 'not codex'
+```
+
+Set `HARNESS_TEST_CLAUDE` when the candidate is outside the normal executable
+search path. These synthetic checks establish native compatibility, not actual
+provider or knowledge-task acceptance. Authentication selection, tool grants,
+existing native identities and runtime pins are unchanged.

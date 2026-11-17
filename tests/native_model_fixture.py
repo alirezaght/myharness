@@ -18,7 +18,7 @@ def native_executable(host):
 
     version = {"claude": "2.1.310", "codex": "0.164.0"}[host]
     version = os.environ.get("HARNESS_TEST_" + host.upper() + "_VERSION", version)
-    supported = {"codex": {"0.164.0", "0.165.0"}, "claude": {"2.1.310", "2.1.325"}}
+    supported = {"codex": {"0.164.0", "0.165.0"}, "claude": {"2.1.310", "2.1.325", "2.1.326"}}
     if version not in supported[host]:
         pytest.fail("unsupported native qualification candidate: " + version)
     clean_path = os.pathsep.join(

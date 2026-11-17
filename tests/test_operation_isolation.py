@@ -42,6 +42,8 @@ def test_actual_operation_boundary(tmp_path):
     code = """import os,socket,sys,asyncio,ctypes,struct
 from pathlib import Path
 repo,metadata,endpoint=sys.argv[1:]
+assert Path.cwd() == Path(repo) / 'source', 'operation cwd did not reach admitted unit'
+Path('cwd-relative').write_text('correct unit')
 asyncio.run(asyncio.sleep(0))
 if sys.platform.startswith('linux'):
     try:socket.socketpair(socket.AF_UNIX,socket.SOCK_DGRAM)
@@ -77,7 +79,7 @@ for family,address in [(socket.AF_INET,('127.0.0.1',9)),(socket.AF_UNIX,'/var/ru
     process = operation_popen(
         profile,
         [sys.executable, "-I", "-c", code, str(repository), str(metadata), str(endpoint)],
-        cwd=repository,
+        cwd=source,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -95,6 +97,7 @@ for family,address in [(socket.AF_INET,('127.0.0.1',9)),(socket.AF_UNIX,'/var/ru
         listener.close()
         socket_root.cleanup()
     assert metadata.read_text() == "protected-native-identity"
+    assert (source / "cwd-relative").read_text() == "correct unit"
     assert (source / "allowed").read_text() == "approved"
     assert not (source / "alias").exists()
     # Reject aliases that existed before policy construction as well.
@@ -155,3 +158,62 @@ print(json.dumps({'outside':json.loads(outside.stdout),'inside':json.loads(out)}
     observed = json.loads(result.stdout)
     assert observed["outside"] == {"allowed": True, "marker": True}
     assert observed["inside"] == {"allowed": False, "marker": False}
+
+
+@pytest.mark.parametrize(
+    "invalid", ["outside", "alias", "ancestor", "missing", "file", "traversal"]
+)
+def test_operation_cwd_refuses_before_spawn(tmp_path, monkeypatch, invalid):
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    unit = repository / "unit"
+    unit.mkdir()
+    (repository / "alias").symlink_to(unit, target_is_directory=True)
+    (unit / "file").write_text("data")
+    profile = prepare_operation_isolation(
+        repository, writable=["unit"], protected=[], hidden=[], directory=tmp_path / "operation"
+    )
+    cwd = {
+        "outside": tmp_path,
+        "alias": repository / "alias",
+        "ancestor": repository / "alias" / "nested",
+        "missing": unit / "missing",
+        "file": unit / "file",
+        "traversal": unit / "..",
+    }[invalid]
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("invalid cwd spawned"))
+    with pytest.raises(ValueError, match="operation cwd"):
+        operation_popen(profile, [sys.executable, "-c", "pass"], cwd=cwd)
+
+
+def test_linux_operation_cwd_preserves_grants_and_exec(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from harness.execution_isolation import operation_argv, operation_exec
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    unit = repository / "unit"
+    unit.mkdir()
+    profile = replace(
+        prepare_operation_isolation(
+            repository, writable=["unit"], protected=[], hidden=[], directory=tmp_path / "operation"
+        ),
+        system="Linux",
+    )
+    argv = [sys.executable, "-c", "pass"]
+    default = operation_argv(profile, argv)
+    nested = operation_argv(profile, argv, cwd=unit)
+    index = default.index("--chdir") + 1
+    assert default[index] == str(repository)
+    assert nested[index] == str(unit)
+    nested[index] = default[index]
+    assert nested == default
+    monkeypatch.chdir(unit)
+    monkeypatch.setattr("harness.execution_isolation.platform.machine", lambda: "aarch64")
+    seen = []
+    monkeypatch.setattr(os, "execvpe", lambda executable, command, env: seen.append(command))
+    operation_exec(profile, argv, {})
+    command = seen.pop()
+    assert command[command.index("--chdir") + 1] == str(unit)
+    assert "--unshare-net" in command

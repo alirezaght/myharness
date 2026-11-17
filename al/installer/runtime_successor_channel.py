@@ -153,6 +153,18 @@ PREPARATION_DIAGNOSTIC = (
 )
 
 
+PREPARATION_OWNERSHIP_DIAGNOSTICS = {
+    "OWNERSHIP_ARGV_UNAVAILABLE": (
+        "Process arguments unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+    "OWNERSHIP_CWD_UNAVAILABLE": (
+        "Process cwd unavailable; restore complete host observation "
+        "and retry the same protected request. No settlement is implied."
+    ),
+}
+
+
 def preparation_error(identifier, sequence, stage, code):
     if (
         sequence not in {1, 2}
@@ -163,6 +175,7 @@ def preparation_error(identifier, sequence, stage, code):
             "DISCONNECTED",
             "INTERNAL",
             "OWNERSHIP_UNAVAILABLE",
+            *PREPARATION_OWNERSHIP_DIAGNOSTICS,
             "TASK_ACTIVITY",
             "PAYLOAD_MISMATCH",
         }
@@ -176,7 +189,7 @@ def preparation_error(identifier, sequence, stage, code):
             "request_id": identifier,
             "stage": stage,
             "code": code,
-            "diagnostic": PREPARATION_DIAGNOSTIC,
+            "diagnostic": PREPARATION_OWNERSHIP_DIAGNOSTICS.get(code, PREPARATION_DIAGNOSTIC),
         },
     }
 
@@ -204,8 +217,8 @@ def classify_preparation_error(error):
         else "INTERNAL"
     )
     code = {
-        "successor process ownership unavailable": "OWNERSHIP_UNAVAILABLE",
-        "task process cwd unavailable": "OWNERSHIP_UNAVAILABLE",
+        "successor process ownership unavailable": "OWNERSHIP_ARGV_UNAVAILABLE",
+        "task process cwd unavailable": "OWNERSHIP_CWD_UNAVAILABLE",
         "live or queued task-managed operation": "TASK_ACTIVITY",
         "task-owned process is live": "TASK_ACTIVITY",
         "requested successor interpreter differs": "PAYLOAD_MISMATCH",
