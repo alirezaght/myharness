@@ -22,7 +22,7 @@ def read_knowledge(db_path, task_id):
         raise LookupError("knowledge database not found")
     with open_state(db_path) as controller:
         repository = repository_for_task(controller, task_id)
-        return inspect_knowledge(controller, repository)
+        return inspect_knowledge(controller, repository, task_id=task_id)
 
 
 def read_knowledge_evidence(db_path, task_id, bundle_hash, assertion_id):
@@ -30,7 +30,9 @@ def read_knowledge_evidence(db_path, task_id, bundle_hash, assertion_id):
         raise LookupError("knowledge database not found")
     with open_state(db_path) as controller:
         repository = repository_for_task(controller, task_id)
-        return evidence_knowledge(controller, repository, bundle_hash, assertion_id)
+        return evidence_knowledge(
+            controller, repository, bundle_hash, assertion_id, task_id=task_id
+        )
 
 
 def knowledge_action(db_path, body, action):
@@ -54,10 +56,16 @@ def knowledge_action(db_path, body, action):
             if action == "refresh":
                 result = refresh_knowledge(controller, repository, task_id=data["task"])
             elif action == "query":
-                result = query_knowledge(controller, repository, data["query"])
+                result = query_knowledge(
+                    controller, repository, data["query"], task_id=data["task"]
+                )
             else:
                 result = explain_knowledge(
-                    controller, repository, data["bundle_hash"], data["assertion_id"]
+                    controller,
+                    repository,
+                    data["bundle_hash"],
+                    data["assertion_id"],
+                    task_id=data["task"],
                 )
         return 200, result
     except LookupError as error:

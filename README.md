@@ -130,6 +130,10 @@ uv run harness decision record <id> --title T --decision C --rationale W [--scop
 uv run harness decision change <id> <DEC-id> --decision C --rationale W --impact I [--title T] [--scope S] [--decisions PATH]   # preview a change, writes nothing
 uv run harness decision decide <id> <cid> accept|reject|modify [--response TEXT] [--decisions PATH]   # developer's verdict on a proposed change
 uv run harness decision suggest <id> --from PATH [--from PATH ...] [--json] [--decisions PATH]   # hints from other repositories' decisions (read-only)
+uv run harness knowledge inspect <id>                                      # task-scoped snapshot, coverage and latest refresh state
+uv run harness knowledge refresh <id>                                      # explicitly index eligible tracked text and selected task records
+uv run harness knowledge query <id> <terms...> [--entity REF] [--as-of SNAPSHOT]   # bounded evidence-linked context
+uv run harness knowledge explain <id> <bundle-hash> <assertion-id>        # explain citations and their source authority
 uv run harness spec show <id> [--specs PATH]   # preview the specification from the approved state (writes nothing)
 uv run harness spec draft <id> [--specs PATH]   # write the preview to docs/specs/<id>/draft.md
 uv run harness spec approve <id> [--specs PATH]   # seal v<N>.md tied to the commit (approval phase only)
@@ -144,6 +148,18 @@ uv run python -m harness.redesign address <id> <comment id>... [--db PATH]   # r
 ```
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
+
+Knowledge results are bounded, evidence-linked observations for the repository
+selected by the task. Snapshot availability does not mean coverage is complete;
+inspect and query results expose refresh failures, removed or unsupported sources,
+identity ambiguity, staleness, conflicts and budget exclusions. An empty result is
+not evidence that a dependency or decision is absent. Bundle references preserve
+their task, snapshot and purpose, and never grant approval or execution authority.
+Native integrations use authenticated Harness tools when the current host supports
+them. Clean-review knowledge is unavailable because current native metadata cannot
+prove that inherited context is absent; the ordinary packet-local AL review remains
+available. See [knowledge evaluation accounting](docs/knowledge/evaluation-accounting.md)
+and [native compatibility](docs/native-compatibility.md).
 
 ### Local state
 

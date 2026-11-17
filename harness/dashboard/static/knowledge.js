@@ -18,6 +18,7 @@ function renderKnowledgePanel(taskId) {
   const status = kEl("div");
   status.className = "knowledge-status";
   status.setAttribute("role", "status");
+  status.tabIndex = -1;
   status.append(kEl("p", "Loading index status…"));
   section.append(status);
   const refresh = kEl("button", "Refresh project knowledge");
@@ -43,15 +44,23 @@ function renderKnowledgePanel(taskId) {
     event.preventDefault();
     if (!input.value.trim()) return;
     results.replaceChildren(kEl("p", "Searching the current snapshot…"));
-    const result = await postJson("/api/knowledge/query", { task: taskId, query: input.value });
-    if (!result.res?.ok) {
-      results.replaceChildren(kEl("p", `Query failed: ${result.data.error || result.netErr || result.res?.statusText || "No response"}`));
-      return;
+    try {
+      const result = await postJson("/api/knowledge/query", { task: taskId, query: input.value });
+      if (!result.res?.ok) {
+        results.replaceChildren(kEl("p", `Query failed: ${result.data.error || result.netErr || result.res?.statusText || "No response"}`));
+        return;
+      }
+      renderKnowledgeResults(results, taskId, result.data);
+    } catch (error) {
+      results.replaceChildren(kEl("p", `Query failed: ${error.message}`));
     }
-    renderKnowledgeResults(results, taskId, result.data);
   });
   section.append(form, results);
   loadKnowledgeStatus(section, taskId);
+  section._statusTimer = window.setInterval(() => {
+    if (section.isConnected) loadKnowledgeStatus(section, taskId);
+    else window.clearInterval(section._statusTimer);
+  }, 15000);
   return section;
 }
 
@@ -68,9 +77,37 @@ async function loadKnowledgeStatus(section, taskId) {
     return data;
   } catch (error) {
     if (!section.isConnected) return;
-    status.replaceChildren(kEl("p", `Index status unavailable: ${error.message}`));
+    const view = captureKnowledgeStatusView(status);
+    const retry = kEl("button", "Retry index status");
+    retry.type = "button";
+    retry.addEventListener("click", () => loadKnowledgeStatus(section, taskId));
+    status.replaceChildren(kEl("p", `Index status unavailable: ${error.message}`), retry);
+    restoreKnowledgeStatusView(status, view);
     return null;
   }
+}
+
+function captureKnowledgeStatusView(container) {
+  const active = document.activeElement;
+  return {
+    focus: container.contains(active)
+      ? { tag: active.tagName, text: active.textContent.trim() }
+      : null,
+    x: window.scrollX,
+    y: window.scrollY,
+    scrollTop: container.scrollTop,
+  };
+}
+
+function restoreKnowledgeStatusView(container, view) {
+  if (view.focus) {
+    const replacement = [...container.querySelectorAll("summary, button")].find(
+      node => node.tagName === view.focus.tag && node.textContent.trim() === view.focus.text,
+    );
+    (replacement || container).focus({ preventScroll: true });
+  }
+  container.scrollTop = view.scrollTop;
+  window.scrollTo(view.x, view.y);
 }
 
 function renderCoverage(container, label, coverage) {
@@ -95,14 +132,23 @@ function renderCoverage(container, label, coverage) {
 }
 
 function renderKnowledgeStatus(container, data) {
+  const view = captureKnowledgeStatusView(container);
+  const openSections = new Set([...container.querySelectorAll("details")]
+    .filter(details => details.open)
+    .map(details => details.querySelector("summary")?.textContent));
   const hasSnapshot = Boolean(data.active_snapshot_id);
-  const failed = data.latest_refresh?.status === "incomplete";
+  const refreshStatus = data.latest_refresh?.status;
+  const failed = refreshStatus === "incomplete";
   let summary;
   if (!hasSnapshot && failed) summary = "No knowledge snapshot yet. Refresh incomplete.";
   else if (!hasSnapshot) summary = "No knowledge snapshot yet. Refresh to build one from eligible repository sources.";
   else if (failed) summary = "Showing the last complete snapshot. Latest refresh incomplete.";
-  else if (data.latest_refresh?.status === "published") summary = "Index ready — latest refresh published.";
-  else summary = "A complete knowledge snapshot is available; latest refresh status is unknown.";
+  else if (refreshStatus === "published") summary = "Index available — latest refresh published a complete snapshot.";
+  else if (refreshStatus === "published-partial") summary = "Index available — latest refresh published partial coverage.";
+  else if (refreshStatus === "unchanged") summary = "Index available — latest refresh found no source changes.";
+  else if (refreshStatus) summary = `Index available; latest refresh status: ${refreshStatus}.`;
+  else if (hasSnapshot) summary = "A knowledge snapshot is available; no refresh outcome is recorded.";
+  else summary = "No knowledge snapshot yet. Refresh to build one from eligible repository sources.";
   container.replaceChildren(kEl("p", summary));
   if (hasSnapshot) {
     container.append(kEl("p", `Snapshot ${data.active_snapshot_id} · ${data.source_count} sources · ${data.entity_count} entities · ${data.relationship_count} observations`));
@@ -113,6 +159,10 @@ function renderKnowledgeStatus(container, data) {
     container.append(kEl("p", `Latest refresh: ${latest.status}${latest.created_at ? ` · ${latest.created_at}` : ""}`));
     renderCoverage(container, "Latest refresh capture diagnostics", latest.coverage);
   }
+  for (const details of container.querySelectorAll("details")) {
+    if (openSections.has(details.querySelector("summary")?.textContent)) details.open = true;
+  }
+  restoreKnowledgeStatusView(container, view);
 }
 
 async function refreshKnowledge(section, taskId) {
@@ -159,18 +209,23 @@ function renderKnowledgeResults(container, taskId, bundle) {
   const notice = kEl("p", bundle.notice || "Context grants no execution or approval authority.");
   notice.className = "knowledge-notice";
   container.append(notice);
+  if (bundle.integrity) container.append(kEl("p", `Integrity: ${String(bundle.integrity)}.`));
+  if (bundle.coverage?.length) renderCoverage(container, "Index coverage and limitations", bundle.coverage);
+  for (const [key, label] of [
+    ["ambiguities", "Identity ambiguities"], ["conflicts", "Sourced conflicts"],
+    ["staleness", "Stale or withheld evidence"],
+  ]) {
+    const values = bundle[key] || [];
+    if (values.length) renderCoverage(container, `${label} (${values.length})`, values);
+  }
+  if (bundle.exclusions && Object.keys(bundle.exclusions).length) {
+    const exclusions = Object.entries(bundle.exclusions).map(([reason, count]) => `${reason}: ${count}`);
+    container.append(kEl("p", `Excluded from this bounded result: ${exclusions.join("; ")}.`));
+  }
   if (!bundle.assertions.length) {
     container.append(kEl("p", "No matching observations in this snapshot. No result does not prove that a dependency or decision is absent."));
     return;
   }
-  if (bundle.coverage?.length) {
-    const details = document.createElement("details");
-    details.append(kEl("summary", "Index coverage and limitations"));
-    for (const gap of bundle.coverage.slice(0, 20)) details.append(kEl("p", typeof gap === "string" ? gap : JSON.stringify(gap)));
-    container.append(details);
-  }
-  if (bundle.conflicts?.length) container.append(kEl("p", `${bundle.conflicts.length} sourced value conflict(s) are reported in this result.`));
-  if (bundle.staleness?.length) container.append(kEl("p", `${bundle.staleness.length} observation(s) were withheld or marked stale.`));
   const graph = renderKnowledgeGraph(bundle);
   container.append(graph);
   const selection = kEl("p", "Select a graph node to focus its cited observations.");

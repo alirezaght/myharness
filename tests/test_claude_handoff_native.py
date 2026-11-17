@@ -40,9 +40,7 @@ def strings(value):
 
 @pytest.mark.parametrize("operations", ["claude"], indirect=True)
 @pytest.mark.parametrize("length", [1400, 6935])
-def test_actual_claude_full_assignment_handoff_delivery(operations, tmp_path, monkeypatch, length):
-    monkeypatch.setenv("HARNESS_TEST_CLAUDE_VERSION", "2.1.325")
-    monkeypatch.setenv("HARNESS_REQUIRE_NATIVE_TESTS", "1")
+def test_actual_claude_full_assignment_handoff_delivery(operations, tmp_path, length):
     executable = native_executable("claude")
     operation, supervisor, _, _, package, execution, envelope = operations
     registry = operation.registry
@@ -271,7 +269,7 @@ def test_actual_claude_full_assignment_handoff_delivery(operations, tmp_path, mo
         assert tail in "".join(shared["pages"])
         assert "AL MANAGED WRITER EVIDENCE END" in "".join(shared["pages"])
         print(
-            "Claude2.1.325 full handoff length",
+            "Claude full handoff length",
             length,
             "tail delivered through authenticated assignment resource;",
             "direct SendMessage full delivery:",

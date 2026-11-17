@@ -91,7 +91,7 @@ class ResumePoint:
 
 
 def _checkpoint(ws: TaskWorkspace, phase: Phase) -> Checkpoint | None:
-    in_phase = [c for c in ws.checkpoints() if c.phase is phase]
+    in_phase = [c for c in ws.checkpoints() if c.phase is phase and c.label != "knowledge-context"]
     return in_phase[-1] if in_phase else None
 
 

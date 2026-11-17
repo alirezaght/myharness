@@ -42,3 +42,16 @@ selector, the historical default remains Codex 0.164.0 / Claude 2.1.310; missing
 optional binaries skip, while `HARNESS_REQUIRE_NATIVE_TESTS=1` makes them fail.
 Older versions were not reinstalled or rerun in this qualification. No provider
 credentials, runtime permissions, approvals, or existing session pins change.
+
+## Knowledge handoff boundary
+
+Native work uses authenticated knowledge reads only when exposed by the active
+host. A handoff carries the exact bundle reference and its task, snapshot and
+purpose; retrieved observations retain their source, verification and freshness
+labels and never grant authority. Profiles first await assignment and then read all
+authenticated handoff pages. A bridge that loses a compatible knowledge
+projection retains its existing execution authority; the existing runtime pin is
+not silently upgraded. Native metadata cannot prove that inherited context is
+absent, so clean-review knowledge remains unavailable on both hosts. The ordinary
+packet-local AL review is still supported. Replacing Claude's terminal invocation
+is not supported.

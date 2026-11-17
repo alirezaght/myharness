@@ -323,7 +323,7 @@ v1 ok
 $ harness resume t-xxxxxxxx
 task t-xxxxxxxx · phase approval · complexity trivial (developer)
 request: [demo] Add a CSV export of items in app/export.py
-checkpoint: approval <timestamp> (#30)
+checkpoint: approval <timestamp> (#31)
 approval: spec v1 sha256:<hash> (current)
 next: harness execution reconnect t-xxxxxxxx exec-xxxxxxxxxxxxxxxxxxxxxxxx
 ```

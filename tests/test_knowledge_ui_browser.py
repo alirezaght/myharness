@@ -1,6 +1,8 @@
 """Real Chrome coverage for graph interactions, refresh truth and visual artifacts."""
 
+import base64
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,10 @@ ARTIFACTS = Path("/private/tmp/al-knowledge-platform-20261116/browser-artifacts"
 
 def _json_for_script(value):
     return json.dumps(value, ensure_ascii=False).replace("<", "\\u003c")
+
+
+def _visible_dom(output):
+    return re.sub(r"<script\b[^>]*>[\s\S]*?</script>", "", output, flags=re.IGNORECASE)
 
 
 def _page(static_dir, script):
@@ -82,27 +88,41 @@ def test_graph_is_bounded_keyboard_linked_safe_and_screenshot_ready(tmp_path):
         "&&document.getElementById('knowledge-evidence-a-two').textContent.includes('unverified');"
         "const bounded=nodes.length<=12&&document.querySelectorAll('.knowledge-arrow').length<=16;"
         "const noPageOverflow=document.documentElement.scrollWidth<=window.innerWidth;"
-        "document.body.append(document.createTextNode(safe&&focused&&trust&&bounded&&noPageOverflow"
-        "?'GRAPH_UI_PASS':'GRAPH_UI_FAIL'));"
+        "const metrics={innerWidth:window.innerWidth,visualWidth:window.visualViewport.width,"
+        "graphRight:document.querySelector('.knowledge-graph').getBoundingClientRect().right,"
+        "panelRight:document.querySelector('.knowledge-panel').getBoundingClientRect().right,"
+        "paragraphsFit:[...document.querySelectorAll('.knowledge-panel p')].every(p=>"
+        "p.scrollWidth<=p.clientWidth+1)};"
+        "const viewportFits=Math.abs(metrics.innerWidth-metrics.visualWidth)<1"
+        "&&metrics.panelRight<=metrics.innerWidth+1&&metrics.paragraphsFit;"
+        "document.body.append(document.createTextNode((safe&&focused&&trust&&bounded&&noPageOverflow"
+        "&&viewportFits?'GRAPH_UI_PASS ':'GRAPH_UI_FAIL ')+JSON.stringify(metrics)));"
     )
     html = tmp_path / "knowledge-graph.html"
     html.write_text(_page(STATIC_DIR, script), encoding="utf-8")
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     captures = []
+    from tests.test_dashboard_live_view_state_browser import chrome, evaluate, wait
+
     for width, height, name in (
         (1280, 800, "knowledge-graph-desktop.png"),
         (390, 844, "knowledge-graph-narrow.png"),
     ):
         artifact = ARTIFACTS / name
-        result = _headless(
-            tmp_path / f"graph-profile-{width}",
-            f"--window-size={width},{height}",
-            "--dump-dom",
-            f"--screenshot={artifact}",
-            html.as_uri(),
-        )
-        assert result.returncode == 0, result.stderr
-        assert "GRAPH_UI_PASS" in result.stdout
+        with chrome(tmp_path / f"graph-profile-{width}", html.as_uri(), width, height) as call:
+            wait(call, "document.readyState === 'complete'")
+            wait(call, "document.body.textContent.includes('GRAPH_UI_')")
+            result = evaluate(
+                call, "document.body.textContent.match(/GRAPH_UI_(?:PASS|FAIL) (\\{[^}]+\\})/)?.[1]"
+            )
+            assert result, evaluate(call, "document.body.innerText")
+            metrics = json.loads(result)
+            visible = evaluate(call, "document.body.innerText")
+            assert "GRAPH_UI_PASS" in visible, metrics
+            assert abs(metrics["innerWidth"] - width) < 1, metrics
+            assert abs(metrics["visualWidth"] - width) < 1, metrics
+            shot = call("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": False})
+            artifact.write_bytes(base64.b64decode(shot["data"]))
         assert artifact.is_file() and artifact.stat().st_size > 0
         captures.append(str(artifact))
     print("knowledge graph screenshots: " + ", ".join(captures))
@@ -213,10 +233,12 @@ def test_refresh_status_retains_incomplete_diagnostics_and_network_recovery(tmp_
         "&&initial.includes('source-size-capped')"
         "&&retained.includes('Showing the last complete snapshot. Latest refresh incomplete.')"
         "&&retained.includes('snapshot-last-complete')&&retained.includes('text-only-no-dependency-analysis')"
-        "&&recovered.includes('Index ready')&&recovered.includes('snapshot-new-complete')"
-        "&&network.includes('offline')&&reloadFailure.includes('Refresh incomplete')"
+        "&&recovered.includes('Index available')&&recovered.includes('snapshot-new-complete')"
+        "&&network.includes('offline')"
+        "&&reloadFailure.toLowerCase().includes('refresh was incomplete')"
         "&&reloadFailure.includes('refresh-bytes-capped')&&available&&noPageOverflow;"
-        "document.body.append(document.createTextNode(ok?'REFRESH_UI_PASS':'REFRESH_UI_FAIL'));"
+        "document.body.append(document.createTextNode((ok?'REFRESH_UI_PASS ':'REFRESH_UI_FAIL ')+"
+        "JSON.stringify({initial,retained,recovered,network,reloadFailure,available,noPageOverflow})));"
         "}catch(error){document.body.append(document.createTextNode(`REFRESH_UI_ERROR:${error.message}`));}})();"
     )
     html = tmp_path / "knowledge-refresh.html"
@@ -229,7 +251,59 @@ def test_refresh_status_retains_incomplete_diagnostics_and_network_recovery(tmp_
             html.as_uri(),
         )
         assert result.returncode == 0, result.stderr
-        assert "REFRESH_UI_PASS" in result.stdout
+        visible = _visible_dom(result.stdout)
+        marker = re.search(r"REFRESH_UI_(?:PASS|FAIL) (\{[^}]+\})", visible)
+        assert marker, visible[-1000:]
+        diagnostic = json.loads(marker.group(1))
+        assert "REFRESH_UI_PASS" in visible, json.dumps(diagnostic)
+
+
+def test_empty_result_integrity_and_panel_state_survive_status_poll(tmp_path):
+    from harness.dashboard.server import STATIC_DIR
+
+    script = (
+        "(async()=>{try{"
+        "let poll;window.setInterval=(callback)=>{poll=callback;return 1;};"
+        "window.clearInterval=()=>{};"
+        "window.fetch=async()=>({ok:true,json:async()=>({status:'indexed',"
+        "active_snapshot_id:'snapshot-1',source_count:1,entity_count:1,relationship_count:0,"
+        "latest_refresh:{status:'unchanged',coverage:[]},snapshot_coverage:["
+        "{status:'limited',reason:'text-only'}]})});"
+        "window.postJson=async()=>({res:{ok:true},data:{}});"
+        "document.body.style.minHeight='1400px';"
+        "const panel=renderKnowledgePanel('task-1');document.getElementById('out').append(panel);"
+        "await new Promise(resolve=>setTimeout(resolve,50));"
+        "const bundle={bundle_hash:'b1',snapshot_id:'s1',"
+        "budget:{serialized_bytes:0,max_bytes:32768,"
+        "max_assertions:40},assertions:[],coverage:[{status:'source-unknown',reason:'unreadable'}],"
+        "ambiguities:[{status:'ambiguous-identity',reason:'two candidates'}],conflicts:[],"
+        "staleness:[{status:'withheld-stale-evidence'}],exclusions:{'source-read-cap':2}};"
+        "renderKnowledgeResults(panel.querySelector('.knowledge-results'),'task-1',bundle);"
+        "const input=panel.querySelector('input');input.value='typed search';"
+        "const details=[...panel.querySelectorAll('.knowledge-results details')];"
+        "details.forEach(item=>item.open=true);"
+        "const before=panel.querySelector('.knowledge-results').textContent;"
+        "const statusSummary=panel.querySelector('.knowledge-status details summary');"
+        "statusSummary.focus();window.scrollTo(0,160);"
+        "await new Promise(resolve=>setTimeout(resolve,25));const scrollBefore=window.scrollY;"
+        "poll();await new Promise(resolve=>setTimeout(resolve,50));"
+        "const after=panel.querySelector('.knowledge-results').textContent;"
+        "const visible=['No matching observations','unreadable','ambiguous-identity',"
+        "'withheld-stale-evidence','source-read-cap'].every(value=>before.includes(value));"
+        "const preserved=input.value==='typed search'&&after===before"
+        "&&[...panel.querySelectorAll('.knowledge-results details')].every(item=>item.open);"
+        "const focusPreserved=document.activeElement==="
+        "panel.querySelector('.knowledge-status details summary')"
+        "&&window.scrollY===scrollBefore;"
+        "document.body.append(document.createTextNode(visible&&preserved&&focusPreserved"
+        "?'EMPTY_UI_PASS':'EMPTY_UI_FAIL'));"
+        "}catch(error){document.body.append(document.createTextNode(`EMPTY_UI_ERROR:${error.message}`));}})();"
+    )
+    html = tmp_path / "knowledge-empty.html"
+    html.write_text(_page(STATIC_DIR, script), encoding="utf-8")
+    result = _headless(tmp_path / "knowledge-empty-profile", "--dump-dom", html.as_uri())
+    assert result.returncode == 0, result.stderr
+    assert "EMPTY_UI_PASS" in _visible_dom(result.stdout)
 
 
 def test_execution_script_loads_and_seal_recovery_ui_retries_same_preview(tmp_path):
@@ -352,4 +426,4 @@ def test_execution_script_loads_and_seal_recovery_ui_retries_same_preview(tmp_pa
         tmp_path / "spec-restoration-profile", "--window-size=390,844", "--dump-dom", html.as_uri()
     )
     assert result.returncode == 0, result.stderr
-    assert "SEAL_UI_PASS" in result.stdout, result.stdout
+    assert "SEAL_UI_PASS" in _visible_dom(result.stdout), result.stdout

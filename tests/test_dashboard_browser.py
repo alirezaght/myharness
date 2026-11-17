@@ -157,19 +157,21 @@ def test_headless_chrome_shows_the_overview_and_switches_tasks(db_path, sample_r
         switched = _dom(server, tmp_path / "profile-b", f"?task={other}")
         unknown = _dom(server, tmp_path / "profile-c", "?task=t-00000000")
         _screenshots(server, tmp_path / "profile-shots")
-    assert f"<h2>Task {task_id}</h2>" in dom and "<dd>csv export</dd>" in dom
+    assert '<h2 title="csv export">csv export</h2>' in dom
+    assert f"<small>Task {task_id}</small>" in dom
     assert f'<time datetime="{since}" data-since="{since}">2d 03h</time>' in dom
     assert "<dd>awaiting approval</dd>" in dom and "<dd>proposal.created at " in dom
     assert "<p>P1 · interview recommendation: Export access</p>" in dom
     assert f"<code>harness interview decide {task_id} 1 accept|reject|modify</code>" in dom
     assert f"<p>next: <code>{resume['next']}</code></p>" in dom
-    assert f'<a href="/?task={task_id}" aria-current="page">{task_id}</a>' in dom
-    assert f'<a href="/?task={other}">{other}</a>' in dom
-    assert f"<p>next: <code>harness investigate {other}</code></p>" in dom
+    assert f'<a href="/?task={task_id}" aria-current="page">csv export</a>' in dom
+    assert f'<a href="/?task={other}">other task</a>' in dom
+    assert "<p>Review requirements and next steps</p>" in dom
 
-    assert f"<h2>Task {other}</h2>" in switched and "<dd>investigation</dd>" in switched
-    assert f'<a href="/?task={other}" aria-current="page">{other}</a>' in switched
-    assert f'<a href="/?task={task_id}">{task_id}</a>' in switched
+    assert '<h2 title="other task">other task</h2>' in switched
+    assert f"<small>Task {other}</small>" in switched and "<dd>investigation</dd>" in switched
+    assert f'<a href="/?task={other}" aria-current="page">other task</a>' in switched
+    assert f'<a href="/?task={task_id}">csv export</a>' in switched
 
     assert "<p>unknown task: t-00000000</p>" in unknown and "<h2>Task " not in unknown
     assert f'<a href="/?task={task_id}">' in unknown and f'<a href="/?task={other}">' in unknown

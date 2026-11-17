@@ -6,10 +6,10 @@ static files; a GET writes only diagram versions (by the Diagram Service, when t
 the selected task changed). `?task=<id>` selects the task; without it the task the dashboard
 was launched for. `/api/diagrams?version=<n>` returns version n of the task's diagrams and
 `/api/diagrams/compare?from=<n>&to=<m>` versions n < m side by side with their changes (P2-06).
-POST is accepted only at `/api/comments` (add a comment, P2-05), `/api/comments/resolve` and
-`/api/comments/reopen` (P2-06) and `/api/approve` (Approve & Implement, P2-07), and only from the
-dashboard's own origin with a JSON body of a declared length; every header is checked before the
-body is read. Any other POST path, and every other method, is 501.
+POST is accepted only at the declared comment, approval, execution, planning-recovery,
+specification-restoration and knowledge action routes, and only from the dashboard's own origin
+with a JSON body of a declared length; every header is checked before the body is read. Knowledge
+query and evidence reads remain task-scoped. Any other POST path, and every other method, is 501.
 """
 
 import json

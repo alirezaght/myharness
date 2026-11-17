@@ -35,6 +35,7 @@ BASE_COMMANDS = [
     "execution",
     "interview",
     "investigate",
+    "knowledge",
     "phase",
     "report",
     "resume",

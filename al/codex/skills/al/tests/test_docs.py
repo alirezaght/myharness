@@ -25,6 +25,17 @@ def test_review_docs_require_clean_fresh_context_and_separate_comparison():
     assert "one optional notes pass" in SKILL.lower()
 
 
+def test_handoffs_preserve_sourced_knowledge_without_granting_authority():
+    handoff_text = " ".join(HANDOFFS.split())
+    for needle in (
+        "bundle hash, task, snapshot and purpose",
+        "first await assignment",
+        "Clean-review knowledge remains unavailable",
+        "existing execution authority",
+    ):
+        assert needle in handoff_text, needle
+
+
 def test_comparison_protocol_names_typed_inputs_and_inspection_hashes():
     roles = role_dir(__file__)
     architect = (roles / "al-architect.toml").read_text()
