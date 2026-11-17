@@ -24,10 +24,32 @@ _DEFAULT_REFRESH_REQUEST = RefreshRequest()
 
 def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
     result = refresh(controller.conn, scope, request)
-    if result.snapshot_id is None or not scope.task_id or result.status == "incomplete":
+    if (
+        request.commit
+        or result.snapshot_id is None
+        or not scope.task_id
+        or result.status == "incomplete"
+    ):
         return result
     sources, coverage = task_sources(controller, scope, scope.task_id)
-    if not sources:
+    from harness.knowledge.retention import version_purged
+
+    blocked = tuple(
+        {
+            "locator": source.locator,
+            "reason": "purged",
+            "status": "purged",
+            "visibility": source.visibility,
+            "version_id": source.version_id,
+        }
+        for source in sources
+        if version_purged(controller.conn, source.version_id)
+    )
+    sources = tuple(
+        source for source in sources if not version_purged(controller.conn, source.version_id)
+    )
+    coverage = (*coverage, *blocked)
+    if not sources and not blocked:
         return result
     project = validate_scope(controller.conn, scope)
     parent = controller.conn.execute(
@@ -42,7 +64,7 @@ def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
             (project["active_snapshot_id"],),
         )
     }
-    if all(s.version_id in old for s in sources):
+    if not blocked and all(s.version_id in old for s in sources):
         return result
     inventory = SourceInventory(sources, True, coverage, json.loads(parent[0]))
     snapshot = publish_snapshot(
@@ -53,10 +75,18 @@ def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
             tuple(extract_source(s) for s in sources),
             scope.policy_generation,
             carry_forward=True,
+            unknown=blocked,
         ),
         expected_active=project["active_snapshot_id"],
     )
-    return replace(result, snapshot_id=snapshot, coverage=(*result.coverage, *coverage))
+    return replace(
+        result,
+        snapshot_id=snapshot,
+        status="published-partial"
+        if blocked or result.status == "published-partial"
+        else "published",
+        coverage=(*result.coverage, *coverage),
+    )
 
 
 def investigate_with_context(controller, task_id, repo_root, request=None, decisions=None):

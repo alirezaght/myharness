@@ -88,12 +88,12 @@ def inspect_knowledge(controller, repository, *, task_id=None):
     }
 
 
-def refresh_knowledge(controller, repository, *, task_id=None):
+def refresh_knowledge(controller, repository, *, task_id=None, commit=None, included_paths=()):
     return asdict(
         refresh_with_records(
             controller,
             current_operator_scope(controller.conn, repository, task_id=task_id),
-            RefreshRequest(),
+            RefreshRequest(included_paths=tuple(sorted(set(included_paths))), commit=commit),
         )
     )
 
@@ -131,17 +131,104 @@ def evidence_knowledge(controller, repository, bundle_hash, assertion_id, *, tas
 def add_knowledge_parser(subparsers):
     root = subparsers.add_parser("knowledge", help="inspect and query the sourced project graph")
     actions = root.add_subparsers(dest="knowledge_action", required=True)
-    for name in ("inspect", "refresh", "query", "explain"):
-        action = actions.add_parser(name)
+    for name in (
+        "inspect",
+        "refresh",
+        "query",
+        "explain",
+        "export",
+        "grant",
+        "import",
+        "revoke",
+        "purge",
+        "retain",
+    ):
+        action = actions.add_parser(name, allow_abbrev=False)
         action.add_argument(
             "task_id", help="Harness task whose investigated repository is selected"
         )
         if name == "query":
-            action.add_argument("text", nargs="*", help="search the current knowledge snapshot")
+            action.add_argument("text", nargs="*", help="search the selected knowledge snapshot")
+            action.add_argument("--entity", action="append", default=[])
+            action.add_argument("--as-of", dest="snapshot_id")
+        elif name == "refresh":
+            action.add_argument("--commit")
+            action.add_argument("--include", action="append", default=[])
         elif name == "explain":
             action.add_argument("bundle_hash")
             action.add_argument("assertion_id")
+        elif name == "export":
+            action.add_argument(
+                "--body-file", required=True, help="repository-relative exact portable Markdown"
+            )
+            action.add_argument(
+                "--decision", required=True, help="current repository-relative approval record"
+            )
+        elif name in {"grant", "revoke"}:
+            action.add_argument("--destination-db", required=True, type=Path)
+            action.add_argument("--destination-task", required=True)
+            action.add_argument(
+                "--grant-id", required=True, help="explicit action identity; reuse for retries"
+            )
+            if name == "grant":
+                action.add_argument("--lesson", required=True)
+                action.add_argument("--version", type=int, required=True)
+        elif name == "import":
+            action.add_argument("locator", help="tracked docs/knowledge/imports/ portable Markdown")
+        elif name == "purge":
+            action.add_argument("--version", action="append", required=True, dest="version_ids")
+        elif name == "retain":
+            action.add_argument("--limit", type=int, default=500)
         action.set_defaults(handler=cmd_knowledge)
+
+
+def _mutation(controller, repository, args):
+    from harness.knowledge.lessons import export_lesson, grant, import_lesson, revoke
+    from harness.knowledge.retention import purge, retain
+    from harness.knowledge.sources import read_source
+
+    scope = current_operator_scope(controller.conn, repository, task_id=args.task_id)
+    name = args.knowledge_action
+    if name == "export":
+        from harness.knowledge.models import MAX_SOURCE_BYTES
+
+        return export_lesson(
+            controller.conn,
+            scope,
+            read_source(repository, args.body_file, MAX_SOURCE_BYTES),
+            args.decision,
+        )
+    if name == "import":
+        return import_lesson(controller.conn, scope, args.locator)
+    if name == "purge":
+        return purge(controller.conn, scope, args.version_ids)
+    if name == "retain":
+        return retain(controller.conn, scope, limit=args.limit)
+    from harness.controller import HarnessController
+    from harness.db import connect
+
+    # Both databases are explicitly selected local existing files; never scan neighbors.
+    destination = args.destination_db.expanduser()
+    if not destination.is_file() or destination.is_symlink():
+        raise ValueError("explicit existing local destination database required")
+    conn = connect(destination)
+    try:
+        other = HarnessController(conn)
+        root = repository_for_task(other, args.destination_task)
+        target = current_operator_scope(conn, root, task_id=args.destination_task)
+        if name == "grant":
+            return grant(
+                controller.conn,
+                scope,
+                conn,
+                target,
+                args.lesson,
+                args.version,
+                grant_id=args.grant_id,
+            )
+        return revoke(controller.conn, scope, conn, target, args.grant_id)
+    finally:
+        conn.close()
 
 
 def cmd_knowledge(args: argparse.Namespace) -> int:
@@ -152,14 +239,32 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
         if args.knowledge_action == "inspect":
             result = inspect_knowledge(controller, repository, task_id=args.task_id)
         elif args.knowledge_action == "refresh":
-            result = refresh_knowledge(controller, repository, task_id=args.task_id)
+            result = refresh_knowledge(
+                controller,
+                repository,
+                task_id=args.task_id,
+                commit=args.commit,
+                included_paths=args.include,
+            )
         elif args.knowledge_action == "query":
             result = query_knowledge(
-                controller, repository, " ".join(args.text), task_id=args.task_id
+                controller,
+                repository,
+                " ".join(args.text),
+                task_id=args.task_id,
+                entity_refs=args.entity,
+                snapshot_id=args.snapshot_id,
             )
-        else:
+        elif args.knowledge_action == "explain":
             result = explain_knowledge(
                 controller, repository, args.bundle_hash, args.assertion_id, task_id=args.task_id
             )
+        else:
+            result = _mutation(controller, repository, args)
     print(json.dumps(result, indent=2, sort_keys=True, default=str))
-    return 0
+    return (
+        1
+        if result.get("status")
+        in {"source-only", "revocation-not-enforced", "revoked-destination-only"}
+        else 0
+    )

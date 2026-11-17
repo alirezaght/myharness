@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 from harness.db import connect
 from harness.knowledge.extract import extract_source
+from harness.knowledge import lessons, retention, commit_sources
 from harness.knowledge.models import (
     EXTRACTOR_VERSION, ContextRequest, PreparedSnapshot, QueryLimits,
     SourceInventory, SourceVersion, digest, identity,
@@ -45,6 +46,8 @@ with connect(root / 'fixture.db') as conn:
     explanation = explain(conn, scope, bundle.bundle_hash, aid)
     assert explanation['citations'][0]['content_sha256'] == sha
     assert len(json.dumps(bundle.to_dict()).encode()) < 4096
+    for imported in (lessons, retention, commit_sources):
+        assert Path(imported.__file__).is_relative_to(Path(sys.argv[1]))
     module = sys.modules['harness.knowledge.query']
     assert Path(module.__file__).is_relative_to(Path(sys.argv[1]))
     print(json.dumps({'assertions': len(bundle.payload['assertions']),

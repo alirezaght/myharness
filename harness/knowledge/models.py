@@ -47,6 +47,7 @@ class RefreshRequest:
     max_files: int = 10000
     max_file_bytes: int = MAX_SOURCE_BYTES
     included_paths: tuple[str, ...] = ()
+    commit: str | None = None
 
 
 @dataclass(frozen=True)

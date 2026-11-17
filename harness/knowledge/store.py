@@ -168,13 +168,17 @@ def _memberships(conn, prepared, expected):
         name = gap["locator"]
         old = previous.get(name)
         sid = identity(project, name)
-        version = old["version_id"] if old else identity(sid, "unread", EXTRACTOR_VERSION)
+        version = gap.get("version_id") or (
+            old["version_id"] if old else identity(sid, "unread", EXTRACTOR_VERSION)
+        )
         members[name] = (sid, version, "unknown", gap)
     names = prepared.names
     if names is None:
         names = frozenset(members)
     for name, old in previous.items():
         if name in members:
+            continue
+        if prepared.inventory.observation.get("mode") == "commit":
             continue
         if prepared.carry_forward:
             prior = conn.execute(
@@ -288,6 +292,18 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
             current["policy_generation"] != prepared.expected_policy_generation
         ):
             raise SnapshotConflict("active snapshot or policy changed during extraction")
+        from harness.knowledge.retention import version_purged
+
+        if any(version_purged(conn, source.version_id) for source in prepared.inventory.sources):
+            raise SnapshotConflict("source version was purged during extraction")
+        if any(
+            conn.execute(
+                "SELECT 1 FROM knowledge_assertion_state WHERE assertion_id=?", (assertion[1][0],)
+            ).fetchone()
+            for row in rows
+            for assertion in row[2]
+        ):
+            raise SnapshotConflict("assertion was purged during extraction")
         conn.execute("INSERT INTO knowledge_snapshots VALUES (?,?,?,?,?,?,?)", snapshot_row)
         derivations = []
         for source, version, assertions, extraction_coverage, material_class in rows:
@@ -299,6 +315,47 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
                 "INSERT OR IGNORE INTO knowledge_source_class VALUES (?,?)",
                 (source[0], material_class),
             )
+            if material_class == "lesson-import":
+                conn.execute(
+                    "UPDATE knowledge_source_class SET material_class='lesson-import' "
+                    "WHERE source_id=?",
+                    (source[0],),
+                )
+            if material_class == "lesson-import":
+                observation = json.loads(version[5])
+                grant = conn.execute(
+                    "SELECT 1 FROM knowledge_grants WHERE grant_id=? AND source_project=? "
+                    "AND destination_project=? AND material_sha256=? AND approval_ref=? "
+                    "AND revoked_at IS NULL",
+                    (
+                        observation["grant_id"],
+                        observation["source_project"],
+                        project,
+                        observation["lesson_sha256"],
+                        observation["approval_ref"],
+                    ),
+                ).fetchone()
+                if not grant:
+                    raise SnapshotConflict("lesson grant changed during extraction")
+                conn.execute(
+                    "INSERT OR IGNORE INTO knowledge_imports VALUES (?,?,?,?,'suggestion')",
+                    (
+                        project,
+                        observation["grant_id"],
+                        observation["lesson_id"],
+                        observation["lesson_version"],
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO knowledge_import_sources VALUES (?,?,?,?) ON CONFLICT(version_id) "
+                    "DO UPDATE SET grant_id=excluded.grant_id",
+                    (
+                        version[0],
+                        observation["grant_id"],
+                        observation["lesson_id"],
+                        observation["lesson_version"],
+                    ),
+                )
             if version[0] in prepared.reused:
                 continue
             for entities, assertion, evidence, lexical, parents in assertions:
@@ -346,7 +403,12 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
             )
             conn.execute(
                 "INSERT OR IGNORE INTO knowledge_source_class VALUES (?,?)",
-                (source[0], "repository"),
+                (
+                    source[0],
+                    "lesson-import"
+                    if source[2].startswith("docs/knowledge/imports/")
+                    else "repository",
+                ),
             )
         conn.executemany(
             "INSERT INTO knowledge_snapshot_sources VALUES (?,?,?,?)",

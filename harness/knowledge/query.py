@@ -40,6 +40,9 @@ _ROW = (
 
 
 def _partition(conn, scope, snapshot):
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS k_snapshot(snapshot_id TEXT)")
+    conn.execute("DELETE FROM temp.k_snapshot")
+    conn.execute("INSERT INTO temp.k_snapshot VALUES (?)", (snapshot,))
     conn.execute("CREATE TEMP TABLE IF NOT EXISTS k_versions(version_id TEXT PRIMARY KEY)")
     conn.execute("DELETE FROM temp.k_versions")
     conn.execute(
@@ -50,10 +53,32 @@ def _partition(conn, scope, snapshot):
         "(json_extract(v.observation_json,'$.visibility') IS NULL "
         "OR json_extract(v.observation_json,'$.visibility')='project' "
         "OR json_extract(v.observation_json,'$.visibility')=?) "
-        "AND m.membership_state='present' AND NOT EXISTS (SELECT 1 FROM knowledge_import_sources i "
-        "WHERE i.version_id=m.version_id AND NOT EXISTS (SELECT 1 FROM knowledge_grants g "
-        "WHERE g.grant_id=i.grant_id AND g.destination_project=? AND g.revoked_at IS NULL))",
-        (snapshot, scope.project_id, "task:" + (scope.task_id or ""), scope.project_id),
+        "AND m.membership_state='present' AND NOT EXISTS (SELECT 1 FROM knowledge_purges p "
+        "WHERE p.target_kind='source-version' AND p.target_sha256=v.version_id) "
+        "AND NOT EXISTS (SELECT 1 FROM knowledge_evidence pe JOIN knowledge_assertion_state ps "
+        "USING(assertion_id) WHERE pe.version_id=v.version_id) "
+        "AND (NOT EXISTS (SELECT 1 FROM knowledge_source_class c WHERE c.source_id=s.source_id "
+        "AND c.material_class='lesson-import') AND NOT EXISTS "
+        "(SELECT 1 FROM knowledge_import_sources i WHERE i.version_id=m.version_id) "
+        "AND s.kind!='lesson' "
+        "AND s.locator NOT LIKE 'docs/knowledge/imports/%' OR EXISTS "
+        "(SELECT 1 FROM knowledge_import_sources i JOIN knowledge_grants g USING(grant_id) "
+        "JOIN knowledge_imports l ON l.grant_id=i.grant_id AND l.lesson_id=i.lesson_id "
+        "AND l.version=i.version AND l.project_id=? WHERE i.version_id=m.version_id "
+        "AND g.source_project=json_extract(v.observation_json,'$.source_project') "
+        "AND g.destination_project=? AND "
+        "g.material_sha256=json_extract(v.observation_json,'$.lesson_sha256') "
+        "AND g.approval_ref=json_extract(v.observation_json,'$.approval_ref') "
+        "AND i.lesson_id=json_extract(v.observation_json,'$.lesson_id') "
+        "AND i.version=json_extract(v.observation_json,'$.lesson_version') AND "
+        "g.revoked_at IS NULL))",
+        (
+            snapshot,
+            scope.project_id,
+            "task:" + (scope.task_id or ""),
+            scope.project_id,
+            scope.project_id,
+        ),
     )
     if scope.permitted_source_versions is not None:
         # No variable-number IN clause or corpus-dependent candidate statistics.
@@ -102,10 +127,12 @@ def _partition(conn, scope, snapshot):
 
 
 def _evidence(conn, aid):
-    return [
+    refs = [
         dict(r)
         for r in conn.execute(
-            "SELECT e.*,v.content_sha256,s.locator,s.kind,v.observation_json FROM "
+            "SELECT e.*,v.content_sha256,s.locator,CASE WHEN s.locator LIKE "
+            "'docs/knowledge/imports/%' THEN 'lesson' ELSE s.kind END AS "
+            "kind,v.observation_json FROM "
             "knowledge_evidence e "
             "JOIN knowledge_source_versions v USING(version_id) JOIN knowledge_sources s "
             "USING(source_id) "
@@ -114,6 +141,12 @@ def _evidence(conn, aid):
             (aid,),
         )
     ]
+
+    from harness.knowledge.commit_sources import snapshot_observation
+
+    for ref in refs:
+        ref["observation_json"] = canonical(snapshot_observation(conn, ref))
+    return refs
 
 
 def _citation_current(scope, ref, *, conn=None, cache=None, reads=None):
@@ -134,8 +167,17 @@ def _citation_current(scope, ref, *, conn=None, cache=None, reads=None):
                     MAX_SOURCE_BYTES, reads.get("max_bytes", MAX_REFRESH_BYTES) - reads["bytes"]
                 )
             kind = ref.get("kind", "text")
-            if kind in {"python", "text"}:
+            observation = json.loads(ref["observation_json"])
+            if kind in {"python", "text"} and observation.get("mode") == "commit":
+                from harness.knowledge.commit_sources import read_blob
+
+                raw = read_blob(scope.repository, observation, read_limit)
+            elif kind in {"python", "text"}:
                 raw = read_source(scope.repository, ref["locator"], read_limit)
+            elif kind == "lesson" and conn is not None:
+                from harness.knowledge.lessons import current_bytes
+
+                raw = current_bytes(conn, scope, ref)
             elif (
                 kind in {"requirements", "design", "checkpoint", "task-event", "execution-event"}
                 and conn is not None
@@ -182,8 +224,10 @@ def _citation_current(scope, ref, *, conn=None, cache=None, reads=None):
 
 def _head_observation(conn, scope, snapshot):
     cursor = conn.execute(
-        "SELECT head,branch FROM knowledge_snapshot_cursor WHERE snapshot_id=?", (snapshot,)
+        "SELECT head,branch,mode FROM knowledge_snapshot_cursor WHERE snapshot_id=?", (snapshot,)
     ).fetchone()
+    if cursor and cursor["mode"] == "commit":
+        return [{"status": "immutable-commit-evidence", "commit": cursor["head"]}]
     if not cursor or not cursor["head"]:
         return []
     head = _git(scope.repository, "rev-parse", "HEAD")
@@ -451,7 +495,8 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     if len(ordered) > len(seeds):
         exclusions["assertion-budget"] += len(ordered) - len(seeds)
     selected, paths, examined = _expand(conn, rows, seeds, references, request.limits, exclusions)
-    historical = (
+    immutable = json.loads(snap["observation_json"]).get("mode") == "commit"
+    historical = immutable or (
         scope.snapshot_id is None
         and request.as_of_snapshot is not None
         and snapshot != project["active_snapshot_id"]
@@ -464,6 +509,8 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
         "query": request.query,
         "entity_refs": list(request.entity_refs),
         "as_of_snapshot": request.as_of_snapshot,
+        "evidence_mode": "commit" if immutable else "working-tree",
+        "commit": json.loads(snap["observation_json"]).get("head") if immutable else None,
         "assertions": [],
         "citations": [],
         "paths": [],
@@ -495,7 +542,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             {"status": "packet-local", "whole_repository_coverage": "not-assessed"}
         ]
     else:
-        if not historical:
+        if not historical or immutable:
             payload["staleness"].extend(_head_observation(conn, scope, snapshot))
         for row in conn.execute(
             "SELECT m.membership_state,s.locator,t.reason FROM knowledge_snapshot_sources m "
@@ -578,8 +625,10 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             exclusions["parent-budget"] += 1
             return
         refs = _evidence(conn, aid)
-        if not historical and not all(
-            _citation_current(scope, ref, conn=conn, cache=cache, reads=reads) for ref in refs
+        if not all(
+            (historical and not immutable and ref["kind"] != "lesson")
+            or _citation_current(scope, ref, conn=conn, cache=cache, reads=reads)
+            for ref in refs
         ):
             payload["staleness"].append({"assertion_id": aid, "status": "withheld-stale-evidence"})
             return
@@ -615,6 +664,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
                     "start_byte",
                     "end_byte",
                     "span_sha256",
+                    "observation_json",
                 )
             }
             for ref in refs
@@ -634,15 +684,29 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     _fit(payload, request.limits.bytes, exclusions)
     # A new read pass closes source edits during candidate selection and packing.
     final_cache = {}
-    if not historical:
+    if (
+        not historical
+        or immutable
+        or any(a["applicability"].get("imported") for a in payload["assertions"])
+    ):
         for aid in {c["assertion_id"] for c in payload["citations"]}:
             if not all(
-                _citation_current(scope, ref, conn=conn, cache=final_cache, reads=reads)
+                (historical and not immutable and ref["kind"] != "lesson")
+                or _citation_current(scope, ref, conn=conn, cache=final_cache, reads=reads)
                 for ref in _evidence(conn, aid)
             ):
                 raise ValueError("selected source changed before bundle publication")
     encoded = canonical(payload)
     bundle_hash = digest(encoded.encode())
+    expired = conn.execute(
+        "SELECT invalidated_at FROM knowledge_bundles WHERE bundle_hash=?", (bundle_hash,)
+    ).fetchone()
+    if expired and expired[0]:
+        # A new retrieval may issue new immutable bytes, never restore an expired row.
+        payload["new_issuance"] = digest((bundle_hash + utcnow()).encode())
+        _fit(payload, request.limits.bytes, exclusions)
+        encoded = canonical(payload)
+        bundle_hash = digest(encoded.encode())
     with transaction(conn):
         current = validate_scope(conn, scope)
         if (
@@ -660,6 +724,11 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             for a in payload["assertions"]
         ):
             raise PermissionError("selected knowledge no longer permitted")
+        existing = conn.execute(
+            "SELECT invalidated_at FROM knowledge_bundles WHERE bundle_hash=?", (bundle_hash,)
+        ).fetchone()
+        if existing and existing[0]:
+            raise PermissionError("bundle-invalidated during publication; query again")
         conn.execute(
             "INSERT OR IGNORE INTO knowledge_bundles VALUES (?,?,?,?,?,?,?,NULL)",
             (
@@ -703,6 +772,14 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
         "SELECT * FROM knowledge_bundles WHERE bundle_hash=? AND project_id=?",
         (bundle_hash, scope.project_id),
     ).fetchone()
+    state = conn.execute(
+        "SELECT reason FROM knowledge_bundle_state WHERE bundle_hash=?", (bundle_hash,)
+    ).fetchone()
+    if state:
+        code = {"purged": "bundle-purged", "expired": "bundle-expired"}.get(
+            state[0], "bundle-invalidated"
+        )
+        raise PermissionError(code + ": bundle unavailable to current scope")
     if (
         not row
         or row["invalidated_at"]
@@ -731,10 +808,19 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
         and scope.snapshot_id is None
     )
     cache = {}
-    if not historical:
+    if (
+        not historical
+        or payload.get("evidence_mode") == "commit"
+        or any(a["applicability"].get("imported") for a in payload["assertions"])
+    ):
         for item in payload["assertions"]:
             if not all(
-                _citation_current(scope, ref, conn=conn, cache=cache, reads=reads)
+                (
+                    historical
+                    and payload.get("evidence_mode") != "commit"
+                    and ref["kind"] != "lesson"
+                )
+                or _citation_current(scope, ref, conn=conn, cache=cache, reads=reads)
                 for ref in _evidence(conn, item["assertion_id"])
             ):
                 raise ValueError("bundle evidence is stale")
@@ -751,6 +837,12 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
             )
     with transaction(conn):
         validate_scope(conn, scope)
+        current_bundle = conn.execute(
+            "SELECT invalidated_at,payload FROM knowledge_bundles WHERE bundle_hash=?",
+            (bundle_hash,),
+        ).fetchone()
+        if not current_bundle or current_bundle[0] or not current_bundle[1]:
+            raise PermissionError("bundle-invalidated during explanation")
         _partition(conn, scope, payload["snapshot_id"])
         if any(
             not conn.execute(

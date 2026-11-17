@@ -122,6 +122,10 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess:
 
 
 def inventory_names(root: Path, request: RefreshRequest) -> tuple[list[str], dict]:
+    if request.commit:
+        from harness.knowledge.commit_sources import commit_inventory
+
+        return commit_inventory(root, request)
     result = _git(root, "ls-files", "-z", "--cached")
     if result.returncode:
         raise ValueError("tracked source enumeration unavailable")
@@ -166,7 +170,12 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
         remaining_bytes = MAX_REFRESH_BYTES - retained_bytes
         read_limit = min(request.max_file_bytes, remaining_bytes)
         try:
-            raw = read_source(root, name, read_limit)
+            if request.commit:
+                from harness.knowledge.commit_sources import read_blob
+
+                raw = read_blob(root, observation["git_entries"][name], read_limit)
+            else:
+                raw = read_source(root, name, read_limit)
         except ExcludedSource:
             coverage.append({"locator": name, "status": "excluded-sensitive"})
             continue
@@ -224,7 +233,18 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
                 kind,
                 sha,
                 raw,
-                dict(observation, visibility=visibility),
+                (
+                    dict(
+                        mode="commit",
+                        commit=observation["head"],
+                        file_mode=observation["git_entries"][name]["mode"],
+                        blob=observation["git_entries"][name]["blob"],
+                        type=observation["git_entries"][name]["type"],
+                        visibility=visibility,
+                    )
+                    if request.commit
+                    else dict(observation, visibility=visibility)
+                ),
                 visibility=visibility,
             )
         )
