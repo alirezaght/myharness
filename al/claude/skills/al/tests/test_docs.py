@@ -239,3 +239,23 @@ def test_writer_handoffs_are_generated_for_all_dispatches():
         assert 'al_command' in text and 'controller' in text
     assert 'Always include the EVIDENCE block printed by' not in HANDOFFS
     assert '<planned-area>' not in HANDOFFS
+
+
+def test_readonly_architect_returns_complete_content_for_host_capture():
+    extension = ".toml" if (role_dir(__file__) / "al-architect.toml").exists() else ".md"
+    delivery_sections = []
+    for role in ("al-architect", "al-architect-fallback"):
+        text = (role_dir(__file__) / (role + extension)).read_text()
+        delivery = text.split("## Named report outputs\n", 1)[1].lstrip().split("\n\n", 1)[0]
+        delivery_sections.append(" ".join(delivery.split()))
+        for required in ("complete plan or report verbatim", "authenticated `submit_output`",
+                         "final response", "supervisor or host captures", "--output-last-message FILE",
+                         "never needs filesystem Write", "scratch", "heredoc", "generator",
+                         "not an approval", "solely because filesystem Write is unavailable"):
+            assert required in " ".join(delivery.split()), required
+    assert delivery_sections[0] == delivery_sections[1]
+    plan = HANDOFFS.split("## al-architect · MODE: PLAN\n", 1)[1].split("\n## ", 1)[0]
+    planning = HANDOFFS.split("## al-architect · PLANNING REPORT\n", 1)[1].split("\n## ", 1)[0]
+    assert "supervisor or host captures the complete content verbatim" in " ".join(plan.split())
+    assert "supervisor captures the exact JSON" in " ".join(planning.split())
+    assert "The Architect returns content; it does not write the report file" in " ".join(planning.split())

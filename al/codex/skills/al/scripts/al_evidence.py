@@ -35,6 +35,27 @@ def _split(raw):
     return [x.strip() for x in (raw or "").replace("\n", ",").split(",") if x.strip()]
 
 
+def _command_example(action):
+    return f"Example: evidence {action} --area unit --scope svc -- python3 -m pytest -q"
+
+
+def parse_arguments(parser, argv, command_argv, *, command_separator):
+    """Keep argparse's option grammar and explain the separately captured argv."""
+    args, unknown = parser.parse_known_args(argv)
+    check = args.cmd == 'evidence' and args.action in {'plan', 'run'}
+    if unknown:
+        message = 'unrecognized arguments: ' + ' '.join(unknown)
+        if check and not command_separator:
+            message += '\nTo supply a check, put `--` before the check command; AL options go before `--`.\n' + _command_example(args.action)
+        parser.error(message)
+    if check and not command_argv:
+        if command_separator:
+            parser.error(f'evidence {args.action}: check command after `--` is empty.\n' + _command_example(args.action))
+        if args.action == 'plan':
+            parser.error('evidence plan requires a check command introduced by `--`.\n' + _command_example('plan'))
+    return args
+
+
 def _commit(sid, entry):
     """Re-load under the lock and write back one entry: a long run must not
     clobber state other commands wrote meanwhile."""
@@ -220,8 +241,12 @@ def _sources_file(a):
 def cmd_evidence_plan(a, sid):
     st = al_store.load(sid)
     argv, scope = a.command_argv, L.norm_scope(a.scope)
-    if not argv or not scope or not a.area:
-        sys.exit("al_state: evidence plan needs --area, --scope and `-- <argv>`")
+    if not argv:
+        sys.exit('al_state: evidence plan requires a check command after `--`.\n' + _command_example('plan'))
+    if not scope:
+        sys.exit('al_state: evidence plan requires --scope PATH[,PATH...].\n' + _command_example('plan'))
+    if not a.area:
+        sys.exit('al_state: evidence plan requires a nonempty --area.')
     if a.tier not in ("focused", "broad"):
         sys.exit("al_state: --tier must be focused or broad")
     sources=_sources_file(a)
@@ -379,8 +404,14 @@ def register(sub):
         p.add_argument("--tier"); p.add_argument("--cwd"); p.add_argument("--scope")
         p.add_argument("--sources-file"); p.add_argument("--env"); p.add_argument("--preflight"); p.add_argument("--needs")
     ev = sub.add_parser("evidence").add_subparsers(dest="action", required=True)
-    p = ev.add_parser("plan"); common(p); p.set_defaults(fn=cmd_evidence_plan, tier="broad")
-    p = ev.add_parser("run"); common(p); p.add_argument("--fresh", action="store_true")
+    p = ev.add_parser("plan", usage='%(prog)s --area AREA --scope SCOPE [options] -- PROGRAM [ARG ...]',
+                      description='Register a check without executing it. Put all AL options before `--`.',
+                      epilog=_command_example('plan'))
+    common(p); p.set_defaults(fn=cmd_evidence_plan, tier="broad")
+    p = ev.add_parser("run", usage='%(prog)s --area AREA [options] [-- PROGRAM [ARG ...]]',
+                      description='Run the planned area, or supply an ad-hoc check after `--`. Put all AL options before it.',
+                      epilog=_command_example('run'))
+    common(p); p.add_argument("--fresh", action="store_true")
     p.add_argument("--writer", help="the active writer this check belongs to; its own files may overlap the scope")
     p.add_argument("--timeout", type=float); p.add_argument("--tail", type=int, default=40)
     p.add_argument("--recovery-file",dest="operation_recovery_file")

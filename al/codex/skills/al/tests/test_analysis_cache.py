@@ -60,12 +60,12 @@ def test_scan_stability_is_required_even_on_cache_hits(repo, monkeypatch):
 def test_graph_cache_replays_gap_and_consumed_policy_deltas(repo):
     from al_python_imports import analyze
     base = facts(repo)
+    (repo / 'svc/new.js').write_text('const a = 1\n')
     scan = F.Snapshot(repo, base['repository']['base_oid'], ['svc/new.js'], set())
     original = {k: copy.deepcopy(v) for k, v in base.items() if k not in {'dependencies', 'scan', 'rule_sources', 'scan_inputs'}}
     original['adapter'] = {'id': 'contract', 'version': 1}
     original['policy_selection'] = ['.']
     original['enumeration']['gaps'] = []
-    scan.files['svc/new.js'] = b'const a = 1\n'
     first, second = copy.deepcopy(original), copy.deepcopy(original)
     assert analyze(first, scan) == analyze(second, scan)
     assert first['enumeration']['gaps'] == second['enumeration']['gaps']

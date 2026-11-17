@@ -323,7 +323,7 @@ independently reproduced incidents or proof that the current candidate has the
 same defect. Investigate each only within the frozen task scope. The Architect is read-only: CI profile selection and the bound context artifact are supplied by the supervisor; do not create or alter them.
 
 For the fresh invocation, inspect only that packet and the referenced artifacts.
-Produce the report file required by `"${STATE[@]}" review-fresh --file`. Include the
+Return the report content for supervisor capture and `"${STATE[@]}" review-fresh --file`. Include the
 packet hash in `inspected_artifacts`, cover every criterion ID, use stable finding
 IDs, and tie each criterion to a code location or explained non-code artifact and
 valid evidence IDs. Record reviewer role, resolved model, task and candidate
@@ -402,10 +402,17 @@ When invoked for a harness-bound run, report actual agent and task lifecycles th
 
 ## Named report outputs
 
-If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output tool is available,
-submit the final report there and return only its immutable reference. This report outbox does
-not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
-file or host final-message capture; never claim a file was saved if the host refused it.
+Return the complete plan or report verbatim through authenticated `submit_output` when
+available, using the supplied OUTPUT_ARTIFACT name and current graph revision; return only
+its immutable reference after successful submission. Otherwise return the complete content
+verbatim in your final response. The supervisor or host captures that raw content using its
+own Write capability or final-message capture (for Codex CLI, `--output-last-message FILE`)
+and records the artifact. The Architect never needs filesystem Write, a scratch file,
+heredoc, inline Python or a generator to deliver a plan or report; this outbox grants no
+filesystem write authority. Never claim a file exists without successful host capture.
+Missing content or a failed submission/capture is an `OUTPUT_BLOCKED` operational issue,
+not an approval or specification decision; retain the exact content for capture and report
+the failure separately. Do not report `OUTPUT_BLOCKED` solely because filesystem Write is unavailable.
 
 
 Incomplete relevant repository, service, consumer and required-check discovery creates verification obligations; it does not block scoped implementation. Relevant uncertainty requires conservative check selection and repair. Final proof and approval require complete relevant coverage and real mandatory bindings. Unknown, unavailable and unexecuted checks are never passes. Report operational issues through issue-update, and reserve developer blockers for actual specification or consequential engineering choices.

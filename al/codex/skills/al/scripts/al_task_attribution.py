@@ -3,6 +3,7 @@ import json
 import hashlib
 import os
 import stat
+import re
 import al_artifacts as A
 import al_scope as S
 import al_store
@@ -79,6 +80,31 @@ def _read(st, ref, kind):
     return value
 
 
+def _validate_conflict_records(rows):
+    """Validate the additive conflict variant without changing historical stage-zero rows."""
+    for row in rows:
+        entry = row.get('index')
+        if not isinstance(entry, dict) or 'stages' not in entry:
+            continue
+        stages = entry['stages']
+        if (set(entry) != {'stages'} or not isinstance(stages, list) or not stages
+                or any(not isinstance(e, dict) or set(e) != {'stage', 'mode', 'oid', 'sha256'}
+                       or type(e['stage']) is not int or e['stage'] not in {1, 2, 3}
+                       or not isinstance(e['mode'], str) or e['mode'] not in {'100644', '100755'}
+                       or not isinstance(e['oid'], str) or not re.fullmatch('[0-9a-f]{40}|[0-9a-f]{64}', e['oid'])
+                       or not isinstance(e['sha256'], str) or not re.fullmatch('[0-9a-f]{64}', e['sha256'])
+                       for e in stages)
+                or [e['stage'] for e in stages] != sorted({e['stage'] for e in stages})
+                or not isinstance(row.get('worktree'), dict)
+                or row['worktree'].get('type') not in {'file', 'deleted'}):
+            refuse('invalid retained unmerged index records')
+        # Git object identity includes its content: recheck immutable stage evidence rather
+        # than accepting an arbitrary digest supplied in a retained artifact.
+        hashes = S._blob_hashes(al_store.REPO_ROOT, [e['oid'] for e in stages])
+        if any(hashes[e['oid']] != e['sha256'] for e in stages):
+            refuse('retained unmerged stage content differs')
+
+
 def _capture(st, ref):
     value = _read(st, ref, 'task-content-capture-v1')
     rows = value.get('files')
@@ -86,6 +112,7 @@ def _capture(st, ref):
         refuse('invalid task attribution capture')
     if len({r['path'] for r in rows}) != len(rows):
         refuse('duplicate task attribution member')
+    _validate_conflict_records(rows)
     contents = value.get('contents')
     retained = {r['path']: r['worktree'] for r in rows if r['worktree']['type'] in {'file', 'symlink'}}
     if not isinstance(contents, dict) or set(contents) != set(retained):refuse('incomplete retained attribution content')
@@ -229,7 +256,7 @@ def classify_changes(st, current_capture=None):
     owned, ambiguous = set(), set()
     external_reconciled = _replay(st, expected, owned, ambiguous)
     current = _map(current_capture or observe(st))
-    limitations = S.child_content_gaps({'files': list(current.values())})
+    limitations = S.child_content_gaps({'files': list(current.values())}) + S.unresolved_index_gaps({'files': list(current.values())})
     ambiguous.update(r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed'))
     external = set(_changes(expected, current)) | (external_reconciled - owned)
     ambiguous.update(external & owned)

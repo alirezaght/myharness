@@ -7,6 +7,7 @@ from al_profile import measured
 from collections import defaultdict
 from pathlib import PurePosixPath
 import sys
+import al_writer_progress as progress
 from al_repository_facts import within,SOURCE_SUFFIXES,gap
 
 # Reviewed module/distribution identities, never inferred from installed packages.
@@ -37,7 +38,7 @@ def _analyze(facts,scan):
         candidates=[u for u in units.values() if any(within(r,path) for r in u['source_roots']) and within(u['path'],path)]
         return max(candidates,key=lambda u:len(u['path'])) if candidates else None
     for snapshot,files in [('base',scan.base),('current',scan.files)]:
-        for path,data in files.items():
+        for path in files:
             if not path.endswith('.py'):continue
             unit=owner(path)
             if unit is None:continue
@@ -47,7 +48,7 @@ def _analyze(facts,scan):
             if any(p in {'tests','__pycache__','.venv'} for p in PurePosixPath(relative).parts):continue
             module=relative[:-3].replace('/','.');package=module.endswith('.__init__') or module=='__init__'
             module=module.removesuffix('.__init__') if module!='__init__' else ''
-            key=(snapshot,path);records[key]={'unit':unit['id'],'module':module,'package':package,'data':data};owners[module].add(key)
+            key=(snapshot,path);records[key]={'unit':unit['id'],'module':module,'package':package};owners[module].add(key)
     def issue(record,path,node,target,reason):
         uncertainties.append({'code':'uncertain-import','unit':record['unit'],'path':path,'location':getattr(node,'lineno',None),'target':target,'reason':reason})
     def targets(record,name):
@@ -61,9 +62,14 @@ def _analyze(facts,scan):
         # Cross-unit imports remain conservative when a local dependency declaration
         # is absent; shared roots are possible, isolated service roots are not.
         return {key for key in candidates if not records[key]['unit'].startswith('services/')}
-    trees={}
-    for (snapshot,path),record in records.items():
-        try:tree=parse_python(record['data'],trees)
+    def sources():
+        for snapshot,files in [('base',scan.base),('current',scan.files)]:
+            paths=[path for which,path in records if which==snapshot]
+            for path,data in files.content_items(paths):yield snapshot,path,records[(snapshot,path)],data
+    for count,(snapshot,path,record,data) in enumerate(sources(),1):
+        progress.report('inventory-analysis',count=count)
+        # A source and its AST are local to one iteration, not a repository-sized memo.
+        try:tree=parse_python(data)
         except (SyntaxError,UnicodeError,ValueError,RecursionError):
             issue(record,path,ast.Pass(),None,'source AST unavailable');continue
         if sum(1 for _ in ast.walk(tree))>100000:
@@ -193,6 +199,7 @@ def _analyze(facts,scan):
                 if isinstance(fn,ast.Name) and fn.id in {'eval','exec'}:issue(record,path,node,None,'runtime code execution can introduce imports')
                 self.generic_visit(node)
         Visitor().visit(tree)
+    progress.report('inventory-analysis',count=len(records),force=True)
     affected={p for _,p in records if any(within(changed,p) or within(p,changed) for changed in scan.paths)}
     artifacts,unclassified=artifact_consumers(scan,records,units)
     for row in artifacts:
@@ -282,7 +289,7 @@ def artifact_consumers(scan,records,units):
         if path in scan.rules or PurePosixPath(path).name in MANIFESTS or any(part.startswith('.') for part in PurePosixPath(path).parts):continue
         owners=[u for u in units.values() if within(u['path'],path)]
         if not owners:continue
-        data=scan.files.get(path,scan.base.get(path,b''))
+        data=scan.files[path] if path in scan.files else scan.base.get(path,b'')
         kind=artifact_kind(path,data)
         if kind is None:
             # A changed non-module file of no supported artifact class keeps the exhaustive fallback.
@@ -315,8 +322,8 @@ def analyze(facts, scan):
     key = {'implementation': IMPLEMENTATION, 'runtime_binding': binding_identity(), 'callable': id(_analyze), 'facts': facts,
            'repository': str(scan.root), 'base': scan.base_oid, 'paths': scan.paths,
            'opaque': scan.opaque, 'required_adapter': scan.required_adapter,
-           'files': {p: hashlib.sha256(v).hexdigest() for p, v in scan.files.items()},
-           'base_files': {p: hashlib.sha256(v).hexdigest() for p, v in scan.base.items()},
+           'files': scan.files.hashes(),
+           'base_files': scan.base.hashes(),
            'modes': scan.modes, 'base_modes': scan.base_modes}
     def compute():
         fresh = copy.deepcopy(facts)
