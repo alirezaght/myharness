@@ -46,12 +46,13 @@ def cold_index(package, admission):
     }
 
 
-def execute(package, mode):
-    receipt = validate(package)
+def execute(package, mode, *, existing=None, stage=None):
+    receipt = validate(package) if stage is None else stage["corpus_receipt"]
     if mode == "validate":
         return {"status": "validated", "corpus": receipt, "provider_started": False}
     state, output = Path(package["state_directory"]), Path(package["output_directory"])
-    state.mkdir(mode=0o700)
+    if existing is None:
+        state.mkdir(mode=0o700)
     output.mkdir(mode=0o700)
     write_once(output / "package.json", package)
     write_once(
@@ -67,7 +68,7 @@ def execute(package, mode):
             "provenance": package["provenance"],
         },
     )
-    admission = admit(package)
+    admission = admit(package, existing=existing, stage=stage)
     if mode == "prepare":
         write_once(output / "admission.json", admission)
         return {"status": "prepared", "provider_started": False, "task_id": admission["task_id"]}
@@ -91,7 +92,12 @@ def execute(package, mode):
         admission["execution_id"] = eid
         write_once(output / "admission.json", admission)
         if package["arm"] == "C":
-            write_once(output / "cold-index.json", cold_index(package, admission))
+            if stage and stage["action"] == "recipient":
+                from scripts.knowledge_evaluation.stages import refresh_recipient
+
+                write_once(output / "recipient-refresh.json", refresh_recipient(package, admission))
+            elif not stage or stage["action"] == "donor":
+                write_once(output / "cold-index.json", cold_index(package, admission))
         # New isolated interpreter: no pre-imported checkout Harness modules can leak in.
         program = (
             "import sys;sys.path.insert(0,sys.argv[1]);sys.path.append(sys.argv[2]);"
@@ -138,10 +144,17 @@ def execute(package, mode):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("package", type=Path)
+    parser.add_argument("--route", choices=("single", "stage"), default="single")
     parser.add_argument("--mode", choices=("validate", "prepare", "live"), default="validate")
     args = parser.parse_args(argv)
     try:
-        result = execute(load(args.package), args.mode)
+        value = load(args.package)
+        if args.route == "stage":
+            from scripts.knowledge_evaluation.stages import execute_stage
+
+            result = execute_stage(value, args.mode)
+        else:
+            result = execute(value, args.mode)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         # Error text may include paths, but never raw native streams or credentials.
         print(canonical({"status": "refused", "reason": str(error)[:2048]}))

@@ -402,3 +402,427 @@ def test_engineer_task_scope_refusals(sample_repo, tmp_path, scope):
     package["specification"]["task_files"] = scope
     with pytest.raises(ValueError):
         validate(package)
+
+
+def metadata_fixture(directory, *, parent=None, role="al-architect", terminal=True, wait=True):
+    import uuid
+    from datetime import UTC, datetime
+
+    native = directory / "native"
+    files = native / "sessions/2026/11/17"
+    files.mkdir(parents=True)
+    root, child, turn = (str(uuid.uuid4()) for _ in range(3))
+    stamp = datetime.now(UTC).isoformat()
+
+    def event(kind, payload):
+        return {"timestamp": stamp, "type": kind, "payload": payload}
+
+    def session(tid, source):
+        return event(
+            "session_meta",
+            {
+                "id": tid,
+                "session_id": tid,
+                "cli_version": "0.165.0",
+                "source": source,
+                "timestamp": stamp,
+            },
+        )
+
+    root_rows = [
+        session(root, "exec"),
+        event(
+            "response_item",
+            {
+                "type": "function_call",
+                "name": "wait_agent",
+                "call_id": "wait-own",
+                "arguments": "{}",
+            },
+        ),
+    ]
+    if wait:
+        root_rows.append(
+            event(
+                "response_item",
+                {
+                    "type": "function_call_output",
+                    "call_id": "wait-own",
+                    "output": json.dumps({"message": "Agent completed", "timed_out": False}),
+                },
+            )
+        )
+    child_rows = [
+        session(
+            child,
+            {
+                "subagent": {
+                    "thread_spawn": {"parent_thread_id": parent or root, "agent_role": role}
+                }
+            },
+        ),
+        event("event_msg", {"type": "task_started", "turn_id": turn}),
+        event("turn_context", {"turn_id": turn, "model": "gpt-6-astra", "effort": "medium"}),
+        event("response_item", {"type": "reasoning", "text": "MUST_NOT_PERSIST_REASONING"}),
+    ]
+    if terminal:
+        child_rows.append(
+            event(
+                "event_msg",
+                {
+                    "type": "task_complete",
+                    "turn_id": turn,
+                    "completed_at": stamp,
+                    "last_agent_message": "MUST_NOT_COPY_PROSE",
+                },
+            )
+        )
+    for tid, rows in ((root, root_rows), (child, child_rows)):
+        (files / ("rollout-" + tid + ".jsonl")).write_text(
+            "".join(json.dumps(r) + "\n" for r in rows)
+        )
+    return native, root, child, files
+
+
+def test_observer_retains_only_bound_terminal_metadata(tmp_path):
+    from scripts.knowledge_evaluation.observer import observe_return
+
+    native, root, child, _ = metadata_fixture(tmp_path)
+    receipt = observe_return(native, root, child, "al-architect")
+    assert receipt["child_id"] == child
+    assert "MUST_NOT" not in json.dumps(receipt)
+
+
+@pytest.mark.parametrize(
+    "fault", ["parent", "role", "terminal", "wait", "turn", "partial", "alias", "oversized"]
+)
+def test_observer_refuses_unproven_return(tmp_path, fault):
+    import uuid
+
+    from scripts.knowledge_evaluation.observer import MAX_RECORD, observe_return
+
+    native, root, child, files = metadata_fixture(
+        tmp_path,
+        parent=str(uuid.uuid4()) if fault == "parent" else None,
+        terminal=fault != "terminal",
+        wait=fault != "wait",
+    )
+    child_file = files / ("rollout-" + child + ".jsonl")
+    if fault == "turn":
+        rows = [json.loads(line) for line in child_file.read_text().splitlines()]
+        rows[-1]["payload"]["turn_id"] = "foreign-turn"
+        child_file.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    elif fault == "partial":
+        child_file.write_text(child_file.read_text().rstrip("\n"))
+    elif fault == "alias":
+        original = tmp_path / "original-metadata"
+        child_file.rename(original)
+        child_file.symlink_to(original)
+    elif fault == "oversized":
+        with child_file.open("a") as stream:
+            stream.write(" " * (MAX_RECORD + 1) + "\n")
+    with pytest.raises(ValueError):
+        observe_return(native, root, child, "al-designer" if fault == "role" else "al-architect")
+
+
+SYNTHETIC_CONTINUITY_CLI = r"""#!/usr/bin/env python3
+import json,sys,os,uuid,time,tomllib
+from pathlib import Path
+from datetime import datetime,UTC
+from urllib.request import Request,urlopen
+if '--version' in sys.argv:
+    print('codex-cli 0.165.0');raise SystemExit(0)
+config={}
+for i,v in enumerate(sys.argv):
+    if v=='-c':config.update(tomllib.loads(sys.argv[i+1]))
+transport=config['mcp_servers']['harness']
+headers={'Authorization':transport['http_headers']['Authorization'],'Content-Type':'application/json'}
+root,child,turn=[str(uuid.uuid4()) for _ in range(3)]
+role=os.environ['EVAL_SYNTHETIC_ROLE'];stage=os.environ['EVAL_SYNTHETIC_STAGE']
+folder=Path(os.environ['CODEX_HOME'])/'sessions/2026/11/17';folder.mkdir(parents=True,exist_ok=True)
+def emit(tid,kind,payload):
+    record={'timestamp':datetime.now(UTC).isoformat(),'type':kind,'payload':payload}
+    with (folder/('rollout-'+tid+'.jsonl')).open('a') as stream:
+        stream.write(json.dumps(record)+chr(10))
+def session(tid,source):
+    emit(tid,'session_meta',{'id':tid,'session_id':tid,'cli_version':'0.165.0','source':source,'timestamp':datetime.now(UTC).isoformat()})
+session(root,'exec')
+print(json.dumps({'type':'thread.started','thread_id':root}),flush=True)
+sys.stdin.read();time.sleep(.25)
+def request(method,params):
+    raw=json.dumps({'jsonrpc':'2.0','id':1,'method':method,'params':params}).encode()
+    with urlopen(Request(transport['url'],raw,headers),timeout=30) as response:
+        headers['Mcp-Session-Id']=response.headers['Mcp-Session-Id']
+        return json.load(response)['result']
+request('initialize',{})
+def call(tid,name,args):
+    value=request('tools/call',{'name':name,'arguments':args,'_meta':{'threadId':tid,'sessionId':tid}})
+    assert not value.get('isError'),value
+    return json.loads(value['content'][0]['text'])
+call(root,'await_assignment',{'timeout':1})
+session(child,{'subagent':{'thread_spawn':{'parent_thread_id':root,'agent_role':role}}})
+emit(child,'event_msg',{'type':'task_started','turn_id':turn})
+emit(child,'turn_context',{'turn_id':turn,'model':'gpt-6-astra','effort':'medium'})
+assignment=call(child,'await_assignment',{'timeout':1})
+if stage=='recipient':
+    report=call(child,'read_file',{'path':'evaluation:donor-report'})
+    assert 'PUBLIC_SYNTHETIC_DONOR' in report['text']
+    if os.environ['EVAL_SYNTHETIC_ARM']=='C':
+        result=call(child,'knowledge_query',{'query':'PUBLIC_SYNTHETIC_DONOR'})
+        assert any('PUBLIC_SYNTHETIC_DONOR' in a['text'] for a in result['assertions']),result
+else:
+    call(child,'read_file',{'path':'demo/export.py'})
+content='PUBLIC_SYNTHETIC_DONOR demo/export.py defines export_rows.'
+if stage!='donor':content='Recipient explicitly used the exact public donor report.'
+call(child,'submit_output',{'name':'answer.md','content':content,
+    'expected_graph_revision':assignment['graph_revision']})
+emit(child,'event_msg',{'type':'task_complete','turn_id':turn,'completed_at':datetime.now(UTC).isoformat(),'last_agent_message':'IGNORED_FINAL_PROSE'})
+if stage=='donor':
+    emit(root,'response_item',{'type':'function_call','name':'wait_agent','call_id':'wait-synthetic','arguments':'{}'})
+    waited=json.dumps({'message':'Agent completed','timed_out':False})
+    emit(root,'response_item',{'type':'function_call_output',
+        'call_id':'wait-synthetic','output':waited})
+    completion=call(root,'read_file',{'path':'evaluation:complete-donor'})
+    assert completion['agent_status']=='Completed'
+print(json.dumps({'type':'turn.completed','usage':{'input_tokens':0,'output_tokens':0}}),flush=True)
+"""
+
+
+def existing_binding(package, admission):
+    from harness.controller import HarnessController
+    from scripts.knowledge_evaluation.package import canonical, sha
+
+    with closing(connect(admission["database"])) as conn:
+        controller = HarnessController(conn)
+        investigation = controller.workspace(admission["task_id"]).latest_checkpoint(
+            "investigation"
+        )
+        return {
+            "database": admission["database"],
+            "specs": admission["specs"],
+            "task_id": admission["task_id"],
+            "task_request_sha256": sha(controller.get_task(admission["task_id"]).request.encode()),
+            "investigation_sha256": sha(canonical(investigation.payload).encode()),
+            "approval_id": admission["approval"]["id"],
+            "approval_content_hash": admission["approval"]["content_hash"],
+            "knowledge_binding": None,
+        }
+
+
+def stage_wrapper(package, action, *, existing=None, donor=None):
+    return {
+        "schema_version": 1,
+        "action": action,
+        "package": package,
+        "al_task_id": "evaluation-" + action,
+        "task_files": ["demo"],
+        "existing": existing,
+        "donor": donor,
+    }
+
+
+@pytest.mark.parametrize("arm", ["B", "C"])
+def test_full_synthetic_native_continuity_and_real_reapproval(
+    sample_repo, tmp_path, monkeypatch, arm
+):
+    from scripts.knowledge_evaluation.continuity import knowledge_empty
+    from scripts.knowledge_evaluation.package import sha
+    from scripts.knowledge_evaluation.stages import execute_stage
+    from tests.execution_helpers import isolated_launch_environment
+
+    isolated_launch_environment(monkeypatch, tmp_path / "continuity-tooling")
+    binary = tmp_path / "continuity-bin"
+    binary.mkdir()
+    executable = binary / "codex"
+    executable.write_text(SYNTHETIC_CONTINUITY_CLI)
+    executable.chmod(0o700)
+    monkeypatch.setenv("PATH", str(binary) + os.pathsep + os.environ["PATH"])
+    monkeypatch.setenv("EVAL_SYNTHETIC_ROLE", "al-architect")
+    monkeypatch.setenv("EVAL_SYNTHETIC_STAGE", "donor")
+    monkeypatch.setenv("EVAL_SYNTHETIC_ARM", arm)
+    package = case(sample_repo, tmp_path)
+    package.update(arm=arm, participant="donor")
+    before = corpus_receipt(sample_repo)
+    donor_result = execute_stage(stage_wrapper(package, "donor"), "live")
+    assert donor_result["status"] == "observed", donor_result
+    output = Path(package["output_directory"])
+    donor_admission = json.loads((output / "admission.json").read_bytes())
+    completion = json.loads((output / "producer-completion.json").read_bytes())
+    assert completion["agent_status"] == "Completed"
+    if arm == "B":
+        assert completion["B_ingestion_refusals"]
+    else:
+        assert completion["knowledge_contributions"][0]["status"] == "published"
+    references = {
+        name: {"path": str(output / filename), "sha256": sha((output / filename).read_bytes())}
+        for name, filename in (
+            ("admission", "admission.json"),
+            ("completion", "producer-completion.json"),
+        )
+    }
+    recipient = copy.deepcopy(package)
+    recipient.update(
+        participant="recipient",
+        output_directory=str(tmp_path / "recipient-output"),
+        role="al-engineer",
+        model="gpt-6.1-sol",
+    )
+    recipient["specification"]["task_files"] = ["demo"]
+    recipient["specification"]["request"] = (
+        "Use the authorized earlier report in a later read-only demo/export.py task."
+    )
+    # Keep concrete supplied answers for newly observed investigation questions.
+    recipient["specification"]["answers"].update(
+        {
+            q.text: "Read-only later task in this exact frozen project."
+            for q in analyze(sample_repo, recipient["specification"]["request"]).questions
+        }
+    )
+    binding = existing_binding(package, donor_admission)
+    monkeypatch.setenv("EVAL_SYNTHETIC_ROLE", "al-engineer")
+    monkeypatch.setenv("EVAL_SYNTHETIC_STAGE", "recipient")
+    result = execute_stage(
+        stage_wrapper(recipient, "recipient", existing=binding, donor=references), "live"
+    )
+    assert result["status"] == "observed", result
+    admission = json.loads((Path(recipient["output_directory"]) / "admission.json").read_bytes())
+    assert admission["task_id"] == donor_admission["task_id"]
+    assert admission["approval"]["id"] != donor_admission["approval"]["id"]
+    assert admission["approval"]["spec_version"] > donor_admission["approval"]["spec_version"]
+    assert result["execution_id"] != donor_result["execution_id"]
+    assert result["native_id"] != donor_result["native_id"]
+    assert result["adapter"]["answers"][0]["role"] == "al-engineer"
+    with closing(connect(admission["database"])) as conn:
+        attempts = conn.execute("SELECT status FROM execution_attempts").fetchall()
+        assert len(attempts) == 2 and all(row[0] == "Exited" for row in attempts)
+        if arm == "B":
+            knowledge_empty(conn)
+        else:
+            row = conn.execute("SELECT task_id FROM knowledge_contributions").fetchone()
+            assert row is not None and row[0] == "evaluation-donor"
+    assert corpus_receipt(sample_repo) == before
+    with pytest.raises(ValueError):
+        execute(recipient, "validate")  # Original single-attempt route remains strict.
+
+
+def test_existing_unapproved_task_ordinary_adoption(sample_repo, tmp_path):
+    from harness.controller import HarnessController
+    from scripts.knowledge_evaluation.package import canonical, sha
+    from scripts.knowledge_evaluation.stages import execute_stage
+
+    package = case(sample_repo, tmp_path)
+    state = Path(package["state_directory"])
+    state.mkdir()
+    database = state / "harness.db"
+    with closing(connect(database)) as conn:
+        controller = HarnessController(conn)
+        task = controller.create_task("Public read-only operator-prepared demonstration project")
+        investigation = controller.record_investigation(
+            task.id, analyze(sample_repo, package["specification"]["request"])
+        )
+        binding = {
+            "database": str(database),
+            "specs": str(state / "specs"),
+            "task_id": task.id,
+            "task_request_sha256": sha(task.request.encode()),
+            "investigation_sha256": sha(canonical(investigation.payload).encode()),
+            "approval_id": None,
+            "approval_content_hash": None,
+            "knowledge_binding": None,
+        }
+    wrapper = stage_wrapper(package, "adopt", existing=binding)
+    forged = copy.deepcopy(wrapper)
+    forged["existing"]["task_request_sha256"] = "f" * 64
+    with pytest.raises(ValueError, match="request binding"):
+        execute_stage(forged, "validate")
+    assert execute_stage(wrapper, "prepare")["status"] == "prepared"
+    admission = json.loads((Path(package["output_directory"]) / "admission.json").read_bytes())
+    assert admission["task_id"] == task.id and admission["approval"]["id"]
+    assert admission["new_user_approval_event"] is False
+    with pytest.raises(ValueError):
+        execute(package, "validate")
+
+
+def test_b_ingestion_restriction_is_before_original_entry(monkeypatch):
+    from unittest.mock import Mock
+
+    from harness.knowledge import contributions
+    from scripts.knowledge_evaluation.lifecycle import ingestion_boundary
+
+    original = Mock(side_effect=AssertionError("original ingestion body must not run"))
+    monkeypatch.setattr(contributions, "ingest", original)
+    refusals = []
+    with ingestion_boundary("B", refusals):
+        with pytest.raises(ValueError, match="denied at entry"):
+            contributions.ingest(None, None, None, None, None)
+    assert original.call_count == 0 and len(refusals) == 1
+    with ingestion_boundary("C", []):
+        assert contributions.ingest is original
+
+
+def test_finalization_refuses_task_hash_yield_and_stale_graph(operations, tmp_path, monkeypatch):
+    """Synthetic predicate units over real initialized operation/outbox; no live status claimed."""
+    from scripts.knowledge_evaluation.lifecycle import complete
+    from tests.test_execution_continuity import child
+
+    adapter, root = make_adapter(operations, tmp_path, monkeypatch)
+    adapter.stage = {
+        "action": "donor",
+        "al_task_id": "donor-unit",
+        "task_files": ["synthetic/source.py"],
+    }
+    operation = adapter.operation
+    adapter.dispatch(root, "await_assignment", {"timeout": 1})
+    principal = child(operation, "al-architect")
+    assignment = adapter.dispatch(principal, "await_assignment", {"timeout": 1})
+    adapter.dispatch(
+        principal,
+        "submit_output",
+        {
+            "name": "answer.md",
+            "content": "Synthetic source-bound report.",
+            "expected_graph_revision": assignment["graph_revision"],
+        },
+    )
+    monkeypatch.setattr("scripts.knowledge_evaluation.lifecycle.observe_return", lambda *a: {})
+    original_authority = operation.authority
+    yield_pending = False
+
+    def authority(*args, **kwargs):
+        execution, state = original_authority(*args, **kwargs)
+        state = copy.deepcopy(state)
+        if yield_pending:
+            state["integration"]["agents"][principal["thread_id"]]["yield_required"] = True
+        return dict(execution, status="Running"), state
+
+    monkeypatch.setattr(operation, "authority", authority)
+    adapter.stage["al_task_id"] = "foreign-task"
+    with pytest.raises(ValueError, match="lifecycle binding"):
+        complete(adapter, root)
+    adapter.stage["al_task_id"] = "donor-unit"
+    original_hash = adapter.answers[0]["artifact"]["sha256"]
+    adapter.answers[0]["artifact"]["sha256"] = "sha256:" + "f" * 64
+    with pytest.raises(ValueError, match="report provenance"):
+        complete(adapter, root)
+    adapter.answers[0]["artifact"]["sha256"] = original_hash
+    yield_pending = True
+    with pytest.raises(ValueError, match="lifecycle binding"):
+        complete(adapter, root)
+    yield_pending = False
+    _, state = operation.authority(operations[2], root)
+    adapter.report_registration(
+        "task-register",
+        "additional-task.json",
+        {
+            "id": "additional",
+            "title": "A distinct synthetic read-only scope",
+            "files": ["docs"],
+            "criteria": operation.envelope["task_package"]["criteria"],
+        },
+        state,
+    )
+    with pytest.raises(ValueError, match="graph revision stale"):
+        complete(adapter, root)
+    current = operation.state(operations[5])
+    assert current["integration"]["agents"][principal["thread_id"]]["status"] == "Idle"
+    assert current["writers"] == {}

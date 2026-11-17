@@ -24,8 +24,9 @@ KNOWLEDGE_TOOLS = {"knowledge_query", "knowledge_explain"}
 
 
 class EvaluatorAdapter:
-    def __init__(self, operation, package):
+    def __init__(self, operation, package, stage=None):
         self.operation, self.package = operation, package
+        self.stage, self.ingestion_refusals, self.completion = stage, [], None
         self.root = Path(package["corpus"]["root"])
         if Path(operation.envelope["repository"]).resolve() != self.root:
             raise ValueError("native execution repository differs from frozen corpus")
@@ -44,8 +45,9 @@ class EvaluatorAdapter:
             raise ValueError("frozen corpus changed")
         if self.package["arm"] == "B":
             with closing(connect(self.operation.database)) as conn:
-                if conn.execute("SELECT count(*) FROM knowledge_snapshots").fetchone()[0]:
-                    raise ValueError("B requires a separate never-indexed store")
+                from .continuity import knowledge_empty
+
+                knowledge_empty(conn)
 
     def check_time(self):
         if time.monotonic() - self.started >= BUDGETS["wall_seconds"]:
@@ -95,10 +97,19 @@ class EvaluatorAdapter:
                     self.supervisor = dict(principal)
                 else:
                     self.register(principal)
+                if self.completion and role != "orchestrator":
+                    raise ValueError("completed native participant cannot be revived")
                 if name == "read_file":
-                    if role != self.package["role"]:
+                    if arguments["path"] == "evaluation:complete-donor":
+                        if set(arguments) != {"path"}:
+                            raise ValueError("closed completion operation required")
+                        from .lifecycle import complete
+
+                        result = complete(self, principal)
+                    elif role != self.package["role"]:
                         raise ValueError("orchestrator source prefetch refused")
-                    result = self.read(principal, arguments)
+                    else:
+                        result = self.read(principal, arguments)
                 elif name in KNOWLEDGE_TOOLS:
                     if role != self.package["role"]:
                         raise ValueError("only actual specialized role may query knowledge")
@@ -135,6 +146,10 @@ class EvaluatorAdapter:
 
     def read(self, principal, arguments):
         path = arguments["path"]
+        if path == "evaluation:donor-report":
+            from .continuity import read_donor
+
+            return read_donor(self, principal, arguments)
         if path.startswith("evaluation:"):
             if set(arguments) != {"path"}:
                 raise ValueError("evaluation resources have closed, unpaged arguments")
@@ -184,20 +199,31 @@ class EvaluatorAdapter:
         with closing(connect(self.operation.database)) as conn:
             _, state = self.operation.authority(HarnessController(conn), self.supervisor)
         value = {"id": identity, "name": "evaluation participant", "role": principal["role"]}
-        if principal["role"] == "al-engineer":
-            scopes = task_files(self.package)
+        if principal["role"] == "al-engineer" or self.stage:
+            scoped = (
+                self.package
+                if not self.stage
+                else dict(
+                    self.package,
+                    specification=dict(
+                        self.package["specification"], task_files=self.stage["task_files"]
+                    ),
+                )
+            )
+            scopes = task_files(scoped)
+            task_id = self.stage["al_task_id"] if self.stage else "evaluation"
             self.report_registration(
                 "task-register",
                 "evaluation-task.json",
                 {
-                    "id": "evaluation",
+                    "id": task_id,
                     "title": self.package["specification"]["request"],
                     "files": scopes,
                     "criteria": self.operation.envelope["task_package"]["criteria"],
                 },
                 state,
             )
-            value["task"] = "evaluation"
+            value["task"] = task_id
             with closing(connect(self.operation.database)) as conn:
                 _, state = self.operation.authority(HarnessController(conn), self.supervisor)
         self.report_registration("agent-register", "evaluation-agent.json", value, state)
@@ -227,6 +253,7 @@ class EvaluatorAdapter:
         )
         if result.get("returncode") != 0:
             raise ValueError("ordinary native evaluation registration refused")
+        return result
 
     def receipt(self):
         return {
@@ -244,4 +271,6 @@ class EvaluatorAdapter:
             "output_tokens": None,
             "answer_token_enforcement": "unavailable; bytes are not tokens",
             "actual_native_proof": False,
+            "producer_completion": self.completion,
+            "B_ingestion_refusals": self.ingestion_refusals,
         }

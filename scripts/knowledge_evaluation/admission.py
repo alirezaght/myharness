@@ -32,20 +32,38 @@ def environment(state):
             os.environ["HARNESS_HOME"] = previous
 
 
-def admit(package):
+def admit(package, *, existing=None, stage=None):
     root = Path(package["corpus"]["root"])
     state = Path(package["state_directory"])
     supplied = package["specification"]
     request = supplied["request"] + "\n\n" + PROVENANCE
     request += "\nPrior authorization: " + str(package["provenance"])
-    with environment(state), closing(connect(state / "harness.db")) as conn:
+    database = Path(existing["database"]) if existing else state / "harness.db"
+    with environment(state), closing(connect(database)) as conn:
         controller = HarnessController(conn)
         # Do not assert a fabricated developer complexity choice.
-        task = controller.create_task(request)
+        task = (
+            controller.get_task(existing["task_id"])
+            if existing
+            else controller.create_task(request)
+        )
         report = analyze(root, supplied["request"])
         controller.record_investigation(task.id, report)
-        controller.advance(task.id)
+        if task.phase == Phase.INVESTIGATION:
+            controller.advance(task.id)
+        elif task.phase != Phase.INTERVIEW:
+            controller.go_back(
+                task.id,
+                Phase.INTERVIEW,
+                "Ordinary recipient-stage evaluation specification under prior authorization",
+            )
         engine = InterviewEngine(controller, task.id)
+        if existing:
+            question = engine.ask(
+                "business_requirements",
+                "What is the read-only evaluation scope for " + stage["al_task_id"] + "?",
+            )
+            engine.answer(question.id, supplied["request"] + "\n" + PROVENANCE)
         while questions := engine.next(group=True):
             for question in questions:
                 answer = supplied["answers"].get(question.text)
@@ -58,16 +76,19 @@ def admit(package):
         designer = ArchitectureDesigner(controller, task.id)
         for section, value in supplied["design"].items():
             designer.add(section, value)
-        if package["role"] == "al-engineer":
+        if package["role"] == "al-engineer" or stage:
             designer.add(
                 "required_behaviour",
-                "Engineer evaluation task source scope: "
-                + canonical(supplied["task_files"])
+                "Read-only evaluation task source scope: "
+                + canonical(stage["task_files"] if stage else supplied["task_files"])
                 + "; read-only operations only; no writer, task admission/start, "
                 "dependency preparation or automatic assignment context.",
             )
         controller.advance(task.id)
         planner = TestPlanner(controller, task.id)
+        if existing:
+            for scenario in planner.document().scenarios:
+                planner.withdraw(scenario.id)
         requirements = [
             f"Q{r.id}" for r in controller.workspace(task.id).questions() if r.status == "answered"
         ]
@@ -81,16 +102,24 @@ def admit(package):
         controller.advance(task.id)
         if controller.get_task(task.id).phase != Phase.APPROVAL:
             raise ValueError("ordinary approval phase unavailable")
-        store = SpecStore(state / "specs" / task.id)
+        specs = Path(existing["specs"]) if existing else state / "specs"
+        store = SpecStore(specs / task.id)
         approval, sealed, _ = ApprovalGate(controller, task.id, store, root).approve()
+        if (
+            existing
+            and existing["approval_id"] is not None
+            and approval.id == existing["approval_id"]
+        ):
+            raise ValueError("recipient requires a genuinely new immutable approval")
         return {
             "task_id": task.id,
-            "database": str(state / "harness.db"),
-            "specs": str(state / "specs"),
+            "database": str(database),
+            "specs": str(specs),
             "approval": asdict(approval),
             "sealed_spec_sha256": sha(Path(sealed.path).read_bytes()),
             "review_state_hash": review.state_hash,
             "provenance": package["provenance"],
             "approval_actor": "supervisor under existing mission authorization",
             "new_user_approval_event": False,
+            **({"evaluation_stage": stage} if stage else {}),
         }

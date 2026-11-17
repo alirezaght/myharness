@@ -56,7 +56,7 @@ def run(package_path, admission_path, bridge_path):
     package, admission = load(Path(package_path)), json.loads(Path(admission_path).read_bytes())
     bridge = Path(bridge_path).resolve(strict=True)
     output = Path(package["output_directory"])
-    captured, adapters, telemetry = [], [], []
+    captured, adapters, telemetry, ingestion_refusals = [], [], [], []
     original_connection, original_serve = mcp.MCPConnection, native_runtime.serve_mcp
     original_runtime = native_runtime.NativeRuntime
 
@@ -71,7 +71,8 @@ def run(package_path, admission_path, bridge_path):
         operation = dispatch.__self__
         adapter = next((a for a in adapters if a.operation is operation), None)
         if adapter is None:
-            adapter = EvaluatorAdapter(operation, package)
+            adapter = EvaluatorAdapter(operation, package, admission.get("evaluation_stage"))
+            adapter.ingestion_refusals = ingestion_refusals
             adapters.append(adapter)
         return original_serve(resolve, adapter.dispatch, **kwargs)
 
@@ -196,11 +197,18 @@ def run(package_path, admission_path, bridge_path):
                 "initial_modules": initial_modules,
             },
         )
+        from .lifecycle import ingestion_boundary
+
         with (
+            ingestion_boundary(package["arm"], ingestion_refusals),
             patch.object(mcp, "MCPConnection", Connection),
             patch.object(native_runtime, "serve_mcp", serve),
             patch.object(native_runtime, "NativeRuntime", Runtime),
-            patch.object(worker, "_prompt", lambda *args, **kwargs: prompt(package)),
+            patch.object(
+                worker,
+                "_prompt",
+                lambda *args, **kwargs: prompt(package, admission.get("evaluation_stage")),
+            ),
             patch.object(worker, "_drain", drain),
         ):
             # Public launch_worker has returned and released its lock. No detached spawn occurred.
@@ -225,13 +233,35 @@ def run(package_path, admission_path, bridge_path):
             "modules": module_receipt(bridge),
             "mission_complete": False,
             "qualification": "private in-process scheduling and authenticated evaluator adapter",
-            "continuity": "unavailable: no completed producer/supervisor transfer demonstrated",
+            "continuity": (
+                {
+                    "route": admission["evaluation_stage"]["action"],
+                    "producer_invocation_completed": bool(adapters and adapters[0].completion),
+                    "limits": (
+                        "inspect actual completion/capability events; no verified task completion"
+                    ),
+                }
+                if admission.get("evaluation_stage")
+                else "unavailable: no completed producer/supervisor transfer demonstrated"
+            ),
         }
         write_once(output / "native-result.json", receipt)
 
 
-def prompt(package):
-    return (
+def prompt(package, stage=None):
+    extra = ""
+    if stage and stage["action"] == "donor":
+        extra = (
+            "After the real child returns, while still supervising, call read_file with "
+            "evaluation:complete-donor. A returned answer alone is insufficient. If native "
+            "terminal metadata is pending, report the refusal; never fabricate completion. "
+        )
+    elif stage and stage["action"] == "recipient":
+        extra = (
+            "The child may explicitly read evaluation:donor-report for the exact authorized "
+            "same-task historical report. Do not inject prior conversation or donor prose. "
+        )
+    return extra + (
         "This is a read-only evaluation under prior mission authorization. "
         "First call await_assignment to authenticate the supervisor. "
         "Spawn exactly one fresh specialized " + package["role"] + " invocation with no inherited "

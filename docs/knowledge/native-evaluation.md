@@ -107,8 +107,8 @@ conversation framing are not fully measured by the tool-result byte counter. Con
 these receipts alone cannot establish all-context budget compliance or frozen evaluation
 acceptance. They establish only declared adapter observations subject to these limits.
 
-`participant` labels preserve donor/recipient separation but do not implement continuity
-transfer. Authenticated report output is available; completed donor lifecycle, supervisor
+In the single-case route, `participant` labels preserve donor/recipient separation but do not
+implement continuity transfer. The explicit stage route below adds the bounded task-local flow. Authenticated report output is available; completed donor lifecycle, supervisor
 ingestion into a later task, portable lesson approval and source/destination grants remain
 separate genuine obligations. No fake writer or SQL grant is created. Donor and recipient
 costs must be reported separately and combined when those demonstrations are performed.
@@ -119,3 +119,88 @@ feed unknown backend read counts into its integer fields as zero. Preserve the a
 agent-visible versus backend and donor/recipient sensitivity interpretations. Actual provider
 and held-out execution, sourced-quality scoring, clean-session proof, full budget verification,
 and business acceptance remain supervising-agent work after release.
+
+## Explicit continuity and trusted task adoption
+
+The original `--route single` remains the default and refuses existing state/output roots.
+Use `--route stage` only with a closed stage wrapper:
+
+```json
+{
+  "schema_version": 1,
+  "action": "donor",
+  "package": "<the complete case object described above, not a filename>",
+  "al_task_id": "evaluation-donor",
+  "task_files": ["harness"],
+  "existing": null,
+  "donor": null
+}
+```
+
+`package` is the actual object. All stages need explicit real tracked source scope, including
+Architect donors. Engineer scope must also match `specification.task_files`. Donor stage uses
+fresh absent roots. Each stage has its own fixed budgets, fresh output directory and native
+conversation. A named output alone does not finalize the producer.
+
+The donor root actually waits for its child, then calls `read_file` with exactly
+`evaluation:complete-donor`. Only its genuine authenticated root can finalize the one observed
+child and exact report/current graph. The private Codex observer checks its own canonical
+SessionMeta parent/role, TurnContext/turn ID, one task_started/task_complete pair and a matched
+root wait_agent call/result after completion. Wait result text is ignored; timed_out=false
+alone grants nothing. Metadata reads are bounded regular, own, nofollow/no-alias reads;
+reasoning, last_agent_message and native prose are not retained. Missing/partial/resumed or
+foreign terminal metadata refuses. Claude terminal observation remains unavailable.
+
+After actual return, ordinary `Idle → Waiting → Completed` records a returned invocation
+awaiting supervised finalization and then its finalized report. It does not assert an admitted,
+started or verified AL task. C uses normal completed-report ingestion. B's declared private
+hook refuses at ingestion entry, before the original body or any knowledge mutation; ordinary
+lifecycle/output persistence still runs and the unavailable contribution outcome is retained.
+The actual worker must subsequently close and settle before recipient admission.
+
+Recipient wrapper uses `action: recipient`, a distinct `al_task_id`, a new absent output root,
+and the same physical case-arm repository/state/database/Harness task. Its `existing` object is:
+
+- `database`, `specs`, `task_id`: exact canonical state-bound existing store/spec root/task.
+- `task_request_sha256`: SHA256 of the actual immutable task request UTF-8 bytes.
+- `investigation_sha256`: SHA256 of canonical sorted compact JSON of the actual latest
+  investigation checkpoint payload, which must bind the exact repository.
+- `approval_id`, `approval_content_hash`: actual current donor approval identity/hash.
+- `knowledge_binding`: null for continuity; exact operator-prepared public demo bindings below.
+
+`donor` contains `admission` and `completion`, each `{ "path": "<canonical receipt>",
+"sha256": "<exact hex SHA256>" }`, referencing the actual donor `admission.json` and
+`producer-completion.json`. Actual native Exited/closed-context, original AL source hash,
+completed report/owner/role/task/artifact hash and original project/task/store/provenance are
+revalidated. No DB is copied and no previous authority is made current.
+
+Recipient-stage scope is added through ordinary interview/design/test-plan/final-review and
+new sealed approval/version under existing mission authorization. A new execution consumes
+that new approval. Historical approvals and original donor outbox/handoff remain retained.
+Authorized fixture transitions occur externally only after actual donor settlement; the next
+stage's exact corpus receipt must describe the real resulting Git identity. C uses a normal
+task-neutral working-tree incremental refresh, retaining temporal reports while preserving
+real working-tree provenance/limitations. A pure explicit commit refresh intentionally excludes
+mutable reports and is not silently overridden.
+
+The recipient may explicitly read `evaluation:donor-report` through the same baseline resource
+in B and C. It resolves only that exact capability-bound donor report and supports ordinary
+bounded offset/limit pages. It does not list prior outputs, read another task/arm or inject donor
+prose into the recipient prompt. C additionally has normal authenticated knowledge tools.
+Every delivered report page counts again toward the recipient context budget; donor cost is
+separate and combined cost remains a required accounting interpretation.
+
+`action: adopt` supports a trusted operator-prepared read-only project/task **before its first
+implementation approval**. Supply the same explicit existing-task binding, with null approval
+fields, no donor reference and no previous task execution. Normal public workflow creates its
+first approval; no SQL approval, task ID assumption or made-up user click is accepted. B
+refuses seeded knowledge. C may retain pre-staged data only with an explicit `knowledge_binding`
+containing `project_id`, `grant_id`, `material_sha256`, matching the actual unrevoked exact
+material/destination grant. Actual lesson export/approval/grant/import/revoke remain production
+public operations; this route grants nothing and does not replace exact human authorization.
+
+Stage validation is read-only. `--mode prepare` stops after ordinary approval and is not a
+resumable provider attempt. `--mode live` is explicit and parent-only for actual provider runs.
+Unavailable telemetry, ingestion refusals, incomplete coverage and Interrupted execution status
+remain literal outcomes. Mixed commit/report labeling is unchanged product behavior, not an
+excuse to suppress mutable report provenance/hash validation or claim clean-review capability.
