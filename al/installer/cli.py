@@ -81,6 +81,8 @@ def parser():
             p.add_argument('--status-line', action='store_true', help='explicitly install the optional Claude status line')
         if command == 'update':
             p.add_argument('--all', action='store_true')
+            p.add_argument('--documentation-only', action='store_true',
+                           help='reviewed, hash-bound documentation update of an enrolled global target')
         if command == 'rollback':
             p.add_argument('--previous', action='store_true', required=True)
         if command == 'bootstrap':
@@ -175,6 +177,10 @@ def main(argv=None):
             reviews = read_json(args.reviews) if args.reviews else {}
             adoption = read_json(args.adopt) if args.adopt else {}
             options = {'reviews': reviews, 'adoption': adoption, 'runtime_roots': args.runtime_root}
+            if args.command == 'update' and args.documentation_only:
+                if not args.global_scope or args.all or args.repo or args.adopt:
+                    raise ValueError('--documentation-only requires --global and forbids --all, --repo and --adopt')
+                options['documentation_only'] = True
             if args.command in {'install', 'update'}:
                 options.update(source=args.source, source_subdir=args.source_subdir, version=args.version,
                                policy=args.policy, status_line=args.status_line)

@@ -146,6 +146,59 @@ configuration freely; owned values are tracked separately and unrelated keys
 are preserved. An interrupted transaction remains pending for diagnosis and
 cannot be retried or rolled back by the ordinary commands.
 
+An enrolled global target can explicitly install an exactly reviewed documentation
+correction while retaining well-formed resumable histories:
+
+```sh
+alctl update --global --version 0.1.7 --documentation-only --reviews /absolute/reviews.json
+```
+
+This mode requires a stable numeric tag and preserves the enrolled source,
+subdirectory, platforms, update policy and configuration. It rejects installation,
+rollback, `--all`, adoption, policy changes and status-line changes. Normal updates
+still require terminal histories. This mode reports retained activity honestly;
+doctor may continue to report those histories as blockers. Malformed runtime
+records, unsettled writers/evidence and ambiguous protected origins still refuse.
+No existing runtime state, pin or immutable snapshot is rewritten.
+
+The existing review JSON must contain a `documentation_update` object:
+
+```json
+{
+  "documentation_update": {
+    "schema_version": 1,
+    "reviewed": true,
+    "reason": "Inspected this exact correction against the existing platform contract",
+    "old_release_digest": "<installed manifest digest>",
+    "new_release_digest": "<candidate manifest digest>",
+    "resources": {
+      "claude/skills/al/SKILL.md": {"before": "<sha256>", "after": "<sha256>"}
+    },
+    "instruction_review": {"path": "/absolute/instruction-review.txt", "sha256": "<sha256>"},
+    "user_authorization": {"path": "/absolute/authorization.txt", "sha256": "<sha256>"}
+  }
+}
+```
+
+The resource map must exactly match every changed payload resource. Provenance
+files must exist and match their recorded hashes at both transaction barriers.
+These artifacts record inspected instructions and actual operator authorization;
+a filename or hash alone does not establish semantic equivalence or authorization.
+Existing applicable instruction/configuration reviews remain required.
+
+The fixed resource allowlist is Claude `SKILL.md` and the two platforms'
+`reference/handoffs.md`. All resource membership, kinds, platform classifications
+and modes must remain identical, and every other byte must match. Claude Markdown
+role definitions are excluded. The two `reference/parity-manifest.json` files may
+change only their schema-1 `platform_adapters.reference_rationales["handoffs.md"]`
+string, accompanied by an exactly reviewed handoffs change. All inventories and
+other parity fields must compare structurally equal; unknown digest/schema
+extensions refuse. The journal records the compatibility receipt, changed hashes,
+unchanged resource-set digest, release commits/digests, review provenance and
+observed activity. Compatibility and preimages are checked before apply and
+installed postimages are checked before publication. Ordinary ownership, cache,
+tag, smoke, transaction and pending-recovery checks remain in force.
+
 ## Inspect and recover
 
 ```sh

@@ -14,6 +14,10 @@ class ActiveRuns(ValueError):
     pass
 
 
+class TerminalWorkflow(ValueError):
+    """A structurally inspected history lacks ordinary terminal eligibility."""
+
+
 def scan_activity(roots):
     inspected, blockers = [], []
     for entry in roots:
@@ -78,12 +82,20 @@ def scan_activity(roots):
                     for entry in evidence['entries']:
                         if entry.get('run') != st['run_id'] or not re.fullmatch(r'E[1-9][0-9]*', entry.get('id', '')) or not isinstance(entry.get('argv'), list) or not entry.get('reservation'):
                             raise ValueError('malformed evidence identity')
+                    if st.get('status') not in {'RUNNING', 'APPROVED', 'STOPPED_WITH_BLOCKERS', 'SPEC_BLOCKED',
+                                               'AGENT_FAILED', 'WAITING_FOR_USER', 'INTERRUPTED', 'TRANSFERRED'}:
+                        raise ValueError('unknown runtime status')
+                    if st.get('phase') not in {'PLANNING', 'PSEUDOCODE', 'IMPLEMENTATION', 'FINALIZATION',
+                                              'VERIFICATION', 'REVIEW', 'REWORK_REASSESSMENT', 'PLAN_CONFLICT',
+                                              'INVESTIGATION', 'REWORK', 'CORRECTION', 'FINAL_VERIFICATION', 'DONE'}:
+                        raise ValueError('unknown runtime phase')
                     if st.get('status') != 'APPROVED' or st.get('phase') != 'DONE':
-                        raise ValueError('potentially resumable run: ' + str(st.get('status')) + '/' + str(st.get('phase')))
+                        raise TerminalWorkflow('potentially resumable run: ' + str(st.get('status')) + '/' + str(st.get('phase')))
                 except (ValueError, OSError, TypeError, KeyError) as exc:
-                    blockers.append({'path': str(path), 'reason': str(exc)})
+                    blockers.append({'path': str(path), 'reason': str(exc),
+                                     'category': 'terminal-workflow' if isinstance(exc, TerminalWorkflow) else 'structural'})
         except (ValueError, OSError, TypeError) as exc:
-            blockers.append({'path': str(root), 'reason': str(exc)})
+            blockers.append({'path': str(root), 'reason': str(exc), 'category': 'structural'})
     return {'roots': inspected, 'blockers': blockers, 'limitation': LIMITATION}
 
 
