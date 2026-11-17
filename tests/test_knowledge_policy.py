@@ -8,7 +8,7 @@ from harness.knowledge.refresh import refresh
 from tests.test_knowledge_snapshots import graph as graph
 
 
-def test_packet_partition_excludes_forbidden_candidates_counts_and_cache(graph):
+def test_packet_partition_excludes_forbidden_candidates_counts_and_cache(graph):  # noqa: F811
     conn, scope = graph
     refresh(conn, scope)
     allowed = frozenset(
@@ -37,7 +37,7 @@ def test_packet_partition_excludes_forbidden_candidates_counts_and_cache(graph):
         query(conn, replace(scope, purpose="fresh-review"), ContextRequest("service"))
 
 
-def test_revocation_blocks_previously_issued_bundle(graph):
+def test_revocation_blocks_previously_issued_bundle(graph):  # noqa: F811
     conn, scope = graph
     refresh(conn, scope)
     bundle = query(conn, scope, ContextRequest("service"))

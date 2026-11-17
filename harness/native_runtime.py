@@ -152,6 +152,7 @@ class NativeRuntime:
                     },
                 }
                 context_path = profile / "context.json"
+
                 def verifier(channel, name, arguments):
                     return self.registry.resolve_claude(channel, name, arguments, context)
 

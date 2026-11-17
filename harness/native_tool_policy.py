@@ -36,6 +36,10 @@ ROLES = (
     "al-builder",
     "al-scout",
 )
+SUPPORTED_NATIVE_VERSIONS = {
+    "codex": frozenset({"0.164.0", "0.165.0"}),
+    "claude": frozenset({"2.1.310", "2.1.325"}),
+}
 DISABLED = (
     "shell_tool shell_snapshot shell_snapshot_v2 unified_exec apply_patch_freeform "
     "code_mode code_mode_only code_mode_host js_repl js_repl_tools_only apps connectors "
@@ -81,7 +85,7 @@ def executable_identity(executable, host):
     result = subprocess.run([str(path), "--version"], capture_output=True, text=True, timeout=10)
     pattern = (r"codex-cli " if host == "codex" else "") + r"(\d+\.\d+\.\d+)(?: \([^()\r\n]+\))?"
     match = re.fullmatch(pattern, result.stdout.strip())
-    supported = {"codex": {"0.164.0"}, "claude": {"2.1.310", "2.1.325"}}[host]
+    supported = SUPPORTED_NATIVE_VERSIONS[host]
     if result.returncode or match is None or match[1] not in supported:
         raise ValueError(
             "unsupported native executable version: " + host + " " + result.stdout.strip()

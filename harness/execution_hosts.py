@@ -249,8 +249,11 @@ def native_diagnostic(host, raw):
             detail = record["result"].strip()
         subtype = str(record.get("subtype", ""))
         label = subtype if subtype.startswith("error") else "failed"
-        return "Claude " + label + ": " + (
-            detail[:4096] or "native host reported an error without diagnostic details"
+        return (
+            "Claude "
+            + label
+            + ": "
+            + (detail[:4096] or "native host reported an error without diagnostic details")
         )
     if host == "codex" and record.get("type") in {"error", "thread.failed", "turn.failed"}:
         error = record.get("error", record.get("message", "native host failed"))
