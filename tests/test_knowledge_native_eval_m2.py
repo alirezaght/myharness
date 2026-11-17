@@ -488,3 +488,97 @@ def test_review_repro_actual_child_packet_contains_m2_policy(stage, arm):
     assert INSTRUCTIONS in child_packet
     assert "Public synthetic architecture question." in child_packet
     assert "After the real child returns" not in child_packet
+
+
+@pytest.mark.parametrize("schema", [1, 2])
+@pytest.mark.parametrize("regular_package", [False, True])
+def test_selected_worker_rejects_ambient_editable_source(
+    tmp_path, monkeypatch, schema, regular_package
+):
+    import shutil
+    import subprocess
+    import venv
+    from pathlib import Path
+
+    from scripts import knowledge_native_eval as runner
+    from scripts.knowledge_evaluation.worker import hashes
+
+    engine, foreign, bridge = (tmp_path / n for n in ("engine", "foreign", "bridge"))
+    selected = engine / "scripts/knowledge_evaluation"
+    stale = foreign / "scripts/knowledge_evaluation"
+    selected.mkdir(parents=True)
+    stale.mkdir(parents=True)
+    bridge.mkdir()
+    if regular_package:
+        (foreign / "scripts/__init__.py").write_text("")
+    (stale / "__init__.py").write_text("")
+    (stale / "live.py").write_text("raise RuntimeError('foreign evaluator selected')")
+    (selected / "__init__.py").write_text("")
+    (engine / "scripts/knowledge_native_eval.py").write_text("# public fixture entrypoint")
+    shutil.copyfile(
+        Path(runner.__file__).parent / "knowledge_evaluation/worker.py", selected / "worker.py"
+    )
+    (selected / "live.py").write_text(
+        "import json,sys\nfrom pathlib import Path\n"
+        "def run(package, admission, bridge, *, evaluator_source):\n"
+        " from .worker import verify_source\n"
+        " modules=verify_source(*evaluator_source)\n"
+        " print(json.dumps({'schema':json.loads(Path(package).read_text())['schema_version'],"
+        "'live':__file__,'first':sys.path[0],'modules':modules}))\n"
+    )
+    venv_root = tmp_path / "environment"
+    venv.EnvBuilder(with_pip=False).create(venv_root)
+    interpreter = venv_root / "bin/python"
+    site = next((venv_root / "lib").glob("python*/site-packages"))
+    (site / "public-foreign.pth").write_text(str(foreign) + "\n")
+    (tmp_path / "package.json").write_text(json.dumps({"schema_version": schema}))
+    (tmp_path / "isolation.json").write_text(json.dumps({"adapter_hashes": hashes(engine)}))
+    monkeypatch.setattr(runner, "_engine", engine)
+    monkeypatch.setattr(runner.sys, "executable", str(interpreter))
+    result = subprocess.run(
+        runner.worker_command(bridge, tmp_path), capture_output=True, check=True
+    )
+    receipt = json.loads(result.stdout)
+    assert receipt["schema"] == schema
+    assert Path(receipt["live"]).resolve() == selected / "live.py"
+    assert receipt["first"] == str(bridge)
+    assert "scripts.knowledge_evaluation.live" in receipt["modules"]
+
+
+@pytest.mark.parametrize("preload", ["namespace", "module", "changed-hash"])
+def test_selected_worker_refuses_foreign_preload(tmp_path, preload):
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from scripts.knowledge_evaluation import worker
+
+    engine = Path(worker.__file__).resolve().parents[2]
+    program = (
+        "import importlib.util,sys,types;from pathlib import Path;"
+        "spec=importlib.util.spec_from_file_location('selector',sys.argv[1]);"
+        "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);"
+        "engine=Path(sys.argv[2]);expected=m.hashes(engine);"
+    )
+    if preload == "namespace":
+        program += (
+            "n=types.ModuleType('scripts');n.__path__=[sys.argv[3]];sys.modules['scripts']=n;"
+        )
+    elif preload == "module":
+        program += (
+            "n=types.ModuleType('scripts.knowledge_evaluation.live');"
+            "n.__file__=sys.argv[3]+'/live.py';sys.modules[n.__name__]=n;"
+        )
+    else:
+        program += "expected['knowledge_evaluation/live.py']='0'*64;"
+    program += "m.select_source(engine,expected)"
+    result = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", program, worker.__file__, str(engine), str(tmp_path)],
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert b"ValueError" in result.stderr
+    assert (
+        b"foreign preimported evaluator" in result.stderr
+        or b"hash binding changed" in result.stderr
+    )
