@@ -83,6 +83,8 @@ def parser():
             p.add_argument('--all', action='store_true')
             p.add_argument('--documentation-only', action='store_true',
                            help='reviewed, hash-bound documentation update of an enrolled global target')
+            p.add_argument('--reviewed-runtime-update', action='store_true',
+                           help='exact independently reviewed global 0.1.7 to 0.1.8 payload update for future runs')
         if command == 'rollback':
             p.add_argument('--previous', action='store_true', required=True)
         if command == 'bootstrap':
@@ -177,6 +179,14 @@ def main(argv=None):
             reviews = read_json(args.reviews) if args.reviews else {}
             adoption = read_json(args.adopt) if args.adopt else {}
             options = {'reviews': reviews, 'adoption': adoption, 'runtime_roots': args.runtime_root}
+            if args.command == 'update' and args.reviewed_runtime_update:
+                if not args.global_scope or args.all or args.repo or args.adopt or args.documentation_only or not args.reviews:
+                    raise ValueError('--reviewed-runtime-update requires --global/--reviews and forbids batch, repo, adoption and mixed modes')
+                from .registry import digest
+                from .validator_origin import capture
+                review_path = Path(args.reviews).expanduser().absolute()
+                options.update(reviewed_runtime_update=True,
+                               runtime_review_artifact={'path': str(review_path), 'sha256': digest(capture(review_path)[0])})
             if args.command == 'update' and args.documentation_only:
                 if not args.global_scope or args.all or args.repo or args.adopt:
                     raise ValueError('--documentation-only requires --global and forbids --all, --repo and --adopt')

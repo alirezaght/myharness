@@ -199,6 +199,93 @@ observed activity. Compatibility and preimages are checked before apply and
 installed postimages are checked before publication. Ordinary ownership, cache,
 tag, smoke, transaction and pending-recovery checks remain in force.
 
+## Exact reviewed 0.1.8 runtime payload update
+
+The separate release-specific operator mode replaces future global payload files
+while preserving independently protected historical runtimes:
+
+```sh
+alctl update --global --version 0.1.8 --reviewed-runtime-update --reviews /absolute/update-reviews.json
+```
+
+Run this through the genuine owned managed launcher using its enrolled registry.
+It supports only the exact reviewed 0.1.7 → 0.1.8 tag objects, commits and resource
+fingerprints compiled into the installer. The fixed delta consists of seven
+runtime script paths and the workflow/parity documents per platform; only
+`al_writer_progress.py` may be added. Every other resource must match the reviewed
+unchanged inventory. Arbitrary future code cannot be admitted by supplying new
+hashes. Source/subdirectory, global target/platforms, policy, configuration,
+status-line, roles and retirement/lock actions must remain unchanged. Install,
+rollback, repo/batch targets, adoption, implicit versions and mixed modes refuse.
+The ordinary and documentation-only guards retain their existing behavior.
+
+The reviews JSON retains applicable `instructions` reviews and adds a closed
+`reviewed_runtime_update` object containing exactly these fields:
+
+```json
+{
+  "schema_version": 1,
+  "kind": "reviewed-runtime-update-v1",
+  "reviewed": true,
+  "reason": "Exact inspected runtime correction and accepted future-payload scope",
+  "target": "<complete enrolled target object>",
+  "source": "<complete enrolled source identity/subdirectory object>",
+  "old_release": "<old release_identity object>",
+  "new_release": "<new release_identity object>",
+  "resources": "<exact APPROVED.resources map of before/after fingerprints>",
+  "independent_review": {"path": "/absolute/independent-review.json", "sha256": "107715fb8e6fa6c7b1c189bd1605503af2e33076ad006476b68397d86d1798b1"},
+  "instruction_review": {"path": "/absolute/instruction-review.json", "sha256": "<sha256>"},
+  "operator_authorization": {"path": "/absolute/operator-authorization.json", "sha256": "<sha256>"},
+  "accepted_limits": [
+    "future-global-payload-only",
+    "historical-pins-and-state-unchanged",
+    "reserved-initialization-settlement-unknown",
+    "no-execution-or-approval-authority",
+    "bootstrap-selection-is-a-separate-publication",
+    "partial-failure-requires-manual-reconciliation"
+  ]
+}
+```
+
+The quoted object/map placeholders above must be actual complete JSON objects.
+`release_identity` comprises version, tag, tag_object, commit, digest,
+source_identity and subdir. Fingerprints contain sha256, mode, platform and kind;
+the new module's before fingerprint is null. The whole review file and each
+referenced artifact are hash-bound and re-read at installation barriers. The
+independent review certificate binds the inspected executable change; instruction
+and operator artifacts must record their actual provenance. No new run approval
+or generic execution authorization is created by this review.
+
+The mode independently enumerates protected index entries and all discovered
+histories, including private session directories and durable epochs. Only typed
+terminal-workflow blockers may coexist with the replacement. It verifies matching
+protected state origins and complete immutable pin closures/interpreter profiles.
+Missing, foreign, corrupt, aliased or ambiguous contexts and unresolved writers,
+running/interrupted evidence or uncertain owned cleanup refuse. RESERVED records
+remain initialization attempts with settlement unknown; the existing durable
+reserved/missing-state refusal remains. No history, binding, pin, old cache or old
+snapshot is moved, rewritten or relabeled. Activity remains visible in the result
+and doctor may still report nonterminal histories.
+
+Supported SUPERSEDED entries are assessed only as protected bookkeeping without
+a run capability. The mode correlates the archived predecessor, immediate ACTIVE
+successor, selector, activation/preparation records and referenced metadata. It
+does not call the sealed Harness bridge or assess current SQLite epoch or approval
+authority; the receipt labels those authorities `NOT_ASSESSED`. The normal run,
+resume and current-authority guards still apply whenever a run is used. Missing,
+changed or unsupported successor chains refuse the update.
+
+The journal retains before/apply/platform/completion observations and exact review,
+source, profile, pin and state digests. New or changed evidence at a barrier
+refuses continuation/completion; a partial failure remains pending for ordinary
+manual reconciliation. No automatic rollback is promised.
+
+Global payload publication and managed coordinator bootstrap are separate actions.
+Existing runs keep their immutable pins. New runs select payloads from the trusted
+coordinator snapshot, so the operator must separately publish and verify the
+intended reviewed bootstrap snapshot through the existing owned bootstrap path.
+This command does not claim an atomic switch across those publications.
+
 ## Inspect and recover
 
 ```sh
