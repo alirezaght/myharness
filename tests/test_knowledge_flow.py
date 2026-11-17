@@ -476,3 +476,108 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
         assert not query(
             controller.conn, scoped, ContextRequest("COMPLETED_REPORT_COVERAGE")
         ).payload["assertions"]
+
+
+def completed_summary_report(operations, document):
+    from tests.test_execution_operations import generated_handoff_fixture
+
+    operation, _, _, initialization, _, _, _ = operations
+    child, _ = generated_handoff_fixture(operations)
+    raw = json.dumps(document)
+    report = operation.artifacts.submit_output(child, "report.json", raw, 1, 1)
+    resource = "artifact:" + report["artifact_id"] + ":" + report["sha256"]
+    path = Path(initialization["source"])
+    state = json.loads(path.read_bytes())
+    state["integration"]["agents"][child["thread_id"]].update(
+        status="Completed", ended_at=time.time(), latest_output=resource
+    )
+    path.write_text(json.dumps(state))
+    return child, resource, raw.encode()
+
+
+@pytest.mark.parametrize("form", ["facts", "answer", "summary"])
+def test_completed_report_summary_aliases_keep_inference_provenance_and_task_scope(
+    operations, form
+):
+    from harness.knowledge.contributions import ingest
+
+    operation, supervisor, controller, _, _, execution, _ = operations
+    claim = "ApprovalGate records specification content_hash and review_state_hash."
+    document = (
+        {
+            "title": "Implementation-handoff approval provenance",
+            "source_revision": "a" * 40,
+            "scope": "Read-only source investigation",
+            "facts": [{"claim": claim, "sources": ["harness/approval.py:56-74"]}],
+            "authority_conclusion": "Historical explanation grants no implementation authority.",
+            "limits": ["No current task-specific approval is asserted."],
+            "source_hashes": {"harness/approval.py": "b" * 64},
+        }
+        if form == "facts"
+        else {form: claim, "atomic_claims": [{"claim": claim}]}
+    )
+    child, resource, raw = completed_summary_report(operations, document)
+    with pytest.raises(PermissionError):
+        ingest(operation, controller, child, "handoff-task", resource)
+    result = ingest(operation, controller, supervisor, "handoff-task", resource)
+    assert result["status"] == "published"
+    assert (
+        ingest(operation, controller, supervisor, "handoff-task", resource)["status"] == "unchanged"
+    )
+    root = Path(operation.envelope["repository"])
+    scoped = current_operator_scope(controller.conn, root, task_id=execution["task_id"])
+    bundle = query(controller.conn, scoped, ContextRequest("ApprovalGate"))
+    item = next(a for a in bundle.payload["assertions"] if a["predicate"] == "observes")
+    assert item["text"] and claim in item["text"]
+    assert item["subject"] == "report:" + digest(raw)
+    assert item["origin"] == "attributed-inference" and item["verification"] == "unverified"
+    assert item["applicability"]["producer_role"] == child["role"]
+    citation = next(
+        c for c in bundle.payload["citations"] if c["assertion_id"] == item["assertion_id"]
+    )
+    assert citation["content_sha256"] == citation["span_sha256"] == digest(raw)
+    assert citation["start_byte"] == 0 and citation["end_byte"] == len(raw)
+    observation = json.loads(citation["observation_json"])
+    assert observation["producer"] == child["thread_id"]
+    assert observation["execution_id"] == execution["id"]
+    assert observation["artifact_sha256"] == digest(raw)
+    assert explain(
+        controller.conn, scoped, bundle.bundle_hash, item["assertion_id"], include_evidence=True
+    )["citations"][0]["text"]
+    assert not query(
+        controller.conn,
+        current_operator_scope(controller.conn, root, task_id="other-task"),
+        ContextRequest("ApprovalGate"),
+    ).payload["assertions"]
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"answer": "  "},
+        {"answer": {"claim": "unsupported"}},
+        {"facts": []},
+        {"facts": {"claim": "unsupported"}},
+        {"facts": [{"claim": ""}]},
+        {"facts": [{"claim": "text", "sources": 7}]},
+        {"facts": [None]},
+        {"other": "not a supported summary"},
+        {"answer": "AKIA0000000000000000"},
+        {
+            "answer": "valid text",
+            "assertions": [
+                {"subject": "x", "predicate": "y", "text": "z", "verification": "source-backed"}
+            ],
+        },
+    ],
+)
+def test_completed_report_invalid_summary_aliases_and_guard_bypasses_refuse(operations, document):
+    from harness.knowledge.contributions import ingest
+
+    operation, supervisor, controller, _, _, _, _ = operations
+    _, resource, _ = completed_summary_report(operations, document)
+    with pytest.raises(ValueError):
+        ingest(operation, controller, supervisor, "handoff-task", resource)
+    assert (
+        controller.conn.execute("SELECT count(*) FROM knowledge_contributions").fetchone()[0] == 0
+    )
