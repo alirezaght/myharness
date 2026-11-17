@@ -220,7 +220,7 @@ def test_projection_allows_only_reviewable_body_changes(projection_data):
     for name in ('codex/agents/al-architect.toml', 'claude/agents/al-architect.md', 'codex/skills/al/SKILL.md'):
         after[name] = contents[name].replace(b'# AL', b'# Reviewed AL', 1)
         new['files'][name]['sha256'] = digest(after[name])
-    assert projection(old, new, contents, after, {})['version'] == 1
+    assert projection(old, new, contents, after, {})['version'] == 2
 
 
 @pytest.mark.parametrize('kind', ['model', 'effort', 'sandbox', 'extra-key', 'structured-key', 'missing-body',
@@ -262,7 +262,7 @@ def test_authority_mutations_cannot_be_reviewed_in(projection_data, kind):
         projection(old, new, contents, after, {})
 
 
-@pytest.mark.parametrize('failure', ['review-hash', 'review-fields', 'provenance', 'source-review', 'delta', 'projection',
+@pytest.mark.parametrize('failure', ['review-hash', 'review-fields', 'provenance', 'source-review', 'delta', 'projection', 'projection-version',
                                     'drift', 'collision', 'cache', 'tag', 'registry', 'pending', 'hardlink', 'symlink', 'overlap',
                                     'manifest-hardlink', 'cache-hardlink'])
 def test_installation_integrity_refusals_are_not_warnings(enrolled, failure):
@@ -278,6 +278,7 @@ def test_installation_integrity_refusals_are_not_warnings(enrolled, failure):
         write_json(ref['path'], value); ref['sha256'] = digest(Path(ref['path']).read_bytes())
     elif failure == 'delta': review['resources'] = {}
     elif failure == 'projection': review['projection']['authority_sha256'] = '0' * 64
+    elif failure == 'projection-version': review['projection']['version'] = 1
     elif failure == 'drift': (package_path(target, 'codex') / 'SKILL.md').write_text('changed')
     elif failure == 'collision': (package_path(target, 'codex') / 'scripts/reviewed_addition.py').write_text('unmanaged')
     elif failure == 'cache': (Path(row['current']['cache']) / 'payload/codex/skills/al/SKILL.md').write_text('changed')
@@ -298,7 +299,7 @@ def test_installation_integrity_refusals_are_not_warnings(enrolled, failure):
         suffix = 'manifest.json' if failure == 'manifest-hardlink' else 'payload/codex/skills/al/SKILL.md'
         path = Path(row['current']['cache']) / suffix
         (w['root'] / 'cache-alias').hardlink_to(path)
-    if failure in {'review-fields', 'source-review', 'delta', 'projection'}:
+    if failure in {'review-fields', 'source-review', 'delta', 'projection', 'projection-version'}:
         review_path.write_text(json.dumps(req['reviews']))
         req['operator_review_artifact']['sha256'] = digest(review_path.read_bytes())
     before = retained(enrolled)
