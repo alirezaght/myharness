@@ -260,3 +260,87 @@ def test_preexisting_schema_one_bundle_paths_still_explain(graph):
         ),
     )
     assert explain(conn, scope, legacy_hash, aid)["paths"] == [[aid]]
+
+
+@pytest.mark.parametrize("limit", [1024, 2048, 32768])
+def test_metadata_compaction_preserves_order_parents_and_integrity_counts(graph, limit):
+    from collections import Counter
+    from copy import deepcopy
+
+    from harness.knowledge.query import _fit
+
+    conn, scope = graph
+    refresh(conn, scope)
+    parent = conn.execute(
+        "SELECT assertion_id FROM knowledge_assertions WHERE predicate='described-by' "
+        "ORDER BY assertion_id LIMIT 1"
+    ).fetchone()[0]
+    children = [
+        r[0]
+        for r in conn.execute(
+            "SELECT assertion_id FROM knowledge_assertions "
+            "WHERE predicate IN ('defines','imports') ORDER BY assertion_id"
+        )
+    ]
+    conn.executemany(
+        "INSERT INTO knowledge_derivations VALUES (?,?)", [(child, parent) for child in children]
+    )
+    payload = deepcopy(query(conn, scope, ContextRequest("consumer service")).payload)
+    original_ids = [a["assertion_id"] for a in payload["assertions"]]
+    assert set(children) <= set(original_ids)
+    original_counts = {}
+    for field in ("coverage", "staleness", "conflicts", "ambiguities"):
+        payload[field] = [
+            {"status": f"{field}-{index % 2}", "detail": "diagnostic detail " * 40}
+            for index in range(60)
+        ]
+        original_counts[field] = Counter(item["status"] for item in payload[field])
+    exclusions = Counter()
+    try:
+        _fit(payload, limit, exclusions)
+    except ValueError as error:
+        assert str(error) == "request metadata exceeds bundle budget"
+        assert not payload["assertions"] and limit == 1024
+        return
+    ids = [a["assertion_id"] for a in payload["assertions"]]
+    assert ids == original_ids[: len(ids)]
+    if limit == 32768:
+        assert ids == original_ids and "byte-budget" not in exclusions
+    if set(children) & set(ids):
+        assert parent in ids
+    assert {c["assertion_id"] for c in payload["citations"]} == set(ids)
+    assert all(set(path["assertion_ids"]) <= set(ids) for path in payload["paths"])
+    for field, counts in original_counts.items():
+        observations = payload[field]
+        if len(observations) == 1 and observations[0].get("summarized"):
+            assert observations[0]["counts"] == counts
+        else:
+            assert Counter(item["status"] for item in observations) == counts
+    encoded = canonical({"bundle_hash": "0" * 64, **payload}).encode()
+    assert len(encoded) == payload["budget"]["serialized_bytes"] <= limit
+    assert payload["truncation"] and exclusions["metadata-detail-budget"]
+    counts_before = deepcopy({field: payload[field] for field in original_counts})
+    _fit(payload, limit, exclusions)
+    assert counts_before == {field: payload[field] for field in original_counts}
+
+
+def test_fitting_detail_is_unchanged_and_nonshrinking_summary_is_not_applied(graph):
+    from collections import Counter
+    from copy import deepcopy
+
+    from harness.knowledge.query import _fit
+
+    conn, scope = graph
+    refresh(conn, scope)
+    payload = deepcopy(query(conn, scope, ContextRequest("service")).payload)
+    payload["coverage"] = [{"status": "x"}]
+    _fit(payload, 32768, Counter())
+    original = deepcopy(payload)
+    _fit(payload, payload["budget"]["serialized_bytes"], Counter())
+    assert payload == original
+    payload.update(assertions=[], citations=[], paths=[], query="mandatory query " * 300)
+    exclusions = Counter()
+    with pytest.raises(ValueError, match="request metadata exceeds bundle budget"):
+        _fit(payload, 1024, exclusions)
+    assert payload["coverage"] == [{"status": "x"}]
+    assert "metadata-detail-budget" not in exclusions

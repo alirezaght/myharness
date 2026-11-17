@@ -487,36 +487,53 @@ def _integrity(rows):
     return conflicts
 
 
+def _bundle_size(payload):
+    while True:
+        size = len(canonical({"bundle_hash": "0" * 64, **payload}).encode())
+        if payload["budget"]["serialized_bytes"] == size:
+            return size
+        payload["budget"]["serialized_bytes"] = size
+
+
 def _fit(payload, limit, exclusions):
     while True:
         payload["exclusions"] = dict(sorted(exclusions.items()))
         payload["truncation"] = bool(exclusions)
-        size = len(canonical({"bundle_hash": "0" * 64, **payload}).encode())
-        if payload["budget"]["serialized_bytes"] != size:
-            payload["budget"]["serialized_bytes"] = size
-            continue
+        size = _bundle_size(payload)
         if size <= limit:
             return
+        # Preserve each integrity kind/count before evicting otherwise-fitting evidence.
+        collapsed = False
+        for field in ("coverage", "staleness", "conflicts", "ambiguities"):
+            observations = payload[field]
+            if not observations or any(item.get("summarized") for item in observations):
+                continue
+            counts = Counter(item.get("status", "observation") for item in observations)
+            summary = [{"status": "integrity-summary", "summarized": True, "counts": dict(counts)}]
+            next_exclusions = exclusions.copy()
+            next_exclusions["metadata-detail-budget"] += 1
+            candidate = dict(
+                payload,
+                **{field: summary},
+                budget=dict(payload["budget"]),
+                exclusions=dict(sorted(next_exclusions.items())),
+                truncation=True,
+            )
+            if _bundle_size(candidate) >= size:
+                continue
+            payload[field] = summary
+            exclusions["metadata-detail-budget"] += 1
+            collapsed = True
+            break
+        if collapsed:
+            continue
         if payload["assertions"]:
             removed = payload["assertions"].pop()["assertion_id"]
             payload["citations"] = [c for c in payload["citations"] if c["assertion_id"] != removed]
             payload["paths"] = [p for p in payload["paths"] if removed not in p["assertion_ids"]]
             exclusions["byte-budget"] += 1
             continue
-        # Preserve each integrity kind and its count; never silently erase observations.
-        collapsed = False
-        for field in ("coverage", "staleness", "conflicts", "ambiguities"):
-            observations = payload[field]
-            if observations and not (len(observations) == 1 and observations[0].get("summarized")):
-                counts = Counter(item.get("status", "observation") for item in observations)
-                payload[field] = [
-                    {"status": "integrity-summary", "summarized": True, "counts": dict(counts)}
-                ]
-                exclusions["metadata-detail-budget"] += 1
-                collapsed = True
-                break
-        if not collapsed:
-            raise ValueError("request metadata exceeds bundle budget")
+        raise ValueError("request metadata exceeds bundle budget")
 
 
 def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> ContextBundle:

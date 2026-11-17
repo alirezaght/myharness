@@ -359,3 +359,50 @@ def test_pre_fix_lesson_bundle_explanation_reprojects_citation_metadata(sharing,
     assert other.execute(
         "SELECT payload FROM knowledge_bundles WHERE bundle_hash=?", (bundle.bundle_hash,)
     ).fetchone()[0] == canonical(bundle.payload)
+
+
+def test_authorized_lesson_survives_large_repository_coverage_budget(sharing):
+    import json
+
+    conn, scope, other, target, _, _, exported = sharing
+    grant(conn, scope, other, target, "portable", 1, grant_id="budget-lesson")
+    for index in range(226):
+        name = f"coverage-{index:03}-" + "component-" * 12 + ".js"
+        (target.repository / name).write_text("public static analysis limitation\n")
+    git(target.repository, "add", ".")
+    install(other, target, exported["payload"])
+    raw_coverage = json.loads(
+        other.execute(
+            "SELECT coverage_json FROM knowledge_snapshots WHERE snapshot_id="
+            "(SELECT active_snapshot_id FROM knowledge_projects)"
+        ).fetchone()[0]
+    )
+    assert len(canonical(raw_coverage).encode()) > 32768
+    bundle = query(other, target, ContextRequest(entity_refs=("lesson:portable",)))
+    assert len(bundle.payload["assertions"]) == 1
+    assert bundle.payload["assertions"][0]["subject"] == "lesson:portable"
+    assert bundle.payload["coverage"] == [
+        {
+            "status": "integrity-summary",
+            "summarized": True,
+            "counts": {"text-only-no-dependency-analysis": 226},
+        }
+    ]
+    observation = json.loads(bundle.payload["citations"][0]["observation_json"])
+    assert observation["grant_id"] == "budget-lesson"
+    assert observation["lesson_sha256"] == exported["material_sha256"]
+    assert observation["source_project"] == scope.project_id
+    assert observation["destination_project"] == target.project_id
+    assert (
+        bundle.payload["truncation"] and bundle.payload["exclusions"]["metadata-detail-budget"] == 1
+    )
+    assert "byte-budget" not in bundle.payload["exclusions"]
+    assert (
+        len(canonical(bundle.to_dict()).encode())
+        == bundle.payload["budget"]["serialized_bytes"]
+        <= 32768
+    )
+    aid = bundle.payload["assertions"][0]["assertion_id"]
+    assert explain(other, target, bundle.bundle_hash, aid, include_evidence=True)["citations"][0][
+        "text"
+    ]
