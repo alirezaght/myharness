@@ -39,6 +39,17 @@ def native_session(repository, platform, argv):
     return data["session_id"]
 
 
+def _writer_progress(started, message):
+    if started is None or sys.stderr is None:
+        return
+    try:
+        print(f"AL writer start [{time.monotonic() - started:.1f}s] {message}",
+              file=sys.stderr, flush=True)
+    except (OSError, ValueError):
+        # Diagnostics must not change admission when stderr is closed/unavailable.
+        pass
+
+
 def run(repository, platform, session, argv, *, existing_run=False, private_session=False):
     if not sys.flags.isolated or not sys.flags.no_site or not sys.dont_write_bytecode:
         raise ValueError("run requires the trusted isolated managed launcher")
@@ -53,6 +64,8 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
         raise ValueError("existing-run requires explicit initialized session and non-start operation")
     if private_session and (existing_run or argv[0] != "start" or "--handoff" not in argv):
         raise ValueError("session-directory applies only to new supervisor Harness starts")
+    progress_started = time.monotonic() if list(argv[:2]) == ["writer", "start"] else None
+    _writer_progress(progress_started, "validating repository and authority")
     implicit = session is None
     if implicit:
         session = native_session(repository, platform, argv)
@@ -65,6 +78,7 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
         raise ValueError("native project directory differs from protected repository")
     # The managed launcher verifies its immutable origin before importing this
     # helper. Target paths never select a runtime distribution or pin store.
+    _writer_progress(progress_started, "acquiring protected admission lock")
     with coordinated(value, readonly=existing_run) as path:
         transaction = read(path) if path.exists() else None
         if transaction:
@@ -100,6 +114,7 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
             pointer.unlink()
         print("AL state cleared")
         return 0
+    _writer_progress(progress_started, "verifying immutable runtime resources")
     verified = verify_pin(storage(readonly=existing_run) / "pins", transaction["pin"])
     manifest = verified["manifest"]
     validate_live(
@@ -108,4 +123,6 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     request = {"transaction": transaction, "argv": list(argv), "storage": str(storage(readonly=existing_run)), "existing_run": existing_run,
                "native_implicit": implicit}
     executable = manifest["interpreter"]["executable"]
+    _writer_progress(progress_started,
+                     "delegating to pinned runtime for admission checks and repository snapshot")
     os.execv(executable, [executable, "-I", "-S", "-B", "-c", program(request)])
