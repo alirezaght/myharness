@@ -114,6 +114,12 @@ def referenced(reference):
 def donor_capability(package, donor):
     closed(donor, {"admission", "completion"})
     admission, completion = referenced(donor["admission"]), referenced(donor["completion"])
+    from .method import binding
+
+    if admission.get("evaluation_method") != binding(package) or completion.get(
+        "evaluation_method"
+    ) != binding(package):
+        raise ValueError("cross-method donor capability refused")
     if (
         completion.get("kind") != "evaluation-producer-completion-v1"
         or completion["task_id"] != admission["task_id"]
@@ -122,6 +128,13 @@ def donor_capability(package, donor):
         or admission["provenance"] != package["provenance"]
     ):
         raise ValueError("donor case/project/task/authorization binding differs")
+    profile = None
+    if package["schema_version"] == 2:
+        from .method import profile_for_role
+
+        profile = profile_for_role(completion["role"])
+        if completion.get("participant_profile") != profile:
+            raise ValueError("original M2 donor profile unavailable or mismatched")
     with closing(_readonly(admission["database"])) as conn:
         execution = get_execution(conn, admission["execution_id"])
         envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
@@ -154,6 +167,7 @@ def donor_capability(package, donor):
             completion["owner"],
             completion["role"],
             expected_wait=observed["wait"]["record_sha256"],
+            **({"expected_profile": profile} if profile is not None else {}),
         )
         if actual_return != observed:
             raise ValueError("original donor native return evidence differs")
@@ -185,6 +199,13 @@ def validate_stage(wrapper):
     ):
         raise ValueError("explicit donor/recipient/adopt stage required")
     package = wrapper["package"]
+    if package.get("schema_version") == 2:
+        from .method import validate_method
+
+        validate_method(package)
+        expected = wrapper["action"] if wrapper["action"] != "adopt" else "single"
+        if package["participant"] != expected:
+            raise ValueError("M2 stage/participant binding differs")
     existing = wrapper["existing"]
     if wrapper["action"] == "donor":
         if existing is not None or wrapper["donor"] is not None:

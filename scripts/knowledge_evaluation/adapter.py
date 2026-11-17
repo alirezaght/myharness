@@ -37,6 +37,20 @@ class EvaluatorAdapter:
         self.supervisor = None
         self.registered = set()
         self.allowed = BASE_TOOLS | (KNOWLEDGE_TOOLS if package["arm"] == "C" else set())
+        self.budget = None
+        self.output_state = {
+            "output_committed": False,
+            "acknowledgment_delivered": False,
+            "acknowledgment_scope": (
+                "MCPConnection.request returned content; client consumption unobserved"
+            ),
+        }
+        self.output_attempted = False
+        self.completion_acknowledged = False
+        if package["schema_version"] == 2:
+            from .budget import Budget
+
+            self.budget = Budget(bool(stage and stage["action"] == "donor"))
         self.revalidate()
 
     def revalidate(self):
@@ -77,9 +91,12 @@ class EvaluatorAdapter:
         with self.lock:
             try:
                 self.check_time()
-                if self.calls >= BUDGETS["tool_calls"]:
+                if self.budget and self.budget.active is None:
+                    raise ValueError("M2 requires accounted MCP transport")
+                if not self.budget and self.calls >= BUDGETS["tool_calls"]:
                     raise ValueError("evaluation tool budget exceeded")
-                self.calls += 1
+                if not self.budget:
+                    self.calls += 1
                 validate_arguments(name, arguments)
                 if name not in self.allowed:
                     raise ValueError("evaluation operation refused")
@@ -90,6 +107,10 @@ class EvaluatorAdapter:
                     if any(w["state"] == "ACTIVE" for w in current["writers"].values()):
                         raise ValueError("evaluation permits no active writer")
                 role = principal["role"]
+                if self.budget:
+                    self.budget.active.update(
+                        principal_id=principal["thread_id"], role=role, tool=name
+                    )
                 if role not in {"orchestrator", self.package["role"]}:
                     raise ValueError("unexpected native specialized role")
                 self.principals[principal["thread_id"]] = {"role": role}
@@ -117,17 +138,38 @@ class EvaluatorAdapter:
                 elif name == "submit_output":
                     if role != self.package["role"] or arguments["name"] != "answer.md":
                         raise ValueError("only specialized role answer.md output permitted")
-                    if self.answers:
+                    if self.answers or self.output_attempted:
                         raise ValueError("single immutable answer; no retry")
-                    result = self.operation.dispatch(principal, name, arguments)
-                    self.answers.append(
-                        {
-                            "principal": principal["thread_id"],
-                            "role": role,
-                            "text": arguments["content"],
-                            "artifact": result,
-                        }
-                    )
+                    if self.budget:
+                        from .lifecycle import reconcile_output
+
+                        self.output_attempted = True
+                        self.output_state["output_committed"] = None
+                        try:
+                            result = self.operation.dispatch(principal, name, arguments)
+                        finally:
+                            reconciled = reconcile_output(self, principal, arguments)
+                            if reconciled is None:
+                                self.output_state["output_committed"] = False
+                            if reconciled:
+                                self.answers.append(
+                                    {
+                                        "principal": principal["thread_id"],
+                                        "role": role,
+                                        "artifact": reconciled,
+                                    }
+                                )
+                    else:
+                        result = self.operation.dispatch(principal, name, arguments)
+                    if not self.budget:
+                        self.answers.append(
+                            {
+                                "principal": principal["thread_id"],
+                                "role": role,
+                                "text": arguments["content"],
+                                "artifact": result,
+                            }
+                        )
                 else:
                     result = self.operation.dispatch(principal, name, arguments)
                     safe_assigned = (
@@ -137,11 +179,15 @@ class EvaluatorAdapter:
                     )
                     if result.get("status") not in {"ReadOnly", "Pending"} and not safe_assigned:
                         raise ValueError("writable/automatic assignment context refused")
-                self.visible(json.dumps(result), name=name, principal=principal["thread_id"])
+                if not self.budget:
+                    self.visible(json.dumps(result), name=name, principal=principal["thread_id"])
                 return result
             except (ValueError, OSError, LookupError) as error:
                 message = str(error)[:2048]
-                self.visible(message, name=name, principal=principal.get("thread_id"), error=True)
+                if not self.budget:
+                    self.visible(
+                        message, name=name, principal=principal.get("thread_id"), error=True
+                    )
                 raise ValueError(message) from None
 
     def read(self, principal, arguments):
@@ -230,6 +276,8 @@ class EvaluatorAdapter:
         self.registered.add(identity)
 
     def report_registration(self, action, name, value, state):
+        if self.budget:
+            self.budget.internal_operations += 1
         artifact = self.operation.dispatch(
             self.supervisor,
             "write_artifact",
@@ -239,6 +287,8 @@ class EvaluatorAdapter:
                 "expected_graph_revision": state["integration"]["graph_revision"],
             },
         )
+        if self.budget:
+            self.budget.internal_operations += 1
         result = self.operation.dispatch(
             self.supervisor,
             "al_command",
@@ -257,7 +307,17 @@ class EvaluatorAdapter:
 
     def receipt(self):
         return {
-            "adapter_version": VERSION,
+            **(
+                {
+                    "method": self.package["method"],
+                    "accounting": self.budget.receipt(),
+                    "output_lifecycle": self.output_state,
+                    "completion_acknowledgment_delivered": self.completion_acknowledged,
+                }
+                if self.budget
+                else {}
+            ),
+            "adapter_version": "qualified-native-evaluation-adapter-m2" if self.budget else VERSION,
             "permitted_tools": sorted(self.allowed),
             "tool_calls": self.calls,
             "agent_visible_bytes": self.delivered,

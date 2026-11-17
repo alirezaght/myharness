@@ -42,8 +42,15 @@ def complete(adapter, principal):
         raise ValueError("one unfinalized authored donor answer required")
     answer = adapter.answers[0]
     child = answer["principal"]
+    from .method import participant_profile
+
+    profile = participant_profile(adapter.package) if adapter.budget else None
     observed = observe_return(
-        operation.registry.native_root, principal["thread_id"], child, adapter.package["role"]
+        operation.registry.native_root,
+        principal["thread_id"],
+        child,
+        adapter.package["role"],
+        **({"expected_profile": profile} if profile is not None else {}),
     )
     with closing(connect(operation.database)) as conn:
         controller = HarnessController(conn)
@@ -109,8 +116,104 @@ def complete(adapter, principal):
             "agent_status": state["integration"]["agents"][child]["status"],
             "mission_complete": False,
         }
+        if adapter.budget:
+            receipt["evaluation_method"] = adapter.package["method"]
+            receipt["participant_profile"] = profile
+            receipt["acknowledgment_at_publication"] = "not yet delivered"
         adapter.completion = receipt
         write_once(Path(adapter.package["output_directory"]) / "producer-completion.json", receipt)
         if adapter.package["arm"] == "B":
             adapter.revalidate()
         return receipt
+
+
+def reconcile_output(adapter, principal, arguments):
+    """Observe only own immutable metadata and streaming content hash, never report text."""
+    import hashlib
+    import os
+    import stat
+
+    operation = adapter.operation
+    with closing(connect(operation.database)) as conn:
+        _, state = operation.authority(HarnessController(conn), principal, operation="read")
+    directory = operation.artifacts.directory
+    index_path = directory / "index.json"
+    if not index_path.exists():
+        return None
+
+    def read_index():
+        fd = os.open(index_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or info.st_uid != os.getuid()
+                or info.st_size > 4 * 1024 * 1024
+            ):
+                raise ValueError("bounded own output index required")
+            with os.fdopen(fd, "rb", closefd=False) as stream:
+                raw = stream.read(4 * 1024 * 1024 + 1)
+            if len(raw) > 4 * 1024 * 1024:
+                raise ValueError("own output index exceeds bound")
+            return raw
+        finally:
+            os.close(fd)
+
+    before = read_index()
+    index = json.loads(before)
+    owner = principal["thread_id"]
+    identifier = index.get("outputs", {}).get(owner, {}).get("answer.md")
+    if not identifier:
+        return None
+    record = index["records"][identifier]
+    expected_hash = "sha256:" + sha(arguments["content"].encode())
+    if (
+        record.get("owner") != owner
+        or record.get("role") != principal["role"]
+        or record.get("source") != "native-agent-output"
+        or record.get("name") != "answer.md"
+        or record.get("sha256") != expected_hash
+        or record.get("graph_revision") != arguments["expected_graph_revision"]
+        or record["graph_revision"] != state["integration"]["graph_revision"]
+        or record.get("size") != len(arguments["content"].encode())
+    ):
+        raise ValueError("own committed output provenance differs")
+    path = Path(record["path"])
+    if path.parent != directory or not path.name.startswith(identifier + "."):
+        raise ValueError("own output resource escaped execution")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        initial = os.fstat(fd)
+        if (
+            not stat.S_ISREG(initial.st_mode)
+            or initial.st_nlink != 1
+            or initial.st_uid != os.getuid()
+            or initial.st_size > 262144
+        ):
+            raise ValueError("own immutable regular output required")
+        digest = hashlib.sha256()
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            remaining = 262145
+            while remaining and (chunk := stream.read(min(65536, remaining))):
+                digest.update(chunk)
+                remaining -= len(chunk)
+            if not remaining:
+                raise ValueError("own output exceeds reconciliation bound")
+        final = os.fstat(fd)
+        stable = ("st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if (
+            any(getattr(initial, k) != getattr(final, k) for k in stable)
+            or "sha256:" + digest.hexdigest() != expected_hash
+            or read_index() != before
+        ):
+            raise ValueError("own output changed during reconciliation")
+    finally:
+        os.close(fd)
+    reference = {k: record[k] for k in ("artifact_id", "sha256", "size", "name", "owner", "role")}
+    adapter.output_state.update(
+        output_committed=True,
+        artifact=reference,
+        reconciliation="authenticated own index/provenance/content hash",
+    )
+    return reference
