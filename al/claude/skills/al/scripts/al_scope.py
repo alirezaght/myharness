@@ -214,6 +214,8 @@ def records(base,root=None):
 
 
 def _records(base,root=None):
+    import al_writer_progress as progress
+    progress.report('scope-index', count=0)
     root = root or al_store.REPO_ROOT
     try:
         index = G.index_entries(root)
@@ -225,10 +227,12 @@ def _records(base,root=None):
         refuse(str(exc))
     hashes = _blob_hashes(root, (e['oid'] for e in index.values() if e['mode'] != '160000'))
     indexed = {}
-    for raw, entry in index.items():
+    for count,(raw, entry) in enumerate(index.items(),1):
         indexed[raw] = dict(entry)
         if entry['mode'] != '160000':
             indexed[raw]['sha256'] = hashes[entry['oid']]
+        progress.report('scope-index', count=count)
+    progress.report('scope-index', count=len(index), force=True)
     opaque = {raw for raw, obs in observations.items() if G.opaque(obs)}
     raw_paths = set(indexed) | set(base_entries) | set(head)
     raw_paths.update(x for x in git_bytes('ls-files','--others','--exclude-standard','-z',root=root).split(b'\0') if x)
@@ -240,6 +244,7 @@ def _records(base,root=None):
         key = parts
         if key not in symlinked:symlinked[key] = (root / Path(*parts)).is_symlink()
         return symlinked[key]
+    progress.report('scope-worktree', count=0)
     for raw in sorted(raw_paths):
         if any(raw.rstrip(b'/') != parent and raw.startswith(parent + b'/') for parent in opaque):
             continue
@@ -258,6 +263,8 @@ def _records(base,root=None):
         elif not p.exists() or (obs and p.is_dir()): row['worktree'] = {'type':'deleted'}
         else: refuse('unsupported candidate file type: ' + str(rel))
         out.append(row)
+        progress.report('scope-worktree', count=len(out))
+    progress.report('scope-worktree', count=len(out), force=True)
     return out
 
 

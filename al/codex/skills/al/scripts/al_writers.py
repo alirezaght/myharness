@@ -61,34 +61,25 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
             refuse('check overlaps unresolved writer ' + w['id'])
 
 def cmd_writer(a,sid):
+    if a.action == 'start':
+        from al_writer_progress import report, writer_progress
+        with writer_progress():
+            report('preflight', force=True)
+            return _cmd_writer(a,sid)
+    return _cmd_writer(a,sid)
+
+
+def _cmd_writer(a,sid):
     st=al_store.load(sid); writers=st['writers']
     if a.action == 'start':
         from al_rework_recovery_contract import guard
         guard(st,implementation=True)
-        from al_new_origin import require_implementation_ready, validate
         degraded = getattr(a, 'degraded', False)
-        if degraded:
-            validate(st)
-            if st.get('proof_admission', {}).get('status') != 'pending' or not getattr(a, 'reason', '').strip():
-                refuse('degraded tracking requires pending proof admission and an explicit reason')
-            if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
-                refuse('degraded tracking still requires SPEC_READY and classification')
-        else: require_implementation_ready(st)
         phases = WRITING | {'PLANNING', 'PSEUDOCODE'} if degraded else WRITING
         if st['status'] != 'RUNNING' or st['phase'] not in phases: refuse('writer admission requires a writing phase or explicit degraded planning tracking')
         if not valid_id(a.id) or a.id in writers: refuse('duplicate/invalid writer id')
         if a.role not in {'al-engineer','al-builder'}: refuse('invalid writer role')
         files=canonical_paths(al_parallel.parse_paths(a.files))
-        if 'integration' in st:
-            from al_execution_tasks import require_task_admission
-            task = getattr(a, 'task', None)
-            agent = st['integration']['agents'].get(getattr(a, 'agent', None))
-            execution_task = require_task_admission(st, task, files=files)
-            receipt = execution_task.get('admission')
-            if execution_task['status'] != 'Running' or receipt != {'revision':execution_task['revision'],'graph_revision':st['integration']['graph_revision']}: refuse('writer requires current admitted and started task')
-            if not agent or agent['task'] != task or agent['role'] != a.role or agent['status'] != 'Running': refuse('writer requires compatible actual assigned running agent')
-        from al_gate_coverage import writer_ready
-        writer_ready(st,files)
         commands=json.loads(Path(a.commands_file).read_text()) if a.commands_file else []
         if not isinstance(commands,list) or any(not isinstance(c,str) for c in commands): refuse('commands file must be a JSON string array')
         shared=al_parallel.shared_state_hits(commands)
@@ -99,6 +90,26 @@ def cmd_writer(a,sid):
         for e in st['evidence']['entries']:
             if (e['status']=='RUNNING' or e.get('interrupted')) and not e.get('reconciliation'):
                 if shared or '.' in e['scope'] or al_parallel.overlaps(files,e['scope']) or al_parallel.shared_state_hits([shlex.join(e['argv'])]): refuse('writer overlaps check '+e['id'])
+        if degraded:
+            from al_new_origin import validate
+            validate(st)
+            if st.get('proof_admission', {}).get('status') != 'pending' or not getattr(a, 'reason', '').strip():
+                refuse('degraded tracking requires pending proof admission and an explicit reason')
+            if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
+                refuse('degraded tracking still requires SPEC_READY and classification')
+        else:
+            from al_implementation import require_preflight
+            require_preflight(st)
+        if 'integration' in st:
+            from al_execution_tasks import require_task_admission
+            task = getattr(a, 'task', None)
+            agent = st['integration']['agents'].get(getattr(a, 'agent', None))
+            execution_task = require_task_admission(st, task, files=files)
+            receipt = execution_task.get('admission')
+            if execution_task['status'] != 'Running' or receipt != {'revision':execution_task['revision'],'graph_revision':st['integration']['graph_revision']}: refuse('writer requires current admitted and started task')
+            if not agent or agent['task'] != task or agent['role'] != a.role or agent['status'] != 'Running': refuse('writer requires compatible actual assigned running agent')
+        from al_gate_coverage import writer_ready
+        writer_ready(st,files)
         if 'integration' in st:
             from al_execution_outputs import invalidate_for_write
             invalidate_for_write(st, a.task, files)
@@ -119,6 +130,9 @@ def cmd_writer(a,sid):
         else:
             if w['state'] not in {'ACTIVE','UNRESOLVED'} or not a.reason: refuse('reconciliation requires unresolved writer and reason')
             w.update(state='RECONCILED',reconciliation={'reason':a.reason,'artifact':snapshot_artifact(sid,Path(a.artifact),'writer-reconciliation'),'at':time.time()})
+    if a.action == 'start':
+        from al_writer_progress import report
+        report('writer-publication', force=True)
     al_store.save(sid,st)
     if a.action == 'start':
         if getattr(a, 'degraded', False):

@@ -121,8 +121,13 @@ def test_report_refusals_preserve_pending_state(launched, mutation):
 def test_source_changed_packet_is_not_reused_and_old_report_cannot_bind_new_packet(launched):
     packet, report = prepare(launched)
     (launched[2] / "external-change.txt").write_text("changed during planning\n")
+    retained = save_report(launched, "codex", report)
+    assert retained.returncode == 0, (retained.stdout[-2000:], retained.stderr[-2000:])
+    reference = json.loads(retained.stdout)["report"]
+    immutable = Path(reference["stored_path"]).read_bytes()
+    assert json.loads(immutable) == report
     before = state_path(launched).read_bytes()
-    refused = save_report(launched, "codex", report)
+    refused = public_run(launched, "codex", "planning", "admit")
     assert refused.returncode != 0
     assert "source observation changed" in refused.stdout + refused.stderr
     assert state_path(launched).read_bytes() == before
@@ -131,6 +136,9 @@ def test_source_changed_packet_is_not_reused_and_old_report_cannot_bind_new_pack
     fresh = json.loads(current.stdout)
     assert fresh["packet"]["sha256"] != packet["packet"]["sha256"]
     assert fresh["content"]["attempt"]["attempt_id"] != packet["content"]["attempt"]["attempt_id"]
+    history = json.loads(state_path(launched).read_bytes())["planning_history"]
+    assert history[-1]["report"] == reference
+    assert Path(reference["stored_path"]).read_bytes() == immutable
     before = state_path(launched).read_bytes()
     stale = save_report(launched, "codex", report)
     assert stale.returncode != 0

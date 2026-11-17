@@ -385,6 +385,19 @@ review and approval. Planning metadata is never a developer approval question:
    contains `FILL:` is refused. The output names `materialized_obligations`.
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
 
+Packet and report authoring may overlap a normal registered ACTIVE writer. Their
+`authoring` response labels the source as an issued observation and grants no
+admission or approval. The template marks begun writer work as `partially_built`;
+that label is implementation context, not proof that changes are complete. A
+moving source can still fail the existing stable-observation publication check.
+
+`planning report` preserves the Architect's exact issued packet, attempt and
+report even when source has since moved. It does not rebind that report to newer
+source. Admission still requires settled operations and current source; source
+movement requires a fresh packet and actual Architect revalidation before proof
+is admitted. UNRESOLVED writers, interrupted checks and uncertain cleanup remain
+operational repair work. They are never evidence of approval.
+
 ### Record behavior observations (before review)
 
 After implementation and its evidence pass, and before `review-start`, every

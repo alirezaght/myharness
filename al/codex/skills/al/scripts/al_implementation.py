@@ -36,7 +36,8 @@ def validate(st):
             refuse('foreign operational issue binding')
 
 
-def require_ready(st, *, task_id=None, paths=()):
+def require_preflight(st, *, task_id=None, paths=()):
+    """Validate implementation identity and authority before current-source analysis."""
     from al_inherited_lineage import require_recovery_complete
     require_recovery_complete(st)
     from al_new_origin import validate as origin
@@ -66,18 +67,30 @@ def require_ready(st, *, task_id=None, paths=()):
         for blocker in integration['blockers'].values():
             if blocker['state'] != 'Resolved' and task_id in affected_tasks(st, blocker['tasks']):
                 refuse('task is blocked by ' + blocker['id'])
+    return owned
+
+
+def require_ready(st, *, task_id=None, paths=()):
+    owned = require_preflight(st, task_id=task_id, paths=paths)
+    from al_writer_progress import report
+    report('readiness', force=True)
     from al_gate_currency import check
     from al_service_coverage import admission_gaps
-    obligations = check(st)['reasons'] + admission_gaps(st, current=True)
+    report('gate-currency', force=True)
+    reasons = check(st)['reasons']
+    report('service-coverage', force=True)
+    obligations = reasons + admission_gaps(st, current=True)
     if st.get('proof_admission', {}).get('status') == 'pending':
         obligations.append('Architect proof admission pending')
     if 'task_attribution' in st:
         from al_task_attribution import classify_changes
+        report('attribution-classification', force=True)
         result = classify_changes(st)  # Corrupt/foreign provenance still refuses.
         obligations += ['attribution analysis incomplete: ' + p for p in result['ambiguous']]
         obligations += ['attribution analysis incomplete: ' + str(v) for v in result['limitations']]
     if owned:
         from al_gate_coverage import prospective_gaps
+        report('prospective-coverage', force=True)
         obligations += prospective_gaps(st, owned)
     previous = st.get('implementation_readiness', {})
     # Debt is cumulative; only proof admission/repair observations can discharge it.
