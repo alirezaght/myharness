@@ -69,3 +69,35 @@ A CI job's `uv run pytest` step is executed through AL's guarded pytest runner e
 CI relevance is source-backed. Supported false applicability rules may defer a disjoint job before demanding execution support. Deferred sources stay currency dependencies. Unsupported global/includes and unknown shared impact remain unresolved for final verification; diagnostic wording cannot decide structural completeness. Known concrete extra jobs cannot replace a missing check or invalidate an independently complete required verification chain.
 
 Pre-commit hooks prepare supported locked dependencies inside their owned disposable checkout before running. Setup uses uv sync --locked, npm ci, or pnpm install --frozen-lockfile according to source lockfiles. Missing tooling or failed setup is INFRA and the hook is NOT_RUN; an executed hook failure is FAIL. Ambient node_modules are never borrowed. Required setup/transport gaps remain unsatisfied and cannot be waived by log text. Provider pending/manual/canceled results retain their outcome and remain INFRA/BLOCKED, while an actual failed provider job remains FAIL.
+
+
+## Source-bound package checks
+
+The repository adapter inventories literal JavaScript package scripts and their
+source-bound CI selections. It retains the selected package manager, lock,
+workspace, lifecycle and configuration inputs. It does not create missing
+manifests or checks, add flags, suppress hooks, or turn a watch command into a
+terminating check. Python applications reuse supported literal Python project
+context; missing source context remains a discovery gap.
+
+Execution and semantic verification are separate. Finite contracts cover Node
+syntax/tests, TypeScript `--noEmit`, ESLint, terminating Vitest and Jest forms.
+Unknown versions, dynamic configuration, external plugins, executable aliases,
+unqualified inherited TypeScript scope and unsupported install lifecycle remain
+unverified. A visible, policy-allowed check is never proof merely because it exits
+zero. Reported failures remain FAIL, no-test results remain EMPTY, and unavailable
+execution remains INFRA. Only an otherwise verified result can be downgraded by
+runtime uncertainty. The framework parser fixtures are not live framework
+certifications; actual runtime qualification is bounded to the recorded versions.
+
+Locked setup uses the selected package root. Package preflight runs before setup
+or version children. New package output is bounded in memory; durable records
+contain typed results, counts, sizes and hashes rather than raw child output or
+exception text. Existing generic source archives and legacy precommit logs are
+outside that output guarantee. Inspection failure stops owned children and
+records cleanup through the standard evidence fields. Unknown cleanup stays
+unresolved even when a baseline failure decision exists.
+
+These adapters do not waive repository-wide v1 coverage, root/shared obligations,
+unknown CI conditions or final proof. Scoped implementation can continue under
+the existing readiness policy while those verification obligations are repaired.
