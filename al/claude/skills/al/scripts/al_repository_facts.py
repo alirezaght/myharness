@@ -13,7 +13,7 @@ import tomllib
 from al_profile import measured
 import al_writer_progress as progress
 
-SOURCE_SUFFIXES=('.py','.js','.jsx','.ts','.tsx','.go','.rs','.java','.kt','.c','.cc','.cpp','.rb','.php','.swift','.cs')
+SOURCE_SUFFIXES=('.py','.js','.jsx','.mjs','.cjs','.ts','.tsx','.go','.rs','.java','.kt','.c','.cc','.cpp','.rb','.php','.swift','.cs')
 # `bytes` bounds retained Snapshot payload, not cumulative source volume. One
 # capture pass is bounded by files * file_bytes for each of current/base; parser
 # work remains separately bounded per source. No cross-command stat cache is used.

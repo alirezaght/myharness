@@ -39,6 +39,7 @@ def validate_check_binding(expected,gate):
         if not set(expected[key])<=set(gate.get(key,[])):gaps.append('check omits '+key+': '+expected['id'])
     if not all_within(gate.get('scope',[]),expected['required_scope']):gaps.append('check omits required scope: '+expected['id'])
     if not all(item in gate.get('sources',[]) for item in expected['sources']):gaps.append('check omits source capability: '+expected['id'])
+    if expected.get('package_script')!=gate.get('package_script'):gaps.append('package-script profile differs from sourced execution: '+expected['id'])
     chain=expected['source_chain']
     if chain:
         source={k:chain[0][k] for k in ('path','sha256')}

@@ -175,6 +175,8 @@ def inventory(st,anticipated=(),ci_context=None):
     for pattern in OTHER_CI:
         if any(al_store.REPO_ROOT.glob(pattern)):
             facts['enumeration']['gaps'].append(gap('unsupported-ci-provider',pattern,'CI job universe cannot be enumerated'))
+    import al_package_checks
+    al_package_checks.select_ci(facts,ci)
     # CI applicability is monotone over the finite selected service universe.
     for job in ci['obligations']:
         selected=set(job['units'])&set(services)

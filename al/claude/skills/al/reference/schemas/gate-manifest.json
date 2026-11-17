@@ -58,7 +58,7 @@
           },
           "obligation_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
           "execution_signature": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-          "runner_resource": {
+          "package_script": {"$ref": "package-script.json"}, "runner_resource": {
             "type": "object",
             "required": ["name", "version", "sha256"],
             "properties": {

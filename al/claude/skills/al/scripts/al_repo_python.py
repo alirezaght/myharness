@@ -143,7 +143,12 @@ def add_unit(scan,facts,path,role=None,language=None):
     unit={'id':path,'path':path,'languages':sorted(languages),'source_roots':sorted(set(roots)), 'module_contexts':contexts,'provenance':[config_path] if config else [prefix+('go.mod' if 'go' in languages else 'package.json')], 'roles':[role] if role else [],'external_distributions':sorted(external),'python_requirement':config.get('project',{}).get('requires-python')}
     facts['units'].append(unit);facts['enumeration']['observed_members'].append(path)
     if config:facts['enumeration']['declarations'].append(config_path)
-    if role or path=='.' or path.startswith(('services/','apps/')):checks(scan,facts,unit,config)
+    if role or path=='.' or path.startswith(('services/','apps/')):
+        if 'python' in languages:checks(scan,facts,unit,config)
+        if 'javascript' in languages:
+            import al_package_checks
+            al_package_checks.observe(scan,facts,unit)
+    return unit
 
 
 def binding(scan,facts,unit,argv,paths,selector,env_names=(),kind='local',cwd='.'):
@@ -236,11 +241,23 @@ def workspace_members(scan,facts):
     return root,explicit
 
 
+def supported_app_context(scan,facts,unit):
+    """Positive literal evidence, never merely an apps/ directory name."""
+    path=unit['path'];config=toml(scan,path+'/pyproject.toml')
+    if not config or not unit['source_roots']:return False
+    tool=config.get('tool',{});setuptools=tool.get('setuptools',{})
+    packages=setuptools.get('packages',{})
+    explicit=isinstance(packages,dict) and bool(packages.get('find',{}).get('where')) or bool(setuptools.get('package-dir')) or 'module-root' in tool.get('uv',{}).get('build-backend',{})
+    if not explicit:return False
+    gaps=[*facts['enumeration']['gaps'],*scan.gaps]
+    return not any(g.get('unit')==path or within(path,g.get('path','.')) for g in gaps)
+
+
 def observe(scan):
     facts=observation(scan);root,declared=workspace_members(scan,facts);names=candidates(scan)|declared
     # A uv monorepo manifest without a project is a bounded container, not a
     # fabricated root service. Its child units still require manifests/checks.
-    if '.' in names and not root.get('project') and root.get('tool',{}).get('uv',{}).get('workspace') and not any(p.endswith('.py') and not p.startswith(('services/','packages/','tests/')) for p in scan.files):
+    if '.' in names and not root.get('project') and root.get('tool',{}).get('uv',{}).get('workspace') and not any(p.endswith('.py') and not p.startswith(('services/','packages/','apps/','tests/')) for p in scan.files):
         names.remove('.')
         facts['enumeration']['exclusions'].append({'path':'.','reason':'literal uv workspace container','provenance':['pyproject.toml']})
     tooling=set()
@@ -256,8 +273,8 @@ def observe(scan):
     for root in sorted(tooling):
         facts['enumeration']['exclusions'].append({'path':root,'reason':'manifest-less tooling root outside service coverage','provenance':['repository layout']})
     for path in sorted(names):
-        add_unit(scan,facts,path)
-        if path.startswith('apps/') and any(u['id']==path and 'python' in u['languages'] for u in facts['units']):facts['enumeration']['gaps'].append(gap('unsupported-unit-layout',path,'generic Python apps layout needs a bundled repository adapter',path))
+        unit=add_unit(scan,facts,path)
+        if path.startswith('apps/') and unit and 'python' in unit['languages'] and not supported_app_context(scan,facts,unit):facts['enumeration']['gaps'].append(gap('unsupported-unit-layout',path,'generic Python apps layout needs a bundled repository adapter',path))
     unique=[]
     for item in facts['enumeration']['exclusions']:
         if item not in unique:unique.append(item)

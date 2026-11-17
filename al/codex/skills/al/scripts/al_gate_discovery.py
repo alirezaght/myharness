@@ -34,8 +34,17 @@ def discover(st,paths,ci_context=None):
         gate(binding['id'],binding['category'],binding['argv'],binding['required_scope'],src)
         gates[-1].update(units=binding['units'],cwd=binding['cwd'],execution_kind=binding['execution_kind'],
                          obligation_ids=binding['obligation_ids'],execution_signature=binding['execution_signature'])
+        if binding.get('package_script'):gates[-1]['package_script']=binding['package_script']
         gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+binding['env_names']))
         gates[-1]['sources']=sorted(gates[-1]['sources']+[v for v in binding['sources'] if v not in gates[-1]['sources']],key=str)
+    required_ids={o['id'] for o in inventory['repository_facts']['checks']['obligations']}
+    for profile in inventory['repository_facts']['checks'].get('package_scripts',[]):
+        identifier='package-'+__import__('al_repository_facts').digest([profile['unit'],profile['script']])[:16]
+        if identifier not in required_ids or any(g['id']==identifier for g in gates):continue
+        primary=next((r for r in profile['manager']['inputs'] if r['path']==__import__('al_package_checks').joined(profile['unit'],'package.json')),None)
+        if primary:
+            gate(identifier,'ci',[],[profile['unit']],{**primary,'job':'scripts.'+profile['script']},unit=profile['unit'],reason='package execution pending; '+'; '.join(profile['execution']['reasons']))
+            gates[-1]['package_script']=profile
     if assessment['outcome']=='incomplete':
         gate('imports-unresolved','lint-imports',[],sorted(set(paths+inventory['import_dependencies'])),rules[0] if rules else None,
              reason='; '.join(g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason'] for g in assessment['gaps']))
@@ -120,6 +129,9 @@ def validate_manifest(st,m,check_sources=True):
                 if not isinstance(remote,dict) or remote.get('provider')!='gitlab' or not remote.get('project_id') or not remote.get('job_name'): refuse('remote gate requires GitLab project/job provenance')
                 if g['source'].get('job')!=remote['job_name']:refuse('remote job identity must match source.job')
                 if len(g['argv'])!=3 or g['argv'][:2]!=['glab','api'] or not g['argv'][2].startswith('projects/'+str(remote['project_id'])+'/jobs/'): refuse('remote gate must query a real GitLab job endpoint')
+        if 'package_script' in g:
+            try:__import__('al_package_checks').validate_profile(g['package_script'])
+            except (ValueError,TypeError,KeyError) as exc:refuse('invalid package-script profile: '+str(exc))
         if g.get('source'):
             src=g['source']; p=al_store.REPO_ROOT/S.safe_path(src['path'])
             if not re.fullmatch(r'[0-9a-f]{64}',str(src.get('sha256',''))):refuse('corrupt gate source hash')
