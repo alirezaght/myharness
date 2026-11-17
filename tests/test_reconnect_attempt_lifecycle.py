@@ -14,7 +14,7 @@ from tests.execution_helpers import approved_execution, started
 
 @pytest.fixture
 def reconnect(controller, sample_repo, monkeypatch):
-    _, eid = approved_execution(controller, sample_repo, monkeypatch)
+    _, eid = approved_execution(controller, sample_repo, monkeypatch, legacy=True)
     started(controller.conn, eid)
     controller.conn.execute(
         "UPDATE executions SET status='WorkerOwned',native_id=? WHERE id=?",

@@ -535,3 +535,160 @@ def test_reserved_start_readiness_failure_preserves_host_binding(
     current = get_execution(controller.conn, reserved["id"])
     assert current["status"] == "Reserved" and current["host"] == "claude"
     assert current["binding"] == reserved["binding"]
+
+
+def test_initialized_runtime_recovers_missing_binding_without_restarting(operations, monkeypatch):
+    import harness.execution_initialization as service
+    from harness.execution_initialization import initialize_execution
+
+    _, _, controller, initial, package, execution, envelope = operations
+    marker = Path(execution["handoff_path"]).parent / "runtime-binding.json"
+    binding = marker.read_bytes()
+    source = Path(initial["source"])
+    previous = source.read_bytes()
+    marker.unlink()
+    original = service.run_owned
+
+    def no_second_start(argv, **kwargs):
+        assert "start" not in argv, "initialized runtime must never be restarted"
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(service, "run_owned", no_second_start)
+    recovered = initialize_execution(controller, execution, package, envelope)
+    assert recovered == initial
+    assert marker.read_bytes() == binding
+    assert source.read_bytes() == previous
+
+
+@pytest.mark.parametrize(
+    "change", ["execution", "epoch", "run", "source", "corrupt-state", "unpublished", "ambiguous"]
+)
+def test_missing_binding_recovery_refuses_changed_origin_without_start_or_publication(
+    operations, monkeypatch, change
+):
+    import harness.execution_initialization as service
+    from harness.execution_initialization import initialize_execution
+    from harness.execution_runtime_recovery import _launcher_call
+
+    _, _, controller, initial, package, execution, envelope = operations
+    marker = Path(execution["handoff_path"]).parent / "runtime-binding.json"
+    origin = _launcher_call(
+        package["launcher"],
+        envelope["repository"],
+        "origin",
+        "--repository",
+        envelope["repository"],
+        "--platform",
+        execution["host"],
+        "--session",
+        execution["al_session_id"],
+    )
+    marker.unlink()
+    source = Path(initial["source"])
+    if change == "execution":
+        origin["transaction"]["harness_binding"]["execution_id"] = "foreign"
+    elif change == "epoch":
+        origin["transaction"]["harness_binding"]["epoch_id"] = "foreign-epoch"
+    elif change == "run":
+        origin["transaction"]["run_id"] = "foreign-run"
+    elif change == "source":
+        origin["source"] = str(source.parent / "foreign.json")
+    elif change == "unpublished":
+        origin["transaction"]["status"] = "RESERVED"
+    elif change == "ambiguous":
+        binding_path = Path(initial["binding_path"])
+        duplicate = binding_path.parent / "ambiguous-fixture.json"
+        duplicate.write_bytes(binding_path.read_bytes())
+        duplicate.chmod(0o600)
+    else:
+        source.write_text("{}")
+    previous = source.read_bytes()
+    monkeypatch.setattr("harness.execution_runtime_recovery._launcher_call", lambda *a: origin)
+    original = service.run_owned
+
+    def no_second_start(argv, **kwargs):
+        assert "start" not in argv, "foreign or corrupt initialized runtime must not be restarted"
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(service, "run_owned", no_second_start)
+    with pytest.raises(ExecutionConflict):
+        initialize_execution(controller, execution, package, envelope)
+    assert not marker.exists()
+    assert source.read_bytes() == previous
+
+
+def test_selected_runtime_missing_protected_transaction_is_not_a_first_start(
+    operations, monkeypatch
+):
+    import harness.execution_initialization as service
+
+    _, _, controller, initial, package, execution, envelope = operations
+    marker = Path(execution["handoff_path"]).parent / "runtime-binding.json"
+    expected = marker.read_bytes()
+    source = Path(initial["source"])
+    previous = source.read_bytes()
+    Path(initial["binding_path"]).unlink()
+
+    def refuse(*args, **kwargs):
+        pytest.fail("missing selected authority must not invoke first-start or origin recovery")
+
+    monkeypatch.setattr(service, "run_owned", refuse)
+    monkeypatch.setattr("harness.execution_runtime_recovery._launcher_call", refuse)
+    with pytest.raises(ExecutionConflict, match="selected durable runtime is unavailable"):
+        service.initialize_execution(controller, execution, package, envelope)
+    assert marker.read_bytes() == expected
+    assert source.read_bytes() == previous
+
+
+@pytest.mark.parametrize(
+    "reason", ["issuer permission denied", "corrupt registry", "unsupported option"]
+)
+def test_origin_call_refusal_never_admits_first_start(operations, monkeypatch, reason):
+    import harness.execution_initialization as service
+
+    _, _, controller, initial, package, execution, envelope = operations
+    marker = Path(execution["handoff_path"]).parent / "runtime-binding.json"
+    marker.unlink()
+    previous = Path(initial["source"]).read_bytes()
+
+    def refused(*args):
+        raise ExecutionConflict(reason)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("issuer refusal must not fall through to first start")
+
+    monkeypatch.setattr("harness.execution_runtime_recovery._launcher_call", refused)
+    monkeypatch.setattr(service, "run_owned", forbidden)
+    with pytest.raises(ExecutionConflict, match="upgrade AL"):
+        service.initialize_execution(controller, execution, package, envelope)
+    assert not marker.exists()
+    assert Path(initial["source"]).read_bytes() == previous
+
+
+@pytest.mark.parametrize(
+    "field", ["repository", "platform", "session_id", "schema_version", "extra"]
+)
+def test_first_start_requires_exact_closed_absence_subject(operations, monkeypatch, field):
+    import harness.execution_initialization as service
+
+    _, _, controller, initial, package, execution, envelope = operations
+    marker = Path(execution["handoff_path"]).parent / "runtime-binding.json"
+    marker.unlink()
+    observed = {
+        "schema_version": 1,
+        "kind": "runtime-origin-absence-v1",
+        "state": "ABSENT",
+        "repository": envelope["repository"],
+        "platform": execution["host"],
+        "session_id": execution["al_session_id"],
+    }
+    observed[field] = True if field == "schema_version" else "foreign"
+    monkeypatch.setattr("harness.execution_runtime_recovery._launcher_call", lambda *a: observed)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("foreign absence observation must not admit first start")
+
+    monkeypatch.setattr(service, "run_owned", forbidden)
+    with pytest.raises(ExecutionConflict, match="absence observation differs"):
+        service.initialize_execution(controller, execution, package, envelope)
+    assert not marker.exists()

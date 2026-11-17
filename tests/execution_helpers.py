@@ -9,7 +9,7 @@ from harness.spec_store import SpecStore
 from tests.complete_task import settle
 
 
-def approved_execution(controller, sample_repo, monkeypatch, *, host="claude"):
+def approved_execution(controller, sample_repo, monkeypatch, *, host="claude", legacy=False):
     monkeypatch.chdir(sample_repo)
     tid = controller.create_task("Implement a safe and verifiable fixture change", "trivial").id
     settle(controller, tid)
@@ -17,7 +17,19 @@ def approved_execution(controller, sample_repo, monkeypatch, *, host="claude"):
     ApprovalGate(
         controller, tid, SpecStore(sample_repo / "docs/specs" / tid), sample_repo
     ).approve()
-    result = start_execution(controller, tid, host=host, launch=False)
+    if legacy:
+        from harness.execution import publish
+
+        def historical(path, value):
+            if path.name == "handoff.json":
+                value = dict(value, runtime_layout="harness-session-directory-v1")
+            return publish(path, value)
+
+        with monkeypatch.context() as context:
+            context.setattr("harness.execution.publish", historical)
+            result = start_execution(controller, tid, host=host, launch=False)
+    else:
+        result = start_execution(controller, tid, host=host, launch=False)
     return tid, result["execution"]["id"]
 
 
@@ -51,3 +63,32 @@ def started(conn, eid):
 
     claimed(conn, eid)
     ingest_event(conn, eid, event(conn, eid, 1, "run.started", {"status": "RUNNING"}))
+
+
+def isolated_launch_environment(monkeypatch, directory):
+    """Bind the real AL adapter to disposable tooling, never the operator's install."""
+    import os
+    import shutil
+    from pathlib import Path
+
+    from tests.al_launcher import bootstrap_alctl
+
+    directory.mkdir(parents=True, exist_ok=True)
+    home = directory / "home"
+    home.mkdir()
+    source = Path(__file__).resolve().parents[1] / "al"
+    for host in ("claude", "codex"):
+        root = home / ("." + host)
+        shutil.copytree(
+            source / host / "skills/al",
+            root / "skills/al",
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+        shutil.copytree(
+            source / host / "agents", root / ("agents/al" if host == "claude" else "agents")
+        )
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))
+    launcher = bootstrap_alctl(directory, directory / "bin/alctl", dict(os.environ))
+    monkeypatch.setenv("PATH", str(launcher.parent) + os.pathsep + os.environ["PATH"])
