@@ -21,6 +21,7 @@ from harness.dashboard.decisions_view import decisions_section
 from harness.dashboard.diagrams_view import diagrams_section
 from harness.dashboard.overview import overview, task_row
 from harness.dashboard.spec_view import spec_section
+from harness.dashboard.workspace_view import workspace_section
 from harness.db import connect
 from harness.diagrams import DiagramService
 
@@ -73,6 +74,7 @@ def _task_view(
         {
             "id": task.id,
             "execution": execution,
+            "workspace": workspace_section(controller, task, store, execution),
             "request": task.request,
             "phase": str(task.phase),
             "complexity": str(task.complexity),

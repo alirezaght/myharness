@@ -5,6 +5,7 @@ directory to also save the diagrams view (diagrams-1280w.png, diagrams-390w.png)
 """
 
 import os
+import re
 from pathlib import Path
 from urllib.parse import quote
 
@@ -42,7 +43,7 @@ def _shots(server: DashboardServer, profile: Path, fragment: str) -> None:
         shot = Path(directory) / f"diagrams-{width}w.png"
         result = _headless(
             profile / f"{width}", f"--window-size={width},{height}", f"--screenshot={shot}",
-            f"{server.url}{fragment}",
+            f"{server.url}?workspace=design&tab=diagram{fragment}",
         )  # fmt: skip
         assert result.returncode == 0 and shot.is_file(), result.stderr
 
@@ -50,11 +51,11 @@ def _shots(server: DashboardServer, profile: Path, fragment: str) -> None:
 def test_headless_chrome_renders_every_diagram_with_addressable_elements(db_path, tmp_path):
     task_id = _sample(db_path)
     _state(db_path, task_id, "component <b>x</b>: <img src=x onerror=alert(1)>")
-    fragment = f"#element={quote(SELECTED, safe='')}"
+    fragment = f"?workspace=design&tab=diagram#element={quote(SELECTED, safe='')}"
     with serve(db_path, task_id) as server:
         items = _items(server)
         dom = _dom(server, tmp_path / "profile", fragment)
-        plain = _dom(server, tmp_path / "profile-b")
+        plain = _dom(server, tmp_path / "profile-b", "?workspace=design&tab=diagram")
         _shots(server, tmp_path / "profile-shots", fragment)
     for kind in TYPES:
         assert f'<figure class="diagram" data-diagram="{kind}">' in dom
@@ -64,10 +65,11 @@ def test_headless_chrome_renders_every_diagram_with_addressable_elements(db_path
     assert 'data-element-id="component:b-x-b"' in dom
     assert "&lt;b&gt;x&lt;/b&gt;" in dom and "<b>x</b>" not in dom and "<img" not in dom
     pressed = [item for item in items if item["id"] == SELECTED]
-    assert len(pressed) == 2 and dom.count('aria-pressed="true"') == len(pressed)
+    selected_elements = re.findall(r'<g\b[^>]*class="diagram-element"[^>]*aria-pressed="true"', dom)
+    assert len(pressed) == 2 and len(selected_elements) == len(pressed)
     assert f'data-element-id="{SELECTED}" data-kind="component" tabindex="0" role="button"' in dom
     assert '<div id="diagram-selection" aria-live="polite"><h4>Selected element</h4>' in dom
     assert f"<dt>id</dt><dd>{SELECTED}</dd>" in dom and "<dd>version 1</dd>" in dom
     assert '<p class="diagram-status">showing: version 1 (current)</p>' in dom
-    assert 'aria-pressed="true"' not in plain
+    assert not re.search(r'<g\b[^>]*class="diagram-element"[^>]*aria-pressed="true"', plain)
     assert "<p>select an element to see its details</p>" in plain

@@ -241,14 +241,19 @@ def _cdp_capture(
                 "mobile": width < 600,
             },
         )
-        call("Page.navigate", {"url": f"{server.url}?task={quote(task_id)}"})
+        tab = "delivery" if delivery else "overview"
+        call(
+            "Page.navigate", {"url": f"{server.url}?task={quote(task_id)}&workspace=run&tab={tab}"}
+        )
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             observed = call(
                 "Runtime.evaluate",
                 {
                     "expression": (
-                        "Boolean(document.querySelector('#execution .execution-blocker'))"
+                        "Boolean(document.querySelector('#delivery'))"
+                        if delivery
+                        else "Boolean(document.querySelector('#execution .execution-blocker'))"
                     ),
                     "returnByValue": True,
                 },
@@ -299,7 +304,8 @@ def _cdp_capture(
                         "({id: node.id, left: node.getBoundingClientRect().left, "
                         "right: node.getBoundingClientRect().right})), graph: (() => {"
                         "const node=document.querySelector('.execution-graph-scroll'); "
-                        "return {clientWidth:node.clientWidth,scrollWidth:node.scrollWidth}})()})"
+                        "return node ? {clientWidth:node.clientWidth,"
+                        "scrollWidth:node.scrollWidth} : null})()})"
                     ),
                     "returnByValue": True,
                 },
@@ -319,7 +325,14 @@ def _cdp_capture(
         dashboard_requests = sum("/api/dashboard" in resource for resource in resource_names)
         assert 1 <= dashboard_requests <= 2, resources
         assert resources.get("streamOpen") is True, resources
-        assert len(resource_names) <= 20, resources
+        resource_files = {urlparse(name).path.rsplit("/", 1)[-1] for name in resource_names}
+        assert {
+            "workspace.js",
+            "workspace_plan.js",
+            "workspace_diagram.js",
+            "workspace.css",
+        } <= resource_files, resources
+        assert len(resource_names) <= 24, resources
         capture = call(
             "Page.captureScreenshot",
             {
@@ -335,12 +348,13 @@ def _cdp_capture(
             if name.startswith("execution-")
             else name.replace(".png", "-overview.png")
         )
+        target = "#delivery" if delivery else "#execution"
         call(
             "Runtime.evaluate",
             {
                 "expression": (
                     "window.scrollTo(0, "
-                    "document.querySelector('#execution').getBoundingClientRect().top "
+                    f"document.querySelector({json.dumps(target)}).getBoundingClientRect().top "
                     "+ window.scrollY)"
                 ),
                 "returnByValue": True,
@@ -365,7 +379,9 @@ def _cdp_capture(
             "Runtime.evaluate",
             {
                 "expression": (
-                    "document.querySelector('.execution-graph').scrollIntoView({block: 'start'})"
+                    "(document.querySelector('.execution-graph') || document."
+                    "querySelector('#delivery')).scrollIntoView({block: 'star"
+                    "t'})"
                 ),
                 "returnByValue": True,
             },

@@ -205,7 +205,8 @@ def _loop(db_path: Path, third: bool = False) -> tuple[str, dict[str, int]]:
 
 
 def _driven_dom(server: DashboardServer, profile: Path, width: int, height: int) -> str:
-    result = _headless(profile, f"--window-size={width},{height}", "--dump-dom", server.url)
+    route = f"{server.url}?workspace=run&tab=history&details=records"
+    result = _headless(profile, f"--window-size={width},{height}", "--dump-dom", route)
     assert result.returncode == 0, result.stderr
     return result.stdout
 
@@ -217,7 +218,7 @@ def _shot(server: DashboardServer, profile: Path, name: str, width: int, height:
     Path(directory).mkdir(parents=True, exist_ok=True)
     shot = Path(directory) / name
     result = _headless(profile, f"--window-size={width},{height}", f"--screenshot={shot}",
-                       server.url)  # fmt: skip
+                       f"{server.url}?workspace=run&tab=history&details=records")  # fmt: skip
     assert result.returncode == 0 and shot.is_file(), result.stderr
 
 

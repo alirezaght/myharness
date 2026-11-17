@@ -138,7 +138,11 @@ def test_work_is_visible_without_fake_percentages(
             evaluate(call, "document.querySelector('[aria-label=\"Show check details\"]').click()")
             assert (
                 evaluate(
-                    call, "document.querySelector('[role=tab][aria-selected=true]').textContent"
+                    call,
+                    (
+                        "document.querySelector('.agent-map-stages [role=tab][ari"
+                        "a-selected=true]').textContent"
+                    ),
                 )
                 == "Check"
             )
@@ -152,12 +156,16 @@ def test_work_is_visible_without_fake_percentages(
             evaluate(call, "refreshDashboard()")
             wait(
                 call,
-                "document.querySelector('[role=tab][aria-selected=true]').textContent === 'Check'",
+                (
+                    "document.querySelector('.agent-map-stages [role=tab][ari"
+                    "a-selected=true]').textContent === 'Check'"
+                ),
             )
             assert evaluate(call, "document.querySelector('.agent-map-check-result details').open")
             evaluate(
                 call,
-                "document.querySelector('[role=tab][aria-selected=true]').dispatchEvent("
+                "document.querySelector('.agent-map-stages "
+                "[role=tab][aria-selected=true]').dispatchEvent("
                 "new KeyboardEvent('keydown', {key:'ArrowRight',bubbles:true}))",
             )
             assert evaluate(call, "document.activeElement.textContent") == "Review"

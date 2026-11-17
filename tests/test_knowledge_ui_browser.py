@@ -661,3 +661,99 @@ def test_execution_script_loads_and_seal_recovery_ui_retries_same_preview(tmp_pa
     )
     assert result.returncode == 0, result.stderr
     assert "SEAL_UI_PASS" in _visible_dom(result.stdout), result.stdout
+
+
+def test_mounted_history_knowledge_survives_real_sse_and_stays_task_scoped(
+    db_path, sample_repo, tmp_path
+):
+    from harness.controller import HarnessController
+    from harness.dashboard.knowledge_view import knowledge_action
+    from harness.db import connect
+    from tests.test_dashboard import serve
+    from tests.test_dashboard_live_view_state_browser import chrome, evaluate, wait
+    from tests.test_knowledge_dashboard import _task
+
+    marker = "mounted_history_knowledge_fixture"
+    (sample_repo / "demo/export.py").write_text(f"def {marker}():\n    return 1\n")
+    task_id = _task(db_path, sample_repo)
+    other = _task(db_path, sample_repo)
+    status, result = knowledge_action(db_path, json.dumps({"task": task_id}).encode(), "refresh")
+    assert status == 200 and result["status"] in {"published", "published-partial"}
+    with (
+        serve(db_path, task_id) as server,
+        chrome(
+            tmp_path / "mounted-knowledge-profile",
+            f"{server.url}?task={task_id}&workspace=run&tab=history&details=records",
+            1280,
+            800,
+        ) as call,
+    ):
+        wait(call, "Boolean(document.querySelector('.knowledge-query-form'))")
+        evaluate(
+            call,
+            "window.keptKnowledge=document.querySelector('details[data-view-disclosure=knowledge]');"
+            "keptKnowledge.open=true;"
+            "window.keptKnowledgeInput=keptKnowledge.querySelector('.knowledge-query-form input');"
+            f"keptKnowledgeInput.value={json.dumps(marker)};"
+            "keptKnowledge.querySelector('form').requestSubmit();",
+        )
+        wait(call, "Boolean(document.querySelector('.knowledge-assertion'))")
+        before = evaluate(
+            call,
+            "(() => {window.keptResults=keptKnowledge"
+            ".querySelector('.knowledge-results').textContent;"
+            "window.keptTimer=keptKnowledge.querySelector('.knowledge-panel')._statusTimer;"
+            "keptKnowledge.closest('details[data-view-disclosure=workspace-task-records]').open=true;"
+            "keptKnowledgeInput.focus();keptKnowledgeInput.setSelectionRange(3,12);"
+            "return {results:keptResults,insideHistory:!!keptKnowledge.closest("
+            "'details[data-view-disclosure=workspace-task-records]')};})()",
+        )
+        assert marker in before["results"] and before["insideHistory"]
+        conn = connect(db_path)
+        try:
+            HarnessController(conn).workspace(task_id).record_event("test.knowledge.sse", {})
+        finally:
+            conn.close()
+        wait(call, "workspaceData.task.latest_activity?.kind==='test.knowledge.sse'")
+        retained = evaluate(
+            call,
+            "({same:keptKnowledge===document.querySelector('details[data-view-disclosure=knowledge]'),"
+            "sameInput:keptKnowledgeInput===document.querySelector('.knowledge-query-form input'),"
+            "focused:document.activeElement===keptKnowledgeInput,start:keptKnowledgeInput.selectionStart,"
+            "end:keptKnowledgeInput.selectionEnd,query:keptKnowledgeInput.value,"
+            "results:keptKnowledge.querySelector('.knowledge-results').textContent,"
+            "open:keptKnowledge.open&&keptKnowledge.closest('details[data-view-disclosure=workspace-task-records]').open,"
+            "timer:keptTimer===keptKnowledge.querySelector('.knowledge-panel')._statusTimer,"
+            "count:document.querySelectorAll('.knowledge-panel').length})",
+        )
+        assert retained == {
+            "same": True,
+            "sameInput": True,
+            "focused": True,
+            "start": 3,
+            "end": 12,
+            "query": marker,
+            "results": before["results"],
+            "open": True,
+            "timer": True,
+            "count": 1,
+        }
+        evaluate(
+            call,
+            "source.close();window.clearedKnowledgeTimers=[];"
+            "window.realClearInterval=window.clearInterval;"
+            "window.clearInterval=id=>{clearedKnowledgeTimers.push(id);realClearInterval(id);};",
+        )
+        evaluate(
+            call,
+            "(async()=>{const response=await fetch('/api/dashboard?task="
+            + other
+            + "');render(await response.json());})()",
+        )
+        assert evaluate(
+            call,
+            "document.querySelector('.knowledge-panel').dataset.task==="
+            + json.dumps(other)
+            + "&&!keptKnowledge.isConnected&&clearedKnowledgeTimers.includes(keptTimer)"
+            "&&document.querySelector('.knowledge-query-form input').value===''",
+        )

@@ -24,10 +24,15 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
     execution = get_execution(controller.conn, eid)
     publish(controller, execution, content(controller, execution, refs))
     with serve(db_path, tid) as server:
-        with chrome(tmp_path / "chrome", server.url + f"?task={tid}", width, height) as call:
+        with chrome(
+            tmp_path / "chrome",
+            server.url + f"?task={tid}&workspace=run&tab=changes",
+            width,
+            height,
+        ) as call:
             wait(call, "Boolean(document.querySelector('.change-illustration svg'))")
             assert "Signed callback changes" in evaluate(
-                call, "document.querySelector('#diagrams').textContent"
+                call, "document.querySelector('.change-illustration').textContent"
             )
             assert evaluate(
                 call,
@@ -51,13 +56,20 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
             assert (
                 evaluate(
                     call,
-                    "document.querySelector('[data-change-element=\\\"flow:notification-service->warehouse\\\"]').dataset.inferred",
+                    (
+                        "document.querySelector('[data-change-element=\\\"flow:noti"
+                        "fication-service->warehouse\\\"]').dataset.inferred"
+                    ),
                 )
                 == "true"
             )
             evaluate(
                 call,
-                "document.querySelector('[data-change-element=\\\"flow:notification-service->warehouse\\\"]').focus({preventScroll:true});refreshDashboard()",
+                (
+                    "document.querySelector('[data-change-element=\\\"flow:noti"
+                    "fication-service->warehouse\\\"]').focus({preventScroll:tr"
+                    "ue});refreshDashboard()"
+                ),
             )
             wait(
                 call,
@@ -69,16 +81,29 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
                 == "flow:notification-service->warehouse"
             )
             assert not evaluate(call, "document.documentElement.scrollWidth > innerWidth")
-            assert evaluate(
-                call,
-                "Boolean(document.querySelector('#diagrams')"
-                ".compareDocumentPosition(document.querySelector('#spec'))"
-                " & Node.DOCUMENT_POSITION_FOLLOWING)",
-            )
             directory = Path(
                 os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "screenshots")
             )
             directory.mkdir(parents=True, exist_ok=True)
             image = call("Page.captureScreenshot", {"format": "png"})
             (directory / f"logical-change-{width}.png").write_bytes(base64.b64decode(image["data"]))
+            assert evaluate(
+                call, "Boolean(document.querySelector('#workspace-panel .change-illustration svg'))"
+            )
+            evaluate(
+                call,
+                (
+                    "[...document.querySelectorAll('.workspace-switch button'"
+                    ")].find(button=>button.textContent==='Plan & Design').cl"
+                    "ick()"
+                ),
+            )
+            wait(
+                call,
+                (
+                    "document.querySelector('#workspace-tab-requirements')?.g"
+                    "etAttribute('aria-selected')==='true'"
+                ),
+            )
+            assert evaluate(call, "Boolean(document.querySelector('#spec'))")
     assert get_execution(controller.conn, eid) == execution
