@@ -142,7 +142,7 @@ function renderKnowledgeStatus(container, data) {
   let summary;
   if (!hasSnapshot && failed) summary = "No knowledge snapshot yet. Refresh incomplete.";
   else if (!hasSnapshot) summary = "No knowledge snapshot yet. Refresh to build one from eligible repository sources.";
-  else if (failed) summary = "Showing the last complete snapshot. Latest refresh incomplete.";
+  else if (failed) summary = "Active knowledge snapshot retained. Latest refresh incomplete.";
   else if (refreshStatus === "published") summary = "Index available — latest refresh published a complete snapshot.";
   else if (refreshStatus === "published-partial") summary = "Index available — latest refresh published partial coverage.";
   else if (refreshStatus === "unchanged") summary = "Index available — latest refresh found no source changes.";
@@ -152,7 +152,7 @@ function renderKnowledgeStatus(container, data) {
   container.replaceChildren(kEl("p", summary));
   if (hasSnapshot) {
     container.append(kEl("p", `Snapshot ${data.active_snapshot_id} · ${data.source_count} sources · ${data.entity_count} entities · ${data.relationship_count} observations`));
-    renderCoverage(container, "Coverage of last complete snapshot", data.snapshot_coverage);
+    renderCoverage(container, "Coverage of active snapshot", data.snapshot_coverage);
   }
   if (data.latest_refresh) {
     const latest = data.latest_refresh;
@@ -238,7 +238,19 @@ function renderKnowledgeResults(container, taskId, bundle) {
     article.id = `knowledge-evidence-${assertion.assertion_id}`;
     article.tabIndex = -1;
     article.append(kEl("h4", `${assertion.subject} · ${assertion.predicate}`));
-    article.append(kEl("p", assertion.object ? `Related to ${assertion.object}` : assertion.text));
+    const observation = assertion.object || assertion.text || "";
+    const excerptLimit = 320;
+    if (observation.length > excerptLimit) {
+      const excerpt = Array.from(observation).slice(0, excerptLimit).join("");
+      article.append(kEl("p", `${assertion.object ? "Related to " : ""}${excerpt}…`));
+      const fullObservation = document.createElement("details");
+      fullObservation.className = "knowledge-observation-full";
+      fullObservation.append(kEl("summary", `Show full observation (${observation.length} characters)`));
+      fullObservation.append(kEl("p", observation));
+      article.append(fullObservation);
+    } else {
+      article.append(kEl("p", assertion.object ? `Related to ${observation}` : observation));
+    }
     article.append(kEl("p", `${assertion.verification} · ${assertion.origin}${assertion.historical ? " · historical" : ""}${assertion.stale ? " · stale" : ""}`));
     const explain = kEl("button", "Explain evidence");
     explain.type = "button";
@@ -396,8 +408,8 @@ function renderKnowledgeGraph(bundle) {
     text.setAttribute("y", String(y + 32));
     text.textContent = label.length > 25 ? `${label.slice(0, 22)}…` : label;
     group.append(text);
-    const trust = all.filter(item => item.subject === label || item.object === label)
-      .slice(0, 3).map(item => `${item.verification}${item.historical ? " · historical" : ""}`);
+    const trust = [...new Set(all.filter(item => item.subject === label || item.object === label)
+      .map(item => `${item.verification}${item.historical ? " · historical" : ""}`))].slice(0, 3);
     const state = document.createElementNS(svg.namespaceURI, "text");
     state.setAttribute("x", String(x + 12));
     state.setAttribute("y", String(y + 57));

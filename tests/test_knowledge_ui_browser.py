@@ -87,6 +87,9 @@ def test_graph_is_bounded_keyboard_linked_safe_and_screenshot_ready(tmp_path):
         ".textContent.includes('historical')"
         "&&document.getElementById('knowledge-evidence-a-two').textContent.includes('unverified');"
         "const bounded=nodes.length<=12&&document.querySelectorAll('.knowledge-arrow').length<=16;"
+        "const serviceTrust=document.querySelector("
+        "'[data-knowledge-node=\"module:service\"] .knowledge-node-state').textContent;"
+        "const trustDeduplicated=serviceTrust==='source-backed / unverified · historical';"
         "const noPageOverflow=document.documentElement.scrollWidth<=window.innerWidth;"
         "const metrics={innerWidth:window.innerWidth,visualWidth:window.visualViewport.width,"
         "graphRight:document.querySelector('.knowledge-graph').getBoundingClientRect().right,"
@@ -95,7 +98,7 @@ def test_graph_is_bounded_keyboard_linked_safe_and_screenshot_ready(tmp_path):
         "p.scrollWidth<=p.clientWidth+1)};"
         "const viewportFits=Math.abs(metrics.innerWidth-metrics.visualWidth)<1"
         "&&metrics.panelRight<=metrics.innerWidth+1&&metrics.paragraphsFit;"
-        "document.body.append(document.createTextNode((safe&&focused&&trust&&bounded&&noPageOverflow"
+        "document.body.append(document.createTextNode((safe&&focused&&trust&&bounded&&trustDeduplicated&&noPageOverflow"
         "&&viewportFits?'GRAPH_UI_PASS ':'GRAPH_UI_FAIL ')+JSON.stringify(metrics)));"
     )
     html = tmp_path / "knowledge-graph.html"
@@ -231,7 +234,7 @@ def test_refresh_status_retains_incomplete_diagnostics_and_network_recovery(tmp_
         "const noPageOverflow=document.documentElement.scrollWidth<=window.innerWidth;"
         "const ok=initial.includes('No knowledge snapshot yet. Refresh incomplete.')"
         "&&initial.includes('source-size-capped')"
-        "&&retained.includes('Showing the last complete snapshot. Latest refresh incomplete.')"
+        "&&retained.includes('Active knowledge snapshot retained. Latest refresh incomplete.')"
         "&&retained.includes('snapshot-last-complete')&&retained.includes('text-only-no-dependency-analysis')"
         "&&recovered.includes('Index available')&&recovered.includes('snapshot-new-complete')"
         "&&network.includes('offline')"
@@ -304,6 +307,237 @@ def test_empty_result_integrity_and_panel_state_survive_status_poll(tmp_path):
     result = _headless(tmp_path / "knowledge-empty-profile", "--dump-dom", html.as_uri())
     assert result.returncode == 0, result.stderr
     assert "EMPTY_UI_PASS" in _visible_dom(result.stdout)
+
+
+def test_partial_snapshot_long_observation_accessibility_and_refresh_poll(tmp_path):
+    from harness.dashboard.server import STATIC_DIR
+    from tests.test_dashboard_live_view_state_browser import chrome, evaluate, wait
+
+    observation = "<img src=x onerror=window.__xss=true>" + "x" * (
+        8275 - len("<img src=x onerror=window.__xss=true>")
+    )
+    initial_status = {
+        "status": "indexed",
+        "active_snapshot_id": "partial-snapshot-1",
+        "source_count": 1310,
+        "entity_count": 9407,
+        "relationship_count": 18963,
+        "latest_refresh": {
+            "status": "published-partial",
+            "coverage": [{"status": "excluded", "reason": "sensitive-source"}],
+        },
+        "snapshot_coverage": [{"status": "excluded", "reason": "sensitive-source"}],
+    }
+    retained_status = {
+        **initial_status,
+        "latest_refresh": {
+            "status": "incomplete",
+            "coverage": [{"status": "excluded", "reason": "sensitive-source"}],
+        },
+    }
+    script = (
+        "(async()=>{"
+        "let statusIndex=0,pollStatus=null;window.__statusTimerMs=null;window.__xss=false;"
+        "window.setInterval=(callback,ms)=>{pollStatus=callback;"
+        "window.__statusTimerMs=ms;return 7;};"
+        "window.clearInterval=()=>{};window.__pollStatus=()=>pollStatus();"
+        f"const statuses={_json_for_script([initial_status, retained_status])};"
+        "window.fetch=async(url)=>{if(String(url).startsWith('/api/knowledge/evidence?'))"
+        "return {ok:true,json:async()=>({citations:[{locator:'src/ApprovalGate.py',"
+        "text:'exact cited bytes',truncated:false}]})};"
+        "const data=statuses[Math.min(statusIndex++,statuses.length-1)];"
+        "return {ok:true,json:async()=>data};};"
+        "window.postJson=async(url)=>String(url).endsWith('/refresh')"
+        "?{res:{ok:true},data:{status:'incomplete',coverage:[{status:'excluded',reason:'sensitive-source'}]}}"
+        ":{res:{ok:true},data:{authority:'Source-backed explanation.',citations:[{"
+        "locator:'src/ApprovalGate.py',"
+        "start_byte:0,end_byte:16,span_sha256:'abc123'}]}};"
+        "document.body.style.minHeight='1800px';"
+        f"window.__observation={_json_for_script(observation)};"
+        "const panel=renderKnowledgePanel('task-partial');"
+        "document.getElementById('out').append(panel);"
+        "await new Promise(resolve=>setTimeout(resolve,40));"
+        "window.__initialStatus=panel.querySelector('.knowledge-status').textContent;"
+        "const bundle={bundle_hash:'bundle-partial',snapshot_id:'partial-snapshot-1',"
+        "budget:{serialized_bytes:9000,max_bytes:32768,max_assertions:40},assertions:[{"
+        "assertion_id:'long-described-by',subject:'module:ApprovalGate',predicate:'described-by',"
+        "object:null,text:"
+        f"{_json_for_script(observation)},"
+        "origin:'static-analysis',verification:'source-backed',historical:false}],"
+        "coverage:[],conflicts:[],staleness:[],paths:[]};"
+        "renderKnowledgeResults(panel.querySelector('.knowledge-results'),'task-partial',bundle);"
+        "window.__bundleRendered=true;})();"
+    )
+    html = tmp_path / "knowledge-long-observation.html"
+    html.write_text(_page(STATIC_DIR, script), encoding="utf-8")
+    artifacts = Path("/private/tmp/knowledge-completion-inputs-20261116/ui-polish-artifacts")
+    artifacts.mkdir(parents=True, exist_ok=True)
+
+    for width, height, name in (
+        (1280, 800, "knowledge-ui-polish-desktop.png"),
+        (390, 844, "knowledge-ui-polish-narrow.png"),
+    ):
+        with chrome(tmp_path / f"polish-profile-{width}", html.as_uri(), width, height) as call:
+            wait(call, "window.__bundleRendered === true")
+            before = evaluate(
+                call,
+                "(()=>{const article=document.querySelector('.knowledge-assertion');"
+                "const details=article.querySelector('.knowledge-observation-full');"
+                "return {status:document.querySelector('.knowledge-status').textContent,"
+                "label:document.querySelector('.knowledge-coverage summary')?.textContent,"
+                "excerpt:article.querySelector('p').textContent,"
+                "full:article.querySelector('.knowledge-observation-full p')?.textContent,"
+                "closed:!details?.open,hasExplain:[...article.querySelectorAll('button')]"
+                ".some(b=>b.textContent==='Explain evidence'),"
+                "safe:article.querySelectorAll('img').length===0&&!window.__xss,"
+                "viewport:window.innerWidth,visual:window.visualViewport.width,"
+                "paragraphsFit:[...document.querySelectorAll('.knowledge-panel p')]"
+                ".every(p=>p.scrollWidth<=p.clientWidth+1)}})()",
+            )
+            assert (
+                "Index available — latest refresh published partial coverage." in before["status"]
+            )
+            assert before["label"] == "Coverage of active snapshot (1)"
+            assert len(before["excerpt"]) <= 340 and before["excerpt"].endswith("…")
+            assert before["full"] == observation and before["closed"]
+            assert before["hasExplain"] and before["safe"]
+            assert before["viewport"] == before["visual"] == width
+            assert before["paragraphsFit"]
+
+            # Native summary keyboard behavior expands and collapses the literal observation.
+            evaluate(call, "document.querySelector('.knowledge-observation-full summary').focus()")
+            call(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "rawKeyDown",
+                    "key": "Enter",
+                    "code": "Enter",
+                    "windowsVirtualKeyCode": 13,
+                    "nativeVirtualKeyCode": 36,
+                },
+            )
+            call(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "char",
+                    "key": "Enter",
+                    "code": "Enter",
+                    "text": "\r",
+                },
+            )
+            call("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter"})
+            wait(call, "document.querySelector('.knowledge-observation-full').open")
+            assert evaluate(
+                call,
+                "document.querySelector('.knowledge-observation-full p').textContent==="
+                "window.__observation",
+            )
+            call(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "rawKeyDown",
+                    "key": "Enter",
+                    "code": "Enter",
+                    "windowsVirtualKeyCode": 13,
+                    "nativeVirtualKeyCode": 36,
+                },
+            )
+            call(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "char",
+                    "key": "Enter",
+                    "code": "Enter",
+                    "text": "\r",
+                },
+            )
+            call("Input.dispatchKeyEvent", {"type": "keyUp", "key": "Enter", "code": "Enter"})
+            wait(call, "!document.querySelector('.knowledge-observation-full').open")
+
+            evaluate(call, "document.querySelector('.knowledge-assertion button').click()")
+            wait(
+                call,
+                "[...document.querySelectorAll('.knowledge-assertion button')]"
+                ".some(b=>b.textContent==='View cited source text')",
+            )
+            evaluate(
+                call,
+                "[...document.querySelectorAll('.knowledge-assertion button')]"
+                ".find(b=>b.textContent==='View cited source text').click()",
+            )
+            wait(
+                call,
+                "document.querySelector('.knowledge-source-text').textContent"
+                ".includes('exact cited bytes')",
+            )
+
+            evaluate(call, "document.querySelector('.knowledge-refresh').click()")
+            wait(
+                call,
+                "document.querySelector('.knowledge-status').textContent"
+                ".includes('Latest refresh incomplete')",
+            )
+            after_refresh = evaluate(
+                call,
+                "({status:document.querySelector('.knowledge-status').textContent,"
+                "label:document.querySelector('.knowledge-coverage summary')?.textContent})",
+            )
+            assert (
+                "Active knowledge snapshot retained. Latest refresh incomplete."
+                in after_refresh["status"]
+            )
+            assert "partial-snapshot-1" in after_refresh["status"]
+            assert after_refresh["label"] == "Coverage of active snapshot (1)"
+            assert "last complete" not in after_refresh["status"].lower()
+
+            # Keep the observation and status disclosures open through the 15 second poll.
+            evaluate(
+                call,
+                "document.querySelector('.knowledge-observation-full').open=true;"
+                "document.querySelector('.knowledge-results details')?.setAttribute('open','');"
+                "document.querySelector('.knowledge-status details').open=true;"
+                "document.querySelector('.knowledge-query-form input').value='ApprovalGate';"
+                "document.querySelector('.knowledge-status details summary')"
+                ".focus({preventScroll:true});"
+                "window.scrollTo(0,800);",
+            )
+            before_poll = evaluate(
+                call,
+                "({results:document.querySelector('.knowledge-results').textContent,"
+                "y:window.scrollY,"
+                "query:document.querySelector('.knowledge-query-form input').value})",
+            )
+            assert evaluate(call, "window.__statusTimerMs") == 15000
+            evaluate(call, "window.__pollStatus()")
+            wait(
+                call,
+                "document.querySelector('.knowledge-status').textContent"
+                ".includes('Latest refresh incomplete')",
+            )
+            after_poll = evaluate(
+                call,
+                "({results:document.querySelector('.knowledge-results').textContent,"
+                "y:window.scrollY,"
+                "query:document.querySelector('.knowledge-query-form input').value,"
+                "observationOpen:document.querySelector('.knowledge-observation-full').open,"
+                "focus:document.activeElement.textContent.trim(),"
+                "statusOpen:document.querySelector('.knowledge-status details').open})",
+            )
+            assert after_poll["results"] == before_poll["results"]
+            assert (
+                after_poll["y"] == before_poll["y"] and after_poll["query"] == before_poll["query"]
+            )
+            assert after_poll["observationOpen"] and after_poll["statusOpen"]
+            assert after_poll["focus"] == "Coverage of active snapshot (1)"
+
+            evaluate(
+                call,
+                "document.querySelector('.knowledge-observation-full').open=false;"
+                "const summary=document.querySelector('.knowledge-observation-full summary');"
+                "window.scrollTo(0,summary.getBoundingClientRect().top+window.scrollY-380);",
+            )
+            shot = call("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": False})
+            (artifacts / name).write_bytes(base64.b64decode(shot["data"]))
 
 
 def test_execution_script_loads_and_seal_recovery_ui_retries_same_preview(tmp_path):
