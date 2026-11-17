@@ -131,9 +131,10 @@ def corpus_receipt(root):
 
 
 def validate(package):
-    closed(package, FIELDS)
-    if type(package["schema_version"]) is not int or package["schema_version"] != 1:
-        raise ValueError("package version 1 required")
+    from .method import validate_method
+
+    validate_method(package)
+    closed(package, FIELDS | ({"method"} if package["schema_version"] == 2 else set()))
     for field in ("arm", "participant", "host", "role"):
         text(package[field])
     if package["arm"] not in {"B", "C"} or package["participant"] not in {

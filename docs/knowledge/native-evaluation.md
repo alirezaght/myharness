@@ -204,3 +204,121 @@ resumable provider attempt. `--mode live` is explicit and parent-only for actual
 Unavailable telemetry, ingestion refusals, incomplete coverage and Interrupted execution status
 remain literal outcomes. Mixed commit/report labeling is unchanged product behavior, not an
 excuse to suppress mutable report provenance/hash validation or claim clean-review capability.
+
+## Prospective M2 method
+
+Schema version 1 packages and their original counters/receipts remain legacy V1. Do not
+retroactively attach reserves, corrected counters or usage evidence to them, pool cohorts,
+or erase failed attempts. Schema version 2 requires an exact `method` object from
+`scripts.knowledge_evaluation.method.contract()`: method ID `knowledge-native-m2-r1`,
+capability profile, reserve values, generic instruction hash and shared product tool-help/schema
+hash. Unknown versions, unsupported declarations, altered totals and mixed-method donor
+capabilities refuse before admission. The explicit stage wrapper stays version 1 and retains
+the nested package's method; M2 donor/recipient participants require their matching stage.
+M2 currently supports the actual qualified Codex Architect/Astra/medium and
+Engineer/Sol/medium profiles. Provider qualification remains a separate supervisor obligation.
+
+M2 keeps the totals at 30 tools/call attempts, 98,304 delivered bytes and 240 seconds. The
+1,800 answer tokens remain a request. Inside the totals it reserves 16,384 completion bytes,
+including a 512-byte error allowance, and the last three calls for transition/refusal, fresh
+assignment and one output; donors reserve a fourth call for root completion. Initial root and
+child assignment calls count normally. Data or listing responses that exceed the evidence
+allowance are replaced whole by a fixed actionable refusal. Retrieval then stays closed;
+only fresh assignment → output → donor completion (where applicable) is admitted. An unused
+refusal slot is not extra capacity. Repeated invalid attempts can still consume the remaining
+calls; oversized control responses record control-budget-exhausted. No truncated JSON,
+extra call, invented revision, retry submission or timeout grace is supplied.
+
+The shared adapter lock protects a participant ledger across all connections. Every
+well-formed JSON-RPC tools/call envelope with object params counts, including unknown tools,
+invalid arguments, pre-dispatch authentication failure, and over-limit attempts (31 is recorded
+as 31, never clipped). Malformed JSON-RPC/envelopes, pre-session HTTP rejection and HTTP bearer
+failures are transport diagnostics outside this participant-call seam; they are not authenticated
+agent operations or evidence of a passed call budget. Original MCP initialization, verifier,
+claim and OperationController authority ordering remains intact. `forwarded_requests` counts
+requests forwarded into that original handler, `admitted_requests` counts successfully presented
+results, and `denied_requests` counts error results. Thus admitted + denied equals attempted;
+forwarding alone establishes neither authenticated authority nor successful delivery.
+
+Tools/list requests are counted separately; every filtered listing's full serialized UTF-8
+metadata counts against the same byte total. For tools/call, each outgoing text block's UTF-8
+bytes count exactly once, including pre-dispatch errors and control acknowledgments. MCP/HTTP
+framing, initial fixed instructions and native collaboration/context are outside that byte seam.
+When the error allowance or total is exhausted, an empty error carries zero text bytes and the
+ledger preserves exhaustion. Listing refusal retains a valid empty tools list with a bounded
+`_meta.evaluation_error` notice; its serialized metadata is charged. Once the error
+allowance is gone, the empty tools-list framing contains no tool metadata or text and is
+unmeasured, just like an empty tools/call error frame. Internal guarded registration/finalization controller operations
+are counted separately and never represented as participant requests. Whole context bytes,
+backend reads and unique source bytes remain unavailable; do not coerce null into zero for
+`knowledge_eval.py`'s integer-only accounting.
+
+M2 records `output_committed` and `acknowledgment_delivered` separately. Before acknowledgment
+budgeting, it reconciles the actual owning execution's immutable index, owner, role, current
+report graph revision, expected hash, file identity and streaming content hash. It never
+interprets or persists answer bodies for reconciliation and never calls submit_output again.
+A failure after publication can therefore be stored-but-unacknowledged rather than falsely
+classified absent. A stale graph or forged owner is refused. The exact report reference is
+preserved; reconciliation does not invent child return, completion or settlement. Donor
+completion still requires own observed child terminal/root wait, actual Idle→Waiting→Completed,
+current graph, exact authored report and normal C ingestion/B pre-entry refusal. Its immutable
+receipt precedes presentation and says acknowledgment is not yet delivered; the adapter receipt
+separately records whether it was delivered. Neither receipt is republished to rescue an error.
+
+Product MCP descriptions now document the semantic query, explanation, confined read,
+assignment and output contracts. This is a new truthful product-help improvement, not recovery
+of richer text previously stripped by the evaluator. M2 preserves the selected bridge's allowed
+schemas/descriptions verbatim and supplies the same generic instructions in B/C. It does not
+restore unrestricted worker prompts, harness resources, tools or permissions. Isolation receipts
+bind evaluator hashes; selected bridge/module hashes remain independently recorded.
+
+M2's own canonical metadata observer separately reports root and each actual child's token_count
+fields, record positions/hashes and TurnContext model/effort. The synthetic supported parser
+shape is event_msg/token_count/info with total_token_usage and last_token_usage. It requires one
+fresh bounded turn, a zero baseline established by the first total equalling last, consistent
+monotonic deltas, identical duplicates, and terminal usage before task_complete. It never sums
+cumulative snapshots. Resets, missing fields, resumed/multiple turns, aliases, foreign identity,
+partial records or missing terminal evidence yield unavailable rather than zero. Installed-host
+public qualification must establish the actual shape and availability before claiming host support.
+Cached input is within input and reasoning output within output; host output-generation counts
+can include tool arguments and other material. They are never exact answer.md tokens.
+`answer_token_compliance` remains `UNKNOWN`, including when generation usage is observed.
+
+There is no arbitrary `private/**` policy. Closed M2 capability declarations cannot invent one.
+Public canary tests characterize a benign tracked `private/canary.pem` outside decision/report
+resources across ordinary baseline readers and cold commit/working-tree Knowledge refresh/query.
+They explicitly allow filename inventory visibility and demonstrate ordinary `.md` text in the
+same directory remains readable. Exact registry history and donor reports are independent
+source kinds; an authorized authored report can deliberately contain disclosed information.
+No universal content secrecy or no-existence-leak boundary across those resources is claimed.
+Independent qualification must cover the exact placement and every advertised reader/history/
+report path before using an integrity fixture. Unsupported boundaries remain unavailable;
+this increment changes no source scope, index, extraction, ranking, grant or permission.
+
+Method tests use public disposable repositories and synthetic host metadata/executables through
+real admission, selected bridges, worker reservations, NativeRuntime, operation authority and
+cleanup. They establish method contracts, not provider quality or mission acceptance. The failed
+original cohort remains failed historical evidence. Independent public native qualification,
+method freeze, fresh independently authored cohort, unchanged scoring, root regression and
+mandatory AL review/acceptance remain supervisor-owned.
+
+Acknowledgment delivery is measured at the returned `MCPConnection.request` content seam;
+client consumption and socket receipt are unobserved. A budgeted acknowledgment is not a
+native acknowledgment of understanding. M2 also records own child return observations
+(or explicit unavailability) and actual exited-attempt/closed-context teardown facts separately.
+Evaluator file hashes are checked against isolation.json before dispatch and again after the
+worker returns; the actual generic prompt hash and selected bridge hashes remain separate.
+
+M2 host-context correction: usage and returned-child receipts validate the complete projected
+turn_id/model/effort fields before retaining them. Turn IDs are bounded ASCII identifiers;
+models are bounded strings from the supported M2 model set, and effort is a supported catalog
+value. A child's observed model/effort must exactly match its validated participant profile.
+Malformed/missing/mismatched context produces a fixed sanitized unavailable reason, never a
+retained object, prose field or inferred token count. Root context is validated independently
+and may report its own supported model/effort. Donor completion binds the original donor
+profile; later validation uses that profile, including Architect→Engineer transfers.
+V1 lifecycle defaults are unchanged. M2's exact generic budget/terminal-retrieval/no-retry
+policy is included in the literal designated Child instructions payload for every stage,
+with identical B/C wording. Donor finalization remains a root-only stage directive outside
+that payload. V1 prompt bytes remain unchanged; corrected M2 prompt/source hashes require
+new independent public qualification before any prospective private evaluation.

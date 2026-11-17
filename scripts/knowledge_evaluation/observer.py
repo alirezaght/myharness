@@ -26,7 +26,7 @@ def _time(value):
     raise ValueError("native lifecycle timestamp unavailable")
 
 
-def records(native_root, identity):
+def records(native_root, identity, *, require_complete=False):
     """Select exactly one own canonical file; bound each read and reject aliases/foreign owners."""
     root = Path(native_root).resolve(strict=True)
     matches = list(root.glob("sessions/*/*/*/*" + identity + ".jsonl"))
@@ -57,6 +57,8 @@ def records(native_root, identity):
                 if len(raw) > MAX_RECORD or size > MAX_METADATA:
                     raise ValueError("native metadata exceeds observation bound")
                 if not raw.endswith(b"\n"):
+                    if require_complete:
+                        raise ValueError("partial native metadata record")
                     break  # A partially flushed final event grants no completion.
                 value = json.loads(raw)
                 # Non-lifecycle record bodies are never interpreted or returned.
@@ -71,23 +73,34 @@ def records(native_root, identity):
         os.close(fd)
 
 
-def observe_return(native_root, root_id, child_id, role, *, expected_wait=None):
+def observe_return(
+    native_root, root_id, child_id, role, *, expected_wait=None, expected_profile=None
+):
     root = read_native_identity(native_root, root_id)
     child = read_native_identity(native_root, child_id)
     if root.parent_thread_id is not None or child.parent_thread_id != root_id or child.role != role:
         raise ValueError("native return parent/role binding differs")
     if root_id == child_id:
         raise ValueError("specialized child return required")
+    if expected_profile is not None:
+        from .method import host_context, profile_for_role
+
+        if expected_profile != profile_for_role(role):
+            raise ValueError("exact declared M2 return profile required")
     turns, started, completed = {}, {}, {}
     starts = 0
     for number, record, digest in records(native_root, child_id):
         payload = record.get("payload", {})
         if not isinstance(payload, dict):
             continue
-        if record["type"] == "turn_context" and isinstance(payload.get("turn_id"), str):
-            turns[payload["turn_id"]] = {
-                k: payload[k] for k in ("model", "effort", "turn_id") if k in payload
-            }
+        if record["type"] == "turn_context":
+            if expected_profile is not None:
+                context = host_context(payload, expected_profile)
+                turns[context["turn_id"]] = context
+            elif isinstance(payload.get("turn_id"), str):
+                turns[payload["turn_id"]] = {
+                    k: payload[k] for k in ("model", "effort", "turn_id") if k in payload
+                }
         if record["type"] == "event_msg" and payload.get("type") == "task_started":
             starts += 1
             started[payload.get("turn_id")] = number

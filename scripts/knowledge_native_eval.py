@@ -47,6 +47,11 @@ def cold_index(package, admission):
 
 
 def execute(package, mode, *, existing=None, stage=None):
+    from scripts.knowledge_evaluation.method import binding, validate_method
+
+    validate_method(package)
+    if package["schema_version"] == 2 and stage is None and package["participant"] != "single":
+        raise ValueError("M2 donor/recipient requires explicit stage route")
     receipt = validate(package) if stage is None else stage["corpus_receipt"]
     if mode == "validate":
         return {"status": "validated", "corpus": receipt, "provider_started": False}
@@ -58,6 +63,7 @@ def execute(package, mode, *, existing=None, stage=None):
     write_once(
         output / "isolation.json",
         {
+            **({"method": binding(package)} if binding(package) else {}),
             "corpus": receipt,
             "adapter_hashes": adapter_hashes(),
             "budgets": package["budgets"],
@@ -69,6 +75,8 @@ def execute(package, mode, *, existing=None, stage=None):
         },
     )
     admission = admit(package, existing=existing, stage=stage)
+    if binding(package):
+        admission["evaluation_method"] = binding(package)
     if mode == "prepare":
         write_once(output / "admission.json", admission)
         return {"status": "prepared", "provider_started": False, "task_id": admission["task_id"]}
