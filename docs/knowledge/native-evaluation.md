@@ -322,3 +322,12 @@ policy is included in the literal designated Child instructions payload for ever
 with identical B/C wording. Donor finalization remains a root-only stage directive outside
 that payload. V1 prompt bytes remain unchanged; corrected M2 prompt/source hashes require
 new independent public qualification before any prospective private evaluation.
+
+
+Worker interpreter source selection is explicitly bound for future V1 and M2 runs.
+The selected evaluator namespace precedes ambient editable/package paths; the
+separately authenticated Harness bridge remains first for Harness imports.
+The parent records evaluator hashes in isolation.json, and the explicit worker
+bootstrap rechecks those hashes and rejects foreign preimported evaluator modules
+before dispatch. Native receipts record the actual evaluator module paths/hashes.
+This does not upgrade or reinterpret historical V1/M1 receipts.

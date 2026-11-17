@@ -46,7 +46,12 @@ def module_receipt(bridge):
     return modules
 
 
-def run(package_path, admission_path, bridge_path):
+def run(package_path, admission_path, bridge_path, *, evaluator_source=None):
+    from .worker import hashes, verify_source
+
+    engine, expected = evaluator_source or (Path(__file__).resolve().parents[2], None)
+    expected = hashes(engine) if expected is None else expected
+    verify_source(engine, expected)
     # The isolated launcher inserts the selected bridge BEFORE importing this module.
     from harness import execution_mcp as mcp
     from harness import execution_worker as worker
@@ -183,6 +188,7 @@ def run(package_path, admission_path, bridge_path):
         # bridge_root already authenticates the selected snapshot; retain its manifest identity.
         manifest = json.loads((bridge / "manifest.json").read_bytes())
         initial_modules = module_receipt(bridge)
+        evaluator_modules = verify_source(engine, expected)
         with patch.object(worker, "_spawn_worker", capture):
             outcome = worker.launch_worker(conn, execution_id)
         if len(captured) != 1 or outcome.get("status") != "WorkerOwned":
@@ -249,6 +255,12 @@ def run(package_path, admission_path, bridge_path):
             "clean_review_provenance": "not claimed or enabled",
             "elapsed_ms": round((time.monotonic() - started) * 1000),
             "selected_bridge": str(bridge),
+            "evaluator_source": {
+                "root": str(engine),
+                "hashes": expected,
+                "initial_modules": evaluator_modules,
+                "modules": verify_source(engine, expected),
+            },
             "bridge_fingerprint": manifest["fingerprint"],
             "modules": module_receipt(bridge),
             "mission_complete": False,

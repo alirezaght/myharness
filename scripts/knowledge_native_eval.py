@@ -2,6 +2,7 @@
 """Validate/prepare a single case; only explicit live mode may spend provider tokens."""
 
 import argparse
+import importlib.util
 import json
 import os
 import subprocess
@@ -15,8 +16,17 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.knowledge_evaluation.admission import admit, environment
-from scripts.knowledge_evaluation.package import canonical, load, sha, validate, write_once
+# Load the source selector by absolute path before importing any evaluator namespace.
+_engine = Path(__file__).resolve().parents[1]
+_selector_spec = importlib.util.spec_from_file_location(
+    "_knowledge_evaluator_selector", _engine / "scripts/knowledge_evaluation/worker.py"
+)
+_selector = importlib.util.module_from_spec(_selector_spec)
+_selector_spec.loader.exec_module(_selector)
+_selector.select_source(_engine, _selector.hashes(_engine))
+
+from scripts.knowledge_evaluation.admission import admit, environment  # noqa: E402
+from scripts.knowledge_evaluation.package import canonical, load, sha, validate, write_once  # noqa: E402
 
 
 def adapter_hashes():
@@ -46,9 +56,24 @@ def cold_index(package, admission):
     }
 
 
+def worker_command(bridge, output):
+    return [
+        sys.executable,
+        "-I",
+        "-B",
+        str(_engine / "scripts/knowledge_evaluation/worker.py"),
+        str(bridge),
+        str(_engine),
+        str(output / "package.json"),
+        str(output / "admission.json"),
+        str(output / "isolation.json"),
+    ]
+
+
 def execute(package, mode, *, existing=None, stage=None):
     from scripts.knowledge_evaluation.method import binding, validate_method
 
+    _selector.verify_source(_engine, adapter_hashes())
     validate_method(package)
     if package["schema_version"] == 2 and stage is None and package["participant"] != "single":
         raise ValueError("M2 donor/recipient requires explicit stage route")
@@ -107,22 +132,7 @@ def execute(package, mode, *, existing=None, stage=None):
             elif not stage or stage["action"] == "donor":
                 write_once(output / "cold-index.json", cold_index(package, admission))
         # New isolated interpreter: no pre-imported checkout Harness modules can leak in.
-        program = (
-            "import sys;sys.path.insert(0,sys.argv[1]);sys.path.append(sys.argv[2]);"
-            "from scripts.knowledge_evaluation.live import run;run(*sys.argv[3:])"
-        )
-        command = [
-            sys.executable,
-            "-I",
-            "-B",
-            "-c",
-            program,
-            str(bridge),
-            str(Path(__file__).resolve().parents[1]),
-            str(output / "package.json"),
-            str(output / "admission.json"),
-            str(bridge),
-        ]
+        command = worker_command(bridge, output)
         # Normal supervisor owns native timeout/cleanup. A killed evaluator is NOT settled.
         result = subprocess.run(
             command,
