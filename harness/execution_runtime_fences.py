@@ -21,6 +21,11 @@ def validate_fence(activation, request):
     old = _reference(receipt["predecessor_binding_ref"])
     storage = Path(receipt["successor_transaction"]["initialization"]["stored_path"]).parent.parent
     directory = storage / "successors" / request["request_id"]
+    plan = _reference(
+        {"stored_path": str(directory / "plan.json"), "sha256": receipt["preparation_sha256"]}
+    )
+    if receipt["request_sha256"] != digest(request).split(":")[1] or plan["request"] != request:
+        raise ExecutionConflict("protected preparation does not match the complete request")
     expected_subject = {
         k: receipt["successor_transaction"][k]
         for k in ("repository_identity", "platform", "session_id")
@@ -70,3 +75,51 @@ def validate_fence(activation, request):
     }
     if tombstone != expected:
         raise ExecutionConflict("protected predecessor has not been irreversibly fenced")
+
+
+def successor_initialization(execution, activation, request):
+    """Revalidate the issuer-fenced chain and derive only its positively initialized identity."""
+    from harness.execution_initialization import protected_initialization
+
+    validate_fence(activation, request)
+    receipt, selector = activation["receipt"], activation["selector"]
+    transaction = receipt["successor_transaction"]
+    predecessor = _reference(receipt["predecessor_binding_ref"])
+    raw, mode = _ordinary(receipt["successor_handoff_ref"]["path"])
+    envelope = json.loads(raw)
+    if (
+        mode != 0o600
+        or digest(raw) != receipt["successor_handoff_ref"]["sha256"]
+        or request["execution_id"] != execution["id"]
+        or request["predecessor_subject"] != {k: predecessor[k] for k in ("session_id", "run_id")}
+        or predecessor["repository_identity"] != transaction["repository_identity"]
+        or transaction["platform"] != execution["host"]
+        or transaction["session_id"] != receipt["successor_subject"]["session_id"]
+        or transaction["run_id"] != receipt["successor_run_id"]
+        or envelope["execution_id"] != execution["id"]
+        or envelope["task_id"] != execution["task_id"]
+        or envelope["host"] != execution["host"]
+        or set(envelope["approval"]) != set(execution["binding"]) | {"path"}
+        or {k: v for k, v in envelope["approval"].items() if k != "path"} != execution["binding"]
+        or envelope["repository"] != transaction["repository_identity"]["root"]
+        or envelope["al_session_id"] != transaction["session_id"]
+        or envelope["runtime_layout"] != "harness-durable-epoch-v1"
+    ):
+        raise ExecutionConflict("successor initialization execution/handoff identity differs")
+    approved, _ = _ordinary(envelope["approval"]["path"])
+    if approved.decode() != envelope["sealed_bytes"] or digest(approved) != envelope["sealed_hash"]:
+        raise ExecutionConflict("successor initialization sealed approval changed")
+    binding = {"storage": selector["storage"], "transaction": transaction}
+    sealed = envelope["runtime_binding"]["transaction"]
+    if envelope["runtime_binding"]["storage"] != binding["storage"] or {
+        k: v for k, v in sealed.items() if k not in {"status", "initialization"}
+    } != {k: v for k, v in transaction.items() if k not in {"status", "initialization"}}:
+        raise ExecutionConflict("successor initialization handoff protected binding differs")
+    selected = dict(
+        execution,
+        epoch_id=selector["epoch_id"],
+        authority_generation=selector["authority_generation"],
+        al_session_id=transaction["session_id"],
+        al_run_id=transaction["run_id"],
+    )
+    return protected_initialization(selected, envelope, binding)

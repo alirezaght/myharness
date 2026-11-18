@@ -21,7 +21,7 @@ def activate_runtime(
 
     from harness.db import transaction, utcnow
     from harness.execution_bootstrap import authority_snapshot, execution_environment
-    from harness.execution_contract import canonical
+    from harness.execution_contract import canonical, digest
     from harness.execution_epochs import require_active_epoch
     from harness.execution_hosts import managed_launcher
     from harness.execution_initialization_channel import receive, send
@@ -41,13 +41,16 @@ def activate_runtime(
             raise ExecutionConflict("runtime preparation has not completed")
         receipt = json.loads(row["preparation"])
         original = json.loads(row["request"])
+        if row["request_hash"] != digest(row["request"].encode()):
+            raise ExecutionConflict("runtime activation request hash differs")
         if receipt["preparation_sha256"] != preparation_sha256 or (
             expected_epoch_id,
             expected_authority_generation,
         ) != (original["expected_epoch_id"], original["expected_authority_generation"]):
             raise ExecutionConflict("runtime activation preparation or expected identity differs")
         if row["state"] == "ACTIVE":
-            require_active_epoch(controller.conn, execution_id)
+            current = require_active_epoch(controller.conn, execution_id)
+            _repair_active_initialization(controller, current, row, original, receipt)
             return json.loads(row["activation"])
         if row["state"] == "PREPARED":
             require_active_epoch(
@@ -185,26 +188,9 @@ def activate_runtime(
             child.close()
 
 
-def _select_database(controller, previous, activation):
-    from harness.db import transaction, utcnow
-    from harness.execution_contract import canonical
-    from harness.execution_store import get_execution
-
-    selector, receipt = activation["selector"], activation["receipt"]
-    transition = controller.conn.execute(
-        "SELECT request FROM execution_runtime_transitions WHERE execution_id=? AND request_id=?",
-        (previous["id"], activation["request_id"]),
-    ).fetchone()
-    if not transition:
-        raise ExecutionConflict("epoch selection requires its recorded transition")
-    request = json.loads(transition["request"])
-    fresh = request.get("transition_mode") in {
-        "fresh-planning-intact",
-        "fresh-planning-missing-state",
-    }
-    if fresh and receipt.get("transition_mode") != request["transition_mode"]:
-        raise ExecutionConflict("fresh planning mode is not bound by the protected receipt")
-    identity = {
+def _epoch_identity(activation):
+    receipt = activation["receipt"]
+    return {
         "al_session_id": receipt["successor_subject"]["session_id"],
         "al_run_id": receipt["successor_run_id"],
         "handoff_path": receipt["successor_handoff_ref"]["path"],
@@ -213,6 +199,36 @@ def _select_database(controller, previous, activation):
         "preparation": receipt,
         "lineage_ref": receipt["lineage_ref"],
     }
+
+
+def _select_database(controller, previous, activation):
+    from harness.db import transaction, utcnow
+    from harness.execution_contract import canonical, digest
+    from harness.execution_initialization import enroll_initialization
+    from harness.execution_runtime_fences import successor_initialization
+    from harness.execution_store import get_execution
+
+    selector, receipt = activation["selector"], activation["receipt"]
+    transition = controller.conn.execute(
+        "SELECT * FROM execution_runtime_transitions WHERE execution_id=? AND request_id=?",
+        (previous["id"], activation["request_id"]),
+    ).fetchone()
+    if not transition:
+        raise ExecutionConflict("epoch selection requires its recorded transition")
+    request = json.loads(transition["request"])
+    if (
+        transition["request_hash"] != digest(transition["request"].encode())
+        or json.loads(transition["preparation"]) != receipt
+    ):
+        raise ExecutionConflict("epoch selection recorded request/preparation differs")
+    initialized = successor_initialization(previous, activation, request)
+    fresh = request.get("transition_mode") in {
+        "fresh-planning-intact",
+        "fresh-planning-missing-state",
+    }
+    if fresh and receipt.get("transition_mode") != request["transition_mode"]:
+        raise ExecutionConflict("fresh planning mode is not bound by the protected receipt")
+    identity = _epoch_identity(activation)
     with transaction(controller.conn):
         current = get_execution(controller.conn, previous["id"])
         if current["epoch_id"] == selector["epoch_id"]:
@@ -220,8 +236,13 @@ def _select_database(controller, previous, activation):
                 "SELECT identity FROM execution_epochs WHERE execution_id=? AND epoch_id=?",
                 (current["id"], current["epoch_id"]),
             ).fetchone()
-            if json.loads(existing["identity"]) != identity:
+            if (
+                current["authority_generation"] != selector["authority_generation"]
+                or not existing
+                or json.loads(existing["identity"]) != identity
+            ):
                 raise ExecutionConflict("selected epoch identity differs from recovery journal")
+            enroll_initialization(controller.conn, current, initialized)
             controller.conn.execute(
                 (
                     "UPDATE execution_runtime_transitions SET "
@@ -302,6 +323,9 @@ def _select_database(controller, previous, activation):
                 current["authority_generation"],
             ),
         )
+        enroll_initialization(
+            controller.conn, get_execution(controller.conn, current["id"]), initialized
+        )
         controller.conn.execute(
             (
                 "UPDATE execution_runtime_transitions SET state='DB_SELECTED',updated_at=? "
@@ -309,3 +333,58 @@ def _select_database(controller, previous, activation):
             ),
             (utcnow(), activation["request_id"]),
         )
+
+
+def _repair_active_initialization(controller, execution, row, request, receipt):
+    from harness.db import transaction
+    from harness.execution_authority import require_execution_authority
+    from harness.execution_epochs import get_epoch
+    from harness.execution_initialization import enroll_initialization
+    from harness.execution_runtime_fences import _reference, successor_initialization
+    from harness.execution_runtime_recovery import verify_selected_authority
+    from harness.execution_store import get_execution
+    from harness.template_classification import _ordinary
+
+    require_execution_authority(controller, execution["id"], operation="read")
+    epoch = get_epoch(controller.conn, execution["id"])
+    selector = verify_selected_authority(execution, epoch)
+    directory = Path(selector["storage"]) / "successors" / request["request_id"]
+    raw, mode = _ordinary(directory / "activation-plan.json")
+    activation = json.loads(raw)
+    expected = {
+        "state": "ACTIVE",
+        "epoch_id": selector["epoch_id"],
+        "authority_generation": selector["authority_generation"],
+        "active_selector_ref": activation["selector_ref"],
+        "native_resumed": False,
+    }
+    journal_raw, journal_mode = _ordinary(directory / "activation-journal.json")
+    journal = json.loads(journal_raw)
+    if (
+        mode != 0o600
+        or journal_mode != 0o600
+        or journal["state"] != "ACTIVE"
+        or journal["activation_ref"]
+        != {
+            "stored_path": str(directory / "activation-plan.json"),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+        or _reference(journal["activation_ref"]) != activation
+        or epoch["identity"] != _epoch_identity(activation)
+        or epoch["authority_generation"] != execution["authority_generation"]
+        or activation["receipt"] != receipt
+        or activation["selector"] != selector
+        or json.loads(row["activation"]) != expected
+    ):
+        raise ExecutionConflict("active successor initialization activation proof differs")
+    initialized = successor_initialization(execution, activation, request)
+    with transaction(controller.conn):
+        if get_execution(controller.conn, execution["id"]) != execution:
+            raise ExecutionConflict("active successor initialization execution changed")
+        current = controller.conn.execute(
+            "SELECT * FROM execution_runtime_transitions WHERE execution_id=? AND request_id=?",
+            (execution["id"], request["request_id"]),
+        ).fetchone()
+        if not current or dict(current) != dict(row):
+            raise ExecutionConflict("active successor initialization transition changed")
+        enroll_initialization(controller.conn, execution, initialized)

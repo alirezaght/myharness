@@ -321,91 +321,89 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
         == original_native
     )
 
+    import subprocess
+
+    from al.tests.planning_reports import report_for
+    from harness.execution_bootstrap import execution_environment
+
+    def command(*arguments, allowed=True):
+        result = subprocess.run(
+            [
+                registered[0][4]["launcher"],
+                "run",
+                "--repository",
+                registered[0][-1]["repository"],
+                "--platform",
+                "codex",
+                "--session",
+                current["al_session_id"],
+                "--existing-run",
+                "--",
+                *arguments,
+            ],
+            cwd=registered[0][-1]["repository"],
+            env=execution_environment(),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert (result.returncode == 0) is allowed, (
+            result.stdout[-2000:],
+            result.stderr[-2000:],
+        )
+        return result
+
+    command("spec-gate", "SPEC_READY")
+    command("classify", "SMALL", "--designer", "no", "--reason", "Current approved fixture scope.")
+    denied = command(
+        "writer",
+        "start",
+        "--id",
+        "before-current-plan",
+        "--role",
+        "al-engineer",
+        "--files",
+        "work",
+        allowed=False,
+    )
     if missing:
-        import subprocess
-
-        from al.tests.planning_reports import report_for
-        from harness.execution_bootstrap import execution_environment
-
-        def command(*arguments, allowed=True):
-            result = subprocess.run(
-                [
-                    registered[0][4]["launcher"],
-                    "run",
-                    "--repository",
-                    registered[0][-1]["repository"],
-                    "--platform",
-                    "codex",
-                    "--session",
-                    current["al_session_id"],
-                    "--existing-run",
-                    "--",
-                    *arguments,
-                ],
-                cwd=registered[0][-1]["repository"],
-                env=execution_environment(),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            assert (result.returncode == 0) is allowed, (
-                result.stdout[-2000:],
-                result.stderr[-2000:],
-            )
-            return result
-
-        command("spec-gate", "SPEC_READY")
-        command(
-            "classify", "SMALL", "--designer", "no", "--reason", "Current approved fixture scope."
-        )
-        denied = command(
-            "writer",
-            "start",
-            "--id",
-            "before-current-plan",
-            "--role",
-            "al-engineer",
-            "--files",
-            "work",
-            allowed=False,
-        )
         assert "fresh current Architect planning report" in denied.stderr
-        packet = json.loads(command("planning", "packet").stdout)
-        report = tmp_path / "fresh-current-scope.json"
-        report.write_text(json.dumps(report_for(packet)))
-        command("planning", "report", "--file", str(report))
-        command("phase", "IMPLEMENTATION")
-        refreshed = json.loads(
-            al_source(current, read_handoff(current["handoff_path"])).read_bytes()
-        )
-        assert refreshed["proof_admission"]["status"] == "pending"
-        assert refreshed["phase"] == "IMPLEMENTATION" and refreshed["writers"] == {}
-        # No detached worker was spawned by this fixture. Model its known
-        # pre-spawn failure before authorizing a second, distinct transition.
-        record_not_started(current, current["worker_token"], stage="worker-spawn")
-        controller.conn.execute(
-            "UPDATE execution_attempts SET status='PreSpawnFailed' WHERE token=?",
-            (current["worker_token"],),
-        )
-        controller.conn.execute(
-            "UPDATE executions SET status='Interrupted' WHERE id=?", (current["id"],)
-        )
-        again = preview_planning(
-            controller,
-            current["id"],
-            expected_epoch_id=current["epoch_id"],
-            expected_authority_generation=current["authority_generation"],
-        )
-        assert again["preview"]["readiness"] == "ready"
-        second = start_planning(
-            controller,
-            current["id"],
-            request_id="second-planning-fixture",
-            preview_sha256=again["preview_sha256"],
-            expected_epoch_id=current["epoch_id"],
-            expected_authority_generation=current["authority_generation"],
-        )
-        assert second["epoch_id"] != current["epoch_id"]
+    else:
+        assert "writer admission requires a writing phase" in denied.stderr
+    packet = json.loads(command("planning", "packet").stdout)
+    report = tmp_path / "fresh-current-scope.json"
+    report.write_text(json.dumps(report_for(packet)))
+    command("planning", "report", "--file", str(report))
+    command("phase", "IMPLEMENTATION")
+    refreshed = json.loads(al_source(current, read_handoff(current["handoff_path"])).read_bytes())
+    assert refreshed["proof_admission"]["status"] == "pending"
+    assert refreshed["phase"] == "IMPLEMENTATION" and refreshed["writers"] == {}
+    # No detached worker was spawned by this fixture. Model its known
+    # pre-spawn failure before authorizing a second, distinct transition.
+    record_not_started(current, current["worker_token"], stage="worker-spawn")
+    controller.conn.execute(
+        "UPDATE execution_attempts SET status='PreSpawnFailed' WHERE token=?",
+        (current["worker_token"],),
+    )
+    controller.conn.execute(
+        "UPDATE executions SET status='Interrupted' WHERE id=?", (current["id"],)
+    )
+    again = preview_planning(
+        controller,
+        current["id"],
+        expected_epoch_id=current["epoch_id"],
+        expected_authority_generation=current["authority_generation"],
+    )
+    assert again["preview"]["readiness"] == "ready"
+    second = start_planning(
+        controller,
+        current["id"],
+        request_id="second-planning-fixture",
+        preview_sha256=again["preview_sha256"],
+        expected_epoch_id=current["epoch_id"],
+        expected_authority_generation=current["authority_generation"],
+    )
+    assert second["epoch_id"] != current["epoch_id"]
 
 
 @pytest.mark.parametrize("operation", ["planning", "runtime"])

@@ -494,3 +494,269 @@ def test_public_runtime_cli_preserves_same_execution_and_never_resumes_native(
     assert active["state"] == "ACTIVE" and active["native_resumed"] is False
     current = get_execution(controller.conn, execution["id"])
     assert current["native_id"] == execution["native_id"] and current["status"] == "Interrupted"
+
+
+def _successor_initialization_case(registered, monkeypatch, tmp_path):
+    from harness.execution_store import bind_host
+
+    _, _, controller, _, _, execution, _ = registered[0]
+    bind_host(controller.conn, execution["id"], registered[0][0].registry.root, "test-owner")
+    monkeypatch.chdir(tmp_path)
+    prepared = prepare_runtime(
+        controller,
+        execution["id"],
+        expected_epoch_id="legacy-0",
+        expected_authority_generation=0,
+        request_id="successor-initialization",
+        reason="Verify protected successor initialization enrollment before worker startup",
+    )
+    arguments = dict(
+        request_id="successor-initialization",
+        preparation_sha256=prepared["preparation_sha256"],
+        expected_epoch_id="legacy-0",
+        expected_authority_generation=0,
+    )
+    return controller, execution, arguments
+
+
+def _successor_initialization_row(controller, execution):
+    return controller.conn.execute(
+        "SELECT * FROM execution_initializations WHERE execution_id=? AND epoch_id=?",
+        (execution["id"], execution["epoch_id"]),
+    ).fetchone()
+
+
+def test_successor_initialization_enrolled_before_ack_and_exact_replay(
+    registered, monkeypatch, tmp_path
+):
+    import harness.execution_runtime_activation as activation
+    from harness.execution_handoff import read_handoff
+    from harness.execution_initialization import initialization_identity
+
+    controller, previous, arguments = _successor_initialization_case(
+        registered, monkeypatch, tmp_path
+    )
+    legacy = dict(_successor_initialization_row(controller, previous))
+    original = activation._select_database
+    observed = []
+
+    def select(*args):
+        original(*args)
+        selected = get_execution(controller.conn, previous["id"])
+        assert _successor_initialization_row(controller, selected)["state"] == "Active"
+        with pytest.raises(ExecutionConflict, match="requires recovery"):
+            require_active_epoch(controller.conn, selected["id"])
+        observed.append(selected)
+
+    monkeypatch.setattr(activation, "_select_database", select)
+    monkeypatch.setattr(
+        "harness.execution_initialization.initialize_execution",
+        lambda *a, **k: pytest.fail("activation cannot initialize a runtime"),
+    )
+    active = activate_runtime(controller, previous["id"], **arguments)
+    assert len(observed) == 1
+    current = get_execution(controller.conn, previous["id"])
+    first = dict(_successor_initialization_row(controller, current))
+    assert json.loads(first["identity"]) == initialization_identity(
+        current, read_handoff(current["handoff_path"])
+    )
+    assert dict(_successor_initialization_row(controller, previous)) == legacy
+    assert activate_runtime(controller, previous["id"], **arguments) == active
+    assert dict(_successor_initialization_row(controller, current)) == first
+
+
+@pytest.mark.parametrize("state", ["missing", "Intent"])
+def test_successor_initialization_repairs_only_proven_old_active(
+    registered, monkeypatch, tmp_path, state
+):
+    controller, previous, arguments = _successor_initialization_case(
+        registered, monkeypatch, tmp_path
+    )
+    active = activate_runtime(controller, previous["id"], **arguments)
+    current = get_execution(controller.conn, previous["id"])
+    identity = _successor_initialization_row(controller, current)["identity"]
+    if state == "missing":
+        controller.conn.execute(
+            "DELETE FROM execution_initializations WHERE execution_id=? AND epoch_id=?",
+            (current["id"], current["epoch_id"]),
+        )
+    else:
+        controller.conn.execute(
+            "UPDATE execution_initializations SET state='Intent',identity=NULL "
+            "WHERE execution_id=? AND epoch_id=?",
+            (current["id"], current["epoch_id"]),
+        )
+    assert activate_runtime(controller, current["id"], **arguments) == active
+    assert _successor_initialization_row(controller, current)["identity"] == identity
+
+
+def test_successor_initialization_selection_rollback_and_rollforward(
+    registered, monkeypatch, tmp_path
+):
+    import sqlite3
+
+    from harness.execution_runtime_recovery import recover_runtime_transition
+
+    controller, previous, arguments = _successor_initialization_case(
+        registered, monkeypatch, tmp_path
+    )
+    controller.conn.execute(
+        "CREATE TEMP TRIGGER refuse_selection BEFORE UPDATE OF state "
+        "ON execution_runtime_transitions "
+        "WHEN NEW.state='DB_SELECTED' BEGIN SELECT RAISE(ABORT,'synthetic selection failure'); END"
+    )
+    with pytest.raises(sqlite3.IntegrityError, match="synthetic selection failure"):
+        activate_runtime(controller, previous["id"], **arguments)
+    assert get_execution(controller.conn, previous["id"])["epoch_id"] == "legacy-0"
+    assert (
+        controller.conn.execute(
+            "SELECT COUNT(*) FROM execution_epochs WHERE execution_id=?", (previous["id"],)
+        ).fetchone()[0]
+        == 1
+    )
+    assert (
+        controller.conn.execute(
+            "SELECT COUNT(*) FROM execution_initializations WHERE execution_id=?", (previous["id"],)
+        ).fetchone()[0]
+        == 1
+    )
+    controller.conn.execute("DROP TRIGGER refuse_selection")
+    result = recover_runtime_transition(
+        controller, previous["id"], request_id=arguments["request_id"]
+    )
+    current = get_execution(controller.conn, previous["id"])
+    assert result["state"] == "ACTIVE" and current["epoch_id"] != "legacy-0"
+    assert _successor_initialization_row(controller, current)["state"] == "Active"
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    [
+        "initialization",
+        "pin",
+        "handoff",
+        "selector",
+        "generation",
+        "binding",
+        "missing-proof",
+        "conflict",
+        "request",
+        "expected-epoch-rehashed",
+        "reason-rehashed",
+        "epoch-record",
+        "activation-reference",
+    ],
+)
+def test_successor_initialization_replay_refuses_tampering(
+    registered, monkeypatch, tmp_path, tamper
+):
+    from harness.execution_contract import canonical, digest
+    from harness.execution_epochs import get_epoch
+
+    controller, previous, arguments = _successor_initialization_case(
+        registered, monkeypatch, tmp_path
+    )
+    activate_runtime(controller, previous["id"], **arguments)
+    current = get_execution(controller.conn, previous["id"])
+    row = dict(_successor_initialization_row(controller, current))
+    identity = json.loads(row["identity"])
+    if tamper in {"initialization", "pin", "handoff", "selector"}:
+        paths = {
+            "initialization": identity["initialization_path"],
+            "pin": str(Path(identity["pin_root"]) / "manifest.json"),
+            "handoff": current["handoff_path"],
+            "selector": get_epoch(controller.conn, current["id"])["identity"][
+                "active_selector_ref"
+            ]["stored_path"],
+        }
+        Path(paths[tamper]).write_text("{}")
+    elif tamper == "missing-proof":
+        Path(identity["initialization_path"]).unlink()
+        controller.conn.execute(
+            "DELETE FROM execution_initializations WHERE execution_id=? AND epoch_id=?",
+            (current["id"], current["epoch_id"]),
+        )
+    elif tamper == "epoch-record":
+        epoch = get_epoch(controller.conn, current["id"])
+        changed = dict(epoch["identity"], lineage_ref={"foreign": True})
+        controller.conn.execute(
+            "UPDATE execution_epochs SET identity=? WHERE execution_id=? AND epoch_id=?",
+            (canonical(changed), current["id"], current["epoch_id"]),
+        )
+    elif tamper == "activation-reference":
+        selector = json.loads(
+            Path(
+                get_epoch(controller.conn, current["id"])["identity"]["active_selector_ref"][
+                    "stored_path"
+                ]
+            ).read_bytes()
+        )
+        journal_path = (
+            Path(selector["storage"])
+            / "successors"
+            / arguments["request_id"]
+            / "activation-journal.json"
+        )
+        journal = json.loads(journal_path.read_bytes())
+        copy = tmp_path / "foreign-activation.json"
+        copy.write_bytes(Path(journal["activation_ref"]["stored_path"]).read_bytes())
+        copy.chmod(0o600)
+        journal["activation_ref"]["stored_path"] = str(copy)
+        journal_path.write_text(canonical(journal))
+    elif tamper == "generation":
+        controller.conn.execute(
+            "UPDATE executions SET authority_generation=authority_generation+1 WHERE id=?",
+            (current["id"],),
+        )
+    elif tamper == "binding":
+        controller.conn.execute(
+            "UPDATE executions SET binding=? WHERE id=?",
+            (canonical(dict(current["binding"], content_hash="foreign")), current["id"]),
+        )
+    elif tamper == "request":
+        controller.conn.execute(
+            "UPDATE execution_runtime_transitions SET request_hash='foreign' WHERE request_id=?",
+            (arguments["request_id"],),
+        )
+    elif tamper in {"expected-epoch-rehashed", "reason-rehashed"}:
+        saved = controller.conn.execute(
+            "SELECT request FROM execution_runtime_transitions WHERE request_id=?",
+            (arguments["request_id"],),
+        ).fetchone()
+        changed = json.loads(saved["request"])
+        if tamper == "expected-epoch-rehashed":
+            changed["expected_epoch_id"] = "epoch-foreign"
+            arguments["expected_epoch_id"] = changed["expected_epoch_id"]
+        else:
+            changed["reason"] = "changed replay reason"
+        raw = canonical(changed)
+        controller.conn.execute(
+            "UPDATE execution_runtime_transitions SET request=?,request_hash=? WHERE request_id=?",
+            (raw, digest(raw.encode()), arguments["request_id"]),
+        )
+        controller.conn.execute(
+            "DELETE FROM execution_initializations WHERE execution_id=? AND epoch_id=?",
+            (current["id"], current["epoch_id"]),
+        )
+    else:
+        controller.conn.execute(
+            "UPDATE execution_initializations SET identity=? WHERE execution_id=? AND epoch_id=?",
+            (canonical(dict(identity, al_run_id="foreign")), current["id"], current["epoch_id"]),
+        )
+    before = _successor_initialization_row(controller, current)
+    before = dict(before) if before else None
+    with pytest.raises((ValueError, OSError, KeyError)):
+        activate_runtime(controller, current["id"], **arguments)
+    after = _successor_initialization_row(controller, current)
+    assert (dict(after) if after else None) == before
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_successor_initialization_pre_spawn_repeated_planning(
+    registered, monkeypatch, tmp_path, missing
+):
+    from tests.test_planning_recovery import (
+        test_missing_state_prepares_fresh_planning_without_inherited_authority as scenario,
+    )
+
+    scenario(registered, monkeypatch, missing, tmp_path)

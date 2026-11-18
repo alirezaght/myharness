@@ -60,6 +60,102 @@ def initialization_identity(execution, envelope):
     }
 
 
+def protected_initialization(execution, envelope, binding):
+    """Describe an already initialized protected run, without starting or trusting AL state."""
+    from harness.execution_runtime_fences import _reference
+    from harness.execution_runtime_layout import durable_runtime, selected_runtime_binding
+    from harness.template_classification import _ordinary
+
+    transaction = binding["transaction"]
+    if transaction.get("status") != "ACTIVE" or transaction.get("schema_version") != 3:
+        raise ExecutionConflict("successor initialization requires an active protected binding")
+    selected_runtime_binding(execution, dict(envelope, runtime_binding=binding))
+    directory = durable_runtime(
+        binding,
+        envelope["repository"],
+        session_id=execution["al_session_id"],
+        run_id=execution["al_run_id"],
+    )
+    storage = Path(binding["storage"])
+    subject = {k: transaction[k] for k in ("repository_identity", "platform", "session_id")}
+    path = storage / "runs" / (digest(subject).split(":")[1] + ".json")
+    raw, mode = _ordinary(path)
+    if mode != 0o600 or json.loads(raw) != transaction:
+        raise ExecutionConflict("successor initialization protected transaction changed")
+    reference = transaction["initialization"]
+    initial_path = storage / "initializations" / reference["sha256"]
+    if (
+        reference["stored_path"] != str(initial_path)
+        or reference["id"] != reference["sha256"]
+        or reference["kind"] != "proof-admission-initialization-v3"
+    ):
+        raise ExecutionConflict("successor initialization reference escaped protected storage")
+    initial = _reference(reference)
+    expected = {
+        k: transaction[k]
+        for k in (
+            "schema_version",
+            "repository_identity",
+            "session_id",
+            "run_id",
+            "runtime_layout",
+            "runtime_directory",
+            "harness_binding",
+        )
+    }
+    expected.update(kind="proof-admission-initialization-v3", runtime_pin=transaction["pin"])
+    if any(initial.get(k) != v for k, v in expected.items()):
+        raise ExecutionConflict("successor initialization proof differs from selected binding")
+    pin = transaction["pin"]
+    pin_root = storage / "pins" / pin["pin_identity"]
+    manifest = _reference(
+        {"stored_path": str(pin_root / "manifest.json"), "sha256": pin["pin_manifest_digest"]}
+    )
+    if (
+        manifest.get("pin_identity") != pin["pin_identity"]
+        or manifest.get("platform") != execution["host"]
+    ):
+        raise ExecutionConflict("successor initialization pin identity differs")
+    lock = path.with_suffix(".lock")
+    if _ordinary(lock)[1] != 0o600:
+        raise ExecutionConflict("successor initialization coordination lock changed")
+    return {
+        "binding_path": str(path),
+        "binding_digest": digest(raw),
+        "initialization_path": str(initial_path),
+        "pin_root": str(pin_root),
+        "coordination_lock": str(lock),
+        "al_run_id": transaction["run_id"],
+        "source": str(directory / (transaction["session_id"] + ".json")),
+    }
+
+
+def enroll_initialization(conn, execution, identity):
+    """Caller owns the epoch-selection transaction; enrollment is not execution authority."""
+    if not conn.in_transaction:
+        raise ExecutionConflict(
+            "successor initialization enrollment requires selection transaction"
+        )
+    row = conn.execute(
+        "SELECT state,identity FROM execution_initializations WHERE execution_id=? AND epoch_id=?",
+        (execution["id"], execution["epoch_id"]),
+    ).fetchone()
+    if row and (
+        row["state"] not in {"Intent", "Active"}
+        or row["identity"] is not None
+        and json.loads(row["identity"]) != identity
+    ):
+        raise ExecutionConflict("conflicting successor initialization enrollment")
+    if row and row["state"] == "Active" and row["identity"] is not None:
+        return
+    conn.execute(
+        "INSERT INTO execution_initializations(execution_id,epoch_id,state,identity,updated_at) "
+        "VALUES (?,?,'Active',?,?) ON CONFLICT(execution_id,epoch_id) DO UPDATE SET "
+        "state='Active',identity=excluded.identity,updated_at=excluded.updated_at",
+        (execution["id"], execution["epoch_id"], canonical(identity), utcnow()),
+    )
+
+
 def initialize_execution(controller, execution, package, envelope):
     from harness.execution_bootstrap import authority_snapshot
 
