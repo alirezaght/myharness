@@ -32,7 +32,14 @@ import secrets
 
 
 def _split(raw):
-    return [x.strip() for x in (raw or "").replace("\n", ",").split(",") if x.strip()]
+    values = raw if isinstance(raw, (list, tuple)) else [raw]
+    names = []
+    for value in values:
+        for name in (value or "").replace("\n", ",").split(","):
+            name = name.strip()
+            if name and name not in names:
+                names.append(name)
+    return names
 
 
 def _command_example(action):
@@ -402,7 +409,10 @@ def register(sub):
     def common(p):
         p.add_argument("--area", required=True); p.add_argument("--kind", default="test", choices=L.KINDS[:-1])
         p.add_argument("--tier"); p.add_argument("--cwd"); p.add_argument("--scope")
-        p.add_argument("--sources-file"); p.add_argument("--env"); p.add_argument("--preflight"); p.add_argument("--needs")
+        p.add_argument("--sources-file")
+        p.add_argument("--env", action="append")
+        p.add_argument("--preflight")
+        p.add_argument("--needs")
     ev = sub.add_parser("evidence").add_subparsers(dest="action", required=True)
     p = ev.add_parser("plan", usage='%(prog)s --area AREA --scope SCOPE [options] -- PROGRAM [ARG ...]',
                       description='Register a check without executing it. Put all AL options before `--`.',

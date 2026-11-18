@@ -66,6 +66,49 @@ def test_declared_env_var_change_invalidates_without_storing_the_value(cli, monk
     assert cli("evidence", "require")[0] == 13
 
 
+def test_repeated_env_names_are_fingerprinted_and_passed_without_logging_values(
+        cli, monkeypatch, state_file):
+    first_value, second_value = 'fixture-python-path-value', 'fixture-other-value'
+    monkeypatch.setenv('PYTHONPATH', first_value)
+    monkeypatch.setenv('AL_TEST_OTHER', second_value)
+    cli("start", "--spec", "Verify repeated evidence environment declarations remain effective.")
+    command = [PY, "-c", "import os; assert os.environ['PYTHONPATH'] and os.environ['AL_TEST_OTHER']"]
+    code, out, err = cli("evidence", "plan", "--area", "env-check", "--kind", "check",
+                         "--tier", "focused", "--scope", "svc",
+                         "--env", "PYTHONPATH", "--env", "AL_TEST_OTHER,PYTHONPATH", "--", *command)
+    assert code == 0, (out, err)
+    plan = cli.state()['evidence']['plan']['env-check']
+    assert plan['env'] == ['PYTHONPATH', 'AL_TEST_OTHER']
+    code, out, err = cli("evidence", "run", "--area", "env-check", "--kind", "check",
+                         "--tier", "focused", "--scope", "svc",
+                         "--env", "PYTHONPATH", "--env", "AL_TEST_OTHER,PYTHONPATH", "--", *command)
+    assert code == 0, (out, err)
+    entry = entries(state_file)[0]
+    assert entry['env'] == ['AL_TEST_OTHER', 'PYTHONPATH']
+    assert entry['fp_before'] == entry['fp_after'] and entry['fp_after']
+    log = Path(entry['log']).read_text()
+    assert first_value not in log and second_value not in log
+    assert first_value not in str(entry) and second_value not in str(entry)
+    monkeypatch.setenv('AL_TEST_OTHER', 'changed-fixture-value')
+    code, out, err = cli('evidence', 'require', '--areas', 'env-check')
+    assert code == 13 and 'STALE' in out and 'changed-fixture-value' not in out + err
+
+
+def test_preflight_repeated_env_flags_keep_names_only_and_run_check(cli, monkeypatch, state_file):
+    monkeypatch.setenv('AL_PREFLIGHT_ONE', 'fixture-one-value')
+    monkeypatch.setenv('AL_PREFLIGHT_TWO', 'fixture-two-value')
+    cli("start", "--spec",
+        "Verify preflight accepts repeated environment names without exposing values.")
+    code, out, err = cli("preflight", "--name", "env", "--check", "env:AL_PREFLIGHT_ONE",
+                         "--check", "env:AL_PREFLIGHT_TWO",
+                         "--env", "AL_PREFLIGHT_ONE,AL_PREFLIGHT_TWO", "--env", "AL_PREFLIGHT_TWO")
+    assert code == 0, (out, err)
+    entry = entries(state_file)[0]
+    assert entry['env'] == ['AL_PREFLIGHT_ONE', 'AL_PREFLIGHT_TWO']
+    assert 'fixture-one-value' not in out + err and 'fixture-two-value' not in out + err
+    assert 'fixture-one-value' not in str(entry) and 'fixture-two-value' not in str(entry)
+
+
 def test_missing_log_blocks_require_and_validate(cli, state_file):
     cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
     plan_both(cli)

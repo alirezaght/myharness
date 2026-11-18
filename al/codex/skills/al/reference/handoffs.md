@@ -392,6 +392,14 @@ snapshotted with a writer-bound receipt. Generation does not execute checks,
 finish the writer, prove delivery, or intercept arbitrary host dispatch.
 Regenerate after relevant plan, writer or phase changes.
 
+An intact generated handoff file is a valid delivery when the host supports
+file-based input; the writer must read the complete file, including every page
+and the managed EVIDENCE block, before work begins. Acknowledge its byte count
+and digest when available. The file may be supplied as the handoff without
+pasting a large prompt into a message; use `writer handoff --area AREA` to select
+the relevant registered checks before generation. Preserve the original spec,
+plan and referenced inputs in the handoff body.
+
 Under Harness, register the actual agent before writer admission when required;
 the agent waits for its generated work handoff. Workers use the generated
 `al_command` evidence route; the controller binds their own writer. Native

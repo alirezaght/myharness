@@ -61,6 +61,16 @@ def test_plan_keeps_command_flags_spaces_empty_arguments_and_literal_shell_text(
     assert plan['env'] == ['ONE', 'TWO']
 
 
+def test_repeated_env_flags_and_comma_lists_merge_deterministically(started):
+    cli, _ = started
+    result = cli('evidence', 'plan', '--area', 'unit', '--scope', 'svc',
+                 '--env', 'PYTHONPATH,SHARED', '--env', 'OTHER,SHARED', '--env', 'LAST',
+                 '--', sys.executable, '-V')
+    assert result[0] == 0, result
+    assert cli.state()['evidence']['plan']['unit']['env'] == [
+        'PYTHONPATH', 'SHARED', 'OTHER', 'LAST']
+
+
 @pytest.mark.parametrize('action', ['plan', 'run'])
 def test_command_options_cannot_satisfy_required_al_arguments(started, action):
     cli, state_file = started

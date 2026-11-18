@@ -137,7 +137,10 @@ def register(sub):
     import al_verification_prepare
     al_verification_prepare.register(sub)
     p = sub.add_parser("preflight"); p.add_argument("--name", required=True)
-    p.add_argument("--validate-isolation", action="store_true"); p.add_argument("--check", action="append"); p.add_argument("--env"); p.add_argument("--cwd")
+    p.add_argument("--validate-isolation", action="store_true")
+    p.add_argument("--check", action="append")
+    p.add_argument("--env", action="append")
+    p.add_argument("--cwd")
     p.add_argument("--timeout", type=float); p.set_defaults(fn=cmd_preflight)
     p = sub.add_parser("overlap"); p.add_argument("--area", required=True)
     p.add_argument("--fix-files", default=""); p.add_argument("--fix-commands", default="")
