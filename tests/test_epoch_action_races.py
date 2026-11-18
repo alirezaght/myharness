@@ -55,7 +55,7 @@ def test_shared_claims_remain_parallel_but_exclude_transition(controller, sample
 @pytest.mark.skipif(sys.platform != "darwin", reason="genuine macOS successor preparation")
 @pytest.mark.parametrize("action", ["resume", "reconnect", "reconcile", "delivery"])
 def test_activation_between_public_check_and_worker_lock_refuses_old_request(
-    registered, monkeypatch, action
+    registered, monkeypatch, action, tmp_path
 ):
     import harness.execution_recovery as service
     import harness.execution_worker as worker
@@ -77,6 +77,7 @@ def test_activation_between_public_check_and_worker_lock_refuses_old_request(
             ),
         )
         old_delivery = delivery_service.get_delivery(controller.conn, eid)
+    monkeypatch.chdir(tmp_path)
     prepared = prepare_runtime(
         controller,
         eid,
