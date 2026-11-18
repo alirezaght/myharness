@@ -19,10 +19,15 @@ def process_arguments(pid):
         raise OSError(ctypes.get_errno(),'readiness process arguments unavailable')
     buf=ctypes.create_string_buffer(size.value)
     if libc.sysctl(mib,3,buf,ctypes.byref(size),None,0)!=0:raise OSError(ctypes.get_errno(),'readiness process arguments denied')
+    if not 4<size.value<=len(buf):raise ValueError('invalid readiness process argument size')
     argc=ctypes.c_int.from_buffer(buf).value;raw=buf.raw[4:size.value]
     if not 0<argc<=1024 or b'\0' not in raw:raise ValueError('invalid readiness process argument framing')
-    tail=raw.split(b'\0',1)[1].lstrip(b'\0');parts=tail.split(b'\0')
-    if len(parts)<=argc or not all(parts[:argc]):raise ValueError('incomplete readiness process arguments')
+    executable,tail=raw.split(b'\0',1)
+    if not executable:raise ValueError('invalid readiness process argument framing')
+    tail=tail.lstrip(b'\0');parts=tail.split(b'\0')
+    # Only the executable-path padding is skipped; empty argv[1:] fields count
+    # toward argc and must retain their exact positions and terminators.
+    if len(parts)<=argc or not parts[0]:raise ValueError('incomplete readiness process arguments')
     return [os.fsdecode(v) for v in parts[:argc]]
 
 
