@@ -85,7 +85,9 @@ def test_settlement_uses_attempts_original_epoch_and_receipt_binding(
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS protected prepared startup")
-def test_retained_issuer_receipt_closes_lost_sqlite_preparation_ack(registered, monkeypatch):
+def test_retained_issuer_receipt_closes_lost_sqlite_preparation_ack(
+    registered, monkeypatch, tmp_path
+):
     from harness.execution_initialization_channel import InitializationChannel
     from harness.execution_runtime_recovery import prepare_runtime, recover_runtime_transition
 
@@ -100,6 +102,7 @@ def test_retained_issuer_receipt_closes_lost_sqlite_preparation_ack(registered, 
         return original(channel, process)
 
     monkeypatch.setattr(InitializationChannel, "serve", lose_ack)
+    monkeypatch.chdir(tmp_path)
     with pytest.raises((OSError, ValueError), match="acknowledgment lost|preparation failed"):
         prepare_runtime(
             controller,
@@ -258,6 +261,7 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
         return {"status": "WorkerOwned", "epoch_id": current["epoch_id"]}
 
     monkeypatch.setattr("harness.execution_planning_recovery.dispatch_fresh_planning", hold_native)
+    monkeypatch.chdir(tmp_path)
     result = start_planning(
         controller,
         execution["id"],

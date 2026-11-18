@@ -27,6 +27,7 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
     conn, eid = controller.conn, execution["id"]
     native_id = registered[0][0].registry.root
     bind_host(conn, eid, native_id, "test-owner")
+    monkeypatch.chdir(tmp_path)
     prepared = prepare_runtime(
         controller,
         eid,

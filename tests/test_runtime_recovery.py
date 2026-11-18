@@ -20,7 +20,9 @@ from tests.test_template_classification_integration import operations, registere
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="macOS prepared-start containment")
 
 
-def test_same_execution_activation_fences_old_and_requires_explicit_successor_identity(registered):  # noqa: F811
+def test_same_execution_activation_fences_old_and_requires_explicit_successor_identity(
+    registered, monkeypatch, tmp_path
+):  # noqa: F811
     _, _, controller, initialization, package, execution, envelope = registered[0]
     from harness.execution_store import bind_host
 
@@ -28,6 +30,7 @@ def test_same_execution_activation_fences_old_and_requires_explicit_successor_id
     bind_host(controller.conn, execution["id"], native_id, "test-owner")
     execution = get_execution(controller.conn, execution["id"])
     original = Path(initialization["source"]).read_bytes()
+    monkeypatch.chdir(tmp_path)
     prepared = prepare_runtime(
         controller,
         execution["id"],
@@ -127,7 +130,7 @@ def test_same_execution_activation_fences_old_and_requires_explicit_successor_id
 
 @pytest.mark.parametrize("with_amendment", [False, True])
 def test_successor_public_guard_can_author_while_old_principal_is_fenced(
-    registered, tmp_path, with_amendment
+    registered, tmp_path, with_amendment, monkeypatch
 ):  # noqa: F811
     import uuid
     from datetime import UTC, datetime
@@ -189,6 +192,7 @@ def test_successor_public_guard_can_author_while_old_principal_is_fenced(
         old_report(registered[0], "decision", json.loads(decision["delivery"]), tmp_path)
         replay_source(controller.conn, old_execution["id"], "test-owner")
         amendment_id = decision["id"]
+    monkeypatch.chdir(tmp_path)
     prepared = prepare_runtime(
         controller,
         old_execution["id"],
@@ -355,13 +359,14 @@ def test_successor_public_guard_can_author_while_old_principal_is_fenced(
 
 @pytest.mark.parametrize("edge", ["database-selected", "selector-published"])
 def test_interrupted_activation_rolls_forward_without_restoring_predecessor(
-    registered, monkeypatch, edge
+    registered, monkeypatch, edge, tmp_path
 ):  # noqa: F811
     import harness.execution_runtime_activation as activation
     import harness.execution_runtime_recovery as recovery
     import harness.owned_subprocess as owned
 
     _, _, controller, initialization, _, execution, _ = registered[0]
+    monkeypatch.chdir(tmp_path)
     prepared = prepare_runtime(
         controller,
         execution["id"],
@@ -425,7 +430,7 @@ def test_interrupted_activation_rolls_forward_without_restoring_predecessor(
 
 
 def test_public_runtime_cli_preserves_same_execution_and_never_resumes_native(
-    registered, db_path, capsys
+    registered, db_path, capsys, monkeypatch, tmp_path
 ):
     from harness.cli import main
 
@@ -441,6 +446,7 @@ def test_public_runtime_cli_preserves_same_execution_and_never_resumes_native(
         "--expected-authority-generation",
         "0",
     ]
+    monkeypatch.chdir(tmp_path)
     assert (
         main(
             [
