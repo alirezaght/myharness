@@ -141,16 +141,37 @@ def test_unstable_membership_cannot_publish_start_snapshot(cli, repo, monkeypatc
     assert 'unstable task attribution observation' in str(result)
 
 
-def test_overlap_blocks_public_verification_without_changing_state(cli, repo, tmp_path, state_file):
+def test_overlap_allows_verification_but_blocks_review_and_approval(cli, repo, tmp_path, state_file):
     start_implementation(cli, tmp_path, ('svc',))
     run(cli, 'writer', 'start', '--id', 'first', '--role', 'al-engineer', '--files', 'svc')
     (repo/'svc/app.py').write_text('x = 2\n')
     run(cli, 'writer', 'finish', '--id', 'first', '--outcome', 'success')
     (repo/'svc/app.py').write_text('x = 3\n')
-    before = state_file().read_bytes()
-    result, _, _ = cli('phase', 'VERIFICATION')
-    assert 'unreconciled task attribution overlap: svc/app.py' in str(result)
-    assert state_file().read_bytes() == before
+    st = state(state_file)
+    from al_new_origin import require_implementation_ready
+    classification = T.classify_changes(st)
+    assert classification['ambiguous'] == ['svc/app.py']
+    assert classification['discovery_paths'] == ['svc/app.py']
+    assert not classification['task_owned']
+    readiness = require_implementation_ready(st, paths=['svc/app.py'])
+    assert any('attribution analysis incomplete' in item for item in readiness['obligations'])
+
+    result, out, err = cli('phase', 'VERIFICATION')
+    assert result == 0, f'verification phase refused: {result} {out}{err}'
+    entered = state(state_file)
+    assert entered['phase'] == 'VERIFICATION'
+    assert entered['status'] == 'RUNNING'
+    assert entered.get('review') is None and 'approval' not in entered
+
+    after_entry = state_file().read_bytes()
+    result, out, err = cli('review-start')
+    diagnostic = 'unreconciled task attribution overlap: svc/app.py'
+    assert result != 0 and diagnostic in f'{result} {out}{err}'
+    assert state_file().read_bytes() == after_entry
+
+    result, out, err = cli('approved')
+    assert result != 0 and 'approved is not allowed from VERIFICATION' in f'{result} {out}{err}'
+    assert state_file().read_bytes() == after_entry
 
 
 def test_disjoint_contributions_do_not_claim_or_block_each_other(cli, repo, state_file):

@@ -44,6 +44,17 @@ evidence. The runtime stores an immutable `resolution_validation` receipt bound
 to both report hashes and the validated evidence; a bare `status: fixed` field
 does not clear historical findings.
 
+## CI-derived evidence planning
+
+For lint and type checks, derive target argv, configuration, cwd, setup and
+environment semantics from actual CI sources and local wrappers. Keep tool
+targets distinct from the complete evidence dependency scope; preserve required
+versus advisory status and record source provenance. `--env NAME` observes and
+fingerprints a value but does not set it. For setup, managed-profile limits,
+literal environment values and a source-backed example, follow
+`skills/al/reference/evidence.md`. Do not infer broader targets or claim CI
+equivalence from a component check.
+
 ## Your instructions
 
 Your full instructions are the canonical AL-Architect definition. Read it now,

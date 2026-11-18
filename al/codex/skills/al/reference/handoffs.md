@@ -371,6 +371,25 @@ a matching prompt from transcript text. The supervisor records the captured file
 with `artifact output --name NAME --file FILE` and retrieves it with `artifact show
 --name NAME`.
 
+## Carry source-bound CI recipes into plans and handoffs
+
+The plan and direct writer body must carry the inspected CI source paths/hashes,
+exact target argv and config, check cwd, required locked setup, non-secret
+environment provisioning, required/advisory status, and the complete dependency
+scope. Keep the tool target separate from that scope. Consult
+`evidence.md` for the source-backed example and the limits of ordinary evidence
+execution; do not imply that registering or running evidence performs package
+setup.
+
+Register the exact command and cwd before generating the writer handoff, with
+all CI scripts, configs, manifests, locks and imported sources in scope. The
+generated evidence block routes the writer to a registered area; it does not
+carry or reconstruct the source recipe, so keep the recipe and prerequisites in
+the body. Writers run the generated area command rather than rebuilding a bare
+Ruff/mypy invocation. Regenerate the handoff after a relevant plan change. If
+the managed profile cannot represent the actual setup or environment, pass that
+limitation as an unresolved verification obligation instead of bypassing it.
+
 ## Generate every writer handoff
 
 For initial Engineer/Builder work, Builder finalization, rework, corrections and
