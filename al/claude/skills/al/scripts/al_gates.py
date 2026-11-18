@@ -122,6 +122,9 @@ def gate_result(st,m,g,stage,fp):
         import al_execution_receipts as Receipts
         valid=not Receipts.validate_association(st,e)
     if valid:valid=not ReviewState.gaps(st,g,e,fp)
+    if valid and g.get('execution_kind')=='remote':
+        from al_remote_github import result_gaps
+        valid=not result_gaps(g,e)
     if valid and g.get('package_script'):
         import al_package_checks
         valid=not al_package_checks.result_gaps(g['package_script'],e)

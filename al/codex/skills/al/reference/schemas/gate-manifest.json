@@ -69,7 +69,8 @@
             "additionalProperties": false
           },
           "verification": {"type": "object"},
-          "remote": {"type": "object"}
+          "remote_source": {"$ref": "#/$defs/github_source"},
+          "remote": {"oneOf": [{"type": "object", "required": ["provider", "repository_id", "run_id", "attempt", "job_id"], "properties": {"provider": {"const": "github"}, "repository_id": {"type": "integer", "minimum": 1}, "run_id": {"type": "integer", "minimum": 1}, "attempt": {"type": "integer", "minimum": 1}, "job_id": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, {"type": "object", "properties": {"provider": {"const": "gitlab"}}}]}
         },
         "not": {"required": ["env"]}
       }
@@ -81,6 +82,7 @@
     }
   },
   "$defs": {
+    "github_source": {"type": "object", "required": ["provider", "repository", "workflow_path", "job_key", "job_name", "runner_label", "steps", "verification_chain", "source_sha256", "semantics_version", "evidence_kind", "pytest_guard_status"], "properties": {"provider": {"const": "github"}, "repository": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"}, "workflow_path": {"type": "string", "pattern": "^\\.github/workflows/[^/]+\\.ya?ml$"}, "job_key": {"type": "string"}, "job_name": {"type": "string"}, "runner_label": {"enum": ["ubuntu-latest", "macos-latest"]}, "steps": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"type": "object", "required": ["number", "name"], "properties": {"number": {"type": "integer", "minimum": 2}, "name": {"type": "string"}}, "additionalProperties": false}}, "verification_chain": {"type": "object"}, "source_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "semantics_version": {"const": 2}, "evidence_kind": {"const": "CI_JOB_ATTESTATION"}, "pytest_guard_status": {"const": "UNAVAILABLE"}}, "additionalProperties": false},
     "source": {
       "oneOf": [
         {"type": "null"},

@@ -1,5 +1,6 @@
-"""Bounded literal GitHub quality jobs mapped to complete local verification."""
+"""Bounded literal GitHub quality jobs mapped to local or remote verification."""
 import hashlib
+import json
 import re
 import shlex
 import tomllib
@@ -51,10 +52,10 @@ def applicability(value,context,paths=None):
 
 
 def execution(root,path,name,job,workflow_source,context):
-    if not isinstance(job,dict) or set(job)-{'name','runs-on','steps'} or job.get('runs-on')!='ubuntu-latest':raise Unsupported('unsupported GitHub job environment/condition')
+    if not isinstance(job,dict) or set(job)-{'name','runs-on','steps'} or job.get('runs-on') not in {'ubuntu-latest','macos-latest'}:raise Unsupported('unsupported GitHub job environment/condition')
     steps=job.get('steps')
     if not isinstance(steps,list) or not steps or len(steps)>128:raise Unsupported('bounded literal steps required')
-    dependencies={path:workflow_source};setup=[];requirements=[];records=[];lines=[];checkout=False;uv=False;python=False;synced=False
+    dependencies={path:workflow_source};setup=[];requirements=[];records=[];lines=[];checkout=False;uv=False;python=False;synced=False;package=False
     def dependency(p):
         raw,ref=read(root,p);dependencies[p]=ref;return raw
     for index,step in enumerate(steps):
@@ -74,6 +75,12 @@ def execution(root,path,name,job,workflow_source,context):
             continue
         if 'with' in step or not checkout or not uv:raise Unsupported('run step requires supported checkout/uv setup')
         text=step['run']
+        prerequisite={'ubuntu-latest':'sudo apt-get update && sudo apt-get install -y ripgrep','macos-latest':'brew install ripgrep'}[job['runs-on']]
+        if text==prerequisite and not package and not python and not lines:
+            if step.get('name') is not None:raise Unsupported('custom GitHub step name unsupported')
+            package=True
+            setup.append({'selector':selector,'kind':'remote-ripgrep-setup','literal_definition':text,'source_sha256':workflow_source['sha256'],'dependencies':[path]})
+            continue
         if not isinstance(text,str) or not text or any(t in text for t in ('$','`',';','&&','||','|','>','<','\\')):raise Unsupported('unsupported shell expansion/control flow')
         for line in text.splitlines():
             tokens=shlex.split(line)
@@ -112,6 +119,7 @@ def execution(root,path,name,job,workflow_source,context):
                 requirements.append({'selector':selector,'purpose':Verification.purpose(tokens,checks),'argv':tokens,'cwd':'.','env_names':ENV,'targets':checks,'dependencies':inputs,**extra})
                 lines.append(mapped);continue
             setup.append({'selector':selector,'kind':kind,'literal_definition':tokens,'source_sha256':workflow_source['sha256'],'dependencies':inputs});lines.append(line)
+    if job['runs-on']=='macos-latest' and not package:raise Unsupported('macOS requires remote prerequisite')
     if not records:raise Unsupported('job has no supported verification requirements')
     for p in ('.ruff.toml','ruff.toml','pytest.ini','setup.cfg','tox.ini','conftest.py'):
         if (root/p).exists():dependency(p)
@@ -120,8 +128,19 @@ def execution(root,path,name,job,workflow_source,context):
             raise Unsupported('pytest profile membership/environment changed during observation')
     chain={'schema_version':1,'provider':'github','workflow':path,'job':name,'applicability':context,'setup':setup,'requirements':requirements,
            'source_chain':[dependencies[p] for p in sorted(dependencies)],'complete':True}
-    return {'verification':records,'verification_chain':chain,'source_dependencies':list(dependencies.values()),
-            'argv':['sh','-eu','-c','\n'.join(lines)],'cwd':'.','execution_kind':'local','env_names':ENV}
+    remote_source=None
+    if package:
+        if steps[:2]!=[{'uses':'actions/checkout@v4'},{'uses':'astral-sh/setup-uv@v6','with':{'enable-cache':True}}]:raise Unsupported('unsupported remote action recipe')
+        if 'name' in job or any('name' in step for step in steps):raise Unsupported('custom GitHub job/step display name unsupported')
+        if not python or not synced or [r['purpose'] for r in requirements]!=['lint','format-check','test','build']:
+            raise Unsupported('remote quality recipe requires complete ordered verification')
+        if any('\n' in step.get('run','') for step in steps):raise Unsupported('remote multiline step unsupported')
+        commands=[step['run'] for step in steps if 'run' in step]
+        if commands!=[prerequisite,'uv python install','uv sync --locked','uv run ruff check .','uv run ruff format --check .','uv run pytest -m \"not browser\"','uv build']:raise Unsupported('unsupported remote quality recipe')
+        from al_remote_github import source_contract
+        remote_source=source_contract(root,path,name,job,chain)
+    return {**({'remote_source':remote_source} if remote_source else {}),'verification':records,'verification_chain':chain,'source_dependencies':list(dependencies.values()),
+            'argv':['gh','api'] if remote_source else ['sh','-eu','-c','\n'.join(lines)],'cwd':'.','execution_kind':'remote' if remote_source else 'local','env_names':ENV}
 
 
 def github_inventory(root,paths,context=None,opaque=()):
@@ -159,4 +178,8 @@ def github_inventory(root,paths,context=None,opaque=()):
     # Every applicable job depends on complete workflow enumeration, including excluded workflows.
     for obligation in obligations:
         obligation['dependencies']=[{**d} for d in {d['path']:d for d in [*dependencies.values(),*obligation['dependencies']]}.values()]
+        exe=obligation.get('execution')
+        if exe and exe.get('remote_source'):
+            exe['verification_chain']['source_chain']=sorted(obligation['dependencies'],key=lambda d:d['path'])
+            exe['remote_source']['source_sha256']=hashlib.sha256(json.dumps(exe['verification_chain'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
     return {'obligations':obligations,'deferred':deferred,'dependencies':list(dependencies.values())}

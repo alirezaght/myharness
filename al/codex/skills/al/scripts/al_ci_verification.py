@@ -99,6 +99,9 @@ def conventional_verification(unit, obligations, bindings, enumeration):
             if obligation.get('impact',{}).get('inventory_complete') is False:
                 result['gaps'].append(obligation['source_path']+':'+obligation['job'])
             continue
+        if execution.get('execution_kind')=='remote' and execution.get('remote_source',{}).get('provider')=='github' and any('pytest_profile' in r for r in chain.get('requirements',[])):
+            result['gaps'].append('guarded pytest qualification unavailable: '+obligation['source_path']+':'+obligation['job'])
+            continue
         result['binding_ids'].append(matches[0]['id']);result['obligation_ids'].extend(matches[0]['obligation_ids'])
         result['proof'].append(chain);records.extend(execution.get('verification',[]))
     for language in unit['languages']:

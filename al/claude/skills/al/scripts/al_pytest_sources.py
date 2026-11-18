@@ -1,7 +1,7 @@
 """Bounded fixture-only conftest/helper declarations; unknown import effects refuse."""
 import ast
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from al_ci_yaml import Unsupported
 
 STDLIB={'os','sys','pathlib','json','hashlib','subprocess','shutil','tempfile','sqlite3','time'}
@@ -40,7 +40,7 @@ def fixture_sources(root,roots,read):
             if count>10000:raise Unsupported('pytest collection observation limit')
             directories.add(Path(parent).relative_to(root).as_posix())
             if 'conftest.py' in files:conftests.add((Path(parent)/'conftest.py').relative_to(root).as_posix())
-    pending=list(sorted(conftests));seen=set()
+    pending=list(sorted(conftests));seen=set();ignored=[]
     while pending:
         name=pending.pop()
         if name in seen:continue
@@ -83,7 +83,19 @@ def fixture_sources(root,roots,read):
             if isinstance(node,(ast.Assign,ast.AnnAssign)):
                 if isinstance(node,ast.AnnAssign):annotation(node.annotation)
                 targets=node.targets if isinstance(node,ast.Assign) else [node.target]
+                if len(targets)==1 and isinstance(targets[0],ast.Name) and targets[0].id=='collect_ignore':
+                    if '.' in roots:raise Unsupported('collect_ignore requires explicit mandated collection roots')
+                    values=literal(node.value)
+                    if not isinstance(values,list) or any(not isinstance(v,str) for v in values):raise Unsupported('literal collect_ignore list required')
+                    for value in values:
+                        path=PurePosixPath(value)
+                        if not value or path.is_absolute() or path.as_posix()!=value or any(c in value for c in '*?[]\\:') or any(p in {'.','..'} for p in path.parts) or value=='.':raise Unsupported('noncanonical collect_ignore path')
+                        # Ignores are relative to their defining conftest directory.
+                        ignored_path=PurePosixPath(name).parent/path
+                        if any(root=='.' or ignored_path.is_relative_to(PurePosixPath(root)) or PurePosixPath(root).is_relative_to(ignored_path) for root in roots):raise Unsupported('collect_ignore overlaps mandated collection')
+                    ignored.append({'source':name,'paths':values,'disjoint_collection_roots':list(roots)})
+                    continue
                 if any(not isinstance(t,ast.Name) or t.id in pytest_aliases|{'pytest_plugins','collect_ignore','collect_ignore_glob'} for t in targets):raise Unsupported('pytest configuration mutation')
                 literal(node.value);continue
             raise Unsupported('unmodeled executable pytest helper declaration: '+name)
-    return {'profile':'fixture-declarations-v1','files':sorted(conftests),'dependencies':sorted(seen),'directories':sorted(directories)}
+    return {**({'disjoint_collect_ignore':ignored} if ignored else {}),'profile':'fixture-declarations-v1','files':sorted(conftests),'dependencies':sorted(seen),'directories':sorted(directories)}

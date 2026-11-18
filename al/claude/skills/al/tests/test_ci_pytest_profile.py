@@ -91,16 +91,29 @@ def test_nonmasking_options_share_one_grammar(repo,monkeypatch):
     with pytest.raises(ValueError):Profile.options(['--collect-only'])
 
 
-def test_actual_root_configuration_uses_the_generic_profile():
+def test_actual_root_configuration_uses_the_generic_profile(monkeypatch):
     import al_ci_inventory as CI
     root=Path(__file__).resolve().parents[5]
     # The repository's CI runs its non-browser suite through a literal marker expression.
     value=Profile.profile(root,['-m','not browser'],lambda p:(root/p).read_bytes())
     assert value['collection_roots']==['tests'] and value['marker_expression']=='not browser'
-    assert value['conftest']['files']==['tests/conftest.py']
-    assert value['conftest']['dependencies']==['tests/conftest.py']
+    assert value['conftest']['files']==['conftest.py','tests/conftest.py']
+    assert value['conftest']['dependencies']==['conftest.py','tests/conftest.py']
+    assert value['conftest']['disjoint_collect_ignore']==[{'source':'conftest.py','paths':['.claude'],'disjoint_collection_roots':['tests']}]
+    # Parse the real workflow bytes with explicit mock public repository identity.
+    # The isolated source checkout has a local origin and cannot supply remote proof.
+    import al_scope as Scope
+    git_bytes=Scope.git_bytes
+    def source_git(*args,**kwargs):
+        if args==('remote','get-url','origin') and kwargs.get('root')==root:return b'https://github.com/example/project.git\n'
+        return git_bytes(*args,**kwargs)
+    monkeypatch.setattr(Scope,'git_bytes',source_git)
     observed=CI.inventory(root,['tests/conftest.py'],'merge_request_quality')
-    job=next(o for o in observed['obligations'] if o['source_path']=='.github/workflows/ci.yml')
+    jobs=[o for o in observed['obligations'] if o['source_path']=='.github/workflows/ci.yml']
+    assert {job['job'] for job in jobs}=={'test','test-macos'}
+    assert all(job['applicability']=='APPLICABLE' and job['execution']['execution_kind']=='remote' for job in jobs)
+    assert {job['execution']['remote_source']['runner_label'] for job in jobs}=={'ubuntu-latest','macos-latest'}
+    job=next(o for o in jobs if o['job']=='test')
     assert job['applicability']=='APPLICABLE' and job['execution']['verification_chain']['complete']
     requirement=next(r for r in job['execution']['verification_chain']['requirements'] if r['purpose']=='test')
     assert requirement['pytest_profile']==value

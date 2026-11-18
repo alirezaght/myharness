@@ -21,6 +21,9 @@ def response(raw):
 
 
 def execute_remote(st,gate,stage,log,timeout,sid,entry,owner):
+    if gate.get('remote_source',{}).get('provider')=='github':
+        from al_remote_github import execute
+        return execute(st,gate,stage,log,timeout,sid,entry,owner)
     remote=gate['remote']
     if stage=='candidate':
         dirty=S.git_bytes('diff','HEAD','--') or S.git_bytes('ls-files','--others','--exclude-standard')

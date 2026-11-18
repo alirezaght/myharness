@@ -34,6 +34,7 @@ def discover(st,paths,ci_context=None):
         gate(binding['id'],binding['category'],binding['argv'],binding['required_scope'],src)
         gates[-1].update(units=binding['units'],cwd=binding['cwd'],execution_kind=binding['execution_kind'],
                          obligation_ids=binding['obligation_ids'],execution_signature=binding['execution_signature'])
+        if binding.get('remote_source'):gates[-1]['remote_source']=binding['remote_source']
         if binding.get('package_script'):gates[-1]['package_script']=binding['package_script']
         gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+binding['env_names']))
         gates[-1]['sources']=sorted(gates[-1]['sources']+[v for v in binding['sources'] if v not in gates[-1]['sources']],key=str)
@@ -70,7 +71,10 @@ def discover(st,paths,ci_context=None):
         execution=job.get('execution') if job['applicability']=='APPLICABLE' else None
         gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',execution['argv'] if execution else [],scope,src,reason=job['reason']+'; map the sourced job to explicit local/remote verification')
         gates[-1]['units']=job['units']
-        if execution:gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
+        if execution:
+            gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
+            gates[-1]['execution_kind']=execution['execution_kind']
+            if execution.get('remote_source'):gates[-1]['remote_source']=execution['remote_source']
     if V.contracts_needed(units):gate('contracts','contracts',[],paths,rules[-1] if rules else None,reason='Resolve the exact contract generation/drift check from sourced rules')
     else:not_applicable('contracts','contracts','No package script generates or builds contracts')
     if not inventory['ci']['obligations']:
@@ -126,9 +130,15 @@ def validate_manifest(st,m,check_sources=True):
             if g.get('execution_kind') not in {'local','remote'}: refuse('gate execution kind required')
             if g['execution_kind']=='remote':
                 remote=g.get('remote')
-                if not isinstance(remote,dict) or remote.get('provider')!='gitlab' or not remote.get('project_id') or not remote.get('job_name'): refuse('remote gate requires GitLab project/job provenance')
-                if g['source'].get('job')!=remote['job_name']:refuse('remote job identity must match source.job')
-                if len(g['argv'])!=3 or g['argv'][:2]!=['glab','api'] or not g['argv'][2].startswith('projects/'+str(remote['project_id'])+'/jobs/'): refuse('remote gate must query a real GitLab job endpoint')
+                if g.get('remote_source',{}).get('provider')=='github':
+                    try:
+                        if remote is not None:__import__('al_remote_github').selection(g)
+                        elif g['argv']!=['gh','api']:raise ValueError('GitHub lookup argv required')
+                    except (ValueError,KeyError,TypeError) as exc:refuse('invalid GitHub selection: '+str(exc))
+                else:
+                    if not isinstance(remote,dict) or remote.get('provider')!='gitlab' or not remote.get('project_id') or not remote.get('job_name'): refuse('remote gate requires GitLab project/job provenance')
+                    if g['source'].get('job')!=remote['job_name']:refuse('remote job identity must match source.job')
+                    if len(g['argv'])!=3 or g['argv'][:2]!=['glab','api'] or not g['argv'][2].startswith('projects/'+str(remote['project_id'])+'/jobs/'): refuse('remote gate must query a real GitLab job endpoint')
         if 'package_script' in g:
             try:__import__('al_package_checks').validate_profile(g['package_script'])
             except (ValueError,TypeError,KeyError) as exc:refuse('invalid package-script profile: '+str(exc))

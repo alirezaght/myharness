@@ -99,6 +99,7 @@
     "al_recovery_subjects.py",
     "al_recovery_types.py",
     "al_remote_gates.py",
+    "al_remote_github.py",
     "al_render.py",
     "al_replay.py",
     "al_replay_policy.py",

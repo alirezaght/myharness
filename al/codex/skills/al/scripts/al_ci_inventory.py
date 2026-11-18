@@ -155,7 +155,7 @@ def gaps(ci,gates):
         for gate in matches:
             if gate['applicability']=='NOT_APPLICABLE' or gate.get('required') is not True:continue
             execution=obligation.get('execution')
-            if gate['applicability']=='APPLICABLE' and (not execution or gate.get('argv')!=execution['argv'] or gate.get('cwd')!='.' or gate.get('execution_kind')!='local' or not set(execution['env_names'])<=set(gate.get('env_names',[]))):continue
+            if gate['applicability']=='APPLICABLE' and (not execution or gate.get('argv')!=execution['argv'] or gate.get('cwd')!='.' or gate.get('execution_kind')!=execution['execution_kind'] or gate.get('remote_source')!=execution.get('remote_source') or not set(execution['env_names'])<=set(gate.get('env_names',[]))):continue
             if obligation['applicability']=='UNRESOLVED' and gate['applicability']!='UNRESOLVED':continue
             if set(obligation['units'])-set(gate['units']):continue
             required=obligation['inputs']+[d['path'] for d in obligation['dependencies']]
