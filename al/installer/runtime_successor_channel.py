@@ -224,4 +224,14 @@ def classify_preparation_error(error):
         "requested successor interpreter differs": "PAYLOAD_MISMATCH",
         "requested successor payload unavailable through protected references": "PAYLOAD_MISMATCH",
     }.get(str(error), code)
+    if isinstance(error, ValueError):
+        code = {
+            "unproven repository process ownership": "TASK_ACTIVITY",
+            "successor process census unavailable": "OWNERSHIP_UNAVAILABLE",
+            "successor process census malformed": "OWNERSHIP_UNAVAILABLE",
+            "successor process absence unstable": "OWNERSHIP_UNAVAILABLE",
+            "successor process identity changed": "OWNERSHIP_UNAVAILABLE",
+            "task-owned process identity unresolved": "OWNERSHIP_UNAVAILABLE",
+            "recorded task process omitted from census": "OWNERSHIP_UNAVAILABLE",
+        }.get(str(error), code)
     return code

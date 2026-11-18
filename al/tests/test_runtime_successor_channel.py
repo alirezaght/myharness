@@ -147,3 +147,83 @@ def test_ownership_error_has_static_actionable_reason(message, code):
     assert "retry the same protected request" in diagnostic
     assert "No settlement is implied" in diagnostic
     assert classify_preparation_error(ValueError("secret unrecognized details")) == "REFUSED"
+
+
+CENSUS_REFUSALS = [
+    ("unproven repository process ownership", "TASK_ACTIVITY"),
+    ("successor process census unavailable", "OWNERSHIP_UNAVAILABLE"),
+    ("successor process census malformed", "OWNERSHIP_UNAVAILABLE"),
+    ("successor process absence unstable", "OWNERSHIP_UNAVAILABLE"),
+    ("successor process identity changed", "OWNERSHIP_UNAVAILABLE"),
+    ("task-owned process identity unresolved", "OWNERSHIP_UNAVAILABLE"),
+    ("recorded task process omitted from census", "OWNERSHIP_UNAVAILABLE"),
+]
+
+
+@pytest.mark.parametrize("literal,code", CENSUS_REFUSALS)
+def test_census_value_error_has_existing_closed_code(literal, code):
+    from al.installer.runtime_successor_channel import (
+        PREPARATION_DIAGNOSTIC,
+        classify_preparation_error,
+        preparation_error,
+    )
+
+    assert classify_preparation_error(ValueError(literal)) == code
+    value = preparation_error("original-request", 1, "preparation", code)
+    assert set(value) == {"version", "sequence", "phase", "payload"}
+    assert value["payload"] == {
+        "request_id": "original-request", "stage": "preparation", "code": code,
+        "diagnostic": PREPARATION_DIAGNOSTIC,
+    }
+
+
+@pytest.mark.parametrize("literal,code", CENSUS_REFUSALS)
+@pytest.mark.parametrize("change", ["prefix", "suffix", "newline", "uppercase"])
+def test_census_near_miss_stays_generic(literal, code, change):
+    from al.installer.runtime_successor_channel import classify_preparation_error
+
+    changed = {"prefix": " " + literal, "suffix": literal + " details",
+               "newline": literal + "\n", "uppercase": literal.upper()}[change]
+    assert classify_preparation_error(ValueError(changed)) == "REFUSED"
+
+
+@pytest.mark.parametrize("literal,code", CENSUS_REFUSALS)
+@pytest.mark.parametrize("error_type,expected", [
+    (OSError, "DISCONNECTED"), (EOFError, "DISCONNECTED"), (RuntimeError, "INTERNAL"),
+])
+def test_census_literal_in_other_exception_type_keeps_original_fallback(literal, code, error_type, expected):
+    from al.installer.runtime_successor_channel import classify_preparation_error
+
+    assert classify_preparation_error(error_type(literal)) == expected
+
+
+@pytest.mark.parametrize("literal,code", [
+    ("successor process ownership unavailable", "OWNERSHIP_ARGV_UNAVAILABLE"),
+    ("task process cwd unavailable", "OWNERSHIP_CWD_UNAVAILABLE"),
+    ("live or queued task-managed operation", "TASK_ACTIVITY"),
+    ("task-owned process is live", "TASK_ACTIVITY"),
+    ("requested successor interpreter differs", "PAYLOAD_MISMATCH"),
+    ("requested successor payload unavailable through protected references", "PAYLOAD_MISMATCH"),
+])
+@pytest.mark.parametrize("error_type", [ValueError, RuntimeError])
+def test_prior_exact_literal_classifications_are_unchanged(literal, code, error_type):
+    from al.installer.runtime_successor_channel import classify_preparation_error
+
+    assert classify_preparation_error(error_type(literal)) == code
+
+
+@pytest.mark.parametrize("error_type,expected", [
+    (ValueError, "REFUSED"), (OSError, "DISCONNECTED"),
+    (EOFError, "DISCONNECTED"), (RuntimeError, "INTERNAL"),
+])
+def test_unknown_error_details_are_not_exposed(error_type, expected):
+    from al.installer.runtime_successor_channel import (
+        PREPARATION_DIAGNOSTIC,
+        classify_preparation_error,
+        preparation_error,
+    )
+
+    code = classify_preparation_error(error_type("synthetic private exception details"))
+    assert code == expected
+    value = preparation_error("original-request", 1, "preparation", code)
+    assert value["payload"]["diagnostic"] == PREPARATION_DIAGNOSTIC
