@@ -1,11 +1,14 @@
 """P2-08: the Phase 2 demo (scripts/demo_phase2.py) is reproducible, pinned and isolated."""
 
 import importlib.util
+import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -132,3 +135,104 @@ def test_port_normalisation(tmp_path):
         "dashboard: http://127.0.0.1:<port>/ · task t-xxxxxxxx · Ctrl-C stops it\n"
         "<demo>/repo <timestamp> 127.0.0.2:80 localhost:8080 #1 v1\n"
     )
+
+
+def test_early_demo_failure_keeps_real_dashboard_owner_until_worker_reaped(tmp_path):
+    module = _load_demo()
+    demo = module.Phase2Demo(tmp_path, sys.executable)
+    ready = tmp_path / "native-ready"
+    executable = tmp_path / "native-bin" / "claude"
+    text = executable.read_text()
+    marker = 'print(json.dumps({"type": "system"'
+    assert marker in text
+    executable.write_text(
+        text.replace(
+            marker,
+            f"Path({str(ready)!r}).touch()\n__import__('time').sleep(12)\n" + marker,
+            1,
+        )
+    )
+    owner = None
+    try:
+        demo.make_sample_repo()
+        task, _ = module.build_task(demo)
+        demo.start_dashboard(task)
+        owner = demo.dashboard
+        state = demo.dashboard_state(task)
+        status, _ = demo.http("POST", "/api/approve", module._tokens(state))
+        assert status == 201
+        deadline = time.monotonic() + 60
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert ready.exists() and owner.poll() is None
+        conn = sqlite3.connect(demo.env["HARNESS_DB"])
+        try:
+            assert conn.execute("SELECT status FROM executions").fetchone()[0] == "Running"
+        finally:
+            conn.close()
+        started = time.monotonic()
+        with pytest.raises(module.DemoError, match="synthetic early failure"):
+            try:
+                raise module.DemoError("synthetic early failure after native activation")
+            finally:
+                demo.kill_dashboard()
+        from tests.fixture_workers import OWNER_SHUTDOWN_TIMEOUT
+
+        assert time.monotonic() - started < OWNER_SHUTDOWN_TIMEOUT
+        assert owner.returncode == 0 and demo.dashboard is None
+        execution = demo.wait_for_execution(task)
+        receipt = Path(execution["handoff_path"]).parent / "fixture-worker-exit.json"
+        facts = json.loads(receipt.read_text())["facts"]
+        assert facts["worker_reaped"] is True and facts["native_closed"] is True
+        assert facts["worker_returncode"] == facts["native_returncode"] == 0
+    finally:
+        demo.kill_dashboard()
+        if demo.retention_thread is not None:
+            demo.retention_thread.join(timeout=130)
+    assert owner is not None and owner.returncode == 0
+
+
+def test_unresolved_demo_shutdown_retains_handle_and_durable_state(tmp_path, monkeypatch):
+    module = _load_demo()
+    from tests import fixture_workers
+
+    monkeypatch.setattr(fixture_workers, "OWNER_SHUTDOWN_TIMEOUT", 0.05)
+    ready, release = tmp_path / "owner-ready", tmp_path / "owner-release"
+    program = (
+        "import signal,time\nfrom pathlib import Path\n"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+        f"Path({str(ready)!r}).touch()\n"
+        "deadline=time.monotonic()+5\n"
+        f"while not Path({str(release)!r}).exists() and time.monotonic()<deadline:\n"
+        "    time.sleep(0.01)\n"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", program],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    demo = module.Phase2Demo.__new__(module.Phase2Demo)
+    demo.demo_dir, demo.dashboard = tmp_path, process
+    demo._dashboard_stopping, demo.retention_thread, demo.retain_state = False, None, False
+    try:
+        deadline = time.monotonic() + 3
+        while not ready.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ready.exists()
+        with pytest.raises(module.DemoError, match="ownership retained"):
+            demo.kill_dashboard()
+        assert demo.dashboard is process and process.poll() is None
+        assert demo.retain_state is True and demo.retention_thread.is_alive()
+        assert demo.retention_thread.daemon is False
+        path = tmp_path / "fixture-owner-retained.json"
+        saved = json.loads(path.read_text())
+        assert saved["owner_reaped"] is False
+        assert saved["descendant_cleanup"] == "unverified"
+    finally:
+        release.touch()
+        if demo.retention_thread is not None:
+            demo.retention_thread.join(timeout=7)
+        process.wait(timeout=2)
+    assert demo.dashboard is None and demo.retention_thread.is_alive() is False
+    assert path.exists() and json.loads(path.read_text())["owner_reaped"] is True

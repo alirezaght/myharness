@@ -3,7 +3,6 @@
 import json
 import sqlite3
 import threading
-import time
 from pathlib import Path
 
 import pytest
@@ -39,6 +38,10 @@ def fast_polling(monkeypatch, tmp_path):
 
     monkeypatch.setattr(DashboardServer, "poll_seconds", 0.05)
     isolated_launch_environment(monkeypatch, tmp_path / "launch-fixture")
+    from tests.fixture_workers import FixtureWorkers
+
+    with FixtureWorkers():
+        yield
 
 
 def approval_task(db_path: Path, repo: Path, design: bool = True, enter: bool = True) -> str:
@@ -106,27 +109,10 @@ def _codes(final: dict) -> list[str]:
 
 
 def _wait_for_execution(db_path: Path, task_id: str) -> dict:
-    """Wait for the genuine worker to leave startup before comparing durable snapshots."""
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        conn = sqlite3.connect(db_path)
-        try:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT * FROM executions WHERE task_id=? ORDER BY created_at DESC LIMIT 1",
-                (task_id,),
-            ).fetchone()
-        finally:
-            conn.close()
-        if row is not None and row["status"] not in {
-            "Reserved",
-            "WorkerOwned",
-            "Launching",
-            "Running",
-        }:
-            return dict(row)
-        time.sleep(0.05)
-    raise AssertionError("approval-bound worker did not leave startup within ten seconds")
+    """Wait for fixture context closure and worker reaping before durable snapshots."""
+    from tests.fixture_workers import wait_for_fixture_execution
+
+    return wait_for_fixture_execution(db_path, task_id)
 
 
 def _assert_dashboard_execution_event(db_path: Path, approval_id: int | None = None) -> None:

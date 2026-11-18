@@ -24,7 +24,7 @@ import signal
 import subprocess
 import sys
 import tempfile
-import time
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +106,9 @@ class Phase2Demo(Demo):
         bootstrap_alctl(demo_dir, native_bin / "alctl", self.env)
         self.dashboard: subprocess.Popen | None = None
         self.port: int | None = None
+        self._dashboard_stopping = False
+        self.retention_thread: threading.Thread | None = None
+        self.retain_state = False
 
     def make_sample_repo(self) -> None:
         for rel, text in phase1.SAMPLE_FILES.items():
@@ -127,27 +130,12 @@ class Phase2Demo(Demo):
         exclude.write_text(exclude.read_text(encoding="utf-8") + "\n.claude/\n", encoding="utf-8")
 
     def wait_for_execution(self, task: str) -> dict:
-        from harness.db import connect
-        from harness.execution_store import latest_execution
+        from tests.fixture_workers import wait_for_fixture_execution
 
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            conn = connect(self.env["HARNESS_DB"])
-            try:
-                execution = latest_execution(conn, task)
-            finally:
-                conn.close()
-            if execution and execution["status"] not in {
-                "Reserved",
-                "WorkerOwned",
-                "Launching",
-                "Running",
-            }:
-                if execution["status"] == "Completed":
-                    raise DemoError("the provider fixture cannot complete AL work")
-                return execution
-            time.sleep(0.05)
-        raise DemoError("the isolated approval-bound worker did not finish within ten seconds")
+        try:
+            return wait_for_fixture_execution(self.env["HARNESS_DB"], task)
+        except AssertionError as error:
+            raise DemoError(str(error)) from None
 
     def emit(self, text: str) -> None:
         sys.stdout.write(normalise_phase2(text, self.demo_dir))
@@ -175,7 +163,7 @@ class Phase2Demo(Demo):
     def start_dashboard(self, task: str) -> None:
         self.emit(f"$ python -m harness.dashboard {task} --no-browser &\n")
         self.dashboard = subprocess.Popen(
-            [self.python, "-m", "harness.dashboard", task, "--no-browser"],
+            [self.python, "-m", "tests.fixture_workers", task, "--no-browser"],
             cwd=self.repo,
             env=self.env,
             stdout=subprocess.PIPE,
@@ -221,27 +209,73 @@ class Phase2Demo(Demo):
             raise DemoError(f"GET /api/dashboard: {status}")
         return data["task"]
 
+    def _retain_dashboard(self, proc) -> None:
+        """Keep the actual owner handle and state when bounded settlement is unknown."""
+        self.retain_state = True
+        path = self.demo_dir / "fixture-owner-retained.json"
+
+        def record(reaped):
+            value = {
+                "code": "owner_reaped_after_retention" if reaped else "owner_ownership_retained",
+                "owner_pid": proc.pid,
+                "owner_returncode": proc.returncode,
+                "owner_reaped": reaped,
+                "descendant_cleanup": "unverified",
+            }
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(value), encoding="utf-8")
+            temporary.replace(path)
+
+        record(False)
+
+        def observe():
+            # A non-daemon monitor preserves this exact Popen across main's
+            # failure return. No parent exit/atexit cleanup discards the owner.
+            while True:
+                try:
+                    proc.communicate(timeout=1)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
+            record(True)
+            self.dashboard = None
+
+        self.retention_thread = threading.Thread(target=observe, daemon=False)
+        self.retention_thread.start()
+
+    def _shutdown_dashboard(self) -> tuple[str, int]:
+        from tests.fixture_workers import OWNER_SHUTDOWN_TIMEOUT
+
+        proc = self.dashboard
+        if proc is None:
+            return "", 0
+        if self.retention_thread is not None:
+            raise DemoError("dashboard owner ownership retained; descendant cleanup unverified")
+        if proc.poll() is None and not self._dashboard_stopping:
+            proc.send_signal(signal.SIGTERM)
+            self._dashboard_stopping = True
+        try:
+            rest, _ = proc.communicate(timeout=OWNER_SHUTDOWN_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            self._retain_dashboard(proc)
+            raise DemoError(
+                "dashboard owner ownership retained; descendant cleanup unverified"
+            ) from None
+        # Keep the handle until communicate has actually reaped the owner.
+        self.dashboard = None
+        return rest, proc.returncode
+
     def stop_dashboard(self) -> None:
-        proc, self.dashboard = self.dashboard, None
         self.emit("$ kill -TERM <dashboard>\n")
-        proc.send_signal(signal.SIGTERM)
-        rest, _ = proc.communicate(timeout=10)
+        rest, code = self._shutdown_dashboard()
         self.emit(rest)
-        if proc.returncode != 0:
-            raise DemoError(f"the dashboard exited {proc.returncode}")
+        if code != 0:
+            raise DemoError(f"the dashboard exited {code}")
 
     def kill_dashboard(self) -> None:
-        proc, self.dashboard = self.dashboard, None
-        if proc is None:
-            return
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-        proc.stdout.close()
+        _, code = self._shutdown_dashboard()
+        if code != 0:
+            raise DemoError(f"the dashboard owner exited {code}")
 
 
 def _expect(status: int, wanted: int, what: str) -> None:
@@ -358,6 +392,7 @@ def main() -> int:
         return 2
     demo_dir = Path(tempfile.mkdtemp(prefix="harness-demo-phase2."))
     demo = Phase2Demo(demo_dir, python)
+    status = 0
     try:
         demo.emit(
             "# AL Engineering Harness, Phase 2 demo (throwaway state; external provider boundary "
@@ -367,14 +402,18 @@ def main() -> int:
         walkthrough(demo)
     except (DemoError, subprocess.CalledProcessError, OSError, ValueError) as exc:
         print(f"demo failed: {exc}", file=sys.stderr)
-        return 1
+        status = 1
     finally:
-        demo.kill_dashboard()
-        if os.environ.get("KEEP_DEMO") == "1":
+        try:
+            demo.kill_dashboard()
+        except DemoError as error:
+            print(f"demo cleanup unresolved: {error}", file=sys.stderr)
+            status = 1
+        if demo.retain_state or os.environ.get("KEEP_DEMO") == "1":
             print(f"demo state kept in {demo_dir}", file=sys.stderr)
         else:
             shutil.rmtree(demo_dir, ignore_errors=True)
-    return 0
+    return status
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ if "--settings" in args:
         for hook in entry["hooks"]:
             subprocess.run(shlex.split(hook["command"]) + hook.get("args", []),
                 input=json.dumps({"hook_event_name":"SessionStart", "session_id":native_id}),
-                text=True, check=True, capture_output=True)
+                text=True, check=True, capture_output=True, timeout=hook["timeout"])
 print(json.dumps({"type": "system", "session_id": native_id}), flush=True)
 print(json.dumps({"type": "result", "session_id": native_id, "is_error": False}), flush=True)
 """

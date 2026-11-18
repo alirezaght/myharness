@@ -54,6 +54,10 @@ def fast_polling(monkeypatch, tmp_path):
 
     monkeypatch.setattr(DashboardServer, "poll_seconds", 0.05)
     isolated_launch_environment(monkeypatch, tmp_path / "launch-fixture")
+    from tests.fixture_workers import FixtureWorkers
+
+    with FixtureWorkers():
+        yield
 
 
 def wrong_connection_task(db_path: Path, repo: Path) -> str:
