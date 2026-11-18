@@ -366,10 +366,13 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
         "work",
         allowed=False,
     )
-    if missing:
-        assert "fresh current Architect planning report" in denied.stderr
-    else:
-        assert "writer admission requires a writing phase" in denied.stderr
+    # Both successor paths are still PLANNING, so the phase guard refuses
+    # writer admission before the fresh-report preflight is reached.
+    assert "writer admission requires a writing phase" in denied.stderr
+    denied_state = json.loads(
+        al_source(current, read_handoff(current["handoff_path"])).read_bytes()
+    )
+    assert denied_state["phase"] == "PLANNING" and denied_state["writers"] == {}
     packet = json.loads(command("planning", "packet").stdout)
     report = tmp_path / "fresh-current-scope.json"
     report.write_text(json.dumps(report_for(packet)))
