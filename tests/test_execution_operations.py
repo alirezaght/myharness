@@ -689,3 +689,82 @@ def test_handoff_redacts_before_paging_and_uses_presentation_cursors(operations)
         if not page["truncated"]:
             break
     assert secret not in "".join(chunks) and "[redacted]" in "".join(chunks)
+
+
+def test_mcp_supervisor_control_contract_without_product_assignment(operations):
+    from harness.execution_mcp import MCPConnection
+
+    operation, principal, controller, _, _, execution, _ = operations
+    connection = MCPConnection(lambda _: principal, operation.dispatch)
+    connection.request({"jsonrpc": "2.0", "method": "initialize"})
+
+    def call(name, arguments):
+        return connection.request(
+            {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": name,
+                    "arguments": arguments,
+                },
+            }
+        )
+
+    assignment = json.loads(call("await_assignment", {})["content"][0]["text"])
+    assert assignment["status"] == "Supervisor"
+    assert assignment["control_plane"]["al"] is True
+    assert assignment["writable"] is False
+    capabilities = json.loads(
+        call("read_file", {"path": "harness:capabilities"})["content"][0]["text"]
+    )
+    capabilities = json.loads(capabilities["text"])
+    assert capabilities["authority"]["status"] == "Supervisor"
+    assert not operation.assignments
+    for arguments in (["show", "--panel"], ["spec-gate", "SPEC_READY"]):
+        result = call("al_command", {"arguments": arguments})
+        assert not result["isError"]
+        command = json.loads(result["content"][0]["text"])
+        assert command["returncode"] == 0, command
+    with pytest.raises(ValueError, match="writable task"):
+        operation.dispatch(
+            principal,
+            "apply_patch",
+            {
+                "patch": "*** Begin Patch\n*** Add File: ESCAPE\n+bad\n*** End Patch\n",
+                "task_id": "unknown",
+                "expected_revision": "old",
+            },
+        )
+    assert not (Path(operation.envelope["repository"]) / "ESCAPE").exists()
+    for launcher in ("alctl", "/private/launcher/alctl", "run"):
+        refusal = call("al_command", {"arguments": [launcher, "--session", "foreign", "show"]})
+        assert refusal["isError"] and "['show', '--panel']" in refusal["content"][0]["text"]
+    inspection = json.loads(
+        call("diagram_operation", {"operation": "inspect"})["content"][0]["text"]
+    )
+    request = inspection["publication_request"]
+    assert request["expected_graph_revision"] == assignment["graph_revision"]
+    assert not call("diagram_operation", request)["isError"]
+    missing = request.copy()
+    del missing["expected_graph_revision"]
+    refusal = call("diagram_operation", missing)
+    assert refusal["isError"] and "expected_graph_revision" in refusal["content"][0]["text"]
+    assert "only orchestrator" not in refusal["content"][0]["text"]
+    stale = request | {"expected_graph_revision": assignment["graph_revision"] + 1}
+    assert "stale" in call("diagram_operation", stale)["content"][0]["text"]
+    for role in ("al-architect", "al-designer"):
+        child = principal | {"thread_id": role, "role": role}
+        assert operation.dispatch(child, "await_assignment", {"timeout": 1})["status"] == "ReadOnly"
+        with pytest.raises(ValueError, match="only orchestrator"):
+            operation.dispatch(child, "diagram_operation", request)
+        with pytest.raises(ValueError, match="native workers"):
+            operation.dispatch(child, "al_command", {"arguments": ["spec-gate", "SPEC_READY"]})
+
+    with pytest.raises(ValueError, match="stale"):
+        operation.dispatch(principal | {"policy": "old"}, "diagram_operation", request)
+    controller.conn.execute(
+        "UPDATE executions SET authority_generation=authority_generation+1 WHERE id=?",
+        (execution["id"],),
+    )
+    with pytest.raises(ValueError, match="stale_epoch"):
+        operation.dispatch(principal, "diagram_operation", request)
