@@ -408,19 +408,24 @@ def _expand(conn, rows, seeds, references, limits, exclusions):
         if edge and limits.hops and row["object"] and row["predicate"] in _RELATIONS:
             paths[aid] = {"assertion_ids": [aid], "edges": [edge], "impact": "likely-source-impact"}
         queue.append((aid, 0))
-    examined = 0
+    examined, visited_entities = 0, set()
     while queue and examined < limits.examined_edges:
         aid, depth = queue.popleft()
         if depth >= limits.hops:
             continue
         row = rows[aid]
         for entity_id in sorted({row["subject_id"], row["object_id"]} - {None}):
+            if entity_id in visited_entities:
+                continue
+            visited_entities.add(entity_id)
             remaining = limits.examined_edges - examined
             if not remaining:
                 break
             edges = conn.execute(
-                _ROW + "WHERE (a.subject_id=? OR a.object_id=?) ORDER BY a.assertion_id LIMIT ?",
-                (entity_id, entity_id, remaining),
+                _ROW + "WHERE (a.subject_id=? OR a.object_id=?) AND a.object_id IS NOT NULL "
+                "AND a.predicate IN (" + ",".join("?" for _ in _RELATIONS) + ") "
+                "ORDER BY a.assertion_id LIMIT ?",
+                (entity_id, entity_id, *sorted(_RELATIONS), remaining),
             ).fetchall()
             examined += len(edges)
             for edge in edges:
@@ -445,6 +450,38 @@ def _expand(conn, rows, seeds, references, limits, exclusions):
                         "impact": "likely-source-impact",
                     }
                 queue.append((other, depth + 1))
+    # Hydrate reached entities only after typed traversal has had its work allowance.
+    # Scalar facts have citations, but never become graph edges or traversal roots.
+    entities = (
+        list(
+            dict.fromkeys(
+                entity_id
+                for aid in selected
+                if aid in seeds or aid in paths
+                for entity_id in (rows[aid]["subject_id"], rows[aid]["object_id"])
+                if entity_id is not None
+            )
+        )
+        if limits.hops
+        else []
+    )
+    for entity_id in entities:
+        remaining = limits.examined_edges - examined
+        if not remaining:
+            exclusions["edge-budget"] += 1
+            break
+        facts = conn.execute(
+            _ROW + "WHERE a.subject_id=? AND a.object_id IS NULL ORDER BY a.assertion_id LIMIT ?",
+            (entity_id, remaining),
+        ).fetchall()
+        examined += len(facts)
+        if len(facts) == remaining:
+            exclusions["edge-budget"] += 1
+        for fact in facts:
+            other = fact["assertion_id"]
+            if other not in selected:
+                rows[other] = dict(fact)
+                selected.append(other)
     if queue and examined == limits.examined_edges:
         exclusions["edge-budget"] += 1
     return selected, paths, examined
@@ -495,7 +532,7 @@ def _bundle_size(payload):
         payload["budget"]["serialized_bytes"] = size
 
 
-def _fit(payload, limit, exclusions):
+def _fit(payload, limit, exclusions, units=None):
     while True:
         payload["exclusions"] = dict(sorted(exclusions.items()))
         payload["truncation"] = bool(exclusions)
@@ -506,9 +543,14 @@ def _fit(payload, limit, exclusions):
         collapsed = False
         for field in ("coverage", "staleness", "conflicts", "ambiguities"):
             observations = payload[field]
-            if not observations or any(item.get("summarized") for item in observations):
+            if not observations or all(item.get("summarized") for item in observations):
                 continue
-            counts = Counter(item.get("status", "observation") for item in observations)
+            counts = Counter()
+            for item in observations:
+                if item.get("summarized"):
+                    counts.update(item["counts"])
+                else:
+                    counts[item.get("status", "observation")] += 1
             summary = [{"status": "integrity-summary", "summarized": True, "counts": dict(counts)}]
             next_exclusions = exclusions.copy()
             next_exclusions["metadata-detail-budget"] += 1
@@ -528,10 +570,19 @@ def _fit(payload, limit, exclusions):
         if collapsed:
             continue
         if payload["assertions"]:
-            removed = payload["assertions"].pop()["assertion_id"]
-            payload["citations"] = [c for c in payload["citations"] if c["assertion_id"] != removed]
-            payload["paths"] = [p for p in payload["paths"] if removed not in p["assertion_ids"]]
-            exclusions["byte-budget"] += 1
+            removed = {payload["assertions"][-1]["assertion_id"]}
+            if units:
+                removed = units.pop()
+            payload["assertions"] = [
+                a for a in payload["assertions"] if a["assertion_id"] not in removed
+            ]
+            payload["citations"] = [
+                c for c in payload["citations"] if c["assertion_id"] not in removed
+            ]
+            payload["paths"] = [
+                p for p in payload["paths"] if not removed.intersection(p["assertion_ids"])
+            ]
+            exclusions["byte-budget"] += len(removed)
             continue
         raise ValueError("request metadata exceeds bundle budget")
 
@@ -741,15 +792,52 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             payload["paths"].append(paths[aid])
         emitted.add(aid)
 
-    for aid in selected:
-        include(aid)
+    # Reverse dependency evidence precedes incidental facts from lexical anchors.
+    relationship_order = sorted(
+        paths,
+        key=lambda aid: (
+            -int(any(e["direction"] == "reverse" for e in paths[aid]["edges"])),
+            len(paths[aid]["edges"]),
+            aid,
+        ),
+    )
+    reverse = [
+        aid
+        for aid in relationship_order
+        if any(e["direction"] == "reverse" for e in paths[aid]["edges"])
+    ]
+    packing_order = list(dict.fromkeys([*reverse, *seeds[:1], *relationship_order, *selected]))
+    units = []
+    for aid in packing_order:
+        required = paths[aid]["assertion_ids"] if aid in paths else [aid]
+        before = set(emitted)
+        for member in required:
+            include(member)
+        added = emitted - before
+        if not set(required) <= emitted:
+            exclusions["evidence-unit-budget"] += 1
+            payload["assertions"] = [
+                a for a in payload["assertions"] if a["assertion_id"] not in added
+            ]
+            payload["citations"] = [
+                c for c in payload["citations"] if c["assertion_id"] not in added
+            ]
+            payload["paths"] = [
+                p for p in payload["paths"] if not added.intersection(p["assertion_ids"])
+            ]
+            emitted.difference_update(added)
+            continue
+        if added:
+            units.append(added)
+        _fit(payload, request.limits.bytes, exclusions, units)
+        emitted.intersection_update(a["assertion_id"] for a in payload["assertions"])
     if reads.get("limited"):
         exclusions["source-read-budget"] += 1
     reads.update(max_count=80, max_bytes=MAX_REFRESH_BYTES)
     packed = {a["assertion_id"] for a in payload["assertions"]}
     payload["paths"] = [p for p in payload["paths"] if set(p["assertion_ids"]) <= packed]
     payload["budget"]["examined_edges"] = examined
-    _fit(payload, request.limits.bytes, exclusions)
+    _fit(payload, request.limits.bytes, exclusions, units)
     # A new read pass closes source edits during candidate selection and packing.
     final_cache = {}
     if (
@@ -772,7 +860,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     if expired and expired[0]:
         # A new retrieval may issue new immutable bytes, never restore an expired row.
         payload["new_issuance"] = digest((bundle_hash + utcnow()).encode())
-        _fit(payload, request.limits.bytes, exclusions)
+        _fit(payload, request.limits.bytes, exclusions, units)
         encoded = canonical(payload)
         bundle_hash = digest(encoded.encode())
     with transaction(conn):

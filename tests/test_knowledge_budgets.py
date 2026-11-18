@@ -344,3 +344,31 @@ def test_fitting_detail_is_unchanged_and_nonshrinking_summary_is_not_applied(gra
         _fit(payload, 1024, exclusions)
     assert payload["coverage"] == [{"status": "x"}]
     assert "metadata-detail-budget" not in exclusions
+
+
+def test_incremental_packing_merges_new_integrity_observations_without_losing_counts(graph):
+    from collections import Counter
+    from copy import deepcopy
+
+    from harness.knowledge.query import _fit
+
+    conn, scope = graph
+    refresh(conn, scope)
+    payload = deepcopy(query(conn, scope, ContextRequest("service")).payload)
+    payload["staleness"] = [
+        {
+            "status": "integrity-summary",
+            "summarized": True,
+            "counts": {"withheld-stale-evidence": 5},
+        },
+        *[{"status": "withheld-stale-evidence", "detail": "x" * 200} for _ in range(30)],
+    ]
+    _fit(payload, 2048, Counter())
+    assert payload["staleness"] == [
+        {
+            "status": "integrity-summary",
+            "summarized": True,
+            "counts": {"withheld-stale-evidence": 35},
+        }
+    ]
+    assert len(canonical({"bundle_hash": "0" * 64, **payload}).encode()) <= 2048

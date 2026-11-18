@@ -67,3 +67,248 @@ def test_large_source_citations_bind_whole_content_and_return_bounded_evidence(g
         explain(conn, scope, bundle.bundle_hash, aid)
     current = query(conn, scope, ContextRequest("large-contract"))
     assert all(a["assertion_id"] != aid for a in current.payload["assertions"])
+
+
+@pytest.mark.parametrize("byte_limit", [4096, 32768])
+def test_saturated_lexical_matches_leave_room_for_graph_only_consumer(graph, byte_limit):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        "\n".join(f"def needle_{index}():\n    return {index}\n" for index in range(60))
+    )
+    refresh(conn, scope)
+    bundle = query(
+        conn, scope, ContextRequest("needle", limits=QueryLimits(assertions=8, bytes=byte_limit))
+    )
+    consumer = next(
+        (
+            a
+            for a in bundle.payload["assertions"]
+            if a["subject"] == "module:consumer" and a["predicate"] == "imports"
+        ),
+        None,
+    )
+    assert consumer is not None
+    assert any(
+        p["edges"][0]["from"] == "module:service"
+        and p["edges"][-1]["to"] == "module:consumer"
+        and consumer["assertion_id"] in p["assertion_ids"]
+        for p in bundle.payload["paths"]
+    )
+
+
+@pytest.mark.parametrize("byte_limit", [2048, 3072, 4096, 8192])
+def test_graph_units_keep_two_hop_evidence_coherent_under_byte_pressure(graph, byte_limit):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text("needle = 1\n")
+    (scope.repository / "upper.py").write_text("import consumer\n")
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    bundle = query(conn, scope, ContextRequest("needle", limits=QueryLimits(bytes=byte_limit)))
+    payload = bundle.payload
+    ids = {a["assertion_id"] for a in payload["assertions"]}
+    assert ids == {c["assertion_id"] for c in payload["citations"]}
+    assert len(canonical(bundle.to_dict()).encode()) <= byte_limit
+    assert all(set(p["assertion_ids"]) <= ids for p in payload["paths"])
+    upper = [a for a in payload["assertions"] if a["subject"] == "module:upper"]
+    if upper:
+        assert any(
+            [e["from"] for e in p["edges"]] == ["module:service", "module:consumer"]
+            and p["edges"][-1]["to"] == "module:upper"
+            for p in payload["paths"]
+        )
+    else:
+        assert payload["truncation"] and payload["exclusions"]["byte-budget"]
+    if byte_limit == 8192:
+        assert upper
+
+
+def test_graph_paths_with_duplicates_and_cycles_are_stable_after_reconnect(graph, monkeypatch):
+    from dataclasses import replace
+    from importlib import import_module
+
+    from harness.db import connect
+
+    conn, scope = graph
+    (scope.repository / "service.py").write_text("import upper\nneedle = 1\n")
+    (scope.repository / "consumer.py").write_text("import service\nimport service\n")
+    (scope.repository / "upper.py").write_text("import consumer\n")
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    request = ContextRequest("needle")
+    first = query(conn, scope, request)
+    for path in first.payload["paths"]:
+        assert len(path["edges"]) <= 2
+        assert len(set(path["assertion_ids"])) == len(path["assertion_ids"])
+        assert all(
+            a["to"] == b["from"] for a, b in zip(path["edges"], path["edges"][1:], strict=False)
+        )
+    database = conn.execute("PRAGMA database_list").fetchone()[2]
+    reopened = connect(database)
+    try:
+        assert query(reopened, scope, request).bundle_hash == first.bundle_hash
+    finally:
+        reopened.close()
+    refresher = import_module("harness.knowledge.refresh")
+    original = refresher.extract_source
+    monkeypatch.setattr(
+        refresher,
+        "extract_source",
+        lambda source: replace(
+            original(source), assertions=tuple(reversed(original(source).assertions))
+        ),
+    )
+    reordered = connect(scope.repository.parent / "reordered.db")
+    try:
+        refresh(reordered, scope)
+        second = query(reordered, scope, request)
+        assert {k: v for k, v in first.payload.items() if k != "snapshot_id"} == {
+            k: v for k, v in second.payload.items() if k != "snapshot_id"
+        }
+    finally:
+        reordered.close()
+
+
+def test_task_private_neighbors_do_not_change_public_selection_counts_or_order(graph):
+    from dataclasses import replace
+
+    from harness.knowledge.models import RefreshRequest
+
+    conn, scope = graph
+    (scope.repository / "service.py").write_text("needle = 1\n")
+    refresh(conn, scope)
+    request = ContextRequest("needle", limits=QueryLimits(assertions=4))
+    before = query(conn, scope, request).payload
+    private = scope.repository / "private_neighbor.py"
+    private.write_text("import service\n")
+    refresh(
+        conn, replace(scope, task_id="t-private"), RefreshRequest(included_paths=(private.name,))
+    )
+    after = query(conn, scope, request).payload
+    assert {k: v for k, v in before.items() if k != "snapshot_id"} == {
+        k: v for k, v in after.items() if k != "snapshot_id"
+    }
+    owner = query(conn, replace(scope, task_id="t-private"), request)
+    assert any(a["subject"] == "module:private_neighbor" for a in owner.payload["assertions"])
+
+
+@pytest.mark.parametrize("denial", ["stale", "revoked", "purged"])
+def test_graph_only_neighbor_denials_survive_priority_packing(graph, denial):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text("needle = 1\n")
+    refresh(conn, scope)
+    request = ContextRequest("needle")
+    bundle = query(conn, scope, request)
+    aid = next(
+        a["assertion_id"]
+        for a in bundle.payload["assertions"]
+        if a["subject"] == "module:consumer" and a["predicate"] == "imports"
+    )
+    if denial == "stale":
+        (scope.repository / "consumer.py").write_text("import changed\n")
+    elif denial == "purged":
+        conn.execute("INSERT INTO knowledge_assertion_state VALUES (?,'purged',NULL)", (aid,))
+    else:
+        version = next(
+            c["version_id"] for c in bundle.payload["citations"] if c["assertion_id"] == aid
+        )
+        conn.execute(
+            "INSERT INTO knowledge_grants VALUES ('g','source',?,'hash','approval','now')",
+            (scope.project_id,),
+        )
+        conn.execute("INSERT INTO knowledge_import_sources VALUES (?,'g','lesson',1)", (version,))
+    current = query(conn, scope, request)
+    assert aid not in {a["assertion_id"] for a in current.payload["assertions"]}
+    assert all(aid not in p["assertion_ids"] for p in current.payload["paths"])
+    with pytest.raises((PermissionError, ValueError)):
+        explain(conn, scope, bundle.bundle_hash, aid)
+
+
+def test_stable_decision_reference_recalls_actual_version_content_and_rationale(graph):
+    from harness.decisions import render_record
+
+    conn, scope = graph
+    (scope.repository / "DEC-0100.md").write_text(
+        render_record(
+            "DEC-0100",
+            "Storage choice",
+            1,
+            "now",
+            "Local persistence",
+            None,
+            "Use SQLite",
+            "Keep atomic local writes",
+            "none",
+        )
+    )
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    bundle = query(conn, scope, ContextRequest(entity_refs=("decision:DEC-0100",)))
+    facts = {
+        a["predicate"]: a["value"]
+        for a in bundle.payload["assertions"]
+        if a["subject"] == "decision:DEC-0100:v1"
+    }
+    assert (
+        facts.items()
+        >= {
+            "title": "Storage choice",
+            "scope": "Local persistence",
+            "status": "approved",
+            "decision": "Use SQLite",
+            "rationale": "Keep atomic local writes",
+        }.items()
+    )
+    assert bundle.payload["citations"]
+    bounded = query(
+        conn,
+        scope,
+        ContextRequest(entity_refs=("decision:DEC-0100",), limits=QueryLimits(examined_edges=2)),
+    )
+    assert bounded.payload["budget"]["examined_edges"] <= 2
+    assert bounded.payload["truncation"] and bounded.payload["exclusions"]["edge-budget"]
+    assert all(
+        edge["from"] is not None and edge["to"] is not None
+        for path in bounded.payload["paths"]
+        for edge in path["edges"]
+    )
+
+
+def test_task_reference_recalls_linked_design_text_status_and_rationale(graph):
+    from dataclasses import replace
+
+    from harness.design_models import DesignSection, EntryStatus
+    from harness.knowledge.integration import refresh_with_records
+
+    conn, scope = graph
+    controller = HarnessController(conn)
+    task = controller.create_task("Recall linked design")
+    workspace = controller.workspace(task.id)
+    entry = workspace.propose_design(
+        DesignSection.COMPONENTS, "Use the shared projection", "Keep one source of truth"
+    )
+    workspace.resolve_design(entry.id, EntryStatus.ACCEPTED)
+    scope = replace(scope, task_id=task.id)
+    refresh_with_records(controller, scope)
+    bundle = query(conn, scope, ContextRequest(entity_refs=(f"task:{task.id}",)))
+    facts = {
+        a["predicate"]: a["value"]
+        for a in bundle.payload["assertions"]
+        if a["subject"] == f"design:{task.id}:{entry.ref}"
+    }
+    assert (
+        facts.items()
+        >= {
+            "text": "Use the shared projection",
+            "binding": "fixed",
+            "status": "accepted",
+            "rationale": "Keep one source of truth",
+        }.items()
+    )
+    assert bundle.payload["citations"]
+
+    public = query(
+        conn, replace(scope, task_id=None), ContextRequest(entity_refs=(f"task:{task.id}",))
+    )
+    assert public.payload["assertions"] == []
+    assert public.payload["citations"] == []
+    assert public.payload["budget"]["examined_edges"] == 0

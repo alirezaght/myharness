@@ -1,5 +1,6 @@
 """Strict dashboard retry uses the durable request, never redacted client text."""
 
+import fcntl
 import http.client
 import json
 import threading
@@ -82,7 +83,7 @@ def decision_fixture(controller, sample_repo, monkeypatch):
 
 
 def post(server, body):
-    client = http.client.HTTPConnection("127.0.0.1", server.port)
+    client = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
     try:
         client.request(
             "POST",
@@ -147,6 +148,8 @@ def test_concurrent_http_retry_publishes_one_frozen_delivery(
     from concurrent.futures import ThreadPoolExecutor
 
     import harness.dashboard.execution_view as view
+    from harness.db import default_db_path
+    from harness.execution_contract import digest
     from harness.execution_handoff import read_handoff
     from harness.execution_hosts import al_source
     from harness.execution_store import get_execution
@@ -171,6 +174,30 @@ def test_concurrent_http_retry_publishes_one_frozen_delivery(
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
+        repository = Path(read_handoff(saved["handoff_path"])["repository"])
+        registry_directory = repository / "docs" / "decisions"
+        lock_key = digest(str(registry_directory.resolve()).encode()).split(":")[1]
+        registry_lock = (
+            default_db_path(registry_directory.resolve()).parent.parent
+            / "registry-locks"
+            / (lock_key + ".lock")
+        )
+        registry_lock.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with registry_lock.open("a") as lock_file:
+            fcntl.flock(lock_file, fcntl.LOCK_EX)
+            try:
+                status, value = post(
+                    server, {"task": tid, "execution": eid, "delivery": before["id"]}
+                )
+                assert status == 409
+                assert value == {
+                    "error": (
+                        "Another operation currently owns the Decision Registry. "
+                        "Refresh recorded status and retry after it settles."
+                    )
+                }
+            finally:
+                fcntl.flock(lock_file, fcntl.LOCK_UN)
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(
                 pool.map(
@@ -180,11 +207,22 @@ def test_concurrent_http_retry_publishes_one_frozen_delivery(
                     range(2),
                 )
             )
-        assert all(status == 200 and value["state"] == "Delivered" for status, value in results), (
-            results
-        )
+        retry_body = {"task": tid, "execution": eid, "delivery": before["id"]}
+        busy = {
+            "error": (
+                "Another operation currently owns the Decision Registry. "
+                "Refresh recorded status and retry after it settles."
+            )
+        }
+        settled_results = []
+        for status, value in results:
+            if status == 409:
+                assert value == busy
+                status, value = post(server, retry_body)
+            assert status == 200 and value["state"] == "Delivered", (status, value)
+            settled_results.append(value)
         assert all(
-            "registry_bytes" not in value and "delivery" not in value for _, value in results
+            "registry_bytes" not in value and "delivery" not in value for value in settled_results
         )
         after = dict(controller.conn.execute("SELECT * FROM execution_decisions").fetchone())
         delivery = Path(saved["handoff_path"]).parent / "inbox" / (before["id"] + ".json")
