@@ -360,16 +360,18 @@ def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(oper
         tasks={"setup-task": {"revision": 1, "files": ["setup-app"]}}, graph_revision=1
     )
     path.write_text(json.dumps(state))
-    result = operation.dispatch(
-        principal,
-        "environment_operation",
-        {
-            "operation": "prepare",
-            "cwd": "setup-app",
-            "task_id": "setup-task",
-            "expected_revision": context_revision(state, "setup-task"),
-        },
-    )
+    inspection = operation.dispatch(principal, "environment_operation", {"operation": "inspect"})
+    task = next(t for t in inspection["tasks"] if t["task_id"] == "setup-task")
+    request = next(r for r in task["prepare_requests"] if r["cwd"] == "setup-app")
+    assert request == {
+        "operation": "prepare",
+        "cwd": "setup-app",
+        "task_id": "setup-task",
+        "expected_revision": context_revision(state, "setup-task"),
+    }
+    with pytest.raises(ValueError, match="repository-relative"):
+        operation.dispatch(principal, "environment_operation", request | {"cwd": str(unit)})
+    result = operation.dispatch(principal, "environment_operation", request)
     with pytest.raises(ValueError, match="owned"):
         operation.dispatch(
             principal | {"thread_id": "other"},
@@ -768,3 +770,26 @@ def test_mcp_supervisor_control_contract_without_product_assignment(operations):
     )
     with pytest.raises(ValueError, match="stale_epoch"):
         operation.dispatch(principal, "diagram_operation", request)
+
+
+def test_supervisor_confined_source_proof_via_mcp(operations):
+    from harness.execution_mcp import MCPConnection
+
+    operation, principal, _, _, _, _, _ = operations
+    root = Path(operation.envelope["repository"])
+    raw = b"ordinary source proof\n" * 100
+    (root / "proof.py").write_bytes(raw)
+    connection = MCPConnection(lambda _: principal, operation.dispatch)
+    connection.request({"jsonrpc": "2.0", "method": "initialize"})
+    result = connection.request(
+        {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {"name": "read_file", "arguments": {"path": "proof.py", "limit": 19}},
+        }
+    )
+    assert not result["isError"]
+    page = json.loads(result["content"][0]["text"])
+    assert page["sha256"] == digest(raw) and page["size"] == len(raw)
+    assert page["page_bytes"] == page["next_offset"] == 19 and page["truncated"]
+    assert principal["writable"] is False and not operation.assignments

@@ -128,7 +128,7 @@ class OperationController:
         )
 
     def tooling_status(self):
-        from harness.task_environment import SetupReport, context_revision
+        from harness.task_environment import SetupReport, context_revision, preparation_requests
 
         with closing(connect(self.database)) as conn:
             current = self.state(get_execution(conn, self.execution_id))
@@ -138,9 +138,17 @@ class OperationController:
                     "task_id": task_id,
                     "expected_revision": context_revision(current, task_id),
                     "files": row["files"],
+                    "prepare_requests": preparation_requests(
+                        self.envelope["repository"], current, task_id
+                    ),
                 }
                 for task_id, row in current["integration"]["tasks"].items()
             ],
+            "prepare_guidance": (
+                "Use a task prepare_requests entry with cwd='.' or a repository-relative unit. "
+                "No entry means no locked unit was found; registration/revision and setup "
+                "checks still apply. Absolute paths are refused."
+            ),
             "setup": [
                 {
                     "handle": handle,

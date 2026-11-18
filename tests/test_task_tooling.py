@@ -380,3 +380,88 @@ def test_failed_setup_is_cached_without_becoming_ready(tmp_path):
     result = prepare(operation, None, {"role": "orchestrator"}, state, request)
     assert result["status"] == "Unavailable" and result["cached"] is True
     assert not (tooling.directory / "environments.json").exists()
+
+
+def test_environment_prepare_absolute_cwd_has_contract_retry(tmp_path):
+    from harness.task_environment import task_unit
+
+    state = {
+        "amendments": [],
+        "integration": {"tasks": {"T": {"revision": 1, "files": ["app"]}}, "graph_revision": 1},
+    }
+    request = {
+        "task_id": "T",
+        "expected_revision": context_revision(state, "T"),
+        "cwd": str(tmp_path),
+    }
+    with pytest.raises(ValueError, match="repository-relative.*inspect"):
+        task_unit(None, None, state, {"role": "orchestrator"}, request)
+
+
+def test_inspected_prepare_templates_use_current_relative_locked_units(tmp_path):
+    from harness.task_environment import preparation_requests, task_unit
+
+    app = tmp_path / "apps/web"
+    app.mkdir(parents=True)
+    for path in (
+        tmp_path / "package.json",
+        tmp_path / "pnpm-lock.yaml",
+        tmp_path / "pnpm-workspace.yaml",
+        app / "package.json",
+    ):
+        path.write_text("synthetic manifest")
+    state = {
+        "amendments": [],
+        "integration": {
+            "tasks": {"T": {"revision": 1, "files": ["apps/web/source.py"]}},
+            "graph_revision": 2,
+        },
+    }
+    requests = preparation_requests(tmp_path, state, "T")
+    assert {r["cwd"] for r in requests} == {".", "apps/web"}
+    for request in requests:
+        assert set(request) == {"operation", "cwd", "task_id", "expected_revision"}
+        assert task_unit(None, None, state, {"role": "orchestrator"}, request) == request["cwd"]
+    state["integration"]["graph_revision"] += 1
+    with pytest.raises(ValueError, match="revision"):
+        task_unit(None, None, state, {"role": "orchestrator"}, requests[0])
+    (app / "package.json").unlink()
+    assert [r["cwd"] for r in preparation_requests(tmp_path, state, "T")] == ["."]
+    (tmp_path / "pnpm-lock.yaml").unlink()
+    assert preparation_requests(tmp_path, state, "T") == []
+
+
+@pytest.mark.parametrize("unit", [".", "app"])
+def test_mixed_manifest_templates_follow_prepare_python_precedence(tmp_path, unit):
+    from harness.task_environment import preparation_requests
+
+    app = tmp_path / unit
+    app.mkdir(parents=True, exist_ok=True)
+    for path in (
+        tmp_path / "package.json",
+        tmp_path / "pnpm-lock.yaml",
+        tmp_path / "pnpm-workspace.yaml",
+        app / "package.json",
+    ):
+        path.write_text("synthetic Node manifest")
+    state = {
+        "amendments": [],
+        "integration": {
+            "tasks": {"T": {"revision": 1, "files": [unit]}},
+            "graph_revision": 1,
+        },
+    }
+    assert unit in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+    (app / "pyproject.toml").write_text('[project]\nname="mixed"\nversion="0.1.0"\n')
+    request = {
+        "operation": "prepare",
+        "cwd": unit,
+        "task_id": "T",
+        "expected_revision": context_revision(state, "T"),
+    }
+    operation = SimpleNamespace(tooling=None, envelope={"repository": str(tmp_path)})
+    with pytest.raises(FileNotFoundError, match="uv.lock"):
+        prepare(operation, None, {"role": "orchestrator"}, state, request)
+    assert unit not in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+    (app / "uv.lock").write_text("synthetic Python lock")
+    assert unit in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}

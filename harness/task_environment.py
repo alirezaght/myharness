@@ -45,6 +45,11 @@ def task_unit(operation, controller, state, principal, request):
     else:
         operation.admitted(controller, principal, request["task_id"], request["expected_revision"])
     unit = request["cwd"]
+    if Path(unit).is_absolute():
+        raise ValueError(
+            "environment cwd must be repository-relative: use '.' or a relative unit; "
+            "call environment_operation inspect for current prepare_requests"
+        )
     if unit != ".":
         relative_path(unit)
     if not any(
@@ -57,6 +62,49 @@ def task_unit(operation, controller, state, principal, request):
     ):
         raise ValueError("dependency setup exceeds this task's declared unit")
     return unit
+
+
+def _python_unit(root, unit):
+    return (Path(root) / unit / "pyproject.toml").is_file()
+
+
+def preparation_requests(root, state, task_id):
+    """Offer current task bindings for concrete locked units, without granting admission."""
+    root = Path(root)
+    task = state["integration"]["tasks"][task_id]
+    units = {"."} if task["files"] else set()
+    for name in task["files"]:
+        if name == ".":
+            continue
+        try:
+            relative = relative_path(name)
+        except ValueError:
+            continue
+        units.update(str(p) for p in (relative, *relative.parents))
+    requests = []
+    for unit in sorted(units):
+        path = root / unit
+        if any(p.is_symlink() for p in (path, *path.parents) if p.is_relative_to(root)):
+            continue
+        locked = (
+            (path / "uv.lock").is_file()
+            if _python_unit(root, unit)
+            else (path / "package.json").is_file()
+            and all(
+                (root / n).is_file()
+                for n in ("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml")
+            )
+        )
+        if locked:
+            requests.append(
+                {
+                    "operation": "prepare",
+                    "cwd": unit,
+                    "task_id": task_id,
+                    "expected_revision": context_revision(state, task_id),
+                }
+            )
+    return requests
 
 
 class SetupReport:
@@ -109,7 +157,7 @@ def prepare(operation, controller, principal, state, request):
     unit = task_unit(operation, controller, state, principal, request)
     tooling, root = operation.tooling, Path(operation.envelope["repository"])
     prefix = "" if unit == "." else unit + "/"
-    python = (root / prefix / "pyproject.toml").is_file()
+    python = _python_unit(root, unit)
     required = (
         [prefix + n for n in ("pyproject.toml", "uv.lock")]
         if python

@@ -20,7 +20,9 @@ TOOL_HELP = {
     ),
     "read_file": (
         "Read an authorized confined source or issued resource using path and optional offset "
-        "and limit. Follow returned cursors when truncated; access remains guarded."
+        "and limit. Ordinary source pages include stable full-source SHA256/version up to the "
+        "reported hash budget; larger sources retain paging with sha256=null and a reason. "
+        "Use byte next_offset cursors; access remains guarded."
     ),
     "await_assignment": (
         "Obtain current assignment and graph_revision. Root orchestrator receives "
@@ -69,7 +71,9 @@ TOOL_HELP = {
     ),
     "environment_operation": (
         "Inspect environment readiness; Supervisor may prepare locked dependencies for the "
-        "registered task_id, cwd and expected_revision. Poll setup handles; setup is not evidence."
+        "registered task_id and expected_revision. Inspect supplies closed prepare_requests. "
+        "cwd must be '.' or a repository-relative unit, never an absolute path. "
+        "Poll setup handles; setup is not evidence."
     ),
     "submit_output": (
         "Submit an execution-owned named report with content and the current "
@@ -190,7 +194,10 @@ def validate_arguments(name, arguments):
 SCHEMAS["environment_operation"] = _schema(
     {
         "operation": {"type": "string", "enum": ["inspect", "prepare"]},
-        "cwd": STRING,
+        "cwd": {
+            **STRING,
+            "description": "Use '.' or a repository-relative unit; absolute paths are refused.",
+        },
         "task_id": STRING,
         "expected_revision": STRING,
     },
