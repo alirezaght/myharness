@@ -112,16 +112,28 @@ def cmd_spec_gate(a, sid):
     must stop and report the blocking questions instead of inventing
     requirements; it must never downgrade a block into an assumption."""
     st = load(sid)
+    if st["status"] != "RUNNING":
+        sys.exit("al_state: spec-gate requires a resumed RUNNING run")
     if st["phase"] != "PLANNING": sys.exit("al_state: spec gate requires planning")
     st["spec_status"] = a.verdict
     if a.verdict == "SPEC_BLOCKED":
+        from al_recovery import checkpoint, close_occurrence
+        reason = a.reason or "specification not implementable as written"
+        ref = checkpoint(
+            st,
+            sid,
+            reason,
+            "After the user answers, resume this run, record the answer with task amend, "
+            "then rerun spec-gate SPEC_READY.",
+        )
         st["status"] = "SPEC_BLOCKED"
-        st["stop_reason"] = a.reason or "specification not implementable as written"
-        if st.get("phase") in st["phase_timings"]:
-            st["phase_timings"][st["phase"]]["ended"] = time.time()
+        st["stop_reason"] = reason
+        st["stopping_checkpoint"] = ref["id"]
+        close_occurrence(st)
         save(sid, st)
         print("AL · SPEC_BLOCKED")
         print(f"Reason: {st['stop_reason']}")
+        print(f"Checkpoint: {ref['id']}")
         print("AL: stop implementation and report the blocking questions", file=sys.stderr)
         sys.exit(8)
     save(sid, st)

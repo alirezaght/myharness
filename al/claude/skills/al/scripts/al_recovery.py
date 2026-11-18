@@ -55,7 +55,11 @@ def cmd_checkpoint(a,sid):
     if a.cmd=='resume':
         ref=next((x for x in st.get('checkpoints',[]) if x['id']==a.checkpoint),None)
         if not ref or st.get('stopping_checkpoint') != ref['id']: refuse('resume requires the latest stopping checkpoint')
-        if st['status'] not in {'WAITING_FOR_USER','INTERRUPTED','TRANSFERRED','AGENT_FAILED'}: refuse('run is not resumably stopped')
+        resumable = {
+            'WAITING_FOR_USER', 'INTERRUPTED', 'TRANSFERRED', 'AGENT_FAILED', 'SPEC_BLOCKED'
+        }
+        if st['status'] not in resumable:
+            refuse('run is not resumably stopped')
         if operation_gaps(st): refuse('reconcile outstanding operations before resume')
         if st.get('failure'): refuse('pending agent failure requires guarded retry, not resume')
         changed=apply_checkpoint(st,A.read_json(ref),ref['id'])
