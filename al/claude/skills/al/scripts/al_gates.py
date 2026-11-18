@@ -122,6 +122,13 @@ def gate_result(st,m,g,stage,fp):
         import al_execution_receipts as Receipts
         valid=not Receipts.validate_association(st,e)
     if valid:valid=not ReviewState.gaps(st,g,e,fp)
+    if valid:
+        import al_pytest_policy as PytestPolicy
+        requirements=PytestPolicy.gate_requirements(m,g)
+        valid=not PytestPolicy.result_gaps(requirements,e)
+        if valid and requirements:
+            context=PytestPolicy.launch_context(st,r['manifest'],g,stage,m['base_oid'],e['pytest_guard_context']['candidate'],e.get('invocation',''))
+            valid=e['pytest_guard_context']==context and (stage!='candidate' or context['candidate']==fp)
     if valid and g.get('execution_kind')=='remote':
         from al_remote_github import result_gaps
         valid=not result_gaps(g,e)
@@ -291,6 +298,8 @@ def cmd_run(a,sid):
             note='isolated '+a.stage+' gate';dirty=None
             preparation=projection=receipt=None
             entry['invocation']=invocation
+            import al_pytest_policy as PytestPolicy
+            pytest_requirements=PytestPolicy.gate_requirements(m,g)
             if g.get('package_script'):
                 from al_package_output import PrivateOwner, Capture
                 owner_type=PrivateOwner;private_output=Capture()
@@ -365,6 +374,7 @@ def cmd_run(a,sid):
                             receipt=Receipts.reuse_candidate(al_store.load(sid),projection,exclude_reservation=entry['reservation'])
                     # Every new run captures task attribution, so reuse is only through
                     # verified execution receipts; legacy key-cache reuse no longer exists.
+                    if pytest_requirements:receipt=None  # Guard proof requires this owned source-bound execution.
                     if receipt:
                         log.write_text('Associated immutable execution receipt '+json.dumps(receipt,sort_keys=True)+'\n')
                         status='PASS';code=0
@@ -405,6 +415,10 @@ def cmd_run(a,sid):
                                         bins.append(str(directory/('.venv/bin' if setup['manager']=='uv' else 'node_modules/.bin')))
                                         if setup['manager']=='uv':hook_env['VIRTUAL_ENV']=str(directory/'.venv')
                                     hook_env['PATH']=__import__('os').pathsep.join(bins+[hook_env.get('PATH','')])
+                                if pytest_requirements:
+                                    hook_env=dict(__import__('os').environ) if hook_env is None else hook_env
+                                    entry['pytest_guard_context']=PytestPolicy.launch_context(current,ref,g,a.stage,m['base_oid'],checkout['capture']['fingerprint'],invocation)
+                                    hook_env[PytestPolicy.CONTEXT_ENV]=json.dumps(entry['pytest_guard_context'],sort_keys=True)
                                 proc=owner.spawn(argv,cwd=cwd,env=hook_env,stdout=out,stderr=subprocess.STDOUT)
                                 entry['pid']=proc.pid
                                 if g['category']=='pre-commit':entry['hook_status']='RUNNING'
@@ -484,6 +498,10 @@ def cmd_run(a,sid):
                     if entry['status']=='PASS':
                         try:A.read(current['gate_manifests'][-1])
                         except (OSError,ValueError,SystemExit):entry.update(status='INFRA',exit=126,note='gate manifest artifact unavailable at finalization')
+                    if entry['status']=='PASS' and pytest_requirements:
+                        entry['pytest_guard_completion']=owner.completion()
+                        gaps=PytestPolicy.result_gaps(pytest_requirements,entry)
+                        if gaps:entry.update(status='INFRA',exit=126,note='; '.join(gaps))
                     if entry['status']=='PASS' and projection is not None:
                         try:
                             fresh=Preparation.prepare(current,gate=g['id'],stage=a.stage)

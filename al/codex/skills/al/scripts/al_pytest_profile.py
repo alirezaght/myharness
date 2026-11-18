@@ -92,17 +92,24 @@ def profile(root,args,read):
         raise Unsupported('explicit pytest selection narrows or changes the mandated root suite')
     from al_pytest_sources import fixture_sources
     sources=fixture_sources(root,roots,read)
+    from al_pytest_policy import selection,PLATFORM
+    policy=selection(read)
+    source_files=[]
+    if policy['version']==PLATFORM:
+        from al_pytest_sources import collection_sources
+        source_files=collection_sources(root,roots,read)
     return {'schema_version':1,'kind':'root-pytest-execution-profile','configuration':config,'collection_roots':roots,
             'application_scope':{'kind':'repository-mandated-ci-suite','roots':['.'],'claim':'required suite execution, not per-source test coverage'},
             'options':list(args),'marker_expression':split(args)[2],'environment_names':ENV,'plugin_mode':'disabled' if mode=='1' else 'locked-empty-entrypoints',
-            'conftest':sources,'execution_guard':'required-after-locked-sync','source_dependencies':sorted(set(config['files']+sources['dependencies']+['uv.lock','pyproject.toml']))}
+            'outcome_policy':policy,'collection_source_files':source_files,'conftest':sources,'execution_guard':'required-after-locked-sync','source_dependencies':sorted(set(config['files']+sources['dependencies']+source_files+['uv.lock','pyproject.toml']))}
 
 
 def execution(args,uv_options=()):
     import hashlib
     import json
     from al_runtime_resources import resource_identity,resource_bytes
-    names=('al_pytest_profile.py','al_pytest_sources.py','al_ci_yaml.py','al_pytest_runner.py')
+    from al_pytest_policy import RESOURCE_NAMES
+    names=RESOURCE_NAMES
     resources={name:{'path':resource_identity(name),'sha256':hashlib.sha256(resource_bytes(name)).hexdigest()} for name in names}
     argv=['uv','run',*uv_options,'python','-I','-B',resources['al_pytest_runner.py']['path'],'--resources',json.dumps(resources,sort_keys=True,separators=(',',':')),'--',*args]
     return argv,resources

@@ -46,12 +46,25 @@ def builtin_plugin(plugin):
 
 
 class Outcomes:
-    def __init__(self,root,conftests,marker=None):
+    def __init__(self,root,conftests,marker=None,*,policy=None,observed=None,read=None):
         self.collected=[];self.outcomes=[];self.plugins=None;self.errors=[];self.allowed={str(root/name) for name in conftests}
-        self.marker=marker;self.deselected=[]
+        self.marker=marker;self.deselected=[];self.collection_reports=[];self.collection_finished=False
+        self.policy=policy or {'version':'strict-v1'};self.observed=observed;self.read=read;self.proofs={}
+    def pytest_collectreport(self,report):
+        self.collection_reports.append({'nodeid':report.nodeid,'outcome':report.outcome,'children':[item.nodeid for item in (report.result or [])]})
     def pytest_collection_finish(self,session):
+        if self.collection_finished:self.errors.append('duplicate pytest collection finalization')
+        self.collection_finished=True
         self.collected=[item.nodeid for item in session.items]
         if len(set(self.collected))!=len(self.collected):self.errors.append('duplicate collected test identity')
+        if self.policy['version']=='platform-aware-v1':
+            from al_pytest_policy import source_skip_proof
+            for item in session.items:
+                path=Path(item.path).resolve()
+                if not path.is_relative_to(session.config.rootpath):
+                    self.errors.append('pytest collected source outside bound root');continue
+                proof=source_skip_proof(self.read(path.relative_to(session.config.rootpath).as_posix()),item,self.observed)
+                if proof:self.proofs[item.nodeid]=proof
         loaded=session.config.pluginmanager.get_plugins()
         for plugin in loaded:
             module=getattr(plugin,'__name__',type(plugin).__module__)
@@ -67,8 +80,7 @@ class Outcomes:
         if items and self.marker is None:self.errors.append('pytest required selection was deselected')
         self.deselected.extend(item.nodeid for item in items)
     def pytest_runtest_logreport(self,report):
-        if report.when=='call' or report.failed or report.skipped:
-            self.outcomes.append({'nodeid':report.nodeid,'when':report.when,'outcome':report.outcome,'xfail':hasattr(report,'wasxfail')})
+        self.outcomes.append({'nodeid':report.nodeid,'when':report.when,'outcome':report.outcome,'xfail':hasattr(report,'wasxfail')})
     def pytest_sessionfinish(self,session,exitstatus):
         if [item.nodeid for item in session.items]!=self.collected:self.errors.append('pytest required selection changed during execution')
         if self.plugins is not None and frozenset(id(p) for p in session.config.pluginmanager.get_plugins())!=self.plugins:
@@ -88,13 +100,15 @@ class Outcomes:
 def main(argv=None):
     parser=argparse.ArgumentParser();parser.add_argument('--resources',required=True);parser.add_argument('pytest_args',nargs=argparse.REMAINDER)
     args=parser.parse_args(argv);resources=json.loads(args.resources);here=Path(__file__).resolve().parent
-    names={'al_pytest_profile.py','al_pytest_sources.py','al_ci_yaml.py','al_pytest_runner.py'}
+    sys.path.insert(0,str(here))
+    names={'al_pytest_profile.py','al_pytest_sources.py','al_ci_yaml.py','al_pytest_runner.py','al_pytest_policy.py'}
     if set(resources)!=names:raise ValueError('pytest guard resource closure differs')
     for name,row in resources.items():
         path=here/name
         if str(path)!=row['path'] or path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest()!=row['sha256']:
             raise ValueError('pytest guard resource changed')
     sys.path.insert(0,str(here))
+    from al_pytest_policy import observed_platform,qualification,CONTEXT_ENV
     from al_pytest_profile import profile
     root=Path.cwd().resolve();inputs={}
     def read(name):
@@ -107,7 +121,9 @@ def main(argv=None):
     before=profile(root,selected,read);read('uv.lock');actual=packages(root,before['plugin_mode'])
     controls={name:os.environ.get(name) for name in before['environment_names']}
     import pytest
-    recorder=Outcomes(root,before['conftest']['files'],before['marker_expression'])
+    observed=observed_platform()
+    context=json.loads(os.environ[CONTEXT_ENV]) if CONTEXT_ENV in os.environ else None
+    recorder=Outcomes(root,before['conftest']['files'],before['marker_expression'],policy=before['outcome_policy'],observed=observed,read=read)
     # A private exact config plus explicit root/cutoff prevents any external
     # ancestor configuration or conftest from selecting or changing this run.
     with tempfile.TemporaryDirectory(prefix='al-pytest-profile-') as directory:
@@ -126,13 +142,22 @@ def main(argv=None):
         if hashlib.sha256((here/name).read_bytes()).hexdigest()!=row['sha256']:raise ValueError('pytest guard resource moved')
     for name,sha in previous.items():
         if hashlib.sha256((root/name).read_bytes()).hexdigest()!=sha:raise ValueError('pytest source input moved')
-    summary=recorder.summary();print('AL_PYTEST_EXECUTION '+json.dumps({'schema_version':1,'profile':before,'environment':actual,'inputs':inputs,'outcomes':summary},sort_keys=True))
+    if observed_platform()!=observed:raise ValueError('observed interpreter/platform changed')
+    if (json.loads(os.environ[CONTEXT_ENV]) if CONTEXT_ENV in os.environ else None)!=context:raise ValueError('guard launch context changed')
+    summary=recorder.summary()
+    collection_proof={'schema_version':1,'finished':recorder.collection_finished,'reports':recorder.collection_reports}
+    bindings={'collection_proof':collection_proof,'profile':before,'environment':actual,'inputs':inputs,'resources':resources,'context':context,'platform':observed,'collection':recorder.collected,'deselected':sorted(recorder.deselected)}
+    qualified=qualification(before['outcome_policy'],recorder.collected,recorder.outcomes,recorder.proofs,observed,context,bindings)
+    if summary['errors']:
+        qualified['errors'].extend(summary['errors']);qualified.update(complete=False,verdict='UNVERIFIED')
+    print('AL_PYTEST_EXECUTION '+json.dumps({'schema_version':2,'profile':before,'environment':actual,'inputs':inputs,'resources':resources,'collection':recorder.collected,'collection_proof':collection_proof,'reports':recorder.outcomes,'outcomes':summary,'qualification':qualified},sort_keys=True))
+    if qualified['verdict']=='UNVERIFIED':return 126
     if result!=0:return int(result)
-    if not summary['collected'] or summary['missing'] or summary['failed'] or summary['skipped'] or summary['errors']:return 1
+    if not qualified['complete']:return 1
     return 0
 
 
 if __name__=='__main__':
     try:raise SystemExit(main())
     except (OSError,ValueError,TypeError,KeyError,ImportError) as exc:
-        print('AL pytest execution unresolved: '+str(exc),file=sys.stderr);raise SystemExit(2)
+        print('AL pytest execution unresolved: '+str(exc),file=sys.stderr);raise SystemExit(126)

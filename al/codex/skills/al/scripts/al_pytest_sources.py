@@ -99,3 +99,23 @@ def fixture_sources(root,roots,read):
                 literal(node.value);continue
             raise Unsupported('unmodeled executable pytest helper declaration: '+name)
     return {**({'disjoint_collect_ignore':ignored} if ignored else {}),'profile':'fixture-declarations-v1','files':sorted(conftests),'dependencies':sorted(seen),'directories':sorted(directories)}
+
+
+def collection_sources(root,roots,read):
+    """Bind collection files and fixture bytes, including additions/removals.
+
+    Python imports outside the selected roots are conservatively closed over the
+    whole repository's Python source; no imported module is executed for proof.
+    """
+    selected=set();count=0
+    for parent,dirs,files in os.walk(root,followlinks=False):
+        dirs[:]=sorted(d for d in dirs if d not in EXCLUDED and not d.startswith('.'))
+        if any((Path(parent)/d).is_symlink() for d in dirs):raise Unsupported('unsafe pytest source directory')
+        for file in sorted(files):
+            path=Path(parent)/file;name=path.relative_to(root).as_posix()
+            inside=any(r=='.' or name==r or name.startswith(r+'/') for r in roots)
+            if not inside and path.suffix!='.py':continue
+            count+=1
+            if count>10000:raise Unsupported('pytest source binding observation limit')
+            read(name);selected.add(name)
+    return sorted(selected)

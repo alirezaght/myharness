@@ -88,6 +88,7 @@
     "al_publication_checks.py",
     "al_publication_contract.py",
     "al_publication_records.py",
+    "al_pytest_policy.py",
     "al_pytest_profile.py",
     "al_pytest_runner.py",
     "al_pytest_sources.py",
@@ -161,6 +162,7 @@
     "implementation-continuity.md",
     "parity-manifest.json",
     "performance.md",
+    "pytest-verification.md",
     "replay.md",
     "replay/baseline-gate-regression.json",
     "replay/criterion-links.json",
@@ -191,6 +193,7 @@
     "schemas/execution-event-v1.json",
     "schemas/gate-manifest.json",
     "schemas/operational-issue.json",
+    "schemas/package-script.json",
     "schemas/replay-fixture.json",
     "schemas/replay-result.json",
     "schemas/repository-facts.json",
@@ -203,8 +206,7 @@
     "schemas/rework-recovery-receipt.json",
     "schemas/service-coverage.json",
     "schemas/task-package.json",
-    "service-coverage.md",
-    "schemas/package-script.json"
+    "service-coverage.md"
   ],
   "platform_adapters": {
     "codex_only": [],
