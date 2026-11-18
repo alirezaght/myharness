@@ -40,10 +40,12 @@ function developerDecisions(execution) {
 function implementationLabel(execution) {
   return {
     ready: "Implementation ready",
+    unverified: "Implementation unverified",
+    complete: "Implementation complete",
     continuing: "Implementation continuing",
     developer_decision: "Developer decision needed",
-    technically_unavailable: "Tool repair in progress",
-  }[execution.implementation?.status] || null;
+    technically_unavailable: "Implementation unavailable",
+  }[execution.implementation?.status] || "Implementation unverified";
 }
 
 function executionDraftKey(execution, blocker) {
@@ -622,8 +624,17 @@ function renderVerificationState(execution) {
   if (verification) {
     const labels = { incomplete: "Verification incomplete", running: "Checks running", complete: "Required verification complete" };
     section.append(el("p", labels[verification.status] || "Verification status unknown"));
-    if (verification.status !== "complete") section.append(el("p",
-      "Implementation can continue within its authorized scope. Final approval still requires the remaining checks."));
+    if (verification.status !== "complete") {
+      const status = execution.implementation?.status;
+      const message = ["ready", "continuing"].includes(status)
+        ? "Implementation can continue within its authorized scope."
+        : status === "technically_unavailable"
+          ? "Reported tooling repair is needed before affected implementation can continue."
+          : status === "developer_decision"
+            ? "A developer decision is needed before affected implementation can continue."
+            : "Implementation admission has not yet been verified.";
+      section.append(el("p", `${message} Final approval still requires the remaining checks.`));
+    }
   }
   const issues = Object.values(execution.operational_issues || {}).filter((issue) => issue.state !== "Resolved");
   const obligations = verification?.obligation_refs || [];

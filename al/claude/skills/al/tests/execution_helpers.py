@@ -29,7 +29,18 @@ def bound(cli, tmp_path, repo, monkeypatch, *, bind_source=True):
     ApprovalGate(controller, task.id, SpecStore(repo / 'docs/specs' / task.id), repo).approve()
     import al_store
     # The host must match the distribution under test: its AL state lives in <repo>/.<host>/al-runtime.
-    launch = start_execution(controller, task.id, host=al_store.RUNTIME_DIR.parent.name[1:], launch=False)
+    # This in-process launcher models the supported historical session layout,
+    # not the durable worker initialization channel. Select that real layout
+    # explicitly rather than producing a durable handoff without its binding.
+    import harness.execution as execution_module
+    publish = execution_module.publish
+    def session_layout(path, value):
+        if path.name == 'handoff.json':
+            value = dict(value, runtime_layout='harness-session-directory-v1')
+        return publish(path, value)
+    with monkeypatch.context() as context:
+        context.setattr(execution_module, 'publish', session_layout)
+        launch = start_execution(controller, task.id, host=al_store.RUNTIME_DIR.parent.name[1:], launch=False)
     eid = launch['execution']['id']; saved = get_execution(conn, eid)
     handoff = Path(saved['handoff_path'])
     package = handoff.parent / 'task-package.json'
