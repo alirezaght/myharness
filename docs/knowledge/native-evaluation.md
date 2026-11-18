@@ -210,7 +210,7 @@ excuse to suppress mutable report provenance/hash validation or claim clean-revi
 Schema version 1 packages and their original counters/receipts remain legacy V1. Do not
 retroactively attach reserves, corrected counters or usage evidence to them, pool cohorts,
 or erase failed attempts. Schema version 2 requires an exact `method` object from
-`scripts.knowledge_evaluation.method.contract()`: method ID `knowledge-native-m2-r1`,
+`scripts.knowledge_evaluation.method.contract()`: method ID `knowledge-native-m2-r2`,
 capability profile, reserve values, generic instruction hash and shared product tool-help/schema
 hash. Unknown versions, unsupported declarations, altered totals and mixed-method donor
 capabilities refuse before admission. The explicit stage wrapper stays version 1 and retains
@@ -331,3 +331,19 @@ The parent records evaluator hashes in isolation.json, and the explicit worker
 bootstrap rechecks those hashes and rejects foreign preimported evaluator modules
 before dispatch. Native receipts record the actual evaluator module paths/hashes.
 This does not upgrade or reinterpret historical V1/M1 receipts.
+
+
+M2-r2 uses capability profile `codex-readonly-ordinary-text-exclusions-v2`. Its ordinary
+source transport supports Makefiles, extensionless scripts and arbitrary safe text suffixes
+in the exact frozen tracked corpus. Both execution-file protected paths and Knowledge
+protected names/directories apply. Descriptor-relative no-follow, single-link, bounded
+stable UTF-8, NUL and secret checks screen the entire file before paging or hashing.
+Engineer task-file path validation uses the same combined exclusions; tracked membership
+and automatic dependency-setup refusal remain required. Knowledge indexing eligibility,
+extraction and ranking are unchanged. There is no caller-controlled bypass.
+
+Old M2-r1 contract objects refuse before admission under this implementation, including
+direct adapter construction and task-scope validation. They must use their original frozen
+engine to retain the old interpretation. Explicit schema-version-1 source reading and
+scopes retain the index-format restriction. R2 requires fresh independent public
+qualification and a new method freeze before private execution; unit tests do not supply it.

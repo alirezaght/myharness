@@ -527,7 +527,7 @@ def test_selected_worker_rejects_ambient_editable_source(
         "'live':__file__,'first':sys.path[0],'modules':modules}))\n"
     )
     venv_root = tmp_path / "environment"
-    venv.EnvBuilder(with_pip=False).create(venv_root)
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(venv_root)
     interpreter = venv_root / "bin/python"
     site = next((venv_root / "lib").glob("python*/site-packages"))
     (site / "public-foreign.pth").write_text(str(foreign) + "\n")
@@ -582,3 +582,67 @@ def test_selected_worker_refuses_foreign_preload(tmp_path, preload):
         b"foreign preimported evaluator" in result.stderr
         or b"hash binding changed" in result.stderr
     )
+
+
+@pytest.mark.parametrize("arm", ["B", "C"])
+def test_r2_ordinary_read_paging_and_accounting(operations, tmp_path, monkeypatch, arm):
+    from scripts.knowledge_evaluation.package import sha
+
+    adapter, root = m2_adapter(operations, tmp_path, monkeypatch, arm)
+    conn, _, _ = authenticated_pair(adapter, root)
+    path = adapter.root / "synthetic/Makefile"
+    raw = b"all: public-build\n"
+    path.write_bytes(raw)
+    # Unit adapter fixture freezes membership separately; real corpus negatives remain below.
+    monkeypatch.setattr(
+        "scripts.knowledge_evaluation.adapter.git", lambda *a: b"synthetic/Makefile\0"
+    )
+    first = rpc(conn, "read_file", {"path": "synthetic/Makefile", "offset": 5, "limit": 3})
+    assert not first["isError"], first
+    page = json.loads(first["content"][0]["text"])
+    assert page == {
+        "text": raw[5:8].decode(),
+        "offset": 5,
+        "next_offset": 8,
+        "truncated": True,
+        "source_sha256": sha(raw),
+    }
+    for name in ("synthetic/missing", "synthetic//Makefile", ".npmrc"):
+        assert rpc(conn, "read_file", {"path": name})["isError"]
+    path.write_bytes(b"public\n" + b"x" * 200 + b'api_key="publiccanary123"')
+    assert rpc(conn, "read_file", {"path": "synthetic/Makefile", "limit": 3})["isError"]
+    assert adapter.budget.admitted + adapter.budget.denied == adapter.budget.attempted == 7
+    assert adapter.budget.attempted <= 30 and adapter.delivered <= 98304
+
+
+def test_r2_scope_formats_legacy_refusal_and_setup(sample_repo, tmp_path):
+    from scripts.knowledge_evaluation.method import contract, validate_method
+    from scripts.knowledge_evaluation.package import corpus_receipt, task_files
+    from tests.sample_repo import git_init
+
+    unit = sample_repo / "public-unit"
+    unit.mkdir()
+    (unit / "Makefile").write_text("all: build\n")
+    git_init(sample_repo)
+    package = m2_case(sample_repo, tmp_path)
+    package["specification"]["task_files"] = ["public-unit/Makefile"]
+    assert task_files(package) == ["public-unit/Makefile"]
+    package["schema_version"] = 1
+    with pytest.raises(ValueError, match="protected/secret"):
+        task_files(package)
+    package.update(schema_version=2, method=dict(contract(), id="knowledge-native-m2-r1"))
+    with pytest.raises(ValueError, match="exact supported"):
+        validate_method(package)
+    with pytest.raises(ValueError, match="exact supported"):
+        task_files(package)
+    package["method"] = contract()
+    for name in ("missing", "../public-unit", "public-unit//Makefile"):
+        package["specification"]["task_files"] = [name]
+        with pytest.raises(ValueError):
+            task_files(package)
+    package["specification"]["task_files"] = ["public-unit/Makefile"]
+    (unit / "package.json").write_text("{}")
+    git_init(sample_repo)
+    package["corpus"] = {"root": str(sample_repo), **corpus_receipt(sample_repo)}
+    with pytest.raises(ValueError, match="automatic dependency setup"):
+        task_files(package)

@@ -12,7 +12,7 @@ from harness.controller import HarnessController
 from harness.db import connect
 from harness.decision_suggest import suggest
 from harness.execution_mcp import validate_arguments
-from harness.knowledge.sources import read_source
+from harness.knowledge.sources import read_ordinary_text, read_source
 from harness.registry import DecisionRegistry
 from harness.repository_audit import audit
 
@@ -25,6 +25,9 @@ KNOWLEDGE_TOOLS = {"knowledge_query", "knowledge_explain"}
 
 class EvaluatorAdapter:
     def __init__(self, operation, package, stage=None):
+        from .method import validate_method
+
+        validate_method(package)
         self.operation, self.package = operation, package
         self.stage, self.ingestion_refusals, self.completion = stage, [], None
         self.root = Path(package["corpus"]["root"])
@@ -223,7 +226,8 @@ class EvaluatorAdapter:
         tracked = git(self.root, "ls-tree", "-rz", "--name-only", "HEAD").decode().split("\0")
         if path not in tracked:
             raise ValueError("source must belong to exact frozen corpus")
-        raw = read_source(self.root, path, 1024 * 1024)
+        reader = read_ordinary_text if self.package["schema_version"] == 2 else read_source
+        raw = reader(self.root, path, 1024 * 1024)
         offset, limit = arguments.get("offset", 0), arguments.get("limit", 16384)
         if not 1 <= limit <= 65536:
             raise ValueError("bounded source page required")

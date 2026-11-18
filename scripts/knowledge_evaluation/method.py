@@ -4,8 +4,8 @@ import hashlib
 import json
 import re
 
-METHOD_ID = "knowledge-native-m2-r1"
-PROFILE = "codex-readonly-fixed-reader-exclusions-v1"
+METHOD_ID = "knowledge-native-m2-r2"
+PROFILE = "codex-readonly-ordinary-text-exclusions-v2"
 PROFILES = {"al-architect": ("gpt-6-astra", "medium"), "al-engineer": ("gpt-6.1-sol", "medium")}
 HOST_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max", "ultra"})
 RESERVE = {"completion_bytes": 16384, "error_bytes": 512, "final_calls": 3, "donor_final_calls": 4}

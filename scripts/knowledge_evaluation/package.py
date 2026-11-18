@@ -209,7 +209,12 @@ def validate(package):
 def task_files(package):
     """Explicit tracked evaluation scope; deny every prospective automatic setup unit."""
     from harness.execution_files import relative_path
-    from harness.knowledge.sources import eligible
+    from harness.knowledge.sources import eligible, ordinary_text_path
+
+    from .method import validate_method
+
+    validate_method(package)
+    permitted = ordinary_text_path if package["schema_version"] == 2 else eligible
 
     root = Path(package["corpus"]["root"])
     scopes = package["specification"]["task_files"]
@@ -223,7 +228,7 @@ def task_files(package):
             raise ValueError("task scope must be an existing unaliased frozen source")
         if not any(name == scope or name.startswith(scope + "/") for name in tracked if name):
             raise ValueError("task scope must contain frozen tracked sources")
-        if not eligible(scope if path.is_file() else scope + "/scope.md"):
+        if not permitted(scope if path.is_file() else scope + "/scope.md"):
             raise ValueError("protected/secret task scope refused")
         unit = path.parent if path.is_file() else path
         for candidate in (unit, unit / "python", unit / "typescript"):

@@ -54,7 +54,7 @@ _SECRET = re.compile(
 )
 
 
-def eligible(locator: str) -> bool:
+def _unprotected(locator: str) -> bool:
     parts = PurePosixPath(locator).parts
     return (
         bool(parts)
@@ -68,14 +68,36 @@ def eligible(locator: str) -> bool:
             )
             for part in parts
         )
-        and Path(locator).suffix.lower() in _SUFFIXES
     )
 
 
+def eligible(locator: str) -> bool:
+    return _unprotected(locator) and Path(locator).suffix.lower() in _SUFFIXES
+
+
+def ordinary_text_path(locator: str) -> bool:
+    """Union of ordinary execution-file and Knowledge protected-path restrictions."""
+    from harness.execution_files import relative_path
+
+    relative_path(locator)
+    return _unprotected(locator)
+
+
 def read_source(root: Path, locator: str, limit: int) -> bytes:
-    """Walk directory descriptors with O_NOFOLLOW; reject aliases and special files."""
     if not eligible(locator):
         raise ValueError("excluded source")
+    return _read_text(root, locator, limit)
+
+
+def read_ordinary_text(root: Path, locator: str, limit: int) -> bytes:
+    """Read authorized ordinary text independently of Knowledge indexing eligibility."""
+    if not ordinary_text_path(locator):
+        raise ValueError("excluded source")
+    return _read_text(root, locator, limit)
+
+
+def _read_text(root: Path, locator: str, limit: int) -> bytes:
+    """Walk directory descriptors with O_NOFOLLOW; screen the entire stable file."""
     flags = os.O_RDONLY | os.O_NOFOLLOW
     fd = os.open(root, flags | os.O_DIRECTORY)
     try:

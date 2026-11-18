@@ -40,3 +40,12 @@ The output records adapter version and hash. Adapter permissions and isolation
 evidence must be retained by the caller; this utility cannot prove that B's listing
 and dispatch both deny knowledge or that B stayed unindexed. Do not give an arm
 access to the held-out questions, labels, gold answers or other-arm outputs.
+
+
+The prospective `knowledge-native-m2-r2` ordinary text transport changes file-format
+eligibility only. B and C share the same confined reader, whole-file screening, page
+limits and source SHA. Every delivered page counts again, and refusals retain the M2
+attempt/admitted/denied accounting. The totals, exhaustion behavior and completion
+reserves are unchanged. M2-r1 packages refuse under the r2 contract; retain historical
+receipts and report each method separately. Public synthetic checks establish transport
+behavior only, with no provider, private-cohort or mission-acceptance claim.
