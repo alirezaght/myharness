@@ -826,3 +826,43 @@ def test_finalization_refuses_task_hash_yield_and_stale_graph(operations, tmp_pa
     current = operation.state(operations[5])
     assert current["integration"]["agents"][principal["thread_id"]]["status"] == "Idle"
     assert current["writers"] == {}
+
+
+def test_supervisor_context_requires_authenticated_read_only_root(
+    operations, tmp_path, monkeypatch
+):
+    from tests.test_execution_continuity import child
+
+    adapter, root = make_adapter(operations, tmp_path, monkeypatch)
+    operation = adapter.operation
+    result = adapter.dispatch(root, "await_assignment", {"timeout": 1})
+    assert result["status"] == "Supervisor" and result["writable"] is False
+    assert root["thread_id"] == operation.registry.root and root["role"] == "orchestrator"
+    assert not operation.assignments
+
+    for change in (
+        {"writable": True},
+        {"writable": 0},
+        {"role": "al-architect"},
+        {"handoff": {"status": "available"}},
+        {"knowledge_context": {"status": "available"}},
+    ):
+        monkeypatch.setattr(
+            operation, "await_assignment", lambda *a, change=change: result | change
+        )
+        with pytest.raises(ValueError, match="writable/automatic assignment"):
+            adapter.dispatch(root, "await_assignment", {"timeout": 1})
+    monkeypatch.setattr(operation, "await_assignment", lambda *a: result)
+    for forged in (root | {"writable": True}, root | {"writable": 0}):
+        with pytest.raises(ValueError, match="writable/automatic assignment"):
+            adapter.dispatch(forged, "await_assignment", {"timeout": 1})
+    with pytest.raises(ValueError, match="stale"):
+        adapter.dispatch(root | {"policy": "forged"}, "await_assignment", {"timeout": 1})
+
+    participant = child(operation, "al-architect")
+    with pytest.raises(ValueError, match="writable/automatic assignment"):
+        adapter.dispatch(participant | {"role": "orchestrator"}, "await_assignment", {"timeout": 1})
+    # Restore the genuine observed supervisor before registering the actual child.
+    adapter.dispatch(root, "await_assignment", {"timeout": 1})
+    with pytest.raises(ValueError, match="writable/automatic assignment"):
+        adapter.dispatch(participant, "await_assignment", {"timeout": 1})
