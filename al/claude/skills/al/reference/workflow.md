@@ -805,3 +805,19 @@ manifest/path ownership and applicable nested instructions. Treat keyword matche
 as inspection leads; assess remaining design risk after inspecting the actual code.
 For Harness, resolve all skill references through `harness:skill/index` and
 `harness:skill/reference/...`, including schemas, using bounded read_file cursors.
+
+
+### Recover in prerequisite order
+
+When review refuses pending planning proof, run `recovery next` first. Guidance
+names unresolved owned work or setup before the current planning requirement.
+A pending RR reassessment cannot replace planning admission: its accepting
+operation requires that same proof. Follow the actual planning packet, external
+Architect report and `planning admit` stages before recomputing RR guidance.
+
+A phase-context diagnostic identifies the current phase instead of asking again
+for an already-ready specification. Inspect the existing guarded implementation
+continuation where applicable; the diagnostic itself grants no phase transition,
+writer, proof or recovery credit. A saved recovery descriptor is bound to its
+observed state. Obtain current guidance after planning changes and retain stale
+binding refusals. Clearing one prerequisite never approves review or final work.

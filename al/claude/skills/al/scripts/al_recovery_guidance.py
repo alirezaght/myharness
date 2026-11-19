@@ -48,7 +48,7 @@ COMMANDS = {
 _active = None
 
 
-def descriptors(st):
+def descriptors(st, *, prerequisite=None):
     from al_verification_authority import authority_binding
 
     authority = authority_binding(st)
@@ -62,7 +62,7 @@ def descriptors(st):
         "manifest_hash": st["gate_manifests"][-1]["sha256"] if st.get("gate_manifests") else None,
     }
     result = []
-    for issue in Subjects.issues(st):
+    for issue in Subjects.issues(st, prerequisite=prerequisite):
         observation = issue.pop("observation")
         binding = dict(
             common,
@@ -165,8 +165,8 @@ def verify_commit(previous):
         reset()
 
 
-def refuse_guided(st, message):
-    offered = descriptors(st)
+def refuse_guided(st, message, *, prerequisite=None):
+    offered = descriptors(st, prerequisite=prerequisite)
     if not offered:
         refuse(message)
     refuse(message + "\nAL_RECOVERY " + J.raw(offered[0]).decode())
