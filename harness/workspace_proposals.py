@@ -65,7 +65,7 @@ def apply_operations(source, operations):
             else edges
         )
         if kind == "traceability":
-            if target not in nodes and target not in plan:
+            if target not in nodes and target not in edges and target not in plan:
                 raise LookupError("unknown traceability target")
             if operation["requirement"] not in requirements:
                 raise LookupError("unknown requirement")

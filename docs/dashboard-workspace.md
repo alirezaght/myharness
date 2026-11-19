@@ -1,4 +1,22 @@
-# Plan & Design workspace interfaces
+# Unified task workspace interfaces
+
+Every task opens in one ordered workflow: **Interview → Requirements → Spec →
+Plan → Diagram → Review → Implementation → Checks → Delivery → History**. New
+tasks open on Interview; tasks with an existing execution open on Implementation.
+The question drawer stays available from every tab. The editor keeps a full
+working specification separate from the approved/adopted version and current run.
+
+## Standalone interview
+
+From a trusted repository, start the local dashboard with
+`uv run python -m harness.dashboard --project /absolute/path/to/repository`
+(add `--no-browser` to print the URL without opening a browser). The interview
+worker uses the existing Codex sign-in; it does not set up credentials. A host
+availability result verifies an installed executable and its restricted profile,
+not authentication. Authentication is verified only when the native invocation
+succeeds. The current Claude client profile is not qualified for no-tool authoring,
+so the UI reports it as unsupported; full manual specification editing remains
+available without a native host.
 
 The dashboard adds `task.workspace = {base, source, proposals}`. `base` is a SHA-256
 of the deterministic source snapshot: original request, interview statements and
@@ -35,8 +53,23 @@ new edge removes its operation. No source node is renamed by regenerating IDs.
 Saved proposals include source, operations and deterministic result; dashboard
 reads add `stale` and `stale_reason`. Proposal history follows insertion order.
 
-The client uses `myharness-workspace:<task>` local storage and an in-memory map.
-Drafts retain their original source and base across SSE, reload and task switches.
+The client uses project/task-scoped `myharness-workspace:<project>:<task>` local
+storage plus task-keyed in-memory state. Interview answers, follow-ups, wording,
+deferral reasons, contribution revisions and the full specification editor use
+separate authoring buffers. Dirty buffers retain their original source and base
+across SSE, reload and task switches; clean buffers refresh their baseline. A save
+only clears the exact version submitted, so text typed while a save is in flight
+remains dirty. Conflicted and ambiguous writes retain the exact request receipt for
+an idempotent retry. Storage failures leave the current page usable and are shown
+to the developer.
+
+The Interview conversation and History tab expose the saved contribution stream.
+When the task snapshot is truncated, “Load earlier conversation” reads the
+paginated `/api/authoring/history` endpoint and caches records by project/task;
+older answers and follow-ups can be revised while their originals remain visible.
+A stale-base conflict offers an explicit latest-state refresh that keeps the text
+and archives the rejected request before a new save.
+
 Source or epoch changes retain stale drafts, make text fields read-only, disable
 other editor controls and disable save; the explicit discard button loads current
 source. Failed saves retain an exact retry request identity; after a reload during
@@ -44,21 +77,36 @@ an in-flight save the result is shown as unknown until retry confirms it. Editin
 produces a new request. Requirement/design source cards always show source text;
 inspector fields and diagram overlays are visibly proposals.
 
-The URL accepts `?workspace=design|run&tab=<name>`. Existing fragment links remain
-usable: `#diagrams`, structured `#version=...&element=...`, and `#comments` open
-Plan & Design → Diagram; `#spec` opens Requirements; `#approvals`,
-`#execution-decisions` and `#resume` open Live Run → Overview; `#delivery` and
-`#history` open their matching Live Run tabs. Task records and historical tools
-remain in a disclosure on History, and raw source IDs/hashes stay in secondary
-details on the requirements inspector.
+The selected tab is reflected in `?tab=<name>` and survives reload. Legacy
+`?workspace=design|run&tab=<name>` links are migrated; `overview` and `changes`
+map to Implementation. Existing fragments remain usable: `#diagrams`, structured
+`#version=...&element=...`, and `#comments` open Diagram; `#spec` opens Spec;
+`#approvals` opens Review; `#execution-decisions`, `#resume` and the legacy
+`#current-status` open Implementation; `#delivery` and `#history` open their
+matching tabs. Clicking a different tab updates the URL and does not let an older
+explicit query/hash override the new selection after reload. Task records and
+historical tools remain available under History.
+
+Model output, developer contributions and full-spec saves remain separate. The
+candidate inspector loads exact specification revisions and their proposed
+logical graph. Adoption requires a read-only preview, explicit graph review and
+source/downstream acknowledgement, then calls the existing guarded reconciliation
+route. Adoption does not approve the specification or authorize execution.
+Planning controls expose interview questions and decisions, all eight design
+sections (including reasoned not-applicable entries), scenario coverage and mock
+justification, pending design/scenario decisions, test-plan review and approval.
+The underlying Harness validators remain authoritative.
 
 Stable UI seams for browser tests and styling:
 
-- `#task.workspace-task`, `.workspace-switch` (Plan & Design / Live Run)
+- `#task.workspace-task`, `.workspace-top`, `.authoring-drawer`
 - `.workspace-tabs [role=tab]`; `#workspace-panel[role=tabpanel]`
-- tabs `workspace-tab-requirements`, `-plan`, `-diagram`, `-review`, `-overview`,
-  `-changes`, `-checks`, `-delivery`, `-history`
+- tabs `workspace-tab-interview`, `-requirements`, `-spec`, `-plan`, `-diagram`,
+  `-review`, `-implementation`, `-checks`, `-delivery`, `-history`
 - `.workspace-inspector`, `.workspace-savebar`, `.workspace-source-card`
+- `.authoring-statusbar`, `.authoring-question`, `.authoring-reconcile`, `.spec-editor`
+- `.workspace-diagram-tools` provides Fit diagram, Full-size view and zoom controls;
+  narrow screens can swipe the full-size canvas.
 - labeled component/connection selector, Component label, Horizontal position,
   Vertical position, From component, To component, Connection label
 - graph `[data-node-id]`, `.workspace-node`, `.workspace-edge`; nodes support
@@ -72,9 +120,9 @@ Stable UI seams for browser tests and styling:
 ## Verification handoff
 
 Core tests are `tests/test_workspace_proposals.py` and
-`tests/test_dashboard_workspace.py`. Builder must adapt historical migration-count
-assertions in `tests/test_db.py` for 0017, adapt long-page browser journeys to the
-new navigation, and verify desktop/mobile light/dark visuals, graph pointer and
-keyboard routes, saved overlays after reload, add→edit/remove connection behavior,
-SSE during input/drag, task isolation, late save responses, stale bases and retry.
-No real engineering execution or external database is needed.
+`tests/test_dashboard_workspace.py`. Browser coverage includes the actual
+task-start form, worker-produced interview output, answer and follow-up receipts,
+full specification saves, candidate graph review and guarded adoption over HTTP,
+as well as desktop/mobile light/dark layout, keyboard focus, tab-route persistence,
+graph pan/fit/zoom and existing proposal/diagram compatibility. No real engineering
+execution or external database is needed.

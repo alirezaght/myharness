@@ -318,7 +318,7 @@ def test_preview_scroll_survives_refresh_repaint_and_stays_task_scoped(
     captures = {}
     with serve(db_path, task) as server:
         for name, width, height in (("desktop", 1280, 800), ("mobile", 390, 844)):
-            url = f"{server.url}?task={task}"
+            url = f"{server.url}?task={task}&tab=review"
             viewport = f"--window-size={width},{height}"
             result = _headless(
                 tmp_path / f"{name}-driver-profile",

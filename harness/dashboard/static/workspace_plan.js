@@ -150,6 +150,7 @@ function workspacePlan(task, state, inspector) {
   const reports = (task.execution?.reports || []).filter(row => /architect|plan/i.test(`${row.role} ${row.name}`));
   if (!reports.length) panel.append(el("p", "No AL planning report references available in recorded execution state."));
   for (const report of reports) panel.append(el("p", `${report.name} · ${report.role}${report.ref ? ` · ${report.ref}` : ""}`));
+  panel.append(workspacePlanningControls(task, state));
   return panel;
 }
 

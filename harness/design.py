@@ -102,26 +102,30 @@ class ArchitectureDesigner:
 
     @contextmanager
     def _mutation(self) -> Iterator[None]:
-        with transaction(self.conn):
-            task = self.controller.get_task(self.task_id)
-            if task.phase is not Phase.DESIGN:
-                before = PHASE_ORDER.index(task.phase) < PHASE_ORDER.index(Phase.DESIGN)
-                hint = (
-                    f"harness phase {task.id} next"
-                    if before
-                    else f'harness phase {task.id} back design --reason "<why>"'
-                )
-                raise DesignError(f"task {task.id} is in phase {task.phase}; run: {hint}")
-            yield
-            coverage = self.coverage()
-            self.ws.checkpoint(
-                "design",
-                {
-                    "uncovered": [str(s) for s in DesignSection if s not in coverage.covered],
-                    "unresolved": [i.ref for i in coverage.items],
-                    "blocking": coverage.blocking,
-                },
+        with transaction(self.conn), self.mutation_in_transaction() as result:
+            yield result
+
+    @contextmanager
+    def mutation_in_transaction(self) -> Iterator[None]:
+        if not self.conn.in_transaction:
+            raise RuntimeError("existing transaction required")
+        task = self.controller.get_task(self.task_id)
+        if task.phase is not Phase.DESIGN:
+            before = PHASE_ORDER.index(task.phase) < PHASE_ORDER.index(Phase.DESIGN)
+            hint = (
+                f"harness phase {task.id} next"
+                if before
+                else f'harness phase {task.id} back design --reason "<why>"'
             )
-            self.conn.execute(
-                "UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id)
-            )
+            raise DesignError(f"task {task.id} is in phase {task.phase}; run: {hint}")
+        yield
+        coverage = self.coverage()
+        self.ws.checkpoint(
+            "design",
+            {
+                "uncovered": [str(s) for s in DesignSection if s not in coverage.covered],
+                "unresolved": [i.ref for i in coverage.items],
+                "blocking": coverage.blocking,
+            },
+        )
+        self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id))

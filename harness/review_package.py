@@ -12,26 +12,30 @@ from harness.testplan_report import ReviewState, plan_hash
 
 
 def package(controller, task_id):
+    from harness.current_decisions import (
+        current_investigation_decisions,
+        current_recorded_decisions,
+    )
     from harness.design import ArchitectureDesigner
+    from harness.effective_records import effective_records
     from harness.interview import InterviewEngine
     from harness.spec_document import build_body, proposed_content
-    from harness.spec_manager import _recorded_decisions
 
     ws = controller.workspace(task_id)
     task = controller.get_task(task_id)
     design = ArchitectureDesigner(controller, task_id).document()
     plan = TestPlanner(controller, task_id).document()
-    investigation = ws.latest_checkpoint("investigation")
-    decisions = investigation.payload.get("decisions", []) if investigation else []
+    effective = effective_records(ws)
+    decisions = current_investigation_decisions(ws)
     body = build_body(
         InterviewEngine(controller, task_id).summary(),
         design,
         decisions,
-        _recorded_decisions(ws.events()),
-        ws.proposals(),
+        current_recorded_decisions(ws),
+        effective.proposals,
         plan,
     )
-    body = proposed_content(body, ws.proposals(), ws.design_entries(), ws.scenarios(), plan)
+    body = proposed_content(body, effective.proposals, ws.design_entries(), ws.scenarios(), plan)
     context = ws.latest_checkpoint("context_import")
     content = {
         "schema_version": 1,
@@ -41,8 +45,9 @@ def package(controller, task_id):
         "phase": str(task.phase),
         "complexity": str(task.complexity),
         "proposed_spec": body,
-        "questions": [asdict(x) for x in ws.questions()],
-        "proposals": [asdict(x) for x in ws.proposals()],
+        "effective_lineage": effective.metadata(),
+        "questions": [asdict(x) for x in effective.questions],
+        "proposals": [asdict(x) for x in effective.proposals],
         "design": [asdict(x) for x in ws.design_entries()],
         "tests": [asdict(x) for x in ws.scenarios()],
         "plan_review": plan.review.to_dict(),
@@ -69,7 +74,11 @@ def accept(controller, task_id, approved_sha256, *, source, registry=None):
         if controller.get_task(task_id).phase == "approval":
             raise ValueError("batch acceptance cannot rewrite an approved specification")
         decisions = []
-        for item in ws.proposals(ProposalStatus.PENDING):
+        from harness.effective_records import effective_records
+
+        for item in effective_records(ws).proposals:
+            if item.status is not ProposalStatus.PENDING:
+                continue
             proposal = ws.resolve(item.id, ProposalStatus.ACCEPTED)
             if item.question_id is not None:
                 question = ws.question(item.question_id)

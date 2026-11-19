@@ -20,6 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("task_id", nargs="?", help="the active task (omit to list the tasks)")
     parser.add_argument("--db", metavar="PATH", help="state DB (default: $HARNESS_DB or per-repo)")
     parser.add_argument("--specs", metavar="PATH", help="specs root (default: <repo>/docs/specs)")
+    parser.add_argument(
+        "--project",
+        metavar="PATH",
+        help="trusted repository context for authoring (default: current repository)",
+    )
     parser.add_argument("--no-browser", action="store_true", help="only print the URL")
     return parser
 
@@ -32,9 +37,14 @@ def _open(url: str) -> bool:
 
 
 def start_dashboard(
-    db_path: Path, task_id: str | None, specs: str | None, open_browser: bool
+    db_path: Path,
+    task_id: str | None,
+    specs: str | None,
+    open_browser: bool,
+    *,
+    project_root: Path | None = None,
 ) -> DashboardServer:
-    server = DashboardServer(db_path, task_id, specs)
+    server = DashboardServer(db_path, task_id, specs, project_root=project_root)
     if task_id and Path(db_path).is_file():
         from harness.dashboard.action_readiness import probe_readiness
         from harness.dashboard.view import open_state
@@ -69,7 +79,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         try:
             server = start_dashboard(
-                resolve_db_path(args.db), args.task_id, args.specs, not args.no_browser
+                resolve_db_path(args.db),
+                args.task_id,
+                args.specs,
+                not args.no_browser,
+                project_root=Path(args.project) if args.project else None,
             )
         except OSError as error:
             print(f"harness dashboard: {error}", file=sys.stderr)

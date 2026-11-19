@@ -150,3 +150,204 @@ def test_references_name_other_current_records(registry):
     registry.record("Unrelated", "Mentions DEC-00012 only.", "r")
     assert [r.id for r in registry.references("DEC-0001")] == [citing.id]
     assert registry.references(citing.id) == []
+
+
+def test_rework1b_withdrawal_removes_approved_registry_reuse(controller, tmp_path):
+    from tests.test_authoring import rework1b_apply, rework1b_service
+
+    service, engine, registry, question, proposal = rework1b_service(
+        controller, tmp_path, decision=True
+    )
+    ident = registry.records()[0].id
+    rework1b_apply(
+        service,
+        f"recommendation:{proposal.id}",
+        {"status": "rejected", "response": "Withdraw storage decision"},
+    )
+    assert registry.get(ident).status == DecisionStatus.REJECTED, (
+        "withdrawal left old approved registry authority"
+    )
+    assert registry.get(ident).version == 2
+    assert not engine.summary().requirements
+
+
+def test_rework1b_registry_transition_compensates_outer_failure(controller, tmp_path, monkeypatch):
+    from tests.test_authoring import rework1b_service
+
+    service, _, registry, _, proposal = rework1b_service(controller, tmp_path, decision=True)
+    ident = registry.records()[0].id
+    target = next(
+        row
+        for row in service.snapshot()["revision_targets"]
+        if row["target"] == f"recommendation:{proposal.id}"
+    )
+    revised = service.revise_record(
+        expected=service.store.base(),
+        request_id="rework1b-rollback-revise",
+        target=target["target"],
+        target_revision=target["revision"],
+        value={"status": "modified", "response": "NEW rollback storage"},
+    )
+    before_files = {
+        str(path.relative_to(registry.directory)): path.read_bytes()
+        for path in registry.directory.rglob("*")
+        if path.is_file()
+    }
+    before_base = service.store.base()
+    observed = []
+
+    def failed_receipt(*args, **kwargs):
+        observed.append(registry.get(ident).version)
+        raise RuntimeError("injected after registry replacement")
+
+    monkeypatch.setattr(service.store, "record_receipt", failed_receipt)
+    with pytest.raises(RuntimeError, match="registry replacement"):
+        service.planning(
+            expected=before_base,
+            request_id="rework1b-rollback-apply",
+            operation={
+                "op": "revision-apply",
+                "target": target["target"],
+                "target_revision": revised["contribution"],
+            },
+        )
+    assert observed == [2], "correction did not replace the original registry version"
+    assert service.store.base() == before_base
+    assert {
+        str(path.relative_to(registry.directory)): path.read_bytes()
+        for path in registry.directory.rglob("*")
+        if path.is_file()
+    } == before_files
+
+
+def test_rework1b_commit_failure_restores_registry_and_database(controller, tmp_path, monkeypatch):
+    import sqlite3
+
+    from tests.test_authoring import rework1b_service
+
+    service, _, registry, _, proposal = rework1b_service(controller, tmp_path, decision=True)
+    target = next(
+        row
+        for row in service.snapshot()["revision_targets"]
+        if row["target"] == f"recommendation:{proposal.id}"
+    )
+    revised = service.revise_record(
+        expected=service.store.base(),
+        request_id="rework1b-commit-revise",
+        target=target["target"],
+        target_revision=target["revision"],
+        value={"status": "modified", "response": "NEW commit storage"},
+    )
+    before = service.store.base()
+    files = {
+        str(p.relative_to(registry.directory)): p.read_bytes()
+        for p in registry.directory.rglob("*")
+        if p.is_file()
+    }
+
+    class CommitFailure:
+        def __getattr__(self, name):
+            return getattr(controller.conn, name)
+
+        def execute(self, sql, *args):
+            if sql == "COMMIT":
+                raise sqlite3.OperationalError("injected commit failure")
+            return controller.conn.execute(sql, *args)
+
+    monkeypatch.setattr(service, "conn", CommitFailure())
+    with pytest.raises(sqlite3.OperationalError, match="commit failure"):
+        service.planning(
+            expected=before,
+            request_id="rework1b-commit-apply",
+            operation={
+                "op": "revision-apply",
+                "target": target["target"],
+                "target_revision": revised["contribution"],
+            },
+        )
+    assert not controller.conn.in_transaction
+    assert service.store.base() == before
+    assert {
+        str(p.relative_to(registry.directory)): p.read_bytes()
+        for p in registry.directory.rglob("*")
+        if p.is_file()
+    } == files
+
+
+def test_rework1b_registry_write_failure_restores_exact_files(controller, tmp_path, monkeypatch):
+    from tests.test_authoring import rework1b_service
+
+    service, _, registry, _, proposal = rework1b_service(controller, tmp_path, decision=True)
+    target = next(
+        row
+        for row in service.snapshot()["revision_targets"]
+        if row["target"] == f"recommendation:{proposal.id}"
+    )
+    revised = service.revise_record(
+        expected=service.store.base(),
+        request_id="rework1b-write-revise",
+        target=target["target"],
+        target_revision=target["revision"],
+        value={"status": "modified", "response": "NEW failed write"},
+    )
+    before = service.store.base()
+    files = {
+        str(p.relative_to(registry.directory)): p.read_bytes()
+        for p in registry.directory.rglob("*")
+        if p.is_file()
+    }
+    from harness import registry as module
+
+    original = module._create
+
+    def failed(path, text):
+        original(path, text)
+        raise OSError("injected after exclusive file creation")
+
+    monkeypatch.setattr(module, "_create", failed)
+    with pytest.raises(OSError):
+        service.planning(
+            expected=before,
+            request_id="rework1b-write-apply",
+            operation={
+                "op": "revision-apply",
+                "target": target["target"],
+                "target_revision": revised["contribution"],
+            },
+        )
+    assert service.store.base() == before
+    assert {
+        str(p.relative_to(registry.directory)): p.read_bytes()
+        for p in registry.directory.rglob("*")
+        if p.is_file()
+    } == files
+
+
+def test_rework1b_current_rejected_record_cannot_be_reused_from_old_investigation(
+    controller, tmp_path
+):
+    from harness.analyzer import load_approved
+    from harness.db import transaction
+    from harness.decision_workflow import DecisionWorkflow
+    from harness.investigation import _decision_dict
+    from tests.test_authoring import rework1b_apply, rework1b_service
+
+    service, engine, registry, _, proposal = rework1b_service(controller, tmp_path, decision=True)
+    record = registry.records()[0]
+    with transaction(controller.conn):
+        engine.ws.checkpoint(
+            "investigation", {"repo_root": str(tmp_path), "decisions": [_decision_dict(record)]}
+        )
+    flow = DecisionWorkflow(controller, service.task_id, registry)
+    change, _ = flow.change(record.id, "Unapplied change", "Reason", "Impact")
+    rework1b_apply(
+        service,
+        f"recommendation:{proposal.id}",
+        {"status": "rejected", "response": "Withdraw actual authority"},
+    )
+    assert record.id not in engine._approved_decision_ids()
+    with pytest.raises(ValueError, match="rejected"):
+        flow.preview(change)
+    approved, _ = load_approved(tmp_path, registry.directory)
+    assert not approved
+    assert record.id not in service.manager().structured_body()

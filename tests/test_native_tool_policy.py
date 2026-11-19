@@ -144,3 +144,54 @@ def test_claude_qualification_accepts_only_exact_version(tmp_path, monkeypatch, 
     else:
         with pytest.raises(ValueError, match="unsupported native executable version"):
             executable_identity(executable, "claude")
+
+
+@pytest.mark.parametrize("version", ["0.164.0", "0.165.0", "0.170.0", "0.171.0"])
+def test_native170_authoring_admission_does_not_expand_execution(tmp_path, version):
+    import json
+    import uuid
+
+    from harness.authoring_policy import build_profile
+    from harness.native_identity import read_native_identity
+    from harness.native_tool_policy import SUPPORTED_NATIVE_VERSIONS, executable_identity
+    from tests.test_authoring_native import native170_executable
+
+    executable = native170_executable(tmp_path, version=version)
+    assert SUPPORTED_NATIVE_VERSIONS["codex"] == frozenset({"0.164.0", "0.165.0"})
+    if version in SUPPORTED_NATIVE_VERSIONS["codex"]:
+        assert executable_identity(executable, "codex")["version"] == version
+    else:
+        with pytest.raises(ValueError, match="unsupported native executable version"):
+            executable_identity(executable, "codex")
+    if version == "0.170.0":
+        assert (
+            build_profile("codex", tmp_path, executable=executable)["executable"]["version"]
+            == version
+        )
+    elif version == "0.171.0":
+        with pytest.raises(ValueError):
+            build_profile("codex", tmp_path, executable=executable)
+    root = tmp_path / "native"
+    sessions = root / "sessions/2026/11/19"
+    sessions.mkdir(parents=True)
+    thread = str(uuid.uuid4())
+    path = sessions / ("rollout-" + thread + ".jsonl")
+    path.write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {
+                    "id": thread,
+                    "session_id": str(uuid.uuid4()),
+                    "cli_version": version,
+                    "source": "cli",
+                },
+            }
+        )
+        + "\n"
+    )
+    if version in SUPPORTED_NATIVE_VERSIONS["codex"]:
+        assert read_native_identity(root, thread).version == version
+    else:
+        with pytest.raises(ValueError, match="identity/version mismatch"):
+            read_native_identity(root, thread)

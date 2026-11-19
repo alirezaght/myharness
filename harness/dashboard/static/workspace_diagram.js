@@ -48,28 +48,97 @@ function workspaceEdgeOffset(edge, edges) {
   return reverse ? 34 + index * 64 : (index - (parallel.length - 1) / 2) * 64;
 }
 
+function workspaceEdgeDisplayLabel(label, from, to) {
+  const text = String(label || "→");
+  const clearGap = Math.max(48, Math.hypot(to.x - from.x, to.y - from.y) - 180);
+  const maxChars = Math.max(6, Math.min(24, Math.floor(clearGap / 7)));
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}…` : text;
+}
+
 function workspaceDiagram(task, state, inspector) {
   const panel = el("section");
   panel.className = "workspace-diagram-panel";
-  panel.append(el("h2", "Design diagram"), el("p", "Select a component or connection. Drag to arrange; double-click a component to edit its label. All edits are proposals."));
+  const logical = state.source.logical || task.workspace.source.logical || {};
+  const kindLabel = logical.kind === "proposed_system" ? "Proposed logical system design"
+    : logical.kind === "recorded" ? "Recorded design projection" : "Task workflow and open design detail";
+  panel.append(el("h2", kindLabel), el("p", "Select nodes or relationships. Drag to arrange; double-click a node to edit its label. Edits are saved proposals and do not change recorded status or approval."));
+  const provenance = el("div"); provenance.className = "authoring-graph-provenance";
+  provenance.append(el("strong", logical.kind === "proposed_system" ? "Model-proposed system diagram"
+    : logical.kind === "recorded" ? "Diagram from recorded task design" : "Task workflow diagram"),
+    el("small", logical.kind === "proposed_system"
+      ? "Proposed components and relationships. Assumptions and source references remain visible for review."
+      : logical.kind === "recorded"
+        ? "Existing task design records. Recorded identities and approval history are preserved."
+        : "Shows workflow stages and open requirements; it does not claim work is complete."));
+  const sourceDetails = el("details"); sourceDetails.className = "authoring-graph-source-details";
+  sourceDetails.append(el("summary", "Exact diagram source and revision details"), el("small", `Source kind: ${logical.kind || "workflow"} · projection ${logical.revision || "not reported"} · graph revision ${logical.graph_revision || "none"}`));
+  provenance.append(sourceDetails);
+  panel.append(provenance);
   const graph = workspaceResult(state).graph;
-  if (!graph.nodes.length) panel.append(el("p", "No structured diagram notation recorded. Design prose is available in Plan; existing notation guidance appears below."));
+  if (!graph.nodes.length) panel.append(el("p", "The server did not provide diagram nodes for this task."));
   else {
-    const select = workspaceChoice("Select component or connection", [...graph.nodes, ...graph.edges.map(edge => ({ ...edge, label: `${edge.from} → ${edge.to}: ${edge.label}` }))], state.selection, "diagram-selection", state);
+    const nodeById = new Map(graph.nodes.map(node => [node.id, node]));
+    const choices = [...graph.nodes, ...graph.edges.map(edge => ({ ...edge, label: `${nodeById.get(edge.from)?.label || edge.from} → ${nodeById.get(edge.to)?.label || edge.to}: ${edge.label}` }))];
+    const select = workspaceChoice("Select component or connection", choices, state.selection, "diagram-selection", state);
     select.input.disabled = false;
     select.input.addEventListener("change", () => { workspaceSelect(state, select.input.value); workspaceRerender(); });
     panel.append(select.wrap);
     const canvas = el("div");
     canvas.className = "workspace-canvas";
     canvas.dataset.workspaceScroll = "diagram";
-    const nodeById = new Map(graph.nodes.map(node => [node.id, node]));
+    canvas.addEventListener("touchstart", workspaceTouchStart, { passive: true });
+    canvas.addEventListener("touchend", workspaceTouchEnd, { passive: true });
+    canvas.addEventListener("touchcancel", workspaceTouchEnd, { passive: true });
     const routes = graph.edges.filter(edge => nodeById.has(edge.from) && nodeById.has(edge.to))
       .map(edge => workspaceEdgeCurve(nodeById.get(edge.from), nodeById.get(edge.to), workspaceEdgeOffset(edge, graph.edges)));
     const minX = Math.min(0, ...graph.nodes.map(node => node.x - 50), ...routes.map(route => route.bounds.minX - 30));
     const minY = Math.min(0, ...graph.nodes.map(node => node.y - 50), ...routes.map(route => route.bounds.minY - 30));
     const width = Math.max(760, ...graph.nodes.map(node => node.x + 230), ...routes.map(route => route.bounds.maxX + 30)) - minX;
     const height = Math.max(330, ...graph.nodes.map(node => node.y + 130), ...routes.map(route => route.bounds.maxY + 30)) - minY;
-    const svg = workspaceSvg("svg", { role: "group", "aria-label": "Proposed design diagram", viewBox: `${minX} ${minY} ${width} ${height}`, width, height });
+    const signature = JSON.stringify([
+      logical.kind || "workflow", logical.revision || null, logical.graph_revision || null,
+      graph.nodes.map(node => node.id), graph.edges.map(edge => edge.id),
+    ]);
+    if (state.diagramView?.signature !== signature) state.diagramView = null;
+    const savedView = state.diagramView;
+    let fitMode = Boolean(savedView?.fit);
+    const svg = workspaceSvg("svg", {
+      role: "group", "aria-label": "Proposed design diagram",
+      viewBox: savedView?.viewBox || `${minX} ${minY} ${width} ${height}`, width, height,
+    });
+    if (savedView?.fit) { svg.style.width = "100%"; svg.style.minWidth = "0"; }
+    const tools = el("div"); tools.className = "workspace-diagram-tools";
+    const help = el("span", "Touch: swipe to pan. Mouse: drag nodes. Keyboard: use arrow keys to move, F2 to edit. Fit diagram shows the whole graph.");
+    const rememberView = fitView => {
+      state.diagramView = {
+        signature, fit: fitView,
+        viewBox: svg.getAttribute("viewBox"),
+      };
+      workspacePersist(state);
+    };
+    const setView = factor => {
+      const box = svg.viewBox.baseVal;
+      const centerX = box.x + box.width / 2, centerY = box.y + box.height / 2;
+      const nextWidth = Math.max(320, Math.min(20000, box.width * factor));
+      const nextHeight = Math.max(240, Math.min(20000, box.height * factor));
+      svg.setAttribute("viewBox", `${centerX - nextWidth / 2} ${centerY - nextHeight / 2} ${nextWidth} ${nextHeight}`);
+      rememberView(fitMode);
+    };
+    const zoomIn = workspaceButton("Zoom in", () => setView(.8));
+    const zoomOut = workspaceButton("Zoom out", () => setView(1.25));
+    const fit = workspaceButton("Fit diagram", () => {
+      fitMode = true;
+      svg.style.width = "100%"; svg.style.minWidth = "0";
+      svg.setAttribute("viewBox", `${minX} ${minY} ${width} ${height}`);
+      rememberView(true);
+    });
+    const fullSize = workspaceButton("Full-size view", () => {
+      fitMode = false;
+      svg.style.width = ""; svg.style.minWidth = "";
+      svg.setAttribute("viewBox", `${minX} ${minY} ${width} ${height}`);
+      rememberView(false);
+    });
+    tools.append(zoomIn, zoomOut, fit, fullSize, help); panel.append(tools);
     const draw = () => {
       svg.replaceChildren();
       const defs = workspaceSvg("defs");
@@ -86,7 +155,8 @@ function workspaceDiagram(task, state, inspector) {
         const curve = workspaceEdgeCurve(from, to, workspaceEdgeOffset(edge, graph.edges));
         group.append(workspaceSvg("path", { d: curve.d, "marker-end": "url(#workspace-arrow)" }));
         const label = workspaceSvg("text", { x: curve.labelX, y: curve.labelY });
-        label.textContent = edge.label || "→";
+        label.textContent = workspaceEdgeDisplayLabel(edge.label, from, to);
+        const title = workspaceSvg("title"); title.textContent = edge.label || "Relationship"; label.append(title);
         group.append(label);
         const choose = () => { workspaceSelect(state, edge.id); workspaceRerender(); };
         group.addEventListener("click", choose);
@@ -94,14 +164,17 @@ function workspaceDiagram(task, state, inspector) {
         svg.append(group);
       }
       for (const node of graph.nodes) {
-        const group = workspaceSvg("g", { tabindex: 0, role: "button", "aria-label": `Component ${node.label}`, transform: `translate(${node.x} ${node.y})`, "data-node-id": node.id, "data-selected": state.selection === node.id });
+        const group = workspaceSvg("g", { tabindex: 0, role: "button", "aria-label": `${node.kind || "Node"} ${node.label}; status ${node.status || "not reported"}`, transform: `translate(${node.x} ${node.y})`, "data-node-id": node.id, "data-status": node.status || "unknown", "data-selected": state.selection === node.id });
         group.classList.add("workspace-node");
         if (state.operations.some(op => op.target === node.id)) group.classList.add("proposed");
         group.append(workspaceSvg("rect", { width: 170, height: 64, rx: 10 }));
         const label = workspaceSvg("text", { x: 85, y: 35 });
         label.textContent = node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label;
+        const meta = workspaceSvg("text", { x: 85, y: 53 });
+        meta.classList.add("node-meta");
+        meta.textContent = `${node.kind || "node"} · ${node.status || "status unknown"}`;
         const title = workspaceSvg("title"); title.textContent = node.label;
-        group.append(label, title);
+        group.append(label, meta, title);
         if (state.inlineNode === node.id) {
           const editor = workspaceSvg("foreignObject", { x: 5, y: 12, width: 160, height: 45 });
           const field = workspaceField("Edit component label", node.label, `inline-label:${node.id}`, state);
@@ -152,7 +225,7 @@ function workspaceDiagram(task, state, inspector) {
           }
         });
         group.addEventListener("pointerdown", event => {
-          if (state.stale || state.saving || event.button !== 0) return;
+          if (state.stale || state.saving || event.button !== 0 || event.pointerType === "touch") return;
           workspaceDragging = true;
           const start = { x: event.clientX, y: event.clientY, nx: node.x, ny: node.y };
           let moved = false;
@@ -214,6 +287,15 @@ function workspaceDiagram(task, state, inspector) {
       || legacyParams.has("version") || legacyParams.has("element");
   notation.append(workspaceSummary(state, notation, "Source notation, diagram history and execution evidence"), renderDiagrams(task.id, task.diagrams), renderComparison(task.id, task.diagrams));
   panel.append(notation);
+  if (logical.kind === "proposed_system" && logical.workflow?.nodes?.length) {
+    const workflow = el("details"); workflow.className = "authoring-workflow-details";
+    workflow.append(el("summary", "Also view task workflow and open requirements"));
+    const map = el("div"); map.className = "authoring-workflow-map";
+    for (const node of logical.workflow.nodes) {
+      const card = el("article"); card.append(el("strong", node.label), el("small", `${node.kind} · ${node.status}`), el("small", `${node.provenance || "Recorded task workflow"} · ${node.sources.join(", ")}`)); map.append(card);
+    }
+    workflow.append(map); panel.append(workflow);
+  }
   rememberComments(task);
   const comments = el("details");
   comments.dataset.viewDisclosure = "workspace-comments";
@@ -225,8 +307,10 @@ function workspaceDiagram(task, state, inspector) {
 
 function workspaceDiagramInspector(state, graph, selected, inspector) {
   const isNode = "x" in selected;
-  inspector.append(el("small", isNode ? "Component inspector" : "Connection inspector"), el("h2", selected.label || selected.id), el("code", selected.id),
-    el("h3", "Design sources"), el("p", selected.sources.join(", ") || "Proposed connection; no approved design source"));
+  inspector.append(el("small", `${selected.kind || (isNode ? "node" : "relationship")} · ${selected.status || "status not reported"} · ${selected.provenance || (isNode ? "Logical graph node" : "Logical graph relationship")}`), el("h2", selected.label || selected.id));
+  const identity = el("details"); identity.append(el("summary", "Exact graph identity and source references"), el("code", selected.id), el("p", selected.sources?.join(", ") || "No source reference recorded"));
+  inspector.append(identity, el("h3", "Traceability and assumption"));
+  if (selected.assumption) inspector.append(el("p", `Assumption / proposal rationale: ${selected.assumption}`));
   if (isNode) {
     const label = workspaceField("Component label", selected.label, `node-label:${selected.id}`, state);
     label.input.maxLength = 500;

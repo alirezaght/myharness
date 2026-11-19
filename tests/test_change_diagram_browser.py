@@ -63,14 +63,42 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
                 )
                 == "true"
             )
+            target_rect = evaluate(
+                call,
+                "(()=>{const target=[...document.querySelectorAll("
+                "'.workspace-panel .change-illustration [data-change-element]')]"
+                ".find(node=>node.dataset.changeElement==='flow:notification-service->warehouse');"
+                "const copies=[...document.querySelectorAll('[data-change-element]')]"
+                ".filter(node=>node.dataset.changeElement==='flow:notification-service->warehouse');"
+                "target.scrollIntoView({block:'center',inline:'center'});"
+                "let rect=target.getBoundingClientRect();"
+                "if(rect.top<0||rect.bottom>innerHeight)window.scrollTo(window.scrollX,"
+                "window.scrollY+rect.top-innerHeight/2);"
+                "rect=target.getBoundingClientRect();return {x:rect.left+rect.width/2,"
+                "y:rect.top+rect.height/2,copies:copies.length,"
+                "insideClosedDetails:Boolean(target.closest('details:not([open])'))}"
+                "})()",
+            )
+            assert target_rect["copies"] == 1 and not target_rect["insideClosedDetails"], (
+                target_rect
+            )
+            focus_before_refresh = evaluate(
+                call,
+                "(()=>{const target=[...document.querySelectorAll("
+                "'.workspace-panel .change-illustration [data-change-element]')]"
+                ".find(node=>node.dataset.changeElement==='flow:notification-service->warehouse');"
+                "target.focus({preventScroll:true});"
+                "return {active:document.activeElement===target,"
+                "key:document.activeElement.getAttribute('data-change-element'),"
+                "tabIndex:target.tabIndex};})()",
+            )
+            assert focus_before_refresh["active"], focus_before_refresh
             evaluate(
                 call,
-                (
-                    "document.querySelector('[data-change-element=\\\"flow:noti"
-                    "fication-service->warehouse\\\"]').focus({preventScroll:tr"
-                    "ue});refreshDashboard()"
-                ),
+                "window.diagramRefreshCompleted=false;"
+                "refreshDashboard().then(()=>window.diagramRefreshCompleted=true);true",
             )
+            wait(call, "window.diagramRefreshCompleted===true")
             wait(
                 call,
                 "document.querySelector('.change-illustration-detail')"
@@ -92,11 +120,7 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
             )
             evaluate(
                 call,
-                (
-                    "[...document.querySelectorAll('.workspace-switch button'"
-                    ")].find(button=>button.textContent==='Plan & Design').cl"
-                    "ick()"
-                ),
+                ("document.querySelector('#workspace-tab-requirements').click()"),
             )
             wait(
                 call,
@@ -105,5 +129,14 @@ def test_logical_change_flow_has_sources_and_survives_live_refresh(
                     "etAttribute('aria-selected')==='true'"
                 ),
             )
-            assert evaluate(call, "Boolean(document.querySelector('#spec'))")
+            assert evaluate(
+                call,
+                "Boolean(document.querySelector('#workspace-panel .workspace-source-card'))",
+            )
+            evaluate(call, "document.querySelector('#workspace-tab-spec').click()")
+            wait(
+                call,
+                "document.querySelector('#workspace-tab-spec')?.getAttribute('aria-selected')==='true'",
+            )
+            assert evaluate(call, "Boolean(document.querySelector('.spec-editor'))")
     assert get_execution(controller.conn, eid) == execution

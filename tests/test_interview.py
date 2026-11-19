@@ -15,6 +15,32 @@ from harness.state_models import ProposalStatus, QuestionSource, QuestionStatus,
 TABLES = ("questions", "proposals", "events", "checkpoints", "tasks")
 
 
+@pytest.fixture(autouse=True)
+def actual_registry_identity(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from harness.decisions import parse_decision, render_record
+
+    directory = tmp_path / "docs/decisions"
+    directory.mkdir(parents=True)
+    records = []
+    for number, status in ((1, DecisionStatus.APPROVED), (2, DecisionStatus.SUPERSEDED)):
+        ident = f"DEC-{number:04d}"
+        path = directory / f"{ident}-storage.md"
+        path.write_text(
+            render_record(
+                ident, "Storage", 1, "2026-01-01", "Persistence", None, "d", "r", "i", status=status
+            )
+        )
+        records.append(parse_decision(path))
+    original = _report
+
+    def report(questions=()):
+        return replace(original(questions), repo_root=str(tmp_path), decisions=tuple(records))
+
+    monkeypatch.setitem(globals(), "_report", report)
+
+
 def _decision(dec_id: str, status: DecisionStatus) -> DecisionRecord:
     return DecisionRecord(
         dec_id, "Storage", status, 1, "2026-01-01", "Persistence", None, "d", "r", "i", Path("x")

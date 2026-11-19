@@ -7,6 +7,7 @@ into production task state.
 import base64
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -740,36 +741,120 @@ def test_workspace_layout_is_inspectable_without_page_overflow(
             swipe = evaluate(
                 call,
                 (
-                    "(() => {const rect=document.querySelector('.workspace-ca"
-                    "nvas').getBoundingClientRect(); return {start:{x:Math.mi"
-                    "n(rect.right-14,rect.left+260),y:rect.top+14},end:{x:rec"
-                    "t.left+18,y:rect.top+14}};})()"
+                    "(() => {const canvas=document.querySelector('.workspace"
+                    "-canvas'); const before=canvas.getBoundingClientRect();"
+                    " canvas.scrollIntoView({block:'center',inline:'nearest'});"
+                    " const rect=canvas.getBoundingClientRect(); const start="
+                    "{x:Math.min(rect.right-14,rect.left+260),y:rect.top+14};"
+                    " return {before:{top:before.top,bottom:before.bottom},"
+                    "viewport:innerHeight,rect:{top:rect.top,bottom:rect.bottom},"
+                    "box:{left:rect.left,right:rect.right,clientWidth:canvas.clientWidth,"
+                    "scrollWidth:canvas.scrollWidth,scrollLeft:canvas.scrollLeft,"
+                    "touchAction:{canvas:getComputedStyle(canvas).touchAction,"
+                    "svg:getComputedStyle(canvas.querySelector('svg')).touchAction,"
+                    "overflowX:getComputedStyle(canvas).overflowX}},"
+                    "start,end:{x:rect.left+18,y:rect.top+14},hit:(()=>{let n=document."
+                    "elementFromPoint(start.x,start.y),chain=[]"
+                    ";for(let i=0;n&&i<6;i++,n=n.parentElement)"
+                    "chain.push({tag:n.tagName,class:n.getAttri"
+                    "bute('class'),touch:getComputedStyle(n).to"
+                    "uchAction});"
+                    "return chain})()};})()"
                 ),
+            )
+            assert swipe["rect"]["top"] >= 0 and swipe["rect"]["bottom"] <= swipe["viewport"], swipe
+            assert swipe["box"]["scrollWidth"] > swipe["box"]["clientWidth"], swipe
+            assert swipe["hit"] and swipe["hit"][0]["tag"], swipe
+            evaluate(
+                call,
+                "(() => {const canvas=document.querySelecto"
+                "r('.workspace-canvas');window.__touchCanvas=canvas;"
+                "window.__touchActive=false;window.__touchMutations=[];"
+                "window.__touchSseMessages=0;source.addEventListener('message',"
+                "()=>window.__touchSseMessages++);"
+                "new MutationObserver(records=>{const relevant=records.some(record=>"
+                "[...record.addedNodes,...record.removedNodes].some(node=>node.nodeType===1&&"
+                "(node.matches('.workspace-canvas')||node.querySelector('.workspace-canvas'))));"
+                "if(relevant)window.__touchMutations.push({during:window.__touchActive,"
+                "sse:window.__touchSseMessages,current:document.querySelector('.workspace-canvas')===canvas,"
+                "appTouching:workspaceTouching,pending:workspaceRenderPending});"
+                "}).observe(document.querySelector('#main'),{childList:true,subtree:true});"
+                "window.__touchRenderFlags=[];window.__priorTouchSse=source.onmessage;"
+                "source.onmessage=function(event){const active=window.__touchActive;"
+                "const result=window.__priorTouchSse.call(this,event);if(active)"
+                "window.__touchRenderFlags.push({appTouching:workspaceTouching,"
+                "pending:workspaceRenderPending});return result;};"
+                "window.__touchProbe"
+                "=[];"
+                "document.addEventListener('touchstart',()=>window.__touchActive=true,"
+                "{capture:true,passive:true});"
+                "for(const type of ['touchend','touchcancel'])document.addEventListener(type,"
+                "event=>{if(!event.touches?.length)window.__touchActive=false;},"
+                "{capture:true,passive:true});"
+                "for(const type of ['touchstart','touchmove','touchend','touchcancel',"
+                "'pointerdown','pointermove','pointerup','pointercancel'])"
+                "canvas.addEventListener(type,event=>window.__touchProbe.push({"
+                "type,target:event.target.tagName,"
+                "x:event.clientX??event.touches?.[0]?.clientX,"
+                "y:event.clientY??event.touches?.[0]?.clientY,"
+                "defaultPrevented:event.defaultPrevented}),"
+                "{capture:true,passive:true});return true})()",
             )
             call(
                 "Emulation.setTouchEmulationEnabled",
                 {"enabled": True, "maxTouchPoints": 1},
             )
             call(
-                "Input.dispatchTouchEvent",
+                "Input.synthesizeScrollGesture",
                 {
-                    "type": "touchStart",
-                    "touchPoints": [
-                        {**swipe["start"], "radiusX": 2, "radiusY": 2, "force": 1, "id": 1}
-                    ],
+                    "x": swipe["start"]["x"],
+                    "y": swipe["start"]["y"],
+                    "xDistance": -180,
+                    "yDistance": 0,
+                    "speed": 800,
+                    "preventFling": True,
+                    "gestureSourceType": "touch",
                 },
             )
-            call(
-                "Input.dispatchTouchEvent",
-                {
-                    "type": "touchMove",
-                    "touchPoints": [
-                        {**swipe["end"], "radiusX": 2, "radiusY": 2, "force": 1, "id": 1}
-                    ],
-                },
+            deadline = time.monotonic() + 8
+            while time.monotonic() < deadline and not evaluate(
+                call, "document.querySelector('.workspace-canvas').scrollLeft > 0"
+            ):
+                time.sleep(0.05)
+            if not evaluate(call, "document.querySelector('.workspace-canvas').scrollLeft > 0"):
+                diagnostic = evaluate(
+                    call,
+                    "(() => {const c=document.querySelector('.workspace-canvas'),"
+                    "r=c.getBoundingClientRect();return {"
+                    "scrollLeft:c.scrollLeft,scrollWidth:c.scrollWidth,clientWidth:c.clientWidth,"
+                    "touchAction:{canvas:getComputedStyle(c).touchAction,"
+                    "svg:getComputedStyle(c.querySelector('svg')).touchAction,"
+                    "overflowX:getComputedStyle(c).overflowX,"
+                    "svgWidth:getComputedStyle(c.querySelector('svg')).width},"
+                    "viewport:{width:innerWidth,height:innerHeight},"
+                    "rect:{left:r.left,right:r.right,top:r.top,bottom:r.bottom},"
+                    "events:window.__touchProbe,bodyScrollLeft:"
+                    "document.scrollingElement.scrollLeft};})()",
+                )
+                pytest.fail(f"Native touch pan did not scroll the diagram canvas: {diagnostic}")
+            touch_events = evaluate(
+                call,
+                "(() => ({sameCanvas:document.querySelector('.workspace-canvas')"
+                "===window.__touchCanvas,mutations:window.__touchMutations,"
+                "renderFlags:window.__touchRenderFlags,"
+                "events:window.__touchProbe.map(event=>event.type)}))()",
             )
-            call("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
-            wait(call, "document.querySelector('.workspace-canvas').scrollLeft > 0")
+            assert not any(mutation["during"] for mutation in touch_events["mutations"]), (
+                touch_events
+            )
+            assert (
+                "touchstart" in touch_events["events"] and "touchmove" in touch_events["events"]
+            ), touch_events
+            if width == 320:
+                assert touch_events["renderFlags"], touch_events
+                assert all(
+                    flag["appTouching"] and flag["pending"] for flag in touch_events["renderFlags"]
+                ), touch_events
         layout = evaluate(
             call,
             (
@@ -804,7 +889,10 @@ def test_workspace_remains_usable_when_browser_storage_is_blocked(db_path, tmp_p
     with (
         serve(db_path, task_id) as server,
         chrome(
-            tmp_path / "chrome-storage-blocked", f"{server.url}?task={task_id}", 1280, 800
+            tmp_path / "chrome-storage-blocked",
+            f"{server.url}?task={task_id}&workspace=design&tab=requirements",
+            1280,
+            800,
         ) as call,
     ):
         call(
@@ -1215,11 +1303,7 @@ def test_existing_change_and_comment_links_open_their_workspace_content(
         )
         wait(
             call,
-            "workspaceStates.get("
-            + json.dumps(task_id)
-            + ").mode==='design' && workspaceStates.get("
-            + json.dumps(task_id)
-            + ").tab==='diagram'",
+            "workspaceStates.get(" + json.dumps(task_id) + ").tab==='diagram'",
         )
         assert evaluate(
             call, "document.querySelector('[data-view-disclosure=workspace-notation]').open"
@@ -1239,16 +1323,19 @@ def test_existing_change_and_comment_links_open_their_workspace_content(
         evaluate(call, "document.querySelector('#comments a[href*=version]').click()")
         wait(
             call,
-            "workspaceStates.get("
-            + json.dumps(task_id)
-            + ").mode==='design' && workspaceStates.get("
-            + json.dumps(task_id)
-            + ").tab==='diagram'",
+            "workspaceStates.get(" + json.dumps(task_id) + ").tab==='diagram'",
         )
         assert evaluate(
             call, "document.querySelector('[data-view-disclosure=workspace-notation]').open"
         )
         assert "version 1" in evaluate(call, "document.querySelector('#diagrams').textContent")
+        evaluate(call, "document.querySelector('#workspace-tab-spec').click(); true")
+        wait(call, "new URLSearchParams(location.search).get('tab')==='spec'")
+        call("Page.navigate", {"url": evaluate(call, "location.href")})
+        wait(
+            call,
+            "document.querySelector('#workspace-tab-spec')?.getAttribute('aria-selected')==='true'",
+        )
 
 
 def test_workspace_retains_scroll_and_draft_when_source_becomes_stale(db_path, tmp_path):

@@ -98,8 +98,9 @@ def _non_loopback_ipv4() -> str | None:
 
 
 def test_binds_loopback_only_on_a_free_port(db_path):
-    params = list(inspect.signature(DashboardServer.__init__).parameters)
-    assert params == ["self", "db_path", "task_id", "specs"]
+    signature = inspect.signature(DashboardServer.__init__)
+    assert list(signature.parameters) == ["self", "db_path", "task_id", "specs", "project_root"]
+    assert signature.parameters["project_root"].kind is inspect.Parameter.KEYWORD_ONLY
     with serve(db_path, None) as first, serve(db_path, None) as second:
         assert first.server_address[0] == "127.0.0.1" and first.port > 0
         assert first.url == f"http://127.0.0.1:{first.port}/"
@@ -342,7 +343,20 @@ def test_no_or_unknown_active_task_lists_the_tasks(db_path, tmp_path):
     with serve(empty_db, None) as server:
         assert api(server)["tasks"] == []
     with serve(tmp_path / "none" / "state.db", None) as server:
-        assert api(server) == {"task": None, "notice": NO_ACTIVE_TASK, "tasks": []}
+        from harness.authoring import project_identity
+
+        project = {
+            "id": project_identity(server.project_root),
+            "repository": str(server.project_root),
+        }
+        assert api(server) == {
+            "task": None,
+            "notice": NO_ACTIVE_TASK,
+            "tasks": [],
+            "authoring": {"project": project, "task": None, "initialized": False},
+            "project": project,
+            "authoring_worker": "stopped",
+        }
 
 
 def test_foreign_host_header_is_refused(db_path):

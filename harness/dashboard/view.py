@@ -117,18 +117,42 @@ def _sync(controller: HarnessController, task_id: str) -> str | None:
     return None
 
 
-def dashboard_view(db_path: Path, task_id: str | None, specs: str | None) -> dict[str, Any]:
-    """The selected task and every task's row; no or an unknown task gives a notice instead.
+def compose_view(controller, task_id, specs, sync_error):
+    task = _find(controller, task_id)
+    shown = None if task is None else _task_view(controller, task, specs, sync_error)
+    return {
+        "task": shown,
+        "notice": None if task else _notice(task_id),
+        "tasks": _rows(controller, specs),
+    }
 
-    Writes only diagram versions (DEC-0007), before the snapshot and on the same connection.
-    """
-    if not Path(db_path).exists():
-        return {"task": None, "notice": _notice(task_id), "tasks": []}
+
+def dashboard_view(db_path: Path, task_id: str | None, specs: str | None) -> dict[str, Any]:
+    """Legacy read wrapper; diagram writes precede its single database snapshot."""
+    return combined_view(db_path, task_id, specs)
+
+
+def combined_view(db_path, task_id, specs, *, root=None):
+    from harness.dashboard.authoring_view import authoring_snapshot
+
+    if not Path(db_path).is_file():
+        data = {"task": None, "notice": _notice(task_id), "tasks": []}
+        if root is not None:
+            data["authoring"] = authoring_snapshot(None, root, None, specs=specs)
+        return data
     with open_state(db_path) as controller:
         found = _find(controller, task_id)
         sync_error = None if found is None else _sync(controller, found.id)
         with _snapshot(controller.conn):
-            task = None if found is None else controller.get_task(found.id)
-            shown = None if task is None else _task_view(controller, task, specs, sync_error)
-            notice = None if task is not None else _notice(task_id)
-            return {"task": shown, "notice": notice, "tasks": _rows(controller, specs)}
+            data = compose_view(controller, task_id, specs, sync_error)
+            if root is not None:
+                try:
+                    data["authoring"] = authoring_snapshot(
+                        controller, root, task_id if data["task"] else None, specs=specs
+                    )
+                except (LookupError, ValueError, OSError):
+                    data["authoring"] = {
+                        "error": "Selected task is outside the configured authoring project",
+                        "task": task_id,
+                    }
+            return data

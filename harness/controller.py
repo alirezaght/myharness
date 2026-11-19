@@ -1,5 +1,6 @@
 """Harness Controller: task lifecycle and persisted, validated phase transitions."""
 
+import re
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -63,6 +64,17 @@ class HarnessController:
         self.conn = conn
 
     def create_task(self, request: str, complexity: Complexity | None = None) -> Task:
+        task_id = f"t-{secrets.token_hex(4)}"
+        with transaction(self.conn):
+            return self.create_task_in_transaction(request, complexity, task_id=task_id)
+
+    def create_task_in_transaction(
+        self, request: str, complexity: Complexity | None = None, *, task_id: str
+    ) -> Task:
+        if not self.conn.in_transaction:
+            raise RuntimeError("task insertion requires an existing transaction")
+        if not isinstance(task_id, str) or not re.fullmatch(r"t-[0-9a-f]{8}", task_id):
+            raise ValueError("invalid internal task identity")
         text = request.strip()
         if not text:
             raise ValueError("request must not be empty")
@@ -70,17 +82,16 @@ class HarnessController:
             level, source = classify_request(text), SOURCE_PROPOSED
         else:
             level, source = Complexity(complexity), SOURCE_DEVELOPER
-        task_id, now, first = f"t-{secrets.token_hex(4)}", utcnow(), PHASE_ORDER[0]
-        with transaction(self.conn):
-            self.conn.execute(
-                "INSERT INTO tasks (id, request, complexity, complexity_source, phase,"
-                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (task_id, text, level, source, first, now, now),
-            )
-            self._record(task_id, None, first, "task created", now)
-            self.workspace(task_id).record_event(
-                "task.created", {"complexity": level, "source": source}
-            )
+        now, first = utcnow(), PHASE_ORDER[0]
+        self.conn.execute(
+            "INSERT INTO tasks (id, request, complexity, complexity_source, phase,"
+            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (task_id, text, level, source, first, now, now),
+        )
+        self._record(task_id, None, first, "task created", now)
+        self.workspace(task_id).record_event(
+            "task.created", {"complexity": level, "source": source}
+        )
         return self.get_task(task_id)
 
     def get_task(self, task_id: str) -> Task:

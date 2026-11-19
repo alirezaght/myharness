@@ -132,11 +132,17 @@ class DecisionWorkflow:
         return change, self.preview(change)
 
     def preview(self, change: DecisionChange) -> ChangePreview:
-        current = self.registry.get(change.decision_id)
+        current = self._approved(change.decision_id)
+        if current.version != change.base_version:
+            raise ValueError(f"{current.id} changed since the proposal (now v{current.version})")
+        from harness.effective_records import effective_records
+
         skipped = tuple(
             q.id
-            for q in self.ws.questions(QuestionStatus.SKIPPED)
-            if q.skip_source is SkipSource.DECISION and q.skip_reason == current.id
+            for q in effective_records(self.ws).questions
+            if q.status is QuestionStatus.SKIPPED
+            and q.skip_source is SkipSource.DECISION
+            and q.skip_reason == current.id
         )
         return ChangePreview(current, change, skipped, tuple(self.registry.references(current.id)))
 
@@ -179,8 +185,12 @@ class DecisionWorkflow:
     def suggest(self, sources: list[Path]) -> tuple[list[Suggestion], list[str]]:
         """Read-only: no DB row, no event, no file."""
         task = self.controller.get_task(self.task_id)
+        from harness.effective_records import effective_records
+
         open_decisions = [
-            q.text for q in self.ws.open_questions() if q.kind is QuestionKind.DECISION
+            q.text
+            for q in effective_records(self.ws).questions
+            if q.status is QuestionStatus.OPEN and q.kind is QuestionKind.DECISION
         ]
         return suggest(task.request, open_decisions, sources, exclude=self.registry.directory)
 

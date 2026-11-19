@@ -175,27 +175,31 @@ class TestPlanner:
 
     @contextmanager
     def _mutation(self) -> Iterator[None]:
-        with transaction(self.conn):
-            task = self.controller.get_task(self.task_id)
-            if task.phase is not Phase.TEST_PLAN:
-                before = PHASE_ORDER.index(task.phase) < PHASE_ORDER.index(Phase.TEST_PLAN)
-                hint = (
-                    f"harness phase {task.id} next"
-                    if before
-                    else f'harness phase {task.id} back test_plan --reason "<why>"'
-                )
-                raise TestPlanError(f"task {task.id} is in phase {task.phase}; run: {hint}")
-            yield
-            review = self.review()
-            self.ws.checkpoint(
-                "test_plan",
-                {
-                    "pending": self._refs(review, AWAITING),
-                    "flagged": self._refs(review, FLAGGED),
-                    "approved": review.current,
-                    "blocking": review.blocking,
-                },
+        with transaction(self.conn), self.mutation_in_transaction() as result:
+            yield result
+
+    @contextmanager
+    def mutation_in_transaction(self) -> Iterator[None]:
+        if not self.conn.in_transaction:
+            raise RuntimeError("existing transaction required")
+        task = self.controller.get_task(self.task_id)
+        if task.phase is not Phase.TEST_PLAN:
+            before = PHASE_ORDER.index(task.phase) < PHASE_ORDER.index(Phase.TEST_PLAN)
+            hint = (
+                f"harness phase {task.id} next"
+                if before
+                else f'harness phase {task.id} back test_plan --reason "<why>"'
             )
-            self.conn.execute(
-                "UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id)
-            )
+            raise TestPlanError(f"task {task.id} is in phase {task.phase}; run: {hint}")
+        yield
+        review = self.review()
+        self.ws.checkpoint(
+            "test_plan",
+            {
+                "pending": self._refs(review, AWAITING),
+                "flagged": self._refs(review, FLAGGED),
+                "approved": review.current,
+                "blocking": review.blocking,
+            },
+        )
+        self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id))

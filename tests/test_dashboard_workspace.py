@@ -97,7 +97,10 @@ def test_workspace_javascript_syntax_and_truthful_task_groups():
         {"status": "Completed", "guidance": {"status": "Verified complete"}},
         {"status": "in progress", "guidance": {"status": "Specification in progress"}},
     ]
-    script = "globalThis.window = { addEventListener() {} };\n" + script
+    script = (
+        "globalThis.window = { addEventListener() {} };\n"
+        "globalThis.document = { addEventListener() {} };\n" + script
+    )
     script += "\nconsole.log(JSON.stringify(" + json.dumps(cases) + ".map(workspaceTaskGroup)));"
     result = subprocess.run([node, "-e", script], check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == [

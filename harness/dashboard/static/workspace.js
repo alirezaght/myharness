@@ -3,43 +3,92 @@
 const workspaceStates = new Map();
 let workspaceData = null;
 let workspaceDragging = false;
+let workspaceTouching = false;
 let workspaceRenderPending = false;
+let workspacePendingFocusIntent = null;
+let workspaceFocusInteractionEpoch = 0;
+
+document.addEventListener("pointerdown", () => { workspaceFocusInteractionEpoch += 1; }, true);
+document.addEventListener("keydown", () => { workspaceFocusInteractionEpoch += 1; }, true);
 
 function workspaceLegacyRoute(hash) {
   const target = (hash || "").slice(1).split(/[?&]/, 1)[0];
   const params = new URLSearchParams((hash || "").slice(1));
   if (target === "diagrams" || target === "diagram-compare" || target === "comments"
       || params.has("version") || params.has("element") || /(?:^|&)element=/.test((hash || "").slice(1))) {
-    return { mode: "design", tab: "diagram" };
+    return { tab: "diagram" };
   }
-  if (target === "spec") return { mode: "design", tab: "requirements" };
-  if (target === "delivery") return { mode: "run", tab: "delivery" };
-  if (target === "history") return { mode: "run", tab: "history" };
-  if (["approvals", "execution", "execution-decisions", "current-status", "resume"].includes(target)) {
-    return { mode: "run", tab: "overview" };
+  if (target === "spec") return { tab: "spec" };
+  if (target === "delivery") return { tab: "delivery" };
+  if (target === "history") return { tab: "history" };
+  if (target === "approvals") return { tab: "review" };
+  if (["execution", "execution-decisions", "current-status", "resume"].includes(target)) {
+    return { tab: "implementation" };
   }
   return null;
 }
 
 function workspacePersist(state) {
   try {
-    localStorage.setItem(`myharness-workspace:${state.task}`, JSON.stringify({ base: state.base, source: state.source,
-      operations: state.operations, fields: state.fields, mode: state.mode, tab: state.tab, selection: state.selection,
-      retry: state.retry, status: state.status, savedId: state.savedId }));
-  } catch (_) { /* The current page still retains the draft when storage is unavailable. */ }
+    localStorage.setItem(`myharness-workspace:${state.projectId}:${state.task}`, JSON.stringify({
+      projectId: state.projectId, base: state.base, source: state.source,
+      operations: state.operations, fields: state.fields, tab: state.tab, selection: state.selection,
+      retry: state.retry, status: state.status, savedId: state.savedId,
+      authoringRequests: state.authoringRequests,
+      authoringRequestActions: state.authoringRequestActions,
+      authoringRequestForms: state.authoringRequestForms,
+      authoringRetryAcknowledgements: state.authoringRetryAcknowledgements,
+      authoringRequestHistory: state.authoringRequestHistory,
+      authoringRequestContinuations: state.authoringRequestContinuations,
+      authoringHistory: state.authoringHistory,
+      authoringConflict: state.authoringConflict, authoringMessage: state.authoringMessage,
+      drawerQuestionId: state.drawerQuestionId, drawerFocusReturnKey: state.drawerFocusReturnKey,
+      newTaskOpen: state.newTaskOpen, diagramView: state.diagramView,
+    }));
+    state.storageAvailable = true;
+    state.storageError = "";
+  } catch (_) {
+    state.storageAvailable = false;
+    state.storageError = "Browser storage is unavailable. Drafts stay in this page until saved to Harness.";
+  }
+}
+
+function workspaceAcceptAuthoringSnapshot(state, snapshot) {
+  if (!snapshot) return state.authoring;
+  const previousGeneration = state.authoring?.base?.generation;
+  const nextGeneration = snapshot.base?.generation;
+  if (Number.isInteger(previousGeneration) && Number.isInteger(nextGeneration)
+      && nextGeneration < previousGeneration) return state.authoring;
+  state.authoring = snapshot;
+  state.authoringReadSequence = (state.authoringReadSequence || 0) + 1;
+  return state.authoring;
 }
 
 function workspaceState(task) {
   let state = workspaceStates.get(task.id);
   if (!state) {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem(`myharness-workspace:${task.id}`)); } catch (_) { /* absent */ }
+    const projectId = task.authoring?.project?.id || workspaceData?.project?.id || "unknown-project";
+    try {
+      stored = JSON.parse(localStorage.getItem(`myharness-workspace:${projectId}:${task.id}`));
+      if (!stored) {
+        const legacy = JSON.parse(localStorage.getItem(`myharness-workspace:${task.id}`));
+        if (legacy && (!legacy.task || legacy.task === task.id)) {
+          if (legacy.base === task.workspace.base) stored = legacy;
+          else if (legacy.operations?.length || Object.keys(legacy.fields || {}).length) {
+            try { localStorage.setItem(`myharness-workspace-recovery:${projectId}:${task.id}`, JSON.stringify(legacy)); } catch (_) { /* the legacy value remains untouched */ }
+          }
+        }
+      }
+    } catch (_) { /* absent or unavailable storage */ }
     const latest = task.workspace.proposals.at(-1);
-    const runSurface = Boolean(task.execution || task.guidance?.target === "start"
-      || ["approval", "execution"].includes(task.phase));
-    state = { task: task.id, base: task.workspace.base, source: task.workspace.source, operations: [], fields: {},
-      mode: runSurface ? "run" : "design", tab: runSurface ? "overview" : "requirements", selection: null,
-      status: "No proposal edits", saving: false, retry: null, savedId: null, ...stored };
+    state = { task: task.id, projectId, base: task.workspace.base, source: task.workspace.source,
+      operations: [], fields: {}, tab: task.execution ? "implementation" : "interview", selection: null,
+      status: "No proposal edits", saving: false, retry: null, savedId: null,
+      authoring: task.authoring || null, ...stored };
+    state.projectId = projectId;
+    workspaceAcceptAuthoringSnapshot(state, task.authoring);
+    state.storageAvailable = true;
     if (state.retry && state.status === "Saving proposal…") {
       state.status = "Save outcome unknown — retry to confirm.";
     }
@@ -49,19 +98,21 @@ function workspaceState(task) {
       state.status = "Saved proposal";
     }
     const route = new URLSearchParams(location.search);
-    const requestedMode = route.get("workspace");
-    if (["design", "run"].includes(requestedMode)) state.mode = requestedMode;
     const legacyRoute = workspaceLegacyRoute(location.hash);
-    if (legacyRoute) {
-      state.mode = legacyRoute.mode;
-      state.tab = legacyRoute.tab;
-    }
-    const allowedTabs = state.mode === "design"
-      ? ["requirements", "plan", "diagram", "review"]
-      : ["overview", "changes", "checks", "delivery", "history"];
-    if (!legacyRoute && allowedTabs.includes(route.get("tab"))) state.tab = route.get("tab");
+    const aliases = { overview: "implementation", changes: "implementation" };
+    const allowedTabs = ["interview", "requirements", "spec", "plan", "diagram", "review",
+      "implementation", "checks", "delivery", "history"];
+    if (legacyRoute) state.tab = legacyRoute.tab;
+    else if (route.get("tab") && allowedTabs.includes(aliases[route.get("tab")] || route.get("tab")))
+      state.tab = aliases[route.get("tab")] || route.get("tab");
+    else if (route.get("workspace") === "run") state.tab = "implementation";
+    else if (route.get("workspace") === "design") state.tab = "requirements";
+    if (stored?.mode && !route.has("tab") && !legacyRoute)
+      state.tab = stored.mode === "run" ? "implementation" : "requirements";
     workspaceStates.set(task.id, state);
   }
+  if (task.authoring) workspaceAcceptAuthoringSnapshot(state, task.authoring);
+  task.authoring = state.authoring || task.authoring;
   const pendingFields = workspaceUnappliedFields(state);
   const hasDraft = state.operations.length || pendingFields.length || state.retry;
   if (state.base !== task.workspace.base && !hasDraft) {
@@ -77,7 +128,6 @@ window.addEventListener("hashchange", () => {
   const task = workspaceData?.task;
   const state = task && workspaceStates.get(task.id);
   if (!route || !state) return;
-  state.mode = route.mode;
   state.tab = route.tab;
   workspacePersist(state);
   workspaceRerender();
@@ -193,7 +243,40 @@ function workspaceSelect(state, id) {
   workspacePersist(state);
 }
 
-function workspaceRerender() { if (workspaceData) render(workspaceData); }
+function workspaceRerender() {
+  if (!workspaceData) return;
+  const state = workspaceData.task && workspaceStates.get(workspaceData.task.id);
+  if (state && document.querySelector(".authoring-drawer:not(.authoring-new-task-dialog)[open]")) {
+    state.drawerOpen = true;
+    state.drawerReplacing = true;
+  }
+  if (state && document.querySelector(".authoring-new-task-dialog[open]")) {
+    state.newTaskOpen = true; state.newTaskReplacing = true;
+  }
+  render(workspaceData);
+  if (state?.drawerReplacing) setTimeout(() => { state.drawerReplacing = false; }, 0);
+  if (state?.newTaskReplacing) setTimeout(() => { state.newTaskReplacing = false; }, 0);
+}
+
+function workspaceTouchStart() {
+  workspaceTouching = true;
+}
+
+function workspaceTouchEnd(event) {
+  if (event.touches?.length) return;
+  workspaceTouching = false;
+  if (workspaceRenderPending && !workspaceDragging) workspaceRerender();
+}
+
+function workspaceSetTab(state, name) {
+  state.tab = name;
+  const url = new URL(location.href);
+  url.searchParams.set("tab", name);
+  url.searchParams.delete("workspace");
+  const legacyHash = workspaceLegacyRoute(url.hash);
+  if (legacyHash && legacyHash.tab !== name) url.hash = "";
+  history.replaceState(null, "", url);
+}
 
 function workspaceTabs(state, names, label) {
   const tabs = el("div");
@@ -202,7 +285,7 @@ function workspaceTabs(state, names, label) {
   tabs.setAttribute("aria-label", label);
   for (const [name, title] of names) {
     const button = workspaceButton(title, () => {
-      state.tab = name; workspacePersist(state); workspaceRerender();
+      workspaceSetTab(state, name); workspacePersist(state); workspaceRerender();
     });
     button.id = `workspace-tab-${name}`;
     button.dataset.workspaceFocus = `tab:${name}`;
@@ -218,7 +301,7 @@ function workspaceTabs(state, names, label) {
       else if (event.key === "End") index = names.length - 1;
       else return;
       event.preventDefault();
-      state.tab = names[index][0]; workspacePersist(state); workspaceRerender();
+      workspaceSetTab(state, names[index][0]); workspacePersist(state); workspaceRerender();
       document.getElementById(`workspace-tab-${state.tab}`)?.focus();
     });
     tabs.append(button);
@@ -257,7 +340,7 @@ function workspaceRunPanel(task, state, inspector, existingKnowledge = null) {
   const execution = task.execution;
   executionTaskId = task.id;
   executionSnapshot = execution;
-  if (state.tab === "overview") {
+  if (state.tab === "implementation") {
     panel.append(renderStatusSummary(task));
     if (execution) {
       const checks = execution.activity?.checks || [];
@@ -269,7 +352,11 @@ function workspaceRunPanel(task, state, inspector, existingKnowledge = null) {
     inspector.append(workspaceKnowledge(task, state, existingKnowledge));
     const diagnostics = el("details");
     diagnostics.dataset.viewDisclosure = "design-diagnostics";
-    diagnostics.append(workspaceSummary(state, diagnostics, "Design notation details"), renderDiagrams(task.id, task.diagrams));
+    const diagnosticDiagrams = { ...task.diagrams, implementation: null };
+    diagnostics.append(
+      workspaceSummary(state, diagnostics, "Design notation details"),
+      renderDiagrams(task.id, diagnosticDiagrams),
+    );
     panel.append(diagnostics);
     if (execution?.delivery) {
       const delivery = el("details");
@@ -278,6 +365,10 @@ function workspaceRunPanel(task, state, inspector, existingKnowledge = null) {
       panel.append(delivery);
     }
     panel.append(workspaceTaskDetails(task));
+    panel.append(el("h2", "Changes in this run"));
+    if (task.diagrams.implementation) panel.append(renderChangeIllustration(task.diagrams.implementation));
+    else panel.append(el("p", "No recorded execution change references available."));
+    panel.append(el("p", "A source diff is unavailable unless recorded by the runtime."));
   } else if (state.tab === "checks") {
     panel.append(el("h2", "Recorded checks"));
     if (execution) {
@@ -292,11 +383,6 @@ function workspaceRunPanel(task, state, inspector, existingKnowledge = null) {
       }
     } else panel.append(el("p", "Checks unavailable until an execution records evidence."));
     inspector.append(el("h2", "Evidence"), el("p", "Missing or unexecuted checks are never counted as passes. Tooling repair is separate from developer decisions."));
-  } else if (state.tab === "changes") {
-    panel.append(el("h2", "Changes in this run"));
-    if (task.diagrams.implementation) panel.append(renderChangeIllustration(task.diagrams.implementation));
-    else panel.append(el("p", "No recorded execution change references available."));
-    panel.append(el("p", "A source diff is unavailable unless recorded by the runtime. Design proposals are reviewed in Plan & Design → Review."));
   } else if (state.tab === "delivery") {
     panel.append(el("h2", "Delivery"));
     if (execution?.delivery) panel.append(renderDelivery(execution.delivery));
@@ -351,38 +437,75 @@ function renderWorkspaceTask(task, existingKnowledge = null) {
   const heading = el("div"); heading.className = "workspace-heading";
   heading.append(el("small", `Task ${task.id} · ${task.phase}`), el("h2", task.request), el("p", task.guidance?.status || task.status));
   const workActivity = task.execution?.activity?.last_activity_at;
-  const meta = el("p", state.mode === "design"
-    ? `Specification · ${specText(task.spec)}`
-    : workActivity ? `Work update · ${workActivity}` : "No recorded run activity");
+  const authoring = state.authoring || task.authoring;
+  const authoringSpec = authoring?.working
+    ? `Working draft saved · ${authoring.working.id.slice(0, 8)}${authoring.adopted ? ` · adopted ${authoring.adopted.id.slice(0, 8)}` : " · not adopted"}`
+    : authoring?.approved
+      ? `Approved specification v${authoring.approved.version}`
+      : authoring?.initialized ? "No working draft saved" : specText(task.spec);
+  const meta = el("p", workActivity ? `Last implementation activity · ${workActivity}` : `Specification · ${authoringSpec}`);
   meta.className = "workspace-muted"; heading.append(meta);
-  const switcher = el("div"); switcher.className = "workspace-switch";
-  switcher.setAttribute("aria-label", "Workspace");
-  for (const [mode, title] of [["design", "Plan & Design"], ["run", "Live Run"]]) {
-    const button = workspaceButton(title, () => {
-      state.mode = mode; state.tab = mode === "design" ? "requirements" : "overview";
-      workspacePersist(state); workspaceRerender();
-    });
-    button.dataset.workspaceFocus = `mode:${mode}`;
-    button.setAttribute("aria-pressed", String(state.mode === mode)); switcher.append(button);
-  }
-  top.append(heading, switcher); root.append(top);
-  const names = state.mode === "design" ? [["requirements", "Requirements"], ["plan", "Plan"], ["diagram", "Diagram"], ["review", `Review${state.operations.length ? ` (${state.operations.length})` : ""}`]]
-    : [["overview", "Overview"], ["changes", "Changes"], ["checks", "Checks"], ["delivery", "Delivery"], ["history", "History"]];
+  const pendingQuestion = (state.authoring?.questions || []).find(item => !item.answer && !item.skip_source);
+  const drawerButton = el("button", pendingQuestion ? `Answer Q${pendingQuestion.id}` : "Open interview");
+  drawerButton.type = "button"; drawerButton.dataset.workspaceFocus = `interview-drawer:${task.id}`;
+  drawerButton.setAttribute("aria-haspopup", "dialog");
+  drawerButton.addEventListener("click", () => {
+    state.drawerQuestionId = pendingQuestion?.id ?? null;
+    state.drawerFocusReturnKey = drawerButton.dataset.workspaceFocus;
+    state.drawerOpen = true; workspacePersist(state); workspaceRerender();
+  });
+  const newTaskButton = el("button", "New interview"); newTaskButton.type = "button";
+  newTaskButton.className = "workspace-new-interview";
+  newTaskButton.dataset.workspaceFocus = `new-interview:${task.id}`;
+  newTaskButton.setAttribute("aria-haspopup", "dialog");
+  newTaskButton.addEventListener("click", () => {
+    state.newTaskOpen = true; state.newTaskFocusReturnKey = newTaskButton.dataset.workspaceFocus;
+    workspacePersist(state); workspaceRerender();
+  });
+  const topActions = el("div"); topActions.className = "workspace-top-actions";
+  topActions.append(drawerButton, newTaskButton);
+  top.append(heading, topActions); root.append(top);
+  const names = [["interview", "Interview"], ["requirements", "Requirements"], ["spec", "Spec"],
+    ["plan", "Plan"], ["diagram", "Diagram"], ["review", `Review${state.operations.length ? ` (${state.operations.length})` : ""}`],
+    ["implementation", "Implementation"], ["checks", "Checks"], ["delivery", "Delivery"], ["history", "History"]];
   if (!names.some(([name]) => name === state.tab)) state.tab = names[0][0];
-  root.append(workspaceTabs(state, names, state.mode === "design" ? "Plan and design" : "Live run"));
-  if (state.mode === "design") {
-    const bar = workspaceSaveBar(task, state);
-    if (bar) root.append(bar);
-  }
+  root.append(workspaceTabs(state, names, "Task workflow"));
+  const authoringStatus = workspaceAuthoringStatus(task, state);
+  if (authoringStatus) root.append(authoringStatus);
+  const bar = workspaceSaveBar(task, state);
+  if (bar) root.append(bar);
   const layout = el("div"); layout.className = "workspace-layout";
   const inspector = el("aside"); inspector.className = "workspace-inspector";
   inspector.setAttribute("aria-label", "Contextual inspector"); inspector.dataset.workspaceScroll = "inspector";
   let panel;
-  if (state.mode === "run") panel = workspaceRunPanel(task, state, inspector, existingKnowledge);
-  else panel = ({ requirements: workspaceRequirements, plan: workspacePlan, diagram: workspaceDiagram, review: workspaceReview })[state.tab](task, state, inspector);
+  panel = ({
+    interview: workspaceInterviewPanel,
+    requirements: workspaceRequirementsPanel,
+    spec: workspaceSpecPanel,
+    plan: workspacePlan,
+    diagram: workspaceDiagram,
+    review: workspaceReviewPanel,
+    implementation: (selectedTask, selectedState, selectedInspector) =>
+      workspaceRunPanel(selectedTask, selectedState, selectedInspector, existingKnowledge),
+    checks: (selectedTask, selectedState, selectedInspector) =>
+      workspaceRunPanel(selectedTask, selectedState, selectedInspector, existingKnowledge),
+    delivery: (selectedTask, selectedState, selectedInspector) =>
+      workspaceRunPanel(selectedTask, selectedState, selectedInspector, existingKnowledge),
+    history: (selectedTask, selectedState, selectedInspector) => {
+      const history = workspaceRunPanel(selectedTask, selectedState, selectedInspector, existingKnowledge);
+      history.append(workspaceConversationHistoryPanel(selectedTask, selectedState));
+      return history;
+    },
+  })[state.tab](task, state, inspector);
   panel.id = "workspace-panel"; panel.classList.add("workspace-panel"); panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", `workspace-tab-${state.tab}`);
   layout.append(panel, inspector); root.append(layout);
+  const drawer = workspaceInterviewDrawer(task, state, drawerButton);
+  root.append(drawer);
+  if (state.drawerOpen) setTimeout(() => { if (drawer.isConnected && !drawer.open) drawer.showModal(); }, 0);
+  const newTaskDialog = workspaceNewTaskDialog(workspaceData, state, newTaskButton);
+  root.append(newTaskDialog);
+  if (state.newTaskOpen) setTimeout(() => { if (newTaskDialog.isConnected && !newTaskDialog.open) newTaskDialog.showModal(); }, 0);
   if (state.saving) inspector.querySelectorAll("input,textarea,select,button").forEach(node => { node.disabled = true; });
   else if (state.stale) {
     inspector.querySelectorAll("input,textarea").forEach(node => { node.readOnly = true; });
@@ -437,15 +560,44 @@ function workspaceNavigation(tasks, selected) {
 
 function withWorkspaceFocus(replace) {
   const node = document.activeElement;
-  const key = node?.dataset.workspaceFocus;
+  const activeKey = node?.dataset.workspaceFocus;
+  const activeDialog = node?.closest("dialog");
+  const activeSurface = activeDialog?.classList.contains("authoring-new-task-dialog")
+    ? "new-task" : activeDialog?.classList.contains("authoring-drawer") ? "drawer" : null;
+  const taskId = workspaceData?.task?.id || null;
+  const state = taskId ? workspaceStates.get(taskId) : null;
+  let pending = workspacePendingFocusIntent;
+  if (pending && (pending.taskId !== taskId || !state
+      || !(pending.surface === "drawer" ? state.drawerOpen : state.newTaskOpen))) {
+    workspacePendingFocusIntent = null;
+    pending = null;
+  }
+  const canCarryPending = pending && (!activeKey || activeKey === pending.key)
+    && (!activeSurface || activeSurface === pending.surface)
+    && pending.interactionEpoch === workspaceFocusInteractionEpoch;
+  if (pending && !canCarryPending) {
+    workspacePendingFocusIntent = null;
+    pending = null;
+  }
+  const key = activeKey || pending?.key || null;
+  const surface = activeSurface || pending?.surface || null;
   const selectedNode = node?.dataset.nodeId;
   const selectedEdge = node?.dataset.edgeId;
   const editors = new Map([...document.querySelectorAll("input[data-workspace-focus],textarea[data-workspace-focus]")]
     .filter(item => typeof item.selectionStart === "number")
     .map(item => [item.dataset.workspaceFocus, [item.selectionStart, item.selectionEnd, item.selectionDirection]]));
+  if (key && pending?.selection && !editors.has(key)) editors.set(key, pending.selection);
+  const disclosures = new Set([...document.querySelectorAll("details[data-workspace-disclosure]")]
+    .filter(item => item.open)
+    .map(item => item.dataset.workspaceDisclosure));
   const scroll = new Map([...document.querySelectorAll("[data-workspace-scroll]")].map(item => [item.dataset.workspaceScroll, [item.scrollLeft, item.scrollTop]]));
   replace();
-  const target = key ? [...document.querySelectorAll("[data-workspace-focus]")].find(item => item.dataset.workspaceFocus === key)
+  for (const item of document.querySelectorAll("details[data-workspace-disclosure]")) {
+    if (disclosures.has(item.dataset.workspaceDisclosure)) item.open = true;
+  }
+  const focusRoot = surface === "drawer" ? document.querySelector(".authoring-drawer:not(.authoring-new-task-dialog)")
+    : surface === "new-task" ? document.querySelector(".authoring-new-task-dialog") : document;
+  const target = key ? [...(focusRoot || document).querySelectorAll("[data-workspace-focus]")].find(item => item.dataset.workspaceFocus === key)
     : selectedNode ? [...document.querySelectorAll("[data-node-id]")].find(item => item.dataset.nodeId === selectedNode)
     : selectedEdge ? [...document.querySelectorAll("[data-edge-id]")].find(item => item.dataset.edgeId === selectedEdge) : null;
   for (const item of document.querySelectorAll("input[data-workspace-focus],textarea[data-workspace-focus]")) {
@@ -453,6 +605,38 @@ function withWorkspaceFocus(replace) {
     if (saved && typeof item.selectionStart === "number" && typeof item.setSelectionRange === "function") item.setSelectionRange(...saved);
   }
   target?.focus({ preventScroll: true });
+  const targetDialog = target?.closest("dialog");
+  if (target && targetDialog && !targetDialog.open && key && surface && state
+      && (surface === "drawer" ? state.drawerOpen : state.newTaskOpen)) {
+    const saved = editors.get(key) || pending?.selection || null;
+    const intent = { taskId, surface, key, selection: saved, interactionEpoch: workspaceFocusInteractionEpoch };
+    workspacePendingFocusIntent = intent;
+    setTimeout(() => {
+      if (workspacePendingFocusIntent !== intent) return;
+      const currentState = workspaceStates.get(taskId);
+      if (!currentState || !(surface === "drawer" ? currentState.drawerOpen : currentState.newTaskOpen)
+          || workspaceFocusInteractionEpoch !== intent.interactionEpoch) {
+        workspacePendingFocusIntent = null;
+        return;
+      }
+      const currentDialog = surface === "drawer"
+        ? document.querySelector(".authoring-drawer:not(.authoring-new-task-dialog)")
+        : document.querySelector(".authoring-new-task-dialog");
+      const currentTarget = currentDialog && [...currentDialog.querySelectorAll("[data-workspace-focus]")]
+        .find(item => item.dataset.workspaceFocus === key);
+      if (!currentTarget?.isConnected || !currentDialog.open) return;
+      const active = document.activeElement;
+      if (active?.dataset.workspaceFocus && active.dataset.workspaceFocus !== key) {
+        workspacePendingFocusIntent = null;
+        return;
+      }
+      currentTarget.focus({ preventScroll: true });
+      if (saved && typeof currentTarget.setSelectionRange === "function") currentTarget.setSelectionRange(...saved);
+      workspacePendingFocusIntent = null;
+    }, 0);
+  } else if (target && targetDialog?.open && key && pending) {
+    workspacePendingFocusIntent = null;
+  }
   for (const item of [...document.querySelectorAll("[data-workspace-scroll]")].reverse()) {
     const saved = scroll.get(item.dataset.workspaceScroll); if (saved) { item.scrollLeft = saved[0]; item.scrollTop = saved[1]; }
   }
