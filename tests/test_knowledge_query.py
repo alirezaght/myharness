@@ -312,3 +312,46 @@ def test_task_reference_recalls_linked_design_text_status_and_rationale(graph):
     assert public.payload["assertions"] == []
     assert public.payload["citations"] == []
     assert public.payload["budget"]["examined_edges"] == 0
+
+
+@pytest.mark.parametrize("byte_limit", [8192, 32768])
+def test_parented_direct_matches_interleave_with_saturated_reverse_impact(graph, byte_limit):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        "".join(f"def rankedneedle_{index}():\n    return {index}\n" for index in range(4))
+    )
+    for index in range(230):
+        (scope.repository / f"dependent_{index:03d}.py").write_text("import service\n")
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    parent = conn.execute(
+        "SELECT a.assertion_id FROM knowledge_assertions a JOIN knowledge_evidence e "
+        "USING(assertion_id) JOIN knowledge_source_versions v USING(version_id) "
+        "JOIN knowledge_sources s USING(source_id) WHERE s.locator='service.py' "
+        "AND a.predicate='described-by'"
+    ).fetchone()[0]
+    direct = {
+        r[0]
+        for r in conn.execute(
+            "SELECT assertion_id FROM knowledge_assertions WHERE predicate='defines' "
+            "AND text LIKE '%rankedneedle_%'"
+        )
+    }
+    conn.executemany(
+        "INSERT INTO knowledge_derivations VALUES (?,?)", [(aid, parent) for aid in direct]
+    )
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest("rankedneedle", limits=QueryLimits(assertions=8, bytes=byte_limit)),
+    )
+    ids = {a["assertion_id"] for a in bundle.payload["assertions"]}
+    assert len(ids & direct) >= 2
+    assert parent in ids
+    assert any(
+        a["predicate"] == "imports" and a["subject"].startswith("module:dependent_")
+        for a in bundle.payload["assertions"]
+    )
+    assert bundle.payload["budget"]["examined_edges"] == 200
+    assert ids == {c["assertion_id"] for c in bundle.payload["citations"]}
+    assert all(set(p["assertion_ids"]) <= ids for p in bundle.payload["paths"])

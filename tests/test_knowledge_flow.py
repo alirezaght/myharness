@@ -581,3 +581,72 @@ def test_completed_report_invalid_summary_aliases_and_guard_bypasses_refuse(oper
     assert (
         controller.conn.execute("SELECT count(*) FROM knowledge_contributions").fetchone()[0] == 0
     )
+
+
+def test_parented_contribution_survives_saturated_graph(operations):
+    from harness.knowledge.contributions import ingest
+
+    operation, supervisor, controller, _, _, execution, _ = operations
+    root = Path(operation.envelope["repository"])
+    (root / "service.py").write_text(
+        "".join(f"import dependency_{index:03d}\n" for index in range(230))
+    )
+    subprocess.run(["git", "-C", str(root), "add", "service.py"], check=True)
+    scoped = current_operator_scope(controller.conn, root, task_id=execution["task_id"])
+    refresh(controller.conn, scoped)
+    parent = controller.conn.execute(
+        "SELECT a.assertion_id FROM knowledge_assertions a JOIN knowledge_entities s "
+        "ON s.entity_id=a.subject_id WHERE s.scoped_key='module:service' "
+        "AND a.predicate='imports' ORDER BY a.assertion_id LIMIT 1"
+    ).fetchone()[0]
+    claims = [
+        {
+            "subject": "module:service",
+            "predicate": predicate,
+            "object": None,
+            "value": None,
+            "text": f"Service continuity {predicate} keeps source-linked engineering evidence.",
+            "parents": [parent],
+        }
+        for predicate in ("calls", "handles", "persists")
+    ]
+    claims.append(
+        {"subject": "report:gaps", "predicate": "observes", "text": "Unrelated coverage gap."}
+    )
+    child, resource, _ = completed_summary_report(operations, {"assertions": claims})
+    assert (
+        ingest(operation, controller, supervisor, "handoff-task", resource)["status"] == "published"
+    )
+    recipient = supervisor | {
+        "thread_id": "later-planning-recipient",
+        "role": "al-scout",
+        "writable": False,
+    }
+    result = operation.dispatch(
+        recipient,
+        "knowledge_query",
+        {
+            "query": "Service continuity source-linked engineering evidence",
+            "entity_refs": ["module:service"],
+        },
+    )
+    assert result["budget"]["examined_edges"] == 200
+    substantive = [
+        a for a in result["assertions"] if a["predicate"] in {"calls", "handles", "persists"}
+    ]
+    assert {a["predicate"] for a in substantive} == {"calls", "handles", "persists"}
+    ids = {a["assertion_id"] for a in result["assertions"]}
+    assert parent in ids
+    assert ids == {c["assertion_id"] for c in result["citations"]}
+    for claim in substantive:
+        assert claim["origin"] == "attributed-inference" and claim["verification"] == "unverified"
+        assert claim["applicability"]["producer_role"] == child["role"]
+        refs = operation.dispatch(
+            recipient,
+            "knowledge_explain",
+            {"bundle_hash": result["bundle_hash"], "assertion_id": claim["assertion_id"]},
+        )["citations"]
+        assert any(c["locator"].startswith("contribution:") for c in refs)
+    assert controller.conn.execute(
+        "SELECT 1 FROM knowledge_receipts WHERE bundle_hash=?", (result["bundle_hash"],)
+    ).fetchone()

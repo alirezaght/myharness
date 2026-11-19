@@ -50,7 +50,43 @@ def test_target_harness_package_cannot_shadow_authority_bridge(cli,tmp_path,repo
     (shadow/'execution_authority.py').write_text(f'from pathlib import Path\nPath({str(marker)!r}).write_text("untrusted target module ran")\nraise SystemExit("target module shadowed authority")\n')
     code,out,err=cli('integration','task-admit','--task','A')
     assert code == 0,(code,out,err)
+    admitted = al_store.load(sid)
+    task = admitted['integration']['tasks']['A']
+    receipt = task['admission'].copy()
+    observation = task['admission_observation'].copy()
+    source = admitted['integration']['outbox'][observation['sequence'] - 1]
+    assert source['kind'] == 'task.updated'
+    assert source['payload']['admission_observation'] == observation
+    assert source['payload']['admission'] == receipt == {'revision': 1, 'graph_revision': 1}
+    assert report(cli, tmp_path, 'task-progress', {'id': 'A', 'activity': 'Continuing admitted work'})[0] == 0
+    current = al_store.load(sid)
+    assert current['integration']['tasks']['A']['admission_observation'] == observation
+    assert current['integration']['tasks']['A']['admission'] == receipt
     assert not marker.exists(), 'target repository replaced the trusted authority bridge'
+    controller.conn.close()
+
+
+def test_admission_observation_uses_final_outbox_sequence(cli, tmp_path, repo, monkeypatch):
+    import copy
+    import al_events
+    controller, _, sid = bound(cli, tmp_path, repo, monkeypatch)
+    previous = al_store.load(sid)
+    previous['status'] = 'WAITING_FOR_USER'
+    proposed = copy.deepcopy(previous)
+    proposed['status'] = 'RUNNING'
+    row = {'id': 'A', 'status': 'Waiting', 'revision': 1,
+           'admission': {'revision': 1, 'graph_revision': 1}}
+    proposed['integration']['tasks']['A'] = row
+    al_events.queue_admission(proposed, row)
+    initial = proposed['integration']['sequence']
+    result = al_events.prepare_commit(previous, proposed)
+    resumed, admitted = result['integration']['outbox'][-2:]
+    assert resumed['kind'] == 'run.started'
+    assert admitted['sequence'] == initial + 2
+    expected = {'sequence': admitted['sequence']}
+    assert row['admission_observation'] == expected
+    assert admitted['payload']['admission_observation'] == expected
+    assert 'assign_admission_observation' not in admitted
     controller.conn.close()
 
 

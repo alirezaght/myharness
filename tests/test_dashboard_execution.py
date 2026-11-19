@@ -102,3 +102,94 @@ def test_explicit_recovery_routes_require_epoch_and_reject_prompt_injection(
         )
         for action in ("recover", "retry-checks")
     ]
+
+
+def test_implementation_label_never_promotes_unknown_readiness():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("local Node unavailable")
+    source = (
+        Path(__file__).resolve().parents[1] / "harness/dashboard/static/execution.js"
+    ).read_text()
+    function = source[
+        source.index("function implementationLabel(") : source.index("function executionDraftKey(")
+    ]
+    script = (
+        function
+        + """
+const assert = require('node:assert/strict');
+for (const execution of [{}, {implementation:{}}, {implementation:{status:'unknown'}},
+                         {implementation:{status:'unverified'}}]) {
+  assert.equal(implementationLabel(execution), 'Implementation unverified');
+}
+assert.equal(implementationLabel({implementation:{status:'ready'}}), 'Implementation ready');
+assert.equal(implementationLabel({implementation:{status:'technically_unavailable'}}),
+             'Implementation unavailable');
+assert.equal(implementationLabel({implementation:{status:'complete'}}), 'Implementation complete');
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, timeout=10)
+
+
+def test_verification_renderer_text_tracks_observed_admission():
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("local Node unavailable")
+    source = (
+        Path(__file__).resolve().parents[1] / "harness/dashboard/static/execution.js"
+    ).read_text()
+    functions = source[
+        source.index("function implementationLabel(") : source.index("function executionDraftKey(")
+    ]
+    functions += source[
+        source.index("function renderVerificationState(") : source.index("function renderProgress(")
+    ]
+    script = (
+        functions
+        + """
+const assert = require('node:assert/strict');
+function el(tag, text='') {
+  return {tag, textContent:text, children:[], dataset:{},
+          append(...nodes) { this.children.push(...nodes); }};
+}
+const document = {createElement: el};
+function text(node) {
+  return [node.textContent, ...node.children.map(text)].join(' ');
+}
+function render(status) {
+  return text(renderVerificationState({implementation:{status},
+    verification:{status:'incomplete', obligation_refs:['coverage remains pending']}}));
+}
+for (const status of ['ready', 'continuing']) {
+  const output = render(status);
+  assert.ok(output.includes('Implementation can continue within its authorized scope.'));
+  assert.ok(output.includes('Verification incomplete'));
+  assert.ok(output.includes('coverage remains pending'));
+}
+for (const status of ['unverified', 'unknown', undefined]) {
+  const output = render(status);
+  assert.ok(output.includes('Implementation admission has not yet been verified.'));
+  assert.ok(!output.includes('Implementation can continue'));
+}
+const unavailable = render('technically_unavailable');
+assert.ok(unavailable.includes('Reported tooling repair is needed before affected implementation'));
+assert.ok(!unavailable.includes('Implementation can continue'));
+for (const status of ['ready', 'continuing', 'unverified', 'technically_unavailable']) {
+  assert.ok(render(status).includes('Final approval still requires the remaining checks.'));
+  assert.ok(!render(status).includes('Required verification complete'));
+}
+"""
+    )
+    subprocess.run([node, "-e", script], check=True, capture_output=True, timeout=10)

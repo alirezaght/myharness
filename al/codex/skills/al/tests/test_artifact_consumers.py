@@ -1,6 +1,6 @@
 """Changed artifacts route to their actual consumers without unrelated import blockers."""
 from conftest import _git
-from test_service_coverage import seed, start, discover, put
+from test_service_coverage import seed, start, discover, put, unit
 
 
 
@@ -39,6 +39,71 @@ def test_shared_fixture_selects_its_literal_consumers_and_defers_unrelated_uncer
     assert row['kind'] == 'data-fixture' and row['consumers'] == ['services/a/src/orders.py']
 
 
+def test_root_readme_does_not_broaden_unrelated_dynamic_imports(cli, repo, tmp_path):
+    seed(repo);unknown_dynamic_import(repo)
+    put(repo, 'pyproject.toml', '[project]\nname="root"\ndependencies=[]\n[tool.al.architecture]\nforbidden=["forbidden_dependency"]\n')
+    put(repo, 'README.md', '# Project\n')
+    commit(repo, 'root package and docs');start(cli)
+    put(repo, 'README.md', '# Project details\n')
+    _, m = discover(cli, tmp_path, ['README.md'])
+    assessment = m['service_coverage']['assessment']
+    assert assessment['outcome'] == 'identified', assessment
+    assert assessment['selected_services'] == ['.']
+    dependencies = m['service_coverage']['semantic_requirements']['dependencies']
+    assert any(u['path'] == 'services/b/src/loader.py' for u in dependencies['deferred_uncertainties'])
+    assert any(b['units'] == ['.'] for b in assessment['required_bindings'])
+    readme = next(r for r in dependencies['artifact_consumers'] if r['path'] == 'README.md')
+    assert readme == {'path': 'README.md', 'kind': 'documentation', 'owner': '.', 'producers': [], 'consumers': []}
+
+
+def test_narrative_doc_under_docs_does_not_select_unrelated_services(cli, repo, tmp_path):
+    seed(repo);unknown_dynamic_import(repo)
+    untouched = {f'services/untouched-{index:02}' for index in range(25)}
+    for service in untouched:unit(repo, service)
+    put(repo, 'pyproject.toml', '[project]\nname="root"\ndependencies=[]\n[tool.al.architecture]\nforbidden=["forbidden_dependency"]\n')
+    put(repo, 'docs/ordinary-narrative.md', '# Narrative\n')
+    commit(repo, 'root package and docs');start(cli)
+    put(repo, 'docs/ordinary-narrative.md', '# Updated narrative\n')
+    _, m = discover(cli, tmp_path, ['docs/ordinary-narrative.md'])
+    assessment = m['service_coverage']['assessment']
+    assert untouched <= set(assessment['potential_services'])
+    assert untouched.isdisjoint(assessment['selected_services'])
+    assert assessment['outcome'] == 'identified', assessment
+    assert assessment['selected_services'] == ['.']
+    dependencies = m['service_coverage']['semantic_requirements']['dependencies']
+    assert any(u['path'] == 'services/b/src/loader.py' for u in dependencies['deferred_uncertainties'])
+    assert any(b['units'] == ['.'] for b in assessment['required_bindings'])
+
+
+def test_changed_root_python_manifest_keeps_its_quality_obligation(cli, repo, tmp_path):
+    seed(repo)
+    put(repo, 'pyproject.toml', '[project]\nname="root"\ndependencies=[]\n[tool.al.architecture]\nforbidden=["forbidden_dependency"]\n')
+    commit(repo, 'root package');start(cli)
+    put(repo, 'pyproject.toml', '[project]\nname="root"\ndependencies=[]\n[tool.al.architecture]\nforbidden=["forbidden_dependency", "another_forbidden"]\n')
+    _, m = discover(cli, tmp_path, ['pyproject.toml'])
+    assessment = m['service_coverage']['assessment']
+    assert assessment['outcome'] == 'identified', assessment
+    assert assessment['selected_services'] == ['.']
+    assert any(binding['units'] == ['.'] and any(source['path'] == 'pyproject.toml'
+               for source in binding['source_chain']) for binding in assessment['required_bindings'])
+
+
+def test_markdown_with_a_literal_runtime_consumer_selects_that_service(cli, repo, tmp_path):
+    seed(repo);unrelated_dynamic_import(repo)
+    put(repo, 'packages/shared/fixtures/guide.md', '# Guide\n')
+    put(repo, 'services/a/src/guide_loader.py', 'GUIDE = "guide.md"\n')
+    commit(repo, 'markdown resource consumer');start(cli)
+    put(repo, 'packages/shared/fixtures/guide.md', '# Updated guide\n')
+    _, m = discover(cli, tmp_path, ['packages/shared/fixtures/guide.md'])
+    assessment = m['service_coverage']['assessment']
+    assert assessment['outcome'] == 'identified', assessment
+    assert assessment['selected_services'] == ['services/a']
+    row = next(r for r in m['service_coverage']['semantic_requirements']['dependencies']['artifact_consumers']
+               if r['path'] == 'packages/shared/fixtures/guide.md')
+    assert row == {'path': 'packages/shared/fixtures/guide.md', 'kind': 'documentation', 'owner': 'packages/shared',
+                   'producers': [], 'consumers': ['services/a/src/guide_loader.py']}
+
+
 def test_unreferenced_shared_fixture_is_an_explicit_exhaustive_requirement(cli, repo, tmp_path):
     seed(repo);put(repo, 'packages/shared/fixtures/lonely.json', '{}\n');commit(repo, 'lonely fixture');start(cli)
     put(repo, 'packages/shared/fixtures/lonely.json', '{"changed": true}\n')
@@ -47,6 +112,16 @@ def test_unreferenced_shared_fixture_is_an_explicit_exhaustive_requirement(cli, 
     assert reports_uncertain_dependents(assessment)
     assert any(u['code'] == 'uncertain-artifact-consumer' for u in assessment['dependency_uncertainties'])
     assert set(assessment['selected_services']) <= set(assessment['potential_services'])
+
+
+def test_unreferenced_shared_markdown_keeps_the_exhaustive_fallback(cli, repo, tmp_path):
+    seed(repo);put(repo, 'packages/shared/fixtures/guide.md', '# Guide\n');commit(repo, 'shared markdown')
+    start(cli);put(repo, 'packages/shared/fixtures/guide.md', '# Updated guide\n')
+    _, m = discover(cli, tmp_path, ['packages/shared/fixtures/guide.md'])
+    assessment = m['service_coverage']['assessment']
+    assert reports_uncertain_dependents(assessment)
+    assert any(u['code'] == 'uncertain-artifact-consumer' and u['path'] == 'packages/shared/fixtures/guide.md'
+               for u in assessment['dependency_uncertainties'])
 
 
 def test_changed_importable_module_keeps_exhaustive_dynamic_import_fallback(cli, repo, tmp_path):

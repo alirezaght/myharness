@@ -44,6 +44,9 @@ def test_preapproval_readiness_is_read_only_and_not_provider_or_acceptance_proof
     before = tree_snapshot(sample_repo)
     result = readiness(sample_repo, "codex")
     assert result["ready"] is True
+    assert result["ready_scope"] == "launch_prerequisites"
+    assert result["implementation_readiness"] == "UNVERIFIED"
+    assert "candidate inspection" in result["readiness_notice"]
     assert result["authentication"].startswith("UNVERIFIED")
     assert result["product_acceptance"] == "NOT_ASSESSED"
     assert result["approval_required_for_implementation"] is True

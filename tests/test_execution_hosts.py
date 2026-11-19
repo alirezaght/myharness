@@ -9,6 +9,7 @@ import pytest
 from harness.execution_hosts import native_identity, resume_argv, start_argv
 from harness.execution_store import get_execution
 from harness.execution_worker import supervise
+from harness.native_diagnostics import message
 from tests.execution_helpers import approved_execution
 
 
@@ -63,7 +64,7 @@ def test_fixed_native_argv_and_explicit_resume():
                 "errors": [],
                 "result": "You've hit your 5-hour limit · resets 9:10pm (Europe/Berlin)",
             },
-            "Claude failed: You've hit your 5-hour limit · resets 9:10pm (Europe/Berlin)",
+            "[NATIVE_USAGE_LIMIT]",
         ),
         (
             {
@@ -74,7 +75,7 @@ def test_fixed_native_argv_and_explicit_resume():
                     "content": [{"type": "text", "text": "Usage limit reached; resets at 21:10"}]
                 },
             },
-            "Claude usage limit: Usage limit reached; resets at 21:10",
+            "[NATIVE_USAGE_LIMIT]",
         ),
     ],
 )
@@ -97,6 +98,10 @@ def test_real_external_host_exit_zero_is_incomplete(
     if failure_record:
         with executable.open("a") as stream:
             stream.write(f"\nprint({json.dumps(failure_record)!r}, flush=True)\n")
+            stream.write(
+                "print(json.dumps({'type':'result','subtype':'success','is_error':False,"
+                "'session_id':native_id}), flush=True)\n"
+            )
         # The fixture exits immediately after emitting its records. Reap that
         # exact child before representing its absent process group, so restricted
         # test runners need no permission to send signals to native processes.
@@ -156,7 +161,7 @@ def test_native_error_facts_exclude_reasoning_and_preserve_actionable_failure():
     [
         (
             {"type": "result", "subtype": "success", "is_error": True},
-            "Claude failed: native host reported an error without diagnostic details",
+            message("NATIVE_PROVIDER_FAILED"),
         ),
         (
             {
@@ -170,7 +175,7 @@ def test_native_error_facts_exclude_reasoning_and_preserve_actionable_failure():
                     ]
                 },
             },
-            "Claude usage limit: You've hit your 5-hour limit",
+            message("NATIVE_USAGE_LIMIT"),
         ),
         (
             {
@@ -179,7 +184,7 @@ def test_native_error_facts_exclude_reasoning_and_preserve_actionable_failure():
                 "error": "rate_limit",
                 "message": {"content": [{"type": "thinking", "thinking": "private reasoning"}]},
             },
-            "Claude usage limit: provider reported rate_limit",
+            message("NATIVE_USAGE_LIMIT"),
         ),
         (
             {
@@ -215,7 +220,7 @@ def test_claude_limit_diagnostic_is_bounded():
         "message": {"content": [{"type": "text", "text": "x" * 5000}]},
     }
     assert native_diagnostic("claude", json.dumps(record).encode()) == (
-        "Claude usage limit: " + "x" * 4096
+        message("NATIVE_USAGE_LIMIT")
     )
 
 

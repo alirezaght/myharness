@@ -207,62 +207,44 @@ def native_identity(host, raw):
 
 
 def native_diagnostic(host, raw):
-    record = loads(raw)
-    if not isinstance(record, dict):
-        raise ValueError("native diagnostic must be an object")
-    if (
-        host == "claude"
-        and record.get("type") == "assistant"
-        and record.get("isApiErrorMessage") is True
-        and record.get("error") == "rate_limit"
-    ):
-        # Claude emits this provider error before a terminal result whose subtype
-        # can still be "success". Only retain text from the marked error message;
-        # ordinary assistant output and thinking blocks are not diagnostics.
-        message = record.get("message")
-        content = message.get("content") if isinstance(message, dict) else None
-        details = []
-        if isinstance(content, list):
-            details = [
-                block["text"]
-                for block in content
-                if isinstance(block, dict)
-                and block.get("type") == "text"
-                and isinstance(block.get("text"), str)
-                and block["text"].strip()
-            ]
-        return "Claude usage limit: " + (
-            "; ".join(details)[:4096] or "provider reported rate_limit"
-        )
-    if (
-        host == "claude"
-        and record.get("type") == "result"
-        and (record.get("is_error") is True or str(record.get("subtype", "")).startswith("error"))
-    ):
+    from harness.native_diagnostics import failure_code, message
+
+    try:
+        record = loads(raw)
+        if not isinstance(record, dict):
+            return message("NATIVE_STREAM_INVALID")
+        kind, subtype = record.get("type"), record.get("subtype")
+        if not isinstance(kind, str) or (subtype is not None and not isinstance(subtype, str)):
+            return message("NATIVE_STREAM_INVALID")
+        if (
+            host == "claude"
+            and kind == "assistant"
+            and record.get("isApiErrorMessage") is True
+            and record.get("error") == "rate_limit"
+        ):
+            return message("NATIVE_USAGE_LIMIT")
+        failure = (
+            host == "claude"
+            and kind == "result"
+            and (
+                record.get("is_error") is True
+                or isinstance(subtype, str)
+                and subtype.startswith("error")
+            )
+        ) or (host == "codex" and kind in {"error", "thread.failed", "turn.failed"})
+        if not failure:
+            return None
+        error = record.get("error")
+        identifiers = [record.get("code"), error]
+        texts = [record.get("message"), record.get("result")]
+        if isinstance(error, dict):
+            identifiers.extend((error.get("code"), error.get("type")))
+            texts.append(error.get("message"))
+        else:
+            texts.append(error)
         errors = record.get("errors")
-        detail = (
-            "; ".join(e for e in errors if isinstance(e, str) and e.strip())
-            if isinstance(errors, list)
-            else ""
-        )
-        if not detail and isinstance(record.get("result"), str):
-            detail = record["result"].strip()
-        subtype = str(record.get("subtype", ""))
-        label = subtype if subtype.startswith("error") else "failed"
-        return (
-            "Claude "
-            + label
-            + ": "
-            + (detail[:4096] or "native host reported an error without diagnostic details")
-        )
-    if host == "codex" and record.get("type") in {"error", "thread.failed", "turn.failed"}:
-        error = record.get("error", record.get("message", "native host failed"))
-        return (
-            "Codex: "
-            + (
-                str(error.get("message", "native host failed"))
-                if isinstance(error, dict)
-                else str(error)
-            )[:4096]
-        )
-    return None
+        if isinstance(errors, list):
+            texts.extend(errors[:16])
+        return message(failure_code(identifiers, texts))
+    except (ValueError, TypeError, UnicodeError, RecursionError):
+        return message("NATIVE_STREAM_INVALID")

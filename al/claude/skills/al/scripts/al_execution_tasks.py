@@ -455,7 +455,7 @@ def cmd_integration(a, sid):
             refuse('task start requires actual running assigned agent')
         row['admission'] = {'revision': row['revision'], 'graph_revision': i['graph_revision']}
         row['status'] = 'Running' if a.action == 'task-start' else 'Waiting'
-        E.queue(st, 'task.updated', row)
+        E.queue_admission(st, row)
     elif a.action == 'task-finish':
         from al_new_origin import require_admitted
         require_admitted(st)

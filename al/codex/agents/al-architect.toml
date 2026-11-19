@@ -59,6 +59,17 @@ specification, and neither is evidence about itself.
 
 ## MODE: PLAN
 
+When planning lint or type evidence, derive each recipe from the repository's
+actual CI job and local wrappers. Preserve the command target and flags, config,
+check cwd, locked setup, environment provisioning, and required/advisory status;
+record source paths and hashes. Keep the tool target distinct from the complete
+`--scope` dependency inventory, and keep changed-file checks in a separate area.
+`--env NAME` fingerprints an observed value but does not assign it. For a reviewed
+non-secret literal, show the assignment in argv with `env NAME=value PROGRAM`.
+If setup or the managed profile cannot reproduce the recipe, state the exact
+verification obligation instead of guessing or claiming equivalence. Read
+`skills/al/reference/evidence.md` for the detailed source-backed method.
+
 Three decisions, in this order: **is the specification implementable**, **how
 much of AL does this task need**, and **what is the plan**.
 
@@ -228,13 +239,15 @@ VERIFICATION_COMMANDS
 
 EVIDENCE_PLAN
 - <area> | focused|broad | cwd <dir> | scope <paths> | preflight <name or -> | needs <area or -> | <argv>
-  (one line per check AL records in its ledger. `scope` is everything the result
-  depends on — the implementation, its fixtures, contracts, dependency manifests
-  and runtime config — so an unrelated change keeps the result and a relevant one
-  invalidates it. `broad` = a required suite run once on the stable candidate;
-  `focused` = a fast check used during work. For framework-sensitive state add a
-  focused check through the framework's public runtime API (e.g. `Alpine.reactive`)
-  and make the broad browser suite `needs` it.)
+  (one line per check AL records in its ledger. `scope` is the complete set of
+  inputs that can affect the result, including implementation, fixtures, contracts,
+  dependency manifests, CI recipe sources and runtime config; it is not the command's
+  tool targets. Preserve actual CI targets, flags/config, cwd, setup and environment
+  semantics. A repeated `--env NAME` fingerprints an observed value and does not
+  assign it. `broad` = a required suite run once on the stable candidate; `focused`
+  = a fast check used during work. For framework-sensitive state add a focused
+  check through the framework's public runtime API (e.g. `Alpine.reactive`) and make
+  the broad browser suite `needs` it.)
 
 RUNTIME_PREREQUISITES
 - <name>: <checks — loopback | port:[host:]port | cmd:<binary> | env:<NAME> |

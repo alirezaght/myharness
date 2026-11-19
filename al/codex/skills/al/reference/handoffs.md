@@ -371,6 +371,25 @@ a matching prompt from transcript text. The supervisor records the captured file
 with `artifact output --name NAME --file FILE` and retrieves it with `artifact show
 --name NAME`.
 
+## Carry source-bound CI recipes into plans and handoffs
+
+The plan and direct writer body must carry the inspected CI source paths/hashes,
+exact target argv and config, check cwd, required locked setup, non-secret
+environment provisioning, required/advisory status, and the complete dependency
+scope. Keep the tool target separate from that scope. Consult
+`evidence.md` for the source-backed example and the limits of ordinary evidence
+execution; do not imply that registering or running evidence performs package
+setup.
+
+Register the exact command and cwd before generating the writer handoff, with
+all CI scripts, configs, manifests, locks and imported sources in scope. The
+generated evidence block routes the writer to a registered area; it does not
+carry or reconstruct the source recipe, so keep the recipe and prerequisites in
+the body. Writers run the generated area command rather than rebuilding a bare
+Ruff/mypy invocation. Regenerate the handoff after a relevant plan change. If
+the managed profile cannot represent the actual setup or environment, pass that
+limitation as an unresolved verification obligation instead of bypassing it.
+
 ## Generate every writer handoff
 
 For initial Engineer/Builder work, Builder finalization, rework, corrections and
@@ -391,6 +410,14 @@ before regenerating. The body is preserved verbatim and the complete prompt is
 snapshotted with a writer-bound receipt. Generation does not execute checks,
 finish the writer, prove delivery, or intercept arbitrary host dispatch.
 Regenerate after relevant plan, writer or phase changes.
+
+An intact generated handoff file is a valid delivery when the host supports
+file-based input; the writer must read the complete file, including every page
+and the managed EVIDENCE block, before work begins. Acknowledge its byte count
+and digest when available. The file may be supplied as the handoff without
+pasting a large prompt into a message; use `writer handoff --area AREA` to select
+the relevant registered checks before generation. Preserve the original spec,
+plan and referenced inputs in the handoff body.
 
 Under Harness, register the actual agent before writer admission when required;
 the agent waits for its generated work handoff. Workers use the generated

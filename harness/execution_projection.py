@@ -1,6 +1,7 @@
 """Transactional semantic ingestion and read-only dashboard projections."""
 
 import json
+import sqlite3
 import time
 from pathlib import Path
 
@@ -15,6 +16,17 @@ def _known(conn, eid, family, identity):
     if row is None:
         raise ExecutionConflict("event references unknown " + family + ": " + identity)
     return row
+
+
+def _dependent_task_ids(tasks, task_id):
+    affected = {task_id}
+    while True:
+        expanded = affected | {
+            task["id"] for task in tasks if affected.intersection(task["dependencies"])
+        }
+        if expanded == affected:
+            return affected
+        affected = expanded
 
 
 def _project(conn, execution, event):
@@ -60,6 +72,15 @@ def _project(conn, execution, event):
             task["authored_output"] = payload
         else:
             task.pop("authored_output", None)
+            rows = entities(conn, eid, "task")
+            affected = _dependent_task_ids(rows, task["id"])
+            for dependent in rows:
+                if dependent["id"] in affected:
+                    dependent.pop("admission", None)
+                    dependent.pop("admission_observation", None)
+                    put_entity(conn, eid, "task", dependent["id"], dependent)
+            task.pop("admission", None)
+            task.pop("admission_observation", None)
         put_entity(conn, eid, "task", task["id"], task)
     elif kind.startswith(("agent.", "task.")):
         family = kind.split(".")[0]
@@ -87,7 +108,10 @@ def _project(conn, execution, event):
         elif old["status"] in {"Completed", "Failed"} and payload["status"] != old["status"]:
             if family != "task" or payload.get("revision", 0) <= old.get("revision", 0):
                 raise ExecutionConflict("terminal entity cannot reopen without amendment")
-        put_entity(conn, eid, family, payload["id"], (old or {}) | payload)
+        projected = (old or {}) | payload
+        if family == "task" and "admission_observation" not in payload:
+            projected.pop("admission_observation", None)
+        put_entity(conn, eid, family, payload["id"], projected)
     elif kind == "blocker.raised":
         if entity(conn, eid, "blocker", payload["id"]):
             raise ExecutionConflict("blocker identity already registered")
@@ -327,6 +351,152 @@ def event_page(conn, execution_id, after=0, limit=100):
     }
 
 
+def implementation_readiness(conn, execution, tasks, issues, decisions_pending):
+    """Project scoped persisted observations; rendering never probes the candidate."""
+    expected = execution["binding"] | {
+        "handoff_hash": execution["handoff_hash"],
+        "al_session_id": execution["al_session_id"],
+        "al_run_id": execution["al_run_id"],
+    }
+    observations, invalidations, cutoff, graph_sequence = {}, {}, 0, 0
+    try:
+        upgrades = conn.execute(
+            "SELECT json_extract(payload,'$.binding') AS binding, "
+            "json_extract(payload,'$.handoff_hash') AS handoff_hash, "
+            "json_extract(payload,'$.al_run_id') AS run, "
+            "json_extract(payload,'$.at') AS at FROM events "
+            "WHERE task_id=? AND kind='execution.bridge_upgraded' "
+            "AND json_extract(payload,'$.id')=? ORDER BY id DESC LIMIT 1",
+            (execution["task_id"], execution["id"]),
+        ).fetchone()
+        if upgrades and (
+            json.loads(upgrades["binding"] or "null") == execution["binding"]
+            and upgrades["handoff_hash"] == execution["handoff_hash"]
+            and upgrades["run"] == execution["al_run_id"]
+        ):
+            cutoff = upgrades["at"] if type(upgrades["at"]) in (int, float) else float("inf")
+        graph_sequence = conn.execute(
+            "SELECT coalesce(max(sequence),0) FROM execution_events WHERE execution_id=? "
+            "AND epoch_id=? AND kind IN "
+            "('task.registered','dependency.changed','ownership.changed')",
+            (execution["id"], execution["epoch_id"]),
+        ).fetchone()[0]
+        rows = conn.execute(
+            "SELECT sequence, json_extract(record,'$.payload.id') AS id, "
+            "json_extract(record,'$.payload.admission') AS admission, "
+            "json_extract(record,'$.payload.admission_observation') AS provenance, "
+            "json_extract(record,'$.payload.revision') AS revision, "
+            "json_extract(record,'$.binding') AS binding, "
+            "json_extract(record,'$.timestamp') AS at FROM execution_events "
+            "WHERE execution_id=? AND epoch_id=? AND kind='task.updated' "
+            "ORDER BY sequence DESC LIMIT 1000",
+            (execution["id"], execution["epoch_id"]),
+        ).fetchall()
+        observations = {row["sequence"]: dict(row) for row in rows}
+        for row in conn.execute(
+            "SELECT max(sequence) AS sequence, "
+            "json_extract(record,'$.payload.task_id') AS task_id "
+            "FROM execution_events WHERE execution_id=? AND epoch_id=? "
+            "AND kind='output.invalidated' GROUP BY task_id",
+            (execution["id"], execution["epoch_id"]),
+        ):
+            for task_id in _dependent_task_ids(tasks, row["task_id"]):
+                invalidations[task_id] = max(invalidations.get(task_id, 0), row["sequence"])
+    except (sqlite3.OperationalError, ValueError, TypeError):
+        observations = {}  # Missing observation capability never establishes readiness.
+    admitted = []
+    for task in tasks:
+        provenance = task.get("admission_observation")
+        if (
+            not isinstance(provenance, dict)
+            or set(provenance) != {"sequence"}
+            or type(provenance["sequence"]) is not int
+        ):
+            continue
+        row = observations.get(provenance["sequence"])
+        if (
+            not row
+            or type(row["at"]) not in (int, float)
+            or row["at"] <= cutoff
+            or row["sequence"] <= graph_sequence
+            or row["sequence"] <= invalidations.get(task["id"], 0)
+            or row["id"] != task["id"]
+        ):
+            continue
+        try:
+            if json.loads(row["binding"]) != expected:
+                continue
+            receipt = json.loads(row["admission"] or "null")
+            if json.loads(row["provenance"] or "null") != provenance:
+                continue
+        except (ValueError, TypeError):
+            continue
+        if (
+            isinstance(receipt, dict)
+            and receipt == task.get("admission")
+            and type(receipt.get("revision")) is int
+            and receipt["revision"] == row["revision"] == task["revision"]
+            and type(receipt.get("graph_revision")) is int
+            and receipt["graph_revision"] > 0
+            and task["status"] in {"Waiting", "Running"}
+        ):
+            admitted.append(task["id"])
+    failures = [
+        i
+        for i in issues
+        if i["state"] != "Resolved"
+        and i["cause"]
+        in {
+            "tool_unavailable",
+            "provider_unavailable",
+            "capability_unavailable",
+            "runtime_repair",
+        }
+    ]
+    blocked, blocking_refs = set(), set()
+    for task in tasks:
+        for failure in failures:
+            relevant = (
+                not failure["task_ids"]
+                and not failure["paths"]
+                or task["id"] in failure["task_ids"]
+                or any(
+                    a == b or a.startswith(b + "/") or b.startswith(a + "/")
+                    for a in task["files"]
+                    for b in failure["paths"]
+                )
+            )
+            if relevant:
+                blocked.add(task["id"])
+                blocking_refs.add(failure["id"])
+    if not tasks:
+        blocking_refs.update(i["id"] for i in failures)
+    ready = sorted(set(admitted) - blocked)
+    status = (
+        "developer_decision"
+        if decisions_pending
+        else "complete"
+        if execution["status"] == "Completed" and execution.get("result")
+        else "technically_unavailable"
+        if execution["status"] in {"Unavailable", "RecoveryRequired", "Failed"}
+        or blocking_refs
+        and not ready
+        else "continuing"
+        if ready and execution["status"] in {"Running", "Launching", "WorkerOwned"}
+        else "ready"
+        if ready
+        else "unverified"
+    )
+    return {
+        "status": status,
+        "scope": "admitted_tasks",
+        "ready_task_ids": ready,
+        "unavailable_task_ids": sorted(blocked),
+        "blocking_issue_refs": sorted(blocking_refs),
+        "issue_refs": [i["id"] for i in issues if i["state"] != "Resolved"],
+    }
+
+
 def execution_view(conn, execution_id):
     saved = get_execution(conn, execution_id)
     if saved["error"]:
@@ -436,15 +606,7 @@ def execution_view(conn, execution_id):
         and b["state"] != "Resolved"
     ]
     issue_refs = [row["id"] for row in issues if row["state"] != "Resolved"]
-    implementation_status = (
-        "developer_decision"
-        if decisions_pending
-        else "technically_unavailable"
-        if saved["status"] in {"Unavailable", "RecoveryRequired", "Failed"}
-        else "continuing"
-        if saved["status"] in {"Running", "Launching", "WorkerOwned"}
-        else "ready"
-    )
+    implementation = implementation_readiness(conn, saved, tasks, issues, decisions_pending)
     from harness.execution_activity import activity_view
 
     feed = event_page(conn, execution_id, max(0, saved["cursor"] - 50), 50)["events"]
@@ -473,7 +635,7 @@ def execution_view(conn, execution_id):
     } | {
         "authored_work": recorded_work,
         "activity": activity,
-        "implementation": {"status": implementation_status, "issue_refs": issue_refs},
+        "implementation": implementation,
         "verification": {
             "status": "complete"
             if saved["status"] == "Completed" and saved.get("result")

@@ -20,11 +20,60 @@ TOOL_HELP = {
     ),
     "read_file": (
         "Read an authorized confined source or issued resource using path and optional offset "
-        "and limit. Follow returned cursors when truncated; access remains guarded."
+        "and limit. Ordinary source pages include stable full-source SHA256/version up to the "
+        "reported hash budget; larger sources retain paging with sha256=null and a reason. "
+        "Use byte next_offset cursors; access remains guarded."
     ),
     "await_assignment": (
-        "Obtain current assignment and graph_revision. ReadOnly, Pending and unavailable "
+        "Obtain current assignment and graph_revision. Root orchestrator receives "
+        "Supervisor with guarded AL control authority and writable=false; product edits "
+        "require admitted scoped writers. ReadOnly, Pending and unavailable "
         "handoff/context do not grant writer authority. Refresh before submitting output."
+    ),
+    "al_command": (
+        "Run guarded AL subcommands only: arguments=['show', '--panel']. Never include alctl, "
+        "launcher paths, run or repository/session wrapper flags; Harness supplies the origin. "
+        "Supervisor can plan/control without product writer authority; read-only children may "
+        "only inspect AL. Long checks use background=true and poll_process until collected."
+    ),
+    "diagram_operation": (
+        "Inspect current source binding, graph_revision and complete publication_request. "
+        "Only orchestrator may publish that closed request with JSON-string content and exact "
+        "expected_graph_revision; inspect again after stale revision or source errors. "
+        "Diagrams are reference views and never grant specification or implementation approval."
+    ),
+    "write_artifact": (
+        "Store a named execution draft using current expected_graph_revision; use returned "
+        "artifact:<artifact_id>:<sha256> for AL file inputs. This grants no product write"
+        " authority."
+    ),
+    "apply_patch": (
+        "Apply a product patch only for the caller's admitted writable task_id and exact "
+        "expected_revision. Supervisor control authority alone does not permit product edits."
+    ),
+    "run_command": (
+        "Run bounded argv in confined cwd. Product writes require an admitted task_id and "
+        "expected_revision; guarded read commands grant no writer authority. Poll the handle."
+    ),
+    "poll_process": (
+        "Collect output/status for a process handle owned by this principal. Continue polling "
+        "until terminal output is collected before ending the native turn."
+    ),
+    "cancel_process": (
+        "Cancel an owned process handle; collect its terminal result with poll_process."
+    ),
+    "diagnostic": (
+        "Inspect a closed guarded diagnostic request; this grants no execution authority."
+    ),
+    "delivery_operation": (
+        "Inspect or poll delivery state; publish/reconcile require current supervisor delivery "
+        "authority and the exact request_id. This does not bypass AL approval."
+    ),
+    "environment_operation": (
+        "Inspect environment readiness; Supervisor may prepare locked dependencies for the "
+        "registered task_id and expected_revision. Inspect supplies closed prepare_requests. "
+        "cwd must be '.' or a repository-relative unit, never an absolute path. "
+        "Poll setup handles; setup is not evidence."
     ),
     "submit_output": (
         "Submit an execution-owned named report with content and the current "
@@ -75,7 +124,14 @@ SCHEMAS = {
     "cancel_process": _schema({"handle": STRING}, ["handle"]),
     "al_command": _schema(
         {
-            "arguments": {"type": "array", "items": STRING, "maxItems": 100},
+            "arguments": {
+                "type": "array",
+                "items": STRING,
+                "maxItems": 100,
+                "description": (
+                    "AL subcommands only, e.g. ['show', '--panel']; no launcher or origin flags."
+                ),
+            },
             "background": {"type": "boolean"},
             "timeout": INTEGER,
         },
@@ -138,7 +194,10 @@ def validate_arguments(name, arguments):
 SCHEMAS["environment_operation"] = _schema(
     {
         "operation": {"type": "string", "enum": ["inspect", "prepare"]},
-        "cwd": STRING,
+        "cwd": {
+            **STRING,
+            "description": "Use '.' or a repository-relative unit; absolute paths are refused.",
+        },
         "task_id": STRING,
         "expected_revision": STRING,
     },
@@ -147,8 +206,14 @@ SCHEMAS["environment_operation"] = _schema(
 SCHEMAS["diagram_operation"] = _schema(
     {
         "operation": {"type": "string", "enum": ["inspect", "publish"]},
-        "content": STRING,
-        "expected_graph_revision": INTEGER,
+        "content": {
+            **STRING,
+            "description": "JSON-string content from inspect publication_request.",
+        },
+        "expected_graph_revision": {
+            **INTEGER,
+            "description": "Exact graph_revision returned by inspect; required for publish.",
+        },
     },
     ["operation"],
 )

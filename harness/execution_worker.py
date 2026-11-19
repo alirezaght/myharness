@@ -27,10 +27,14 @@ from harness.execution_hosts import (
     native_identity,
     package_fingerprint,
 )
-from harness.execution_logs import append_log, redact
+from harness.execution_logs import append_log
 from harness.execution_models import TERMINAL, ExecutionConflict
 from harness.execution_projection import ingest_event
 from harness.execution_store import bind_host, get_execution, process_alive, update_owned
+from harness.native_diagnostics import NativeStageFailure
+from harness.native_diagnostics import message as native_message
+from harness.native_diagnostics import preserve as native_failure
+from harness.native_diagnostics import startup as native_startup
 
 
 class WorkerOwnedConflict(ExecutionConflict):
@@ -237,7 +241,7 @@ def launch_worker(
                 from harness.execution_planning_dispatch import observe_dispatch
 
                 observe_dispatch(conn, execution_id, token, "launching")
-        except OSError as error:
+        except OSError:
             # Popen failed before creation; no native host was attempted by this worker.
             from harness.execution_recovery_settlement import record_not_started
 
@@ -247,7 +251,7 @@ def launch_worker(
                 execution_id,
                 token,
                 status="Unavailable",
-                error="worker creation failed: " + redact(str(error)),
+                error=native_message("WORKER_SPAWN_FAILED"),
             )
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE id=?",
@@ -257,47 +261,51 @@ def launch_worker(
                 conn,
                 execution_id,
                 "worker",
-                "Startup failed before native spawn: worker creation failed: " + str(error),
+                native_startup("WORKER_SPAWN_FAILED"),
             )
-            return {"status": "Unavailable", "error": redact(str(error))}
+            return {"status": "Unavailable", "error": native_message("WORKER_SPAWN_FAILED")}
     return {"status": "WorkerOwned", "attempt_id": attempt}
 
 
 def _spawn_worker(argv, execution, attempt):
-    diagnostics = Path(execution["handoff_path"]).parent / ("worker-" + attempt + ".log")
-    descriptor = os.open(diagnostics, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with open(os.devnull, "rb") as stdin, os.fdopen(descriptor, "ab") as output:
-        subprocess.Popen(
-            argv,
-            stdin=stdin,
-            stdout=output,
-            stderr=output,
-            close_fds=True,
-            start_new_session=True,
-            env=dict(
-                execution_environment(),
-                HARNESS_AUTHORITY_ROOT=str(
-                    __import__("harness.execution_bridge", fromlist=["bridge_root"]).bridge_root(
-                        execution
-                    )
-                ),
+    subprocess.Popen(
+        argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        start_new_session=True,
+        env=dict(
+            execution_environment(),
+            HARNESS_AUTHORITY_ROOT=str(
+                __import__("harness.execution_bridge", fromlist=["bridge_root"]).bridge_root(
+                    execution
+                )
             ),
-        )
+        ),
+    )
 
 
 def _drain(stream, channel, output):
+    control = getattr(output, "control_put", output.put)
     try:
         while True:
             raw = stream.readline(MAX_RECORD + 1)
             if not raw:
                 break
             if len(raw) > MAX_RECORD or not raw.endswith(b"\n"):
-                output.put(("error", "oversized or partial native stream record"))
+                control(("error", native_message("NATIVE_STREAM_INVALID")))
                 break
             output.put((channel, raw))
+    except Exception:
+        control(("error", native_message("NATIVE_SUPERVISION_FAILED")))
     finally:
-        stream.close()
-        output.put(("closed", channel))
+        try:
+            stream.close()
+        except Exception:
+            control(("error", native_message("NATIVE_SUPERVISION_FAILED")))
+        finally:
+            control(("closed", channel))
 
 
 def replay_source(conn, execution_id, token):
@@ -427,7 +435,8 @@ def _prompt(execution, package, envelope, mode, focus=None):
         "download until capability changes. Environment issues are not product decisions. "
         "Publish a source-bound logical change diagram early through diagram_operation, "
         "showing affected components, flows and existing/changed/new elements. Use inspect "
-        "to obtain its exact approval/design binding and publication schema. "
+        "to obtain its exact approval/design binding, graph_revision and complete "
+        "publication_request. "
         "Read read_file paths harness:handoff, harness:task-package, harness:skill, "
         "and harness:al-state for the fixed approved documents. "
         "Read harness:skill/index to enumerate the exact protected pin. Resolve every "
@@ -439,7 +448,12 @@ def _prompt(execution, package, envelope, mode, focus=None):
         "Read harness:planning-adoptions and inspect any hash-bound prior planning receipts "
         "as reference inputs; a current Architect must revalidate them and author current "
         "planning proof. Old approval, admission and evidence are never transferred. "
-        "al_command accepts structured AL arguments. Use write_artifact for JSON/Markdown drafts. "
+        "The root orchestrator is Supervisor with guarded AL planning/control authority, "
+        "even with writable=false and no product writer assignment. Product edits require"
+        " admitted writers. al_command takes ONLY AL subcommands, for example "
+        "arguments=['show', '--panel']. Never include alctl, launcher paths, run, "
+        "repository or session wrapper flags; Harness supplies the fixed origin. Use "
+        "write_artifact for JSON/Markdown drafts. "
         "Set al_command background=true for long checks "
         "and poll the returned owned process handle until its terminal result is collected. "
         "Do not send a final response while a Harness command is running or has an uncollected "
@@ -537,7 +551,7 @@ def _reconnect(controller, execution, token):
                 or "replayed committed events; inspect startup evidence "
                 "and current readiness before choosing an available recovery action",
             )
-    except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, LookupError, subprocess.SubprocessError):
         current = get_execution(conn, execution_id)
         if current["status"] not in TERMINAL and current["worker_token"] == token:
             update_owned(
@@ -546,12 +560,12 @@ def _reconnect(controller, execution, token):
                 token,
                 status="Unavailable",
                 error=(
-                    execution.get("error")
+                    native_failure(execution.get("error"), "NATIVE_REPLAY_FAILED")
                     if not execution["native_id"] and execution.get("error")
-                    else redact(str(error))
+                    else native_message("NATIVE_REPLAY_FAILED")
                 ),
             )
-        append_log(conn, execution_id, "worker", str(error))
+        append_log(conn, execution_id, "worker", native_message("NATIVE_REPLAY_FAILED"))
     finally:
         from harness.execution_recovery_settlement import record_not_started
 
@@ -615,20 +629,25 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 previous_package
                 and loads(previous_package["package"])["sha256"] != package["sha256"]
             ):
-                raise ExecutionConflict(
-                    "installed AL package changed since launch; explicit reconciliation required"
-                )
-        except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+                raise ExecutionConflict(native_message("NATIVE_PACKAGE_DRIFT"))
+        except (OSError, ValueError, LookupError, subprocess.SubprocessError) as exc:
             from harness.execution_recovery_settlement import record_not_started
 
+            failure = native_failure(exc, "NATIVE_SETUP_FAILED")
             record_not_started(execution, token, stage="native-setup")
-            update_owned(conn, execution_id, token, status="Unavailable", error=redact(str(error)))
+            update_owned(
+                conn,
+                execution_id,
+                token,
+                status="Unavailable",
+                error=failure,
+            )
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
             append_log(
-                conn, execution_id, "worker", "Startup failed before native spawn: " + str(error)
+                conn, execution_id, "worker", "Startup failed before native spawn: " + failure
             )
             return
         if mode == "resume":
@@ -681,7 +700,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             isolation_stack.callback(runtime.close)
             env = native_auth_environment(execution["host"])
             argv = runtime.argv(envelope["repository"], resume=mode == "resume")
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
+        except (OSError, ValueError, subprocess.SubprocessError):
             isolation_stack.close()
             from harness.execution_recovery_settlement import record_not_started
 
@@ -690,10 +709,14 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
-            update_owned(conn, execution_id, token, status="Unavailable", error=redact(str(error)))
-            append_log(
-                conn, execution_id, "worker", "Startup failed before native spawn: " + str(error)
+            update_owned(
+                conn,
+                execution_id,
+                token,
+                status="Unavailable",
+                error=native_message("NATIVE_SETUP_FAILED"),
             )
+            append_log(conn, execution_id, "worker", native_startup("NATIVE_SETUP_FAILED"))
             return
         with transaction(conn):
             update_owned(
@@ -707,6 +730,61 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             )
             if native_id:
                 bind_host(conn, execution_id, native_id, token)
+        stage_failures = []
+        closure_validated = False
+        status_published = False
+        readers = []
+        attempt_row = conn.execute(
+            "SELECT * FROM execution_attempts WHERE execution_id=? AND token=?",
+            (execution_id, token),
+        ).fetchone()
+
+        def signal_group(sig):
+            try:
+                os.killpg(proc.pid, sig)
+            except ProcessLookupError:
+                pass
+
+        def record_failure(stage, error):
+            category = (
+                "timeout"
+                if isinstance(error, subprocess.TimeoutExpired)
+                else "os-error"
+                if isinstance(error, OSError)
+                else "closure-refused"
+                if stage == "closure-record" and isinstance(error, ValueError)
+                else "unexpected-error"
+            )
+            stage_failures.append(
+                {
+                    "stage": stage,
+                    "category": category,
+                    "diagnostic": "NATIVE_REPLAY_FAILED"
+                    if stage == "source-replay"
+                    else "NATIVE_SETTLEMENT_UNAVAILABLE",
+                }
+            )
+
+        def cleanup_call(stage, action):
+            try:
+                return True, action()
+            except Exception as error:
+                record_failure(stage, error)
+                return False, None
+
+        def drain_readers():
+            deadline = time.monotonic() + 5
+            while any(reader.is_alive() for reader in readers):
+                if time.monotonic() >= deadline:
+                    raise subprocess.TimeoutExpired("native-reader", 5)
+                try:
+                    output.get(timeout=0.05)
+                except queue.Empty:
+                    pass
+                for reader in readers:
+                    if reader.ident is not None:
+                        reader.join(timeout=0.01)
+
         try:
             require_execution_authority(
                 controller, execution_id, operation="resume" if mode == "resume" else "launch"
@@ -721,31 +799,41 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 close_fds=True,
                 start_new_session=True,
             )
-        except (OSError, ValueError) as error:
+        except (OSError, ValueError):
             from harness.execution_recovery_settlement import record_not_started
 
             record_not_started(execution, token, stage="native-spawn")
-            update_owned(conn, execution_id, token, status="Unavailable", error=redact(str(error)))
+            update_owned(
+                conn,
+                execution_id,
+                token,
+                status="Unavailable",
+                error=native_message("NATIVE_SPAWN_FAILED"),
+            )
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
             isolation_stack.close()
-            append_log(
-                conn, execution_id, "worker", "Startup failed before native spawn: " + str(error)
-            )
+            append_log(conn, execution_id, "worker", native_startup("NATIVE_SPAWN_FAILED"))
             return
-        conn.execute(
-            "UPDATE execution_attempts SET status='Running',child_pid=?,updated_at=? WHERE token=?",
-            (proc.pid, utcnow(), token),
-        )
-        update_owned(conn, execution_id, token, status="Running")
-        output = queue.Queue(maxsize=200)
-        for channel, stream in (("host", proc.stdout), ("stderr", proc.stderr)):
-            threading.Thread(target=_drain, args=(stream, channel, output), daemon=True).start()
         closed, last_poll = 0, 0
         failure = None
+        stderr_seen = False
         try:
+            conn.execute(
+                "UPDATE execution_attempts SET status='Running',child_pid=?,updated_at=? "
+                "WHERE token=?",
+                (proc.pid, utcnow(), token),
+            )
+            update_owned(conn, execution_id, token, status="Running")
+            output = queue.Queue(maxsize=200)
+            for channel, stream in (("host", proc.stdout), ("stderr", proc.stderr)):
+                reader = threading.Thread(
+                    target=_drain, args=(stream, channel, output), daemon=True
+                )
+                readers.append(reader)
+                reader.start()
             try:
                 proc.stdin.write(_prompt(execution, package, envelope, mode, focus).encode())
             except BrokenPipeError:
@@ -763,7 +851,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 if channel == "closed":
                     closed += 1
                 elif channel == "error":
-                    raise ExecutionConflict(raw)
+                    raise ExecutionConflict(native_failure(raw, "NATIVE_STREAM_INVALID"))
                 elif channel == "host":
                     diagnostic = native_diagnostic(execution["host"], raw)
                     if diagnostic:
@@ -776,8 +864,11 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
 
                         observe_dispatch(conn, execution_id, token, "observed", native_id=found)
                     # Native content may contain reasoning; retain only process/session facts.
-                elif channel == "stderr":
-                    append_log(conn, execution_id, "stderr", raw.decode(errors="replace"))
+                elif channel == "stderr" and not stderr_seen:
+                    stderr_seen = True
+                    append_log(
+                        conn, execution_id, "stderr", native_message("NATIVE_STDERR_SUPPRESSED")
+                    )
                 if time.monotonic() - last_poll > 1:
                     runtime.tick()
                     current = get_execution(conn, execution_id)
@@ -791,76 +882,138 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                     dispatch_pending(controller, execution_id, package)
                     replay_source(conn, execution_id, token)
                     last_poll = time.monotonic()
-        except (ValueError, OSError, LookupError) as error:
-            failure = str(error)
-            try:
-                os.killpg(proc.pid, __import__("signal").SIGTERM)
-            except ProcessLookupError:
-                pass
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                os.killpg(proc.pid, __import__("signal").SIGKILL)
-                proc.wait(timeout=5)
-            append_log(conn, execution_id, "worker", failure)
+        except Exception as error:
+            failure = native_failure(error)
+            cleanup_call("failure-signal", lambda: signal_group(__import__("signal").SIGTERM))
+            cleanup_call("failure-wait", lambda: proc.wait(timeout=5))
         finally:
-            # This exact native process was launched in its own session. Reap
-            # remaining descendants even when the immediate native host exited.
-            try:
-                os.killpg(proc.pid, __import__("signal").SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.wait(timeout=5)
-            isolation_stack.close()
-            from harness.execution_settlement import record_closed_context
+            # Independent disposal retains errors without skipping later owned cleanup.
+            group_disposed, _ = cleanup_call(
+                "final-signal", lambda: signal_group(__import__("signal").SIGKILL)
+            )
+            cleanup_call("final-wait", lambda: proc.wait(timeout=5))
+            readers_closed, _ = cleanup_call("runtime-close", drain_readers)
+            streams_closed = readers_closed
+            if readers_closed:
+                for stream in (proc.stdin, proc.stdout, proc.stderr):
+                    if stream is not None and not stream.closed:
+                        stream_closed, _ = cleanup_call("runtime-close", stream.close)
+                        streams_closed = streams_closed and stream_closed
+            runtime_closed, _ = cleanup_call("runtime-close", isolation_stack.close)
+            from harness.execution_settlement import closed_context, record_closed_context
 
-            record_closed_context(get_execution(conn, execution_id), token, proc, runtime)
-            try:
-                for _ in range(100):
-                    if replay_source(conn, execution_id, token):
-                        break
-            except (OSError, ValueError) as error:
-                failure = failure or str(error)
-                append_log(conn, execution_id, "protocol", str(error))
-            current = get_execution(conn, execution_id)
-            if current["status"] not in TERMINAL:
-                recorded_work = None
-                if proc.returncode == 0 and not failure:
-                    from harness.execution_work_notice import authored_work_notice
+            def publish_closure():
+                current = get_execution(conn, execution_id)
+                if (
+                    current["worker_token"] != token
+                    or current["epoch_id"] != execution["epoch_id"]
+                    or current["authority_generation"] != execution["authority_generation"]
+                ):
+                    raise ExecutionConflict("worker closure ownership was lost")
+                record_closed_context(current, token, proc, runtime)
 
-                    try:
-                        recorded_work = authored_work_notice(conn, execution_id)
-                    except ValueError:
-                        failure = (
-                            "authored output provenance is unavailable; inspect recorded source"
+            if group_disposed and streams_closed and runtime_closed:
+                cleanup_call("closure-record", publish_closure)
+                if attempt_row:
+                    current_attempt = conn.execute(
+                        "SELECT * FROM execution_attempts WHERE execution_id=? AND token=?",
+                        (execution_id, token),
+                    ).fetchone()
+                    valid, observation = cleanup_call(
+                        "closure-record",
+                        lambda: closed_context(get_execution(conn, execution_id), current_attempt),
+                    )
+                    closure_validated = valid and observation is True
+                    if not closure_validated:
+                        record_failure(
+                            "closure-record", ValueError("closure validation unavailable")
                         )
-                update_owned(
-                    conn,
-                    execution_id,
-                    token,
-                    status="Interrupted",
-                    error=(
-                        None
+            else:
+                record_failure("closure-record", ValueError("closure prerequisites unavailable"))
+            for _ in range(100):
+                replayed, outcome = cleanup_call(
+                    "source-replay", lambda: replay_source(conn, execution_id, token)
+                )
+                if not replayed or outcome:
+                    break
+
+            def publish_status():
+                current = get_execution(conn, execution_id)
+                if current["worker_token"] != token:
+                    raise ExecutionConflict("worker ownership was lost")
+                recovery = (
+                    bool(stage_failures)
+                    or proc.returncode is None
+                    or (attempt_row is not None and not closure_validated)
+                )
+                if (
+                    current["status"] not in TERMINAL
+                    or recovery
+                    and current["status"] == "Completed"
+                ):
+                    recorded_work = None
+                    if proc.returncode == 0 and not failure and not recovery:
+                        from harness.execution_work_notice import authored_work_notice
+
+                        try:
+                            recorded_work = authored_work_notice(conn, execution_id)
+                        except ValueError:
+                            recorded_work = None
+                    update_owned(
+                        conn,
+                        execution_id,
+                        token,
+                        status="RecoveryRequired" if recovery else "Interrupted",
+                        error=(failure or native_message("NATIVE_SETTLEMENT_UNAVAILABLE"))
+                        if recovery
+                        else None
                         if recorded_work
                         else failure
                         or (
                             f"native host exited {proc.returncode}; "
                             "no guarded AL implementation result"
-                        )
+                        ),
+                    )
+                if proc.returncode is not None:
+                    conn.execute(
+                        "UPDATE execution_attempts SET status='Exited',updated_at=? "
+                        "WHERE execution_id=? AND token=? AND EXISTS "
+                        "(SELECT 1 FROM executions WHERE id=? AND worker_token=?)",
+                        (utcnow(), execution_id, token, execution_id, token),
+                    )
+
+            status_published, _ = cleanup_call("status-publication", publish_status)
+            if failure:
+                cleanup_call(
+                    "status-publication", lambda: append_log(conn, execution_id, "worker", failure)
+                )
+            for item in list(stage_failures):
+                cleanup_call(
+                    "status-publication",
+                    lambda item=item: append_log(
+                        conn, execution_id, "worker", native_message(item["diagnostic"])
                     ),
                 )
-            conn.execute(
-                "UPDATE execution_attempts SET status='Exited',updated_at=? WHERE token=?",
-                (utcnow(), token),
-            )
+            if stage_failures:
+                raise NativeStageFailure(
+                    {
+                        "kind": "native-failure-stage-v1",
+                        "execution_id": execution_id,
+                        "attempt_id": attempt_row["id"] if attempt_row else None,
+                        "failures": stage_failures,
+                        "returncode_known": proc.returncode is not None,
+                        "closure_validated": closure_validated,
+                        "status_publication_reached": status_published,
+                    }
+                ) from None
     # Release worker ownership before admitting a recorded-session correction.
     # A new generation's worker owns its own publication and monitoring loop.
     try:
         from harness.execution_settlement import settle_exited_work
 
         settle_exited_work(controller, execution_id)
-    except (OSError, ValueError, LookupError) as error:
-        append_log(conn, execution_id, "recovery", str(error))
+    except (OSError, ValueError, LookupError):
+        append_log(conn, execution_id, "worker", native_message("NATIVE_SETTLEMENT_UNAVAILABLE"))
     monitor_completed_delivery(controller, execution_id, token)
 
 

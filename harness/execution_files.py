@@ -1,5 +1,6 @@
 """Descriptor-relative repository files; symlinks and hardlink aliases are refused."""
 
+import hashlib
 import os
 import secrets
 import stat
@@ -60,20 +61,69 @@ def _ordinary(info):
         raise ValueError("file must be regular with exactly one link")
 
 
+MAX_HASH_BYTES = 8 * 1024 * 1024
+
+
+def _source_version(info):
+    return {
+        "device": info.st_dev,
+        "inode": info.st_ino,
+        "size": info.st_size,
+        "mode": info.st_mode,
+        "links": info.st_nlink,
+        "mtime_ns": info.st_mtime_ns,
+        "ctime_ns": info.st_ctime_ns,
+    }
+
+
 def read_file(root, path, *, offset=0, limit=16384):
     if type(offset) is not int or type(limit) is not int or offset < 0 or not 1 <= limit <= 65536:
         raise ValueError("bounded file read required")
     with parent_descriptor(root, path) as (directory, name):
         descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
         try:
-            _ordinary(os.fstat(descriptor))
-            raw = os.pread(descriptor, limit + 1, offset)
+            before = os.fstat(descriptor)
+            _ordinary(before)
+            version = _source_version(before)
+            sha, hash_bytes = None, 0
+            if before.st_size <= MAX_HASH_BYTES:
+                hasher, page, position = hashlib.sha256(), bytearray(), 0
+                while position <= MAX_HASH_BYTES:
+                    chunk = os.read(descriptor, min(65536, MAX_HASH_BYTES + 1 - position))
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                    begin, end = (
+                        max(0, offset - position),
+                        min(len(chunk), offset + limit - position),
+                    )
+                    if begin < end:
+                        page.extend(chunk[begin:end])
+                    position += len(chunk)
+                if position > MAX_HASH_BYTES or position != before.st_size:
+                    raise ValueError("source changed or exceeded full-source hash budget")
+                sha, hash_bytes, raw = "sha256:" + hasher.hexdigest(), position, bytes(page)
+            else:
+                raw = os.pread(descriptor, limit, offset)
+            after = os.fstat(descriptor)
+            with parent_descriptor(root, path) as (current_directory, current_name):
+                named = os.stat(current_name, dir_fd=current_directory, follow_symlinks=False)
+            if version != _source_version(after) or version != _source_version(named):
+                raise ValueError("source changed during confined read")
         finally:
             os.close(descriptor)
     return {
-        "text": raw[:limit].decode(errors="replace"),
-        "truncated": len(raw) > limit,
+        "text": raw.decode(errors="replace"),
+        "truncated": offset + len(raw) < before.st_size,
         "offset": offset,
+        "next_offset": offset + len(raw),
+        "page_bytes": len(raw),
+        "size": before.st_size,
+        "version": version,
+        "sha256": sha,
+        "hash_status": "complete" if sha else "unavailable:source_exceeds_hash_budget",
+        "hash_bytes": hash_bytes,
+        "max_hash_bytes": MAX_HASH_BYTES,
     }
 
 

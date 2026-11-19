@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 from hook_regression_helpers import begin, finish_review, invoke
+import al_artifacts as A
+import al_task as T
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -45,6 +47,133 @@ def test_waiting_checkpoint_resumes_unchanged_candidate(cli, state_file, tmp_pat
     resumed = json.loads(state_file().read_text())
     assert resumed["status"] == "RUNNING"
     assert resumed["resumes"][-1]["changed"] is False
+
+
+def test_spec_blocked_run_resumes_for_answer_and_requires_ready_gate(cli, state_file, tmp_path):
+    invoke(
+        cli,
+        "start",
+        "--spec",
+        "Resolve the stated ambiguity, retain the original task, and verify the result.",
+    )
+    original = json.loads(state_file().read_text())
+    package_ref = original['task_package'].copy()
+    package = A.read_json(package_ref)
+    original_task_hash = T.task_hash(original)
+
+    code, out, err = cli(
+        "spec-gate", "SPEC_BLOCKED", "--reason", "The acceptance criteria conflict."
+    )
+    assert code == 8, (out, err)
+    blocked = json.loads(state_file().read_text())
+    assert blocked['status'] == 'SPEC_BLOCKED' and blocked['spec_status'] == 'SPEC_BLOCKED'
+    checkpoint_id = blocked.get('stopping_checkpoint')
+    assert checkpoint_id
+    assert f'Checkpoint: {checkpoint_id}' in out
+    checkpoint_ref = next(ref for ref in blocked['checkpoints'] if ref['id'] == checkpoint_id)
+    checkpoint = A.read_json(checkpoint_ref)
+    assert checkpoint['prior_phase'] == 'PLANNING'
+    assert checkpoint['task_hash'] == original_task_hash
+    assert (
+        'task amend' in checkpoint['resume_instructions']
+        and 'SPEC_READY' in checkpoint['resume_instructions']
+    )
+    assert blocked['phase_occurrences'][-1]['ended'] is not None
+    assert blocked['phase_occurrences'][-1]['completed'] is False
+    assert blocked['completed_phases'] == original['completed_phases']
+
+    before = state_file().read_bytes()
+    invoke(cli, 'spec-gate', 'SPEC_READY', ok=False)
+    invoke(cli, 'task', 'amend', '--file', str(tmp_path / 'answer.json'), ok=False)
+    invoke(
+        cli,
+        'writer',
+        'start',
+        '--id',
+        'blocked',
+        '--role',
+        'al-engineer',
+        '--files',
+        'svc/app.py',
+        ok=False,
+    )
+    invoke(cli, 'phase', 'IMPLEMENTATION', ok=False)
+    assert state_file().read_bytes() == before
+
+    invoke(cli, 'resume', '--checkpoint', checkpoint_id)
+    resumed = json.loads(state_file().read_text())
+    assert resumed['status'] == 'RUNNING' and resumed['phase'] == 'PLANNING'
+    assert resumed['spec_status'] == 'SPEC_BLOCKED'
+    assert resumed['resumes'][-1]['checkpoint'] == checkpoint_id
+
+    answer = tmp_path / 'answer.json'
+    answer.write_text(json.dumps({
+        'id': 'ANSWER-1',
+        'source': 'user clarification',
+        'text': 'The user clarifies the disputed acceptance behavior for this same task.',
+    }))
+    invoke(cli, 'task', 'amend', '--file', str(answer))
+    amended = json.loads(state_file().read_text())
+    assert amended['task_package'] == package_ref
+    assert A.read_json(amended['task_package']) == package
+    assert [item['id'] for item in amended['amendments']] == ['ANSWER-1']
+    assert A.read_json(amended['amendments'][0]['artifact'])['text'] == (
+        'The user clarifies the disputed acceptance behavior for this same task.'
+    )
+    assert T.task_hash(amended) != original_task_hash
+    assert amended['spec_status'] is None and amended['phase'] == 'PLANNING'
+    before = state_file().read_bytes()
+    invoke(cli, 'phase', 'IMPLEMENTATION', ok=False)
+    assert state_file().read_bytes() == before
+
+    invoke(cli, 'spec-gate', 'SPEC_READY')
+    ready = json.loads(state_file().read_text())
+    assert ready['status'] == 'RUNNING' and ready['spec_status'] == 'SPEC_READY'
+    assert ready['task_package'] == package_ref and ready['amendments'][0]['id'] == 'ANSWER-1'
+
+
+@pytest.mark.parametrize('defect', ['missing', 'stale', 'foreign', 'corrupt'])
+def test_spec_blocked_resume_refuses_stale_foreign_or_corrupt_checkpoint(
+        cli, state_file, tmp_path, defect):
+    invoke(
+        cli,
+        'start',
+        '--spec',
+        'Resume only the latest intact checkpoint for this blocked specification.',
+    )
+    if defect == 'stale':
+        waiting = tmp_path / 'waiting.json'
+        waiting.write_text(json.dumps({'reason': 'Awaiting external input.',
+                                       'resume_instructions': 'Continue the same run.'}))
+        _, out, _ = invoke(cli, 'waiting', '--file', str(waiting))
+        stale_id = out.strip()
+        invoke(cli, 'resume', '--checkpoint', stale_id)
+    code, _, err = cli('spec-gate', 'SPEC_BLOCKED', '--reason', 'Clarification is required.')
+    assert code == 8, err
+    st = json.loads(state_file().read_text())
+    latest_id = st['stopping_checkpoint']
+    latest_ref = next(ref for ref in st['checkpoints'] if ref['id'] == latest_id)
+    if defect == 'missing':
+        attempted_id = 'missing-checkpoint-id'
+    elif defect == 'stale':
+        assert latest_id != stale_id
+        attempted_id = stale_id
+    elif defect == 'foreign':
+        data = A.read_json(latest_ref)
+        data['identity'] = dict(data['identity'], root='/foreign/repository')
+        foreign = A.snapshot_bytes(
+            st['session_id'], json.dumps(data).encode(), 'checkpoint', 'foreign checkpoint'
+        )
+        st['checkpoints'].append(foreign)
+        st['stopping_checkpoint'] = foreign['id']
+        state_file().write_text(json.dumps(st))
+        attempted_id = foreign['id']
+    else:
+        Path(latest_ref['stored_path']).write_bytes(b'corrupt checkpoint')
+        attempted_id = latest_id
+    before = state_file().read_bytes()
+    invoke(cli, 'resume', '--checkpoint', attempted_id, ok=False)
+    assert state_file().read_bytes() == before
 
 
 # A content edit inside planned paths returns to verification; new obligations it implies

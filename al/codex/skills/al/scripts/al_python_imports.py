@@ -245,11 +245,13 @@ def _analyze(facts,scan):
 
 
 DATA_SUFFIXES=('.json','.yaml','.yml')
+DOCUMENT_SUFFIXES=('.md','.markdown','.mdx')
 GENERATED_MARKERS=(b'@generated',b'do not edit',b'code generated')
 
 
 def artifact_kind(path,data):
-    """Closed artifact classes: OpenAPI schemas, other data fixtures, generated Python code."""
+    """Closed artifact classes: documentation, schemas, data fixtures and generated code."""
+    if path.endswith(DOCUMENT_SUFFIXES):return 'documentation'
     if path.endswith('.py'):
         header=b'\n'.join(data.splitlines()[:8]).lower()
         return 'generated-code' if any(marker in header for marker in GENERATED_MARKERS) else None
@@ -283,7 +285,8 @@ def artifact_consumers(scan,records,units):
     A literal path or file-name reference identifies a consumer (over-approximating on
     shared names); generated code records the schema files that produced it."""
     rows=[];unclassified=False
-    changed=sorted({p for files in (scan.files,scan.base) for p in files if any(within(c,p) for c in scan.paths)})
+    changed=sorted({p for files in (scan.files,scan.base) for p in files if any(within(c,p) for c in scan.paths)} |
+                   {p for p in scan.paths if p.endswith(DOCUMENT_SUFFIXES)})
     for path in changed:
         # Configuration, manifests and rule sources keep their existing unit/rule handling.
         if path in scan.rules or PurePosixPath(path).name in MANIFESTS or any(part.startswith('.') for part in PurePosixPath(path).parts):continue
@@ -300,13 +303,17 @@ def artifact_consumers(scan,records,units):
             producers=sorted(p for p in set(scan.files)|set(scan.base) if p.endswith(DATA_SUFFIXES) and PurePosixPath(p).name.encode() in header)
             rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':producers,'consumers':[]})
             continue
+        if kind=='documentation':
+            rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':[],
+                         'consumers':_referencing(scan,path,path)})
+            continue
         rows.append({'path':path,'kind':kind,'owner':max(owners,key=lambda u:len(u['path']))['id'],'producers':[],
                      'consumers':_referencing(scan,path,path)})
     # Changed paths of kinds the snapshot never reads (e.g. .csv, .sql, templates) are unclassified too.
     for path in scan.paths:
         parts=PurePosixPath(path).parts
         if path=='.' or any(within(path,p) for files in (scan.files,scan.base) for p in files) or any(part.startswith('.') for part in parts):continue
-        if any(within(u['path'],path) for u in units.values()) and not path.endswith(SOURCE_SUFFIXES):unclassified=True
+        if any(within(u['path'],path) for u in units.values()) and not path.endswith(SOURCE_SUFFIXES) and not path.endswith(DOCUMENT_SUFFIXES):unclassified=True
     return rows,unclassified
 
 

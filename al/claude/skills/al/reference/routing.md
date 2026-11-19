@@ -26,6 +26,17 @@ the codebase.
   blocking question into an assumption, and never invent a major requirement to
   keep the run moving.
 
+For a standalone run, continue from the checkpoint recorded by `spec-gate`:
+resume with its `stopping_checkpoint`, record the user's answer with
+`task amend --file <answer.json>`, then rerun `spec-gate SPEC_READY`. The answer
+does not itself clear the specification block; rerun the gate before advancing
+the workflow.
+
+For a Harness-bound run, use the scoped developer decision and acknowledgement
+workflow in [execution integration](execution-integration.md#reporting-and-admission).
+Do not use `task amend` for that run; continue the affected scope only through
+the Harness decision and any required Architect revalidation.
+
 ## 2. Task classification
 
 AL-Architect returns `TASK_CLASSIFICATION`, `IMPLEMENTER` and
@@ -40,7 +51,7 @@ AL-Architect returns `TASK_CLASSIFICATION`, `IMPLEMENTER` and
 The command prints the classification, the path, and — when the Designer is
 skipped — the reason. A skipped Designer is **expected behaviour, not an error**.
 
-`/al` means "use AL's quality controls". It does not mean "spend every agent on
+`$al` means "use AL's quality controls". It does not mean "spend every agent on
 every task".
 
 ## 3. The three paths

@@ -180,7 +180,21 @@ class EvaluatorAdapter:
                         and result.get("handoff", {}).get("status") == "unavailable"
                         and result.get("knowledge_context", {}).get("status") == "unavailable"
                     )
-                    if result.get("status") not in {"ReadOnly", "Pending"} and not safe_assigned:
+                    safe_supervisor = (
+                        result.get("status") == "Supervisor"
+                        and role == "orchestrator"
+                        and principal["thread_id"] == self.operation.registry.root
+                        and principal.get("writable") is False
+                        and result.get("role") == "orchestrator"
+                        and result.get("writable") is False
+                        and "handoff" not in result
+                        and "knowledge_context" not in result
+                    )
+                    if (
+                        result.get("status") not in {"ReadOnly", "Pending"}
+                        and not safe_assigned
+                        and not safe_supervisor
+                    ):
                         raise ValueError("writable/automatic assignment context refused")
                 if not self.budget:
                     self.visible(json.dumps(result), name=name, principal=principal["thread_id"])

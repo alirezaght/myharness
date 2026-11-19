@@ -21,6 +21,21 @@ other:
     assert result['deferred'][0]['dependencies']
 
 
+def test_root_readme_keeps_global_ci_and_defers_disjoint_changes_job(repo):
+    put(repo, '.gitlab-ci.yml', '''root-quality:
+  script: python3 -m compileall -q .
+other:
+  image: unrelated/custom-runner:1
+  script: unsupported-tool
+  rules:
+    - changes: [apps/other/**/*]
+''')
+    result=CI.inventory(repo,['README.md'])
+    assert [o['job'] for o in result['obligations']]==['root-quality']
+    assert result['obligations'][0]['units']==['.']
+    assert [d['job'] for d in result['deferred']]==['other']
+
+
 def test_disjoint_github_workflow_stays_in_currency_dependencies(repo):
     put(repo,'.github/workflows/other.yml','''on:
   pull_request:

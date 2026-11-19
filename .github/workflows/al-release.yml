@@ -17,12 +17,44 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
       - name: Install test runner
         run: python -m pip install pytest 'jsonschema>=4,<5'
+      - name: Prepare external verification evidence
+        shell: bash
+        run: |
+          al_release_evidence_directory="$RUNNER_TEMP/al-release-evidence"
+          mkdir -p "$al_release_evidence_directory"
+          printf 'AL_RELEASE_EVIDENCE=%s\n' "$al_release_evidence_directory" >> "$GITHUB_ENV"
+      - name: Check owned verification prerequisites
+        shell: bash
+        run: |
+          python al/verification_preflight.py --temporary-root "$RUNNER_TEMP" > "$AL_RELEASE_EVIDENCE/preflight.json"
+          cat "$AL_RELEASE_EVIDENCE/preflight.json"
       - name: Verify installer, platform suites, and release payload
-        run: python al/release_verify.py --full
+        run: python al/release_verify.py --full --report "$AL_RELEASE_EVIDENCE/full.json"
       - name: Run the pre-release acceptance tier (long end-to-end proofs)
-        run: python al/release_verify.py --tier acceptance
+        run: python al/release_verify.py --tier acceptance --report "$AL_RELEASE_EVIDENCE/acceptance.json"
+      - name: Preserve verification diagnostics
+        if: ${{ always() && env.AL_RELEASE_EVIDENCE != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: al-release-verification-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 14
+          # Preserve exact reports and shard diagnostics, never disposable homes,
+          # pytest fixture trees, copied runtime stores, or hidden files.
+          path: |
+            ${{ env.AL_RELEASE_EVIDENCE }}/*.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/plan.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/collect-*/collection.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/collect-*/collection.log
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/execution/plan.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/execution/journal.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/execution/*/assignment.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/execution/*/report.json
+            ${{ env.AL_RELEASE_EVIDENCE }}/*-runs/run-*/execution/*/output.log

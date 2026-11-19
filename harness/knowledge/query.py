@@ -213,6 +213,7 @@ def _citation_current(scope, ref, *, conn=None, cache=None, reads=None):
                     reads["bytes"] >= reads.get("max_bytes", MAX_REFRESH_BYTES)
                 ):
                     reads["limited"] = True
+                    reads.setdefault("limited_versions", set()).add(key)
                     return False
                 reads["count"] += 1
             if reads is not None:
@@ -253,6 +254,7 @@ def _citation_current(scope, ref, *, conn=None, cache=None, reads=None):
             if len(raw) > read_limit:
                 if reads is not None:
                     reads["limited"] = True
+                    reads.setdefault("limited_versions", set()).add(key)
                 cache[key] = (b"", "")
                 return False
             if reads is not None:
@@ -271,6 +273,7 @@ def _citation_current(scope, ref, *, conn=None, cache=None, reads=None):
             and read_limit < MAX_SOURCE_BYTES
         ):
             reads["limited"] = True
+            reads.setdefault("limited_versions", set()).add(key)
         cache[key] = (b"", "")
         return False
 
@@ -392,7 +395,7 @@ def _path(row, entity):
     }
 
 
-def _expand(conn, rows, seeds, references, limits, exclusions):
+def _expand(conn, rows, seeds, references, limits, exclusions, *, examined=0):
     selected, paths = list(seeds), {}
     queue = deque()
     for aid in seeds:
@@ -408,7 +411,7 @@ def _expand(conn, rows, seeds, references, limits, exclusions):
         if edge and limits.hops and row["object"] and row["predicate"] in _RELATIONS:
             paths[aid] = {"assertion_ids": [aid], "edges": [edge], "impact": "likely-source-impact"}
         queue.append((aid, 0))
-    examined, visited_entities = 0, set()
+    visited_entities = set()
     while queue and examined < limits.examined_edges:
         aid, depth = queue.popleft()
         if depth >= limits.hops:
@@ -615,7 +618,47 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     seeds = ordered[: request.limits.assertions]
     if len(ordered) > len(seeds):
         exclusions["assertion-budget"] += len(ordered) - len(seeds)
-    selected, paths, examined = _expand(conn, rows, seeds, references, request.limits, exclusions)
+    examined, parent_lists, closures = 0, {}, {}
+
+    def discover_parents(aid, trail=frozenset()):
+        nonlocal examined
+        if aid in closures:
+            return closures[aid]
+        if aid in trail:
+            return False
+        parents = tuple(
+            r[0]
+            for r in conn.execute(
+                "SELECT d.parent_assertion_id FROM knowledge_derivations d "
+                "JOIN temp.k_eligible k ON k.assertion_id=d.parent_assertion_id "
+                "WHERE d.assertion_id=? ORDER BY 1 LIMIT ?",
+                (aid, min(request.limits.assertions + 1, request.limits.examined_edges - examined)),
+            )
+        )
+        examined += len(parents)
+        parent_lists[aid] = parents
+        complete = (
+            len(parents)
+            == conn.execute(
+                "SELECT count(*) FROM knowledge_derivations WHERE assertion_id=?", (aid,)
+            ).fetchone()[0]
+        )
+        for parent in parents:
+            if parent not in rows:
+                rows[parent] = dict(
+                    conn.execute(_ROW + "WHERE a.assertion_id=?", (parent,)).fetchone()
+                )
+            if not discover_parents(parent, trail | {aid}):
+                complete = False
+        closures[aid] = complete
+        return complete
+
+    # Required provenance gets the shared work allowance before optional traversal.
+    for aid in seeds:
+        discover_parents(aid)
+    selected, paths, examined = _expand(
+        conn, rows, seeds, references, request.limits, exclusions, examined=examined
+    )
     immutable = json.loads(snap["observation_json"]).get("mode") == "commit"
     historical = immutable or (
         scope.snapshot_id is None
@@ -706,42 +749,19 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             exclusions["parent-budget"] += 1
             return
         visiting.add(aid)
-        parents = [
-            r[0]
-            for r in conn.execute(
-                "SELECT d.parent_assertion_id FROM knowledge_derivations d "
-                "JOIN temp.k_eligible k ON k.assertion_id=d.parent_assertion_id "
-                "WHERE d.assertion_id=? ORDER BY 1 LIMIT ?",
-                (aid, min(request.limits.assertions + 1, request.limits.examined_edges - examined)),
-            )
-        ]
-        examined += len(parents)
+        if not discover_parents(aid):
+            visiting.remove(aid)
+            exclusions["parent-budget"] += 1
+            return
+        parents = parent_lists[aid]
         for parent in parents:
-            if parent not in rows:
-                rows[parent] = dict(
-                    conn.execute(_ROW + "WHERE a.assertion_id=?", (parent,)).fetchone()
-                )
             include(parent)
         visiting.remove(aid)
-        if (
-            not set(parents) <= emitted
-            or conn.execute(
-                "SELECT 1 FROM knowledge_derivations d WHERE d.assertion_id=? AND NOT EXISTS "
-                "(SELECT 1 FROM temp.k_eligible e WHERE "
-                "e.assertion_id=d.parent_assertion_id) LIMIT 1",
-                (aid,),
-            ).fetchone()
-        ):
+        if not set(parents) <= emitted:
             exclusions["parent-budget"] += 1
             return
         if len(payload["assertions"]) >= request.limits.assertions:
             exclusions["assertion-budget"] += 1
-            return
-        all_parents = conn.execute(
-            "SELECT count(*) FROM knowledge_derivations WHERE assertion_id=?", (aid,)
-        ).fetchone()[0]
-        if all_parents != len(parents):
-            exclusions["parent-budget"] += 1
             return
         refs = _evidence(conn, aid)
         if not all(
@@ -749,7 +769,12 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             or _citation_current(scope, ref, conn=conn, cache=cache, reads=reads)
             for ref in refs
         ):
-            payload["staleness"].append({"assertion_id": aid, "status": "withheld-stale-evidence"})
+            status = (
+                "withheld-source-read-budget"
+                if any(ref["version_id"] in reads.get("limited_versions", ()) for ref in refs)
+                else "withheld-stale-evidence"
+            )
+            payload["staleness"].append({"assertion_id": aid, "status": status})
             return
         row = rows[aid]
         applicability = json.loads(row["applicability_json"])
@@ -792,7 +817,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             payload["paths"].append(paths[aid])
         emitted.add(aid)
 
-    # Reverse dependency evidence precedes incidental facts from lexical anchors.
+    # Interleave direct relevance with reverse impact, keeping whole evidence units.
     relationship_order = sorted(
         paths,
         key=lambda aid: (
@@ -804,11 +829,11 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     reverse = [
         aid
         for aid in relationship_order
-        if any(e["direction"] == "reverse" for e in paths[aid]["edges"])
+        if aid not in seeds and any(e["direction"] == "reverse" for e in paths[aid]["edges"])
     ]
-    packing_order = list(dict.fromkeys([*reverse, *seeds[:1], *relationship_order, *selected]))
     units = []
-    for aid in packing_order:
+
+    def pack(aid):
         required = paths[aid]["assertion_ids"] if aid in paths else [aid]
         before = set(emitted)
         for member in required:
@@ -826,11 +851,27 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
                 p for p in payload["paths"] if not added.intersection(p["assertion_ids"])
             ]
             emitted.difference_update(added)
-            continue
+            return False
         if added:
             units.append(added)
         _fit(payload, request.limits.bytes, exclusions, units)
         emitted.intersection_update(a["assertion_id"] for a in payload["assertions"])
+        return bool(added & emitted)
+
+    direct, impact = deque(seeds), deque(reverse)
+    attempted = set()
+    while direct or impact:
+        for stream in (direct, impact):
+            while stream:
+                aid = stream.popleft()
+                if aid in attempted:
+                    continue
+                attempted.add(aid)
+                if pack(aid):
+                    break
+    for aid in dict.fromkeys([*relationship_order, *selected]):
+        if aid not in attempted:
+            pack(aid)
     if reads.get("limited"):
         exclusions["source-read-budget"] += 1
     reads.update(max_count=80, max_bytes=MAX_REFRESH_BYTES)

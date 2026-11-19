@@ -128,7 +128,7 @@ class OperationController:
         )
 
     def tooling_status(self):
-        from harness.task_environment import SetupReport, context_revision
+        from harness.task_environment import SetupReport, context_revision, preparation_requests
 
         with closing(connect(self.database)) as conn:
             current = self.state(get_execution(conn, self.execution_id))
@@ -138,9 +138,17 @@ class OperationController:
                     "task_id": task_id,
                     "expected_revision": context_revision(current, task_id),
                     "files": row["files"],
+                    "prepare_requests": preparation_requests(
+                        self.envelope["repository"], current, task_id
+                    ),
                 }
                 for task_id, row in current["integration"]["tasks"].items()
             ],
+            "prepare_guidance": (
+                "Use a task prepare_requests entry with cwd='.' or a repository-relative unit. "
+                "No entry means no locked unit was found; registration/revision and setup "
+                "checks still apply. Absolute paths are refused."
+            ),
             "setup": [
                 {
                     "handle": handle,
@@ -526,6 +534,7 @@ class OperationController:
             resources = {
                 "harness:tooling": self.tooling_status,
                 "harness:capabilities": lambda: {
+                    "authority": self.control_context(principal),
                     "file_operations": {
                         "max_edit_target_bytes": 8 * 1024 * 1024,
                         "max_patch_bytes": 65536,
@@ -756,7 +765,11 @@ class OperationController:
             raise ValueError("another manifest-producing operation is already active")
         args = list(original_arguments)
         if not args or args[0] not in COMMANDS:
-            raise ValueError("AL command is not available through the controller")
+            raise ValueError(
+                "al_command requires only AL subcommands, for example "
+                "arguments=['show', '--panel']; omit alctl, launcher paths, run and "
+                "repository/session wrapper flags. AL origin is supplied by Harness."
+            )
         if args[0] == "integration" and (
             len(args) < 2 or args[1] in {"decision", "delivery-correction"}
         ):
@@ -1085,6 +1098,31 @@ class OperationController:
             raise ValueError("foreign Claude child")
         return {"role": row["role"]}
 
+    @staticmethod
+    def control_context(principal):
+        supervisor = principal["role"] == "orchestrator"
+        return {
+            "status": (
+                "Supervisor"
+                if supervisor
+                else "WriterCandidate"
+                if principal["writable"]
+                else "ReadOnly"
+            ),
+            "role": principal["role"],
+            "writable": principal["writable"],
+            "control_plane": {"al": supervisor, "diagram_publish": supervisor},
+            "guidance": (
+                "Supervisor has guarded AL planning/control authority without a product writer. "
+                "Product edits require an admitted scoped writer."
+                if supervisor
+                else "Writer roles require an admitted scoped assignment for product edits and "
+                "registered checks; they have no supervisor control authority."
+                if principal["writable"]
+                else "Read-only context grants no AL mutation or diagram publication authority."
+            ),
+        }
+
     def await_assignment(self, principal, timeout):
         if type(timeout) is not int or not 1 <= timeout <= 30:
             raise ValueError("assignment wait must be between 1 and 30 seconds")
@@ -1092,9 +1130,9 @@ class OperationController:
         while True:
             with self.lock, closing(connect(self.database)) as conn:
                 _, state = self.authority(HarnessController(conn), principal)
-                if not principal["writable"]:
+                if principal["role"] == "orchestrator" or not principal["writable"]:
                     return {
-                        "status": "ReadOnly",
+                        **self.control_context(principal),
                         "graph_revision": state["integration"]["graph_revision"],
                     }
                 value = self.assignments.get(principal["thread_id"])

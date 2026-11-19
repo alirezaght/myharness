@@ -20,6 +20,12 @@ def queue(st, kind, payload):
         st['integration'].setdefault('pending', []).append({'kind': kind, 'payload': copy.deepcopy(payload)})
 
 
+def queue_admission(st, payload):
+    queue(st, 'task.updated', payload)
+    if 'integration' in st:
+        st['integration']['pending'][-1]['assign_admission_observation'] = True
+
+
 def validate(st):
     i = st.get('integration')
     if i is None:
@@ -90,6 +96,14 @@ def prepare_commit(previous, proposed):
         pending.append({'kind': 'implementation.result', 'payload': {'status': 'APPROVED', 'approval': copy.deepcopy(proposed['approval'])}})
     for fact in pending:
         i['sequence'] += 1
+        if fact.pop('assign_admission_observation', False):
+            payload = fact['payload']
+            row = i['tasks'][payload['id']]
+            if fact['kind'] != 'task.updated' or row.get('admission') != payload.get('admission'):
+                raise ValueError('admission observation requires the current runtime receipt')
+            observation = {'sequence': i['sequence']}
+            payload['admission_observation'] = copy.deepcopy(observation)
+            row['admission_observation'] = observation
         event = {'schema_version': 1, 'event_id': 'evt-' + secrets.token_hex(12), 'sequence': i['sequence'], 'timestamp': time.time(), 'binding': copy.deepcopy(i['binding']), **fact}
         validate_event(event)
         i['outbox'].append(event)

@@ -45,6 +45,7 @@ def complete(adapter, principal):
     from .method import participant_profile
 
     profile = participant_profile(adapter.package) if adapter.budget else None
+    # Qualified observation must precede database access and every authority side effect.
     observed = observe_return(
         operation.registry.native_root,
         principal["thread_id"],

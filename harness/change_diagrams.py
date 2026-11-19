@@ -172,7 +172,8 @@ def diagram_operation(operation, controller, principal, state, request):
     current_binding = binding(controller, current)
     source_notes = sources(controller, current["task_id"])
     if request == {"operation": "inspect"}:
-        return {
+        result = {
+            "graph_revision": state["integration"]["graph_revision"],
             "binding": current_binding,
             "sources": {
                 ref: {"section": str(e.section), "text": e.text}
@@ -197,12 +198,25 @@ def diagram_operation(operation, controller, principal, state, request):
             },
             "authority": "REFERENCE_ONLY",
         }
+        result["publication_request"] = {
+            "operation": "publish",
+            "content": canonical(result["publication_schema"]),
+            "expected_graph_revision": result["graph_revision"],
+        }
+        return result
+    if principal["role"] != "orchestrator":
+        raise ValueError("only orchestrator may publish a logical diagram")
     if (
-        principal["role"] != "orchestrator"
-        or request.get("operation") != "publish"
+        request.get("operation") != "publish"
         or set(request) != {"operation", "content", "expected_graph_revision"}
+        or not isinstance(request.get("content"), str)
+        or type(request.get("expected_graph_revision")) is not int
     ):
-        raise ValueError("only orchestrator may publish a closed logical diagram request")
+        raise ValueError(
+            "closed logical diagram publish request requires operation, JSON-string content "
+            "and integer expected_graph_revision; call diagram_operation inspect and use "
+            "its publication_request template"
+        )
     if request["expected_graph_revision"] != state["integration"]["graph_revision"]:
         raise ValueError("logical diagram graph revision is stale")
     return publish(controller, current, json.loads(request["content"]))

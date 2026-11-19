@@ -90,6 +90,12 @@ def readiness(root, host):
         "repository": str(Path(root).resolve()),
         "host": host,
         "ready": all(c["status"] == "PASS" for c in checks),
+        "ready_scope": "launch_prerequisites",
+        "implementation_readiness": "UNVERIFIED",
+        "readiness_notice": (
+            "Launch prerequisites only; planning, candidate inspection and scoped writer "
+            "admission have not been verified."
+        ),
         "checks": checks,
         "authentication": "UNVERIFIED: no provider login, request or credential inspection",
         "product_acceptance": "NOT_ASSESSED",

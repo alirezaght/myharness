@@ -233,6 +233,10 @@ for AL-Architect, never authority, never a finding of record.
   intercept arbitrary raw host dispatch. Under Harness, register the actual
   agent before admission when required and keep it waiting for its generated
   handoff; generated `al_command` instructions retain controller binding.
+  An intact generated handoff file is valid file-based delivery: the recipient
+  reads every page, including the managed EVIDENCE block, before work and
+  acknowledges byte count/digest when available. A large handoff need not be
+  pasted into a message; select relevant checks with repeatable `--area AREA`.
   A concurrent writer body also carries the **concurrency block** with its owned
   paths, the peer's, and unstable interfaces.
 - Validate each returned contract independently (required headings in
