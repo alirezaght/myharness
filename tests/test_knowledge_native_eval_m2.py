@@ -1,6 +1,7 @@
 """Public synthetic method qualification; never provider or acceptance evidence."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -277,7 +278,9 @@ def test_cross_method_donor_refused_before_store_access(sample_repo, tmp_path):
 
 
 @pytest.mark.parametrize("arm", ["B", "C"])
-def test_m2_clean_actual_worker_donor_recipient_exhaustion(sample_repo, tmp_path, monkeypatch, arm):
+def test_m2_synthetic_donor_exhaustion_keeps_observation_unavailable(
+    sample_repo, tmp_path, monkeypatch, arm
+):
     """Real admission/bridge/lease/NativeRuntime/authority; only host executable is synthetic."""
     from scripts.knowledge_evaluation.method import contract
     from tests import test_knowledge_native_eval as legacy
@@ -317,26 +320,23 @@ emit(child,'event_msg',{'type':'token_count','info':{
     )
     monkeypatch.setattr(legacy, "case", case)
     monkeypatch.setattr(legacy, "SYNTHETIC_CONTINUITY_CLI", script)
-    legacy.test_full_synthetic_native_continuity_and_real_reapproval(
+    legacy.test_synthetic_donor_refuses_unqualified_completion(
         sample_repo, tmp_path, monkeypatch, arm
     )
-    for name in ("evaluation-output", "recipient-output"):
-        result = json.loads((tmp_path / name / "native-result.json").read_bytes())
-        ledger = result["adapter"]["accounting"]
-        assert ledger["attempted_tools_call"] == 30
-        assert ledger["delivered_bytes"] <= 98304
-        assert result["adapter"]["output_lifecycle"]["acknowledgment_delivered"]
-        assert len(result["settlement"]["attempts"]) == 1
-        assert result["settlement"]["attempts"][0]["status"] == "Exited"
-        assert result["settlement"]["attempts"][0]["closed_context"]
-        assert result["evaluator_hashes"]
-        assert result["prompt_sha256"]
-        observed = result["usage"]["children"][0]
-        assert observed["status"] == "observed"
-        assert observed["host_context"]["model"] == (
-            "gpt-6-astra" if name == "evaluation-output" else "gpt-6.1-sol"
-        )
-        assert result["usage"]["answer_token_compliance"] == "UNKNOWN"
+    result = json.loads((tmp_path / "evaluation-output" / "native-result.json").read_bytes())
+    ledger = result["adapter"]["accounting"]
+    assert ledger["attempted_tools_call"] == 30
+    assert ledger["delivered_bytes"] <= 98304
+    assert result["adapter"]["output_lifecycle"]["acknowledgment_delivered"]
+    assert len(result["settlement"]["attempts"]) == 1
+    assert result["settlement"]["attempts"][0]["status"] == "Exited"
+    assert result["settlement"]["attempts"][0]["closed_context"]
+    assert result["evaluator_hashes"] and result["prompt_sha256"]
+    assert result["usage"]["children"][0]["status"] == "unavailable"
+    assert result["usage"]["children"][0]["turn_generation_delta"] is None
+    assert result["usage"]["answer_token_compliance"] == "UNKNOWN"
+    assert result["child_returns"][0]["status"] == "unavailable"
+    assert not (tmp_path / "recipient-output").exists()
 
 
 def test_public_exact_pem_canary_reader_boundaries(sample_repo, tmp_path):
@@ -646,3 +646,263 @@ def test_r2_scope_formats_legacy_refusal_and_setup(sample_repo, tmp_path):
     package["corpus"] = {"root": str(sample_repo), **corpus_receipt(sample_repo)}
     with pytest.raises(ValueError, match="automatic dependency setup"):
         task_files(package)
+
+
+def test_legacy_donor_observation_cannot_admit_recipient(tmp_path, monkeypatch):
+    from scripts.knowledge_evaluation.continuity import donor_capability
+    from scripts.knowledge_evaluation.package import sha
+
+    package = {"schema_version": 1, "corpus": {"root": "/synthetic/project"}, "provenance": {}}
+    admission = {"task_id": "task", "execution_id": "execution", "provenance": {}}
+    completion = {
+        "kind": "evaluation-producer-completion-v1",
+        "task_id": "task",
+        "execution_id": "execution",
+        "repository": "/synthetic/project",
+        "native_return": {"wait": {"record_sha256": "a" * 64}},
+    }
+    refs = {}
+    for name, value in (("admission", admission), ("completion", completion)):
+        path = tmp_path / (name + ".json")
+        path.write_text(json.dumps(value))
+        refs[name] = {"path": str(path), "sha256": sha(path.read_bytes())}
+    before = {name: Path(ref["path"]).read_bytes() for name, ref in refs.items()}
+
+    def forbidden(*args):
+        pytest.fail("unqualified donor must not reach its database")
+
+    monkeypatch.setattr("scripts.knowledge_evaluation.continuity._readonly", forbidden)
+    with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
+        donor_capability(package, refs)
+    assert before == {name: Path(ref["path"]).read_bytes() for name, ref in refs.items()}
+
+
+_CLEANUP_WORKER_SHIM = """import os,runpy,signal,subprocess,sys
+mode=sys.argv.pop(1)
+worker=sys.argv.pop(1)
+assert mode in {'disposed','deny-final','deny-term'}
+popen,killpg=subprocess.Popen,os.killpg
+native={}
+def capture(argv,*args,**kwargs):
+    process=popen(argv,*args,**kwargs)
+    if isinstance(argv,(list,tuple)) and '--session-id' in argv:
+        native[process.pid]=process
+    return process
+def dispose(pid,sig):
+    if pid not in native:
+        return killpg(pid,sig)
+    if (mode=='deny-final' and sig==signal.SIGKILL) or (mode=='deny-term' and sig==signal.SIGTERM):
+        raise PermissionError('FIXTURE_SIGNAL_CANARY')
+    if sig==signal.SIGKILL:
+        assert native[pid].wait(timeout=5)==0
+        raise ProcessLookupError
+    return None
+subprocess.Popen=capture
+os.killpg=dispose
+runpy.run_path(worker,run_name='__main__')
+"""
+
+
+def _controlled_cleanup_worker(monkeypatch, tmp_path, mode):
+    from scripts import knowledge_native_eval
+
+    original = knowledge_native_eval.worker_command
+    shim = tmp_path / "controlled-cleanup-worker.py"
+    shim.write_text(_CLEANUP_WORKER_SHIM)
+
+    def command(bridge, output):
+        argv = original(bridge, output)
+        return [*argv[:3], str(shim), mode, *argv[3:]]
+
+    monkeypatch.setattr(knowledge_native_eval, "worker_command", command)
+
+
+@pytest.mark.parametrize("malformed", [False, True])
+def test_persisted_telemetry_boundary_uses_real_worker_drain(
+    sample_repo, tmp_path, monkeypatch, malformed
+):
+    _persisted_telemetry_case(sample_repo, tmp_path, monkeypatch, malformed, "disposed")
+
+
+@pytest.mark.parametrize("mode", ["deny-final", "deny-term"])
+def test_persisted_telemetry_boundary_injected_cleanup_failure(
+    sample_repo, tmp_path, monkeypatch, mode
+):
+    _persisted_telemetry_case(sample_repo, tmp_path, monkeypatch, True, mode)
+
+
+def _persisted_telemetry_case(sample_repo, tmp_path, monkeypatch, malformed, mode):
+    """Synthetic stdout crosses live.run's drain hook into its actual persisted receipt."""
+    import os
+
+    from scripts.knowledge_evaluation.live import TELEMETRY_UNAVAILABLE
+    from scripts.knowledge_evaluation.package import corpus_receipt, sha
+    from scripts.knowledge_native_eval import execute
+    from tests.execution_helpers import isolated_launch_environment
+    from tests.native_provider_fixture import _CLAUDE
+    from tests.test_knowledge_native_eval import case
+
+    isolated_launch_environment(monkeypatch, tmp_path / "telemetry-tooling")
+    _controlled_cleanup_worker(monkeypatch, tmp_path, mode)
+    events = [
+        {
+            "type": "assistant",
+            "parent_tool_use_id": "toolu_Telemetry123",
+            "message": {
+                "model": "gpt-6-astra",
+                "effort": "medium",
+                "usage": {"input_tokens": 12, "output_tokens": 3},
+                "content": [
+                    {"type": "text", "text": "BOUNDARY_PROSE_CANARY"},
+                    {"type": "thinking", "thinking": "BOUNDARY_REASONING_CANARY"},
+                ],
+            },
+        },
+        {
+            "type": "assistant",
+            "message": {
+                "usage": {"input_tokens": 1, "auth": {"token": "BOUNDARY_USAGE_AUTH_CANARY"}},
+            },
+        },
+        {
+            "type": "result",
+            "modelUsage": {
+                "gpt-6-astra": {"inputTokens": 1, "auth": {"token": "BOUNDARY_MODEL_AUTH_CANARY"}},
+            },
+        },
+        {"type": "turn.completed", "usage": {"input_tokens": 21, "output_tokens": 5}},
+    ]
+    lines = [json.dumps(event) for event in events]
+    if malformed:
+        lines.append('{"BOUNDARY_MALFORMED_CANARY":')
+    binary = tmp_path / "telemetry-bin"
+    binary.mkdir()
+    executable = binary / "claude"
+    # Reuse the fixture's real SessionStart handshake, then emit synthetic public stream events.
+    executable.write_text(
+        _CLAUDE + "\nfor line in " + repr(lines) + ":\n    print(line, flush=True)\n"
+    )
+    executable.chmod(0o700)
+    monkeypatch.setenv("PATH", str(binary) + os.pathsep + os.environ["PATH"])
+    package = case(sample_repo, tmp_path)
+    package.update(host="claude", model="fable", arm="B")
+    before = corpus_receipt(sample_repo)
+    result = execute(package, "live")
+    output = Path(package["output_directory"])
+    from contextlib import closing
+
+    from harness.db import connect
+    from harness.execution_settlement import closed_context
+    from harness.execution_store import get_execution
+    from harness.native_diagnostics import message
+
+    admission = json.loads((output / "admission.json").read_bytes())
+    with closing(connect(admission["database"])) as conn:
+        execution = get_execution(conn, admission["execution_id"])
+        attempt = conn.execute(
+            "SELECT * FROM execution_attempts WHERE execution_id=?", (execution["id"],)
+        ).fetchone()
+        assert execution["result"] is None and attempt["status"] == "Exited"
+        if mode == "disposed":
+            assert execution["status"] == "Interrupted"
+            assert closed_context(execution, attempt)
+            if malformed:
+                assert execution["error"] == message("NATIVE_STREAM_INVALID")
+            else:
+                assert (
+                    execution["error"]
+                    == "native host exited 0; no guarded AL implementation result"
+                )
+        else:
+            assert execution["status"] == "RecoveryRequired"
+            assert execution["error"] == message("NATIVE_STREAM_INVALID")
+            expected_closure = mode == "deny-term"
+            assert closed_context(execution, attempt) is expected_closure
+            stage = json.loads((output / "native-failure-stage.json").read_bytes())
+            failures = [
+                {
+                    "stage": "failure-signal" if mode == "deny-term" else "final-signal",
+                    "category": "os-error",
+                    "diagnostic": "NATIVE_SETTLEMENT_UNAVAILABLE",
+                }
+            ]
+            if mode == "deny-final":
+                failures.append(
+                    {
+                        "stage": "closure-record",
+                        "category": "closure-refused",
+                        "diagnostic": "NATIVE_SETTLEMENT_UNAVAILABLE",
+                    }
+                )
+            assert stage == {
+                "kind": "native-failure-stage-v1",
+                "execution_id": execution["id"],
+                "attempt_id": attempt["id"],
+                "failures": failures,
+                "returncode_known": True,
+                "closure_validated": expected_closure,
+                "status_publication_reached": True,
+            }
+    if mode != "disposed":
+        assert result["status"] == "unavailable"
+        assert not (output / "native-result.json").exists()
+        receipt = json.loads((output / "operational-failure.json").read_bytes())
+        assert receipt == {
+            "kind": "evaluation-worker-failure-v2",
+            "status": "unavailable",
+            "worker_returncode": 1,
+            "execution_id": result["execution_id"],
+            "diagnostic": "isolated-worker-failed",
+            "recovery": "inspect actual execution diagnostics and reservation; no automatic retry",
+            "settlement": "unknown; inspect authoritative attempt/closure receipts",
+        }
+        persisted = json.dumps([receipt, stage, execution["error"]])
+        assert "BOUNDARY_" not in persisted
+        for line in lines:
+            assert sha(line.encode()) not in persisted
+            assert sha((line + "\n").encode()) not in persisted
+        assert corpus_receipt(sample_repo) == before
+        return
+    assert not (output / "native-failure-stage.json").exists()
+    assert not (output / "operational-failure.json").exists()
+    receipt = json.loads((output / "native-result.json").read_bytes())
+    assert receipt == result and receipt["status"] == "unavailable"
+    assert receipt["execution_status"] == "Interrupted"
+    assert (output / "worker-reservation.json").exists()
+    assert receipt["modules"]["harness.execution_worker"]["path"].startswith(
+        receipt["selected_bridge"] + "/harness/"
+    )
+    telemetry = receipt["provider_telemetry"]
+    assert [row for row in telemetry if row.get("type") == "assistant"] == [
+        {
+            "kind": "public-provider-telemetry-v2",
+            "status": "reported",
+            "type": "assistant",
+            "parent_tool_use_id": "toolu_Telemetry123",
+            "model": "gpt-6-astra",
+            "effort": "medium",
+            "usage": {"input_tokens": 12, "output_tokens": 3},
+        }
+    ]
+    assert [row for row in telemetry if row.get("type") == "turn.completed"] == [
+        {
+            "kind": "public-provider-telemetry-v2",
+            "status": "reported",
+            "type": "turn.completed",
+            "usage": {"input_tokens": 21, "output_tokens": 5},
+        }
+    ]
+    assert sum(row == TELEMETRY_UNAVAILABLE for row in telemetry) == (3 if malformed else 2)
+    persisted = json.dumps(receipt)
+    for canary in (
+        "BOUNDARY_PROSE_CANARY",
+        "BOUNDARY_REASONING_CANARY",
+        "BOUNDARY_USAGE_AUTH_CANARY",
+        "BOUNDARY_MODEL_AUTH_CANARY",
+        "BOUNDARY_MALFORMED_CANARY",
+    ):
+        assert canary not in persisted
+    for line in lines:
+        assert sha(line.encode()) not in persisted
+        assert sha((line + "\n").encode()) not in persisted
+    assert corpus_receipt(sample_repo) == before

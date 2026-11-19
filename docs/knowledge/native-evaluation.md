@@ -1,10 +1,39 @@
-# Qualified native evaluation infrastructure
+# Native evaluation infrastructure and recovery limits
 
 `python scripts/knowledge_native_eval.py CASE.json` defaults to validation and spends no
 provider tokens. `--mode prepare` creates an isolated SQLite store, concrete interview,
 design, test plan, final review and ordinary immutable approval. `--mode live` additionally
 reserves an execution and invokes its real supervisor. Live runs are explicit and supervised;
 this increment's tests use synthetic identities/providers only.
+
+## Current recovery boundary (2026-11-19)
+
+The private recovery implementation disables transcript-derived observation. Both
+`observe_return()` and `observe_usage()` refuse with the fixed error
+`qualified native observer unavailable`; the legacy `records()` entry point also
+refuses without opening host session files. No qualified replacement observer is
+installed. Public scalar telemetry is reported metadata, not proof of role identity,
+child return, clean-session isolation, settlement or budget compliance.
+
+Evaluator donor completion refuses before authority updates, report ingestion or a
+completion receipt. Recipient admission also refuses legacy donor receipts; record
+hashes cannot upgrade them. Ordinary authorized Harness non-review demonstrations
+are a separate route and remain unexecuted in this recovery. Refusal does not
+satisfy K5, K7 or K8. All K1–K9 acceptance obligations remain open.
+
+Current receipt kinds are:
+
+| Kind | Meaning |
+| --- | --- |
+| `public-provider-telemetry-v2` | Closed supported scalar projection, or a fixed unavailable diagnostic; no raw event/hash. |
+| `native-return-observation-v2` | Explicit unavailable child-return observation. |
+| `native-generation-usage-v2` | Unavailable scoped generation counts; null deltas/answer tokens and `UNKNOWN` answer-token compliance. |
+| `evaluation-worker-failure-v2` | Execution ID, numeric worker return code, fixed diagnostic and unknown settlement; worker streams are discarded. |
+
+Source/build/package and deliberately authored output hashes remain valid integrity
+bindings. They do not restore lost approval or observation authority. The original
+R13 source and observer/review proposal bodies were lost; their surviving hashes
+cannot recover their contents or transfer authority. See [recovery status](recovery-20261119.md).
 
 A case is a closed JSON object with these fields:
 
@@ -108,7 +137,7 @@ these receipts alone cannot establish all-context budget compliance or frozen ev
 acceptance. They establish only declared adapter observations subject to these limits.
 
 In the single-case route, `participant` labels preserve donor/recipient separation but do not
-implement continuity transfer. The explicit stage route below adds the bounded task-local flow. Authenticated report output is available; completed donor lifecycle, supervisor
+implement continuity transfer. The historical stage contract below describes the now-refused evaluator continuity flow. Authenticated report output is available; completed donor lifecycle, supervisor
 ingestion into a later task, portable lesson approval and source/destination grants remain
 separate genuine obligations. No fake writer or SQL grant is created. Donor and recipient
 costs must be reported separately and combined when those demonstrations are performed.
@@ -120,7 +149,7 @@ agent-visible versus backend and donor/recipient sensitivity interpretations. Ac
 and held-out execution, sourced-quality scoring, clean-session proof, full budget verification,
 and business acceptance remain supervising-agent work after release.
 
-## Explicit continuity and trusted task adoption
+## Historical evaluator continuity contract and trusted task adoption
 
 The original `--route single` remains the default and refuses existing state/output roots.
 Use `--route stage` only with a closed stage wrapper:
@@ -142,39 +171,25 @@ Architect donors. Engineer scope must also match `specification.task_files`. Don
 fresh absent roots. Each stage has its own fixed budgets, fresh output directory and native
 conversation. A named output alone does not finalize the producer.
 
-The donor root actually waits for its child, then calls `read_file` with exactly
-`evaluation:complete-donor`. Only its genuine authenticated root can finalize the one observed
-child and exact report/current graph. The private Codex observer checks its own canonical
-SessionMeta parent/role, TurnContext/turn ID, one task_started/task_complete pair and a matched
-root wait_agent call/result after completion. Wait result text is ignored; timed_out=false
-alone grants nothing. Metadata reads are bounded regular, own, nofollow/no-alias reads;
-reasoning, last_agent_message and native prose are not retained. Missing/partial/resumed or
-foreign terminal metadata refuses. Claude terminal observation remains unavailable.
+The earlier implementation attempted to finalize donors from canonical session
+metadata, child-terminal records and a matching root wait. That observation route
+has been removed. Current evaluator donor finalization always refuses before any
+`Idle → Waiting → Completed` updates, ingestion or completion receipt. Both B and C
+remain refused; no replacement observation token is issued.
 
-After actual return, ordinary `Idle → Waiting → Completed` records a returned invocation
-awaiting supervised finalization and then its finalized report. It does not assert an admitted,
-started or verified AL task. C uses normal completed-report ingestion. B's declared private
-hook refuses at ingestion entry, before the original body or any knowledge mutation; ordinary
-lifecycle/output persistence still runs and the unavailable contribution outcome is retained.
-The actual worker must subsequently close and settle before recipient admission.
+Historical recipient wrappers referenced donor admission/completion artifact hashes
+and the same project/task/store. These files remain historical. Current
+`donor_capability()` validates basic existing bindings and then refuses before
+opening the donor database. Its former positive identity, settlement, AL-source,
+report/owner/role/task and artifact validation path was removed as unreachable.
+Any future re-enabling must explicitly restore and qualify the complete genuine
+bindings; deleting the fixed refusal alone is insufficient.
 
-Recipient wrapper uses `action: recipient`, a distinct `al_task_id`, a new absent output root,
-and the same physical case-arm repository/state/database/Harness task. Its `existing` object is:
+The stage-wrapper example above is retained only as schema history. Do not run a
+live donor/recipient evaluation until an approved safe observer has been qualified.
+Trusted task adoption is distinct from evaluator donor continuity.
 
-- `database`, `specs`, `task_id`: exact canonical state-bound existing store/spec root/task.
-- `task_request_sha256`: SHA256 of the actual immutable task request UTF-8 bytes.
-- `investigation_sha256`: SHA256 of canonical sorted compact JSON of the actual latest
-  investigation checkpoint payload, which must bind the exact repository.
-- `approval_id`, `approval_content_hash`: actual current donor approval identity/hash.
-- `knowledge_binding`: null for continuity; exact operator-prepared public demo bindings below.
-
-`donor` contains `admission` and `completion`, each `{ "path": "<canonical receipt>",
-"sha256": "<exact hex SHA256>" }`, referencing the actual donor `admission.json` and
-`producer-completion.json`. Actual native Exited/closed-context, original AL source hash,
-completed report/owner/role/task/artifact hash and original project/task/store/provenance are
-revalidated. No DB is copied and no previous authority is made current.
-
-Recipient-stage scope is added through ordinary interview/design/test-plan/final-review and
+Historically, recipient-stage scope was added through ordinary interview/design/test-plan/final-review and
 new sealed approval/version under existing mission authorization. A new execution consumes
 that new approval. Historical approvals and original donor outbox/handoff remain retained.
 Authorized fixture transitions occur externally only after actual donor settlement; the next
@@ -215,7 +230,7 @@ capability profile, reserve values, generic instruction hash and shared product 
 hash. Unknown versions, unsupported declarations, altered totals and mixed-method donor
 capabilities refuse before admission. The explicit stage wrapper stays version 1 and retains
 the nested package's method; M2 donor/recipient participants require their matching stage.
-M2 currently supports the actual qualified Codex Architect/Astra/medium and
+M2 declares the Codex Architect/Astra/medium and
 Engineer/Sol/medium profiles. Provider qualification remains a separate supervisor obligation.
 
 M2 keeps the totals at 30 tools/call attempts, 98,304 delivered bytes and 240 seconds. The
@@ -260,10 +275,10 @@ interprets or persists answer bodies for reconciliation and never calls submit_o
 A failure after publication can therefore be stored-but-unacknowledged rather than falsely
 classified absent. A stale graph or forged owner is refused. The exact report reference is
 preserved; reconciliation does not invent child return, completion or settlement. Donor
-completion still requires own observed child terminal/root wait, actual Idle→Waiting→Completed,
-current graph, exact authored report and normal C ingestion/B pre-entry refusal. Its immutable
-receipt precedes presentation and says acknowledgment is not yet delivered; the adapter receipt
-separately records whether it was delivered. Neither receipt is republished to rescue an error.
+completion is currently unavailable before lifecycle mutation or ingestion. No
+completion receipt is emitted. Stored output, acknowledgment, child return and
+settlement remain separate facts; output reconciliation supplies none of the
+missing observation authority.
 
 Product MCP descriptions now document the semantic query, explanation, confined read,
 assignment and output contracts. This is a new truthful product-help improvement, not recovery
@@ -272,17 +287,13 @@ schemas/descriptions verbatim and supplies the same generic instructions in B/C.
 restore unrestricted worker prompts, harness resources, tools or permissions. Isolation receipts
 bind evaluator hashes; selected bridge/module hashes remain independently recorded.
 
-M2's own canonical metadata observer separately reports root and each actual child's token_count
-fields, record positions/hashes and TurnContext model/effort. The synthetic supported parser
-shape is event_msg/token_count/info with total_token_usage and last_token_usage. It requires one
-fresh bounded turn, a zero baseline established by the first total equalling last, consistent
-monotonic deltas, identical duplicates, and terminal usage before task_complete. It never sums
-cumulative snapshots. Resets, missing fields, resumed/multiple turns, aliases, foreign identity,
-partial records or missing terminal evidence yield unavailable rather than zero. Installed-host
-public qualification must establish the actual shape and availability before claiming host support.
-Cached input is within input and reasoning output within output; host output-generation counts
-can include tool arguments and other material. They are never exact answer.md tokens.
-`answer_token_compliance` remains `UNKNOWN`, including when generation usage is observed.
+Scoped root/child generation usage is currently unavailable. No host session
+records, record positions or record hashes are read or retained by the evaluator.
+Generation deltas and answer tokens remain null; answer-token compliance remains
+`UNKNOWN`. Closed public host usage may be reported when supported, but it is not
+qualified per-child measurement. Cached input is within input, reasoning output is
+within output, and generation output may include tool arguments. Neither bytes
+nor generation counts establish exact answer.md token counts.
 
 There is no arbitrary `private/**` policy. Closed M2 capability declarations cannot invent one.
 Public canary tests characterize a benign tracked `private/canary.pem` outside decision/report
@@ -304,20 +315,16 @@ mandatory AL review/acceptance remain supervisor-owned.
 
 Acknowledgment delivery is measured at the returned `MCPConnection.request` content seam;
 client consumption and socket receipt are unobserved. A budgeted acknowledgment is not a
-native acknowledgment of understanding. M2 also records own child return observations
-(or explicit unavailability) and actual exited-attempt/closed-context teardown facts separately.
+native acknowledgment of understanding. M2 records explicit unavailable child-return observations and actual exited-attempt/closed-context teardown facts separately.
 Evaluator file hashes are checked against isolation.json before dispatch and again after the
 worker returns; the actual generic prompt hash and selected bridge hashes remain separate.
 
-M2 host-context correction: usage and returned-child receipts validate the complete projected
-turn_id/model/effort fields before retaining them. Turn IDs are bounded ASCII identifiers;
-models are bounded strings from the supported M2 model set, and effort is a supported catalog
-value. A child's observed model/effort must exactly match its validated participant profile.
-Malformed/missing/mismatched context produces a fixed sanitized unavailable reason, never a
-retained object, prose field or inferred token count. Root context is validated independently
-and may report its own supported model/effort. Donor completion binds the original donor
-profile; later validation uses that profile, including Architect→Engineer transfers.
-V1 lifecycle defaults are unchanged. M2's exact generic budget/terminal-retrieval/no-retry
+The current public telemetry projector retains only enumerated event fields,
+supported model/effort values, constrained identities, and bounded nonnegative
+finite counts/timings. Booleans, nested unknown usage, unsupported models and
+malformed values yield a fixed unavailable diagnostic without rejected values or
+event hashes. This scalar projection is not a qualified lifecycle observation.
+V1 evaluator observation and continuity are also refused; no legacy receipt is upgraded. M2's exact generic budget/terminal-retrieval/no-retry
 policy is included in the literal designated Child instructions payload for every stage,
 with identical B/C wording. Donor finalization remains a root-only stage directive outside
 that payload. V1 prompt bytes remain unchanged; corrected M2 prompt/source hashes require
@@ -347,3 +354,25 @@ direct adapter construction and task-scope validation. They must use their origi
 engine to retain the old interpretation. Explicit schema-version-1 source reading and
 scopes retain the index-format restriction. R2 requires fresh independent public
 qualification and a new method freeze before private execution; unit tests do not supply it.
+
+
+## Native diagnostic retention
+
+Native launch/supervision diagnostics now use a closed code and authored-message
+catalog. Recognized provider failures retain actionable usage-limit,
+authentication-required, permission-denied or generic-provider-failure codes.
+Classification of known prose markers is transient and occurs only inside an
+already-recognized failure envelope. Ordinary prose never grants failure or success.
+Provider prose, reset details, exception text, native stderr, rejected values and
+whole-event/stream hashes are not retained on these new native diagnostic paths.
+Native stderr is drained with at most one fixed suppression observation per attempt;
+stderr alone does not change the result. Oversized/incomplete framing remains a
+failure. Unmanaged worker stdout/stderr goes to `DEVNULL`.
+
+The exact `Startup failed before native spawn:` prefix remains available with a
+fixed stage code. Authentic no-spawn/closure evidence still governs retry safety;
+a message or missing PID cannot make an unknown/native-recorded attempt eligible.
+Usage-limit failure stays failure even if the host exits zero or subsequently says
+`success`. Zero exit without a guarded AL implementation result remains incomplete.
+Historical evidence is retained unchanged. These changes qualify no provider or
+observer and do not alter native identity, authentication selection or permissions.

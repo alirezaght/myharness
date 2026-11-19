@@ -484,13 +484,12 @@ def metadata_fixture(directory, *, parent=None, role="al-architect", terminal=Tr
     return native, root, child, files
 
 
-def test_observer_retains_only_bound_terminal_metadata(tmp_path):
+def test_observer_refuses_previously_accepted_terminal_metadata(tmp_path):
     from scripts.knowledge_evaluation.observer import observe_return
 
     native, root, child, _ = metadata_fixture(tmp_path)
-    receipt = observe_return(native, root, child, "al-architect")
-    assert receipt["child_id"] == child
-    assert "MUST_NOT" not in json.dumps(receipt)
+    with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
+        observe_return(native, root, child, "al-architect")
 
 
 @pytest.mark.parametrize(
@@ -499,7 +498,7 @@ def test_observer_retains_only_bound_terminal_metadata(tmp_path):
 def test_observer_refuses_unproven_return(tmp_path, fault):
     import uuid
 
-    from scripts.knowledge_evaluation.observer import MAX_RECORD, observe_return
+    from scripts.knowledge_evaluation.observer import observe_return
 
     native, root, child, files = metadata_fixture(
         tmp_path,
@@ -520,7 +519,7 @@ def test_observer_refuses_unproven_return(tmp_path, fault):
         child_file.symlink_to(original)
     elif fault == "oversized":
         with child_file.open("a") as stream:
-            stream.write(" " * (MAX_RECORD + 1) + "\n")
+            stream.write(" " * (4 * 1024 * 1024 + 1) + "\n")
     with pytest.raises(ValueError):
         observe_return(native, root, child, "al-designer" if fault == "role" else "al-architect")
 
@@ -622,11 +621,7 @@ def stage_wrapper(package, action, *, existing=None, donor=None):
 
 
 @pytest.mark.parametrize("arm", ["B", "C"])
-def test_full_synthetic_native_continuity_and_real_reapproval(
-    sample_repo, tmp_path, monkeypatch, arm
-):
-    from scripts.knowledge_evaluation.continuity import knowledge_empty
-    from scripts.knowledge_evaluation.package import sha
+def test_synthetic_donor_refuses_unqualified_completion(sample_repo, tmp_path, monkeypatch, arm):
     from scripts.knowledge_evaluation.stages import execute_stage
     from tests.execution_helpers import isolated_launch_environment
 
@@ -647,62 +642,11 @@ def test_full_synthetic_native_continuity_and_real_reapproval(
     assert donor_result["status"] == "observed", donor_result
     output = Path(package["output_directory"])
     donor_admission = json.loads((output / "admission.json").read_bytes())
-    completion = json.loads((output / "producer-completion.json").read_bytes())
-    assert completion["agent_status"] == "Completed"
-    if arm == "B":
-        assert completion["B_ingestion_refusals"]
-    else:
-        assert completion["knowledge_contributions"][0]["status"] == "published"
-    references = {
-        name: {"path": str(output / filename), "sha256": sha((output / filename).read_bytes())}
-        for name, filename in (
-            ("admission", "admission.json"),
-            ("completion", "producer-completion.json"),
-        )
-    }
-    recipient = copy.deepcopy(package)
-    recipient.update(
-        participant="recipient",
-        output_directory=str(tmp_path / "recipient-output"),
-        role="al-engineer",
-        model="gpt-6.1-sol",
-    )
-    recipient["specification"]["task_files"] = ["demo"]
-    recipient["specification"]["request"] = (
-        "Use the authorized earlier report in a later read-only demo/export.py task."
-    )
-    # Keep concrete supplied answers for newly observed investigation questions.
-    recipient["specification"]["answers"].update(
-        {
-            q.text: "Read-only later task in this exact frozen project."
-            for q in analyze(sample_repo, recipient["specification"]["request"]).questions
-        }
-    )
-    binding = existing_binding(package, donor_admission)
-    monkeypatch.setenv("EVAL_SYNTHETIC_ROLE", "al-engineer")
-    monkeypatch.setenv("EVAL_SYNTHETIC_STAGE", "recipient")
-    result = execute_stage(
-        stage_wrapper(recipient, "recipient", existing=binding, donor=references), "live"
-    )
-    assert result["status"] == "observed", result
-    admission = json.loads((Path(recipient["output_directory"]) / "admission.json").read_bytes())
-    assert admission["task_id"] == donor_admission["task_id"]
-    assert admission["approval"]["id"] != donor_admission["approval"]["id"]
-    assert admission["approval"]["spec_version"] > donor_admission["approval"]["spec_version"]
-    assert result["execution_id"] != donor_result["execution_id"]
-    assert result["native_id"] != donor_result["native_id"]
-    assert result["adapter"]["answers"][0]["role"] == "al-engineer"
-    with closing(connect(admission["database"])) as conn:
-        attempts = conn.execute("SELECT status FROM execution_attempts").fetchall()
-        assert len(attempts) == 2 and all(row[0] == "Exited" for row in attempts)
-        if arm == "B":
-            knowledge_empty(conn)
-        else:
-            row = conn.execute("SELECT task_id FROM knowledge_contributions").fetchone()
-            assert row is not None and row[0] == "evaluation-donor"
+    assert not (output / "producer-completion.json").exists()
+    assert donor_result["adapter"]["producer_completion"] is None
+    with closing(connect(donor_admission["database"])) as conn:
+        assert conn.execute("SELECT count(*) FROM knowledge_contributions").fetchone()[0] == 0
     assert corpus_receipt(sample_repo) == before
-    with pytest.raises(ValueError):
-        execute(recipient, "validate")  # Original single-attempt route remains strict.
 
 
 def test_existing_unapproved_task_ordinary_adoption(sample_repo, tmp_path):
@@ -866,3 +810,61 @@ def test_supervisor_context_requires_authenticated_read_only_root(
     adapter.dispatch(root, "await_assignment", {"timeout": 1})
     with pytest.raises(ValueError, match="writable/automatic assignment"):
         adapter.dispatch(participant, "await_assignment", {"timeout": 1})
+
+
+def test_unavailable_observation_cannot_finalize_or_ingest(operations, tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    from scripts.knowledge_evaluation.lifecycle import complete
+
+    adapter, root = make_adapter(operations, tmp_path, monkeypatch)
+    adapter.stage = {"action": "donor", "al_task_id": "donor-unit"}
+    adapter.answers = [{"principal": "synthetic-child", "role": "al-architect"}]
+    adapter.operation.authority = Mock(side_effect=AssertionError("authority must not run"))
+    adapter.report_registration = Mock(side_effect=AssertionError("agent-update must not run"))
+    with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
+        complete(adapter, root)
+    adapter.operation.authority.assert_not_called()
+    adapter.report_registration.assert_not_called()
+    assert adapter.completion is None
+    assert not (tmp_path / "producer-completion.json").exists()
+
+
+def test_failed_worker_discards_streams_and_retains_only_closed_failure(
+    sample_repo, tmp_path, monkeypatch
+):
+    import subprocess
+
+    from scripts.knowledge_evaluation.package import sha
+    from tests.execution_helpers import isolated_launch_environment
+
+    isolated_launch_environment(monkeypatch, tmp_path / "failure-tooling")
+    original = subprocess.run
+    streams = (b"PUBLIC_STDOUT_PROSE_CANARY", b"PUBLIC_STDERR_AUTH_CANARY")
+
+    def run(command, **kwargs):
+        if any(str(arg).endswith("knowledge_evaluation/worker.py") for arg in command):
+            assert kwargs["stdout"] is subprocess.DEVNULL
+            assert kwargs["stderr"] is subprocess.DEVNULL
+            assert "capture_output" not in kwargs
+            return subprocess.CompletedProcess(command, 17, *streams)
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    package = case(sample_repo, tmp_path)
+    result = execute(package, "live")
+    failure = json.loads(
+        (Path(package["output_directory"]) / "operational-failure.json").read_bytes()
+    )
+    assert failure == {
+        "kind": "evaluation-worker-failure-v2",
+        "status": "unavailable",
+        "worker_returncode": 17,
+        "execution_id": result["execution_id"],
+        "diagnostic": "isolated-worker-failed",
+        "recovery": "inspect actual execution diagnostics and reservation; no automatic retry",
+        "settlement": "unknown; inspect authoritative attempt/closure receipts",
+    }
+    serialized = json.dumps(failure)
+    for stream in streams:
+        assert stream.decode() not in serialized and sha(stream) not in serialized

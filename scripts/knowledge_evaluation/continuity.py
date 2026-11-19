@@ -1,16 +1,11 @@
 """Explicit trusted existing-task admission and exact task-local donor capability."""
 
-import json
 import os
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 
 from harness.controller import HarnessController
-from harness.execution_authority import require_authored_report
-from harness.execution_handoff import read_handoff
-from harness.execution_hosts import al_source
-from harness.execution_settlement import closed_context
 from harness.execution_store import get_execution
 from harness.knowledge.models import identity
 
@@ -128,66 +123,10 @@ def donor_capability(package, donor):
         or admission["provenance"] != package["provenance"]
     ):
         raise ValueError("donor case/project/task/authorization binding differs")
-    profile = None
-    if package["schema_version"] == 2:
-        from .method import profile_for_role
+    # Legacy transcript hashes cannot be upgraded into qualified observation.
+    from .observer import UNAVAILABLE
 
-        profile = profile_for_role(completion["role"])
-        if completion.get("participant_profile") != profile:
-            raise ValueError("original M2 donor profile unavailable or mismatched")
-    with closing(_readonly(admission["database"])) as conn:
-        execution = get_execution(conn, admission["execution_id"])
-        envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
-        if (
-            execution["task_id"] != admission["task_id"]
-            or envelope["repository"] != package["corpus"]["root"]
-        ):
-            raise ValueError("foreign donor execution/project")
-        attempts = conn.execute(
-            "SELECT * FROM execution_attempts WHERE execution_id=?", (execution["id"],)
-        ).fetchall()
-        if (
-            len(attempts) != 1
-            or attempts[0]["status"] != "Exited"
-            or not closed_context(execution, attempts[0])
-        ):
-            raise ValueError("actual donor native context not settled")
-        observed = completion["native_return"]
-        if (
-            observed["root_id"] != execution["native_id"]
-            or observed["child_id"] != completion["owner"]
-            or observed["role"] != completion["role"]
-        ):
-            raise ValueError("donor native identity binding differs")
-        from .observer import observe_return
-
-        actual_return = observe_return(
-            canonical_path(completion["native_root"]),
-            execution["native_id"],
-            completion["owner"],
-            completion["role"],
-            expected_wait=observed["wait"]["record_sha256"],
-            **({"expected_profile": profile} if profile is not None else {}),
-        )
-        if actual_return != observed:
-            raise ValueError("original donor native return evidence differs")
-        source = al_source(execution, envelope)
-        if sha(source.read_bytes()) != completion["source_sha256"]:
-            raise ValueError("donor AL source changed after completion")
-        state = json.loads(source.read_bytes())
-        report = require_authored_report(
-            execution, state, completion["al_task_id"], completion["report"]["resource"]
-        )
-        if report != completion["report"] or completion["owner"] != report["owner"]:
-            raise ValueError("donor report/owner provenance differs")
-    return {
-        "admission": donor["admission"],
-        "completion": donor["completion"],
-        "resource": "evaluation:donor-report",
-        "owner": completion["owner"],
-        "sha256": report["sha256"],
-        "al_task_id": completion["al_task_id"],
-    }
+    raise ValueError(UNAVAILABLE)
 
 
 def validate_stage(wrapper):

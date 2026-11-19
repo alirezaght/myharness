@@ -35,16 +35,12 @@ def usage_fixture(tmp_path, role="al-architect"):
     return native, root, child, path, rows
 
 
-def test_bound_usage_deduplicates_cumulative_and_never_copies_prose(tmp_path):
+def test_native_usage_refuses_previously_accepted_cumulative_metadata(tmp_path):
     native, root, child, _, _ = usage_fixture(tmp_path)
-    result = observe_usage(
-        native, root, child, "al-architect", expected_profile=profile_for_role("al-architect")
-    )
-    assert result["turn_generation_delta"]["total_tokens"] == 130
-    assert len(result["observations"]) == 2
-    assert result["observations"][-1]["duplicate"]
-    assert result["answer_tokens"] is None and result["answer_token_compliance"] == "UNKNOWN"
-    assert "MUST_NOT" not in json.dumps(result)
+    with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
+        observe_usage(
+            native, root, child, "al-architect", expected_profile=profile_for_role("al-architect")
+        )
 
 
 @pytest.mark.parametrize(
@@ -132,19 +128,14 @@ def test_review_repro_untrusted_context_is_not_persisted(tmp_path, fault):
 
 
 @pytest.mark.parametrize("role", ["al-architect", "al-engineer"])
-def test_matching_usage_and_native_return_bind_actual_child_profile(tmp_path, role):
+def test_declared_profile_cannot_qualify_native_usage_or_return(tmp_path, role):
     from scripts.knowledge_evaluation.observer import observe_return
 
     native, root, child, _, _ = usage_fixture(tmp_path, role)
     expected = profile_for_role(role)
-    usage = observe_usage(native, root, child, role, expected_profile=expected)
-    returned = observe_return(native, root, child, role, expected_profile=expected)
-    assert usage["host_context"] == returned["terminal"]["host_context"]
-    assert usage["host_context"]["model"] == expected["model"]
-    assert usage["turn_generation_delta"]["output_tokens"] == 30
-    assert "MUST_NOT" not in json.dumps([usage, returned])
-    with pytest.raises(ValueError, match="exact declared"):
-        observe_usage(native, root, child, role)
+    for observe in (observe_usage, observe_return):
+        with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
+            observe(native, root, child, role, expected_profile=expected)
 
 
 @pytest.mark.parametrize(
@@ -215,9 +206,103 @@ def test_root_context_is_separate_from_declared_child_profile(tmp_path):
         },
     )
     receipt = usage_receipt(adapter)
-    assert receipt["root"]["status"] == "observed"
-    assert receipt["root"]["host_context"]["model"] == "gpt-6.1-sol"
-    assert receipt["root"]["host_context"]["effort"] == "high"
-    assert receipt["children"][0]["host_context"]["model"] == "gpt-6-astra"
-    assert receipt["children"][0]["host_context"]["effort"] == "medium"
+    assert receipt["kind"] == "native-generation-usage-v2"
+    assert receipt["root"]["status"] == "unavailable"
+    assert receipt["children"][0]["status"] == "unavailable"
+    assert receipt["root"]["turn_generation_delta"] is None
+    assert receipt["children"][0]["turn_generation_delta"] is None
+    assert receipt["answer_tokens"] is None
+    assert receipt["answer_token_compliance"] == "UNKNOWN"
     assert "MUST_NOT" not in json.dumps(receipt)
+
+
+def test_observation_never_opens_native_records(monkeypatch):
+    from scripts.knowledge_evaluation.observer import observe_return, records
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("native host record access is prohibited")
+
+    monkeypatch.setattr("builtins.open", forbidden)
+    monkeypatch.setattr("os.open", forbidden)
+    monkeypatch.setattr("pathlib.Path.open", forbidden)
+    monkeypatch.setattr("pathlib.Path.glob", forbidden)
+    for observe, args in (
+        (records, ("not-a-real-native-root", "synthetic-child")),
+        (observe_return, ("not-a-real-native-root", "root", "child", "al-architect")),
+        (observe_usage, ("not-a-real-native-root", "root", "child", "al-architect")),
+    ):
+        with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
+            observe(*args)
+
+
+@pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf"), {}, [], "SECRET"])
+@pytest.mark.parametrize("field", ["input_tokens", "duration_ms", "total_cost_usd"])
+def test_public_telemetry_rejects_unsafe_scalars(field, value):
+    from scripts.knowledge_evaluation.live import TELEMETRY_UNAVAILABLE, public_telemetry
+
+    event = {"type": "result"}
+    if field == "input_tokens":
+        event["usage"] = {field: value}
+    else:
+        event[field] = value
+    assert public_telemetry(event) == TELEMETRY_UNAVAILABLE
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"type": "assistant", "message": {"usage": {"secret": "PROSE_CANARY"}}},
+        {"type": "result", "modelUsage": {"gpt-6-astra": {"inputTokens": {"auth": "AUTH_CANARY"}}}},
+        {"type": "result", "modelUsage": {"UNKNOWN_CANARY": {"inputTokens": 1}}},
+        {"type": "turn_context", "payload": {"model": "MODEL_CANARY"}},
+        {"type": "turn_context", "payload": {"effort": {"reasoning": "REASONING_CANARY"}}},
+        {"type": "result", "session_id": "CONFIG_CANARY"},
+        {"type": "assistant", "parent_tool_use_id": {"auth": "AUTH_CANARY"}},
+        {"type": "result", "subtype": ["SECRET_CANARY"]},
+        ["SECRET_CANARY"],
+    ],
+)
+def test_public_telemetry_nested_canaries_have_fixed_diagnostics(event):
+    from scripts.knowledge_evaluation.live import TELEMETRY_UNAVAILABLE, public_telemetry
+    from scripts.knowledge_evaluation.package import canonical, sha
+
+    result = public_telemetry(event)
+    assert result == TELEMETRY_UNAVAILABLE
+    assert "CANARY" not in json.dumps(result)
+    assert sha(canonical(event).encode()) not in json.dumps(result)
+
+
+def test_public_telemetry_projects_only_supported_scalars():
+    from scripts.knowledge_evaluation.live import public_telemetry
+
+    result = public_telemetry(
+        {
+            "type": "result",
+            "subtype": "success",
+            "duration_ms": 12.5,
+            "duration_api_ms": 10,
+            "total_cost_usd": 0.01,
+            "session_id": "12345678-1234-1234-1234-123456789abc",
+            "usage": {"input_tokens": 100, "output_tokens": 30},
+            "modelUsage": {"gpt-6-astra": {"inputTokens": 100, "costUSD": 0.01}},
+            "result": "RAW_PROSE_CANARY",
+            "authentication": "AUTH_CANARY",
+            "reasoning": {"private": "REASONING_CANARY"},
+        }
+    )
+    assert result["status"] == "reported"
+    assert result["usage"]["output_tokens"] == 30
+    assert result["modelUsage"]["gpt-6-astra"]["inputTokens"] == 100
+    assert "CANARY" not in json.dumps(result)
+    context = public_telemetry(
+        {
+            "type": "turn_context",
+            "payload": {
+                "model": "gpt-6-astra",
+                "effort": "medium",
+                "reasoning": "SECRET_CANARY",
+            },
+        }
+    )
+    assert context["model"] == "gpt-6-astra" and context["effort"] == "medium"
+    assert "CANARY" not in json.dumps(context)

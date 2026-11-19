@@ -3,7 +3,10 @@
 `python scripts/knowledge_eval.py events.jsonl --adapter-version VERSION
 --adapter-sha256 SHA256` produces a reproducible accounting report from an
 evaluator adapter's JSONL event export. It is an accounting utility, not a native
-workflow runner and not an acceptance judge.
+workflow runner and not an acceptance judge. Its event export must be deliberately
+authored from permitted adapter outputs; JSONL is a file format, not authorization
+to ingest native host transcripts, reasoning, authentication/configuration material
+or arbitrary diagnostic streams. The utility does not qualify an observer.
 
 Each event records `pair_id`, `arm` (`B` or `C`), `phase` (`cold-index`,
 `warm-query`, or `continuity`), `participant` (`single`, `donor`, or
@@ -49,3 +52,13 @@ attempt/admitted/denied accounting. The totals, exhaustion behavior and completi
 reserves are unchanged. M2-r1 packages refuse under the r2 contract; retain historical
 receipts and report each method separately. Public synthetic checks establish transport
 behavior only, with no provider, private-cohort or mission-acceptance claim.
+
+
+During the 2026-11-19 recovery, scoped native root/child usage and return observation
+are unavailable. `native-generation-usage-v2` keeps generation deltas and answer
+tokens null, with answer-token compliance `UNKNOWN`. Supported public scalar
+telemetry is reported data, not a qualified per-child measurement. Do not supply
+missing native counts as zero or treat generation output as exact answer tokens.
+Evaluator donor completion and recipient admission remain refused, including legacy
+receipts. Accounting observations cannot complete K5, K7, K8 or mission acceptance.
+See [current recovery evidence and obligations](recovery-20261119.md).

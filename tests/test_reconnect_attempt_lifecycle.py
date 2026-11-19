@@ -9,6 +9,7 @@ import pytest
 from harness import execution_worker as worker
 from harness.execution_models import ExecutionConflict
 from harness.execution_store import get_execution
+from harness.native_diagnostics import message
 from tests.execution_helpers import approved_execution, started
 
 
@@ -70,7 +71,7 @@ def test_handled_failure_settles_replay_and_preserves_diagnostic(reconnect, monk
     monkeypatch.setattr(target, denied)
     worker.supervise(controller.conn, eid, "test-owner", mode="reconnect")
     saved = get_execution(controller.conn, eid)
-    assert saved["status"] == "Unavailable" and saved["error"] == "specific " + seam + " failure"
+    assert saved["status"] == "Unavailable" and saved["error"] == message("NATIVE_REPLAY_FAILED")
     assert attempts(controller.conn)["current"]["status"] == "Exited"
 
 

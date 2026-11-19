@@ -12,6 +12,7 @@ from harness.execution_recovery_settlement import record_not_started
 from harness.execution_start_retry import startup_disposition
 from harness.execution_store import get_execution
 from harness.execution_worker import launch_worker
+from harness.native_diagnostics import message
 from tests.execution_helpers import approved_execution
 
 
@@ -420,7 +421,7 @@ def test_actual_old_worker_to_upgraded_worker_dispatch(controller, monkeypatch, 
             assert processes[-1].wait(timeout=45) == 0
             first = get_execution(controller.conn, execution["id"])
             assert first["status"] == "Unavailable"
-            assert "unsupported native executable version" in first["error"]
+            assert first["error"] == message("NATIVE_SETUP_FAILED")
             assert first["native_id"] is None
             assert startup_disposition(controller, first)["retry_eligible"]
             result = worker.launch_worker(controller.conn, execution["id"], mode="retry-start")

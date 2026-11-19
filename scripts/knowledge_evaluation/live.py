@@ -1,6 +1,8 @@
 """One isolated selected-bridge worker, with qualified in-process scheduling only."""
 
 import json
+import math
+import re
 import sys
 import time
 from contextlib import closing
@@ -8,6 +10,112 @@ from pathlib import Path
 from unittest.mock import patch
 
 from .package import sha, write_once
+
+USAGE_COUNTS = frozenset(
+    {
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens",
+        "reasoning_output_tokens",
+        "total_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+        "inputTokens",
+        "outputTokens",
+        "cacheReadInputTokens",
+        "cacheCreationInputTokens",
+        "webSearchRequests",
+        "contextWindow",
+        "maxOutputTokens",
+    }
+)
+TELEMETRY_UNAVAILABLE = {
+    "kind": "public-provider-telemetry-v2",
+    "status": "unavailable",
+    "reason": "unsupported public telemetry",
+}
+
+
+def public_telemetry(event):
+    """Project public scalar metadata; malformed fields never enter a receipt or diagnostic."""
+    from .method import HOST_EFFORTS, PROFILES
+
+    models = {p[0] for p in PROFILES.values()}
+
+    def number(value, *, integer=False):
+        if type(value) not in ({int} if integer else {int, float}):
+            raise ValueError
+        if not 0 <= value <= 2**63 - 1 or not math.isfinite(value):
+            raise ValueError
+        return value
+
+    def usage(value):
+        if not isinstance(value, dict) or not set(value) <= USAGE_COUNTS | {"costUSD"}:
+            raise ValueError
+        return {k: number(v, integer=k != "costUSD") for k, v in value.items()}
+
+    def model(value):
+        if not isinstance(value, str) or value not in models:
+            raise ValueError
+        return value
+
+    def identity(value, *, tool=False):
+        pattern = (
+            r"toolu_[A-Za-z0-9]{1,128}"
+            if tool
+            else (r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+        )
+        if not isinstance(value, str) or not re.fullmatch(pattern, value):
+            raise ValueError
+        return value
+
+    try:
+        if not isinstance(event, dict) or not isinstance(event.get("type"), str):
+            raise ValueError
+        kind = event["type"]
+        if kind not in {"assistant", "turn.completed", "turn_context", "result"}:
+            return None
+        result = {"kind": "public-provider-telemetry-v2", "status": "reported", "type": kind}
+        if kind == "result":
+            message = event
+            if "subtype" in event:
+                if event["subtype"] not in {
+                    "success",
+                    "error_max_turns",
+                    "error_during_execution",
+                    "error_max_budget_usd",
+                    "error_max_structured_output_retries",
+                }:
+                    raise ValueError
+                result["subtype"] = event["subtype"]
+            for key in ("duration_ms", "duration_api_ms", "total_cost_usd"):
+                if key in event:
+                    result[key] = number(event[key])
+            if "session_id" in event:
+                result["session_id"] = identity(event["session_id"])
+            if "modelUsage" in event:
+                values = event["modelUsage"]
+                if not isinstance(values, dict) or len(values) > len(models):
+                    raise ValueError
+                result["modelUsage"] = {model(k): usage(v) for k, v in values.items()}
+        else:
+            message = event.get("message", event.get("payload", event))
+            if not isinstance(message, dict):
+                raise ValueError
+            if event.get("parent_tool_use_id") is not None:
+                result["parent_tool_use_id"] = identity(event["parent_tool_use_id"], tool=True)
+        if "model" in message:
+            result["model"] = model(message["model"])
+        if "effort" in message:
+            effort = message["effort"]
+            if not isinstance(effort, str) or effort not in HOST_EFFORTS:
+                raise ValueError
+            result["effort"] = effort
+        if "usage" in message:
+            result["usage"] = usage(message["usage"])
+        return result
+    except (ValueError, TypeError, OverflowError):
+        return dict(TELEMETRY_UNAVAILABLE)
 
 
 def connection_class(base):
@@ -137,44 +245,18 @@ def run(package_path, admission_path, bridge_path, *, evaluator_source=None):
 
     def drain(stream, channel, queue):
         class ObservedQueue:
+            def control_put(self, value):
+                return queue.put(value)
+
             def put(self, value, *args, **kwargs):
                 # Parse only public usage/model fields. Never persist native reasoning/text blocks.
                 if value[0] == "host":
                     try:
-                        event = json.loads(value[1])
-                        if event.get("type") in {"assistant", "turn.completed", "turn_context"}:
-                            message = event.get("message", event.get("payload", event))
-                            if isinstance(message, dict):
-                                telemetry.append(
-                                    {
-                                        "type": event["type"],
-                                        "parent_tool_use_id": event.get("parent_tool_use_id"),
-                                        **{
-                                            k: message[k]
-                                            for k in ("model", "effort", "usage")
-                                            if k in message
-                                        },
-                                    }
-                                )
-                        if event.get("type") == "result":
-                            telemetry.append(
-                                {
-                                    k: event[k]
-                                    for k in (
-                                        "type",
-                                        "subtype",
-                                        "usage",
-                                        "modelUsage",
-                                        "duration_ms",
-                                        "duration_api_ms",
-                                        "total_cost_usd",
-                                        "session_id",
-                                    )
-                                    if k in event
-                                }
-                            )
+                        projected = public_telemetry(json.loads(value[1]))
                     except (ValueError, TypeError):
-                        pass
+                        projected = dict(TELEMETRY_UNAVAILABLE)
+                    if projected is not None:
+                        telemetry.append(projected)
                 return queue.put(value, *args, **kwargs)
 
         return original_drain(stream, channel, ObservedQueue())
@@ -238,7 +320,13 @@ def run(package_path, admission_path, bridge_path, *, evaluator_source=None):
             patch.object(worker, "_drain", drain),
         ):
             # Public launch_worker has returned and released its lock. No detached spawn occurred.
-            worker.supervise(conn, eid, values["--token"])
+            from harness.native_diagnostics import NativeStageFailure
+
+            try:
+                worker.supervise(conn, eid, values["--token"])
+            except NativeStageFailure as error:
+                write_once(output / "native-failure-stage.json", error.receipt)
+                raise
         actual = get_execution(conn, eid)
         receipt = {
             "status": "observed" if adapters and adapters[0].answers else "unavailable",
@@ -300,8 +388,14 @@ def run(package_path, admission_path, bridge_path, *, evaluator_source=None):
                         answer["role"],
                         expected_profile=participant_profile(package),
                     )
-                except (ValueError, OSError, KeyError, TypeError) as exc:
-                    observed = {"status": "unavailable", "reason": str(exc)[:256]}
+                except (ValueError, OSError, KeyError, TypeError):
+                    from .observer import UNAVAILABLE
+
+                    observed = {
+                        "kind": "native-return-observation-v2",
+                        "status": "unavailable",
+                        "reason": UNAVAILABLE,
+                    }
                 receipt["child_returns"].append(observed)
             receipt["method"] = package["method"]
             receipt["usage"] = usage_receipt(adapters[0] if adapters else None)

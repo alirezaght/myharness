@@ -138,7 +138,8 @@ def execute(package, mode, *, existing=None, stage=None):
             command,
             env=dict(os.environ, HARNESS_AUTHORITY_ROOT=str(bridge)),
             check=False,
-            capture_output=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
     if result.returncode:
         # Do not copy unfiltered transport/native diagnostics into the evaluation report.
@@ -147,8 +148,9 @@ def execute(package, mode, *, existing=None, stage=None):
             {
                 "status": "unavailable",
                 "worker_returncode": result.returncode,
-                "stderr_sha256": sha(result.stderr),
-                "stdout_sha256": sha(result.stdout),
+                "kind": "evaluation-worker-failure-v2",
+                "execution_id": eid,
+                "diagnostic": "isolated-worker-failed",
                 "recovery": (
                     "inspect actual execution diagnostics and reservation; no automatic retry"
                 ),
