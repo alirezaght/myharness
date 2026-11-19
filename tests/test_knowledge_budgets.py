@@ -372,3 +372,185 @@ def test_incremental_packing_merges_new_integrity_observations_without_losing_co
         }
     ]
     assert len(canonical({"bundle_hash": "0" * 64, **payload}).encode()) <= 2048
+
+
+def derived_graph(graph):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        "".join(
+            f"def closure_{name}():\n    return 1\n" for name in ("root", "middle", "leaf", "peer")
+        )
+    )
+    refresh(conn, scope)
+    ids = {
+        row["object"].rsplit(":", 1)[1]: row["assertion_id"]
+        for row in conn.execute(
+            "SELECT a.assertion_id,o.scoped_key AS object FROM knowledge_assertions a "
+            "JOIN knowledge_entities o ON o.entity_id=a.object_id "
+            "WHERE a.predicate='defines' AND o.scoped_key LIKE 'symbol:service:closure_%'"
+        )
+    }
+    links = [
+        (ids["closure_leaf"], ids["closure_middle"]),
+        (ids["closure_peer"], ids["closure_middle"]),
+        (ids["closure_middle"], ids["closure_root"]),
+    ]
+    conn.executemany("INSERT INTO knowledge_derivations VALUES (?,?)", links)
+    return conn, scope, ids, links
+
+
+@pytest.mark.parametrize("edges", [0, 1, 2, 3])
+def test_shared_transitive_closure_charges_each_parent_edge_once(graph, edges):
+    conn, scope, ids, links = derived_graph(graph)
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "closure_leaf closure_peer", limits=QueryLimits(hops=0, examined_edges=edges)
+        ),
+    )
+    returned = {a["assertion_id"] for a in bundle.payload["assertions"]}
+    assert len(bundle.payload["assertions"]) == len(returned)
+    for child, parent in links:
+        assert child not in returned or parent in returned
+    assert bundle.payload["budget"]["examined_edges"] == edges
+    children = {ids["closure_leaf"], ids["closure_peer"]}
+    if edges == 3:
+        assert set(ids.values()) <= returned
+    else:
+        assert not children <= returned
+        assert bundle.payload["exclusions"]["parent-budget"]
+    assert returned == {c["assertion_id"] for c in bundle.payload["citations"]}
+
+
+@pytest.mark.parametrize("assertions", [2, 3, 8])
+@pytest.mark.parametrize("byte_limit", [2048, 4096, 8192])
+def test_derived_units_rollback_without_orphans_under_packing_limits(graph, assertions, byte_limit):
+    conn, scope, ids, links = derived_graph(graph)
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "closure_leaf closure_peer",
+            limits=QueryLimits(assertions=assertions, bytes=byte_limit, hops=0),
+        ),
+    )
+    returned = {a["assertion_id"] for a in bundle.payload["assertions"]}
+    for child, parent in links:
+        assert child not in returned or parent in returned
+    assert returned == {c["assertion_id"] for c in bundle.payload["citations"]}
+    assert len(returned) <= assertions
+    assert len(canonical(bundle.to_dict()).encode()) <= byte_limit
+    assert all(set(p["assertion_ids"]) <= returned for p in bundle.payload["paths"])
+    if assertions == 2:
+        assert not {ids["closure_leaf"], ids["closure_peer"]} & returned
+    if assertions == 8 and byte_limit == 8192:
+        assert set(ids.values()) <= returned
+
+
+@pytest.mark.parametrize("denial", ["stale", "revoked", "purged", "cycle", "private"])
+def test_required_parent_denial_withholds_derived_descendants(graph, denial):
+    conn, scope, ids, _ = derived_graph(graph)
+    request = ContextRequest("closure_leaf closure_peer", limits=QueryLimits(hops=0))
+    before = query(conn, scope, request)
+    assert set(ids.values()) <= {a["assertion_id"] for a in before.payload["assertions"]}
+    parent = ids["closure_root"]
+    version = next(
+        c["version_id"] for c in before.payload["citations"] if c["assertion_id"] == parent
+    )
+    if denial == "stale":
+        (scope.repository / "service.py").write_text("changed source\n")
+    elif denial == "purged":
+        conn.execute("INSERT INTO knowledge_assertion_state VALUES (?,'purged',NULL)", (parent,))
+    elif denial == "cycle":
+        conn.execute(
+            "INSERT INTO knowledge_derivations VALUES (?,?)", (parent, ids["closure_leaf"])
+        )
+    elif denial == "private":
+        conn.execute(
+            "UPDATE knowledge_source_versions SET observation_json="
+            "json_set(observation_json,'$.visibility','task:other') WHERE version_id=?",
+            (version,),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO knowledge_grants VALUES ('g','source',?,'hash','approval','now')",
+            (scope.project_id,),
+        )
+        conn.execute("INSERT INTO knowledge_import_sources VALUES (?,'g','lesson',1)", (version,))
+    after = query(conn, scope, request)
+    assert not set(ids.values()) & {a["assertion_id"] for a in after.payload["assertions"]}
+    with pytest.raises((ValueError, PermissionError)):
+        explain(conn, scope, before.bundle_hash, ids["closure_leaf"])
+
+
+def test_failed_units_keep_read_work_and_distinguish_budget_from_staleness(graph):
+    import subprocess
+
+    conn, scope = graph
+    for index in range(22):
+        (scope.repository / f"parent_{index}.md").write_text(f"Supporting origin {index}.")
+        (scope.repository / f"child_{index}.md").write_text(f"readcapneedle observation {index}.")
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    ids = {
+        r["locator"]: r["assertion_id"]
+        for r in conn.execute(
+            "SELECT s.locator,a.assertion_id FROM knowledge_assertions a JOIN knowledge_evidence e "
+            "USING(assertion_id) JOIN knowledge_source_versions v USING(version_id) "
+            "JOIN knowledge_sources s USING(source_id) WHERE a.predicate='described-by'"
+        )
+    }
+    conn.executemany(
+        "INSERT INTO knowledge_derivations VALUES (?,?)",
+        [(ids[f"child_{index}.md"], ids[f"parent_{index}.md"]) for index in range(22)],
+    )
+    for index in range(22):
+        (scope.repository / f"child_{index}.md").write_text("changed source")
+    bundle = query(conn, scope, ContextRequest("readcapneedle", limits=QueryLimits(hops=0)))
+    assert not bundle.payload["assertions"]
+    assert bundle.payload["budget"]["examined_edges"] == 22
+    statuses = {o["status"] for o in bundle.payload["staleness"]}
+    assert statuses == {"withheld-stale-evidence", "withheld-source-read-budget"}
+    assert bundle.payload["exclusions"]["source-read-budget"]
+    receipt = conn.execute(
+        "SELECT source_reads FROM knowledge_receipts WHERE bundle_hash=?", (bundle.bundle_hash,)
+    ).fetchone()
+    assert receipt[0] == 40
+
+
+def test_deep_failed_seed_does_not_poison_shorter_parent_closure(graph):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        'def ranked_A():\n    "priorityword priorityextra"\n    return 1\n'
+        "def supporting_B():\n    return 2\n"
+        "def later_C():\n    return 3\n"
+        "def origin_D():\n    return 4\n"
+    )
+    refresh(conn, scope)
+    ids = {
+        r["name"]: r["assertion_id"]
+        for r in conn.execute(
+            "SELECT a.assertion_id,o.scoped_key AS name FROM knowledge_assertions a "
+            "JOIN knowledge_entities o ON o.entity_id=a.object_id WHERE a.predicate='defines'"
+        )
+    }
+    a, b, c, d = [
+        ids[f"symbol:service:{name}"]
+        for name in ("ranked_A", "supporting_B", "later_C", "origin_D")
+    ]
+    conn.executemany("INSERT INTO knowledge_derivations VALUES (?,?)", [(a, b), (b, c), (c, d)])
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "priorityword priorityextra",
+            entity_refs=("symbol:service:ranked_A", "symbol:service:later_C"),
+            limits=QueryLimits(assertions=3, hops=0),
+        ),
+    )
+    returned = {item["assertion_id"] for item in bundle.payload["assertions"]}
+    assert {c, d} <= returned
+    assert a not in returned
+    assert len(returned) <= 3
+    assert returned == {ref["assertion_id"] for ref in bundle.payload["citations"]}
