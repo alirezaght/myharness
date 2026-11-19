@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import al_store  # noqa: E402
 import al_sources as Sources
 import al_scope as S
+import al_runner_output as RunnerOutput
 
 STATUSES = ("PASS", "FAIL", "EMPTY", "INFRA", "TORN", "RUNNING")
 TIERS = ("focused", "broad", "preflight")
@@ -218,6 +219,18 @@ def parse_counts(text):
     counts, worst = {}, {}
     for line in text.splitlines():
         suite_line = bool(NOT_TEST_COUNT_RE.search(line))
+        go = RunnerOutput.gotestsum_counts(line)
+        if go is not None:
+            # DONE is a complete summary. Omitted categories are zero in this
+            # summary; earlier failures remain separately in worst.
+            for key in ('passed', 'skipped', 'failed', 'error'):
+                counts.pop(key, None)
+            counts.update(go)
+            for key in ('failed', 'error'):
+                if go.get(key):worst[key] = max(worst.get(key, 0), go[key])
+            continue
+        if RunnerOutput.GO_PREFIX.match(RunnerOutput.ANSI.sub('', line).strip()):
+            continue  # Malformed known summaries are not invented zero counts.
         for n, word in COUNT_RE.findall(line):
             key = word.lower().rstrip("s") if word.lower().startswith("error") else word.lower()
             if key in ("failed", "error"):  # a failed suite or file is a failure, wherever reported
@@ -267,7 +280,7 @@ def _other_runner_counts(text):
     return found
 
 
-def classify(kind, exit_code, counts, timed_out, before, after):
+def classify(kind, exit_code, counts, timed_out, before, after, *, output=None):
     """(status, note) for a finished run."""
     if timed_out:
         return "INFRA", "timed out"
@@ -275,6 +288,9 @@ def classify(kind, exit_code, counts, timed_out, before, after):
         return "INFRA", INFRA_EXIT[exit_code]
     if before != after:
         return "TORN", "the scope changed while the command ran — the result describes no single tree"
+    if output is not None:
+        problem = RunnerOutput.output_problem(output)
+        if problem:return "INFRA", problem
     if exit_code != 0:
         if kind == "test" and exit_code == 5 and not counts:
             return "EMPTY", "no tests collected"
@@ -358,6 +374,22 @@ def assess(e):
         return "LOG_ALTERED", "the log no longer matches the hash recorded at the end of the run"
     if e["status"] != "PASS":
         return e["status"], e.get("note") or ""
+    try:
+        raw = Path(e["log"]).read_text(errors='replace')
+    except OSError:
+        return "LOG_MISSING", "the captured output cannot be read"
+    body = RunnerOutput.captured_body(e, raw)
+    if body is not None:
+        current_counts = parse_counts(body) if e['kind']=='test' else e.get('counts', {})
+        current, note = classify(e['kind'], e.get('exit'), current_counts, False,
+                                 e.get('fp_before'), e.get('fp_after'), output=body)
+        if current != 'PASS':
+            return current, 'stored PASS is unusable under current output classification: '+note
+    else:
+        # Unknown historical header formats are not guessed. A closed launcher
+        # diagnostic still cannot support a pass; retain the original receipt.
+        problem = RunnerOutput.output_problem(raw)
+        if problem:return 'INFRA', problem
     try:
         now = scope_fingerprint(e["scope"], e.get("env"), e.get("sources", []), e.get("cwd", "."))
     except FingerprintError as exc:

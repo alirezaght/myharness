@@ -109,13 +109,16 @@ def classify(commands,unit,versions,config_text):
 def result(profile,code,text):
     """Raw successful execution is distinct from a semantically usable result."""
     import al_ledger as L
+    import al_runner_output
     semantic=profile['semantic_coverage'];text=re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]','',text);counts=L.parse_counts(text);reasons=[]
     if any(r['profile']=='node-test' for r in semantic['records']):
         passed=re.findall(r'^(?:#|ℹ)\s+pass\s+(\d+)\s*$',text,re.M);failed=re.findall(r'^(?:#|ℹ)\s+fail\s+(\d+)\s*$',text,re.M)
         if passed:counts['passed']=int(passed[-1])
         if failed:counts['failed']=max(counts.get('failed',0),max(map(int,failed)))
     execution='PASS' if code==0 else 'INFRA' if code in {126,127} else 'FAIL'
+    problem=al_runner_output.output_problem(text)
     if execution!='PASS':verdict=execution
+    elif problem:verdict='INFRA';reasons.append(problem)
     elif counts.get('failed') or counts.get('error'):verdict='FAIL';reasons.append('runner reported failures despite exit zero')
     elif L.NOTHING_RAN_RE.search(text):verdict='EMPTY';reasons.append('runner explicitly reported no tests')
     elif semantic['kind']=='test' or profile['intent']=='test':

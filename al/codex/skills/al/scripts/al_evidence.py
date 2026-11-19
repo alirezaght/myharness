@@ -205,7 +205,7 @@ def _execute(sid, entry, timeout, commit=True):
         entry['log_sha256'] = None
         failure = 'log provenance unavailable: ' + str(exc)
     entry['fp_after'] = _fingerprint(entry)
-    status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'])
+    status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'], output=raw[start:end].decode(errors='replace') if entry.get('log_sha256') else '')
     if interrupted is not None:
         status, note = 'INFRA', 'cancelled — the run was interrupted'
         entry['interrupted'] = True
