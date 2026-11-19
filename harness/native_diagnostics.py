@@ -27,6 +27,10 @@ CATALOG = {
     "NATIVE_SETUP_FAILED": (
         "Inspect current launch readiness; startup failed before native spawn."
     ),
+    "NATIVE_PACKAGE_DRIFT": (
+        "The selected AL runtime differs from this execution epoch. "
+        "Use supported runtime recovery before continuing."
+    ),
     "NATIVE_SPAWN_FAILED": (
         "Native process creation failed; inspect local executable and execution prerequisites."
     ),

@@ -629,25 +629,26 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                 previous_package
                 and loads(previous_package["package"])["sha256"] != package["sha256"]
             ):
-                raise ExecutionConflict(
-                    "installed AL package changed since launch; explicit reconciliation required"
-                )
-        except (OSError, ValueError, LookupError, subprocess.SubprocessError):
+                raise ExecutionConflict(native_message("NATIVE_PACKAGE_DRIFT"))
+        except (OSError, ValueError, LookupError, subprocess.SubprocessError) as exc:
             from harness.execution_recovery_settlement import record_not_started
 
+            failure = native_failure(exc, "NATIVE_SETUP_FAILED")
             record_not_started(execution, token, stage="native-setup")
             update_owned(
                 conn,
                 execution_id,
                 token,
                 status="Unavailable",
-                error=native_message("NATIVE_SETUP_FAILED"),
+                error=failure,
             )
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
             )
-            append_log(conn, execution_id, "worker", native_startup("NATIVE_SETUP_FAILED"))
+            append_log(
+                conn, execution_id, "worker", "Startup failed before native spawn: " + failure
+            )
             return
         if mode == "resume":
             from harness.execution_store import process_alive

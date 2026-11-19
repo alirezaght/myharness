@@ -14,6 +14,7 @@ from harness.execution_hosts import package_fingerprint
 from harness.execution_runtime_recovery import activate_runtime, prepare_runtime
 from harness.execution_store import bind_host, get_execution
 from harness.execution_worker import supervise
+from harness.native_diagnostics import message as native_message
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="genuine macOS successor start")
@@ -59,6 +60,8 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
         f"#!{sys.executable}\nimport json,sys\n"
         "if '--version' in sys.argv:\n print('codex-cli 0.164.0');sys.exit()\n"
         "prompt=sys.stdin.buffer.read()\n"
+        f"with open({str(tmp_path / 'provider-launches.txt')!r}, 'a') as launches:\n"
+        " launches.write('launch\\n')\n"
         f"open({str(tmp_path / 'prompt.txt')!r}, 'wb').write(prompt)\n"
         f"print(json.dumps({{'type':'thread.started','thread_id':{native_id!r}}}))\n"
     )
@@ -118,15 +121,18 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
         "UPDATE execution_attempts SET package=? WHERE token='successor-worker'",
         (canonical(dict(selected_package, sha256=digest("unexpected selected-pin drift"))),),
     )
+    launches = tmp_path / "provider-launches.txt"
+    assert launches.read_text() == "launch\n"
     reserve("drift-worker")
     supervise(conn, eid, "drift-worker", "resume")
-    assert "installed AL package changed" in get_execution(conn, eid)["error"]
-    assert (
-        conn.execute(
-            "SELECT child_pid,status FROM execution_attempts WHERE token='drift-worker'"
-        ).fetchone()[0]
-        is None
-    )
+    rejected = get_execution(conn, eid)
+    assert rejected["status"] == "Unavailable"
+    assert rejected["error"] == native_message("NATIVE_PACKAGE_DRIFT")
+    drift_attempt = conn.execute(
+        "SELECT child_pid,status FROM execution_attempts WHERE token='drift-worker'"
+    ).fetchone()
+    assert tuple(drift_attempt) == (None, "PreSpawnFailed")
+    assert launches.read_text() == "launch\n"
 
     conn.execute(
         "UPDATE execution_attempts SET package=? WHERE token='successor-worker'",
@@ -147,3 +153,4 @@ def test_successor_supervise_ignores_legacy_package_but_preserves_current_epoch_
         ).fetchone()[0]
         is None
     )
+    assert launches.read_text() == "launch\n"
