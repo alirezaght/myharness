@@ -220,7 +220,7 @@ def inventory(root,paths,context=None,opaque=(),*,capture=None):
     try:
         if capture.observe_path('.github/workflows')['state']=='opaque':
             raise Unsupported('unsafe/unavailable GitHub workflow boundary')
-        github=github_inventory(root,paths,context,opaque,directories=reader.directories)
+        github=github_inventory(root,paths,context,opaque,directories=reader.directories,capture=capture)
     except Unsupported as exc:
         # Too many workflows, or workflows edited while AL read them: the pipeline verifies them.
         github={'obligations':[{'source_path':'.github/workflows','source_sha256':'0'*64,'job':'<unresolved-workflows>',
@@ -238,6 +238,28 @@ def inventory(root,paths,context=None,opaque=(),*,capture=None):
         if 'job' in item:item['workflow_definition']=definition
         else:item['trigger_definition']=definition.get('on')
     obligations=reader.obligations()+github['obligations']
+    from al_go_checks import container_observation
+    for obligation in obligations:
+        definitions=[v['job'] for v in obligation.get('definition_variants',[]) if isinstance(v.get('job'),dict)]
+        workflow=obligation.get('workflow_definition',{})
+        if isinstance(workflow,dict) and isinstance(workflow.get('jobs',{}),dict):
+            definition=workflow.get('jobs',{}).get(obligation['job'])
+            if isinstance(definition,dict):definitions.append(definition)
+        observations=[]
+        for definition in definitions:
+            try:
+                def container_read(path):
+                    if capture:return capture.capture_bytes(path,required=True,rule=True)
+                    from al_ci_github import read
+                    return read(root,path)[0]
+                observed=container_observation(definition,root,container_read,observe=capture.observe_path if capture else None)
+                if observed and observed not in observations:observations.append(observed)
+            except __import__('al_repository_capture').CaptureDrift:raise
+            except (Unsupported,OSError,ValueError):continue
+        if observations:
+            obligation['verification_observations']=observations
+            for observed in observations:
+                obligation['dependencies'].extend(r for r in observed['sources'] if r not in obligation['dependencies'])
     dependencies={d['path']:d for d in [*reader.files.values(),*github['dependencies'],*(d for o in obligations for d in o['dependencies'])]}
     value={'obligations':obligations,'deferred':reader.deferred+github.get('deferred',[]),'dependencies':[dependencies[p] for p in sorted(dependencies)]}
     if capture:
@@ -286,7 +308,7 @@ def execution(job,root,opaque=(),environment_context=(),*,capture=None):
     """Only literal local shell-job semantics; unsupported CI environments stay open."""
     if isinstance(job.get('environment'),dict) and job['environment'].get('action') in {'prepare','access'}:
         from al_ci_environment import execution as isolated
-        return isolated(job,root,opaque,environment_context)
+        return isolated(job,root,opaque,environment_context,capture=capture)
     if set(job)-{'script','before_script','stage','rules','allow_failure','interruptible','retry','timeout','tags','needs'}:return None
     if job.get('needs') or any(isinstance(rule,dict) and ('variables' in rule or rule.get('when') in {'manual','delayed'}) for rule in job.get('rules',[])):return None
     lines=[]
@@ -296,6 +318,15 @@ def execution(job,root,opaque=(),environment_context=(),*,capture=None):
         lines.extend(value)
     if not lines:return None
     text='\n'.join(lines)
+    from al_go_checks import command_candidate
+    if command_candidate(lines):
+        from al_go_checks import execution as go_execution
+        def go_read(path):
+            if any(path==o or path.startswith(o+'/') for o in opaque):raise Unsupported('opaque Go recipe input')
+            if capture:return capture.capture_bytes(path,required=True,rule=True)
+            from al_ci_github import read
+            return read(root,path)[0]
+        return go_execution(lines,root,go_read,observe=capture.observe_path if capture else None)
     # The reviewed local mapping permits literal commands, not expansion/eval or
     # shell control flow whose CI execution context is unavailable locally.
     if any(token in text for token in ('$','`',';','&&','||','|','>','<','\\')):return None

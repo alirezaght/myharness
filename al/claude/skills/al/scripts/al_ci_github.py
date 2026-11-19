@@ -51,10 +51,22 @@ def applicability(value,context,paths=None,directories=()):
     return {'profile':context,'events':events,'selection':'conservative quality-event union'}
 
 
-def execution(root,path,name,job,workflow_source,context):
+def execution(root,path,name,job,workflow_source,context,*,capture=None):
     if not isinstance(job,dict) or set(job)-{'name','runs-on','steps'} or job.get('runs-on') not in {'ubuntu-latest','macos-latest'}:raise Unsupported('unsupported GitHub job environment/condition')
     steps=job.get('steps')
     if not isinstance(steps,list) or not steps or len(steps)>128:raise Unsupported('bounded literal steps required')
+    if job['runs-on']=='ubuntu-latest' and steps and steps[0]=={'uses':'actions/checkout@v4'} and len(steps)>1 and all(isinstance(step,dict) and set(step)=={'run'} and isinstance(step['run'],str) for step in steps[1:]):
+        commands=[];shell_starts=[]
+        for step in steps[1:]:
+            shell_starts.append(len(commands));commands.extend(step['run'].splitlines())
+        from al_go_checks import command_candidate
+        if command_candidate(commands,require_all=True):
+            from al_go_checks import execution as go_execution
+            result=go_execution(commands,root,lambda p:read(root,p)[0],provider='github',shell_starts=shell_starts,observe=capture.observe_path if capture else None)
+            result['verification_chain'].update(workflow=path,job=name,applicability=context,
+                setup=[{'selector':'jobs.'+name+'.steps[0]','kind':'checkout','literal_definition':steps[0],
+                        'source_sha256':workflow_source['sha256'],'dependencies':[path]}],source_chain=[workflow_source,*result['source_dependencies']])
+            return result
     dependencies={path:workflow_source};setup=[];requirements=[];records=[];lines=[];checkout=False;uv=False;python=False;synced=False;package=False
     def dependency(p):
         raw,ref=read(root,p);dependencies[p]=ref;return raw
@@ -143,7 +155,7 @@ def execution(root,path,name,job,workflow_source,context):
             'argv':['gh','api'] if remote_source else ['sh','-eu','-c','\n'.join(lines)],'cwd':'.','execution_kind':'remote' if remote_source else 'local','env_names':ENV}
 
 
-def github_inventory(root,paths,context=None,opaque=(),*,directories=()):
+def github_inventory(root,paths,context=None,opaque=(),*,directories=(),capture=None):
     directory=root/'.github/workflows'
     files=sorted(p.relative_to(root).as_posix() for p in directory.glob('*') if p.suffix in {'.yml','.yaml'})
     if len(files)>128:raise Unsupported('GitHub workflow count limit')
@@ -165,7 +177,7 @@ def github_inventory(root,paths,context=None,opaque=(),*,directories=()):
             if not isinstance(jobs,dict) or not jobs:raise Unsupported('literal nonempty jobs required')
             for name,job in jobs.items():
                 try:
-                    exe=execution(root,path,name,job,src,selected)
+                    exe=execution(root,path,name,job,src,selected,capture=capture)
                     exe['verification_chain']['workflow_membership']=files
                     append(name,'APPLICABLE','complete literal GitHub quality job',exe)
                 except (Unsupported,ValueError,TypeError) as exc:append(name,'UNRESOLVED',str(exc))

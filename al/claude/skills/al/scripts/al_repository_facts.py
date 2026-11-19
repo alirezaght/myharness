@@ -31,6 +31,9 @@ def safe(path):
     return path
 
 
+def unit_depth(path):return len(Path(path).parts)
+
+
 def within(parent,path):return parent=='.' or parent==path or path.startswith(parent.rstrip('/')+'/')
 
 
@@ -48,7 +51,7 @@ def gap(code,path,reason,unit=None,category=None):
     return dict(code=code,path=path,reason=reason,unit=unit,**({'category':category} if category else {}))
 
 
-MANIFESTS={'pyproject.toml','package.json','pnpm-workspace.yaml','go.mod','setup.cfg','setup.py','Cargo.toml','.gitignore','repository.json'}
+MANIFESTS={'pyproject.toml','package.json','pnpm-workspace.yaml','go.mod','go.sum','go.work','go.work.sum','setup.cfg','setup.py','Cargo.toml','.gitignore','repository.json'}
 
 
 def file_identity(value):
@@ -184,7 +187,7 @@ class Snapshot(CaptureMixin):
 
     @staticmethod
     def relevant(p):
-        return p.endswith(SOURCE_SUFFIXES) or p.endswith(('.toml','.json','.yaml','.yml','.sh','.lock')) or Path(p).name in {'Makefile','go.mod','setup.cfg','.gitignore'}
+        return p.endswith(SOURCE_SUFFIXES) or p.endswith(('.toml','.json','.yaml','.yml','.sh','.lock')) or Path(p).name in {'Makefile','go.mod','go.sum','go.work','go.work.sum','setup.cfg','.gitignore'}
 
     def safe_file(self,p):
         safe(p)
@@ -486,7 +489,7 @@ def collect(root,*,base_oid,paths,opaque,required_adapter=None):
 
 def collect_from_snapshot(scan):
     import al_repo_adapters as adapters
-    import al_python_imports as imports
+    import al_repo_dependencies as imports
     progress.report('inventory-analysis')
     adapter=adapters.select(scan);facts=adapter.observe(scan)
     facts.update(schema_version=2,repository={'root':str(scan.root),'base_oid':scan.base_oid},adapter={'id':adapter.ID,'version':adapter.VERSION},policy_version=2)
@@ -511,7 +514,9 @@ def collect_from_snapshot(scan):
 
 def validate_facts(facts):
     if (facts.get('schema_version'),facts.get('policy_version')) not in {(1,1),(2,2)}:raise ValueError('unsupported repository fact version')
-    if facts.get('adapter') not in ({'id':'python','version':1},{'id':'contract','version':1}):raise ValueError('unsupported repository adapter')
+    adapters=({'id':'python','version':1},{'id':'contract','version':1})
+    if facts['schema_version']==2:adapters+=({'id':'conventional','version':1},{'id':'contract','version':2})
+    if facts.get('adapter') not in adapters:raise ValueError('unsupported repository adapter')
     if not isinstance(facts.get('repository'),dict) or not isinstance(facts['repository'].get('root'),str) or not Path(facts['repository']['root']).is_absolute():raise ValueError('invalid repository identity')
     count=0
     def bounded(value,depth=0):
@@ -534,6 +539,7 @@ def validate_facts(facts):
     for u in facts['units']:
         if u['id']!=u['path']:raise ValueError('unit identity must match canonical path')
         safe(u['path'])
+        if 'go' in u and facts['adapter'] not in ({'id':'conventional','version':1},{'id':'contract','version':2}):raise ValueError('Go module facts require a current composed adapter')
         for root in u['source_roots']:safe(root)
     for category in ('obligations','bindings','gaps'):
         if not isinstance(facts['checks'][category],list):raise ValueError('invalid check observations')

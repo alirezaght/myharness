@@ -8,7 +8,7 @@ from collections import defaultdict
 from pathlib import PurePosixPath
 import sys
 import al_writer_progress as progress
-from al_repository_facts import within,SOURCE_SUFFIXES,gap
+from al_repository_facts import within,SOURCE_SUFFIXES,gap, unit_depth
 
 # Reviewed module/distribution identities, never inferred from installed packages.
 EXTERNAL={'elasticsearch':'elasticsearch'}
@@ -22,13 +22,14 @@ def _targets_digest(targets):
 
 
 def _analyze(facts,scan):
-    units={u['id']:u for u in facts['units']};potential=sorted(u['id'] for u in facts['units'] if ('python' in u['languages'] or facts['adapter']['id']=='python') and (u['roles'] or u['id']=='.' or u['id'].startswith(('services/','apps/'))))
+    units={u['id']:u for u in facts['units']};potential=sorted(u['id'] for u in facts['units'] if ('python' in u['languages'] or facts['adapter']['id'] in {'python','conventional'}) and (u['roles'] or u['id']=='.' or u['id'].startswith(('services/','apps/'))))
     records={};owners=defaultdict(set);edges=set();uncertainties=[];resolved=set();import_targets=set()
     for path in sorted(set(scan.files)|set(scan.base)|set(scan.paths)):
         if path.endswith('.py') or not path.endswith(SOURCE_SUFFIXES) or not any(within(p,path) or within(path,p) for p in scan.paths):continue
         owners_for_path=[u for u in units.values() if within(u['path'],path)]
         if not owners_for_path:continue  # enumeration reports the unsupported root
-        unit=max(owners_for_path,key=lambda u:len(u['path']))
+        unit=max(owners_for_path,key=lambda u:unit_depth(u['path']))
+        if path.endswith('.go') and 'go' in unit:continue
         if facts['adapter']['id']=='contract':
             if unit.get('independent'):continue
             facts['enumeration']['gaps'].append(gap('unsupported-shared-language',path,'the repository contract cannot prove impact for this non-Python source class',unit['id']))
@@ -36,13 +37,13 @@ def _analyze(facts,scan):
             uncertainties.append({'code':'uncertain-language-impact','unit':unit['id'],'path':path,'location':None,'target':None,'reason':'non-Python dependency analysis is unsupported; all enumerated services require verification'})
     def owner(path):
         candidates=[u for u in units.values() if any(within(r,path) for r in u['source_roots']) and within(u['path'],path)]
-        return max(candidates,key=lambda u:len(u['path'])) if candidates else None
+        return max(candidates,key=lambda u:unit_depth(u['path'])) if candidates else None
     for snapshot,files in [('base',scan.base),('current',scan.files)]:
         for path in files:
             if not path.endswith('.py'):continue
             unit=owner(path)
             if unit is None:continue
-            root=max((r for r in unit['source_roots'] if within(r,path)),key=len)
+            root=max((r for r in unit['source_roots'] if within(r,path)),key=unit_depth)
             relative=path if root=='.' else path[len(root)+1:]
             # Test/cache code does not supply installed module identities.
             if any(p in {'tests','__pycache__','.venv'} for p in PurePosixPath(relative).parts):continue
@@ -206,7 +207,7 @@ def _analyze(facts,scan):
         uncertainties.append({'code':'uncertain-artifact-classification','unit':None,'path':scan.paths[0] if len(scan.paths)==1 else '.', 'location':None,'target':None,'reason':'changed runtime source/data has no complete consumer classification'})
     for row in artifacts:
         # An artifact owned by a service with no literal reference elsewhere is that service's input.
-        if not row['consumers'] and row['kind'] not in {'generated-code','documentation'} and row['owner'] not in potential:
+        if not row['consumers'] and row['kind'] not in {'generated-code','documentation'} and row['owner'] not in potential and not any(u['id']==row['owner'] and 'go' in u for u in units.values()):
             uncertainties.append({'code':'uncertain-artifact-consumer','unit':None,'path':row['path'],'location':None,'target':None,
                                   'reason':row['kind']+' has no literal consumer reference; all enumerated services require verification'})
         affected.update(c for c in row['consumers'] if c.endswith('.py'))
@@ -219,12 +220,12 @@ def _analyze(facts,scan):
         for consumer in row['consumers']:
             owners_for_path=[u for u in units.values() if within(u['path'],consumer)]
             if owners_for_path:
-                unit=max(owners_for_path,key=lambda u:len(u['path']))['id']
+                unit=max(owners_for_path,key=lambda u:unit_depth(u['path']))['id']
                 if unit in potential:known.add(unit)
             else:
                 facts['enumeration']['gaps'].append(gap('unclassified-runtime-consumer',consumer,
                     'literal runtime consumer is outside the supported unit layout'))
-            if not consumer.endswith('.py'):
+            if not consumer.endswith('.py') and not (consumer.endswith('.go') and owners_for_path and 'go' in units[unit]):
                 uncertainties.append({'code':'uncertain-language-impact','unit':unit if owners_for_path else None,
                     'path':consumer,'location':None,'target':None,
                     'reason':'runtime consumer dependency analysis is unavailable for this source language'})
@@ -306,7 +307,7 @@ def artifact_consumers(scan,records,units):
         elif PurePosixPath(path).name in MANIFESTS or any(part.startswith('.') for part in PurePosixPath(path).parts):continue
         else:consumers=None
         owners=[u for u in units.values() if within(u['path'],path)]
-        owner=max(owners,key=lambda u:len(u['path']))['id'] if owners else None
+        owner=max(owners,key=lambda u:unit_depth(u['path']))['id'] if owners else None
         data=scan.files[path] if path in scan.files else scan.base.get(path,b'')
         kind=artifact_kind(path,data)
         if policy and kind is None:kind='runtime-source'

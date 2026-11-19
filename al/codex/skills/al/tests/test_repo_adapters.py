@@ -21,6 +21,16 @@ def test_unsupported_boundary_cannot_be_omitted(cli,repo,tmp_path,defect,code):
         exclusions=m['service_coverage']['semantic_requirements']['enumeration']['exclusions']
         assert any(e['path']=='services/b/lib' for e in exclusions)
         return
+    if defect=='symlink':
+        coverage=m['service_coverage']
+        assert assessment['outcome']=='identified'
+        retained=[r for r in coverage['projection']['records'] if r['record'].get('code')==code]
+        assert retained and all(r['record_id'] in assessment['deferred_record_ids'] for r in retained)
+        assert coverage['global_inventory']['status']=='incomplete'
+        _,relevant=discover(cli,tmp_path,['services/b/link'])
+        assert relevant['service_coverage']['assessment']['outcome']=='incomplete'
+        assert any(g['code']==code for g in relevant['service_coverage']['assessment']['gaps'])
+        return
     assert assessment['outcome']=='incomplete' and any(g['code']==code for g in assessment['gaps'])
 
 
@@ -33,12 +43,22 @@ def test_generic_works_without_contract_and_missing_new_unit_is_seen(cli,repo,tm
     assert any(g['path']=='services/new/pyproject.toml' for g in m['service_coverage']['assessment']['gaps'])
 
 
-def test_torn_and_limited_scan_never_certify(cli,repo,tmp_path,monkeypatch):
-    seed(repo);start(cli);original=Snapshot.stable
-    monkeypatch.setattr(Snapshot,'stable',lambda self:False);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
-    assert m['service_coverage']['assessment']['outcome']=='incomplete'
-    monkeypatch.setattr(Snapshot,'stable',original);monkeypatch.setitem(LIMITS,'files',2)
-    _,m=discover(cli,tmp_path,['services/a/src/app.py']);assert m['service_coverage']['assessment']['outcome']=='incomplete'
+def test_torn_and_limited_scan_never_certify(cli,repo,tmp_path,monkeypatch,state_file):
+    from al_repository_capture import CaptureDrift
+    from hook_regression_helpers import invoke
+    seed(repo);start(cli);original=Snapshot.revalidate;attempts=[]
+    def torn(self,*args,**kwargs):
+        attempts.append(1);raise CaptureDrift('source-content',['services/a/src/app.py'])
+    paths=tmp_path/'paths.json';paths.write_text(json.dumps(['services/a/src/app.py']))
+    monkeypatch.setattr(Snapshot,'revalidate',torn);before=state_file().read_bytes()
+    result=invoke(cli,'gates','discover','--paths-file',str(paths),ok=False)
+    assert 'capture drift' in ''.join(map(str,result))
+    assert len(attempts)==2 and state_file().read_bytes()==before
+    monkeypatch.setattr(Snapshot,'revalidate',original);monkeypatch.setitem(LIMITS,'files',2)
+    before=state_file().read_bytes()
+    result=invoke(cli,'gates','discover','--paths-file',str(paths),ok=False)
+    assert 'limit' in ''.join(map(str,result))
+    assert state_file().read_bytes()==before
 
 
 CONTRACT={
@@ -75,11 +95,12 @@ def contract(repo,data=None):
 def test_contract_nested_package_and_mixed_language_enumeration(cli,repo,tmp_path):
     contract(repo);start(cli);_,m=discover(cli,tmp_path,['packages/pyshared/src/app.py'])
     coverage=m['service_coverage'];units={u['id']:u for u in coverage['semantic_requirements']['units']}
-    assert coverage['adapter']=={'id':'contract','version':1}
+    assert coverage['adapter']=={'id':'contract','version':2}
     assert coverage['assessment']['outcome']=='identified',coverage['assessment']['gaps']
     assert {'apps/pdf','packages/pyshared','packages/nested/inner','services/go-service'}<=set(units)
     assert 'packages/nested' not in units
-    assert 'services/go-service' not in coverage['assessment']['potential_services']
+    assert 'services/go-service' in coverage['assessment']['potential_services']
+    assert 'services/go-service' not in coverage['assessment']['selected_services']
     assert units['packages/pyshared']['roles']==['shared_role']
 
 
@@ -126,13 +147,24 @@ def test_unmanifested_foreign_source_root_blocks_admission(cli,repo,tmp_path,sta
     _,m=discover(cli,tmp_path,['backend/src/mod.py'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
     from hook_regression_helpers import invoke
+    from launcher_context import _reports
+    packet=json.loads(invoke(cli,'planning','packet')[1]);report=tmp_path/'planning.json'
+    report.write_text(json.dumps(_reports().report_for(packet)))
+    materialized=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
     before=state_file().read_bytes()
-    invoke(cli,'phase','IMPLEMENTATION',ok=False)
+    invoke(cli,'planning','admit','--file',materialized['materialized_obligations']['stored_path'],ok=False)
+    assert state_file().read_bytes()==before
+    invoke(cli,'phase','IMPLEMENTATION')
+    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    invoke(cli,'writer','start','--id','scoped-source','--role','al-engineer','--files','backend/src/mod.py')
+    invoke(cli,'writer','finish','--id','scoped-source','--outcome','success')
+    invoke(cli,'phase','VERIFICATION');before=state_file().read_bytes()
+    invoke(cli,'review-start',ok=False)
     assert state_file().read_bytes()==before
     assert json.loads(cli('gates','status')[1])['coverage_blockers']
 
 
-def test_source_free_legacy_manifest_can_prove_absence(cli,repo,tmp_path):
+def test_source_free_manifest_still_requires_v2_declaration(cli,repo,tmp_path,state_file):
     (repo/'pyproject.toml').unlink();(repo/'svc/app.py').unlink();(repo/'web/app.js').unlink()
     from conftest import _git
     _git(repo,'add','.');_git(repo,'commit','-qm','source-free fixture')
@@ -141,7 +173,10 @@ def test_source_free_legacy_manifest_can_prove_absence(cli,repo,tmp_path):
     assert not m['service_coverage']['assessment']['potential_services']
     m.pop('service_coverage');p=tmp_path/'legacy.json';p.write_text(json.dumps(m))
     from hook_regression_helpers import invoke
-    invoke(cli,'gates','plan','--file',str(p))
+    before=state_file().read_bytes()
+    result=invoke(cli,'gates','plan','--file',str(p),ok=False)
+    assert 'v2 declaration required' in ''.join(map(str,result))
+    assert state_file().read_bytes()==before
 
 
 def test_contract_shared_nonpython_source_is_explicitly_unsupported(cli,repo,tmp_path):
@@ -163,7 +198,8 @@ def test_actual_mutation_during_read_is_a_torn_scan(cli,repo,tmp_path,monkeypatc
     from hook_regression_helpers import invoke
     p=tmp_path/'race-paths.json';p.write_text(json.dumps(['services/a/src/app.py']));before=state_file().read_bytes()
     result=invoke(cli,'gates','discover','--paths-file',str(p),ok=False)
-    assert result[0]=='al_run: captured coverage input changed: services/b/src/app.py'
+    assert 'incomplete repository gate inventory' in str(result[0])
+    assert 'rediscover repository gates' in str(result[0])
     assert state_file().read_bytes()==before
     _,m=discover(cli,tmp_path,['services/a/src/app.py'])
     assert m['service_coverage']['assessment']['outcome']=='identified'
@@ -173,7 +209,7 @@ def test_deleting_committed_contract_cannot_downgrade_to_generic(cli,repo,tmp_pa
     contract(repo);start(cli)
     (repo/'.al/repository.json').unlink()
     _,m=discover(cli,tmp_path,['services/a-service/src/app.py'])
-    assert m['service_coverage']['adapter']=={'id':'contract','version':1}
+    assert m['service_coverage']['adapter']=={'id':'contract','version':2}
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
     assert any(g['path']=='.al/repository.json' for g in m['service_coverage']['assessment']['gaps'])
 
@@ -227,3 +263,28 @@ def test_option_like_unit_name_is_never_bound_into_argv(cli,repo,tmp_path):
     start(cli);_,m=discover(cli,tmp_path,['services/-x-service/src/app.py'])
     assert not any(g.get('argv') and any(a.startswith('SVC=-') for a in g['argv']) for g in m['gates'])
     assert m['service_coverage']['assessment']['outcome']=='incomplete'
+
+
+
+def test_go_review_unsupported_consumer_in_both_snapshots_cannot_disappear(cli,repo,tmp_path,monkeypatch):
+    from test_go_repository_coverage import go_repository,module,pinned,supported_go_environment
+    supported_go_environment(monkeypatch);go_repository(repo);module(repo,'a','example.invalid/a');module(repo,'b','example.invalid/b')
+    put(repo,'b/go.mod','module example.invalid/b\ngo 1.22\nrequire example.invalid/a v1.0.0\nreplace example.invalid/a => ../a\nretract v1.0.0\n')
+    put(repo,'.gitlab-ci.yml','test-a:\n  script: cd a && go test ./...\n');pinned(repo);start(cli)
+    _,docs=discover(cli,tmp_path,['docs/readme.md'])
+    assert docs['service_coverage']['assessment']['outcome']=='identified'
+    assert docs['service_coverage']['global_inventory']['status']=='incomplete'
+    _,changed=discover(cli,tmp_path,['a/main.go']);c=changed['service_coverage']
+    assert c['assessment']['outcome']=='incomplete'
+    assert 'b' in c['assessment']['selected_services']
+    assert c['assessment']['dependency_uncertainties']
+
+
+@pytest.mark.parametrize('manifest',[
+    'module example.invalid/x\nreplace example.invalid/a => .\n',
+    'module example.invalid/x\nreplace example.invalid/a => ..\n',
+    'module example.invalid/x\nexclude (\nexample.invalid/a v1.0.0\nexample.invalid/a v1.1.0\n)\n',
+])
+def test_go_review_literal_relative_replacements_and_excluded_versions(manifest):
+    from al_repo_go import parse_mod
+    assert parse_mod(manifest)['module']=='example.invalid/x'

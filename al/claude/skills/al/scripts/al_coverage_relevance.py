@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from al_repository_facts import digest, within
+from al_repository_facts import digest, within, unit_depth
 
 BOUNDARIES = {
     "opaque-boundary",
@@ -28,7 +28,7 @@ def task_question(facts, paths=None, ci_context=None):
     governing = []
     for ref in facts.get("rule_sources", []):
         owners = [u["id"] for u in facts["units"] if within(u["path"], ref["path"])]
-        owner = max(owners, key=len) if owners else "."
+        owner = max(owners, key=unit_depth) if owners else "."
         if (
             len(ref["path"].split("/")) == 1
             or ref["path"] == ".al/repository.json"
@@ -61,7 +61,7 @@ def impact(record, facts, question):
     owner = record.get("unit")
     missing = {"missing-verification-check", "missing-architecture-check", "missing-check"}
     unit_complete = not any(g.get("unit") == owner for g in facts["enumeration"]["gaps"])
-    if owner in units and record.get("code") in missing and unit_complete:
+    if owner in units and record.get("code") in missing and (unit_complete or any(u['id']==owner and 'go' in u for u in facts['units'])):
         return {
             "extent": "bounded",
             "paths": [],
@@ -71,6 +71,11 @@ def impact(record, facts, question):
             "basis": "declared-independent-unit",
             "complete": True,
         }
+    if owner in units and record.get("code") in {"unsupported-go-module", "duplicate-go-module", "unsupported-go-dependency"}:
+        unit = next(u for u in facts['units'] if u['id'] == owner)
+        return {"extent":"bounded", "paths":[unit['path']], "patterns":[], "unit_ids":[owner],
+                "source_refs":[{"path":unit['path'], "selector":"captured-go-module"}],
+                "basis":"captured-module-boundary", "complete":True}
     path = record.get("path", ".")
     if record.get("code") in BOUNDARIES and path != ".":
         consumers = facts["dependencies"].get("boundary_consumers", {}).get(path, [])
@@ -80,7 +85,7 @@ def impact(record, facts, question):
             owners = [u["id"] for u in facts["units"] if within(u["path"], consumer)]
             if not owners:
                 break
-            consumer_units.append(max(owners, key=len))
+            consumer_units.append(max(owners, key=unit_depth))
         complete = len(consumer_units) == len(consumers) and not any(
             g.get("unit") in consumer_units for g in facts["enumeration"]["gaps"]
         )

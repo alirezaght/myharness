@@ -11,7 +11,7 @@ import al_store
 import al_affected_services
 import al_service_coverage as Coverage
 import al_ci_verification as Verification
-from al_repository_facts import digest,within,gap,Snapshot,collect_from_snapshot
+from al_repository_facts import digest,within,gap,Snapshot,collect_from_snapshot, unit_depth
 from al_repository_capture import capture_discovery,CaptureDrift,CaptureUnavailable
 import al_coverage_relevance as Relevance
 import al_ci_inventory as CI
@@ -90,7 +90,7 @@ def manifest_unit(directory):
 def classify_unit(path,opaque,facts=None):
     if facts:
         candidates=[u['path'] for u in facts['units'] if within(u['path'],path)]
-        if candidates and max(candidates,key=len)!='.':return max(candidates,key=len)
+        if candidates and max(candidates,key=unit_depth)!='.':return max(candidates,key=unit_depth)
     if facts is not None:return '/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.'
     folder=path if (al_store.REPO_ROOT/path).is_dir() else str(Path(path).parent)
     unit=manifest_unit(folder) or ('/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.')

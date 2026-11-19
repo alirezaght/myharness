@@ -562,7 +562,7 @@
           "const": 2
         },
         "adapter": {
-          "$ref": "#/$defs/adapter"
+          "$ref": "#/$defs/adapterV2"
         },
         "policy_version": {
           "const": 2
@@ -720,6 +720,34 @@
           }
         }
       }
+    },
+    "adapterV2": {
+      "oneOf": [
+        {
+          "const": {
+            "id": "python",
+            "version": 1
+          }
+        },
+        {
+          "const": {
+            "id": "contract",
+            "version": 1
+          }
+        },
+        {
+          "const": {
+            "id": "conventional",
+            "version": 1
+          }
+        },
+        {
+          "const": {
+            "id": "contract",
+            "version": 2
+          }
+        }
+      ]
     }
   }
 }
