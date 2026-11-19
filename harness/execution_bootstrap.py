@@ -66,6 +66,10 @@ def authority_snapshot(directory, *, versioned=False):
     }
     for name in _KNOWLEDGE_MODULES:
         files["knowledge/" + name] = (source / "knowledge" / name).read_bytes()
+    from harness.storage import core_sources
+
+    for name, raw in core_sources().items():
+        files["_storage_core/" + name] = raw
     fingerprint = hashlib.sha256(
         b"".join(k.encode() + v for k, v in sorted(files.items()))
     ).hexdigest()

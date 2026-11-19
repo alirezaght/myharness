@@ -128,6 +128,112 @@ class OperationController:
             json.loads(self.assignment_path.read_bytes()) if self.assignment_path.exists() else {}
         )
 
+    def prepared_checks(self, principal, request, prepared, *, plan_defaults):
+        """Completion-time authority and current task inputs precede default planning."""
+        from harness.storage import load_core
+        from harness.task_environment import task_unit
+
+        try:
+            with self.lock, closing(connect(self.database)) as conn:
+                controller = HarnessController(conn)
+                _, current = self.authority(controller, principal)
+                task_unit(self, controller, current, principal, request)
+                result = self.tooling.check_descriptor(current, request, prepared)
+                if result["status"] != "Ready":
+                    return result
+                descriptor = result["descriptor"]
+                if not plan_defaults or principal["role"] != "orchestrator":
+                    return result | {"status": "Pending", "reason": "supervisor_plan_required"}
+                existing = current["evidence"]["plan"].get(descriptor["area"])
+                if existing is not None:
+                    if (
+                        existing.get("recipe_context") == descriptor
+                        and existing.get("recipe") == descriptor["recipe"]
+                        and existing.get("kind") == "test"
+                        and existing.get("tier") == "broad"
+                        and existing.get("argv") == []
+                        and existing.get("cwd") == "."
+                        and existing.get("scope")
+                        == ["tests", "harness", "al", "pyproject.toml", "uv.lock"]
+                        and existing.get("sources", []) == []
+                        and existing.get("env", []) == []
+                        and existing.get("needs", []) == []
+                        and existing.get("preflight") is None
+                    ):
+                        return result | {
+                            "status": "Planned",
+                            "area": descriptor["area"],
+                            "reused": True,
+                        }
+                    return result | {
+                        "status": "Pending",
+                        "reason": "recipe_plan_conflict",
+                        "area": descriptor["area"],
+                    }
+                fs = load_core()["storage_filesystem"]
+                artifact = result.get("artifact")
+                if artifact is None:
+                    reference = self.artifacts.capture_generated(
+                        descriptor["area"] + ".json", fs.canonical(descriptor)
+                    )
+                    artifact = "artifact:" + reference["artifact_id"] + ":" + reference["sha256"]
+                    result["artifact"] = artifact
+                    self.tooling._update(
+                        "check-recipes.json",
+                        descriptor["task_id"] + ":" + descriptor["unit"],
+                        result,
+                    )
+                response = self.al_command(
+                    controller,
+                    principal,
+                    {
+                        "arguments": [
+                            "evidence",
+                            "plan",
+                            "--area",
+                            descriptor["area"],
+                            "--kind",
+                            "test",
+                            "--tier",
+                            "broad",
+                            "--cwd",
+                            ".",
+                            "--scope",
+                            "tests,harness,al,pyproject.toml,uv.lock",
+                            "--recipe",
+                            descriptor["recipe"]["name"],
+                            "--recipe-descriptor-file",
+                            artifact,
+                        ]
+                    },
+                    current,
+                )
+                if response.get("returncode") != 0:
+                    return result | {
+                        "status": "Pending",
+                        "reason": "recipe_plan_reconciliation_required",
+                        "plan_result": response,
+                    }
+                return result | {
+                    "status": "Planned",
+                    "area": descriptor["area"],
+                    "artifact": artifact,
+                }
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            sqlite3.Error,
+            subprocess.SubprocessError,
+        ) as error:
+            return {
+                "status": "Unavailable",
+                "reason": "recipe_preparation_revalidation_failed",
+                "error_kind": type(error).__name__,
+                "test_evidence": False,
+            }
+
     def tooling_status(self):
         from harness.task_environment import SetupReport, context_revision, preparation_requests
 
@@ -780,6 +886,8 @@ class OperationController:
         if args[:2] == ["evidence", "run"] and "--area" in args:
             area = args[args.index("--area") + 1]
             plan = state["evidence"]["plan"].get(area)
+            if plan and plan.get("recipe_context") is not None:
+                self.tooling.validate_check_descriptor(plan["recipe_context"])
             if plan and plan.get("kind") != "preflight":
                 readiness = self.dependency_readiness(
                     plan.get("scope", [plan.get("cwd", ".")]), plan["argv"]
@@ -832,6 +940,8 @@ class OperationController:
             "--output",
             "--paths-file",
             "--body-file",
+            "--storage-file",
+            "--recipe-descriptor-file",
             "--recovery-file",
             "--claims",
         }
@@ -936,7 +1046,75 @@ class OperationController:
         if report:
             report.classification = profile.classification
             self.active_report = report
-        channel = CheckChannel(context_path, validate_check)
+        from harness.storage import ExecutionStorage, harness_home
+
+        storage_context = {
+            "manager_root": str(harness_home() / "managed-storage"),
+            "publication_root": str(
+                Path(self.initialization["source"]).parent
+                / self.envelope["al_session_id"]
+                / "logs/storage"
+            ),
+            "repository": self.envelope["repository"],
+            "session": self.envelope["al_session_id"],
+            "execution": self.execution_id,
+            "epoch": self.epoch_id,
+            "authority_generation": str(self.authority_generation),
+            "principal": principal["thread_id"],
+            "protected_roots": list(profile.protected),
+        }
+
+        def validate_storage_entry(binding, declaration, *, final):
+            if (
+                not isinstance(binding, dict)
+                or set(binding) != {"run", "id", "reservation"}
+                or any(not isinstance(v, str) or not v or len(v) > 256 for v in binding.values())
+            ):
+                raise ValueError("invalid storage evidence reservation")
+            with closing(connect(self.database)) as conn:
+                _, current = self.authority(HarnessController(conn), principal)
+                if current["status"] != "RUNNING" or current["run_id"] != binding["run"]:
+                    raise ValueError("storage evidence authority is stale")
+                entry = next(
+                    (e for e in current["evidence"]["entries"] if e["id"] == binding["id"]), None
+                )
+                if (
+                    entry is None
+                    or any(entry.get(k) != v for k, v in binding.items())
+                    or entry.get("storage") != declaration
+                    or final
+                    and entry["status"] not in {"PASS", "FAIL", "INFRA", "EMPTY", "TORN"}
+                    or not final
+                    and entry["status"] != "RUNNING"
+                ):
+                    raise ValueError("storage evidence reservation changed")
+                recipe_assignment = entry.get("recipe_assignment")
+                if recipe_assignment is not None:
+                    from harness.storage import load_core
+
+                    load_core()["verification_contracts"].validate_assignment_binding(
+                        recipe_assignment
+                    )
+                    parent = next(
+                        (
+                            e
+                            for e in current["evidence"]["entries"]
+                            if e["id"] == recipe_assignment["parent"]["id"]
+                        ),
+                        None,
+                    )
+                    if (
+                        parent is None
+                        or not parent.get("recipe")
+                        or any(parent.get(k) != v for k, v in recipe_assignment["parent"].items())
+                        or not final
+                        and parent["status"] != "RUNNING"
+                    ):
+                        raise ValueError("recipe parent reservation is not current")
+                return entry
+
+        storage = ExecutionStorage(storage_context, validate_storage_entry)
+        channel = CheckChannel(context_path, validate_check, storage=storage)
         self.check_channels.append(channel)
         environment["HARNESS_CHECK_FD"] = str(channel.descriptor)
         if request.get("background"):
@@ -1189,10 +1367,13 @@ class OperationController:
 
             with self.lock, closing(connect(self.database)) as conn:
                 controller = HarnessController(conn)
-                for key, (principal, request) in list(self.setup_pending.items()):
+                for key, pending in list(self.setup_pending.items()):
+                    principal, request, plan_defaults = pending
                     try:
                         _, state = self.authority(controller, principal)
-                        result = prepare(self, controller, principal, state, request)
+                        result = prepare(
+                            self, controller, principal, state, request, plan_defaults=plan_defaults
+                        )
                         self.setup_outcomes[request["cwd"]] = result
                         if result.get("status") != "Queued":
                             self.setup_pending.pop(key, None)

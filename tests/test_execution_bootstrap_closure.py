@@ -1,7 +1,9 @@
 """Execute required Knowledge imports from fresh sealed authority snapshots."""
 
 import hashlib
+import importlib
 import json
+import os
 import subprocess
 import sys
 import sysconfig
@@ -81,3 +83,36 @@ def test_snapshot_contains_executable_contribution_contract(tmp_path, monkeypatc
         manifest["files"]["knowledge/contribution_contract.py"]
         == hashlib.sha256(module.read_bytes()).hexdigest()
     )
+
+
+def test_recipe_target_imports_materializer_and_observer_from_bound_repository():
+    import al.tests.conftest as al_fixtures
+    import tests.execution_helpers as execution_fixtures
+    from al.installer import source_materialization, source_materialization_metadata
+
+    repository = Path(__file__).resolve().parents[1]
+    for module in (
+        al_fixtures,
+        execution_fixtures,
+        source_materialization,
+        source_materialization_metadata,
+    ):
+        assert Path(module.__file__).resolve().is_relative_to(repository), module.__file__
+
+    prefix = "_al_harness_recipe_child_v1"
+    if os.environ.get("HARNESS_EXPECT_SEALED_RECIPE") != "1":
+        return
+    importlib.import_module(prefix + ".storage_filesystem")
+    importlib.import_module(prefix + ".storage_declarations")
+    importlib.import_module(prefix + ".verification_contracts")
+    importlib.import_module(prefix + ".verification_harness")
+    importlib.import_module(prefix + ".verification_pytest")
+    importlib.import_module(prefix + ".verification_harness_child")
+    sealed = Path(sys.modules[prefix + ".verification_harness_child"].__file__).resolve().parent
+    loaded = {
+        name: Path(module.__file__).resolve()
+        for name, module in tuple(sys.modules.items())
+        if name == prefix or name.startswith(prefix + ".")
+    }
+    assert len(loaded) == 7  # package plus all six fixed canonical child files
+    assert all(path.is_relative_to(sealed) for path in loaded.values())

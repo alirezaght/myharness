@@ -71,6 +71,7 @@ def isolated_launch_environment(monkeypatch, directory):
     import shutil
     from pathlib import Path
 
+    from al.installer.source_materialization import copy2
     from tests.al_launcher import bootstrap_alctl
 
     directory.mkdir(parents=True, exist_ok=True)
@@ -83,9 +84,12 @@ def isolated_launch_environment(monkeypatch, directory):
             source / host / "skills/al",
             root / "skills/al",
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            copy_function=copy2,
         )
         shutil.copytree(
-            source / host / "agents", root / ("agents/al" if host == "claude" else "agents")
+            source / host / "agents",
+            root / ("agents/al" if host == "claude" else "agents"),
+            copy_function=copy2,
         )
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))

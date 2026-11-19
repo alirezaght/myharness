@@ -19,6 +19,7 @@ from harness.cli_knowledge import add_knowledge_parser
 from harness.cli_resume import add_resume_parser
 from harness.cli_review import add_review_parser
 from harness.cli_spec import add_spec_parser
+from harness.cli_storage import add_storage_parser
 from harness.cli_testplan import add_testplan_parser
 from harness.controller import TaskNotFound
 from harness.errors import RecordNotFound
@@ -94,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_delivery_parser(subparsers)
     add_browser_parser(subparsers)
     add_diagnostics_parser(subparsers)
+    add_storage_parser(subparsers)
 
     return parser
 

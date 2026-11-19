@@ -9,7 +9,8 @@ import subprocess
 import time
 import uuid
 
-from al.verification_plan import environment, pytest_argv, qualified, reconcile
+from al.verification_plan import (environment, pytest_argv, qualified, reconcile,
+    allocate_verification_storage, record_verification_storage)
 from al.verification_profile import digest, read_json, write_json
 from al.verification_process import OwnedProcess
 
@@ -32,36 +33,9 @@ def partition(plan, *, workers, durations):
 
 
 def validate_child_report(assignment, report, process):
-    errors = []
-    for key in ('schema_version', 'run_id', 'shard_id', 'suite', 'assignment_digest', 'source_digest'):
-        if report.get(key) != assignment[key]:errors.append('child binding mismatch: ' + key)
-    if process.get('ownership') and report.get('launch_token')!=process['ownership']['token']:errors.append('child launch token mismatch')
-    if report.get('finalized') is not True:errors.append('child report not finalized')
-    if report.get('exitstatus') != process['returncode']:errors.append('process/report exit mismatch')
-    # pytest may regroup parametrized items of an assigned subset; identity and content must match exactly.
-    nodes = report.get('nodes')
-    if not isinstance(nodes, list) or len(nodes) != len(assignment['nodes']) or {n.get('nodeid'): n for n in nodes if isinstance(n, dict)} != {n['nodeid']: n for n in assignment['nodes']}:
-        errors.append('assigned collection/source/fixture drift')
-    if report.get('deselected') or report.get('errors'):errors.append('child collection errors/deselection')
-    expected = {n['nodeid'] for n in assignment['nodes']}
-    stages = report.get('reports', {})
-    if set(stages) != expected:errors.append('missing/extra executed nodes')
-    outcomes = {}
-    for node in expected:
-        results = stages.get(node, {})
-        if not isinstance(results, dict):
-            outcomes[qualified(assignment['suite'], node)] = 'error';continue
-        if any(r.get('wasxfail') for r in results.values()):
-            status = 'xfailed' if any(r['outcome'] == 'skipped' for r in results.values()) else 'xpassed'
-        elif any(r.get('outcome') == 'failed' for r in results.values()):status = 'failed'
-        elif any(r.get('outcome') == 'skipped' for r in results.values()):status = 'skipped'
-        elif set(results) == {'setup', 'call', 'teardown'} and all(r.get('outcome') == 'passed' for r in results.values()):status = 'passed'
-        else:status = 'error'
-        outcomes[qualified(assignment['suite'], node)] = status
-    if process['returncode'] == 0 and any(v in {'failed', 'error'} for v in outcomes.values()):errors.append('successful process conceals failing stages')
-    if process['returncode'] != 0:errors.append('child process failed')
-    return {'outcomes': outcomes, 'errors': errors, 'subprocesses': report.get('subprocesses', 0), 'runtime_profile': report.get('runtime_profile', {}),
-            'durations': {qualified(assignment['suite'], node): sum(r.get('duration', 0) for r in stages.get(node, {}).values()) for node in expected}}
+    from al.installer.verification_contracts import validate_release_report
+
+    return validate_release_report(assignment, report, process)
 
 
 def cancel_owned(children, cause):
@@ -97,14 +71,15 @@ def run(plan, *, workers, artifact_root, cache_mode, durations=None, profile=Fal
         path, report, log = directory / 'assignment.json', directory / 'report.json', directory / 'output.log'
         write_json(path, assignment)
         suite = plan['collections'][assignment['suite']]
-        argv = pytest_argv(suite['cwd']) + ['--basetemp', str(directory / 'pytest-tmp'), '--al-assignment', str(path), '--al-child-report', str(report)]
+        storage_manager, storage_binding = allocate_verification_storage(directory, assignment['assignment_digest'])
+        argv = pytest_argv(suite['cwd']) + ['--basetemp', str(Path(storage_binding['allocation']['path']) / 'pytest-tmp'), '--al-assignment', str(path), '--al-child-report', str(report)]
         argv.extend(n['nodeid'] for n in assignment['nodes'])
         output = log.open('wb')
         owner=OwnedProcess(directory,assignment['assignment_digest'])
-        child = {'assignment': assignment, 'report': report, 'log': log, 'output': output, 'started': time.monotonic(), 'argv': argv, 'owner':owner}
+        child = {'assignment': assignment, 'report': report, 'log': log, 'output': output, 'started': time.monotonic(), 'argv': argv, 'owner':owner, 'storage_manager':storage_manager, 'storage_binding':storage_binding}
         active.append(child)
         try:
-            child['process'] = owner.spawn(argv, cwd=suite['cwd'], env=environment(plan['source_binding']['root'], directory, profile=profile, cache_mode=cache_mode), output=output)
+            child['process'] = owner.spawn(argv, cwd=suite['cwd'], env=environment(plan['source_binding']['root'], storage_binding['allocation']['path'], profile=profile, cache_mode=cache_mode), output=output)
         except BaseException:
             output.close();raise
         journal['children'].append({'shard_id': assignment['shard_id'], 'assignment_digest': assignment['assignment_digest'], **owner.record()})
@@ -138,9 +113,16 @@ def run(plan, *, workers, artifact_root, cache_mode, durations=None, profile=Fal
                     validated = validate_child_report(child['assignment'], report, process)
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     validated = {'outcomes': {}, 'errors': ['missing/invalid child report: ' + str(exc)]}
+                storage_result = None
+                if child['report'].is_file():
+                    storage_result = record_verification_storage(child['report'].parent, child['storage_manager'],
+                        child['storage_binding'], child['owner'],
+                        success=bool(validated['outcomes']) and not validated['errors'] and all(v == 'passed' for v in validated['outcomes'].values()),
+                        complete=descendant_cleanup['complete'],
+                        artifacts=[child['report'], child['log'], child['report'].parent / 'assignment.json'])
                 reference={k: child['assignment'][k] for k in ('shard_id','suite','assignment_digest','source_digest')}
                 reference['path']=str(child['report'].parent/'assignment.json')
-                receipts.append({'assignment': reference, 'process': process, 'log': str(child['log']),
+                receipts.append({'storage_result':storage_result, 'assignment': reference, 'process': process, 'log': str(child['log']),
                                  'log_sha256': hashlib.sha256(child['log'].read_bytes()).hexdigest(),
                                  'report': str(child['report']), 'report_sha256': hashlib.sha256(child['report'].read_bytes()).hexdigest() if child['report'].is_file() else None,
                                  **validated})

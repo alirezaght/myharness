@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from al.installer.manifest import build_manifest, cache_release, verify_cache
 from al.installer.source import resolve_release
+from al.installer.source_materialization import copy2
 
 
 def git_test(root, *args):
@@ -20,7 +21,7 @@ def make_source(tmp_path):
     canonical = Path(__file__).resolve().parents[1]
     for platform in ('codex', 'claude'):
         shutil.copytree(canonical / platform, root / 'al' / platform,
-                        ignore=shutil.ignore_patterns('tests', '__pycache__', '.pytest_cache', '*.pyc'))
+                        ignore=shutil.ignore_patterns('tests', '__pycache__', '.pytest_cache', '*.pyc'), copy_function=copy2)
     # Exclusion must hold for committed tests as well as ignored checkout caches.
     tests = root / 'al/codex/skills/al/tests'
     tests.mkdir()

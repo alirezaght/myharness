@@ -9,6 +9,7 @@ from .source import git
 from .validator_origin import capture_origin, closure_paths, interpreter_identity, snapshot_identity, verify_snapshot, verify_origin_data, capture
 from .validator_boot import launcher as validator_launcher
 from .validator_anchor import existing_anchor
+from .source_materialization import write_captured
 
 
 def _verify(path, expected):
@@ -74,11 +75,18 @@ def bootstrap_cli(source_root, destination, state_root, *, held=None):
             stage = Path(tempfile.mkdtemp(prefix='.cli-', dir=snapshot.parent))
             try:
                 for name, raw in content.items():
-                    D.atomic(stage / name, raw, files[name]['mode'])
+                    write_captured(root / name, stage / name, raw, files[name]['mode'])
                 write_json(stage / 'origin.json', origin)
                 write_json(stage / 'receipt.json', receipt)
                 _verify(stage, expected)
+                for directory, _, _ in os.walk(stage, topdown=False):
+                    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                    try: os.fsync(descriptor)
+                    finally: os.close(descriptor)
                 os.rename(stage, snapshot)
+                descriptor = os.open(snapshot.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try: os.fsync(descriptor)
+                finally: os.close(descriptor)
             finally:
                 if stage.exists():
                     shutil.rmtree(stage)

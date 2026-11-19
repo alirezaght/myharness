@@ -1,5 +1,6 @@
 """Explicit writer/check lifetimes share the run's admission lock."""
 import json
+import os
 import shlex
 import time
 from pathlib import Path
@@ -32,6 +33,31 @@ def canonical_paths(paths):
     if not out: refuse('writer needs owned files')
     return out
 
+def _check_effects(st, spec):
+    if not spec.get('recipe') and not spec.get('recipe_assignment'):
+        return al_parallel.shared_state_hits([shlex.join(spec['argv'])])
+    import al_evidence_recipe
+    view = dict(spec, run=spec.get('run', st['run_id']))
+    try:
+        al_evidence_recipe.validate_entry_recipe(view)
+        if view.get('recipe'):
+            al_evidence_recipe.load_recipe(view['recipe'])
+        else:
+            binding = view['recipe_assignment']['parent']
+            parent = next((e for e in st['evidence']['entries'] if e['id'] == binding['id']), None)
+            if (parent is None or parent.get('status') != 'RUNNING' or not parent.get('recipe')
+                    or any(parent.get(k) != v for k, v in binding.items())
+                    or parent.get('owner_pid') != view.get('owner_pid', os.getpid())
+                    or not L._alive(parent.get('owner_pid'))):
+                refuse('recipe child has no exact live coordinator reservation')
+            al_evidence_recipe.validate_entry_recipe(parent)
+            al_evidence_recipe.load_recipe(parent['recipe'])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        refuse('invalid typed recipe operation: ' + type(exc).__name__)
+    # This closed operation is not shell argv. Actual children remain fixed sandbox executions.
+    return []
+
+
 def admit_check(st, spec, *, gate_context=None, own_writer=None):
     from al_execution_tasks import admit_check as execution_check
     execution_check(st, spec, gate_context=gate_context)
@@ -44,11 +70,11 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
     if not target.is_dir(): refuse('check cwd does not exist')
     missing=L.unmet(st,spec)
     if missing: refuse('; '.join(missing))
-    shared=al_parallel.shared_state_hits([shlex.join(spec['argv'])])
+    shared=_check_effects(st,spec)
     for e in st['evidence']['entries']:
         if e.get('reconciliation') or (e['status']!='RUNNING' and not e.get('interrupted')): continue
         if e.get('interrupted') or not L._alive(e.get('owner_pid')): refuse('reconcile interrupted check '+e['id'])
-        if shared or al_parallel.shared_state_hits([shlex.join(e['argv'])]): refuse('shared-state check overlap '+e['id'])
+        if shared or _check_effects(st,e): refuse('shared-state check overlap '+e['id'])
     # A base gate runs in a disposable checkout of the base commit: writers in the working tree
     # cannot affect it, nor it them.
     if gate_context and gate_context.get('stage')=='base':return
@@ -89,7 +115,7 @@ def _cmd_writer(a,sid):
             if w['state'] != 'ACTIVE' or shared or al_parallel.shared_state_hits(w['commands']) or al_parallel.overlaps(files,w['files']): refuse('writer overlap: ' + w['id'])
         for e in st['evidence']['entries']:
             if (e['status']=='RUNNING' or e.get('interrupted')) and not e.get('reconciliation'):
-                if shared or '.' in e['scope'] or al_parallel.overlaps(files,e['scope']) or al_parallel.shared_state_hits([shlex.join(e['argv'])]): refuse('writer overlaps check '+e['id'])
+                if shared or '.' in e['scope'] or al_parallel.overlaps(files,e['scope']) or _check_effects(st,e): refuse('writer overlaps check '+e['id'])
         if degraded:
             from al_new_origin import validate
             validate(st)

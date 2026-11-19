@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .interpreter_execution import capture_profile, validate_profile
 from .registry import write_json
+from .source_materialization import write_captured
 from .runtime_pin_capture import relative, stable_distribution
 from .validator_origin import canonical, capture, decode, digest, interpreter_identity, safe
 
@@ -80,11 +81,7 @@ def prepare_pin(trusted_distribution, platform, storage):
         for name, raw in contents.items():
             path = payload / relative(name)
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with path.open("xb") as stream:
-                stream.write(raw)
-                stream.flush()
-                os.fchmod(stream.fileno(), files[name]["mode"])
-                os.fsync(stream.fileno())
+            write_captured(Path(trusted_distribution) / relative(name), path, raw, files[name]["mode"])
         write_json(stage / "manifest.json", manifest)
         if (
             stable_distribution(trusted_distribution, platform)

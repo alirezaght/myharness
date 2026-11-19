@@ -9,6 +9,7 @@ import pytest
 
 from al.installer.runtime_pin import prepare_pin, verify_pin
 from al.installer.runtime_pin_capture import stable_distribution
+from al.installer.source_materialization import copy2
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -17,7 +18,10 @@ SOURCE = Path(__file__).resolve().parents[1]
 def distribution(tmp_path):
     root = tmp_path / "distribution"
     shutil.copytree(
-        SOURCE, root, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".ruff_cache")
+        SOURCE,
+        root,
+        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".ruff_cache"),
+        copy_function=copy2,
     )
     return root
 
@@ -27,6 +31,34 @@ def prepared(distribution, tmp_path):
     storage = tmp_path / "pins"
     binding = prepare_pin(distribution, "codex", storage)
     return distribution, storage, binding
+
+
+@pytest.mark.parametrize("platform", ["codex", "claude"])
+def test_pin_materialization_is_independent_for_both_host_resources(
+    distribution, tmp_path, platform
+):
+    storage = tmp_path / (platform + "-pins")
+    binding = prepare_pin(distribution, platform, storage)
+    relative = Path(platform) / "skills/al/SKILL.md"
+    source = distribution / relative
+    pinned = storage / binding["pin_identity"] / "payload" / relative
+    source_info, pin_info = source.stat(), pinned.stat()
+    assert source.read_bytes() == pinned.read_bytes()
+    assert (source_info.st_dev, source_info.st_ino) != (pin_info.st_dev, pin_info.st_ino)
+    assert pin_info.st_nlink == 1
+
+    original = source.read_bytes()
+    pinned.write_bytes(b"pin-only mutation")
+    assert source.read_bytes() == original
+    with pytest.raises(ValueError):
+        verify_pin(storage, binding)
+
+    pinned.write_bytes(original)
+    assert verify_pin(storage, binding)["manifest"]["platform"] == platform
+    source.write_bytes(b"installation-only mutation")
+    assert pinned.read_bytes() == original
+    shutil.rmtree(distribution)
+    assert verify_pin(storage, binding)["manifest"]["platform"] == platform
 
 
 def test_pin_captures_complete_runtime_resources_and_survives_installation_removal(prepared):

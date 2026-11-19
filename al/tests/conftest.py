@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from al.installer.source_materialization import copy2
+
 
 @pytest.fixture
 def installer_workspace(tmp_path, monkeypatch):
@@ -55,5 +57,6 @@ def copy_al_source(destination):
         root,
         destination,
         ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
+        copy_function=copy2,
     )
     return Path(destination)

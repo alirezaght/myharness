@@ -77,6 +77,7 @@ class OwnedProcess:
         self.receipt = self.directory / ("ownership-" + self.token + ".json")
         self.process = None
         self.launch_identity = None
+        self.last_cleanup = None
 
     def spawn(self, argv, *, cwd, env, output, pass_fds=()):
         child_env = dict(
@@ -164,7 +165,20 @@ class OwnedProcess:
     def cleanup(self):
         errors, unresolved, secondary = [], [], []
         if self.process is None:
-            return {"complete": True, "errors": [], "unresolved": [], "secondary_signals": []}
+            result = {
+                "complete": True,
+                "errors": [],
+                "unresolved": [],
+                "secondary_signals": [],
+                "leader_reaped": False,
+                "owned_group_settled": True,
+                "descendant_scope": "group",
+                "descendants_settled": None,
+                "settlement_basis": "owned-process-group-only",
+                "settlement_evidence": None,
+            }
+            self.last_cleanup = result
+            return result
         with cleanup_barrier(secondary):
             for number, grace in ((signal.SIGTERM, 1), (signal.SIGKILL, 2)):
                 try:
@@ -213,12 +227,22 @@ class OwnedProcess:
             for number in SIGNALS & signal.sigpending():
                 signal.sigwait({number})
                 secondary.append(signal.Signals(number).name)
-        return {
+        result = {
             "complete": not errors and not unresolved,
             "errors": errors,
             "unresolved": unresolved,
             "secondary_signals": secondary,
+            "leader_reaped": self.process.poll() is not None,
+            "owned_group_settled": not errors
+            and not unresolved
+            and self.process.poll() is not None,
+            "descendant_scope": "group",
+            "descendants_settled": None,
+            "settlement_basis": "owned-process-group-only",
+            "settlement_evidence": {"launch_identity": self.launch_identity},
         }
+        self.last_cleanup = result
+        return result
 
 
 def execute(argv, *, cwd, env, output, directory, assignment, timeout):

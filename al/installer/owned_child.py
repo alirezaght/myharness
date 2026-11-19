@@ -24,7 +24,12 @@ def main():
         path, {"schema_version": 1, "token": token, "assignment": assignment, "identity": observed}
     )
     signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGINT, signal.SIGTERM})
-    os.execvpe(sys.argv[3], sys.argv[3:], os.environ)
+    try:
+        os.execvpe(sys.argv[3], sys.argv[3:], os.environ)
+    except FileNotFoundError:
+        raise SystemExit(127) from None
+    except PermissionError:
+        raise SystemExit(126) from None
 
 
 if __name__ == "__main__":

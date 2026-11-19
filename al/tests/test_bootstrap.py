@@ -39,6 +39,8 @@ def test_launcher_runs_from_snapshot_after_source_is_removed(tmp_path):
     assert receipt["source_commit_if_available"] is None
     snapshot = Path(json.loads(boot.stdout)["snapshot"])
     assert (snapshot / "installer/cli.py").is_file()
+    assert (snapshot / "installer/source_materialization.py").is_file()
+    assert (snapshot / "installer/source_materialization_metadata.py").is_file()
 
     import shutil
 
@@ -57,6 +59,66 @@ def test_launcher_runs_from_snapshot_after_source_is_removed(tmp_path):
     assert installed.returncode == 0, installed.stdout + installed.stderr
     assert json.loads(installed.stdout)["status"] == "updated"
     assert (installed_home / ".codex/skills/al/SKILL.md").is_file()
+
+
+def test_snapshot_members_have_independent_inodes_and_mutations(tmp_path):
+    source = copy_al_source(tmp_path / "checkout/al")
+    state = tmp_path / "state"
+    launcher = tmp_path / "bin/alctl"
+    boot = subprocess.run(
+        [
+            sys.executable,
+            str(source / "alctl.py"),
+            "bootstrap",
+            "--source-root",
+            str(source),
+            "--destination",
+            str(launcher),
+            "--state-root",
+            str(state),
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        env=_environment(),
+    )
+    assert boot.returncode == 0, boot.stdout + boot.stderr
+    snapshot = Path(json.loads(boot.stdout)["snapshot"])
+    source_member = source / "installer/cli.py"
+    snapshot_member = snapshot / "installer/cli.py"
+    captured = source_member.read_bytes()
+    source_identity = source_member.stat()
+    snapshot_identity = snapshot_member.stat()
+    assert snapshot_member.read_bytes() == captured
+    assert (source_identity.st_dev, source_identity.st_ino) != (
+        snapshot_identity.st_dev,
+        snapshot_identity.st_ino,
+    )
+
+    snapshot_member.write_bytes(b"snapshot-only mutation")
+    assert source_member.read_bytes() == captured
+    snapshot_member.write_bytes(captured)
+    assert source_member.read_bytes() == captured
+
+    verified = subprocess.run(
+        [
+            sys.executable,
+            str(source / "alctl.py"),
+            "bootstrap",
+            "--source-root",
+            str(source),
+            "--destination",
+            str(launcher),
+            "--state-root",
+            str(state),
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        env=_environment(),
+    )
+    assert verified.returncode == 0, verified.stdout + verified.stderr
+    assert json.loads(verified.stdout)["snapshot"] == str(snapshot)
 
 
 def test_bootstrap_revalidates_snapshot_and_refuses_launcher_collision(tmp_path):

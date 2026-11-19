@@ -305,7 +305,12 @@ def classify(kind, exit_code, counts, timed_out, before, after, *, output=None):
     return "PASS", ""
 
 
-def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=None, needs=(), sources=()):
+def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=None, needs=(), sources=(), storage=None, recipe=None, recipe_assignment=None, recipe_context=None):
+    import al_evidence_storage
+    storage = al_evidence_storage.normalize_declaration(storage)
+    import al_evidence_recipe
+    recipe = al_evidence_recipe.normalize_recipe(recipe)
+    recipe_assignment = al_evidence_recipe.validate_assignment_binding(recipe_assignment)
     ev = ledger(st)
     ev["seq"] += 1
     entry = {
@@ -319,6 +324,12 @@ def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=No
         "phase": st.get("phase"), "correction_iteration": st.get("correction_iteration", 0),
         "run": st.get("run_id"),
     }
+    if storage is not None: entry["storage"] = storage
+    if recipe is not None: entry["recipe"] = recipe
+    if recipe_context is not None:
+        al_evidence_recipe.modules()[1].validate_task_recipe(recipe_context)
+        entry["recipe_context"] = recipe_context
+    if recipe_assignment is not None: entry["recipe_assignment"] = recipe_assignment
     ev["entries"].append(entry)
     return entry
 
@@ -331,11 +342,17 @@ def find(st, entry_id):
 
 
 def same_command(e, spec):
-    return (e["area"] == spec["area"] and e["argv"] == list(spec["argv"])
+    import al_evidence_storage
+    import al_evidence_recipe
+    return (al_evidence_recipe.normalize_recipe(e.get("recipe")) == al_evidence_recipe.normalize_recipe(spec.get("recipe"))
+            and e.get("recipe_assignment") == spec.get("recipe_assignment")
+            and e.get("recipe_context") == spec.get("recipe_context")
+            and e["area"] == spec["area"] and e["argv"] == list(spec["argv"])
             and e["cwd"] == (spec.get("cwd") or ".") and e["scope"] == list(spec["scope"])
             and e.get("kind") == spec.get("kind", e.get("kind"))
             and sorted(e.get("env") or ()) == sorted(spec.get("env") or ())
             and e.get("sources", []) == spec.get("sources", [])
+            and al_evidence_storage.normalize_declaration(e.get("storage")) == al_evidence_storage.normalize_declaration(spec.get("storage"))
             and e.get("preflight") == spec.get("preflight")
             and sorted(e.get("needs") or ()) == sorted(spec.get("needs") or ()))
 
@@ -374,22 +391,37 @@ def assess(e):
         return "LOG_ALTERED", "the log no longer matches the hash recorded at the end of the run"
     if e["status"] != "PASS":
         return e["status"], e.get("note") or ""
-    try:
-        raw = Path(e["log"]).read_text(errors='replace')
-    except OSError:
-        return "LOG_MISSING", "the captured output cannot be read"
-    body = RunnerOutput.captured_body(e, raw)
-    if body is not None:
-        current_counts = parse_counts(body) if e['kind']=='test' else e.get('counts', {})
-        current, note = classify(e['kind'], e.get('exit'), current_counts, False,
-                                 e.get('fp_before'), e.get('fp_after'), output=body)
-        if current != 'PASS':
-            return current, 'stored PASS is unusable under current output classification: '+note
+    if e.get("storage"):
+        import al_evidence_storage
+        try: al_evidence_storage.validate_outputs(e)
+        except (OSError, ValueError, KeyError, TypeError):
+            return "OUTPUT_MISSING", "declared managed output is unavailable or changed"
+    if e.get('recipe'):
+        # A typed coordinator has no child process or subprocess exit/output.
+        if (e.get('argv') != [] or e.get('exit') is not None
+                or e.get('pid') is not None or e.get('process') is not None):
+            return 'RECIPE_UNVERIFIED', 'recipe coordinator cannot be an ordinary process receipt'
+        import al_evidence_recipe
+        try:al_evidence_recipe.assess_recipe(e)
+        except (OSError, ValueError, KeyError, TypeError):
+            return 'RECIPE_UNVERIFIED', 'recipe source, child artifacts or complete aggregate are unavailable or changed'
     else:
-        # Unknown historical header formats are not guessed. A closed launcher
-        # diagnostic still cannot support a pass; retain the original receipt.
-        problem = RunnerOutput.output_problem(raw)
-        if problem:return 'INFRA', problem
+        try:
+            raw = Path(e["log"]).read_text(errors='replace')
+        except OSError:
+            return "LOG_MISSING", "the captured output cannot be read"
+        body = RunnerOutput.captured_body(e, raw)
+        if body is not None:
+            current_counts = parse_counts(body) if e['kind']=='test' else e.get('counts', {})
+            current, note = classify(e['kind'], e.get('exit'), current_counts, False,
+                                     e.get('fp_before'), e.get('fp_after'), output=body)
+            if current != 'PASS':
+                return current, 'stored PASS is unusable under current output classification: '+note
+        else:
+            # Unknown historical header formats are not guessed. A closed launcher
+            # diagnostic still cannot support a pass; retain the original receipt.
+            problem = RunnerOutput.output_problem(raw)
+            if problem:return 'INFRA', problem
     try:
         now = scope_fingerprint(e["scope"], e.get("env"), e.get("sources", []), e.get("cwd", "."))
     except FingerprintError as exc:

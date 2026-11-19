@@ -227,6 +227,10 @@ def main(argv=None) -> int:
             if capture_source_binding(ROOT.parent)!=source:raise ValueError('source content or membership changed during suites')
             if args.plan_only:
                 report={'status':'PLAN','kind':'verification-plan',**suites}
+                write_json(Path(suites['report_path']), report)
+                from al.verification_plan import finalize_verification_storage
+                cleanup = finalize_verification_storage(suites['report_path'], suites)
+                report['storage_cleanup'] = cleanup
             else:
                 reconciliation=suites['reconciliation']
                 complete=(reconciliation['complete'] if args.full else reconciliation['selected_success'])
@@ -241,7 +245,9 @@ def main(argv=None) -> int:
                 path=Path(suites['report_path']);write_json(path,report)
                 report['elapsed_seconds']=time.monotonic()-started
                 write_json(path,report)
-                print(json.dumps({'status':report['status'],'complete':report['complete'],'report':str(path),
+                from al.verification_plan import finalize_verification_storage
+                storage_cleanup = finalize_verification_storage(path, suites)
+                print(json.dumps({'storage_cleanup':storage_cleanup, 'status':report['status'],'complete':report['complete'],'report':str(path),
                                   'report_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'elapsed_seconds':report['elapsed_seconds'],
                                   'collected_obligations':suites['collected_obligations'],'shared_equivalents':suites['equivalent_obligations']},sort_keys=True))
                 print(f"{reconciliation['executed_passed']} passed, {reconciliation['executed_failed']} failed, {reconciliation['executed_errors']} errors")
