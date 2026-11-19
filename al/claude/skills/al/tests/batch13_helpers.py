@@ -83,5 +83,20 @@ def assert_incomplete_admission(cli):
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
     admit_planning(cli,expect_coverage_blocked=incomplete)
-    invoke(cli,'phase','IMPLEMENTATION',ok=not incomplete)
+    state=json.loads(cli('show')[1])
+    if incomplete:
+        import al_gate_currency as Currency
+        import al_service_coverage as Coverage
+        expected=Currency.check(state)['reasons']+Coverage.admission_gaps(state,current=True)
+        assert expected
+    invoke(cli,'phase','IMPLEMENTATION')
+    if incomplete:
+        import al_store
+        current=json.loads(cli('show')[1])
+        assert set(expected)<=set(current['implementation_readiness']['obligations'])
+        assert current['proof_admission']==state['proof_admission']
+        invoke(cli,'phase','VERIFICATION')
+        path=al_store.state_path(state['session_id']);before=path.read_bytes()
+        invoke(cli,'review-start',ok=False)
+        assert path.read_bytes()==before
     invoke(cli,'approved',ok=False)

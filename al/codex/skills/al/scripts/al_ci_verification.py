@@ -83,7 +83,16 @@ def purpose(tokens, records):
     return 'verification'
 
 
-def conventional_verification(unit, obligations, bindings, enumeration):
+def conventional_verification(unit, obligations, bindings, enumeration, *, projection=None):
+    if projection is not None and projection.get('schema_version')!=2:raise ValueError('invalid task relevance projection')
+    if projection is not None:
+        from al_coverage_relevance import ci_record_id,record_id
+        obligations=[o for o in obligations if ci_record_id(o) in projection['relevant_ci_ids']]
+        known={row['record_id']:row for row in projection['records']}
+        relevant_ids=set(projection['relevant_gap_ids'])
+        enumeration={**enumeration,'gaps':[g for g in enumeration.get('gaps',[])
+                     if record_id({'category':'enumeration',**g}) not in known or
+                     record_id({'category':'enumeration',**g}) in relevant_ids]}
     relevant=[o for o in obligations if unit['path'] in o['units'] or '.' in o['units']]
     result={'satisfied':False,'obligation_ids':[],'binding_ids':[],'proof':[],'gaps':[]}
     if enumeration.get('gaps') or not relevant:return result

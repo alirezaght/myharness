@@ -209,7 +209,10 @@ def test_non_source_marker_preserves_requirements_but_changes_execution_candidat
     from test_service_coverage import start,plan
     seed(repo);start(cli);plan(cli,repo,tmp_path,['services/a/src'])
     st=json.loads(cli('show')[1]);before=Scope.capture_candidate(st)['fingerprint']
-    put(repo,'services/a/src/fixed','marker')
-    assert Currency.check(st)['current']
+    # A narrative README is positively classified as documentation; arbitrary
+    # extensionless runtime/data inputs retain conservative coverage.
+    put(repo,'services/a/src/README.md','# Local source guide\nUnconsumed narrative fixture.\n')
+    currency=Currency.check(st)
+    assert currency['current'],currency
     assert Scope.capture_candidate(st)['fingerprint']!=before
     assert cli('phase','IMPLEMENTATION')[0]==0

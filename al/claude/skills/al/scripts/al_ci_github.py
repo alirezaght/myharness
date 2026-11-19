@@ -22,7 +22,7 @@ def read(root,path):
     return raw,{'path':path,'sha256':hashlib.sha256(raw).hexdigest(),'job':None}
 
 
-def applicability(value,context,paths=None):
+def applicability(value,context,paths=None,directories=()):
     events={v:None for v in value} if isinstance(value,list) else {value:None} if isinstance(value,str) else value
     if not isinstance(events,dict) or not events:raise Unsupported('literal workflow trigger required')
     for name,filters in events.items():
@@ -42,10 +42,10 @@ def applicability(value,context,paths=None):
             if 'paths' in filters and 'paths-ignore' in filters:raise Unsupported('conflicting workflow path filters')
             selected=True
             if 'paths' in filters:
-                matched=[Rules.pattern_matches(pattern,path) for pattern in filters['paths'] for path in paths]
+                matched=[Rules.pattern_matches(pattern,path,path in directories) for pattern in filters['paths'] for path in paths]
                 selected=any(v is True for v in matched) or any(v is None for v in matched)
             elif 'paths-ignore' in filters:
-                selected=not all(any(Rules.pattern_matches(pattern,path) is True for pattern in filters['paths-ignore']) for path in paths)
+                selected=not all(any(Rules.pattern_matches(pattern,path,path in directories) is True for pattern in filters['paths-ignore']) for path in paths)
             possible.append(selected)
         if possible and not any(possible):return False
     return {'profile':context,'events':events,'selection':'conservative quality-event union'}
@@ -143,7 +143,7 @@ def execution(root,path,name,job,workflow_source,context):
             'argv':['gh','api'] if remote_source else ['sh','-eu','-c','\n'.join(lines)],'cwd':'.','execution_kind':'remote' if remote_source else 'local','env_names':ENV}
 
 
-def github_inventory(root,paths,context=None,opaque=()):
+def github_inventory(root,paths,context=None,opaque=(),*,directories=()):
     directory=root/'.github/workflows'
     files=sorted(p.relative_to(root).as_posix() for p in directory.glob('*') if p.suffix in {'.yml','.yaml'})
     if len(files)>128:raise Unsupported('GitHub workflow count limit')
@@ -156,7 +156,7 @@ def github_inventory(root,paths,context=None,opaque=()):
         try:
             if any(path==o or path.startswith(o.rstrip('/')+'/') for o in opaque):raise Unsupported('unavailable workflow child')
             raw,src=read(root,path);dependencies[path]=src;data=load(raw.decode())
-            selected=applicability(data.get('on'),context,paths)
+            selected=applicability(data.get('on'),context,paths,directories)
             if selected is None or selected is False:
                 deferred.append({'source_path':path,'source_sha256':src['sha256'],'classification':'deferred','reason':'sourced trigger excludes the selected quality context or all affected inputs','dependencies':[src]})
                 continue

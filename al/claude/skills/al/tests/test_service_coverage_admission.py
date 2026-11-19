@@ -48,6 +48,11 @@ def test_incomplete_missing_check_blocks_proof_but_allows_scoped_writing(cli,rep
     invoke(cli,'writer','start','--id','scoped','--role','al-engineer','--files','packages/shared/src/common.py')
     assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
     invoke(cli,'writer','finish','--id','scoped','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
+    before=state_file().read_bytes()
+    code,out,err=invoke(cli,'review-start',ok=False)
+    assert 'proof admission pending' in str(code)+out+err
+    assert state_file().read_bytes()==before
     invoke(cli,'approved',ok=False)
 
 
@@ -232,8 +237,14 @@ def test_incomplete_coverage_preserves_proof_guards_but_allows_writer_readiness(
     writer_ready(writing,['packages/shared/src/common.py'])
     assert writing['implementation_readiness']['obligations']
     assert st==before and state_file().read_bytes()==disk
-    for check in [lambda:require_admitted(st),lambda:ready(st),lambda:require_transition(st,'review-start','REVIEW'),lambda:require_transition(st,'approved','DONE')]:
+    for check in [lambda:require_admitted(st),lambda:ready(st)]:
         with pytest.raises(SystemExit,match='coverage'):check()
+        assert st==before and state_file().read_bytes()==disk
+    for command,destination,diagnostic in [
+        ('review-start','REVIEW','review-start is not allowed from PLANNING'),
+        ('approved','DONE','approved is not allowed from PLANNING'),
+    ]:
+        with pytest.raises(SystemExit,match=diagnostic):require_transition(st,command,destination)
         assert st==before and state_file().read_bytes()==disk
     assert any('coverage incomplete' in g for g in gate_gaps(st,'candidate'))
     assert any('coverage incomplete' in g for g in approval_gaps(st))
@@ -262,3 +273,299 @@ def test_unsupported_ci_provider_blocks_even_without_selected_services(cli,repo,
     seed(repo);put(repo,'Jenkinsfile','pipeline {}\n');start(cli)
     _,m=discover(cli,tmp_path,['docs/readme.md'])
     assert any(g['code']=='unsupported-ci-provider' for g in m['service_coverage']['assessment']['gaps'])
+
+
+def scoped_docs_fixture(repo):
+    import subprocess
+    seed(repo)
+    unit(repo, 'services/b', check=False)
+    put(repo, 'docs/policy.json', '{"valid": true}\n')
+    put(repo, '.gitlab-ci.yml', "include:\n  - local: ci/unused.yml\n    rules:\n      - if: '$OPTIONAL_PIPELINE'\nverify-documents:\n  script: python3 -m json.tool docs/policy.json\n  rules:\n    - changes: [docs/**/*]\n")
+    put(repo, 'ci/unused.yml', 'b:fast_check:\n  image: python:3.13\n  script: unsupported-check\n  rules:\n    - changes: [services/b/**/*]\n')
+    (repo / '.codex').mkdir(exist_ok=True)
+    put(repo, 'tooling/shared-skills/sentinel.md', 'Contained fixture target; discovery must not follow the link.\n')
+    (repo / '.codex/skills').symlink_to('../tooling/shared-skills', target_is_directory=True)
+    (repo / 'vendor.wiki').mkdir()
+    oid = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip()
+    _git(repo, 'add', '.')
+    _git(repo, 'update-index', '--add', '--cacheinfo', '160000', oid, 'vendor.wiki')
+    _git(repo, 'commit', '-qm', 'task-scoped boundary and generated CI fixture')
+
+
+def test_docs_only_public_admission_currency_and_writer_keep_global_diagnostics(cli, repo, tmp_path, state_file):
+    cli=cli.raw
+    scoped_docs_fixture(repo)
+    start(cli)
+    put(repo, 'docs/readme.md', 'Updated narrative\n')
+    manifest = plan(cli, repo, tmp_path, ['docs/readme.md'])
+    coverage = manifest['service_coverage']
+    assert coverage['schema_version'] == 2
+    assert coverage['assessment']['selected_services'] == []
+    assert coverage['assessment']['outcome'] == 'identified'
+    assert coverage['global_inventory']['status'] == 'incomplete'
+    records = coverage['projection']['records']
+    assert any(r['record']['path'] == 'vendor.wiki' for r in records)
+    assert any(r['record']['path'] == '.codex/skills' for r in records)
+    assert any(r['record'].get('unit') == 'services/b' for r in records)
+    assert [g['source']['job'] for g in manifest['gates'] if g['category'] == 'ci' and g['applicability'] != 'NOT_APPLICABLE'] == ['verify-documents']
+    assert any(row['record'].get('job') == 'b:fast_check' and not row['relevant'] for row in coverage['projection']['ci_records'])
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    admit_planning(cli)
+    state = json.loads(cli('show')[1])
+    assert state['proof_admission']['status'] == 'admitted'
+    assert Currency.check(state)['current']
+    invoke(cli, 'phase', 'IMPLEMENTATION')
+    invoke(cli, 'writer', 'start', '--id', 'docs', '--role', 'al-engineer', '--files', 'docs/readme.md')
+    invoke(cli, 'writer', 'finish', '--id', 'docs', '--outcome', 'success')
+    from al_gate_coverage import prospective_gaps
+    state=json.loads(cli('show')[1])
+    debt=prospective_gaps(state,['services/b/src/app.py'])
+    assert any('not anticipated' in reason for reason in debt)
+    assert any('unplanned unit' in reason for reason in debt)
+    before = state_file().read_bytes()
+    invoke(cli,'writer','start','--id','unsafe','--role','al-engineer','--files','../outside.py',ok=False)
+    assert state_file().read_bytes() == before
+    invoke(cli,'writer','start','--id','unplanned','--role','al-engineer','--files','services/b/src/app.py')
+    admitted=json.loads(cli('show')[1])
+    assert set(debt)<=set(admitted['implementation_readiness']['obligations'])
+    put(repo,'services/b/src/app.py','VALUE = 2\n')
+    invoke(cli,'writer','finish','--id','unplanned','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
+    before=state_file().read_bytes()
+    code,out,err=invoke(cli,'review-start',ok=False)
+    assert 'replanning' in str(code)+out+err or 'coverage' in str(code)+out+err
+    assert state_file().read_bytes()==before
+
+
+def test_formerly_unrelated_consumer_invalidates_currency_and_admission(cli, repo, tmp_path, state_file):
+    cli=cli.raw
+    scoped_docs_fixture(repo)
+    start(cli)
+    put(repo, 'docs/readme.md', 'Updated narrative\n')
+    plan(cli, repo, tmp_path, ['docs/readme.md'])
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    admit_planning(cli)
+    previous = json.loads(cli('show')[1])
+    assert Currency.check(previous)['current']
+    put(repo, 'services/b/src/prompt.py', 'PROMPT = "docs/readme.md"\n')
+    currency = Currency.check(previous)
+    assert not currency['current'] and currency['pathless']
+    _, manifest = discover(cli, tmp_path, ['docs/readme.md'])
+    assert 'services/b' in manifest['service_coverage']['assessment']['selected_services']
+    assert manifest['service_coverage']['assessment']['outcome'] == 'incomplete'
+    import al_service_coverage as Coverage
+    with pytest.raises(SystemExit,match='coverage'):Coverage.require_ready(previous,current=True)
+    assert json.loads(cli('show')[1])['proof_admission']['status']=='admitted'
+    # Prior authored admission stays historical; a distinct disposable public
+    # session proves current pending-proof admission on both host protocols.
+    previous_cli=cli
+    session='consumer-current'
+    cli=lambda *args: previous_cli('--session',session,*args)
+    start(cli)
+    plan(cli, repo, tmp_path, ['docs/readme.md'])
+    from launcher_context import _reports
+    packet = json.loads(invoke(cli, 'planning', 'packet')[1])
+    report = tmp_path / 'consumer-planning.json'
+    report.write_text(json.dumps(_reports().report_for(packet)))
+    response = json.loads(invoke(cli, 'planning', 'report', '--file', str(report))[1])
+    before = state_file(session).read_bytes()
+    invoke(cli, 'planning', 'admit', '--file', response['materialized_obligations']['stored_path'], ok=False)
+    assert state_file(session).read_bytes() == before
+
+
+def test_v1_document_fallback_stays_v1_and_requires_v2_replanning(cli, repo, tmp_path, monkeypatch, state_file):
+    import al_service_coverage as Coverage
+    import al_repository_facts as Facts
+    import al_artifacts as Artifacts
+    import al_gate_refresh as Refresh
+    seed(repo)
+    put(repo, 'packages/shared/guide.md', '# Guide\n')
+    start(cli)
+    _, current = discover(cli, tmp_path, ['packages/shared/guide.md'])
+    facts = Facts.collect(repo, base_oid=None, paths=['packages/shared/guide.md'], opaque=[])
+    facts = deepcopy(facts)
+    facts.update(schema_version=1, policy_version=1)
+    facts['dependencies']['uncertainties'] = [{'code':'uncertain-artifact-consumer','unit':None,
+        'path':'packages/shared/guide.md','location':None,'target':None,
+        'reason':'documentation has no literal consumer reference; all enumerated services require verification'}]
+    assessment = Coverage.assess(facts)
+    assert assessment['schema_version'] == 1 and assessment['outcome'] == 'exhaustive'
+    assert assessment['selected_services'] == ['services/a', 'services/b']
+    # The retained V1 model remains independently reconstructible. Its unbound
+    # checks are not falsely made executable in this structural fixture.
+    facts['checks'] = {'obligations':[], 'bindings':[], 'gaps':[]}
+    assessment = Coverage.assess(facts)
+    legacy = Coverage.declaration(facts, assessment, [])
+    Coverage.validate_declaration(legacy, [])
+    assert legacy['schema_version'] == 1 and legacy['policy_version'] == 1
+    hybrid = deepcopy(legacy)
+    hybrid['schema_version'] = 2
+    with pytest.raises(ValueError):Coverage.validate_declaration(hybrid, [])
+    manifest = deepcopy(current)
+    manifest['service_coverage'] = legacy
+    manifest['gates'] = [{**g} for g in manifest['gates'] if not g.get('obligation_ids')]
+    # Currency rejects a retained policy transition before any automatic refresh.
+    saved = Artifacts.read_json
+    monkeypatch.setattr(Artifacts, 'read_json', lambda ref: manifest if ref == 'retained-v1' else saved(ref))
+    state = json.loads(cli('show')[1])
+    state['gate_manifests'] = ['retained-v1']
+    result = Currency.check(state)
+    assert not result['current'] and result['pathless']
+    assert not Refresh.refreshable(state, result)
+
+
+@pytest.mark.parametrize('mutation',['deferred','relevant','global','mixed'])
+def test_v2_projection_tampering_refuses_without_state_mutation(cli,repo,tmp_path,state_file,mutation):
+    scoped_docs_fixture(repo)
+    start(cli)
+    _,manifest=discover(cli,tmp_path,['docs/readme.md'])
+    value=manifest['service_coverage']
+    if mutation=='deferred':value['projection']['deferred']=[]
+    elif mutation=='relevant':value['projection']['relevant_ci_ids']=[]
+    elif mutation=='global':value['global_inventory']['status']='complete'
+    else:value['policy_version']=1
+    path=tmp_path/'forged-projection.json'
+    path.write_text(json.dumps(manifest))
+    before=state_file().read_bytes()
+    invoke(cli,'gates','plan','--file',str(path),ok=False)
+    assert state_file().read_bytes()==before
+
+
+def test_self_consistent_removed_obligation_is_not_current_source_authority(cli,repo,tmp_path,state_file):
+    import al_gate_inventory as Inventory
+    import al_service_coverage as Coverage
+    seed(repo)
+    unit(repo,'services/b',check=False)
+    start(cli)
+    _,manifest=discover(cli,tmp_path,['services/b/src/app.py'])
+    state=json.loads(cli('show')[1])
+    inventory=Inventory.inventory(state,['services/b/src/app.py'])
+    facts=deepcopy(inventory['repository_facts'])
+    facts['checks']['gaps']=[]
+    facts['checks']['obligations']=[]
+    facts['checks']['bindings']=[]
+    assessment=Coverage.assess(facts)
+    assert assessment['outcome']=='identified'
+    forged=deepcopy(manifest)
+    forged['gates']=[g for g in forged['gates'] if not g.get('obligation_ids')]
+    forged['service_coverage']=Coverage.declaration(facts,assessment,forged['gates'])
+    Coverage.validate_declaration(forged['service_coverage'],forged['gates'])
+    path=tmp_path/'forged-source-model.json';path.write_text(json.dumps(forged))
+    before=state_file().read_bytes()
+    invoke(cli,'gates','plan','--file',str(path),ok=False)
+    assert state_file().read_bytes()==before
+
+
+def test_changed_unmapped_ci_semantics_is_pathless_even_on_a_planned_path(cli,repo,tmp_path):
+    import al_gate_refresh as Refresh
+    seed(repo)
+    put(repo,'.gitlab-ci.yml','extra:\n  image: python:3.13\n  script: unsupported-check\n')
+    start(cli)
+    plan(cli,repo,tmp_path,['services/a/src/app.py','.gitlab-ci.yml'])
+    state=json.loads(cli('show')[1])
+    assert Currency.check(state)['current']
+    put(repo,'.gitlab-ci.yml','extra:\n  image: different/runtime:1\n  script: different-check\n')
+    result=Currency.check(state)
+    assert not result['current'] and result['pathless']
+    assert not Refresh.refreshable(state,result)
+
+
+def test_docs_scope_real_checks_and_bound_behavior_unlock_review(cli,repo,tmp_path,state_file):
+    import sys
+    from launcher_context import observe_behavior
+    from al_behavior_observations import behavior_gaps
+    cli=cli.raw
+    scoped_docs_fixture(repo)
+    start(cli)
+    manifest=plan(cli,repo,tmp_path,['docs/readme.md'])
+    assert manifest['service_coverage']['assessment']['outcome']=='identified'
+    assert json.loads(cli('show')[1])['proof_admission']['status']=='pending'
+    invoke(cli,'gates','run','--stage','base')
+    admit_planning(cli)
+    invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'writer','start','--id','docs','--role','al-engineer','--files','docs/readme.md')
+    put(repo,'docs/readme.md','Actual owned narrative edit\n')
+    invoke(cli,'writer','finish','--id','docs','--outcome','success')
+    invoke(cli,'gates','run','--stage','candidate')
+    invoke(cli,'phase','VERIFICATION')
+    invoke(cli,'evidence','plan','--area','document-policy','--tier','broad','--kind','check',
+           '--scope','docs','--',sys.executable,'-m','json.tool','docs/policy.json')
+    invoke(cli,'evidence','run','--area','document-policy')
+    before=state_file().read_bytes()
+    code,out,err=invoke(cli,'review-start',ok=False)
+    assert 'missing current behavior scenario' in str(code)+out+err
+    assert state_file().read_bytes()==before
+    directory=tmp_path/'behavior';directory.mkdir()
+    observe_behavior(cli,path='docs/policy.json',directory=directory)
+    state=json.loads(cli('show')[1])
+    assert not behavior_gaps(state)
+    assert state['proof_admission']['status']=='admitted'
+    assert Currency.check(state)['current']
+    invoke(cli,'review-start')
+    state=json.loads(cli('show')[1])
+    assert state['phase']=='REVIEW' and state['review']['stage']=='fresh'
+    assert state['status']=='RUNNING' and not state.get('approval')
+
+
+def test_missing_projection_requires_rediscovery_even_without_service_units(cli,repo,tmp_path,state_file):
+    import al_service_coverage as Coverage
+    import al_repository_facts as Facts
+    (repo/'pyproject.toml').unlink()
+    (repo/'svc/app.py').unlink()
+    (repo/'web/app.js').unlink()
+    start(cli)
+    _,manifest=discover(cli,tmp_path,['docs/readme.md'])
+    assert manifest['service_coverage']['assessment']['selected_services']==[]
+    legacy=deepcopy(manifest);legacy.pop('service_coverage')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/readme.md'],opaque=[])
+    assert Coverage.current_gaps(facts,Coverage.assess(facts),legacy)
+    path=tmp_path/'missing-projection.json';path.write_text(json.dumps(legacy))
+    before=state_file().read_bytes()
+    invoke(cli,'gates','plan','--file',str(path),ok=False)
+    assert state_file().read_bytes()==before
+
+
+@pytest.mark.parametrize('quality',['architecture','ci'])
+def test_versioned_schema_accepts_actual_v2_summary_and_retained_v1(cli,repo,tmp_path,quality):
+    from pathlib import Path
+    from jsonschema import Draft202012Validator
+    from referencing import Registry,Resource
+    import al_gate_inventory as Inventory
+    import al_service_coverage as Coverage
+    seed(repo)
+    if quality=='ci':
+        unit(repo,'services/a',check=False)
+        put(repo,'.gitlab-ci.yml','verify-a:\n  script: python3 -m compileall -q services/a/src\n')
+    start(cli)
+    _,manifest=discover(cli,tmp_path,['services/a/src/app.py'])
+    schemas=Path(__file__).resolve().parents[1]/'reference/schemas'
+    registry=Registry().with_resources((path.name,Resource.from_contents(json.loads(path.read_text())))
+                                       for path in schemas.glob('*.json'))
+    outer=Draft202012Validator(json.loads((schemas/'gate-manifest.json').read_text()),registry=registry)
+    errors=[(list(error.absolute_path),error.validator) for error in outer.iter_errors(manifest)]
+    assert errors==[]
+    assert manifest['schema_version']==1 and manifest['service_coverage']['schema_version']==2
+    assert isinstance(manifest['service_coverage']['provenance']['scan_inputs'],dict)
+    state=json.loads(cli('show')[1])
+    facts=deepcopy(Inventory.inventory(state,['services/a/src/app.py'])['repository_facts'])
+    facts_validator=Draft202012Validator(json.loads((schemas/'repository-facts.json').read_text()),registry=registry)
+    errors=[(list(error.absolute_path),error.validator) for error in facts_validator.iter_errors(facts)]
+    assert errors==[]
+    assert isinstance(facts['scan_inputs'],list)
+    import al_repository_facts as Facts
+    standalone=Facts.collect(repo,base_oid=None,paths=['services/a/src/app.py'],opaque=[])
+    assert not list(facts_validator.iter_errors(standalone))
+    for field in ('capture','question'):
+        missing=deepcopy(facts);missing.pop(field)
+        assert list(facts_validator.iter_errors(missing))
+    facts.update(schema_version=1,policy_version=1)
+    assert not list(facts_validator.iter_errors(facts))
+    hybrid_facts=deepcopy(facts);hybrid_facts['policy_version']=2
+    assert list(facts_validator.iter_errors(hybrid_facts))
+    legacy=Coverage.declaration(facts,Coverage.assess(facts),manifest['gates'])
+    Coverage.validate_declaration(legacy,manifest['gates'])
+    validator=Draft202012Validator(json.loads((schemas/'service-coverage.json').read_text()),registry=registry)
+    errors=[(list(error.absolute_path),error.validator) for error in validator.iter_errors(legacy)]
+    assert errors==[]
+    hybrid=deepcopy(legacy);hybrid['schema_version']=2
+    assert list(validator.iter_errors(hybrid))

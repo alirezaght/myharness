@@ -141,3 +141,60 @@ def release(name,semantics):
         return None
     if stage in {'test','verify','validate','lint','quality','coverage','security','acceptance'}:return False
     return None if any(p.lower() in RELEASE for p in name.split(':')) else False
+
+
+def evaluate_rules(value,paths,context=None,directories=(),*,comparisons=None):
+    """Ordered V2 selection, including all possible unknown-condition outcomes."""
+    visited=[];fields=set();inputs=set();outcomes=set();unbound=False
+    def result(selected,reason):
+        return {'selected':selected,'inputs':sorted(inputs) if selected is not False else [],
+                'reason_code':reason,'evaluated_arm_indices':visited,
+                'context_fields_used':sorted(fields),'comparison_refs':[],
+                'complete':selected is not None}
+    if not isinstance(value,list):return result(None,'unsupported-rules')
+    try:
+        for rule in value:
+            if not isinstance(rule,dict) or set(rule)-{'if','changes','when','allow_failure','variables','needs','interruptible','auto_cancel'}:
+                return result(None,'unsupported-rules')
+            if 'auto_cancel' in rule and not E.scheduling(rule['auto_cancel']):return result(None,'unsupported-rules')
+            if not isinstance(rule.get('when','on_success'),str) or rule.get('when','on_success') not in {'always','never','on_success','on_failure','manual','delayed'}:
+                return result(None,'unsupported-rules')
+            E.evaluate(rule.get('if',True),None,strict=True)
+            if 'changes' in rule:
+                change=rule['changes']
+                if isinstance(change,dict):
+                    if set(change)-{'paths','compare_to'} or 'compare_to' in change and not isinstance(change['compare_to'],str):
+                        return result(None,'unsupported-rules')
+                    change=change.get('paths')
+                if not isinstance(change,list) or not change or any(not isinstance(v,str) or not v for v in change):
+                    return result(None,'unsupported-rules')
+    except ValueError:return result(None,'unsupported-rules')
+    terminated=False
+    for index,rule in enumerate(value):
+        visited.append(index)
+        condition=rule.get('if',True)
+        if isinstance(condition,str):fields.update(re.findall(r'\$([A-Za-z_][A-Za-z0-9_]*)',condition))
+        condition=E.evaluate(condition,context,strict=True)
+        if condition is False:continue
+        change=rule.get('changes')
+        if isinstance(change,dict) and 'compare_to' in change:
+            # No current caller supplies an independently admitted comparison
+            # artifact. Ordinary task paths never stand in for that baseline.
+            match,matched=None,set(paths);unbound=True
+        else:match,matched=changes(change,paths,directories) if 'changes' in rule else (True,set(paths))
+        if match is False:continue
+        action=rule.get('when')!='never'
+        outcomes.add(action)
+        if action:inputs.update(matched)
+        if condition is True and match is True:
+            terminated=True;break
+    if not terminated:outcomes.add(False)
+    selected=next(iter(outcomes)) if len(outcomes)==1 else None
+    return result(selected,'selected' if selected is True else 'all-excluded' if selected is False else
+                  'unbound-comparison' if unbound else 'context-unresolved')
+
+
+def possible_inputs(value,paths,directories=(),*,comparisons=None):
+    decision=evaluate_rules(value,paths,None,directories,comparisons=comparisons)
+    possible=None if decision['reason_code'] in {'unsupported-rules','unbound-comparison'} else decision['selected'] is not False
+    return {'possible':possible,'inputs':decision['inputs'],'proof_refs':[]}

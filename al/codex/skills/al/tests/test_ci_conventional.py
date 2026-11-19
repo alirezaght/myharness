@@ -184,8 +184,19 @@ def assert_incomplete_refuses_admission(cli,tmp_path):
     assert status['coverage_blockers'] and status['coverage_resolution']
     state=json.loads(cli('show')[1])
     if state.get('proof_admission',{}).get('status')!='pending':
-        before=json.loads(cli('show')[1]);invoke(cli,'phase','IMPLEMENTATION',ok=False)
-        assert json.loads(cli('show')[1])==before
+        import al_service_coverage as Coverage
+        import al_gate_currency as Currency
+        import al_store
+        expected=Currency.check(state)['reasons']+Coverage.admission_gaps(state,current=True)
+        assert expected
+        invoke(cli,'phase','IMPLEMENTATION')
+        current=json.loads(cli('show')[1])
+        assert set(expected)<=set(current['implementation_readiness']['obligations'])
+        assert current['proof_admission']==state['proof_admission']
+        invoke(cli,'phase','VERIFICATION')
+        path=al_store.state_path(state['session_id']);before=path.read_bytes()
+        invoke(cli,'review-start',ok=False)
+        assert path.read_bytes()==before
         return
     from launcher_context import _reports
     packet=json.loads(invoke(cli,'planning','packet')[1])

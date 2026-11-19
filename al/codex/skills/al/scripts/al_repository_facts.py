@@ -10,6 +10,7 @@ import selectors
 import stat
 import time
 import tomllib
+from al_repository_capture import CaptureMixin, CaptureDrift, CaptureUnavailable, capture_discovery, immutable_observation, opaque_owner, literal_opaque_exclusions
 from al_profile import measured
 import al_writer_progress as progress
 
@@ -111,13 +112,13 @@ class CapturedContent(Mapping):
         if self.snapshot=='current':
             self.scan.safe_file(path)
             if file_identity((self.scan.root/path).lstat())!=record['identity']:
-                raise ValueError('captured coverage input changed: '+path)
+                raise CaptureDrift('source-content-or-identity', [path])
         cached=self.scan.cached((self.snapshot,path))
         if cached is not None:
             self.verify(path,cached);return cached
         if self.snapshot=='current':
             data,identity=self.scan.read_observed(path)
-            if identity!=record['identity']:raise ValueError('captured coverage input changed: '+path)
+            if identity!=record['identity']:raise CaptureDrift('source-content-or-identity', [path])
         else:
             from al_git_cache import blobs
             data=blobs(self.scan.root,[record['oid']],max_bytes=LIMITS['file_bytes'],file_bytes=LIMITS['file_bytes'])[record['oid']]
@@ -127,7 +128,7 @@ class CapturedContent(Mapping):
 
     def verify(self,path,data):
         if hashlib.sha256(data).hexdigest()!=self.records[path]['sha256']:
-            raise ValueError('captured coverage content changed: '+path)
+            raise CaptureDrift('source-content', [path])
 
     def items(self):return self.content_items(list(self))
 
@@ -146,7 +147,7 @@ class CapturedContent(Mapping):
     def hashes(self):return {p:r['sha256'] for p,r in self.records.items()}
 
 
-class Snapshot:
+class Snapshot(CaptureMixin):
     def __init__(self,root,base_oid,paths,opaque,required_adapter=None):
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
         self.required_adapter=required_adapter;self.root=Path(root).resolve();self.base_oid=base_oid
@@ -154,22 +155,28 @@ class Snapshot:
         for path in paths:
             if len(self.paths)>=LIMITS['files']:path_overflow=True;break
             self.paths.append(safe(path))
-        self.paths=sorted(set(self.paths));self.opaque=sorted(opaque)
+        self.paths=sorted(set(self.paths));self.opaque=sorted(set(safe(p) for p in opaque))
         self.gaps=[];self.files=CapturedContent(self,'current');self.base=CapturedContent(self,'base');self.modes={};self.base_modes={};self.rules=set();self.absent=set();self.total=0
+        self.initialize_capture()
         self.cache=OrderedDict();self.retained_bytes=0;self.peak_retained_bytes=0
         self.batch_bytes=max(LIMITS['file_bytes'],min(LIMITS['bytes'],4*1024*1024))
         if path_overflow:self.gaps.append(gap('file-limit','.', 'explicit path membership limit'))
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
-        self.members=self.listing()
+        self.listing_observation=self.observe_listing()
+        self.install_listing(self.listing_observation)
+        for path in self.paths:self.observe_path(path)
         progress.report('inventory-current', count=0)
         for count,p in enumerate(sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))),1):
-            if not p.endswith('/') and self.relevant(p) and (self.root/p).exists():
+            affected=any(within(path,p) for path in self.paths)
+            if not p.endswith('/') and affected:self.observe_path(p)
+            if not p.endswith('/') and (self.relevant(p) or affected and p.endswith(('.md','.markdown','.mdx'))) and (self.root/p).exists():
                 try:
                     data,identity=self.read_observed(p)
                     self.total+=len(data)
                     self.files.records[p]={'sha256':hashlib.sha256(data).hexdigest(),'identity':identity,'size':len(data)}
                     self.retain(('current',p),data);self.modes[p]=identity[2]&0o7777
                     if Path(p).name=='.gitignore':self.rules.add(p)
+                except CaptureDrift:raise
                 except (OSError,ValueError) as exc:self.gaps.append(gap('unreadable-input',p,str(exc)))
             progress.report('inventory-current', count=count)
         progress.report('inventory-current', count=len(self.members), force=True)
@@ -226,25 +233,32 @@ class Snapshot:
         finally:os.close(directory)
         try:
             opened=os.fstat(fd)
-            if file_identity(opened)!=file_identity(before):raise ValueError('coverage input identity changed')
+            if file_identity(opened)!=file_identity(before):raise CaptureDrift('source-identity', [p])
             with os.fdopen(fd,'rb',closefd=False) as stream:data=stream.read(allowance+1)
-            if len(data)>allowance or file_identity(os.fstat(fd))!=file_identity(opened) or file_identity((self.root/p).lstat())!=file_identity(before):raise ValueError('coverage input changed/byte limit')
+            if len(data)>allowance:raise CaptureUnavailable('source-byte-limit', [p])
+            if file_identity(os.fstat(fd))!=file_identity(opened) or file_identity((self.root/p).lstat())!=file_identity(before):raise CaptureDrift('source-identity', [p])
             return data,file_identity(opened)
         finally:os.close(fd)
 
-    def listing(self):
+    def observe_listing(self):
         progress.report('inventory-membership', count=0)
-        result=set();exclusions=[];before_gaps=len(self.gaps);base_rows=[];priority_inputs=set()
+        result=set();exclusions=[];diagnostics=[];declarations=[];base_rows=[];priority_inputs=set()
+        opaque_paths=set(self.opaque)
         def declaration_bytes(p):
             # Declarations are parsed one at a time, before ordinary content.
             # Their aggregate size cannot starve later priority manifests.
-            return self.read(p,False)
+            data,identity=self.read_observed(p)
+            declarations.append({'path':p,'sha256':hashlib.sha256(data).hexdigest(),'identity':list(identity)})
+            return data
         def add(p,protected=False):
             p=p.rstrip('/')
             if not p or p=='.':return
+            boundary=opaque_owner(opaque_paths,p)
+            if boundary is not None:
+                diagnostics.append(gap('opaque-boundary',boundary,'supplied opaque source boundary'));return
             try:self.safe_file(p)
             except (OSError,ValueError) as exc:
-                self.gaps.append(gap('symlink-boundary' if 'symlink' in str(exc) else 'unsafe-boundary',p,str(exc)));return
+                diagnostics.append(gap('symlink-boundary' if 'symlink' in str(exc) else 'unsafe-boundary',p,str(exc)));return
             if not (self.root/p).exists():return
             parts=Path(p).parts
             if any(part in EXCLUDED for part in parts):
@@ -254,37 +268,44 @@ class Snapshot:
             for entry in entries:
                 if entry in result:continue
                 if len(result)>=LIMITS['files']:
-                    self.gaps.append(gap('file-limit','.', 'coverage membership limit exceeded'));return
+                    diagnostics.append(gap('file-limit','.', 'coverage membership limit exceeded'));return
                 result.add(entry)
                 progress.report('inventory-membership', count=len(result))
         # Reserve root and supported member manifests before ordinary enumeration.
         roots=['.'];root_set={'.'};protected=set(self.paths)
         def add_root(p):
-            if p in root_set:return
+            if p in root_set or opaque_owner(opaque_paths,p) is not None:return
             if len(roots)>=LIMITS['files']:
-                self.gaps.append(gap('file-limit','.', 'priority root membership limit'));return
+                diagnostics.append(gap('file-limit','.', 'priority root membership limit'));return
             root_set.add(p);roots.append(p)
         def protect(p):
             if p not in protected and len(protected)>=LIMITS['files']:
-                self.gaps.append(gap('file-limit','.', 'protected membership limit'));return
+                diagnostics.append(gap('file-limit','.', 'protected membership limit'));return
             protected.add(p)
+        for boundary in self.opaque:add(boundary,True)
         tracked=[]
         try:
             tracked=[row.decode() for row in git_records(self.root,['ls-files','--cached','-z'],LIMITS)]
             for p in tracked:
                 safe(p)
                 if Path(p).name in MANIFESTS:add_root(Path(p).parent.as_posix())
-        except (OSError,ValueError) as exc:self.gaps.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
+        except (OSError,ValueError) as exc:diagnostics.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
         if self.base_oid:
             try:
                 base_rows=git_records(self.root,['ls-tree','-r','-l','-z',self.base_oid],LIMITS)
                 for row in base_rows:
                     meta,path=row.split(b'\t',1);mode,kind,oid,size=meta.split();p=path.decode();safe(p)
-                    if mode==b'160000':self.gaps.append(gap('gitlink-boundary',p,'base gitlink is opaque'))
+                    if mode==b'160000':diagnostics.append(gap('gitlink-boundary',p,'base gitlink is opaque'))
                     elif kind==b'blob' and Path(p).name in MANIFESTS:add_root(Path(p).parent.as_posix())
-            except (OSError,ValueError) as exc:self.gaps.append(gap('base-unavailable','.',str(exc)))
+            except (OSError,ValueError) as exc:diagnostics.append(gap('base-unavailable','.',str(exc)))
         for kind in ('apps','services','packages'):
             try:
+                observed=self.path_observation(kind)
+                if observed['state']=='absent':continue
+                if observed['state']=='opaque':
+                    add(kind,True);continue
+                if observed['state']!='directory':
+                    diagnostics.append(gap('unsafe-boundary',kind,'priority container is not an ordinary directory'));continue
                 with os.scandir(self.root/kind) as entries:
                     children=[]
                     for entry in entries:
@@ -293,20 +314,22 @@ class Snapshot:
                 for name in sorted(children):
                     p=kind+'/'+name
                     if name in EXCLUDED:continue
-                    if (self.root/p).is_symlink():add(p,True)
-                    elif (self.root/p).is_dir():add_root(p);add(p)
+                    observed_child=self.path_observation(p)
+                    if observed_child['state']=='opaque':add(p,True)
+                    elif observed_child['state']=='directory':add_root(p);add(p)
             except FileNotFoundError:pass
-            except (OSError,ValueError) as exc:self.gaps.append(gap('file-limit',kind,str(exc)))
+            except (OSError,ValueError) as exc:diagnostics.append(gap('file-limit',kind,str(exc)))
         for p in self.paths:
             parts=Path(p).parts
             for i in range(1,len(parts)+1):
-                if (self.root/Path(*parts[:i])).is_dir():add_root('/'.join(parts[:i]))
+                ancestor=Path(*parts[:i]).as_posix()
+                if self.path_observation(ancestor)['state']=='directory':add_root(ancestor)
         # Parse literal declarations as data, with the same pre-read bounds.
         visited=set()
         for directory in roots:
             if directory in visited:continue
             if len(visited)>=LIMITS['files']:
-                self.gaps.append(gap('file-limit','.', 'priority declaration limit'));break
+                diagnostics.append(gap('file-limit','.', 'priority declaration limit'));break
             visited.add(directory)
             for name in sorted(MANIFESTS):
                 p=(Path(directory)/name).as_posix()
@@ -334,50 +357,70 @@ class Snapshot:
                         if isinstance(member,str) and not any(c in member for c in '*!$'):
                             safe(member);protect(member)
                             if member not in visited:add_root(member)
-                except (OSError,ValueError,TypeError,AttributeError,KeyError) as exc:self.gaps.append(gap('unsupported-declaration',p,str(exc)))
+                except (OSError,ValueError,TypeError,AttributeError,KeyError) as exc:diagnostics.append(gap('unsupported-declaration',p,str(exc)))
         if (self.root/'.al/repository.json').exists():
             # Contract units may live below generated-looking literal roots.
             p='.al/repository.json';add(p,True);priority_inputs.add(p)
             try:
                 data=json.loads(declaration_bytes(p))
                 for u in data.get('units',[]):protect(safe(u['path']))
-            except (OSError,ValueError,TypeError,KeyError) as exc:self.gaps.append(gap('unsupported-declaration',p,str(exc)))
+            except (OSError,ValueError,TypeError,KeyError) as exc:diagnostics.append(gap('unsupported-declaration',p,str(exc)))
         for p in tracked:add(p,True)
         for row in base_rows:
             try:
                 meta,path=row.split(b'\t',1);mode,kind,oid,size=meta.split()
                 if kind==b'blob':add(path.decode(),True)
-            except (ValueError,OSError) as exc:self.gaps.append(gap('base-unavailable','.',str(exc)))
-        excluded=[v for name in sorted(EXCLUDED) for v in ('--exclude='+name+'/','--exclude=**/'+name+'/')]
+            except (ValueError,OSError) as exc:diagnostics.append(gap('base-unavailable','.',str(exc)))
+        opaque_excluded=literal_opaque_exclusions(opaque_paths)
+        excluded=[v for name in sorted(EXCLUDED) for v in ('--exclude='+name+'/','--exclude=**/'+name+'/')]+opaque_excluded
         try:
             for row in git_records(self.root,['ls-files','--others','--exclude-per-directory=.gitignore',*excluded,'-z'],LIMITS):add(row.decode())
             for scope in sorted(protected):
                 if scope=='.':continue
                 add(scope,True)
+                if opaque_owner(opaque_paths,scope) is not None:continue
                 try:
                     self.safe_file(scope)
                     regular=stat.S_ISREG((self.root/scope).lstat().st_mode)
                 except (OSError,ValueError):regular=False
                 if regular:continue
-                for row in git_records(self.root,['ls-files','--others','-z','--',scope],LIMITS):
+                for row in git_records(self.root,['ls-files','--others',*opaque_excluded,'-z','--',scope],LIMITS):
                     p=row.decode();add(p,not any(part in EXCLUDED for part in Path(p).parts[len(Path(scope).parts):]))
-        except (OSError,ValueError,UnicodeError) as exc:self.gaps.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
+        except (OSError,ValueError,UnicodeError) as exc:diagnostics.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
         # Bind repository ignore rules even when they exclude themselves.
         try:
             rules=git_records(self.root,['ls-files','--others','--cached','--exclude-per-directory=.gitignore',*excluded,'-z','--','.gitignore',':(glob)**/.gitignore'],LIMITS)
             for row in rules:add(row.decode(),True)
-        except (OSError,ValueError) as exc:self.gaps.append(gap('membership-unavailable','.',str(exc)))
+        except (OSError,ValueError) as exc:diagnostics.append(gap('membership-unavailable','.',str(exc)))
         try:
             ignored=git_records(self.root,['ls-files','--others','--ignored','--directory','--exclude-per-directory=.gitignore',*excluded,'-z'],LIMITS)
             for row in ignored:
                 p=row.decode().rstrip('/');safe(p)
+                if opaque_owner(opaque_paths,p) is not None:continue
                 exclusions.append({'path':p,'reason':'repository ignore/generated output exclusion','provenance':sorted(v for v in result if Path(v).name=='.gitignore')+sorted(EXCLUDED)})
-        except (OSError,ValueError) as exc:self.gaps.append(gap('membership-unavailable','.',str(exc)))
+        except (OSError,ValueError) as exc:diagnostics.append(gap('membership-unavailable','.',str(exc)))
         exclusions.append({'path':'.','reason':'repository .gitignore and generated/cache directory exclusions','provenance':sorted(p for p in result if Path(p).name=='.gitignore')+sorted(EXCLUDED)})
-        self.membership_observation={'exclusions':sorted(exclusions,key=lambda e:(e['path'],e['reason'])),'base_rows_sha256':digest([r.hex() for r in base_rows]),'complete':len(self.gaps)==before_gaps}
-        self.base_rows=base_rows;self.priority_inputs=priority_inputs
+        unique={digest(g):g for g in diagnostics}
+        boundaries=[{'path':g['path'],'kind':g['code'],'observation':self.path_observation(g['path'])} for g in unique.values() if g['code'] in {'symlink-boundary','unsafe-boundary','gitlink-boundary'}]
+        observation={'members':sorted(result),'exclusions':sorted(exclusions,key=lambda e:(e['path'],e['reason'])),'diagnostics':[unique[k] for k in sorted(unique)],'boundaries':boundaries,'declarations':declarations,'base_rows':[row.hex() for row in base_rows],'priority_inputs':sorted(priority_inputs),'complete':not diagnostics}
         progress.report('inventory-membership', count=len(result), force=True)
-        return sorted(result)
+        return immutable_observation(observation)
+
+    def install_listing(self, observation):
+        self.members=list(observation['members'])
+        self.gaps.extend(json.loads(json.dumps(observation['diagnostics'])))
+        self.base_rows=[bytes.fromhex(row) for row in observation['base_rows']]
+        self.priority_inputs=set(observation['priority_inputs'])
+        self.membership_observation=json.loads(json.dumps({k:observation[k] for k in ('exclusions','complete','boundaries')}))
+        self.membership_observation['base_rows_sha256']=digest(observation['base_rows'])
+        for row in observation['declarations']:
+            self.observe_path(row['path'])
+            data,identity=self.read_observed(row['path'])
+            if tuple(identity)!=tuple(row['identity']) or hashlib.sha256(data).hexdigest()!=row['sha256']:
+                raise CaptureDrift('declaration-content', [row['path']])
+
+    def listing(self):
+        return list(self.observe_listing()['members'])
 
     def base_batches(self,paths):
         batch=[];total=0
@@ -416,31 +459,19 @@ class Snapshot:
         except (OSError,ValueError,subprocess.CalledProcessError) as exc:self.gaps.append(gap('base-unavailable','.',str(exc)))
 
     def text(self,p,required=False,rule=False):
-        safe(p)
-        if rule:self.rules.add(p)
-        if p not in self.files:
-            self.absent.add(p)
-            if required:self.gaps.append(gap('missing-input',p,'required repository input is absent'))
+        try:return self.capture_bytes(p,required=required,rule=rule).decode('utf-8')
+        except CaptureDrift:raise
+        except (OSError,ValueError,UnicodeError) as exc:
+            self.gaps.append(gap('unreadable-input',p,str(exc)))
             return ''
-        try:return self.files[p].decode('utf-8')
-        except UnicodeError:
-            self.gaps.append(gap('invalid-encoding',p,'required source is not UTF-8'));return ''
 
     def stable(self):
-        progress.report('inventory-stability', count=0)
-        observation=self.membership_observation;count=len(self.gaps)
-        if self.listing()!=self.members or observation!=self.membership_observation or len(self.gaps)!=count:return False
-        progress.report('inventory-stability', count=0)
-        def unchanged(index,p,record):
-            data,identity=self.read_observed(p)
-            same=identity==record['identity'] and hashlib.sha256(data).hexdigest()==record['sha256']
-            progress.report('inventory-stability', count=index)
-            return same
         try:
-            stable=all(unchanged(index,p,record) for index,(p,record) in enumerate(self.files.records.items(),1)) and all(not (self.root/p).exists() for p in self.absent)
-            progress.report('inventory-stability', count=len(self.files) if stable else None, force=True)
-            return stable
-        except (OSError,ValueError):return False
+            observation=self.observe_listing()
+            diagnostics=json.loads(json.dumps(observation['diagnostics']))
+            self.gaps.extend(row for row in diagnostics if row not in self.gaps)
+            self.revalidate(observation);return True
+        except (CaptureDrift,CaptureUnavailable,OSError,ValueError):return False
 
 
 def membership_digest(members):
@@ -450,28 +481,36 @@ def membership_digest(members):
 
 @measured('discovery')
 def collect(root,*,base_oid,paths,opaque,required_adapter=None):
+    return capture_discovery(lambda:Snapshot(root,base_oid,paths,opaque,required_adapter),collect_from_snapshot)
+
+
+def collect_from_snapshot(scan):
     import al_repo_adapters as adapters
     import al_python_imports as imports
-    scan=Snapshot(root,base_oid,paths,opaque,required_adapter)
     progress.report('inventory-analysis')
     adapter=adapters.select(scan);facts=adapter.observe(scan)
-    facts.update(schema_version=1,repository={'root':str(scan.root),'base_oid':base_oid},adapter={'id':adapter.ID,'version':adapter.VERSION},policy_version=1)
+    facts.update(schema_version=2,repository={'root':str(scan.root),'base_oid':scan.base_oid},adapter={'id':adapter.ID,'version':adapter.VERSION},policy_version=2)
     facts['enumeration']['gaps'].extend(scan.gaps)
     facts['enumeration']['exclusions'].extend(e for e in scan.membership_observation['exclusions'] if e['reason']!='repository ignore/generated output exclusion')
     facts['enumeration']['ignored_outputs']=[e for e in scan.membership_observation['exclusions'] if e['reason']=='repository ignore/generated output exclusion']
     facts['enumeration']['membership_sha256']=membership_digest(scan.members)
     facts['enumeration']['membership_rules']=sorted(p for p in scan.files if Path(p).name=='.gitignore')
     facts['dependencies']=imports.analyze(facts,scan)
-    facts['unsupported_boundaries']=[gap('opaque-boundary',p,'opaque child content cannot be enumerated') for p in sorted(opaque)]
+    facts['unsupported_boundaries']=[gap('opaque-boundary',p,'opaque child content cannot be enumerated') for p in sorted(scan.opaque)]
     facts['rule_sources']=[{'path':p,'sha256':scan.files.records[p]['sha256']} for p in sorted(scan.rules) if p in scan.files]
     facts['scan_inputs']=[{'path':p,'snapshot':which,'sha256':record['sha256']} for which,files in [('base',scan.base),('current',scan.files)] for p,record in sorted(files.records.items()) if p.endswith(SOURCE_SUFFIXES) and any((p.endswith('.py') and any(within(r,p) for r in u['source_roots'])) or (not p.endswith('.py') and within(u['path'],p)) for u in facts['units'])]
     facts['enumeration']['absent_paths']=sorted(scan.absent)
-    facts['scan']={'stable':scan.stable(),'limits':LIMITS,'membership_digest':digest(scan.members),'provenance_digest':digest(facts['scan_inputs'])}
+    facts['scan']={'stable':True,'limits':LIMITS,'membership_digest':digest(scan.members),'provenance_digest':digest(facts['scan_inputs'])}
+    selected=set(facts['dependencies']['potential_services']) if facts['dependencies']['uncertainties'] else set(facts['dependencies']['known_affected'])|set(facts['dependencies'].get('policy_selection',[]))
+    facts['dependencies']['coverage_inputs']=sorted({row[1] for row in facts['dependencies']['source_membership'] if row[2] in selected}|set(facts['dependencies'].get('affected_source_paths',[])))
+    facts['question']={'changed_paths':scan.paths,'directory_paths':sorted(p for p in scan.paths if scan.observe_path(p)['state']=='directory')}
+    facts['capture']=scan.capture_metadata()
+    facts['dependencies']['boundary_consumers']={p:imports._referencing(scan,p,p) for p in sorted(set(scan.opaque)|{g['path'] for g in scan.gaps if g['code'] in {'symlink-boundary','unsafe-boundary','gitlink-boundary'}})}
     validate_facts(facts);return facts
 
 
 def validate_facts(facts):
-    if facts.get('schema_version')!=1 or facts.get('policy_version')!=1:raise ValueError('unsupported repository fact version')
+    if (facts.get('schema_version'),facts.get('policy_version')) not in {(1,1),(2,2)}:raise ValueError('unsupported repository fact version')
     if facts.get('adapter') not in ({'id':'python','version':1},{'id':'contract','version':1}):raise ValueError('unsupported repository adapter')
     if not isinstance(facts.get('repository'),dict) or not isinstance(facts['repository'].get('root'),str) or not Path(facts['repository']['root']).is_absolute():raise ValueError('invalid repository identity')
     count=0
@@ -514,10 +553,13 @@ def validate_facts(facts):
 
 def semantic_requirements(facts):
     deps=facts['dependencies']
-    return {'schema_version':1,'repository':facts['repository'],'adapter':facts['adapter'],'policy_version':facts['policy_version'],
+    value= {'schema_version':facts['schema_version'],'repository':facts['repository'],'adapter':facts['adapter'],'policy_version':facts['policy_version'],
             'units':facts['units'],'enumeration':{k:v for k,v in facts['enumeration'].items() if k not in {'absent_paths','ignored_outputs'}},
             # Import edges and source membership change the requirements hash through digests, not copies.
             'dependencies':{**{k:v for k,v in deps.items() if k not in {'edges','source_membership'}},
                             'edges_sha256':digest(deps['edges']),'source_membership_sha256':digest(deps['source_membership']),
                             'uncertainties':[{k:v for k,v in u.items() if k!='location'} for u in deps['uncertainties']]},
-            'checks':facts['checks'],'unsupported_boundaries':facts['unsupported_boundaries'],'membership_rules':[r for r in facts.get('rule_sources',[]) if r['path'] in facts['enumeration'].get('membership_rules',[])],'stable':facts['scan']['stable']}
+            'question':facts.get('question',{}),'ci_observations':facts.get('ci_observations',{}),'rule_sources':facts.get('rule_sources',[]),'checks':facts['checks'],'unsupported_boundaries':facts['unsupported_boundaries'],'membership_rules':[r for r in facts.get('rule_sources',[]) if r['path'] in facts['enumeration'].get('membership_rules',[])],'stable':facts['scan']['stable']}
+    if facts['schema_version']==1:
+        for key in ('question','ci_observations','rule_sources'):value.pop(key,None)
+    return value

@@ -23,8 +23,19 @@ def test_planned_rule_file_edit_refreshes_and_keeps_base_runs(cli,tmp_path,repo)
     (repo/'pyproject.toml').write_text((repo/'pyproject.toml').read_text()+'# planned edit\n')
     invoke(cli,'writer','finish','--id','first','--outcome','success')
     invoke(cli,'writer','start','--id','second','--role','al-engineer','--files','svc/app.py')
-    s=state(cli);new=s['gate_manifests'][-1]['sha256']
-    assert new!=old and 'gate_recovery' not in s and s['writers']['second']['state']=='ACTIVE'
+    public=state(cli)
+    assert public['gate_manifests'][-1]['sha256']==old
+    assert public['writers']['second']['state']=='ACTIVE'
+    assert 'source rule changed: pyproject.toml' in public['implementation_readiness']['obligations']
+    # Helper-level projection proves refresh/carry behavior; public scoped writer
+    # admission records debt and does not publish a refresh as a side effect.
+    import copy
+    import al_gate_refresh as Refresh
+    s=copy.deepcopy(public)
+    assert Refresh.refresh(s)['current']
+    new=s['gate_manifests'][-1]['sha256']
+    assert new!=old and 'gate_recovery' not in s
+    assert state(cli)==public
     refresh=s['gate_refreshes'][-1]
     assert refresh['superseded']==old and refresh['manifest']==new
     assert any('pyproject.toml' in reason for reason in refresh['reasons'])
@@ -38,7 +49,13 @@ def test_unplanned_rule_source_still_needs_a_replan(cli,tmp_path,repo,state_file
     implementing(cli,tmp_path,['svc/app.py'])
     invoke(cli,'writer','finish','--id','first','--outcome','success')
     (repo/'AGENTS.md').write_text('New repository instructions.\n')
+    invoke(cli,'writer','start','--id','second','--role','al-engineer','--files','svc/app.py')
+    current=state(cli)
+    assert 'new repository rule source: AGENTS.md' in current['implementation_readiness']['obligations']
+    assert 'gate_refreshes' not in current
+    invoke(cli,'writer','finish','--id','second','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
     before=state_file().read_bytes()
-    out=invoke(cli,'writer','start','--id','second','--role','al-engineer','--files','svc/app.py',ok=False)
+    out=invoke(cli,'review-start',ok=False)
     assert 'new repository rule source: AGENTS.md' in ''.join(out)
     assert state_file().read_bytes()==before and 'gate_refreshes' not in state(cli)

@@ -104,3 +104,24 @@ correctly scoped component area separately, then use `evidence retire` with a
 reason to retire the mistaken plan. `evidence supersede` applies only when the
 replacement satisfies its existing same-obligation and current-plan rules; it
 cannot assert equivalence between changed command semantics.
+
+
+### Task-scoped coverage policy (v2)
+
+New repository discovery records global inventory diagnostics separately from task requirements.
+A deferred diagnostic is retained with a sourced exclusion proof; it is neither a passing check
+nor an execution `NOT_APPLICABLE` result. Root checks and literal runtime/build document
+consumers remain required even when shared narrative documentation selects no service.
+
+Discovery, planning admission, conventional verification, directory expansion and currency use
+the same reconstructed relevance policy. Unknown scope and incomplete applicable CI remain
+obligations. Recognizing a generated GitLab job does not supply an equivalent local execution.
+
+Captured repository, rule and CI bytes, membership, absences and boundary metadata are validated
+as one attempt. Only typed source drift permits one fresh retry. Permission, syntax and bound
+failures remain explicit failures. Evidence still depends on applicable source bytes; unchanged
+dependency semantics do not make stale execution evidence valid.
+
+Retained v1 declarations retain their original interpretation. Current v2 admission requires
+actual rediscovery/replanning; a policy transition is pathless and cannot be silently refreshed.
+Scoped implementation continuity does not admit proof, review or approval.
