@@ -299,6 +299,9 @@ def test_read_only_agent_can_submit_only_a_named_report_outbox(operations):
         {"path": "artifact:" + result["artifact_id"] + ":" + result["sha256"]},
     )
     assert json.loads(report["text"])["finding"] == "exact final report"
+    assert result["knowledge_contribution"]["status"] == "ready"
+    assert context["registered_assignment"]["status"] == "not_registered"
+    assert not context["control_plane"]["al"]
     assert (
         "findings.json"
         in operation.dispatch(principal, "read_file", {"path": "harness:outputs"})[

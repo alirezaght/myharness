@@ -7,9 +7,9 @@ from harness.db import utcnow
 from harness.execution_authority import require_authored_report
 from harness.execution_handoff import read_handoff
 from harness.execution_store import get_execution
+from harness.knowledge.contribution_contract import extract
 from harness.knowledge.models import (
     EXTRACTOR_VERSION,
-    Assertion,
     Extraction,
     PreparedSnapshot,
     SourceInventory,
@@ -18,7 +18,7 @@ from harness.knowledge.models import (
     identity,
 )
 from harness.knowledge.policy import current_operator_scope, validate_scope
-from harness.knowledge.sources import _SECRET, read_artifact, read_source
+from harness.knowledge.sources import read_artifact, read_source
 from harness.knowledge.store import ensure_project, publish_snapshot
 
 
@@ -79,9 +79,6 @@ def ingest(operation, controller, principal, task_id, resource):
     if not record:
         raise ValueError("completed native report artifact unavailable")
     raw = read_artifact(root, record, maximum=262144)
-    text = raw.decode()
-    if _SECRET.search(text):
-        raise ValueError("sensitive contribution excluded")
     repository = Path(operation.envelope["repository"])
     scope = current_operator_scope(controller.conn, repository, task_id=execution["task_id"])
     ensure_project(controller.conn, scope)
@@ -120,91 +117,7 @@ def ingest(operation, controller, principal, task_id, resource):
         visibility,
     )
     kind = _kind(state, producer)
-    try:
-        document = json.loads(text)
-    except ValueError:
-        document = None
-    claims = document.get("assertions") if isinstance(document, dict) else None
-    assertions = []
-    if isinstance(claims, list):
-        for claim in claims[:40]:
-            if not isinstance(claim, dict) or set(claim) - {
-                "subject",
-                "predicate",
-                "object",
-                "value",
-                "text",
-                "parents",
-            }:
-                raise ValueError("closed source-bound contribution required")
-            if not all(isinstance(claim.get(k), str) for k in ("subject", "predicate", "text")):
-                raise ValueError("source-bound contribution fields required")
-            parents = claim.get("parents", [])
-            if (
-                not isinstance(parents, list)
-                or len(parents) > 40
-                or any(not isinstance(p, str) for p in parents)
-            ):
-                raise ValueError("bounded contribution parents required")
-            assertions.append(
-                Assertion(
-                    claim["subject"],
-                    claim["predicate"],
-                    claim.get("object"),
-                    claim.get("value"),
-                    claim["text"][:8192],
-                    0,
-                    len(raw),
-                    "attributed-inference",
-                    "unverified",
-                    applicability={"producer_role": row["role"], "report_kind": kind},
-                    derivation_parents=tuple(parents),
-                )
-            )
-    else:
-        if isinstance(document, dict):
-            parts = [
-                str(document[k])
-                for k in ("finding", "summary", "conclusion", "observations")
-                if k in document
-            ]
-            answer = document.get("answer")
-            if isinstance(answer, str) and answer.strip():
-                parts.append(answer)
-            facts = document.get("facts")
-            if (
-                isinstance(facts, list)
-                and facts
-                and all(
-                    isinstance(fact, dict)
-                    and not set(fact) - {"claim", "sources"}
-                    and isinstance(fact.get("claim"), str)
-                    and fact["claim"].strip()
-                    and isinstance(fact.get("sources", []), list)
-                    and all(isinstance(ref, str) and ref.strip() for ref in fact.get("sources", []))
-                    for fact in facts
-                )
-            ):
-                parts.append(json.dumps(facts, sort_keys=True, ensure_ascii=False))
-            summary = "\n".join(parts)
-        else:
-            summary = text
-        if not summary.strip():
-            raise ValueError("report has no supported knowledge assertions")
-        assertions.append(
-            Assertion(
-                "report:" + sha,
-                "observes",
-                None,
-                None,
-                summary[:8192],
-                0,
-                len(raw),
-                "attributed-inference",
-                "unverified",
-                applicability={"producer_role": row["role"], "report_kind": kind},
-            )
-        )
+    assertions = extract(raw, row["role"], kind)
     expected = project["active_snapshot_id"]
     parent = controller.conn.execute(
         "SELECT observation_json,enumeration_complete FROM knowledge_snapshots WHERE snapshot_id=?",

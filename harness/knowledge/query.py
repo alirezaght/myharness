@@ -529,7 +529,7 @@ def _integrity(rows):
 
 def _bundle_size(payload):
     while True:
-        size = len(canonical({"bundle_hash": "0" * 64, **payload}).encode())
+        size = len(canonical({"bundle_hash": "0" * 64, "receipt_id": "0" * 32, **payload}).encode())
         if payload["budget"]["serialized_bytes"] == size:
             return size
         payload["budget"]["serialized_bytes"] = size
@@ -795,6 +795,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             value=json.loads(row["value_json"]),
             applicability=applicability,
             historical=historical or bool(applicability.get("historical")),
+            derivation_parents=list(parents),
         )
         payload["assertions"].append(assertion)
         payload["citations"].extend(
@@ -961,8 +962,72 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
                 "INSERT OR IGNORE INTO knowledge_bundle_pins VALUES (?,?)",
                 (bundle_hash, f"execution:{scope.execution_id}"),
             )
-        record_receipt(conn, scope, payload, bundle_hash, reads, started)
-    return ContextBundle(bundle_hash, payload)
+        receipt_id = record_receipt(conn, scope, payload, bundle_hash, reads, started)
+    return ContextBundle(bundle_hash, payload, receipt_id)
+
+
+def _derivation(conn, payload, assertion_id):
+    allowed = {item["assertion_id"]: item for item in payload["assertions"]}
+    remaining = min(200, payload.get("budget", {}).get("max_examined_edges", 200))
+    pending, visited, edges, complete = deque([assertion_id]), set(), [], True
+    direct = []
+    while pending:
+        child = pending.popleft()
+        if child in visited:
+            continue
+        visited.add(child)
+        parents = [
+            r[0]
+            for r in conn.execute(
+                "SELECT parent_assertion_id FROM knowledge_derivations WHERE assertion_id=? "
+                "ORDER BY parent_assertion_id LIMIT ?",
+                (child, remaining),
+            )
+        ]
+        remaining -= len(parents)
+        count = conn.execute(
+            "SELECT count(*) FROM knowledge_derivations WHERE assertion_id=?", (child,)
+        ).fetchone()[0]
+        if count != len(parents):
+            complete = False
+        recorded = allowed[child].get("derivation_parents")
+        if recorded is not None and recorded != parents:
+            complete = False
+        for parent in parents:
+            if parent not in allowed:
+                complete = False
+                continue
+            if child == assertion_id:
+                direct.append(parent)
+            edges.append({"child_assertion_id": child, "parent_assertion_id": parent})
+            pending.append(parent)
+    parent_ids = {edge["parent_assertion_id"] for edge in edges} - {assertion_id}
+    return {
+        "status": "complete" if complete else "incomplete",
+        "direct_parent_ids": direct,
+        "edges": edges,
+        "assertions": [
+            item for item in payload["assertions"] if item["assertion_id"] in parent_ids
+        ],
+        "citations": [ref for ref in payload["citations"] if ref["assertion_id"] in parent_ids],
+    }
+
+
+def _fit_explanation(result, limit):
+    if len(canonical(result).encode()) > limit:
+        result["derivation"] = {
+            "status": "unavailable-budget",
+            "direct_parent_ids": [],
+            "edges": [],
+            "assertions": [],
+            "citations": [],
+        }
+    if len(canonical(result).encode()) > limit:
+        for citation in result["citations"]:
+            if "text" in citation:
+                citation.update(text="", truncated=True)
+    if len(canonical(result).encode()) > limit:
+        raise ValueError("knowledge explanation exceeds response budget")
 
 
 def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidence=False) -> dict:
@@ -1040,6 +1105,20 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
             citation.update(
                 text=excerpt[:4096].decode("utf-8", errors="ignore"), truncated=len(excerpt) > 4096
             )
+    result = {
+        "bundle_hash": bundle_hash,
+        "receipt_id": "0" * 32,
+        "assertion": assertion,
+        "citations": citations,
+        "paths": [
+            p
+            for p in payload["paths"]
+            if assertion_id in (p.get("assertion_ids", []) if isinstance(p, dict) else p)
+        ],
+        "derivation": _derivation(conn, payload, assertion_id),
+        "authority": "derived context only",
+    }
+    _fit_explanation(result, min(32768, payload.get("budget", {}).get("max_bytes", 32768)))
     with transaction(conn):
         validate_scope(conn, scope)
         current_bundle = conn.execute(
@@ -1056,14 +1135,6 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
             for item in payload["assertions"]
         ):
             raise PermissionError("bundle contains revoked or purged evidence")
-        record_receipt(conn, scope, payload, bundle_hash, reads, started)
-    return {
-        "assertion": assertion,
-        "citations": citations,
-        "paths": [
-            p
-            for p in payload["paths"]
-            if assertion_id in (p.get("assertion_ids", []) if isinstance(p, dict) else p)
-        ],
-        "authority": "derived context only",
-    }
+        receipt_id = record_receipt(conn, scope, payload, bundle_hash, reads, started)
+    result["receipt_id"] = receipt_id
+    return result

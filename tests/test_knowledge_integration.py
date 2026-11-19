@@ -57,3 +57,28 @@ def test_record_augmentation_withholds_purged_versions(graph):
     assert not conn.execute(
         "SELECT * FROM knowledge_extraction_cache WHERE version_id=?", (version,)
     ).fetchall()
+
+
+def test_investigation_uses_returned_receipt_not_latest_same_bundle(graph, monkeypatch):
+    from importlib import import_module
+
+    conn, scope = graph
+    controller = HarnessController(conn)
+    task = controller.create_task("Investigate alpha")
+    integration = import_module("harness.knowledge.integration")
+    actual = integration.query
+    issued = []
+
+    def interleaved(*args, **kwargs):
+        first = actual(*args, **kwargs)
+        second = actual(*args, **kwargs)
+        assert first.bundle_hash == second.bundle_hash
+        assert first.receipt_id != second.receipt_id
+        issued.append(first.receipt_id)
+        return first
+
+    monkeypatch.setattr(integration, "query", interleaved)
+    result = integration.investigate_with_context(controller, task.id, scope.repository)
+    assert result["context"]["receipt_id"] == issued[0]
+    checkpoint = controller.workspace(task.id).latest_checkpoint("knowledge-context")
+    assert checkpoint.payload["receipt"]["receipt_id"] == issued[0]

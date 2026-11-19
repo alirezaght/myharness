@@ -316,7 +316,7 @@ def test_metadata_compaction_preserves_order_parents_and_integrity_counts(graph,
             assert observations[0]["counts"] == counts
         else:
             assert Counter(item["status"] for item in observations) == counts
-    encoded = canonical({"bundle_hash": "0" * 64, **payload}).encode()
+    encoded = canonical({"bundle_hash": "0" * 64, "receipt_id": "0" * 32, **payload}).encode()
     assert len(encoded) == payload["budget"]["serialized_bytes"] <= limit
     assert payload["truncation"] and exclusions["metadata-detail-budget"]
     counts_before = deepcopy({field: payload[field] for field in original_counts})
@@ -371,7 +371,10 @@ def test_incremental_packing_merges_new_integrity_observations_without_losing_co
             "counts": {"withheld-stale-evidence": 35},
         }
     ]
-    assert len(canonical({"bundle_hash": "0" * 64, **payload}).encode()) <= 2048
+    assert (
+        len(canonical({"bundle_hash": "0" * 64, "receipt_id": "0" * 32, **payload}).encode())
+        <= 2048
+    )
 
 
 def derived_graph(graph):

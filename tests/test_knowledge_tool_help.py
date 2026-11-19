@@ -14,3 +14,13 @@ def test_product_tool_help_and_schemas_are_truthful_and_generic():
     assert "bundle_hash" in TOOL_HELP["knowledge_explain"]
     assert "expected_graph_revision" in TOOL_HELP["submit_output"]
     assert not any(word in str(TOOL_HELP) for word in ("demo/export", "preferred terms", "gold"))
+
+
+def test_additive_context_help_keeps_request_schemas_closed():
+    assert "registered_assignment" in TOOL_HELP["await_assignment"]
+    assert "task_id" not in SCHEMAS["await_assignment"]["properties"]
+    assert "receipt_id" in TOOL_HELP["knowledge_query"]
+    assert "derivation" in TOOL_HELP["knowledge_explain"]
+    assert "server-assigned" in TOOL_HELP["submit_output"]
+    assert "source locators" in TOOL_HELP["submit_output"]
+    assert set(SCHEMAS["knowledge_query"]["properties"]) == {"query", "entity_refs"}

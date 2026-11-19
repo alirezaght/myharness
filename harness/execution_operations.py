@@ -3,6 +3,7 @@
 import json
 import os
 import secrets
+import sqlite3
 import subprocess
 import threading
 import time
@@ -453,8 +454,6 @@ class OperationController:
     def _dispatch(self, controller, principal, name, a, state):
         root, owner = self.envelope["repository"], principal["thread_id"]
         if name in {"knowledge_query", "knowledge_explain"}:
-            import sqlite3
-
             from harness.knowledge.models import ContextRequest
             from harness.knowledge.policy import derive_scope, policy_digest
             from harness.knowledge.query import explain, query
@@ -655,9 +654,13 @@ class OperationController:
                 principal, current_graph_revision=state["integration"]["graph_revision"], **a
             )
         if name == "submit_output":
-            return self.artifacts.submit_output(
+            from harness.knowledge.contribution_contract import feedback
+
+            result = self.artifacts.submit_output(
                 principal, current_graph_revision=state["integration"]["graph_revision"], **a
             )
+            result["knowledge_contribution"] = feedback(a["content"].encode())
+            return result
         if name == "apply_patch":
 
             def authorize(paths):
@@ -1041,6 +1044,7 @@ class OperationController:
             and args[:2] == ["integration", "agent-update"]
             and principal["role"] == "orchestrator"
         ):
+            from harness.knowledge.contribution_contract import ContributionFormatError
             from harness.knowledge.contributions import ingest
 
             current = self.state(get_execution(controller.conn, self.execution_id))
@@ -1063,7 +1067,15 @@ class OperationController:
                             completed_agent["latest_output"],
                         )
                     )
-                except (ValueError, OSError, LookupError):
+                except ContributionFormatError as error:
+                    contributions.append(
+                        {
+                            "status": "invalid",
+                            "reason": "contribution-format-invalid",
+                            "feedback": error.feedback,
+                        }
+                    )
+                except (ValueError, OSError, LookupError, sqlite3.Error, RecursionError):
                     contributions.append(
                         {
                             "status": "unavailable",
@@ -1129,10 +1141,18 @@ class OperationController:
         deadline = time.monotonic() + timeout
         while True:
             with self.lock, closing(connect(self.database)) as conn:
-                _, state = self.authority(HarnessController(conn), principal)
+                execution, state = self.authority(HarnessController(conn), principal)
+                from harness.assignment_observation import registered_assignment
+                from harness.knowledge.contribution_contract import description
+
+                observed = {
+                    "registered_assignment": registered_assignment(state, execution, principal),
+                    "knowledge_contribution_contract": description(),
+                }
                 if principal["role"] == "orchestrator" or not principal["writable"]:
                     return {
                         **self.control_context(principal),
+                        **observed,
                         "graph_revision": state["integration"]["graph_revision"],
                     }
                 value = self.assignments.get(principal["thread_id"])
@@ -1153,13 +1173,14 @@ class OperationController:
                         context = assignment_context(self, HarnessController(conn), principal)
                     return {
                         "status": "Assigned",
+                        **observed,
                         **value,
                         "graph_revision": state["integration"]["graph_revision"],
                         "handoff": handoff,
                         "knowledge_context": context,
                     }
             if time.monotonic() >= deadline:
-                return {"status": "Pending"}
+                return {"status": "Pending", **observed}
             time.sleep(0.1)
 
     def tick(self):

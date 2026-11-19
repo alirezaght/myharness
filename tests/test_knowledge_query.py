@@ -355,3 +355,97 @@ def test_parented_direct_matches_interleave_with_saturated_reverse_impact(graph,
     assert bundle.payload["budget"]["examined_edges"] == 200
     assert ids == {c["assertion_id"] for c in bundle.payload["citations"]}
     assert all(set(p["assertion_ids"]) <= ids for p in bundle.payload["paths"])
+
+
+def test_explanation_returns_actual_shared_transitive_derivation_and_bundle_evidence(graph):
+    from tests.test_knowledge_budgets import derived_graph
+
+    conn, scope, ids, links = derived_graph(graph)
+    extra = (ids["closure_leaf"], ids["closure_peer"])
+    conn.execute("INSERT INTO knowledge_derivations VALUES (?,?)", extra)
+    bundle = query(conn, scope, ContextRequest("closure_leaf closure_peer"))
+    rows = {a["assertion_id"]: a for a in bundle.payload["assertions"]}
+    for child, parent in [*links, extra]:
+        assert parent in rows[child]["derivation_parents"]
+    result = explain(conn, scope, bundle.bundle_hash, ids["closure_leaf"])
+    derivation = result["derivation"]
+    assert derivation["status"] == "complete"
+    assert set(derivation["direct_parent_ids"]) == {ids["closure_middle"], ids["closure_peer"]}
+    assert {
+        (e["child_assertion_id"], e["parent_assertion_id"]) for e in derivation["edges"]
+    } == set([*links, extra])
+    parents = {ids["closure_middle"], ids["closure_peer"], ids["closure_root"]}
+    assert {a["assertion_id"] for a in derivation["assertions"]} == parents
+    assert {c["assertion_id"] for c in derivation["citations"]} == parents
+    assert len(canonical(result).encode()) <= bundle.payload["budget"]["max_bytes"]
+    assert result["receipt_id"] != bundle.receipt_id
+    assert "receipt_id" not in bundle.payload
+
+
+def test_receipt_failure_rolls_back_bundle_and_receipt_without_success_reference(
+    graph, monkeypatch
+):
+    from importlib import import_module
+
+    conn, scope = graph
+    refresh(conn, scope)
+    module = import_module("harness.knowledge.query")
+    original = module.record_receipt
+
+    def failed(*args):
+        original(*args)
+        raise ValueError("injected persistence failure")
+
+    monkeypatch.setattr(module, "record_receipt", failed)
+    with pytest.raises(ValueError, match="injected persistence failure"):
+        query(conn, scope, ContextRequest("service"))
+    assert conn.execute("SELECT count(*) FROM knowledge_receipts").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM knowledge_bundles").fetchone()[0] == 0
+
+
+def test_dense_derivation_explanation_refuses_optional_detail_within_32k(graph):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        "".join(f"def chain_needle_{i}():\n    return {i}\n" for i in range(16))
+    )
+    refresh(conn, scope)
+    ids = {
+        r["name"]: r["assertion_id"]
+        for r in conn.execute(
+            "SELECT a.assertion_id,o.scoped_key AS name FROM knowledge_assertions a "
+            "JOIN knowledge_entities o ON o.entity_id=a.object_id WHERE a.predicate='defines'"
+        )
+    }
+    ordered = [ids[f"symbol:service:chain_needle_{i}"] for i in range(16)]
+    conn.executemany(
+        "INSERT INTO knowledge_derivations VALUES (?,?)",
+        [(child, parent) for index, child in enumerate(ordered) for parent in ordered[:index]],
+    )
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(entity_refs=("symbol:service:chain_needle_15",), limits=QueryLimits(hops=0)),
+    )
+    assert set(ordered) <= {a["assertion_id"] for a in bundle.payload["assertions"]}
+    assert bundle.payload["budget"]["examined_edges"] == 120
+    result = explain(conn, scope, bundle.bundle_hash, ordered[-1])
+    assert result["derivation"]["status"] == "unavailable-budget"
+    assert not result["derivation"]["edges"]
+    assert not result["derivation"]["assertions"]
+    assert len(canonical(result).encode()) <= 32768
+    assert len(canonical(bundle.to_dict()).encode()) <= 32768
+
+
+def test_authored_prose_never_creates_derivation_edges(graph):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        "# parents: " + "a" * 64 + '\nneedle = "derived from source.py:1"\n'
+    )
+    refresh(conn, scope)
+    bundle = query(conn, scope, ContextRequest("needle"))
+    assert bundle.payload["assertions"]
+    for assertion in bundle.payload["assertions"]:
+        assert assertion["derivation_parents"] == []
+        result = explain(conn, scope, bundle.bundle_hash, assertion["assertion_id"])
+        assert result["derivation"]["status"] == "complete"
+        assert result["derivation"]["edges"] == []

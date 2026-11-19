@@ -360,3 +360,47 @@ def test_upgrade_respects_existing_transaction_rollback(legacy):
         == legacy_identity
     )
     assert old(legacy, action="query")["status"] == "ok"
+
+
+@pytest.mark.parametrize("omit_parent", [False, True])
+def test_legacy_bundle_derivation_is_stored_bounded_and_never_rehashed(legacy, omit_parent):
+    from harness.knowledge.models import canonical, digest
+
+    _, _, _, conn, scope = legacy
+    refresh(conn, scope)
+    first = query(conn, scope, ContextRequest("public"))
+    parent = next(
+        a["assertion_id"] for a in first.payload["assertions"] if a["predicate"] == "described-by"
+    )
+    child = next(
+        a["assertion_id"] for a in first.payload["assertions"] if a["predicate"] == "imports"
+    )
+    conn.execute("INSERT INTO knowledge_derivations VALUES (?,?)", (child, parent))
+    bundle = query(conn, scope, ContextRequest("public"))
+    payload = json.loads(json.dumps(bundle.payload))
+    for assertion in payload["assertions"]:
+        assertion.pop("derivation_parents")
+    if omit_parent:
+        payload["assertions"] = [a for a in payload["assertions"] if a["assertion_id"] != parent]
+        payload["citations"] = [c for c in payload["citations"] if c["assertion_id"] != parent]
+    encoded = canonical(payload)
+    legacy_hash = digest(encoded.encode())
+    conn.execute(
+        "INSERT INTO knowledge_bundles SELECT ?,project_id,snapshot_id,policy_digest,"
+        "purpose,?,created_at,NULL "
+        "FROM knowledge_bundles WHERE bundle_hash=?",
+        (legacy_hash, encoded, bundle.bundle_hash),
+    )
+    result = explain(conn, scope, legacy_hash, child)
+    assert result["derivation"]["status"] == ("incomplete" if omit_parent else "complete")
+    assert result["derivation"]["direct_parent_ids"] == ([] if omit_parent else [parent])
+    assert (
+        conn.execute(
+            "SELECT payload FROM knowledge_bundles WHERE bundle_hash=?", (legacy_hash,)
+        ).fetchone()[0]
+        == encoded
+    )
+    assert digest(encoded.encode()) == legacy_hash
+    conn.execute("INSERT INTO knowledge_assertion_state VALUES (?,'purged',NULL)", (parent,))
+    with pytest.raises(PermissionError):
+        explain(conn, scope, legacy_hash, child)

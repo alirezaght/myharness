@@ -8,10 +8,11 @@ from harness.knowledge.models import canonical
 
 
 def record(conn, scope, payload, bundle_hash, reads, started):
+    receipt_id = secrets.token_hex(16)
     conn.execute(
         "INSERT INTO knowledge_receipts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         (
-            secrets.token_hex(16),
+            receipt_id,
             scope.project_id,
             bundle_hash,
             payload["snapshot_id"],
@@ -32,3 +33,4 @@ def record(conn, scope, payload, bundle_hash, reads, started):
             utcnow(),
         ),
     )
+    return receipt_id

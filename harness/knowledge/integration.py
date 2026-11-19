@@ -115,8 +115,8 @@ def investigate_with_context(controller, task_id, repo_root, request=None, decis
         if bundle:
             row = controller.conn.execute(
                 "SELECT receipt_id,snapshot_id,policy_digest,source_reads,elapsed_ms FROM "
-                "knowledge_receipts WHERE bundle_hash=? ORDER BY rowid DESC LIMIT 1",
-                (bundle.bundle_hash,),
+                "knowledge_receipts WHERE receipt_id=?",
+                (bundle.receipt_id,),
             ).fetchone()
             receipt["receipt"] = dict(row) if row else None
         workspace.checkpoint("knowledge-context", receipt)
@@ -154,14 +154,10 @@ def assignment_context(operation, controller, principal):
         bundle = query(controller.conn, scope, ContextRequest(task["title"][:4096]))
     except (ValueError, OSError, LookupError, sqlite3.Error):
         return {"status": "unavailable"}
-    receipt = controller.conn.execute(
-        "SELECT receipt_id FROM knowledge_receipts WHERE bundle_hash=? ORDER BY rowid DESC LIMIT 1",
-        (bundle.bundle_hash,),
-    ).fetchone()
     return {
         "status": "available",
         "bundle_hash": bundle.bundle_hash,
         "snapshot_id": bundle.payload["snapshot_id"],
         "assertion_ids": [a["assertion_id"] for a in bundle.payload["assertions"]],
-        "receipt_id": receipt[0] if receipt else None,
+        "receipt_id": bundle.receipt_id,
     }
