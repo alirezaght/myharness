@@ -136,7 +136,18 @@ def _delete(controller, repo, task_id):
 
 
 def _content_change(controller, repo, task_id):
-    decision = {"id": "DEC-0009", "version": 1, "title": "Fixture", "status": "approved"}
+    from harness.registry import DecisionRegistry
+
+    record = DecisionRegistry(repo / "docs/decisions").record(
+        "Fixture addition", "New explicit requirement", "Developer amendment", "Task"
+    )
+    decision = {
+        "id": record.id,
+        "version": record.version,
+        "title": record.title,
+        "status": str(record.status),
+        "path": str(record.path),
+    }
     with transaction(controller.conn):
         controller.workspace(task_id).checkpoint("investigation", {"decisions": [decision]})
 

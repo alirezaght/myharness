@@ -341,8 +341,20 @@ function restoreView(root, saved) {
 }
 
 function render(data) {
+  const previousDrawer = document.querySelector(".authoring-drawer:not(.authoring-new-task-dialog)[open]");
+  const previousNewTaskDialog = document.querySelector(".authoring-new-task-dialog[open]");
+  const previousDrawerTask = workspaceData?.task?.id;
+  const replacingDrawerState = previousDrawerTask && workspaceStates.get(previousDrawerTask);
+  if (previousDrawer && replacingDrawerState) {
+    replacingDrawerState.drawerOpen = true;
+    replacingDrawerState.drawerReplacing = true;
+  }
+  if (previousNewTaskDialog && replacingDrawerState) {
+    replacingDrawerState.newTaskOpen = true;
+    replacingDrawerState.newTaskReplacing = true;
+  }
   workspaceData = data;
-  if (workspaceDragging) { workspaceRenderPending = true; return; }
+  if (workspaceDragging || workspaceTouching) { workspaceRenderPending = true; return; }
   workspaceRenderPending = false;
   rendered = true;
   const main = document.getElementById("main");
@@ -363,7 +375,7 @@ function render(data) {
     ? [knowledgeFocus.selectionStart, knowledgeFocus.selectionEnd, knowledgeFocus.selectionDirection] : null;
   const content = data.task
     ? renderTask(data.task, previousKnowledge)
-    : renderNotice(data.notice);
+    : workspaceEmptyProject(data);
   content.dataset.viewIdentity = identity;
   const preview = content.querySelector("#approve-preview");
   if (preview) preview.dataset.viewDisclosure = JSON.stringify(["approval-preview", data.task.approval_center.final.spec_hash]);
@@ -380,6 +392,8 @@ function render(data) {
     knowledgeFocus.focus({ preventScroll: true });
     if (knowledgeSelection) knowledgeFocus.setSelectionRange(...knowledgeSelection);
   }
+  if (replacingDrawerState?.drawerReplacing) setTimeout(() => { replacingDrawerState.drawerReplacing = false; }, 0);
+  if (replacingDrawerState?.newTaskReplacing) setTimeout(() => { replacingDrawerState.newTaskReplacing = false; }, 0);
 }
 
 function renderError(message) {

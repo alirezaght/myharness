@@ -8,6 +8,7 @@ it is disabled. The server re-checks every one of them inside the approval trans
 
 from typing import Any
 
+from harness.authoring_store import approval_token
 from harness.cli_commands import task_repo_root
 from harness.controller import HarnessController, Task
 from harness.dashboard.markdown import parse_markdown
@@ -76,7 +77,7 @@ def _final(
         return base | {"enabled": False, "blockers": [{"code": "unavailable", "text": text}]}
     return base | {
         "version": latest.version if latest else None,
-        "review_hash": report.state_hash,
+        "review_hash": approval_token(controller, task.id, report.state_hash),
         "spec_hash": spec_hash,
         "preview": preview,
         "comments": counts,

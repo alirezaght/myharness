@@ -42,7 +42,7 @@ def cmd_interview(args: argparse.Namespace) -> int:
             asked = engine.next(group=args.group)
             for question in asked:
                 print_question(engine, question)
-            unresolved = len(engine.ws.open_questions())
+            unresolved = len(engine.effective_questions("open"))
             if not asked and unresolved:
                 print(
                     f"no questions left to ask; {unresolved} open question(s) stay unresolved"

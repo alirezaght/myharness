@@ -7,7 +7,7 @@ two spaces, so developer text can never introduce a `## ` section of its own.
 from collections.abc import Iterable, Sequence
 from typing import Any
 
-from harness.decisions import DecisionRecord
+from harness.decisions import DecisionRecord, DecisionStatus
 from harness.design_models import DesignSection, EntryOrigin
 from harness.design_report import DesignDocument
 from harness.interview_report import InterviewSummary, Requirement
@@ -71,7 +71,11 @@ def _rationale(
         for e in design.entries
         if e.origin is EntryOrigin.RECOMMENDATION and e.rationale
     ]
-    lines += [f"- {r.id} v{r.version} — {r.title}: {r.rationale}" for r in recorded]
+    lines += [
+        f"- {r.id} v{r.version} — {r.title}: {r.rationale}"
+        for r in recorded
+        if r.status is DecisionStatus.APPROVED
+    ]
     return _listed(lines)
 
 

@@ -14,7 +14,6 @@ from urllib.parse import urlparse
 
 import pytest
 
-from harness.dashboard import server as server_module
 from tests.execution_helpers import approved_execution, started
 from tests.test_dashboard import api, serve
 from tests.test_dashboard_browser import CHROME
@@ -24,7 +23,7 @@ pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Ch
 
 
 @contextmanager
-def chrome(profile, url, width, height):
+def chrome(profile, url, width, height, *, process_env=None):
     profile.mkdir()
     process = subprocess.Popen(
         [
@@ -37,6 +36,7 @@ def chrome(profile, url, width, height):
             "--remote-debugging-port=0",
             "about:blank",
         ],
+        env=process_env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -44,9 +44,28 @@ def chrome(profile, url, width, height):
     try:
         port_file = profile / "DevToolsActivePort"
         deadline = time.monotonic() + 10
-        while not port_file.exists() and time.monotonic() < deadline:
+        lines = []
+        port = None
+        while time.monotonic() < deadline:
+            if port_file.is_file():
+                lines = port_file.read_text().splitlines()
+                if len(lines) >= 2 and lines[1].startswith("/"):
+                    try:
+                        candidate_port = int(lines[0])
+                    except ValueError:
+                        pass
+                    else:
+                        if 1 <= candidate_port <= 65535:
+                            port = candidate_port
+                            break
+            if process.poll() is not None:
+                pytest.fail(
+                    "Chrome exited before publishing DevToolsActivePort "
+                    f"(exit {process.returncode})"
+                )
             time.sleep(0.05)
-        port = int(port_file.read_text().splitlines()[0])
+        if port is None:
+            pytest.fail("Chrome did not publish valid DevToolsActivePort contents before deadline")
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=5) as response:
             target = next(t for t in json.load(response) if t["type"] == "page")
         parsed = urlparse(target["webSocketDebuggerUrl"])
@@ -187,7 +206,7 @@ def test_live_view_state(controller, sample_repo, monkeypatch, db_path, tmp_path
             result["task"]["execution"]["cursor"] = count
             return result
 
-        monkeypatch.setattr(server_module, "dashboard_view", live_view)
+        monkeypatch.setattr("harness.dashboard.view.combined_view", live_view)
         server.poll_seconds = 0.2
         with chrome(tmp_path / "chrome", server.url + f"?task={task}", width, height) as call:
             wait(call, "Boolean(document.querySelector('.saved-decision-details'))")

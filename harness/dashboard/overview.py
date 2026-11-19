@@ -46,9 +46,12 @@ def pending_approvals(
 ) -> list[dict[str, str]]:
     """Everything waiting on the developer, with the CLI command that decides it (read-only)."""
     tid, ws = task.id, controller.workspace(task.id)
+    from harness.effective_records import effective_records
+
     items = [
         _decide("interview recommendation", f"P{p.id}", p.title, "interview", tid, p.id)
-        for p in ws.proposals(ProposalStatus.PENDING)
+        for p in effective_records(ws).proposals
+        if p.status is ProposalStatus.PENDING
     ]
     items += [
         _decide("design recommendation", e.ref, e.statement, "design", tid, e.id)

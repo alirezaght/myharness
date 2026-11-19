@@ -122,3 +122,64 @@ def test_server_close_ends_open_streams(db_path):
     finally:
         thread.join(timeout=10)
     assert server.closing.is_set()
+
+
+def test_rework1_dashboard_authoring_share_one_snapshot(controller, db_path, tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+
+    from harness.dashboard import view
+    from harness.db import transaction
+    from harness.phases import Phase
+
+    task = controller.create_task("Snapshot race", "trivial")
+    entered, release = threading.Event(), threading.Event()
+    original = view._task_view
+
+    def paused(*args, **kwargs):
+        result = original(*args, **kwargs)
+        entered.set()
+        assert release.wait(10)
+        return result
+
+    monkeypatch.setattr(view, "_task_view", paused)
+    with serve(db_path, task.id) as server, ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(api, server)
+        try:
+            assert entered.wait(10)
+            with transaction(controller.conn):
+                controller._move(task.id, Phase.INVESTIGATION, Phase.INTERVIEW, None)
+        finally:
+            release.set()
+        result = future.result(timeout=10)
+    assert result["task"]["phase"] == result["authoring"]["phase"], result
+    assert result["tasks"][0]["phase"] == result["task"]["phase"]
+
+
+def test_rework1_close_during_frame_build_emits_no_data(controller, db_path, tmp_path, monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    original = server_module.DashboardHandler._frame
+
+    def paused(self, task_id):
+        result = original(self, task_id)
+        entered.set()
+        assert release.wait(10)
+        return result
+
+    monkeypatch.setattr(server_module.DashboardHandler, "_frame", paused)
+    task = controller.create_task("Close race", "trivial")
+    server = DashboardServer(db_path, task.id, project_root=tmp_path)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    try:
+        with stream(server) as response:
+            assert frame(response) == {"retry": str(RETRY_MS)}
+            assert entered.wait(10)
+            server.shutdown()
+            server.server_close()
+            release.set()
+            assert frame(response) is None
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=10)

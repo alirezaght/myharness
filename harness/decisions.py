@@ -144,8 +144,11 @@ def render_record(
     content: str,
     rationale: str,
     impact: str,
+    *,
+    status: DecisionStatus = DecisionStatus.APPROVED,
 ) -> str:
     """The record in the layout of the existing hand-written records; refuses lossy input."""
+    status = DecisionStatus(status)
     head = _line(_required(title, "title"))
     body = {
         "Decision": _required(content, "decision"),
@@ -157,7 +160,7 @@ def render_record(
             f"# {decision_id} — {head}",
             "",
             f"- **ID:** {decision_id}",
-            f"- **Status:** {DecisionStatus.APPROVED}",
+            f"- **Status:** {status}",
             f"- **Version:** {version}",
             f"- **Timestamp:** {timestamp}",
             f"- **Scope:** {_line(scope or '') or NOT_STATED_SCOPE}",

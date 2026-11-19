@@ -62,7 +62,7 @@ _ASSIGNMENT_HANDOFF_INSTRUCTIONS = (
 )
 
 
-def executable_identity(executable, host):
+def _observe_executable_identity(executable, host):
     path = Path(executable).resolve(strict=True)
     if host == "codex" and path.suffix == ".js":
         import platform
@@ -85,8 +85,7 @@ def executable_identity(executable, host):
     result = subprocess.run([str(path), "--version"], capture_output=True, text=True, timeout=10)
     pattern = (r"codex-cli " if host == "codex" else "") + r"(\d+\.\d+\.\d+)(?: \([^()\r\n]+\))?"
     match = re.fullmatch(pattern, result.stdout.strip())
-    supported = SUPPORTED_NATIVE_VERSIONS[host]
-    if result.returncode or match is None or match[1] not in supported:
+    if result.returncode or match is None:
         raise ValueError(
             "unsupported native executable version: " + host + " " + result.stdout.strip()
         )
@@ -96,6 +95,15 @@ def executable_identity(executable, host):
         "version": version,
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }
+
+
+def executable_identity(executable, host):
+    identity = _observe_executable_identity(executable, host)
+    if identity["version"] not in SUPPORTED_NATIVE_VERSIONS[host]:
+        raise ValueError(
+            "unsupported native executable version: " + host + " " + identity["version"]
+        )
+    return identity
 
 
 def restricted_catalog():

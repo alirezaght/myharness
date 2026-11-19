@@ -198,7 +198,8 @@ def test_headless_chrome_shows_the_overview_and_switches_tasks(db_path, sample_r
     assert "Your decision needed" in dom
     assert "Specification in progress" in switched
 
-    assert "<p>unknown task: t-00000000</p>" in unknown and "<h2>Task " not in unknown
+    assert '<section id="notice"><p>unknown task: t-00000000</p></section>' in unknown
+    assert "<h2>Task " not in unknown
     assert _workspace_task_link(unknown, task_id) and _workspace_task_link(unknown, other)
     assert "aria-current" not in unknown
 

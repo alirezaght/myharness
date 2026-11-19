@@ -342,3 +342,95 @@ def test_approved_test_plan_is_embedded_and_sealed_specs_stay_untouched(run, sam
     assert "- plan changed_since_approval\n- blocking: yes" in shown
     assert v1.read_bytes() == sealed
     assert _ok(run, "spec", "verify", task) == "v1 ok\n"
+
+
+def _constraint_cohort_fixture(controller, tmp_path):
+    from harness.db import transaction
+    from harness.interview import InterviewEngine
+    from harness.investigation import _decision_dict
+    from harness.registry import DecisionRegistry
+    from harness.spec_manager import SpecificationManager
+
+    registry = DecisionRegistry(tmp_path / "docs/decisions")
+    investigated = registry.record("Storage", "Use files", "Simple storage", "Persistence")
+    task = controller.create_task("Preserve constraint cohorts", "trivial")
+    ws = controller.workspace(task.id)
+    with transaction(controller.conn):
+        ws.checkpoint("investigation", {"decisions": [_decision_dict(investigated)]})
+    controller.advance(task.id)
+    engine = InterviewEngine(controller, task.id, registry)
+    question = engine.ask("functional_behavior", "Existing behavior?", decision=True)
+    proposal = engine.propose(question.id, "Exports", "Keep exports unchanged", "Additive change")
+    engine.decide(proposal.id, "accepted", "")
+    recorded = registry.get(engine.last_record.id)
+    manager = SpecificationManager(controller, task.id, SpecStore(tmp_path / "specs"), tmp_path)
+    return ws, registry, investigated, recorded, manager
+
+
+def _constraint_bodies(controller, ws, manager):
+    from harness.review_package import package
+
+    return [manager.structured_body(), package(controller, ws.task_id)["content"]["proposed_spec"]]
+
+
+def test_constraints_preserve_latest_investigation_cohort_and_recorded_rationale(
+    controller, tmp_path
+):
+    from harness.authoring_store import source_state
+    from harness.current_decisions import current_decisions
+    from harness.db import transaction
+    from harness.investigation import _decision_dict
+
+    ws, registry, investigated, recorded, manager = _constraint_cohort_fixture(controller, tmp_path)
+    for body in _constraint_bodies(controller, ws, manager):
+        assert _section(body, "Constraints").strip() == "- DEC-0001 v1 — Storage (Persistence)"
+        assert recorded.id in _section(body, "Rationale")
+        assert "Keep exports unchanged" in _section(body, "Requirements")
+    assert {row["id"] for row in current_decisions(ws)} == {investigated.id, recorded.id}
+    assert recorded.id in {
+        row["id"] for row in source_state(controller, ws.task_id)["recorded_decisions"]
+    }
+    with transaction(controller.conn):
+        ws.checkpoint("investigation", {"decisions": [_decision_dict(registry.get(recorded.id))]})
+    for body in _constraint_bodies(controller, ws, manager):
+        constraints = _section(body, "Constraints")
+        assert recorded.id in constraints and investigated.id not in constraints
+
+
+@pytest.mark.parametrize("authority", ["approved", "rejected", "mismatch", "missing"])
+def test_constraints_resolve_current_investigation_authority_without_fallback(
+    controller, tmp_path, authority
+):
+    from harness.db import transaction
+
+    ws, registry, investigated, recorded, manager = _constraint_cohort_fixture(controller, tmp_path)
+    current = registry.transition(
+        investigated.id,
+        "Current storage",
+        "Use current files",
+        "Explicit correction",
+        "Persistence",
+        "Storage impact",
+        expected_version=1,
+        status="rejected" if authority == "rejected" else "approved",
+    )
+    with transaction(controller.conn):
+        ws.record_event(
+            "decision.superseded",
+            {
+                "id": current.id,
+                "version": 1 if authority == "mismatch" else current.version,
+                "path": str(current.path),
+                "status": str(current.status),
+            },
+        )
+    if authority == "missing":
+        current.path.unlink()
+    for body in _constraint_bodies(controller, ws, manager):
+        constraints = _section(body, "Constraints")
+        if authority == "approved":
+            assert constraints.strip() == "- DEC-0001 v2 — Current storage (Persistence)"
+        else:
+            assert constraints.strip() == "- (none)"
+        assert recorded.id in _section(body, "Rationale")
+    assert ws.latest_checkpoint("investigation").payload["decisions"][0]["version"] == 1

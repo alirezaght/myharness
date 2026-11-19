@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import Any
 
 from harness.classification import interview_depth
@@ -63,13 +64,26 @@ class InterviewEngine:
 
     # Read-only views
 
+    def effective(self):
+        from harness.effective_records import effective_records
+
+        return effective_records(self.ws)
+
+    def effective_questions(self, status=None):
+        return [q for q in self.effective().questions if status is None or q.status == status]
+
+    def effective_proposals(self, status=None):
+        return [p for p in self.effective().proposals if status is None or p.status == status]
+
     def checklist(self) -> InterviewChecklist:
         task = self.controller.get_task(self.task_id)
-        pending = plan_sync(self.ws.questions(), catalogue_for(self._topics(task)))
-        return build_checklist(self.ws.questions(), self.ws.proposals(), pending)
+        pending = plan_sync(self.effective_questions(), catalogue_for(self._topics(task)))
+        return build_checklist(self.effective_questions(), self.effective_proposals(), pending)
 
     def summary(self) -> InterviewSummary:
-        return build_summary(self.ws.questions(), self.ws.proposals(), self.checklist())
+        return build_summary(
+            self.effective_questions(), self.effective_proposals(), self.checklist()
+        )
 
     def upcoming(self) -> Question | None:
         """The question `next()` asks (or re-asks) from committed state; no sync, no write."""
@@ -79,12 +93,14 @@ class InterviewEngine:
     def sync_due(self) -> bool:
         """True when `next()` would first seed, skip or reopen catalogue questions."""
         task = self.controller.get_task(self.task_id)
-        plan = plan_sync(self.ws.questions(), catalogue_for(self._topics(task)))
+        plan = plan_sync(self.effective_questions(), catalogue_for(self._topics(task)))
         return bool(plan.seed or plan.skip or plan.reopen)
 
     def pending_proposals(self, question_id: int) -> list[Proposal]:
         return [
-            p for p in self.ws.proposals(ProposalStatus.PENDING) if p.question_id == question_id
+            p
+            for p in self.effective_proposals(ProposalStatus.PENDING)
+            if p.question_id == question_id
         ]
 
     # Mutations: each one transaction, one event and one `interview` checkpoint
@@ -110,6 +126,7 @@ class InterviewEngine:
                 f" harness interview unknown {self.task_id} {question_id}"
             )
         with self._mutation():
+            self.effective().require_current("question", question_id)
             question = self.ws.answer(question_id, text)
             self.ws.record_event("question.answered", {"id": question_id})
         return question
@@ -163,10 +180,19 @@ class InterviewEngine:
         """Resolve a recommendation; an approved decision question is recorded (last_record)."""
         self.last_record = None
         with discard_on_failure() as written, self._mutation():
+            effective = self.effective()
+            effective.require_current("proposal", proposal_id)
+            current = next(
+                (p for p in effective.proposals if p.id == proposal_id),
+                self.ws.proposal(proposal_id),
+            )
             proposal = self.ws.resolve(proposal_id, status, response)
-            qid = proposal.question_id
+            qid = current.question_id
+            proposal = replace(proposal, question_id=qid)
             if proposal.status in DECIDED and qid is not None:
-                question = self.ws.question(qid)
+                question = next(
+                    (q for q in effective.questions if q.id == qid), self.ws.question(qid)
+                )
                 if question.status is QuestionStatus.OPEN:
                     self.ws.mark_decided(qid)
                 if self.registry is not None:
@@ -186,37 +212,47 @@ class InterviewEngine:
 
     @contextmanager
     def _mutation(self) -> Iterator[tuple[int, int]]:
-        with transaction(self.conn):
-            task = self.controller.get_task(self.task_id)
-            self._approved_decision_ids()
-            if task.phase is not Phase.INTERVIEW:
-                hint = (
-                    f"harness phase {task.id} next"
-                    if task.phase is Phase.INVESTIGATION
-                    else f'harness phase {task.id} back interview --reason "<why>"'
-                )
-                raise InterviewError(f"task {task.id} is in phase {task.phase}; run: {hint}")
-            yield self._sync(task)
-            self.ws.checkpoint("interview", self._checkpoint_payload())
-            self.conn.execute(
-                "UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id)
+        with transaction(self.conn), self.mutation_in_transaction() as result:
+            yield result
+
+    @contextmanager
+    def mutation_in_transaction(self) -> Iterator[tuple[int, int]]:
+        if not self.conn.in_transaction:
+            raise RuntimeError("existing transaction required")
+        task = self.controller.get_task(self.task_id)
+        self._approved_decision_ids()
+        if task.phase is not Phase.INTERVIEW:
+            hint = (
+                f"harness phase {task.id} next"
+                if task.phase is Phase.INVESTIGATION
+                else f'harness phase {task.id} back interview --reason "<why>"'
             )
+            raise InterviewError(f"task {task.id} is in phase {task.phase}; run: {hint}")
+        yield self._sync(task)
+        self.ws.checkpoint("interview", self._checkpoint_payload())
+        self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id))
 
     def _approved_decision_ids(self) -> set[str]:
         checkpoint = self.ws.latest_checkpoint("investigation")
         if checkpoint is None:
             raise InterviewError(f"run harness investigate {self.task_id} first")
-        decisions: list[dict[str, Any]] = checkpoint.payload.get("decisions", [])
+        from harness.current_decisions import current_decisions
+
+        decisions: list[dict[str, Any]] = current_decisions(self.ws, self.registry)
         return {d["id"] for d in decisions if d.get("status") == "approved"}
 
     def _open(self, question_id: int) -> Question:
-        question = self.ws.question(question_id)
+        effective = self.effective()
+        effective.require_current("question", question_id)
+        question = next(
+            (q for q in effective.questions if q.id == question_id), self.ws.question(question_id)
+        )
         if question.status is not QuestionStatus.OPEN:
             raise InterviewError(f"question {question_id} is already {question.status}")
         return question
 
     def _sync(self, task: Task) -> tuple[int, int]:
-        plan = plan_sync(self.ws.questions(), catalogue_for(self._topics(task)))
+        plan = plan_sync(self.effective_questions(), catalogue_for(self._topics(task)))
         for entry in plan.seed:
             self.ws.ask(entry.topic, entry.text, kind=entry.kind, catalogue_key=entry.key)
         for question in plan.skip:
@@ -228,11 +264,15 @@ class InterviewEngine:
 
     def _askable(self) -> list[Question]:
         deferred = {e.payload.get("id") for e in self.ws.events() if e.kind == UNRESOLVED_EVENT}
-        return [q for q in ordered(self.ws.open_questions()) if q.id not in deferred]
+        return [
+            q
+            for q in ordered(self.effective_questions(QuestionStatus.OPEN))
+            if q.id not in deferred
+        ]
 
     def _checkpoint_payload(self) -> dict[str, Any]:
         upcoming = self._askable()
-        checklist = build_checklist(self.ws.questions(), self.ws.proposals(), None)
+        checklist = build_checklist(self.effective_questions(), self.effective_proposals(), None)
         return {
             "next_question_id": upcoming[0].id if upcoming else None,
             "unresolved": [item.ref for item in checklist.items],

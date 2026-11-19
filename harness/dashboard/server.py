@@ -23,11 +23,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from harness.authoring_actions_contract import SCHEMAS
 from harness.dashboard.approve import approve_task
 from harness.dashboard.comments_view import add_comment, move_comment
 from harness.dashboard.compare_view import compare_view
 from harness.dashboard.diagrams_view import diagram_version_view
-from harness.dashboard.view import NO_ACTIVE_TASK, dashboard_view
+from harness.dashboard.view import NO_ACTIVE_TASK
 
 LOCALHOST = "127.0.0.1"
 API_PATH = "/api/dashboard"
@@ -61,6 +62,8 @@ WRITES = {
     "/api/planning-recovery/finish": "planning-finish",
     "/api/spec-restoration/restore": "spec-restoration",
 }
+
+WRITES.update({"/api/authoring/" + action: "authoring" for action in {*SCHEMAS, "new"}})
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16
 VERSION = re.compile(r"[1-9][0-9]*")
@@ -72,9 +75,16 @@ STATIC_DIR = files("harness.dashboard") / "static"
 STATIC = {
     **{
         f"/static/{name}": (name, "text/javascript; charset=utf-8")
-        for name in ("workspace.js", "workspace_plan.js", "workspace_diagram.js")
+        for name in (
+            "interview.js",
+            "spec_editor.js",
+            "workspace.js",
+            "workspace_plan.js",
+            "workspace_diagram.js",
+        )
     },
     "/static/workspace.css": ("workspace.css", "text/css; charset=utf-8"),
+    "/static/interview.css": ("interview.css", "text/css; charset=utf-8"),
     "/": ("index.html", "text/html; charset=utf-8"),
     "/static/start.js": ("start.js", "text/javascript; charset=utf-8"),
     "/static/app.js": ("app.js", "text/javascript; charset=utf-8"),
@@ -110,15 +120,31 @@ class DashboardServer(ThreadingHTTPServer):
     poll_seconds = 1.0
     stream_lifetime = 300.0
 
-    def __init__(self, db_path: Path, task_id: str | None, specs: str | None = None):
+    def __init__(
+        self,
+        db_path: Path,
+        task_id: str | None,
+        specs: str | None = None,
+        *,
+        project_root: Path | None = None,
+    ):
         self.db_path = Path(db_path)
         self.task_id = task_id
         self.specs = specs
+        from harness.authoring_worker import AuthoringWorker
+        from harness.db import repo_root
+
+        self.project_root = Path(project_root or repo_root()).resolve()
+        self.authoring_worker = AuthoringWorker(self.db_path, self.project_root, specs=specs)
         self.closing = threading.Event()
+        self.emission_lock = threading.Lock()
         super().__init__((LOCALHOST, 0), DashboardHandler)
+        self.authoring_worker.start()
 
     def server_close(self) -> None:
-        self.closing.set()
+        with self.emission_lock:
+            self.closing.set()
+        self.authoring_worker.close()
         super().server_close()
 
     @property
@@ -165,7 +191,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _view(self, task_id: str | None) -> dict[str, Any]:
         server = self.server
-        return dashboard_view(server.db_path, task_id, server.specs)
+        from harness.dashboard.view import combined_view
+
+        data = combined_view(server.db_path, task_id, server.specs, root=server.project_root)
+        authoring = data["authoring"]
+        from harness.authoring import project_identity
+
+        data["project"] = {
+            "id": project_identity(server.project_root),
+            "repository": str(server.project_root),
+        }
+        data["authoring_worker"] = server.authoring_worker.status
+        if data.get("task"):
+            data["task"]["authoring"] = authoring
+        return data
 
     def do_GET(self) -> None:
         if self.headers.get("Host") not in self.server.allowed_hosts():
@@ -179,6 +218,67 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json(500, {"error": str(error)})
                 return
             self._json(200, data)
+        elif url.path in {"/api/authoring/history", "/api/authoring/revision"}:
+            from harness.authoring import AuthoringService
+            from harness.dashboard.view import open_state
+
+            try:
+                query = parse_qs(url.query, keep_blank_values=True)
+                keys = (
+                    {"task", "before", "limit"}
+                    if url.path.endswith("history")
+                    else {"task", "revision"}
+                )
+                if (
+                    not set(query) <= keys
+                    or "task" not in query
+                    or any(len(v) != 1 for v in query.values())
+                ):
+                    raise ValueError("invalid authoring query")
+                if not self.server.db_path.is_file():
+                    raise LookupError("missing database")
+                with open_state(self.server.db_path) as controller:
+                    service = AuthoringService(
+                        controller,
+                        self.server.project_root,
+                        query["task"][0],
+                        specs=self.server.specs,
+                    )
+                    data = (
+                        service.history(
+                            before=int(query.get("before", ["9223372036854775807"])[0]),
+                            limit=int(query.get("limit", ["100"])[0]),
+                        )
+                        if url.path.endswith("history")
+                        else service.store.revision(query["revision"][0])
+                    )
+                    if data is None:
+                        raise LookupError("missing revision")
+                self._json(200, data)
+            except (LookupError, KeyError):
+                self._json(404, {"error": "Unknown task-owned record"})
+            except (ValueError, OSError, sqlite3.Error):
+                self._json(400, {"error": "Invalid authoring read"})
+        elif url.path == "/api/authoring":
+            from harness.dashboard.authoring_view import read_authoring
+
+            try:
+                query = parse_qs(url.query, keep_blank_values=True)
+                if not set(query) <= {"task", "hosts"} or any(len(v) != 1 for v in query.values()):
+                    raise ValueError("invalid authoring query")
+                data = read_authoring(
+                    self.server.db_path,
+                    self.server.project_root,
+                    self._requested_task(url.query),
+                    specs=self.server.specs,
+                    hosts=query.get("hosts", ["0"])[0] == "1",
+                )
+                data["worker"] = self.server.authoring_worker.status
+                self._json(200, data)
+            except LookupError:
+                self._json(404, {"error": "Unknown task in configured project"})
+            except (ValueError, OSError, sqlite3.Error):
+                self._json(503, {"error": "Authoring state unavailable"})
         elif url.path == STREAM_PATH:
             self._stream(self._requested_task(url.query))
         elif url.path == DIAGRAMS_PATH:
@@ -314,12 +414,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path == "/api/workspace/proposals" and int(self.headers["Content-Length"]) > 131072:
             self._json(413, {"error": "proposal request exceeds 131072 bytes"})
             return
+        if path.startswith("/api/authoring/") and int(self.headers["Content-Length"]) > 131072:
+            self._json(413, {"error": "authoring request exceeds 131072 bytes"})
+            return
         body = self._body(int(self.headers["Content-Length"]))
         if body is None:
             self._json(400, {"error": "request body is incomplete"})
             return
         action, db_path = WRITES[path], self.server.db_path
-        if action is None:
+        if action == "authoring":
+            from harness.dashboard.authoring_actions import authoring_action
+
+            result = authoring_action(
+                db_path,
+                self.server.project_root,
+                body,
+                path.removeprefix("/api/authoring/"),
+                specs=self.server.specs,
+            )
+            self._json(*result)
+            if result[0] < 300:
+                self.server.authoring_worker.start()
+        elif action is None:
             self._json(*add_comment(db_path, body))
         elif action == "workspace-proposal":
             from harness.dashboard.workspace_actions import add_proposal
@@ -438,25 +554,36 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(chunk)
         self.wfile.flush()
 
+    def _emit(self, chunk):
+        with self.server.emission_lock:
+            if self.server.closing.is_set():
+                return False
+            self._write(chunk)
+            return True
+
     def _stream(self, task_id: str | None) -> None:
         """Server-sent events: the view whenever it changes, until closed or recycled."""
         server = self.server
         self.close_connection = True
+        self.connection.settimeout(5)
         self.send_response(200)
         self.send_header("Content-Type", STREAM_TYPE)
         self.end_headers()
         deadline = time.monotonic() + server.stream_lifetime
         try:
-            self._write(f"retry: {RETRY_MS}\n\n".encode())
+            if not self._emit(f"retry: {RETRY_MS}\n\n".encode()):
+                return
             last, written = b"", time.monotonic()
             while not server.closing.is_set():
                 frame = self._frame(task_id)
                 now = time.monotonic()
                 if frame != last:
-                    self._write(frame)
+                    if not self._emit(frame):
+                        break
                     last, written = frame, now
                 elif now - written >= KEEPALIVE_SECONDS:
-                    self._write(b": keep-alive\n\n")
+                    if not self._emit(b": keep-alive\n\n"):
+                        break
                     written = now
                 remaining = deadline - now
                 if remaining <= 0 or server.closing.wait(min(server.poll_seconds, remaining)):

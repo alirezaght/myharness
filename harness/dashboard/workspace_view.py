@@ -85,7 +85,7 @@ def source_snapshot(controller, task, store, execution):
                     "text": section,
                     "kind": "spec_section",
                     "status": spec["status"],
-                    "provenance": f"Specification v{spec['version']}"
+                    "provenance": f"Approved specification v{spec['version']}"
                     if spec["version"]
                     else "Draft specification",
                 }
@@ -147,7 +147,12 @@ def source_snapshot(controller, task, store, execution):
                 "sources": edge["sources"],
             }
         )
+    from harness.logical_diagram import project_graph
+
+    logical = project_graph(controller, task, graph, requirements, execution)
+    graph = logical["primary"]
     return {
+        "logical": logical,
         "task": task.id,
         "requirements": requirements,
         "plan": plan,

@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from harness.dashboard import server as server_module
 from tests.execution_helpers import approved_execution, started
 from tests.test_dashboard import api, serve
 from tests.test_dashboard_browser import CHROME
@@ -56,7 +55,8 @@ def test_epoch_status_and_stale_actions(
             decisions=[],
         )
         monkeypatch.setattr(
-            server_module, "dashboard_view", lambda *a, **kw: copy.deepcopy(baseline)
+            "harness.dashboard.view.combined_view",
+            lambda *a, **kw: copy.deepcopy(baseline),
         )
         with chrome(tmp_path / "chrome", server.url + f"?task={task}", width, height) as call:
             wait(call, "Boolean(document.querySelector('.execution-verification h4'))")

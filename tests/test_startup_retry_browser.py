@@ -25,7 +25,7 @@ def test_startup_failure_ready_retry_and_pending_result(
     monkeypatch.setattr("harness.execution_worker._spawn_worker", lambda *a: calls.append(a))
     with (
         serve(Path(envelope["database"]), execution["task_id"]) as server,
-        chrome(tmp_path / "chrome", server.url, width, 1000) as call,
+        chrome(tmp_path / "chrome", server.url + "?tab=implementation", width, 1000) as call,
     ):
         wait(call, 'Boolean(document.getElementById("execution"))')
         assert evaluate(
@@ -114,7 +114,10 @@ def test_definitive_preflight_failure_allows_host_switch(
         "harness.execution_worker.launch_worker",
         lambda conn, eid: calls.append(eid) or {"status": "Reserved"},
     )
-    with serve(db_path, tid) as server, chrome(tmp_path / "chrome", server.url, 390, 1000) as call:
+    with (
+        serve(db_path, tid) as server,
+        chrome(tmp_path / "chrome", server.url + "?tab=implementation", 390, 1000) as call,
+    ):
         wait(call, 'Boolean(document.querySelector("#implementation-host"))')
         evaluate(
             call,
@@ -166,7 +169,10 @@ def test_lost_success_response_recovers_same_run_after_host_drift(
         return {"status": "WorkerOwned"}
 
     monkeypatch.setattr("harness.execution_worker.launch_worker", dispatch)
-    with serve(db_path, tid) as server, chrome(tmp_path / "chrome", server.url, 390, 1000) as call:
+    with (
+        serve(db_path, tid) as server,
+        chrome(tmp_path / "chrome", server.url + "?tab=implementation", 390, 1000) as call,
+    ):
         wait(call, 'Boolean(document.getElementById("implementation-host"))')
         evaluate(
             call,
@@ -218,7 +224,10 @@ def test_reserved_preflight_error_keeps_host_locked_across_refresh(
         raise OSError("dispatch unavailable after reservation")
 
     monkeypatch.setattr("harness.execution_worker.launch_worker", unavailable)
-    with serve(db_path, tid) as server, chrome(tmp_path / "chrome", server.url, 390, 1000) as call:
+    with (
+        serve(db_path, tid) as server,
+        chrome(tmp_path / "chrome", server.url + "?tab=implementation", 390, 1000) as call,
+    ):
         wait(call, 'Boolean(document.getElementById("implementation-host"))')
         evaluate(
             call,

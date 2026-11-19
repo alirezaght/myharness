@@ -110,19 +110,35 @@ class SpecificationManager:
     # Read-only
 
     def body(self, *, proposed=False) -> str:
+        from harness.authoring_store import adopted_revision
+
+        adopted = adopted_revision(self.controller, self.task_id)
+        if adopted is not None:
+            return adopted["body"]
+        return self.structured_body(proposed=proposed)
+
+    def structured_body(self, *, proposed=False) -> str:
         engine = InterviewEngine(self.controller, self.task_id)
         designer = ArchitectureDesigner(self.controller, self.task_id)
-        checkpoint = self.ws.latest_checkpoint("investigation")
-        decisions = checkpoint.payload.get("decisions", []) if checkpoint else []
-        recorded = _recorded_decisions(self.ws.events())
+        from harness.current_decisions import (
+            current_investigation_decisions,
+            current_recorded_decisions,
+        )
+
+        decisions = current_investigation_decisions(self.ws)
+        recorded = current_recorded_decisions(self.ws)
         plan = TestPlanner(self.controller, self.task_id).document()
         summary, design = engine.summary(), designer.document()
-        body = build_body(summary, design, decisions, recorded, self.ws.proposals(), plan)
+        body = build_body(summary, design, decisions, recorded, engine.effective_proposals(), plan)
         if proposed:
             from harness.spec_document import proposed_content
 
             body = proposed_content(
-                body, self.ws.proposals(), self.ws.design_entries(), self.ws.scenarios(), plan
+                body,
+                engine.effective_proposals(),
+                self.ws.design_entries(),
+                self.ws.scenarios(),
+                plan,
             )
         return body
 
@@ -252,6 +268,11 @@ class SpecificationManager:
         if draft.is_file():
             restores.append((draft, draft.read_bytes().decode("utf-8")))
             draft.unlink()
+        self.conn.execute(
+            "UPDATE authoring_projections SET state='sealed' WHERE task_id=? AND revision_id="
+            "(SELECT adopted_id FROM authoring_tasks WHERE task_id=?)",
+            (self.task_id, self.task_id),
+        )
         if on_sealed is not None:
             on_sealed(dict(payload), report)
         return previous

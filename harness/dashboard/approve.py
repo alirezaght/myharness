@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.approval import ApprovalGate
+from harness.authoring_store import approval_token
 from harness.cli_approve import approval_lines
 from harness.cli_commands import task_repo_root
 from harness.cli_spec import spec_store
@@ -79,7 +80,7 @@ def _guard(controller: HarnessController, gate: ApprovalGate, seen: dict[str, An
                 f"the design changed since diagram version {current or 'none'}; reload to see"
                 " the new version before approving"
             )
-        if report.state_hash != seen["review_hash"]:
+        if approval_token(controller, gate.task_id, report.state_hash) != seen["review_hash"]:
             raise StaleApproval(
                 "the final design review changed since the page was loaded; reload before approving"
             )
