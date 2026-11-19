@@ -26,6 +26,31 @@ OWNERSHIP_DIAGNOSTICS = {
 }
 
 
+def _valid_process_observation(value, code):
+    """Closed metadata only; never accept exception text, argv or filesystem paths."""
+    return (
+        isinstance(value, dict)
+        and set(value)
+        == {"schema_version", "pid", "operation", "error_kind", "error_number", "identity_after"}
+        and type(value["schema_version"]) is int
+        and value["schema_version"] == 1
+        and type(value["pid"]) is int
+        and 0 < value["pid"] < 2**31
+        and isinstance(value["operation"], str)
+        and {"argv": "OWNERSHIP_ARGV_UNAVAILABLE", "cwd": "OWNERSHIP_CWD_UNAVAILABLE"}.get(
+            value["operation"]
+        )
+        == code
+        and value["error_kind"] in ("os_error", "invalid_value")
+        and (
+            value["error_number"] is None
+            or type(value["error_number"]) is int
+            and 0 <= value["error_number"] <= 4095
+        )
+        and value["identity_after"] in ("live", "zombie", "changed", "unavailable")
+    )
+
+
 class PreparationFailure(ValueError):
     def __init__(self, diagnostic):
         self.diagnostic = diagnostic
@@ -180,7 +205,11 @@ class InitializationChannel:
                 or type(value["sequence"]) is not int
                 or value["sequence"] != sequence
                 or not isinstance(payload, dict)
-                or set(payload) != {"request_id", "stage", "code", "diagnostic"}
+                or set(payload)
+                not in (
+                    {"request_id", "stage", "code", "diagnostic"},
+                    {"request_id", "stage", "code", "diagnostic", "observation"},
+                )
                 or payload["request_id"] != self.request["request_id"]
                 or payload["stage"] not in {"request", "preparation", "start"}
                 or payload["code"]
@@ -193,6 +222,8 @@ class InitializationChannel:
                     "TASK_ACTIVITY",
                     "PAYLOAD_MISMATCH",
                 }
+                or "observation" in payload
+                and not _valid_process_observation(payload["observation"], payload["code"])
                 or payload["diagnostic"]
                 != OWNERSHIP_DIAGNOSTICS.get(
                     payload["code"],

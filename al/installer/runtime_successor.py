@@ -272,6 +272,7 @@ def _request(value, identifier):
 def prepare_successor(repository, platform, identifier, coordinator_fd):
     from .runtime_successor_channel import (
         PreparationTransport,
+        ProcessObservationFailure,
         classify_preparation_error,
         preparation_error,
         send,
@@ -287,7 +288,8 @@ def prepare_successor(repository, platform, identifier, coordinator_fd):
         sequence = coordinator.sequence
         code = classify_preparation_error(error)
         diagnostic = preparation_error(
-            identifier, sequence, "start" if sequence == 2 else "preparation", code
+            identifier, sequence, "start" if sequence == 2 else "preparation", code,
+            observation=error.observation if isinstance(error, ProcessObservationFailure) else None,
         )
         try:
             Store.immutable(
