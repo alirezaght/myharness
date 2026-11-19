@@ -13,8 +13,6 @@ jobs:
   verify:
     # Successor preparation exercises the supported macOS process sandbox.
     runs-on: macos-latest
-    env:
-      AL_RELEASE_EVIDENCE: ${{ runner.temp }}/al-release-evidence
     steps:
       - uses: actions/checkout@v7
         with:
@@ -26,10 +24,15 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Install test runner
         run: python -m pip install pytest 'jsonschema>=4,<5'
+      - name: Prepare external verification evidence
+        shell: bash
+        run: |
+          al_release_evidence_directory="$RUNNER_TEMP/al-release-evidence"
+          mkdir -p "$al_release_evidence_directory"
+          printf 'AL_RELEASE_EVIDENCE=%s\n' "$al_release_evidence_directory" >> "$GITHUB_ENV"
       - name: Check owned verification prerequisites
         shell: bash
         run: |
-          mkdir -p "$AL_RELEASE_EVIDENCE"
           python al/verification_preflight.py --temporary-root "$RUNNER_TEMP" > "$AL_RELEASE_EVIDENCE/preflight.json"
           cat "$AL_RELEASE_EVIDENCE/preflight.json"
       - name: Verify installer, platform suites, and release payload
@@ -37,7 +40,7 @@ jobs:
       - name: Run the pre-release acceptance tier (long end-to-end proofs)
         run: python al/release_verify.py --tier acceptance --report "$AL_RELEASE_EVIDENCE/acceptance.json"
       - name: Preserve verification diagnostics
-        if: always()
+        if: ${{ always() && env.AL_RELEASE_EVIDENCE != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: al-release-verification-${{ github.run_id }}-${{ github.run_attempt }}
