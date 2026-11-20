@@ -15,6 +15,7 @@ def require_running(st):
 def checkpoint(st,sid,reason,instructions,recipient=None,artifact=None):
     data={'schema_version':1,'run_id':st['run_id'],'identity':st['identity'],'task_hash':al_task.task_hash(st),
           'candidate_hash':S.candidate_fingerprint(st),'prior_phase':st['phase'],
+          'phase_occurrence':len(st['phase_occurrences'])-1,
           'outstanding':operation_gaps(st),'reason':reason,'resume_instructions':instructions,'recipient':recipient,'transfer_artifact':artifact,'at':time.time()}
     ref=A.snapshot_bytes(sid,json.dumps(data,sort_keys=True).encode(),'checkpoint','runtime')
     st.setdefault('checkpoints',[]).append(ref)
@@ -26,10 +27,16 @@ def close_occurrence(st):
     if st['phase_occurrences'] and st['phase_occurrences'][-1]['ended'] is None:st['phase_occurrences'][-1]['ended']=now
 
 
-def apply_checkpoint(st,data,checkpoint_id):
+def apply_checkpoint(st,data,checkpoint_id,*,restoration,rework_continuation=None,retry_agent=None):
+    if restoration not in {'checkpoint-resume','agent-retry','rework-continuation'}:
+        refuse('checkpoint restoration needs a supported operation')
+    if ((restoration=='agent-retry') != (retry_agent is not None)
+            or (restoration=='rework-continuation') != (rework_continuation is not None)):
+        refuse('checkpoint restoration authority does not match operation')
     if data['run_id']!=st['run_id'] or data['identity']!=st['identity'] or data['task_hash']!=al_task.task_hash(st):refuse('checkpoint identity/task mismatch')
     from al_gate_refresh import refresh
     currency=refresh(st)
+    retained_marker=st.get('gate_recovery')
     changed=data['candidate_hash']!=S.candidate_fingerprint(st)
     phase=data['prior_phase']
     if (changed or not currency['current']) and phase in {'REVIEW','FINAL_VERIFICATION','VERIFICATION'}:
@@ -46,6 +53,10 @@ def apply_checkpoint(st,data,checkpoint_id):
     if changed or not currency['current']:
         st['review']=None;st['review_status']=None;st['evidence']['invalidated_at']=time.time()
     st['status']='RUNNING';st['stop_reason']=None
+    if retained_marker is not None and st.get('gate_recovery') is retained_marker:
+        from al_gate_recovery import continue_phase
+        proof={'retry_agent':retry_agent} if retry_agent is not None else (rework_continuation or {})
+        continue_phase(st,phase,restoration,checkpoint=checkpoint_id,**proof)
     al_store.set_phase(st,phase)
     return changed
 
@@ -62,8 +73,9 @@ def cmd_checkpoint(a,sid):
             refuse('run is not resumably stopped')
         if operation_gaps(st): refuse('reconcile outstanding operations before resume')
         if st.get('failure'): refuse('pending agent failure requires guarded retry, not resume')
-        changed=apply_checkpoint(st,A.read_json(ref),ref['id'])
-        st.setdefault('resumes',[]).append({'checkpoint':ref['id'],'changed':changed,'at':time.time()})
+        changed=apply_checkpoint(st,A.read_json(ref),ref['id'],restoration='checkpoint-resume')
+        st.setdefault('resumes',[]).append({'checkpoint':ref['id'],'changed':changed,
+                                          'phase_occurrence':len(st['phase_occurrences'])-1,'at':time.time()})
     else:
         require_running(st)
         data=json.loads(Path(a.file).read_bytes()) if getattr(a,'file',None) else {'reason':a.reason,'resume_instructions':a.resume_instructions}

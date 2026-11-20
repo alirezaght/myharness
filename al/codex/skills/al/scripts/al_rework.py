@@ -118,7 +118,7 @@ def validated_request(st,a):
             'label':a.label,'repro':repro,'reasons':reasons,'route':'architect' if reasons else 'fast'}
 
 
-def consume_return(st,request):
+def consume_return(st,request,*,recovery_occurrence=None):
     rw=rework_state(st)
     row={key:request[key] for key in ('source','findings','files','label','repro','reasons','route')}
     if 'rework_recovery' in st:
@@ -127,6 +127,11 @@ def consume_return(st,request):
     rw['used']+=1;rw['total']+=1
     row.update(batch=rw['batch'],n=rw['used'],phase=st['phase'],at=time.time());rw['history'].append(row)
     st['status']='RUNNING';_reopen_tasks(st,row['files'])
+    if st.get('gate_recovery'):
+        from al_gate_recovery import continue_phase
+        command='rework-recovery' if recovery_occurrence else 'rework'
+        proof={'rework_occurrence':recovery_occurrence} if recovery_occurrence else {}
+        continue_phase(st,'REWORK',command,**proof)
     set_phase(st,'REWORK',['al-architect','al-engineer'] if row['reasons'] else ['al-engineer'])
     return row
 
@@ -145,7 +150,8 @@ def cmd_rework(a, sid):
         current(st,o)
         print('AL · rework budget exhausted · Architect reassessment pending',file=sys.stderr);sys.exit(10)
     from al_transitions import require_transition
-    require_transition(st,'rework','REWORK')
+    # Validate admission now; record only the phase actually entered below.
+    require_transition(st,'rework','REWORK',record_continuation=False)
     rw=rework_state(st)
     if rw['used']>=rw['max']:
         from al_rework_recovery import enter

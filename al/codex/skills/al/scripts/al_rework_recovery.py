@@ -37,7 +37,11 @@ def enter(st,sid,request):
     o['binding']=C.binding(st,o);r['occurrences'].append(o)
     if r['automatic_authorizations']>=2:stop(st,sid,o,'automatic rework recovery cap reached','cap')
     else:
-        r['pending']=o['id'];Store.set_phase(st,'REWORK_REASSESSMENT',['al-architect'])
+        r['pending']=o['id']
+        if st.get('gate_recovery'):
+            from al_gate_recovery import continue_phase
+            continue_phase(st,'REWORK_REASSESSMENT','rework-reassessment',rework_occurrence=o['id'])
+        Store.set_phase(st,'REWORK_REASSESSMENT',['al-architect'])
     Store.save(sid,st)
     return o
 
@@ -134,14 +138,20 @@ def cmd_decide(a,sid):
         from types import SimpleNamespace
         request=validated_request(st,SimpleNamespace(**o['request']['arguments']))
         if request!=o['request']:refuse('pending rework request changed')
-        from al_new_origin import require_admitted
-        from al_gate_recovery import ready
-        require_admitted(st)
-        if st.get('gate_recovery'):ready(st)
+        # A bounded credit authorizes no product execution or final proof. Keep
+        # issuer/spec/checkpoint integrity, without requiring the proof it may repair.
+        from al_inherited_lineage import require_recovery_complete
+        from al_new_origin import validate
+        require_recovery_complete(st);validate(st)
+        if st.get('spec_status')!='SPEC_READY' or st.get('classification') not in {'SMALL','STANDARD','COMPLEX'}:
+            refuse('recovery requires defined specification and classification')
+        if st.get('gate_recovery'):
+            from al_gate_recovery import marker
+            marker(st)
         if r['automatic_authorizations']>=2:refuse('automatic recovery cap reached')
         # All authority checks precede the single atomic grant + consumption commit.
         g=add_grant(st,'automatic',data['request_id']);r['automatic_authorizations']+=1;r['pending']=None
-        consume_return(st,request)
+        consume_return(st,request,recovery_occurrence=o['id'])
         row,receipt=accepted(st,sid,data,'decision',g['id'],st['rework']['total'])
         r['decisions'].append(row)
         o['dispositions'].append({'kind':'allowed','request_id':data['request_id'],'receipt':row['receipt']})
@@ -163,7 +173,9 @@ def cmd_continue(a,sid):
     if type(auth['schema_version']) is not int or auth['schema_version']!=1 or auth['kind']!='explicit-user-continuation-v1' or auth['request_id']!=data['request_id'] or auth['binding']!=data['binding']:refuse('explicit user authorization binding mismatch')
     J.text(auth['message'],'explicit user message');J.text(auth['provenance'],'user message provenance')
     o=next(o for o in r['occurrences'] if o['id']==stop_record['occurrence_id'])
-    R.apply_checkpoint(st,J.read(o['checkpoint']),o['checkpoint']['id'])
+    R.apply_checkpoint(st,J.read(o['checkpoint']),o['checkpoint']['id'],
+                       restoration='rework-continuation',
+                       rework_continuation={'rework_occurrence':o['id'],'continuation_request':data['request_id']})
     g=add_grant(st,'user',data['request_id']);row,receipt=accepted(st,sid,data,'continuation',g['id'])
     r['continuations'].append(row);r['pending']=None;r['stop']=None
     Store.save(sid,st);print(json.dumps(receipt,indent=2,sort_keys=True))
