@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 from al.installer import workspace_tools as T
@@ -50,15 +51,33 @@ def test_two_real_al_fixtures_isolate_source_mutation_and_deletion(tmp_path):
 
 def _paired_inputs():
     contents = {name: (ROOT / name).read_bytes() for name in ("pyproject.toml", "README.md")}
-    for package in ("harness", "al/installer"):
-        for path in sorted((ROOT / package).rglob("*.py")):
-            if not {"__pycache__", ".pytest_cache", ".ruff_cache"} & set(path.parts):
-                contents[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    for path in sorted((ROOT / "harness").rglob("*")):
+        if (
+            path.is_file()
+            and not {"__pycache__", ".pytest_cache"} & set(path.parts)
+            and path.suffix not in {".pyc", ".pyo"}
+        ):
+            contents[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    for path in sorted((ROOT / "al/installer").glob("*.py")):
+        contents[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     return contents
 
 
 def test_paired_wheel_installs_source_materializer_without_workspace_imports(tmp_path):
     contents = _paired_inputs()
+    build_backend = tomllib.loads(contents["pyproject.toml"].decode())["tool"]["uv"][
+        "build-backend"
+    ]
+    declared_migrations = {
+        path.relative_to(ROOT).as_posix()
+        for pattern in build_backend["source-include"]
+        if pattern.startswith("harness/migrations/")
+        for path in ROOT.glob(pattern)
+        if path.is_file() and path.suffix == ".sql"
+    }
+    assert W.PAIRED_RESOURCE_REQUIRED <= contents.keys()
+    assert declared_migrations
+    assert declared_migrations <= contents.keys()
     source, metadata = W.build_copy(contents, tmp_path / "source")
     tool = T.tool_identity("uv")
     build_env = T.environment(tmp_path / "build-environment")
