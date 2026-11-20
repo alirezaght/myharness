@@ -85,3 +85,19 @@ require a developer decision. Real permission, identity, ownership and secret
 protections remain enforced. An updated
 installation does not migrate older runs or change their immutable runtime
 issuer; those runs retain their original command set and evidence.
+
+## Controlled benchmark storage
+
+`benchmark_verify.py` allocates each cohort's disposable source copy, private
+home and pytest temporary files through managed verification storage. Reports,
+logs, probes, source bindings and ownership journals remain outside disposable
+allocations. The report's `storage_cleanup_path` points to a separate cleanup
+receipt; report bytes remain stable when cleanup completes.
+
+Successful tests alone do not authorize deletion. Failed runs, changed sources
+and unproven descendant settlement retain their allocations. Group-only process
+cleanup remains unproven for this purpose. Qualified settlement and durable
+publication use the existing storage finalizer. These allocations make benchmark
+scratch attributable; they do not adopt historical directories or the active
+native build cache. The storage warning and admission free-space reserve are
+not a live-operation quota.
