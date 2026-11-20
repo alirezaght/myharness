@@ -4,7 +4,7 @@ import json
 from evidence_helpers import plan_na_gates
 from launcher_context import _reports
 from test_rework import load, record_red
-from test_rework_recovery import decision, exhaust
+from test_rework_recovery import exhaust
 
 
 def succeeded(result):
@@ -41,32 +41,14 @@ def test_pending_proof_precedes_rr_and_actual_planning_progression_preserves_gua
     before = state_file().read_bytes()
     first = offered(raw)[0]
     assert first["code"] == "PROOF_ADMISSION_PENDING"
-    requirement = first["recovery"]["required_input"]
-    assert requirement["kind"] == "planning-phase-context"
-    assert "REWORK_REASSESSMENT" in requirement["description"]
-    assert "SPEC_READY" not in requirement["description"]
+    # Retained implementation readiness now permits planning authorship directly
+    # in reassessment. Guidance must offer that public route without changing
+    # proof admission, spending rework credit, or requiring a phase detour.
+    assert first["recovery"]["command"] == "planning.packet"
+    assert first["recovery"]["required_input"] is None
     assert state_file().read_bytes() == before
+    retained_recovery = initial["rework_recovery"]
 
-    # A valid Architect recovery decision still cannot grant credits without proof.
-    path, _ = decision(raw, tmp_path)
-    retained_recovery = load(state_file)["rework_recovery"]
-    before = state_file().read_bytes()
-    refused = raw("rework-recovery", "decide", "--file", str(path))
-    assert refused[0] != 0
-    assert "proof admission pending" in str(refused)
-    assert '"code":"PROOF_ADMISSION_PENDING"' in str(refused)
-    assert '"code":"REWORK_REASSESSMENT_REQUIRED"' not in str(refused)
-    assert state_file().read_bytes() == before
-
-    # Use the existing guarded continuation; guidance must not invent this edge.
-    succeeded(raw("phase", "FINALIZATION"))
-    succeeded(raw("phase", "VERIFICATION"))
-    assert load(state_file)["rework"] == initial["rework"]
-    before = state_file().read_bytes()
-    refused = raw("review-start")
-    assert refused[0] != 0 and "proof admission pending" in str(refused)
-    assert '"code":"PROOF_ADMISSION_PENDING"' in str(refused)
-    assert state_file().read_bytes() == before
     packet_action = offered(raw)[0]
     assert packet_action["recovery"]["command"] == "planning.packet"
     descriptor = tmp_path / "before-planning-recovery.json"
@@ -81,6 +63,7 @@ def test_pending_proof_precedes_rr_and_actual_planning_progression_preserves_gua
     succeeded(raw("planning", "admit", "--file", result["materialized_obligations"]["stored_path"]))
     current = load(state_file)
     assert current["proof_admission"]["status"] == "admitted"
+    assert current["phase"] == "REWORK_REASSESSMENT"
     assert current["rework"] == initial["rework"]
     assert current["rework_recovery"] == retained_recovery
     assert current["review_status"] is None
