@@ -87,7 +87,7 @@ def _transition_preflight(st, command, destination, implementation_edge):
     return src
 
 
-def require_transition(st, command, destination):
+def require_transition(st, command, destination, *, record_continuation=True):
     from al_rework_recovery_contract import guard
     from al_new_origin import require_admitted, require_implementation_ready
     implementation_edge = destination in WRITING or command == 'phase' and destination in {'VERIFICATION', 'PSEUDOCODE', 'PLAN_CONFLICT'}
@@ -117,7 +117,7 @@ def require_transition(st, command, destination):
         gaps=workflow_gaps(st)
         if gaps: refuse('; '.join(gaps))
 
-    if implementation_edge and st.get('gate_recovery'):
+    if implementation_edge and st.get('gate_recovery') and record_continuation:
         from al_gate_recovery import continue_phase
         continue_phase(st, destination, command)
 

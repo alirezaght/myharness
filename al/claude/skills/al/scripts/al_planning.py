@@ -71,7 +71,7 @@ def readiness_gap(st, *, authoring=False):
         )
     )
     from al_transitions import WRITING
-    retained = st["phase"] in WRITING | {"VERIFICATION"} and bool(st.get("implementation_readiness"))
+    retained = st["phase"] in WRITING | {"VERIFICATION", "REWORK_REASSESSMENT"} and bool(st.get("implementation_readiness"))
     if st["phase"] not in {"PLANNING", "PSEUDOCODE"} and not scoped and not retained:
         return "planning-phase-context", "planning provenance requires current planning or acknowledged scoped revalidation"
     from al_writers import operation_gaps

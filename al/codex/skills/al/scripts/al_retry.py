@@ -64,8 +64,9 @@ def cmd_retry(a,sid):
         A.read(peer['artifact'])
     ref=failure.get('checkpoint')
     if not ref or ref not in st.get('checkpoints',[]):refuse('failure checkpoint missing')
-    changed=R.apply_checkpoint(st,A.read_json(ref),ref['id'])
-    st.setdefault('retry_history',[]).append({'agent':a.agent,'reason':a.reason,'failure':failure,'checkpoint':ref,'changed':changed,'at':time.time()})
+    changed=R.apply_checkpoint(st,A.read_json(ref),ref['id'],restoration='agent-retry',retry_agent=a.agent)
+    st.setdefault('retry_history',[]).append({'agent':a.agent,'reason':a.reason,'failure':failure,'checkpoint':ref,
+                                             'changed':changed,'phase_occurrence':len(st['phase_occurrences'])-1,'at':time.time()})
     st.setdefault('retries',{})[a.agent]=used+1;st['failure']=None
     al_store.save(sid,st);print('AL · retrying '+al_models.display(a.agent)+' (1/1) · '+a.reason)
 

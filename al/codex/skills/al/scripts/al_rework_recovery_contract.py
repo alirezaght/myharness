@@ -93,6 +93,12 @@ def guard(st, *, implementation=False):
         if st['status']=='STOPPED_WITH_BLOCKERS' and r['stop']:
             st['status']='RUNNING'
         if st['phase']=='REWORK_REASSESSMENT' or r['stop']:
+            if st.get('gate_recovery'):
+                from al_gate_recovery import continue_phase
+                record=st['rework_implementation_continuity'][-1]
+                occurrence=record['pending'] or record['stop']['occurrence_id']
+                continue_phase(st,'IMPLEMENTATION','implementation-continuity',
+                               rework_occurrence=occurrence,continuity_hash=J.digest(record))
             from al_store import set_phase
             set_phase(st,'IMPLEMENTATION',['al-engineer'])
     if r['pending'] and not continuity(st):
