@@ -14,6 +14,14 @@ from .workspace_tools import environment, run_tool, tool_identity
 
 LEGACY_LAYOUT = {"module-root": ""}
 PAIRED_LAYOUT = {"module-root": "", "module-name": ["harness", "al.installer"]}
+PAIRED_RESOURCE_LAYOUT = {
+    **PAIRED_LAYOUT,
+    "source-include": ["harness/skills/harness/**", "harness/migrations/*.sql"],
+}
+PAIRED_RESOURCE_REQUIRED = {
+    "harness/skills/harness/" + name
+    for name in ("SKILL.md", "claude.md", "codex.md", "protocol.md")
+}
 PAIRED_REQUIRED = {
     "al/installer/" + name
     for name in (
@@ -31,13 +39,9 @@ PAIRED_REQUIRED = {
 
 
 def _paired(contents):
-    return (
-        tomllib.loads(contents["pyproject.toml"].decode())
-        .get("tool", {})
-        .get("uv", {})
-        .get("build-backend")
-        == PAIRED_LAYOUT
-    )
+    return tomllib.loads(contents["pyproject.toml"].decode()).get("tool", {}).get("uv", {}).get(
+        "build-backend"
+    ) in (PAIRED_LAYOUT, PAIRED_RESOURCE_LAYOUT)
 
 
 def _installer_member(name):
@@ -59,12 +63,14 @@ def project(contents):
         or metadata.get("scripts", {}).get("harness") != "harness.cli:main"
         or backend != {"requires": ["uv_build>=0.10,<0.11"], "build-backend": "uv_build"}
         or value.get("tool", {}).get("uv", {}).get("build-backend")
-        not in (LEGACY_LAYOUT, PAIRED_LAYOUT)
+        not in (LEGACY_LAYOUT, PAIRED_LAYOUT, PAIRED_RESOURCE_LAYOUT)
     ):
         raise ValueError("unsupported approved Harness build configuration")
     required = {"harness/__init__.py", "harness/cli.py"}
     if _paired(contents):
         required |= PAIRED_REQUIRED
+    if value.get("tool", {}).get("uv", {}).get("build-backend") == PAIRED_RESOURCE_LAYOUT:
+        required |= PAIRED_RESOURCE_REQUIRED
     if not required <= contents.keys():
         raise ValueError("approved Harness implementation missing")
     return metadata

@@ -13,8 +13,12 @@ from harness.storage import CANONICAL_MODULES
 ROOT = Path(__file__).parents[2]
 
 
-def inputs(*, paired=True):
+def inputs(*, paired=True, resources=True):
     contents = {name: (ROOT / name).read_bytes() for name in ("pyproject.toml", "README.md")}
+    if not paired or not resources:
+        contents["pyproject.toml"] = contents["pyproject.toml"].replace(
+            b'source-include = ["harness/skills/harness/**", "harness/migrations/*.sql"]\n', b""
+        )
     if not paired:
         contents["pyproject.toml"] = contents["pyproject.toml"].replace(
             b'module-name = ["harness", "al.installer"]\n', b""
@@ -38,9 +42,28 @@ def test_exact_paired_required_inventory_matches_canonical_distribution():
     }
 
 
-@pytest.mark.parametrize("paired", [False, True])
-def test_project_accepts_only_complete_supported_layouts(paired):
-    assert W.project(inputs(paired=paired))["name"] == "harness"
+@pytest.mark.parametrize("paired,resources", [(False, False), (True, False), (True, True)])
+def test_project_accepts_only_complete_supported_layouts(paired, resources):
+    assert W.project(inputs(paired=paired, resources=resources))["name"] == "harness"
+
+
+@pytest.mark.parametrize("missing", sorted(W.PAIRED_RESOURCE_REQUIRED))
+def test_bundled_skill_layout_requires_every_resource_before_copy(tmp_path, missing):
+    contents = inputs()
+    contents.pop(missing)
+    with pytest.raises(ValueError, match="implementation missing"):
+        W.build_copy(contents, tmp_path / "source")
+    assert not (tmp_path / "source").exists()
+
+
+@pytest.mark.parametrize("pattern", ["**", "../**", "harness/**"])
+def test_bundled_skill_layout_cannot_expand_source_includes(pattern):
+    contents = inputs()
+    contents["pyproject.toml"] = contents["pyproject.toml"].replace(
+        b"harness/skills/harness/**", pattern.encode()
+    )
+    with pytest.raises(ValueError, match="configuration"):
+        W.project(contents)
 
 
 @pytest.mark.parametrize(
@@ -123,6 +146,8 @@ def test_actual_public_workspace_build_copy_owned_tool_and_inspection(public_bui
     assert observed["sha256"] == digest(artifact.read_bytes())
     for name in W.PAIRED_REQUIRED:
         assert (name in observed["members"]) is paired
+    if paired:
+        assert W.PAIRED_RESOURCE_REQUIRED <= observed["members"].keys()
     assert observed == W.inspect_wheel(artifact, "0.1.0", contents=contents)
 
 
