@@ -66,6 +66,9 @@ def start_execution(
 ):
     if host not in {"claude", "codex"}:
         raise ValueError("host must be claude or codex")
+    from harness.policy.deadlines import origin_receipt, record_origin
+
+    timing_origin = origin_receipt()
     conn = controller.conn
     root = task_repo_root(controller, task_id).resolve()
     store = spec_store(controller, task_id, specs)
@@ -210,6 +213,8 @@ def start_execution(
                 handoff_hash=hh,
                 al_session_id=envelope["al_session_id"],
             )
+            if created:
+                record_origin(conn, eid, timing_origin)
             controller.workspace(task_id).record_event(
                 "execution.reserved",
                 {"execution_id": eid, "approval_id": approval.id, "host": host},

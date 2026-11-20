@@ -1,0 +1,8 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q al/codex/skills/al/tests/test_parity.py --basetemp=/private/tmp/al-r5a-parity-001 --junitxml=/private/tmp/al-r5a-parity-001.xml
+# cwd: .
+# started: Fri Nov 20 15:47:17 2026
+
+.                                                                        [100%]
+1 passed in 0.54s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 44411, "pid": 44411, "sid": 44411, "start": [1795186037, 583003], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

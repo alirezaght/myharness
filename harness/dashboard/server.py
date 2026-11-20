@@ -65,6 +65,15 @@ WRITES = {
     "/api/spec-restoration/restore": "spec-restoration",
 }
 
+WRITES.update(
+    {
+        "/api/reliability/" + action: action
+        for action in ("investigate", "suggest", "group-decision", "project", "verdict")
+    }
+)
+WRITES.update(
+    {"/api/policy/" + action: action for action in ("install", "capability", "revoke", "workflow")}
+)
 WRITES.update({"/api/authoring/" + action: "authoring" for action in {*SCHEMAS, "new"}})
 LENGTH = re.compile(r"[0-9]{1,18}")
 READ_CHUNK = 1 << 16
@@ -96,6 +105,11 @@ STATIC = {
     "/static/compare.js": ("compare.js", "text/javascript; charset=utf-8"),
     "/static/approvals.js": ("approvals.js", "text/javascript; charset=utf-8"),
     "/static/execution.js": ("execution.js", "text/javascript; charset=utf-8"),
+    "/static/reliability.js": ("reliability.js", "text/javascript; charset=utf-8"),
+    "/static/policy.js": ("policy.js", "text/javascript; charset=utf-8"),
+    "/static/policy.css": ("policy.css", "text/css; charset=utf-8"),
+    "/static/timeline.js": ("timeline.js", "text/javascript; charset=utf-8"),
+    "/static/timeline.css": ("timeline.css", "text/css; charset=utf-8"),
     "/static/knowledge.js": ("knowledge.js", "text/javascript; charset=utf-8"),
     "/static/execution_diagram.js": ("execution_diagram.js", "text/javascript; charset=utf-8"),
     "/static/execution_stage_details.js": (
@@ -105,6 +119,7 @@ STATIC = {
     "/static/execution_diagram.css": ("execution_diagram.css", "text/css; charset=utf-8"),
     "/static/delivery.js": ("delivery.js", "text/javascript; charset=utf-8"),
     "/static/app.css": ("app.css", "text/css; charset=utf-8"),
+    "/static/reliability.css": ("reliability.css", "text/css; charset=utf-8"),
 }
 JSON_TYPE = "application/json; charset=utf-8"
 TEXT_TYPE = "text/plain; charset=utf-8"
@@ -233,6 +248,28 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json(*read_failure(error))
                 return
             self._json(200, data)
+        elif url.path in {
+            "/api/reliability/" + action
+            for action in (
+                "incidents",
+                "detail",
+                "investigation",
+                "groups",
+                "group",
+                "projection",
+                "outputs",
+            )
+        }:
+            from harness.dashboard.incident_view import read_catalog
+
+            self._json(
+                *read_catalog(
+                    self.server.db_path,
+                    self.server.project_root,
+                    url.query,
+                    url.path.removeprefix("/api/reliability/"),
+                )
+            )
         elif url.path in {"/api/authoring/history", "/api/authoring/revision"}:
             from harness.authoring import AuthoringService
             from harness.dashboard.view import open_state
@@ -323,6 +360,24 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._diagrams(url.query)
         elif url.path == COMPARE_PATH:
             self._compare(url.query)
+        elif url.path == "/api/execution/policy":
+            from harness.dashboard.policy_view import read_policy
+
+            self._json(*read_policy(self.server.db_path, url.query))
+        elif url.path in {"/api/execution/timeline", "/api/execution/timeline/span"}:
+            from harness.dashboard.reliability_view import read_timeline
+
+            status, data = read_timeline(
+                self.server.db_path, url.query, detail=url.path.endswith("/span")
+            )
+            self._json(status, data)
+        elif url.path in {"/api/execution/incidents", "/api/execution/incidents/detail"}:
+            from harness.dashboard.reliability_view import read_incidents
+
+            status, data = read_incidents(
+                self.server.db_path, url.query, detail=url.path.endswith("/detail")
+            )
+            self._json(status, data)
         elif url.path in {"/api/execution", "/api/execution/events", "/api/execution/logs"}:
             from harness.dashboard.execution_view import read_execution
 
@@ -464,6 +519,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/authoring/") and int(self.headers["Content-Length"]) > 131072:
             self._json(413, {"error": "authoring request exceeds 131072 bytes"})
             return
+        if path.startswith("/api/policy/") and int(self.headers["Content-Length"]) > 4096:
+            self._json(413, {"error": "policy request exceeds 4096 bytes"})
+            return
+        if path.startswith("/api/reliability/") and int(self.headers["Content-Length"]) > 32768:
+            self._json(413, {"error": "incident request exceeds 32768 bytes"})
+            return
         body = self._body(int(self.headers["Content-Length"]))
         if body is None:
             self._json(400, {"error": "request body is incomplete"})
@@ -502,6 +563,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
             from harness.dashboard.session_actions import session_action
 
             self._json(*session_action(db_path, self.server.project_root, body))
+        elif path.startswith("/api/reliability/"):
+            from harness.dashboard.incident_actions import incident_action
+
+            self._json(*incident_action(db_path, self.server.project_root, body, action))
+        elif path.startswith("/api/policy/"):
+            from harness.dashboard.policy_actions import policy_action
+
+            self._json(*policy_action(db_path, body, action))
         elif action == "authoring":
             from harness.dashboard.authoring_actions import authoring_action
 

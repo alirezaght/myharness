@@ -45,6 +45,17 @@ def validate_delivery(payload, binding):
     if type(payload["projection_version"]) is not int or payload["projection_version"] != 2:
         raise ValueError("unsupported publication delivery version")
     value = payload["publication"]
+    if isinstance(value, dict) and "contract" in value:
+        from al_agent_contracts import ContractError, fingerprint, validate
+
+        contract = value["contract"]
+        validate(contract)
+        value = {k: v for k, v in value.items() if k != "contract"}
+        if (contract["kind"] != "final-delivery"
+                or contract["context"]["al_run"] != binding["al_run_id"]
+                or contract["context"]["al_session"] != binding["al_session_id"]
+                or contract["payload"]["record_digest"] != fingerprint(value)):
+            raise ContractError("/payload", kind="final-delivery")
     closed(value, FIELDS)
     if (
         value["schema_version"] != 1

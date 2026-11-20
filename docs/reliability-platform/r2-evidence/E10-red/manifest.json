@@ -1,0 +1,36 @@
+{
+  "evidence": "E10",
+  "run_id": "0d32430a",
+  "result": "FAIL",
+  "counts": {
+    "failed": 2
+  },
+  "cause": "Timeline principal input selection lost on parent refresh; existing focus restoration omitted the new input.",
+  "artifacts": [
+    {
+      "original_path": "/private/tmp/al-r2-browser-001.xml",
+      "path": "docs/reliability-platform/r2-evidence/E10-red/al-r2-browser-001.xml",
+      "sha256": "562dedbab47527e144cb5c83d25f4dc9b09ae1e8af74029b523a5966309230b2"
+    },
+    {
+      "original_path": "/private/tmp/al-r2-browser-001/test_real_process_timeline_in_1/timeline-shots/timeline-390x844.png",
+      "path": "docs/reliability-platform/r2-evidence/E10-red/timeline-390x844.png",
+      "sha256": "3af312e3839b618f2007ac0aa9278a2fd14558457cb41bfafdab8088572e2344"
+    },
+    {
+      "original_path": "/private/tmp/al-r2-browser-001/test_real_process_timeline_in_1/timeline-shots/timeline-390x844.json",
+      "path": "docs/reliability-platform/r2-evidence/E10-red/timeline-390x844.json",
+      "sha256": "77c40cd20cc368d3aded8b31461169fd7431a6ebccec325cdfb120ed72095f98"
+    },
+    {
+      "original_path": "/private/tmp/al-r2-browser-001/test_real_process_timeline_in_0/timeline-shots/timeline-1280x800.json",
+      "path": "docs/reliability-platform/r2-evidence/E10-red/timeline-1280x800.json",
+      "sha256": "7a307a0ebf7bea07375d5be83117b70e9170e4e0f538a96ede574f7ff19c24f6"
+    },
+    {
+      "original_path": "/private/tmp/al-r2-browser-001/test_real_process_timeline_in_0/timeline-shots/timeline-1280x800.png",
+      "path": "docs/reliability-platform/r2-evidence/E10-red/timeline-1280x800.png",
+      "sha256": "afa7cef7f6f10e9a0adc3517a44066ad2eacd0e878bb5dd9dba3ddf1914e0906"
+    }
+  ]
+}

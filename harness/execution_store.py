@@ -93,6 +93,9 @@ def reserve_execution(
             now,
         ),
     )
+    from harness.reliability.timeline_store import ensure_trace
+
+    ensure_trace(conn, execution_id, now)
     return get_execution(conn, execution_id), True
 
 

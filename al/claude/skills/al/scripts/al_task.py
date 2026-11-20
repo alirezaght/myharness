@@ -35,7 +35,10 @@ def package(sid,a):
     return data,A.snapshot_bytes(sid,raw,'task-package',source)
 
 def revision_hashes(st):
-    A.read(st['task_package']);amendments=[];hashes=[]
+    A.read(st['task_package'])
+    from al_agent_exchange import require_analysis
+    require_analysis(st)
+    amendments=[];hashes=[]
     def current():return A.digest(json.dumps({'original':st['task_package']['sha256'],'amendments':amendments},sort_keys=True).encode())
     hashes.append(current())
     for amendment in st['amendments']:
@@ -65,7 +68,10 @@ def cmd_amend(a,sid):
     from al_gate_recovery import amendment_binding,amend
     recovery=amendment_binding(st) if 'gate_recovery' in st else None
     data.update(at=time.time(),artifact=A.snapshot_artifact(sid,Path(a.file),'user-amendment'))
-    st['amendments'].append(data); st['review']=None; st['review_status']=None
+    st['amendments'].append(data)
+    from al_agent_exchange import refresh_analysis
+    refresh_analysis(st)
+    st['review']=None; st['review_status']=None
     st['evidence']['invalidated_at']=time.time()
     al_store.set_phase(st,'PLANNING'); st['spec_status']=None
     if recovery:amend(st,sid,data,recovery)

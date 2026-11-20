@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "baseline": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+  "architecture_decisions": [
+    "DEC-0048",
+    "DEC-0049",
+    "DEC-0050",
+    "DEC-0051",
+    "DEC-0052"
+  ],
+  "runtime": {
+    "python": "3.13.18",
+    "sqlite": "3.53.1",
+    "capability_tests": {
+      "passed": 6,
+      "failed": 0
+    },
+    "scope": "isolated temporary interpreter and locked environment; no global runtime change"
+  },
+  "ownership": {
+    "reliability": "this isolated worktree",
+    "knowledge_acceptance": "Existing Codex chat Implement phase 5; no changes made to its workspaces or task state",
+    "compatibility_plan": "retained unexecuted; no writer admitted or production version added"
+  },
+  "source_hashes": {
+    "harness/execution_operations.py": "7b9fd0caa565e3e33e854384f384e36ce6980011495e4b285eb433400592363e",
+    "harness/execution_contract.py": "db671158f0f78d3ef87768a21e02001165cab1fa26afa51eaef3e2cc080be848",
+    "harness/execution_projection.py": "dd79ae832446230bcc688906b584de61277fa746698bc37c755f8f678ce6196a",
+    "harness/knowledge/models.py": "93897b7a445a91dcb8051d322b1eacb31db32cd97973d5adc8f9a969de8cdb04",
+    "harness/knowledge/integration.py": "efd136cdc7045e7e754fef138b8be9abd8c4aa8af130f6e6bcd17656bc4a5671",
+    "harness/native_tool_policy.py": "12c23966480b3d764155e43b0f0591a2fc17c3a41d7fb6e2ecdf9dfd1e254164",
+    "scripts/knowledge_evaluation/observer.py": "1b8803bc4752f490b751aebcdd8f63f68105e87f9c1cd7cea1e57c468d13f308",
+    "scripts/knowledge_evaluation/usage.py": "2c88d51f57c7c2fa447d60821713ce93851fdc40c1c0d6f4d060e00bc0300c0b",
+    "harness/dashboard/static/knowledge.js": "203ffc3c68dc2e96991b4ed6d68abc4430c6c3d7670d975d6b624159e5b073c7"
+  },
+  "native_and_knowledge_acceptance": "not established; dependent on actual owner evidence, not historical docs or test pass counts",
+  "knowledge_tests": {
+    "passed": 411,
+    "deselected_browser": 6,
+    "seconds": 588.52,
+    "command": "/private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_knowledge_*.py tests/test_native_diagnostics.py -m 'not browser' -p no:cacheprovider --basetemp=/private/tmp/al-reliability-r0-knowledge --junitxml=/private/tmp/al-reliability-r0-knowledge.xml"
+  },
+  "browser_tests": {
+    "initial": {
+      "passed": 5,
+      "failed": 1,
+      "reason": "Chrome DevToolsActivePort startup timeout"
+    },
+    "unchanged_recheck": {
+      "passed": 1,
+      "seconds": 1.27
+    },
+    "visual_review": "Desktop1280 and narrow390 captures inspected; no alignment/clipping defect observed; graph container scrolls horizontally at narrow width."
+  },
+  "knowledge_owner_status": "interrupted; acceptance incomplete",
+  "fixture_cleanup": {
+    "status": "completed",
+    "removed": [
+      "/private/tmp/al-reliability-r0-knowledge",
+      "/private/tmp/al-reliability-r0-browser",
+      "/private/tmp/al-reliability-r0-browser-recheck"
+    ],
+    "retained": "Current XML and four selected screenshots under r0-evidence; temporary Python/locked environment retained for continuation; no other task storage modified."
+  }
+}

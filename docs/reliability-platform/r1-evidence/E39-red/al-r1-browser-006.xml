@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="8.595" timestamp="2026-11-19T22:32:58.912716+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_reliability_browser" name="test_persisted_operation_incidents_in_chrome[1280x800-1280-800]" time="4.292"><failure message="AssertionError: ('passiveWindowPreserved', {'viewport': 1280, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})&#10;assert False">observed = (&lt;harness.execution_operations.OperationController object at 0x107158590&gt;, {'thread_id': 'bd431b63-b6f0-4c97-97d5-67ad..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10705fcb0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1070e2190&gt;
+tmp_path = PosixPath('/private/tmp/al-r1-browser-006/test_persisted_operation_incid0')
+name = '1280x800', width = 1280, height = 800
+
+    @pytest.mark.parametrize("name,width,height", [("1280x800", 1280, 800), ("390x844", 390, 844)])
+    def test_persisted_operation_incidents_in_chrome(
+        observed, monkeypatch, tmp_path, name, width, height
+    ):
+        operation, principal, _ = observed
+        from tests.test_reliability_api import record_private_dispatches
+    
+        from datetime import UTC, datetime, timedelta
+        from itertools import count
+    
+        ticks = count()
+        epoch = datetime.now(UTC)
+        monkeypatch.setattr(
+            store, "utcnow", lambda: (epoch + timedelta(seconds=next(ticks))).isoformat()
+        )
+        private_terms = record_private_dispatches(observed)
+        for _index in range(25):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "DISPATCH_REJECTED")
+        store.begin(operation, principal, "run_command")
+    
+        output = Path(os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "incident-shots"))
+        output.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("HARNESS_DASHBOARD_SCREENSHOT_DIR", str(output))
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+        _install_driver(monkeypatch, tmp_path, private_terms)
+        task_id = operation.envelope["task_id"]
+    
+        def fixture_action(action):
+            from harness.db import connect
+    
+            with connect(operation.database) as conn:
+                before_count = conn.execute("SELECT COUNT(*) FROM reliability_incidents").fetchone()[0]
+            added = 30 if action == "burst" else 101 - before_count
+            assert action in {"burst", "deep"} and added &gt; 0
+            for _ in range(added):
+                oid = store.begin(operation, principal, "read_file")
+                store.finish(operation, oid, "DISPATCH_REJECTED")
+            with connect(operation.database) as conn:
+                ids = [row[0] for row in conn.execute("SELECT incident_id FROM reliability_incidents")]
+            assert len(ids) == before_count + added
+            return {"ids": ids, "added": added}
+    
+        with serve(operation.database, task_id) as server:
+            profile = tmp_path / f"chrome-{name}"
+            screenshot = output / f"operation-incidents-{name}.png"
+            results = [
+                _capture_incident_view(
+                    server, task_id, profile / "shot", screenshot, width, height, fixture_action
+                )
+            ]
+    
+        for result in results:
+            assert "error" not in result, result
+            assert result["initialCount"] == 25 and result["olderCount"] == 27, result
+            assert result["hasPending"] and result["literalSafe"] and result["focusSurvivesRefresh"], (
+                result
+            )
+            assert result["controlFits"] and result["maliciousNodes"] == 0 and not result["overflow"], (
+                result
+            )
+            assert result["fenced"], result
+            for scenario in (
+                "privateAPI",
+                "privateUI",
+                "evidenceFocusOnStart",
+                "evidenceFocusAfterResponse",
+                "delayedDetailSurvivesRefresh",
+                "summaryFocusOnToggle",
+                "collapsedLocally",
+                "collapsedAfterParentAndList",
+                "summaryFocusAfterParentAndList",
+                "independentListAndDetail",
+                "loadedHistorySurvivesRefresh",
+                "oldInvestigationSurvivesRefresh",
+                "passiveWindowPreserved",
+                "newArrivalsSignaled",
+                "burstComplete",
+                "deepComplete",
+                "renderedHistoryBounded",
+            ):
+&gt;               assert result[scenario], (scenario, result)
+E               AssertionError: ('passiveWindowPreserved', {'viewport': 1280, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})
+E               assert False
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_browser.py:597: AssertionError</failure></testcase><testcase classname="tests.test_reliability_browser" name="test_persisted_operation_incidents_in_chrome[390x844-390-844]" time="4.161"><failure message="AssertionError: ('passiveWindowPreserved', {'viewport': 390, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})&#10;assert False">observed = (&lt;harness.execution_operations.OperationController object at 0x10714b110&gt;, {'thread_id': '8b633b26-0194-4be2-ba6f-ada6..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x107284eb0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107330290&gt;
+tmp_path = PosixPath('/private/tmp/al-r1-browser-006/test_persisted_operation_incid1')
+name = '390x844', width = 390, height = 844
+
+    @pytest.mark.parametrize("name,width,height", [("1280x800", 1280, 800), ("390x844", 390, 844)])
+    def test_persisted_operation_incidents_in_chrome(
+        observed, monkeypatch, tmp_path, name, width, height
+    ):
+        operation, principal, _ = observed
+        from tests.test_reliability_api import record_private_dispatches
+    
+        from datetime import UTC, datetime, timedelta
+        from itertools import count
+    
+        ticks = count()
+        epoch = datetime.now(UTC)
+        monkeypatch.setattr(
+            store, "utcnow", lambda: (epoch + timedelta(seconds=next(ticks))).isoformat()
+        )
+        private_terms = record_private_dispatches(observed)
+        for _index in range(25):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "DISPATCH_REJECTED")
+        store.begin(operation, principal, "run_command")
+    
+        output = Path(os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "incident-shots"))
+        output.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("HARNESS_DASHBOARD_SCREENSHOT_DIR", str(output))
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+        _install_driver(monkeypatch, tmp_path, private_terms)
+        task_id = operation.envelope["task_id"]
+    
+        def fixture_action(action):
+            from harness.db import connect
+    
+            with connect(operation.database) as conn:
+                before_count = conn.execute("SELECT COUNT(*) FROM reliability_incidents").fetchone()[0]
+            added = 30 if action == "burst" else 101 - before_count
+            assert action in {"burst", "deep"} and added &gt; 0
+            for _ in range(added):
+                oid = store.begin(operation, principal, "read_file")
+                store.finish(operation, oid, "DISPATCH_REJECTED")
+            with connect(operation.database) as conn:
+                ids = [row[0] for row in conn.execute("SELECT incident_id FROM reliability_incidents")]
+            assert len(ids) == before_count + added
+            return {"ids": ids, "added": added}
+    
+        with serve(operation.database, task_id) as server:
+            profile = tmp_path / f"chrome-{name}"
+            screenshot = output / f"operation-incidents-{name}.png"
+            results = [
+                _capture_incident_view(
+                    server, task_id, profile / "shot", screenshot, width, height, fixture_action
+                )
+            ]
+    
+        for result in results:
+            assert "error" not in result, result
+            assert result["initialCount"] == 25 and result["olderCount"] == 27, result
+            assert result["hasPending"] and result["literalSafe"] and result["focusSurvivesRefresh"], (
+                result
+            )
+            assert result["controlFits"] and result["maliciousNodes"] == 0 and not result["overflow"], (
+                result
+            )
+            assert result["fenced"], result
+            for scenario in (
+                "privateAPI",
+                "privateUI",
+                "evidenceFocusOnStart",
+                "evidenceFocusAfterResponse",
+                "delayedDetailSurvivesRefresh",
+                "summaryFocusOnToggle",
+                "collapsedLocally",
+                "collapsedAfterParentAndList",
+                "summaryFocusAfterParentAndList",
+                "independentListAndDetail",
+                "loadedHistorySurvivesRefresh",
+                "oldInvestigationSurvivesRefresh",
+                "passiveWindowPreserved",
+                "newArrivalsSignaled",
+                "burstComplete",
+                "deepComplete",
+                "renderedHistoryBounded",
+            ):
+&gt;               assert result[scenario], (scenario, result)
+E               AssertionError: ('passiveWindowPreserved', {'viewport': 390, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})
+E               assert False
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_browser.py:597: AssertionError</failure></testcase></testsuite></testsuites>

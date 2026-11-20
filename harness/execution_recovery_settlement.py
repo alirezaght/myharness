@@ -9,7 +9,7 @@ from harness.execution_models import ExecutionConflict
 from harness.template_classification import _ordinary
 
 
-def record_not_started(execution, token, *, stage):
+def record_not_started(execution, token, *, stage, conn=None, launch_permit=None):
     if stage not in {"worker-spawn", "native-setup", "native-spawn", "reconnect"}:
         raise ValueError("unsupported no-native disposition")
     receipt = {
@@ -22,7 +22,12 @@ def record_not_started(execution, token, *, stage):
         "native_started": False,
     }
     path = Path(execution["handoff_path"]).parent / "settlements" / ("unspawned-" + token + ".json")
+    if conn is not None:
+        from harness.policy.native_presence import not_started
+
+        not_started(conn, execution, token, receipt, launch_permit=launch_permit)
     atomic_file(path, canonical(receipt).encode())
+    return receipt
 
 
 def _not_started(execution, attempt, *, required_stage=None):

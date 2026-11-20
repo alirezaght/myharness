@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="6" time="15.654" timestamp="2026-11-19T18:22:55.389553+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_knowledge_ui_browser" name="test_graph_is_bounded_keyboard_linked_safe_and_screenshot_ready" time="1.089" /><testcase classname="tests.test_knowledge_ui_browser" name="test_refresh_status_retains_incomplete_diagnostics_and_network_recovery" time="1.008" /><testcase classname="tests.test_knowledge_ui_browser" name="test_empty_result_integrity_and_panel_state_survive_status_poll" time="0.509" /><testcase classname="tests.test_knowledge_ui_browser" name="test_partial_snapshot_long_observation_accessibility_and_refresh_poll" time="10.017"><failure message="Failed: Chrome did not publish valid DevToolsActivePort contents before deadline">tmp_path = PosixPath('/private/tmp/al-reliability-r0-browser/test_partial_snapshot_long_obs0')
+
+    def test_partial_snapshot_long_observation_accessibility_and_refresh_poll(tmp_path):
+        from harness.dashboard.server import STATIC_DIR
+        from tests.test_dashboard_live_view_state_browser import chrome, evaluate, wait
+    
+        observation = "&lt;img src=x onerror=window.__xss=true&gt;" + "x" * (
+            8275 - len("&lt;img src=x onerror=window.__xss=true&gt;")
+        )
+        initial_status = {
+            "status": "indexed",
+            "active_snapshot_id": "partial-snapshot-1",
+            "source_count": 1310,
+            "entity_count": 9407,
+            "relationship_count": 18963,
+            "latest_refresh": {
+                "status": "published-partial",
+                "coverage": [{"status": "excluded", "reason": "sensitive-source"}],
+            },
+            "snapshot_coverage": [{"status": "excluded", "reason": "sensitive-source"}],
+        }
+        retained_status = {
+            **initial_status,
+            "latest_refresh": {
+                "status": "incomplete",
+                "coverage": [{"status": "excluded", "reason": "sensitive-source"}],
+            },
+        }
+        script = (
+            "(async()=&gt;{"
+            "let statusIndex=0,pollStatus=null;window.__statusTimerMs=null;window.__xss=false;"
+            "window.setInterval=(callback,ms)=&gt;{pollStatus=callback;"
+            "window.__statusTimerMs=ms;return 7;};"
+            "window.clearInterval=()=&gt;{};window.__pollStatus=()=&gt;pollStatus();"
+            f"const statuses={_json_for_script([initial_status, retained_status])};"
+            "window.fetch=async(url)=&gt;{if(String(url).startsWith('/api/knowledge/evidence?'))"
+            "return {ok:true,json:async()=&gt;({citations:[{locator:'src/ApprovalGate.py',"
+            "text:'exact cited bytes',truncated:false}]})};"
+            "const data=statuses[Math.min(statusIndex++,statuses.length-1)];"
+            "return {ok:true,json:async()=&gt;data};};"
+            "window.postJson=async(url)=&gt;String(url).endsWith('/refresh')"
+            "?{res:{ok:true},data:{status:'incomplete',coverage:[{status:'excluded',reason:'sensitive-source'}]}}"
+            ":{res:{ok:true},data:{authority:'Source-backed explanation.',citations:[{"
+            "locator:'src/ApprovalGate.py',"
+            "start_byte:0,end_byte:16,span_sha256:'abc123'}]}};"
+            "document.body.style.minHeight='1800px';"
+            f"window.__observation={_json_for_script(observation)};"
+            "const panel=renderKnowledgePanel('task-partial');"
+            "document.getElementById('out').append(panel);"
+            "await new Promise(resolve=&gt;setTimeout(resolve,40));"
+            "window.__initialStatus=panel.querySelector('.knowledge-status').textContent;"
+            "const bundle={bundle_hash:'bundle-partial',snapshot_id:'partial-snapshot-1',"
+            "budget:{serialized_bytes:9000,max_bytes:32768,max_assertions:40},assertions:[{"
+            "assertion_id:'long-described-by',subject:'module:ApprovalGate',predicate:'described-by',"
+            "object:null,text:"
+            f"{_json_for_script(observation)},"
+            "origin:'static-analysis',verification:'source-backed',historical:false}],"
+            "coverage:[],conflicts:[],staleness:[],paths:[]};"
+            "renderKnowledgeResults(panel.querySelector('.knowledge-results'),'task-partial',bundle);"
+            "window.__bundleRendered=true;})();"
+        )
+        html = tmp_path / "knowledge-long-observation.html"
+        html.write_text(_page(STATIC_DIR, script), encoding="utf-8")
+        artifacts = tmp_path / "ui-polish-artifacts"
+        artifacts.mkdir()
+    
+        for width, height, name in (
+            (1280, 800, "knowledge-ui-polish-desktop.png"),
+            (390, 844, "knowledge-ui-polish-narrow.png"),
+        ):
+&gt;           with chrome(tmp_path / f"polish-profile-{width}", html.as_uri(), width, height) as call:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_knowledge_ui_browser.py:378: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/private/tmp/al-reliability-python/cpython-3.13.18-macos-aarch64-none/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+profile = PosixPath('/private/tmp/al-reliability-r0-browser/test_partial_snapshot_long_obs0/polish-profile-1280')
+url = 'file:///private/tmp/al-reliability-r0-browser/test_partial_snapshot_long_obs0/knowledge-long-observation.html'
+width = 1280, height = 800, process_env = None
+
+    @contextmanager
+    def chrome(profile, url, width, height, *, process_env=None):
+        profile.mkdir()
+        process = subprocess.Popen(
+            [
+                CHROME,
+                "--headless=new",
+                "--no-first-run",
+                "--disable-gpu",
+                "--disable-background-networking",
+                f"--user-data-dir={profile}",
+                "--remote-debugging-port=0",
+                "about:blank",
+            ],
+            env=process_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        sock = None
+        try:
+            port_file = profile / "DevToolsActivePort"
+            deadline = time.monotonic() + 10
+            lines = []
+            port = None
+            while time.monotonic() &lt; deadline:
+                if port_file.is_file():
+                    lines = port_file.read_text().splitlines()
+                    if len(lines) &gt;= 2 and lines[1].startswith("/"):
+                        try:
+                            candidate_port = int(lines[0])
+                        except ValueError:
+                            pass
+                        else:
+                            if 1 &lt;= candidate_port &lt;= 65535:
+                                port = candidate_port
+                                break
+                if process.poll() is not None:
+                    pytest.fail(
+                        "Chrome exited before publishing DevToolsActivePort "
+                        f"(exit {process.returncode})"
+                    )
+                time.sleep(0.05)
+            if port is None:
+&gt;               pytest.fail("Chrome did not publish valid DevToolsActivePort contents before deadline")
+E               Failed: Chrome did not publish valid DevToolsActivePort contents before deadline
+
+tests/test_dashboard_live_view_state_browser.py:68: Failed</failure></testcase><testcase classname="tests.test_knowledge_ui_browser" name="test_execution_script_loads_and_seal_recovery_ui_retries_same_preview" time="0.503" /><testcase classname="tests.test_knowledge_ui_browser" name="test_mounted_history_knowledge_survives_real_sse_and_stays_task_scoped" time="2.314" /></testsuite></testsuites>

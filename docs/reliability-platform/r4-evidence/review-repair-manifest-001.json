@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "purpose": "R4 independent-review repair evidence package. Preserves original diagnostic failures and separates authored repair from pending independent reinspection and formal approval.",
+  "report_sources": [
+    {
+      "file": "fresh-diagnostic-report-001.md",
+      "source": "/private/tmp/al-r4-fresh-diagnostic-report-001.md",
+      "bytes": 13218,
+      "sha256": "6d15688a3a4989b69f124c93f586205db9a77554fa3072bc3510bed7e41b3501",
+      "description": "Exact independent diagnostic report; findings are diagnostic, not formal approval."
+    },
+    {
+      "file": "fresh-findings-architect-resolution-001.md",
+      "source": "/private/tmp/al-r4-fresh-findings-architect-resolution-001.md",
+      "bytes": 4391,
+      "sha256": "202a61bc8b4d8bccc5a2820550a4651e1f6bad7a5dc9b053d894925805f8b640",
+      "description": "Exact bounded Architect resolution for the four diagnostic findings."
+    },
+    {
+      "file": "review-repair-engineer-report-001.md",
+      "source": "/private/tmp/al-r4-review-repair-engineer-report-001.md",
+      "bytes": 11152,
+      "sha256": "9d07bc7c34a071302093119b390ef53c86996fde0430c8656c8da438487acdc0",
+      "description": "Exact Engineer repair report; authored repair, independent reinspection pending."
+    },
+    {
+      "file": "review-repair-exact-hashes-001.json",
+      "source": "/private/tmp/al-r4-review-repair-exact-hashes-001.json",
+      "bytes": 2009,
+      "sha256": "b7aac8410d5199d3d4e9768dc7fc1ae8984e8c6ab4dfc9fa7bbd49ff83fce29c",
+      "description": "Exact source/hash manifest supplied at repair handoff."
+    },
+    {
+      "file": "review-repair-exact-delta-001.diff",
+      "source": "/private/tmp/al-r4-review-repair-exact-delta-001.diff",
+      "bytes": 56888,
+      "sha256": "0e1ac83ff30ad989364b0305e0df8fbcfb83629041a130a77e95d73f5c842155",
+      "description": "Exact repair delta supplied at repair handoff."
+    }
+  ],
+  "check_history": [
+    {
+      "eid": "E75",
+      "area": "r4-review-codex-repro",
+      "status": "FAIL",
+      "counts": "4 failed, 16 deselected",
+      "evidence": "Protected AL ledger log and frozen-review-006/E75-al-r4-review-codex-repro-001.xml",
+      "meaning": "Causal pre-repair red for Codex criteria/output boundary."
+    },
+    {
+      "eid": "E76",
+      "area": "r4-review-claude-repro",
+      "status": "FAIL",
+      "counts": "4 failed, 16 deselected",
+      "evidence": "Protected AL ledger log and frozen-review-006/E76-al-r4-review-claude-repro-001.xml",
+      "meaning": "Causal pre-repair red for Claude criteria/output boundary."
+    },
+    {
+      "eid": "E77",
+      "area": "r4-review-harness-repro",
+      "status": "FAIL",
+      "counts": "1 failed",
+      "evidence": "Protected AL ledger log and frozen-review-006/E77-al-r4-review-harness-repro-001.xml",
+      "meaning": "Fixture scope miss; distinct from actual source causal proof."
+    },
+    {
+      "eid": "E78",
+      "area": "r4-review-harness-repro",
+      "status": "FAIL",
+      "counts": "1 failed",
+      "evidence": "Protected AL ledger log and frozen-review-006/E78-al-r4-review-harness-repro-002.xml",
+      "meaning": "Corrected actual public-producer reconciliation/outbox causal red."
+    },
+    {
+      "eid": "E79",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": "counts unknown",
+      "meaning": "Historical, stale after later test/helper edits."
+    },
+    {
+      "eid": "E80",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": "651 files formatted",
+      "meaning": "Historical, stale after later documentation edits."
+    },
+    {
+      "eid": "E81",
+      "area": "r4-review-codex-repro",
+      "status": "FAIL",
+      "counts": "1 failed, 9 passed, 16 deselected",
+      "meaning": "Retained test-helper NameError, not core behavior proof."
+    },
+    {
+      "eid": "E82",
+      "area": "r4-review-codex-repro",
+      "status": "PASS",
+      "counts": "10 passed, 16 deselected",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E83",
+      "area": "r4-review-claude-repro",
+      "status": "PASS",
+      "counts": "10 passed, 16 deselected",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E84",
+      "area": "r4-review-harness-repro",
+      "status": "PASS",
+      "counts": "1 passed",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E85",
+      "area": "r4-parity",
+      "status": "PASS",
+      "counts": "1 passed",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E86",
+      "area": "r4-control-regressions",
+      "status": "PASS",
+      "counts": "24 passed",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E87",
+      "area": "r4-installer-closure",
+      "status": "PASS",
+      "counts": "18 passed",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E88",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": "counts unknown",
+      "meaning": "Valid on Engineer source snapshot006; current currency must be checked against later source changes."
+    },
+    {
+      "eid": "E89",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": "651 files formatted",
+      "meaning": "Valid on Engineer source snapshot006 before this support documentation update; historical after docs edit."
+    },
+    {
+      "eid": "E90",
+      "area": "r4-review-al-codex-broad",
+      "status": "FAIL",
+      "counts": "3 failed, 136 passed",
+      "elapsed": "476.68s",
+      "ledger_log_archive": "E90-r4-review-al-codex-broad.log",
+      "xml_archive": "E90-r4-review-al-codex-broad.xml",
+      "meaning": "Two parameter variants fail after the public integration task-register transition because the admitted implementation-plan companion retains graph_revision 0 while current graph_revision is 1; test has no direct state mutation. One reconciliation test fails because its old fixture forged a RUNNING entry without updating its authenticated companion; fixture corrected to use a real SIGINT-interrupted public evidence producer, pending a current broad rerun. Protected process result reports descendant_settlement_unproven."
+    }
+  ],
+  "limitations": [
+    "These records are not formal AL approval or mission completion.",
+    "Ledger-owned process-group settlement does not prove all descendants settled.",
+    "Native/provider/hosted CI and broad runtime qualification remain separate obligations."
+  ],
+  "authored_support_changes": [
+    {
+      "file": "al/codex/skills/al/tests/test_runtime_batch5.py",
+      "change": "Replaced direct state-file mutation and already-exited dummy runner with a real public evidence plan/run, state-based wait, SIGINT, child reap, retained original companion and proof, while preserving the retry refusal before reconciliation and retry after reconciliation. This correction has not yet been run."
+    }
+  ]
+}

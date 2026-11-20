@@ -1,0 +1,176 @@
+{
+  "schema_version": 1,
+  "purpose": "Retained R3 infrastructure, red/green, repair and diagnostic reinspection records. E140 is historical R3 frozen003 evidence, not current R4 full-source proof.",
+  "artifacts": [
+    {
+      "file": "E119-red.xml",
+      "source": "/private/tmp/al-r3-read-deadline-002.xml",
+      "sha256": "268cb2e9cf2c18945063b3b09a774707549b726c140b8ae635966a795fde0e65",
+      "bytes": 46898,
+      "description": "E119 causal deadline red: 32 tests, 10 failed, 22 passed; real handler returned after controlled bound; not infrastructure."
+    },
+    {
+      "file": "E121-green.xml",
+      "source": "/private/tmp/al-r3-read-deadline-003.xml",
+      "sha256": "3d9bc4792e52f133dd88bfb3918ef02d1c035f64cd351e9255d0ea5725a00f11",
+      "bytes": 4844,
+      "description": "E121 later deadline regression: 32 tests passed, zero failed/skipped."
+    },
+    {
+      "file": "E118-infrastructure-reconciliation.json",
+      "source": "/private/tmp/al-r3-E118-infrastructure-reconciliation.json",
+      "sha256": "219956380003a92cdb894d167d5c8f127e4a8504156fd895f254ef17951c4d4c",
+      "bytes": 888,
+      "description": "Actual public reconciliation artifact for E118; classified INFRA from disk exhaustion during sessionfinish/ledger commit, not causal red."
+    },
+    {
+      "file": "capacity-cleanup-audit.jsonl",
+      "source": "/private/tmp/al-r3-disposable-cleanup-20261120.jsonl",
+      "sha256": "d591a163fa7f39ba72e3eb5d75b2d0834f442952428f7343d37ae40b9f4b615d",
+      "bytes": 7919,
+      "description": "Root-owned audit of removing 38 settled disposable basetemp roots; retained XML/logs/reports/snapshots/source/browser/pins were preserved."
+    },
+    {
+      "file": "E124-red.xml",
+      "source": "/private/tmp/al-r3-review-repro-001.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "sha256": "5f443003cc1a3d7a4a0f0e2da4c241d9df53b1b701e04c7db64bad5489478d28",
+      "bytes": 63750,
+      "description": "E124 genuine public reproduction: FAIL 12 failed / 35 passed; all three independent source findings reproduced."
+    },
+    {
+      "file": "E127-intermediate.xml",
+      "source": "/private/tmp/al-r3-review-repro-002.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "sha256": "e0c547deeddface9acf4526c846bd4b69606d52a774e03cc9ac6b93be327a089",
+      "bytes": 7978,
+      "description": "E127 historical intermediate repair PASS 53; classifier source/tests later changed, not final-source proof."
+    },
+    {
+      "file": "E132-classifier-red.xml",
+      "source": "/private/tmp/al-r3-review-repro-003.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "sha256": "d813d1aa14cc56f90c6e70d4e131f0fb54fc5400ad02888b7a552fe7bb1a6130",
+      "bytes": 60094,
+      "description": "E132 distinct classifier regression red: FAIL 16 failed / 67 passed; retained as causal history."
+    },
+    {
+      "file": "E134-final-repro-green.xml",
+      "source": "/private/tmp/al-r3-review-repro-004.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "sha256": "6b6723bbd5f231a266dc95f363ae0484e20feb55e2a0159a1786767be5c016b0",
+      "bytes": 12539,
+      "description": "E134 current final reproduction-area PASS 83 after adjacent route classification repair."
+    },
+    {
+      "file": "E135-final-core-green.xml",
+      "source": "/private/tmp/al-r3-review-core-002.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "sha256": "9afe2497903025abdd8cf6f4e1dcb9c53695780a2fa9006f48907f597c4d4aa4",
+      "bytes": 18153,
+      "description": "E135 current authored core result: PASS 124."
+    },
+    {
+      "file": "E136-final-files-green.xml",
+      "source": "/private/tmp/al-r3-review-files-002.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "sha256": "30fefff1c994fa0a527f6affa54cccc13a297af647a4e2546f8866ef66b84792",
+      "bytes": 5661,
+      "description": "E136 current ordinary file/operation/snapshot regression: PASS 27 passed / 4 skipped."
+    },
+    {
+      "file": "E139-policy-desktop.png",
+      "source": "/private/tmp/al-r3-review-browser-001/test_policy_flow_in_real_chrom0/policy-shots/policy-1280x800.png",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "667a40cd59021f66d6218e64227e60c7a61b827b6958ba85f7b89f23b14c6eb1",
+      "bytes": 172017,
+      "description": "E139 actual policy UI screenshot, desktop 1280x800."
+    },
+    {
+      "file": "E139-policy-desktop-capabilities.png",
+      "source": "/private/tmp/al-r3-review-browser-001/test_policy_flow_in_real_chrom0/policy-shots/policy-1280x800-capabilities.png",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "585ff95ae3d0fce5f7a30c5dfa9fb2c01ad2fbc29e80a0bccdd8c24a015218e1",
+      "bytes": 66515,
+      "description": "E139 actual policy capabilities viewport screenshot, desktop 1280 width."
+    },
+    {
+      "file": "E139-policy-narrow.png",
+      "source": "/private/tmp/al-r3-review-browser-001/test_policy_flow_in_real_chrom1/policy-shots/policy-390x844.png",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "6248ab3d3bff3b3559e786332a22f9778a5a75f7cd8507efd92797b1f0c52d64",
+      "bytes": 80349,
+      "description": "E139 actual policy UI screenshot, narrow 390x844."
+    },
+    {
+      "file": "E139-policy-narrow-capabilities.png",
+      "source": "/private/tmp/al-r3-review-browser-001/test_policy_flow_in_real_chrom1/policy-shots/policy-390x844-capabilities.png",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "c23b671daa67fac414956993fd997b8c53261b7bf6fab944a631903b6afe5c99",
+      "bytes": 66019,
+      "description": "E139 actual policy capabilities viewport screenshot, narrow 390 width."
+    },
+    {
+      "file": "E139-policy-desktop.json",
+      "source": "/private/tmp/al-r3-review-browser-001/test_policy_flow_in_real_chrom0/policy-shots/policy-1280x800.json",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "f572699e1bf6d2ff6fae8080883f022f09c9ec5f8657ea75bea46542165b8fc7",
+      "bytes": 314,
+      "description": "E139 functional driver result for desktop policy Chrome flow."
+    },
+    {
+      "file": "E139-policy-narrow.json",
+      "source": "/private/tmp/al-r3-review-browser-001/test_policy_flow_in_real_chrom1/policy-shots/policy-390x844.json",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "f572699e1bf6d2ff6fae8080883f022f09c9ec5f8657ea75bea46542165b8fc7",
+      "bytes": 314,
+      "description": "E139 functional driver result for narrow policy Chrome flow."
+    },
+    {
+      "file": "E139-browser.xml",
+      "source": "/private/tmp/al-r3-review-browser-001.xml",
+      "run": "a5c3cd80",
+      "session": "reliability-r3-20261119",
+      "evidence": "E139",
+      "sha256": "098a0de7f3796491be49a3a08dbca9b667d4c692fc7b1a2fd861550e5c111b5b",
+      "bytes": 486,
+      "description": "E139 actual browser JUnit XML: 2 desktop/narrow Chrome tests passed."
+    },
+    {
+      "file": "R3-reinspection-001.md",
+      "source": "/private/tmp/al-r3-review-resolutions-001.md",
+      "source_candidate": "/private/tmp/al-r3-frozen-review-003",
+      "evidence": "E140 diagnostic reinspection",
+      "sha256": "56d22dc8e4822c9c57365b8bf7bdbe74fecff18e93f7fe3322a786e16cfde925",
+      "bytes": 4350,
+      "description": "Actual independent diagnostic reinspection: three R3 findings fixed in frozen candidate003; no new counterexample in inspected scope; not formal AL approval."
+    },
+    {
+      "file": "E140-r3-review-resolution.xml",
+      "source": "/private/tmp/al-r3-frozen-review-003/evidence/E140-al-r3-review-repro-005.xml",
+      "source_candidate": "/private/tmp/al-r3-frozen-review-003",
+      "evidence": "E140 diagnostic reinspection",
+      "sha256": "1c11080e58c6600f7c98bce060ab5c8eed082d6458bfd8140aad6ad7d89da9e2",
+      "bytes": 12539,
+      "description": "E140 reproduction-area result, 83 passed; recorded VALID at frozen candidate003, historical R3 source evidence."
+    }
+  ]
+}

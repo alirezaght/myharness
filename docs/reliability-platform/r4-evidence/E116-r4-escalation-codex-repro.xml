@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="13" time="14.441" timestamp="2026-11-20T11:46:18.388942+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_graph_growth" time="1.628" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_real_resolution" time="1.272" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[registration]" time="0.954" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[scope]" time="1.041" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[revision]" time="0.995" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[original]" time="1.030" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[current]" time="1.043" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[unsupported]" time="1.054" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[missing]" time="1.037" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[authority]" time="1.076" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[foreign-delivery]" time="1.073" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[forged-delivery]" time="1.134" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_controlled_replacement_after_real_authority" time="1.058"><failure message="AssertionError: (0, '{&quot;ok&quot;:true,&quot;sequence&quot;:7}&#10;  ', 'AL · execution update · checking guarded command · 0.0s elapsed&#10;  AL · execution upd...idating and saving guarded run state · 0.1s elapsed&#10;  AL · execution update · guarded run state saved · 0.1s elapsed&#10;  ')&#10;assert 0 != 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x109a25d00&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-repro-004/test_r4_escalation_repair_cont0')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-repro-004/test_r4_escalation_repair_cont0/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1095239a0&gt;
+
+    def test_r4_escalation_repair_controlled_replacement_after_real_authority(cli, tmp_path, repo, monkeypatch):
+        import json
+        from pathlib import Path
+        import al_execution_tasks as T
+        from harness.execution_decisions import record_execution_decision
+        controller, eid, sid, _ = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        _r4_sync(controller, eid, sid)
+        decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
+            request_id='replace-one', verdict='reject',
+            decision_text='Reject this proposal and keep the architecture decision open for review.',
+            tasks=['A'], criteria=['AC-01'])
+        actual = json.loads(decided['delivery'])
+        forged = copy.deepcopy(actual);forged['verdict'] = 'accept'
+        real_authority = T.authority
+        witnessed = []
+        def replace_after_authority(st, operation, task=None, delivery=None):
+            receipt = real_authority(st, operation, task, delivery)
+            if operation == 'decision':
+                assert receipt['allowed'] is True
+                path = Path(st['integration']['handoff']).parent / 'inbox' / (delivery + '.json')
+                assert json.loads(path.read_bytes()) == actual
+                witnessed.append(receipt)
+                path.write_text(json.dumps(forged))
+            return receipt
+        monkeypatch.setattr(T, 'authority', replace_after_authority)
+        before = al_store.state_path(sid).read_bytes()
+        result = report(cli, tmp_path, 'decision', forged)
+        assert len(witnessed) == 1
+&gt;       assert result[0] != 0, result
+E       AssertionError: (0, '{"ok":true,"sequence":7}
+E         ', 'AL · execution update · checking guarded command · 0.0s elapsed
+E         AL · execution upd...idating and saving guarded run state · 0.1s elapsed
+E         AL · execution update · guarded run state saved · 0.1s elapsed
+E         ')
+E       assert 0 != 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:245: AssertionError</failure></testcase></testsuite></testsuites>

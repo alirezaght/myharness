@@ -1,0 +1,88 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q -m browser tests/test_reliability_incident_intelligence_browser.py --basetemp=/private/tmp/al-r5a-incident-browser-001 --junitxml=/private/tmp/al-r5a-incident-browser-001.xml
+# cwd: .
+# started: Fri Nov 20 14:43:11 2026
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_persisted_incident_intelligence_in_chrome[desktop-1280-800] _______
+
+operations = (<harness.execution_operations.OperationController object at 0x107529d30>, {'thread_id': '2058ad13-f4eb-40a7-a43e-d420...codex'}, {'id': 'exec-2025f5393ed29c47f30aaf61', 'task_id': 't-5a5a688b', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107463100>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-001/test_persisted_incident_intell0')
+name = 'desktop', width = 1280, height = 800
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        snapshot = refresh(controller.conn, scope, RefreshRequest()).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND s.locator='README.md' AND m.membership_state='present'",
+            (snapshot,),
+        ).fetchone()
+>       assert source is not None
+E       assert None is not None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:392: AssertionError
+________ test_persisted_incident_intelligence_in_chrome[narrow-390-844] ________
+
+operations = (<harness.execution_operations.OperationController object at 0x107536490>, {'thread_id': '5fb58890-5623-49ec-a6ba-4cc4...codex'}, {'id': 'exec-ff9cc0d4457095bdda3d4870', 'task_id': 't-f5e55fdf', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106e0e780>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-001/test_persisted_incident_intell1')
+name = 'narrow', width = 390, height = 844
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        snapshot = refresh(controller.conn, scope, RefreshRequest()).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND s.locator='README.md' AND m.membership_state='present'",
+            (snapshot,),
+        ).fetchone()
+>       assert source is not None
+E       assert None is not None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:392: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[desktop-1280-800]
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[narrow-390-844]
+2 failed in 12.91s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 49261, "pid": 49261, "sid": 49261, "start": [1795182192, 35162], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

@@ -27,19 +27,24 @@ def presentation_page(text):
 
 
 class ArtifactStore:
-    def __init__(self, directory):
+    def __init__(self, directory, *, create=True):
         self.directory = Path(directory).resolve()
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if create:
+            self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        elif not self.directory.is_dir():
+            raise ValueError("published artifact store unavailable")
 
     @contextmanager
-    def locked(self):
-        with (self.directory / "artifacts.lock").open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+    def locked(self, *, read_only=False):
+        with (self.directory / "artifacts.lock").open("r" if read_only else "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_SH if read_only else fcntl.LOCK_EX)
             path = self.directory / "index.json"
             value = (
                 json.loads(path.read_bytes()) if path.is_file() else {"names": {}, "records": {}}
             )
             yield value
+            if read_only:
+                return
             fd, name = tempfile.mkstemp(prefix=".index-", dir=self.directory)
             try:
                 with os.fdopen(fd, "wb") as stream:
@@ -131,7 +136,13 @@ class ArtifactStore:
             }
 
     def submit_output(
-        self, principal, name, content, expected_graph_revision, current_graph_revision
+        self,
+        principal,
+        name,
+        content,
+        expected_graph_revision,
+        current_graph_revision,
+        contract=None,
     ):
         from harness.execution_contract import identity
         from harness.native_tool_policy import ROLES
@@ -152,8 +163,18 @@ class ArtifactStore:
             raise ValueError("report output must be nonempty and at most 256 KiB")
         if name.endswith(".json"):
             json.loads(content)
+        if contract is not None:
+            from harness.agent_contracts import ContractError, fingerprint, validate
+
+            validate(contract)
+            if contract["kind"] != "implementation-result" or contract["payload"][
+                "record_digest"
+            ] != fingerprint(content):
+                raise ContractError("/payload", kind="implementation-result")
         with self.locked() as index:
             record = self._publish(index, name, content.encode(), "native-agent-output")
+            if contract is not None:
+                record["contract"] = contract
             record.update(
                 owner=owner, role=principal["role"], graph_revision=current_graph_revision
             )
@@ -168,7 +189,8 @@ class ArtifactStore:
                 owner: {
                     name: {
                         k: index["records"][ref][k]
-                        for k in ("artifact_id", "sha256", "size", "role")
+                        for k in ("artifact_id", "sha256", "size", "role", "contract")
+                        if k in index["records"][ref]
                     }
                     for name, ref in names.items()
                 }
@@ -190,20 +212,70 @@ class ArtifactStore:
         index["records"][artifact_id] = record
         return record
 
-    def resolve(self, artifact_id, expected_sha256):
+    def buffer(self, artifact_id, expected_sha256):
+        """Authenticate a bounded ordinary file and return exactly the checked immutable buffer."""
+        import stat
+
+        from harness.policy.context import check_deadline
+
         if not re.fullmatch(r"artifact-[0-9a-f]{32}", artifact_id):
             raise ValueError("invalid execution artifact identity")
-        with self.locked() as index:
+        with self.locked(read_only=True) as index:
             record = index["records"].get(artifact_id)
             if not record or record["sha256"] != expected_sha256:
                 raise ValueError("execution artifact hash/identity differs")
             path = Path(record["path"])
-            if path.parent != self.directory or path.is_symlink() or path.stat().st_nlink != 1:
+            if path.parent != self.directory:
                 raise ValueError("execution artifact path/link identity differs")
-            raw = path.read_bytes()
-            if digest(raw) != record["sha256"] or len(raw) != record["size"]:
+            check_deadline()
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                before = os.fstat(fd)
+                if (
+                    not stat.S_ISREG(before.st_mode)
+                    or before.st_nlink != 1
+                    or not 0 <= before.st_size <= 16 * 1024 * 1024
+                ):
+                    raise ValueError("bounded ordinary execution artifact required")
+                chunks, size = [], 0
+                while size <= 16 * 1024 * 1024:
+                    check_deadline()
+                    chunk = os.read(fd, min(65536, 16 * 1024 * 1024 + 1 - size))
+                    check_deadline()
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    size += len(chunk)
+                after, named = os.fstat(fd), path.lstat()
+            finally:
+                os.close(fd)
+
+            def version(info):
+                return (
+                    info.st_dev,
+                    info.st_ino,
+                    info.st_mode,
+                    info.st_nlink,
+                    info.st_size,
+                    info.st_mtime_ns,
+                    info.st_ctime_ns,
+                )
+
+            raw = b"".join(chunks)
+            if (
+                version(before) != version(after)
+                or version(after) != version(named)
+                or digest(raw) != record["sha256"]
+                or len(raw) != record["size"]
+            ):
                 raise ValueError("execution artifact bytes changed")
-            return path
+            check_deadline()
+            return raw
+
+    def resolve(self, artifact_id, expected_sha256):
+        self.buffer(artifact_id, expected_sha256)
+        with self.locked(read_only=True) as index:
+            return Path(index["records"][artifact_id]["path"])
 
     def read(self, artifact_id, expected_sha256, *, offset=0, limit=16384):
         if (
@@ -213,13 +285,11 @@ class ArtifactStore:
             or not 1 <= limit <= 65536
         ):
             raise ValueError("bounded artifact cursor required")
-        path = self.resolve(artifact_id, expected_sha256)
-        with path.open("rb") as stream:
-            size = os.fstat(stream.fileno()).st_size
-            if offset > size:
-                raise ValueError("artifact offset exceeds content")
-            stream.seek(offset)
-            raw = stream.read(min(limit, 16384))
+        checked = self.buffer(artifact_id, expected_sha256)
+        size = len(checked)
+        if offset > size:
+            raise ValueError("artifact offset exceeds content")
+        raw = checked[offset : offset + min(limit, 16384)]
         if raw and raw[0] & 0xC0 == 0x80:
             raise ValueError("artifact offset splits a UTF-8 character")
         while raw:
@@ -280,3 +350,11 @@ def output_reports(directory):
     if path.read_bytes() != before:
         raise ValueError("report index changed during status observation")
     return sorted(rows, key=lambda r: (r["owner"], r["name"]))
+
+
+def recorded_output_directory(conn, execution_id, epoch_id):
+    """Server-selected historical store; the recorded epoch is context, not write authority."""
+    from harness.execution_epochs import get_epoch
+
+    epoch = get_epoch(conn, execution_id, epoch_id)
+    return Path(epoch["identity"]["handoff_path"]).parent / "operations" / "drafts"

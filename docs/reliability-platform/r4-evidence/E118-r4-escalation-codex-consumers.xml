@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="20" time="19.363" timestamp="2026-11-20T11:50:15.674651+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_foreign_decision_and_unproven_revalidation_are_refused" time="1.174" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_global_amendment_cannot_bypass_developer_delivery" time="0.663" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_real_registry_rejection_amendment_ack_and_scoped_revalidation" time="1.574"><failure message="AssertionError: assert 'al_state: execution authority unavailable: authenticated decision receipt unavailable' == 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x109800220&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-consumers-002/test_real_registry_rejection_a0')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-consumers-002/test_real_registry_rejection_a0/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1090daf10&gt;
+launcher = &lt;launcher_context.Launcher object at 0x1091ba3c0&gt;
+
+    def test_real_registry_rejection_amendment_ack_and_scoped_revalidation(cli, tmp_path, repo, monkeypatch, launcher):
+        from harness.execution_decisions import record_execution_decision
+        from harness.execution_projection import ingest_event
+        from harness.execution_store import get_execution
+        import json
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch)
+        assert cli('spec-gate', 'SPEC_READY')[0] == 0
+        assert cli('classify', 'STANDARD', '--designer', 'no', '--implementers', 'al-engineer')[0] == 0
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert register_task(cli, tmp_path, 'B', ['docs'])[0] == 0
+        assert report(cli, tmp_path, 'blocker', {'id':'design', 'kind': 'developer_engineering_decision','tasks':['A'],'question':'Choose architecture','context':'An explicit decision is required','alternatives':['one','two'],'recommendation':'one'})[0] == 0
+        def sync():
+            state = al_store.load(sid)
+            cursor = get_execution(controller.conn, eid)['cursor']
+            for event in state['integration']['outbox'][cursor:]:
+                ingest_event(controller.conn, eid, event)
+        sync()
+        rejected = record_execution_decision(controller, eid, 'design', blocker_revision=1, request_id='reject-one', verdict='reject', decision_text='Reject the recommendation and keep this architecture decision open.', tasks=['A'], criteria=['AC-01'])
+        delivery = json.loads(rejected['delivery'])
+        from pathlib import Path
+        from harness.execution_worker import dispatch_pending
+        dispatch_pending(controller, eid, {'script': str(Path(al_store.__file__).parent / 'al_state.py'),
+                                           'launcher': launcher.alctl_double(tmp_path)})
+        sync()
+        assert al_store.load(sid)['integration']['blockers']['design']['state'] == 'Open'
+        # Lost acknowledgement: retry exact immutable delivery, with no new Registry ID.
+        before = al_store.load(sid)['integration']['sequence']
+&gt;       assert report(cli,tmp_path,'decision',delivery)[0] == 0
+E       AssertionError: assert 'al_state: execution authority unavailable: authenticated decision receipt unavailable' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:59: AssertionError</failure></testcase><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_graph_growth" time="1.023" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_real_resolution" time="1.006"><failure message="AssertionError: ('al_state: execution authority unavailable: authenticated decision receipt unavailable', '', 'AL · execution update ·...date · run admission lock acquired · 0.0s elapsed&#10;  AL · execution update · loading guarded run state · 0.0s elapsed&#10;  ')&#10;assert 'al_state: execution authority unavailable: authenticated decision receipt unavailable' == 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x109818180&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-consumers-002/test_r4_escalation_repair_iden1')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-consumers-002/test_r4_escalation_repair_iden1/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x109612210&gt;
+
+    def test_r4_escalation_repair_identical_registration_after_real_resolution(cli, tmp_path, repo, monkeypatch):
+        import json
+        from harness.execution_decisions import record_execution_decision
+        controller, eid, sid, blocker = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        original = copy.deepcopy(al_store.load(sid)['integration']['blockers']['design'])
+        _r4_sync(controller, eid, sid)
+        decided = record_execution_decision(
+            controller, eid, 'design', blocker_revision=1, request_id='resolve-one', verdict='accept',
+            decision_text='Use the recommended architecture with explicit acceptance limited to task A.',
+            tasks=['A'], criteria=['AC-01'])
+        delivery = json.loads(decided['delivery'])
+        result = report(cli, tmp_path, 'decision', delivery)
+&gt;       assert result[0] == 0, result
+E       AssertionError: ('al_state: execution authority unavailable: authenticated decision receipt unavailable', '', 'AL · execution update ·...date · run admission lock acquired · 0.0s elapsed
+E         AL · execution update · loading guarded run state · 0.0s elapsed
+E         ')
+E       assert 'al_state: execution authority unavailable: authenticated decision receipt unavailable' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:134: AssertionError</failure></testcase><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[registration]" time="0.879" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[scope]" time="0.942" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[revision]" time="0.931" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[original]" time="0.922" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[current]" time="0.905" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[unsupported]" time="0.888" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[missing]" time="0.893" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[authority]" time="0.935" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[foreign-delivery]" time="0.894" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[forged-delivery]" time="0.945" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_controlled_replacement_after_real_authority" time="0.904"><failure message="assert 0 == 1&#10; +  where 0 = len([])">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x109addc60&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-consumers-002/test_r4_escalation_repair_cont0')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-consumers-002/test_r4_escalation_repair_cont0/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10944b770&gt;
+
+    def test_r4_escalation_repair_controlled_replacement_after_real_authority(cli, tmp_path, repo, monkeypatch):
+        import json
+        from pathlib import Path
+        import al_execution_tasks as T
+        from harness.execution_decisions import record_execution_decision
+        controller, eid, sid, _ = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        _r4_sync(controller, eid, sid)
+        decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
+            request_id='replace-one', verdict='reject',
+            decision_text='Reject this proposal and keep the architecture decision open for review.',
+            tasks=['A'], criteria=['AC-01'])
+        actual = json.loads(decided['delivery'])
+        forged = copy.deepcopy(actual);forged['verdict'] = 'accept'
+        real_authority = T.authority
+        witnessed = []
+        def replace_after_authority(st, operation, task=None, delivery=None):
+            receipt = real_authority(st, operation, task, delivery)
+            if operation == 'decision':
+                import hashlib
+                assert receipt['allowed'] is True
+                assert receipt['delivery_receipt'] == {'schema_version': 1, 'sha256': hashlib.sha256(decided['delivery'].encode()).hexdigest()}
+                path = Path(st['integration']['handoff']).parent / 'inbox' / (delivery + '.json')
+                assert json.loads(path.read_bytes()) == actual
+                witnessed.append(receipt)
+                path.write_text(json.dumps(forged))
+            return receipt
+        monkeypatch.setattr(T, 'authority', replace_after_authority)
+        before = al_store.state_path(sid).read_bytes()
+        result = report(cli, tmp_path, 'decision', forged)
+&gt;       assert len(witnessed) == 1
+E       assert 0 == 1
+E        +  where 0 = len([])
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:246: AssertionError</failure></testcase><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_closed_real_decision_receipt[missing]" time="0.915" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_closed_real_decision_receipt[version]" time="0.978" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_closed_real_decision_receipt[digest]" time="0.929" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_closed_real_decision_receipt[extra]" time="1.004" /></testsuite></testsuites>

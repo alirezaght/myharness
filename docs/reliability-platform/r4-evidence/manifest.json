@@ -1,0 +1,740 @@
+{
+  "schema_version": 1,
+  "purpose": "R4 Builder focused evidence archive. Ledger logs and XMLs are retained copies; outcomes do not imply whole-tree process settlement, approval, or qualification.",
+  "source_candidate": "R4 authored source with Builder docs/config support frozen before E28; docs-only evidence archive updates followed checks.",
+  "artifacts": [
+    {
+      "file": "source-delta-from-frozen-r3-003.json",
+      "source": "/private/tmp/al-r4-frozen-review-001/r4-changes.json",
+      "source_candidate": "/private/tmp/al-r4-frozen-review-001",
+      "sha256": "5b181a1bcf9d9a4a50966ce5abf2bcd17389cdc56911888eaa271718d8c1f4ab",
+      "bytes": 19481,
+      "path_count": 72,
+      "description": "Exact Engineer source-delta inventory relative to verified frozen R3-003 predecessor; excludes Builder support delta."
+    },
+    {
+      "eid": "E28",
+      "area": "r4-al-claude",
+      "status": "PASS",
+      "counts": "passed=58",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E28-r4-al-claude-test.log",
+      "bytes": 1019,
+      "sha256": "48885491cd4afcbd5a84efbd80e9eeb749072a5cd08d7aa0cedb66c4728599e9",
+      "junit_xml": {
+        "archive": "E28-r4-al-claude.xml",
+        "source": "/private/tmp/al-r4-al-claude-002.xml",
+        "bytes": 9294,
+        "sha256": "0f0f0d14f8fe76c14e8f4ef5b81122dc39fcca7fd2ab7376183f9ebc5f0d38c4"
+      }
+    },
+    {
+      "eid": "E29",
+      "area": "r4-al-codex",
+      "status": "FAIL",
+      "counts": "passed=0; pytest exit 4; no tests ran (missing selector paths)",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E29-r4-al-codex-test.log",
+      "bytes": 961,
+      "sha256": "f66579eee0316f725a50b2df3862eb196e658ec4704dc956990405bfcccbff96",
+      "junit_xml": {
+        "archive": "E29-r4-al-codex.xml",
+        "source": "/private/tmp/al-r4-al-codex-003.xml",
+        "bytes": 252,
+        "sha256": "5304fcf3a903316fd4a82eacf6bb1a1011e4ef130c07f2eb9b7aca23cde730a1"
+      }
+    },
+    {
+      "eid": "E30",
+      "area": "r4-claude-corruption",
+      "status": "PASS",
+      "counts": "passed=61",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E30-r4-claude-corruption-test.log",
+      "bytes": 877,
+      "sha256": "d69ccca2a56ed65a9d30e984bb4da1dda7b4f26e6df020f1498d9a5eeb253c19",
+      "junit_xml": {
+        "archive": "E30-r4-claude-corruption.xml",
+        "source": "/private/tmp/al-r4-claude-corruption-001.xml",
+        "bytes": 11399,
+        "sha256": "080151bd8941edc4ce206a6a501137ac0a5afec54628de62e5e70139ff149f71"
+      }
+    },
+    {
+      "eid": "E31",
+      "area": "r4-consumer-regressions",
+      "status": "FAIL",
+      "counts": "failed=9; passed=17; skipped=4",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E31-r4-consumer-regressions-test.log",
+      "bytes": 39081,
+      "sha256": "457fb4414cb7e3ce9c8e05e4a8b5448f2da612f7a46cc9967f0505cb7a3982d9",
+      "junit_xml": {
+        "archive": "E31-r4-consumer-regressions.xml",
+        "source": "/private/tmp/al-r4-consumer-regressions-001.xml",
+        "bytes": 42940,
+        "sha256": "0ed05b1a30b0c492324abc6253ed106983ad2d75efb758f79cca427eb7c56dac"
+      }
+    },
+    {
+      "eid": "E32",
+      "area": "r4-control-regressions",
+      "status": "PASS",
+      "counts": "passed=24",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E32-r4-control-regressions-test.log",
+      "bytes": 871,
+      "sha256": "2b2e267913d6f5ba87bc23da3416d121db5022485fffd17046d9e85f34a6039c",
+      "junit_xml": {
+        "archive": "E32-r4-control-regressions.xml",
+        "source": "/private/tmp/al-r4-control-regressions-001.xml",
+        "bytes": 4007,
+        "sha256": "cb99c5f39c8a861cf1b3d9ac58e2d971f654df900909ebcc776912d58dd5ac69"
+      }
+    },
+    {
+      "eid": "E33",
+      "area": "r4-delivery-regressions",
+      "status": "PASS",
+      "counts": "passed=4",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E33-r4-delivery-regressions-test.log",
+      "bytes": 858,
+      "sha256": "3da6cb5585a62805539b90dcdc820fbe276e6bcab61f36a355c427a1aefb78db",
+      "junit_xml": {
+        "archive": "E33-r4-delivery-regressions.xml",
+        "source": "/private/tmp/al-r4-delivery-regressions-001.xml",
+        "bytes": 810,
+        "sha256": "4c8bb5a058b8458c5ee3d68aa5de8a0bc8647b98a1ff0ec19030e4b9b06eca9b"
+      }
+    },
+    {
+      "eid": "E34",
+      "area": "r4-handoff-protocol",
+      "status": "PASS",
+      "counts": "passed=1",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E34-r4-handoff-protocol-test.log",
+      "bytes": 856,
+      "sha256": "eb1d1817dfa9e57ff38650e9f50e893f2650fd5ae67277982d4b17b96d9298ed",
+      "junit_xml": {
+        "archive": "E34-r4-handoff-protocol.xml",
+        "source": "/private/tmp/al-r4-handoff-protocol-006.xml",
+        "bytes": 421,
+        "sha256": "576c2d9a9f75181b044cf4dd3a4f98b29ddb4a46d066a30e35cbd08dd11b2236"
+      }
+    },
+    {
+      "eid": "E35",
+      "area": "r4-harness-contracts",
+      "status": "PASS",
+      "counts": "passed=21",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E35-r4-harness-contracts-test.log",
+      "bytes": 895,
+      "sha256": "7daf72e6f16ca1f8827646bafb8090d0fe7306aee00fea06446f566d2b464bef",
+      "junit_xml": {
+        "archive": "E35-r4-harness-contracts.xml",
+        "source": "/private/tmp/al-r4-harness-contracts-005.xml",
+        "bytes": 3111,
+        "sha256": "1626b1643b4b293554a35d193b6a2dc20ab7c132e36ebe0afba9fb2432851ca5"
+      }
+    },
+    {
+      "eid": "E36",
+      "area": "r4-harness-snapshot",
+      "status": "PASS",
+      "counts": "passed=11",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E36-r4-harness-snapshot-test.log",
+      "bytes": 851,
+      "sha256": "a9a4eeb0ba7bc82d5576124db42bb8ae46cbc6345fbad81c1dd1036a2bce8c50",
+      "junit_xml": {
+        "archive": "E36-r4-harness-snapshot.xml",
+        "source": "/private/tmp/al-r4-harness-snapshot-001.xml",
+        "bytes": 1741,
+        "sha256": "e0e74a66e38f218a41e725ec55d323b89b60fd27f647273039d17f2e67d59fc5"
+      }
+    },
+    {
+      "eid": "E37",
+      "area": "r4-installer-closure",
+      "status": "PASS",
+      "counts": "passed=18",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E37-r4-installer-closure-test.log",
+      "bytes": 884,
+      "sha256": "2ea66c11b034f50a47f2a7253fcd7ada35fc872426137a3de6ed66796e449dab",
+      "junit_xml": {
+        "archive": "E37-r4-installer-closure.xml",
+        "source": "/private/tmp/al-r4-installer-closure-001.xml",
+        "bytes": 2494,
+        "sha256": "956d797545eb2435a52f8f436f1a4994c3e9d47a562bd73bd29862a2d1979aa5"
+      }
+    },
+    {
+      "eid": "E38",
+      "area": "r4-launch-protocol",
+      "status": "PASS",
+      "counts": "passed=5",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E38-r4-launch-protocol-test.log",
+      "bytes": 852,
+      "sha256": "bd9660de5227ab2f5e761b58a2dbd0a8af4279d0aa891e879593cd349233d5c3",
+      "junit_xml": {
+        "archive": "E38-r4-launch-protocol.xml",
+        "source": "/private/tmp/al-r4-launch-protocol-003.xml",
+        "bytes": 985,
+        "sha256": "f4ec4d0bcc1734a98033e00cac984d44ad3312a14a2c2e23ebf3b847fdcd7fc3"
+      }
+    },
+    {
+      "eid": "E39",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": "counts=unknown",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E39-r4-lint-lint.log",
+      "bytes": 635,
+      "sha256": "b434ff31ffc040f42d773a4cb614ca8fadaa618499a88b95d870f92a36f2319e"
+    },
+    {
+      "eid": "E40",
+      "area": "r4-migration",
+      "status": "PASS",
+      "counts": "passed=18",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E40-r4-migration-test.log",
+      "bytes": 821,
+      "sha256": "45a8311c4ed0f3cb1d021684507ab6415d743f0ebc6c66c2b45826f698d379ac",
+      "junit_xml": {
+        "archive": "E40-r4-migration.xml",
+        "source": "/private/tmp/al-r4-migration-001.xml",
+        "bytes": 2138,
+        "sha256": "7b80538d8725d696483e260113310cc55064790d16ed04f8110e3e4e8d4c6825"
+      }
+    },
+    {
+      "eid": "E41",
+      "area": "r4-mutable-protocol",
+      "status": "PASS",
+      "counts": "passed=50",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E41-r4-mutable-protocol-test.log",
+      "bytes": 888,
+      "sha256": "074a73040c2191b76c030e15e83dbf7f154e10fc67dba4ed43cab0c9c1ceb1f2",
+      "junit_xml": {
+        "archive": "E41-r4-mutable-protocol.xml",
+        "source": "/private/tmp/al-r4-mutable-protocol-004.xml",
+        "bytes": 7757,
+        "sha256": "c1b9d678cb64922a9eee34b17dd9c00f3cd959b0e66b205502c846c3350a2580"
+      }
+    },
+    {
+      "eid": "E42",
+      "area": "r4-native-startup",
+      "status": "PASS",
+      "counts": "passed=2",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E42-r4-native-startup-test.log",
+      "bytes": 849,
+      "sha256": "1f375de770f5b0957efaecdb71747119614010fbd3ab2b31c5b3efc6705ab430",
+      "junit_xml": {
+        "archive": "E42-r4-native-startup.xml",
+        "source": "/private/tmp/al-r4-native-startup-001.xml",
+        "bytes": 551,
+        "sha256": "ef392b4c19e7d5f95665999425be5572cff14545986dd787bc95fbe1e23b5f22"
+      }
+    },
+    {
+      "eid": "E43",
+      "area": "r4-parity",
+      "status": "FAIL",
+      "counts": "failed=1",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E43-r4-parity-test.log",
+      "bytes": 2972,
+      "sha256": "7f949313fc7fe89a74ed11e5cdf260c85357a0cac707dd7c79c0c0f75ca7a3d0",
+      "junit_xml": {
+        "archive": "E43-r4-parity.xml",
+        "source": "/private/tmp/al-r4-parity-001.xml",
+        "bytes": 2447,
+        "sha256": "8948725f5f052f62caea3cc71e2958bf0d3b5090294e0d7dd15136ca2519bdb3"
+      }
+    },
+    {
+      "eid": "E44",
+      "area": "r4-policy-regressions",
+      "status": "PASS",
+      "counts": "passed=56",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E44-r4-policy-regressions-test.log",
+      "bytes": 982,
+      "sha256": "2cc2ec987d3d64b730b70b9d07d56fcc9c48267e40903a0b8a4766c323238d64",
+      "junit_xml": {
+        "archive": "E44-r4-policy-regressions.xml",
+        "source": "/private/tmp/al-r4-policy-regressions-001.xml",
+        "bytes": 8360,
+        "sha256": "5551e2f5ae311a4da14076e43a538f078811e0172a1476af89709b9c7c8bf3be"
+      }
+    },
+    {
+      "eid": "E45",
+      "area": "r4-preexecution",
+      "status": "PASS",
+      "counts": "passed=50",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E45-r4-preexecution-test.log",
+      "bytes": 935,
+      "sha256": "58069874c64e2f4215ce158864b33a8ed1d2912f8bddc43a5ca2092715843372",
+      "junit_xml": {
+        "archive": "E45-r4-preexecution.xml",
+        "source": "/private/tmp/al-r4-preexecution-003.xml",
+        "bytes": 6088,
+        "sha256": "cdad1a2109620159f70673f8706a1cad604ee1826539887510020b9eee5d0334"
+      }
+    },
+    {
+      "eid": "E46",
+      "area": "r4-publication-regressions",
+      "status": "PASS",
+      "counts": "passed=1",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E46-r4-publication-regressions-test.log",
+      "bytes": 871,
+      "sha256": "6fda628ca0a5141952ea81e05d58ea722faa84c5f1e2e9ca55a378f55164e198",
+      "junit_xml": {
+        "archive": "E46-r4-publication-regressions.xml",
+        "source": "/private/tmp/al-r4-publication-regressions-001.xml",
+        "bytes": 418,
+        "sha256": "a07d8818abbad638082f0434fb44b4c21ded72591574a5ff482d5ddf80b3e495"
+      }
+    },
+    {
+      "eid": "E47",
+      "area": "r4-worker-regressions",
+      "status": "PASS",
+      "counts": "passed=19",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E47-r4-worker-regressions-test.log",
+      "bytes": 930,
+      "sha256": "9ef59cf3643e5efe2f3b237d3124009b567c1055ec72d13816b9865f3011791e",
+      "junit_xml": {
+        "archive": "E47-r4-worker-regressions.xml",
+        "source": "/private/tmp/al-r4-worker-regressions-001.xml",
+        "bytes": 2970,
+        "sha256": "06fac68dca5986ca585d9f72ac81bbc7fe8a7a026702ec8004ea799f36f49b03"
+      }
+    },
+    {
+      "artifact": "E31-readonly-engineer-diagnosis.md",
+      "source": "/private/tmp/al-r4-E31-readonly-engineer-diagnosis.md",
+      "bytes": 2623,
+      "sha256": "62139746b6a08327d97677f8c6f932f82b6d764c68899c9bae82be565a9be563",
+      "description": "Read-only diagnosis; no edits/checks. Separates fixture causes from two source-backed continuation seams."
+    },
+    {
+      "eid": "E48",
+      "area": "r4-al-codex",
+      "status": "INFRA",
+      "counts": "passed=0; command not executable; storage_reserve_unavailable; pytest did not start",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E48-r4-al-codex-test.log",
+      "bytes": 530,
+      "sha256": "ec1316a9355180f4df2fc508fb21dce1c442b94d62c4a62510aacfd5b2491dc4",
+      "junit_xml": null,
+      "note": "Corrected registered selector using canonical al/codex/skills/al/tests paths; no XML was emitted. Not a product test result."
+    },
+    {
+      "eid": "E49",
+      "area": "r4-al-codex",
+      "status": "PASS",
+      "counts": "passed=58",
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E49-r4-al-codex-test.log",
+      "bytes": 1013,
+      "sha256": "c8f99efeb0634277d8ac02143f46bc642f8a8f36580ce9a8e29696a8c076c9e8",
+      "junit_xml": {
+        "archive": "E49-r4-al-codex.xml",
+        "source": "/private/tmp/al-r4-al-codex-005.xml",
+        "bytes": 9236,
+        "sha256": "f9c0f5c23d1e8a23d388ee414a22e791e33f157369bf6de0277f61ccd8dbcbbe"
+      },
+      "note": "Corrected selector, registered as an exact source-verified same-area recipe after E29; executed after audited capacity repair."
+    },
+    {
+      "eid": "E50",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E50-r4-format-lint.log",
+      "bytes": 652,
+      "sha256": "ccccbe5d8616e2865b794d363900717c55f843a2e6ddedb6f10e03d462d6b4f9",
+      "source_candidate": "frozen pre-Builder-repair R4 source"
+    },
+    {
+      "eid": "E51",
+      "area": "r4-setup-protocol",
+      "status": "FAIL",
+      "counts": {
+        "failed": 11,
+        "passed": 17,
+        "skipped": 4
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E51-r4-setup-protocol-test.log",
+      "bytes": 42384,
+      "sha256": "42acec646c9686df9de75e9214ed809777302b41ad9061049236a0249ebe9ced",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E51-r4-setup-protocol.xml",
+        "source": "/private/tmp/al-r4-setup-protocol-001.xml",
+        "bytes": 46975,
+        "sha256": "f4004511381b5bbe526a66f017d96d0c63f177d38581a2f27ef1b5ca11cce973"
+      }
+    },
+    {
+      "eid": "E52",
+      "area": "r4-lint",
+      "status": "FAIL",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E52-r4-lint-lint.log",
+      "bytes": 3616,
+      "sha256": "271327960d05c16f8cefbc5e066b943bc5cd134053b9e044e55e5db8157f8118",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E53",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E53-r4-lint-lint.log",
+      "bytes": 635,
+      "sha256": "33ec4b31e2c9badf3c55d3b869c0121afbe77fc2a2bd67152c1de644f977e540",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E54",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E54-r4-format-lint.log",
+      "bytes": 653,
+      "sha256": "b473c098b1b6772a4c2ab7f697d579e3f4d2b522f3f5b6600ed536555b78f732",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E55",
+      "area": "r4-parity",
+      "status": "PASS",
+      "counts": {
+        "passed": 1
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E55-r4-parity-test.log",
+      "bytes": 837,
+      "sha256": "ff0b7a3c718df40d7e129bbeb5884578b228c04f12eceb0f6f1be24c70a89586",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E55-r4-parity.xml",
+        "source": "/private/tmp/al-r4-parity-002.xml",
+        "bytes": 404,
+        "sha256": "efc0a287d4fbc55c82bee920f1a81e136749c11bbdedcc1c2bb7d411eeebb1e6"
+      }
+    },
+    {
+      "eid": "E56",
+      "area": "r4-setup-protocol",
+      "status": "FAIL",
+      "counts": {
+        "failed": 1,
+        "passed": 29,
+        "skipped": 4
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E56-r4-setup-protocol-test.log",
+      "bytes": 3910,
+      "sha256": "6e0347aa99526e6c497df100d3c4cc82d6ff5d15d8a0a0912125878df3a7b62d",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E56-r4-setup-protocol.xml",
+        "source": "/private/tmp/al-r4-setup-protocol-002.xml",
+        "bytes": 9007,
+        "sha256": "42b77bebce07e232218fce6624ac6c535dd2d0949dd20f70f2698832b4f342d4"
+      }
+    },
+    {
+      "eid": "E57",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E57-r4-lint-lint.log",
+      "bytes": 635,
+      "sha256": "f3cc062dd1b5983856c866e27be118d8a060b83f00ee6976fe056a4efdd8656d",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E58",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E58-r4-format-lint.log",
+      "bytes": 653,
+      "sha256": "6870662a7ebf2a6aac0b20f8cb5140b2f2f52a2c0f62424b8a2472d0c6b73c92",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E59",
+      "area": "r4-setup-protocol",
+      "status": "PASS",
+      "counts": {
+        "passed": 30,
+        "skipped": 4
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E59-r4-setup-protocol-test.log",
+      "bytes": 970,
+      "sha256": "d06a6b2a1ed18c05fe2928a1fbf0f32180e6169e02800fc29775758d39bdf78a",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E59-r4-setup-protocol.xml",
+        "source": "/private/tmp/al-r4-setup-protocol-003.xml",
+        "bytes": 6062,
+        "sha256": "826eda94dc1de21f2662675b567c603ebd93996d67fd32842ecfbb853e32d5fc"
+      }
+    },
+    {
+      "eid": "E60",
+      "area": "r4-consumer-regressions",
+      "status": "PASS",
+      "counts": {
+        "passed": 26,
+        "skipped": 4
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E60-r4-consumer-regressions-test.log",
+      "bytes": 943,
+      "sha256": "46529e40bfe92bab8bb56763195013e80f39213bfd9119f5503d83f190aed78d",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E60-r4-consumer-regressions.xml",
+        "source": "/private/tmp/al-r4-consumer-regressions-002.xml",
+        "bytes": 5494,
+        "sha256": "3dc68f9b7c0d4c887bddd889722168d711c6a7fc108f9eb16122f2324c5756ad"
+      }
+    },
+    {
+      "eid": "E61",
+      "area": "r4-mutable-protocol",
+      "status": "FAIL",
+      "counts": {
+        "failed": 1,
+        "passed": 51
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E61-r4-mutable-protocol-test.log",
+      "bytes": 3154,
+      "sha256": "7b65ea7ce520b42badb7fbacfa25323db94ac425bb308c9ffdc00bbc5bdf7067",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E61-r4-mutable-protocol.xml",
+        "source": "/private/tmp/al-r4-mutable-protocol-005.xml",
+        "bytes": 10104,
+        "sha256": "8c4ef485f5029e982b7fcf57b72cce5c55998ef633b7046a8f88af71c58a1d21"
+      }
+    },
+    {
+      "eid": "E62",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E62-r4-lint-lint.log",
+      "bytes": 632,
+      "sha256": "ab8bb1b9689376124a572764a7b124e64a8e8ecbfce6c55fb8bb5679ece7e541",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E63",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": {},
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E63-r4-format-lint.log",
+      "bytes": 650,
+      "sha256": "75eba54031aa532b6352cbf21f8d0a1b8649e1084d62f68923506f27b1afdc91",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes"
+    },
+    {
+      "eid": "E64",
+      "area": "r4-mutable-protocol",
+      "status": "PASS",
+      "counts": {
+        "passed": 52
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E64-r4-mutable-protocol-test.log",
+      "bytes": 885,
+      "sha256": "dc1b94a038890dc228d22b16ac2d1c712c8b477fc5786b3c9c35ed8bd9b101bd",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E64-r4-mutable-protocol.xml",
+        "source": "/private/tmp/al-r4-mutable-protocol-006.xml",
+        "bytes": 8048,
+        "sha256": "4aeb9328915bbbd4ed018e9aaaf3820a9b6f55599a22b4b25367873115f15f9e"
+      }
+    },
+    {
+      "eid": "E65",
+      "area": "r4-launch-protocol",
+      "status": "PASS",
+      "counts": {
+        "passed": 5
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E65-r4-launch-protocol-test.log",
+      "bytes": 848,
+      "sha256": "ab1620a2422ecb17a11170595730463135b454166c321873299768e84a236be8",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E65-r4-launch-protocol.xml",
+        "source": "/private/tmp/al-r4-launch-protocol-004.xml",
+        "bytes": 985,
+        "sha256": "b4438457519efe43bddb130cfcb8e65de251a9709386d1e96a06d16139734514"
+      }
+    },
+    {
+      "eid": "E66",
+      "area": "r4-parity",
+      "status": "PASS",
+      "counts": {
+        "passed": 1
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E66-r4-parity-test.log",
+      "bytes": 834,
+      "sha256": "2db0cf1fb143c0b4ea70d83fcedb928574f4b3ef8eb94b2b650e0a1c113b0867",
+      "source_candidate": "post-repair source; see E51\u201366 report currency notes",
+      "junit_xml": {
+        "archive": "E66-r4-parity.xml",
+        "source": "/private/tmp/al-r4-parity-003.xml",
+        "bytes": 404,
+        "sha256": "9149c0d554806f4744dcd1b96f4375a4c8226e1b50f64577e456ff588b68e74e"
+      }
+    },
+    {
+      "artifact": "E51-66-repair-engineer-report.md",
+      "source": "/private/tmp/al-r4-repair-engineer-report-001.md",
+      "bytes": 12898,
+      "sha256": "f32654b389212450aebe4fbb8c176eb2642493851e698a1c38e5155765de650c",
+      "description": "Authored Engineer return1 repair report; not independent review or formal AL approval."
+    },
+    {
+      "artifact": "repair-source-manifest-001.json",
+      "source": "/private/tmp/al-r4-repair-source-manifest-001.json",
+      "bytes": 992,
+      "sha256": "b8298faf162317067e6837788bfcdbc104b02ead0e029bfbe269b0b3a2004fa9",
+      "description": "Nine exact repaired paths and hashes against the pre-repair frozen source."
+    },
+    {
+      "eid": "E67",
+      "area": "r4-setup-protocol",
+      "status": "PASS",
+      "counts": {
+        "passed": 30,
+        "skipped": 4
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E67-r4-setup-protocol-test.log",
+      "bytes": 970,
+      "sha256": "cb7140ea05019db808724a680a0ba61a286bdace701955c7d533dbea7f1ba9ae",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E67-r4-setup-protocol.xml",
+        "source": "/private/tmp/al-r4-setup-protocol-004.xml",
+        "bytes": 6062,
+        "sha256": "3b9d1eedb64021ac1ddfd0a4625aa06d5366a383cd1077fb94528394af95f6da"
+      }
+    },
+    {
+      "eid": "E68",
+      "area": "r4-control-regressions",
+      "status": "PASS",
+      "counts": {
+        "passed": 24
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E68-r4-control-regressions-test.log",
+      "bytes": 871,
+      "sha256": "968aeecfe4e0fd69555e52e344f5138eaa9bfc158a47e7af7a6e4c9543a573c1",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E68-r4-control-regressions.xml",
+        "source": "/private/tmp/al-r4-control-regressions-002.xml",
+        "bytes": 4007,
+        "sha256": "4b5f29ba726df75ad192021fe9f369d8dc9a0459a6b5e26bd12b58266daa17f2"
+      }
+    },
+    {
+      "eid": "E69",
+      "area": "r4-harness-contracts",
+      "status": "PASS",
+      "counts": {
+        "passed": 21
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E69-r4-harness-contracts-test.log",
+      "bytes": 893,
+      "sha256": "4f4fe2aeabf241a15fc8b0b1165f575fdd30226cfa3d8fa30702150cdd79d635",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E69-r4-harness-contracts.xml",
+        "source": "/private/tmp/al-r4-harness-contracts-006.xml",
+        "bytes": 3111,
+        "sha256": "8ffecd92328fa754aea55ce9c669053eecba7f6f5fbfc85b9598e2d9fc621d2e"
+      }
+    },
+    {
+      "eid": "E70",
+      "area": "r4-harness-snapshot",
+      "status": "PASS",
+      "counts": {
+        "passed": 11
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E70-r4-harness-snapshot-test.log",
+      "bytes": 851,
+      "sha256": "9951c4c6e9978cc15ae27ebefada4260e6f5b06346a7268ac5991f66b5424644",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E70-r4-harness-snapshot.xml",
+        "source": "/private/tmp/al-r4-harness-snapshot-002.xml",
+        "bytes": 1741,
+        "sha256": "6863effcbb693dbc5910d7cecb4378812146883f4c16fe3b07fd53d55c4d63de"
+      }
+    },
+    {
+      "eid": "E71",
+      "area": "r4-installer-closure",
+      "status": "PASS",
+      "counts": {
+        "passed": 18
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E71-r4-installer-closure-test.log",
+      "bytes": 884,
+      "sha256": "235eb2b0d4608892f05ab243dc2f0d11c2eae94776db51d2aededd802b5c429b",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E71-r4-installer-closure.xml",
+        "source": "/private/tmp/al-r4-installer-closure-002.xml",
+        "bytes": 2494,
+        "sha256": "505a86dc0471443a7a095332959609bc68697485ad33ee912b30da9c6a9fbef6"
+      }
+    },
+    {
+      "eid": "E72",
+      "area": "r4-policy-regressions",
+      "status": "PASS",
+      "counts": {
+        "passed": 56
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E72-r4-policy-regressions-test.log",
+      "bytes": 981,
+      "sha256": "60d9421e574475648de456530541ca3148ad8a9bf1efea66070527e82a5c2755",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E72-r4-policy-regressions.xml",
+        "source": "/private/tmp/al-r4-policy-regressions-002.xml",
+        "bytes": 8360,
+        "sha256": "81fc5e5cdd7e3111038ac5e8bc2f5740c46107cfefac865b3b61304b575ef198"
+      }
+    },
+    {
+      "eid": "E73",
+      "area": "r4-worker-regressions",
+      "status": "PASS",
+      "counts": {
+        "passed": 19
+      },
+      "ledger_log": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E73-r4-worker-regressions-test.log",
+      "bytes": 930,
+      "sha256": "dd0ee5e50dcf4051590e3f0df8d507b83752c3ded76fbdbc85a441fc3ba3afd2",
+      "source_candidate": "post-repair R4 source; docs-only updates follow",
+      "junit_xml": {
+        "archive": "E73-r4-worker-regressions.xml",
+        "source": "/private/tmp/al-r4-worker-regressions-002.xml",
+        "bytes": 2970,
+        "sha256": "04548575debd9d6ceb070bc8e0ba01aa8509c70934a22a67bd8dd2fd9955a3db"
+      }
+    }
+  ],
+  "repair_source_candidate": {
+    "candidate": "/private/tmp/al-r4-frozen-review-003",
+    "source_files": 1653,
+    "delta_paths_from_frozen_r3_003": 79,
+    "relation": "Internal handoff source observation, not independent review or approval."
+  }
+}

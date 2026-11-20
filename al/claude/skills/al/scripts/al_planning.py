@@ -394,6 +394,11 @@ def cmd_report(a, sid):
     if receipt:
         current['rebind_validation'] = {'receipt': receipt, 'revalidation': J.snapshot(
             sid, assessment, 'planning-rebind-revalidation-v1', a.revalidation_file)}
+    from al_agent_exchange import produce
+    contract = produce(st, 'implementation-plan', reference['id'], report,
+                       producer=report['invocation_id'])
+    if contract is not None:
+        current['contract_observation'] = J.snapshot(sid, contract, 'implementation-plan-contract-v1')
     al_store.save(sid, st)
     print(J.raw({"report": reference, "materialized_obligations": obligations,
                  "authoring": authoring_view(st)}).decode())
@@ -407,6 +412,8 @@ def validate_admitted(st):
     from al_planning_rebind import submitted
     submitted(st, current, report)
     expected = validate_report(st, report, current, contents, attempt, current["report"])
+    from al_agent_exchange import consume_plan
+    consume_plan(st, current, report)
     actual = J.read(current["obligations"])
     if J.raw(actual) != J.raw(expected):
         refuse("materialized obligations differ beyond sole noncircular report_ref substitution")

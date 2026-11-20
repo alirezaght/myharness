@@ -1,0 +1,177 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_execution_decisions.py -k r4_escalation_repair --basetemp=/private/tmp/al-r4-escalation-codex-repro-003 --junitxml=/private/tmp/al-r4-escalation-codex-repro-003.xml
+# cwd: al/codex/skills/al
+# started: Fri Nov 20 11:35:46 2026
+
+........F..F                                                             [100%]
+=================================== FAILURES ===================================
+___ test_r4_escalation_repair_refuses_tampering_and_stale_authority[missing] ___
+
+cli = <function current_protocol.<locals>.run at 0x10bc05580>
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-repro-003/test_r4_escalation_repair_refu6')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-repro-003/test_r4_escalation_repair_refu6/repo')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bb868f0>
+tamper = 'missing'
+
+    @pytest.mark.parametrize('tamper', ['registration', 'scope', 'revision', 'original', 'current',
+                                       'unsupported', 'missing', 'authority', 'foreign-delivery', 'forged-delivery'])
+    def test_r4_escalation_repair_refuses_tampering_and_stale_authority(cli, tmp_path, repo, monkeypatch, tamper):
+        import json
+        from pathlib import Path
+        import al_artifacts as A
+        controller, eid, sid, blocker = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        assert register_task(cli, tmp_path, 'B', ['docs'])[0] == 0
+        st = al_store.load(sid)
+        if tamper in {'registration', 'revision'}:
+            st['integration']['blockers']['design'][tamper] = 'forged' if tamper == 'registration' else 2
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'scope':
+            blocker = dict(blocker, tasks=['B'])
+        elif tamper == 'current':
+            st['agent_contracts']['escalation-request:design']['acceptance_criteria'] = ['forged']
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'original':
+            path = Path(st['escalation_observations']['design'][0]['stored_path'])
+            path.write_bytes(path.read_bytes() + b' changed original observation')
+        elif tamper == 'missing':
+            Path(st['escalation_observations']['design'][0]['stored_path']).unlink()
+        elif tamper == 'unsupported':
+            ref = st['escalation_observations']['design'][0]
+            value = A.read_json(ref);value['schema_version'] = 99
+            st['escalation_observations']['design'][0] = A.snapshot_bytes(sid, json.dumps(value).encode(), 'escalation-observation-v1', 'negative fixture')
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'authority':
+            controller.conn.execute("UPDATE executions SET status='Completed' WHERE id=?", (eid,))
+        else:
+            from harness.execution_decisions import record_execution_decision
+            _r4_sync(controller, eid, sid)
+            decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
+                request_id='foreign-one', verdict='reject' if tamper == 'forged-delivery' else 'accept', decision_text='Use the recommended architecture with explicit acceptance limited to task A.', tasks=['A'], criteria=['AC-01'])
+            delivery = json.loads(decided['delivery'])
+            if tamper == 'forged-delivery':
+                assert delivery['verdict'] == 'reject'
+                delivery['verdict'] = 'accept'
+            else:
+                delivery['binding']['approval_id'] += 1
+            before = al_store.state_path(sid).read_bytes()
+            assert report(cli, tmp_path, 'decision', delivery)[0] != 0
+            assert al_store.state_path(sid).read_bytes() == before
+            controller.conn.close()
+            return
+        before = al_store.state_path(sid).read_bytes()
+>       assert report(cli, tmp_path, 'blocker', blocker)[0] != 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:202: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/execution_helpers.py:65: in report
+    return cli('integration', action, '--file', str(path))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/launcher_context.py:418: in run
+    return call(*args)
+           ^^^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/conftest.py:137: in _run
+    launcher.run(Path.cwd(), session, start, al_state._main)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/launcher_context.py:88: in run
+    main()
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_state.py:292: in _main
+    _dispatch(a, al_recovery_guidance)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_state.py:313: in _dispatch
+    a.fn(a, sid)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_execution_tasks.py:438: in cmd_integration
+    _blocker(st, data)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_execution_tasks.py:301: in _blocker
+    consume_escalation(st, bid, i['blockers'][bid])
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_agent_exchange.py:263: in consume_escalation
+    observed = A.read_json(ref)
+               ^^^^^^^^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_artifacts.py:37: in read_json
+    return json.loads(read(ref))
+                      ^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_artifacts.py:32: in read
+    raw = Path(ref['stored_path']).read_bytes()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/private/tmp/al-reliability-python/cpython-3.13.18-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:625: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/tmp/al-r4-escalation-codex-repro-003/test_r4_escalation_repair_refu6/repo/.codex/al-runtime/sessio...f7f3de2e7/harness-d8903cc27249f5ef7f3de2e7/artifacts/3396abae9c0eb7246a56ed33dbe92789cfcbdb30a653198d408388334d39d2fb')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+>       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/al-r4-escalation-codex-repro-003/test_r4_escalation_repair_refu6/repo/.codex/al-runtime/sessions/harness-d8903cc27249f5ef7f3de2e7/harness-d8903cc27249f5ef7f3de2e7/artifacts/3396abae9c0eb7246a56ed33dbe92789cfcbdb30a653198d408388334d39d2fb'
+
+/private/tmp/al-reliability-python/cpython-3.13.18-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError
+----------------------------- Captured stderr call -----------------------------
+AL · execution update · checking guarded command · 0.0s elapsed
+AL · execution update · acquiring run admission lock · 0.0s elapsed
+AL · execution update · run admission lock acquired · 0.0s elapsed
+AL · execution update · loading guarded run state · 0.0s elapsed
+_ test_r4_escalation_repair_refuses_tampering_and_stale_authority[forged-delivery] _
+
+cli = <function current_protocol.<locals>.run at 0x10bca1b20>
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-repro-003/test_r4_escalation_repair_refu9')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-repro-003/test_r4_escalation_repair_refu9/repo')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10bc19cc0>
+tamper = 'forged-delivery'
+
+    @pytest.mark.parametrize('tamper', ['registration', 'scope', 'revision', 'original', 'current',
+                                       'unsupported', 'missing', 'authority', 'foreign-delivery', 'forged-delivery'])
+    def test_r4_escalation_repair_refuses_tampering_and_stale_authority(cli, tmp_path, repo, monkeypatch, tamper):
+        import json
+        from pathlib import Path
+        import al_artifacts as A
+        controller, eid, sid, blocker = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        assert register_task(cli, tmp_path, 'B', ['docs'])[0] == 0
+        st = al_store.load(sid)
+        if tamper in {'registration', 'revision'}:
+            st['integration']['blockers']['design'][tamper] = 'forged' if tamper == 'registration' else 2
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'scope':
+            blocker = dict(blocker, tasks=['B'])
+        elif tamper == 'current':
+            st['agent_contracts']['escalation-request:design']['acceptance_criteria'] = ['forged']
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'original':
+            path = Path(st['escalation_observations']['design'][0]['stored_path'])
+            path.write_bytes(path.read_bytes() + b' changed original observation')
+        elif tamper == 'missing':
+            Path(st['escalation_observations']['design'][0]['stored_path']).unlink()
+        elif tamper == 'unsupported':
+            ref = st['escalation_observations']['design'][0]
+            value = A.read_json(ref);value['schema_version'] = 99
+            st['escalation_observations']['design'][0] = A.snapshot_bytes(sid, json.dumps(value).encode(), 'escalation-observation-v1', 'negative fixture')
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'authority':
+            controller.conn.execute("UPDATE executions SET status='Completed' WHERE id=?", (eid,))
+        else:
+            from harness.execution_decisions import record_execution_decision
+            _r4_sync(controller, eid, sid)
+            decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
+                request_id='foreign-one', verdict='reject' if tamper == 'forged-delivery' else 'accept', decision_text='Use the recommended architecture with explicit acceptance limited to task A.', tasks=['A'], criteria=['AC-01'])
+            delivery = json.loads(decided['delivery'])
+            if tamper == 'forged-delivery':
+                assert delivery['verdict'] == 'reject'
+                delivery['verdict'] = 'accept'
+            else:
+                delivery['binding']['approval_id'] += 1
+            before = al_store.state_path(sid).read_bytes()
+>           assert report(cli, tmp_path, 'decision', delivery)[0] != 0
+E           assert 0 != 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:197: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_execution_decisions.py::test_r4_escalation_repair_refuses_tampering_and_stale_authority[missing]
+FAILED tests/test_execution_decisions.py::test_r4_escalation_repair_refuses_tampering_and_stale_authority[forged-delivery]
+2 failed, 10 passed, 3 deselected in 13.93s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 86218, "pid": 86218, "sid": 86218, "start": [1795170946, 834471], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

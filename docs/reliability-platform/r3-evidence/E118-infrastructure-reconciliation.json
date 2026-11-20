@@ -1,0 +1,22 @@
+{
+  "evidence_id": "E118",
+  "session": "reliability-r3-20261119",
+  "run": "a5c3cd80",
+  "cause": "ENOSPC during pytest sessionfinish and public evidence commit",
+  "recorded_owner_pid": 8246,
+  "recorded_test_pid": 8261,
+  "execution_receipt": {
+    "tool_session": 65846,
+    "completed": true,
+    "exit_code": 1,
+    "context": "al_evidence._execute reached _commit; al_store.save tempfile.mkstemp failed with errno28"
+  },
+  "root_observation": {
+    "source": "orchestrator message",
+    "recorded_pids_ps": "header only; neither8246 nor8261 present"
+  },
+  "log": ".codex/al-runtime/reliability-r3-20261119/logs/a5c3cd80-E118-r3-read-deadline-test.log",
+  "classification": "INFRA; not clean causal deadline red",
+  "cleanup_audit": "/private/tmp/al-r3-disposable-cleanup-20261120.jsonl",
+  "preserved": "current deadline001, all XML/logs/reports/frozen snapshots/browser/pins"
+}

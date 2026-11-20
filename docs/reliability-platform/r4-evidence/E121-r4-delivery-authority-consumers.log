@@ -1,0 +1,66 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_execution.py tests/test_execution_decisions.py --basetemp=/private/tmp/al-r4-delivery-authority-consumers-001 --junitxml=/private/tmp/al-r4-delivery-authority-consumers-001.xml
+# cwd: .
+# started: Fri Nov 20 11:52:52 2026
+
+.........F                                                               [100%]
+=================================== FAILURES ===================================
+___________ test_decision_authority_captures_exact_validated_buffer ____________
+
+operations = (<harness.execution_operations.OperationController object at 0x1075a78c0>, {'thread_id': '82ccacd6-76cc-4fd0-83aa-db1e...codex'}, {'id': 'exec-089abeb1f28d1ed01595bea9', 'task_id': 't-ff23a9b1', 'approval_id': 1, 'host': 'codex', ...}, ...)
+
+    def test_decision_authority_captures_exact_validated_buffer(operations):
+        import hashlib
+        import json
+    
+        from harness.execution_models import ExecutionConflict
+        from tests.test_execution_continuity import prepare, report, state
+    
+        operation, principal, controller, _, eid, _, _ = operations
+        prepare(operation, principal)
+        report(
+            operation,
+            principal,
+            "blocker",
+            {
+                "id": "buffer-design",
+                "kind": "developer_engineering_decision",
+                "tasks": ["B"],
+                "question": "Choose architecture",
+                "context": "Explicit developer decision required",
+                "alternatives": ["one", "two"],
+                "recommendation": "one",
+            },
+        )
+>       decided = record_execution_decision(
+            controller,
+            eid,
+            "buffer-design",
+            blocker_revision=1,
+            request_id="buffer-one",
+            verdict="reject",
+            decision_text="Reject this proposal and retain the open architecture decision.",
+            tasks=["B"],
+            criteria=state(operation)["integration"]["tasks"]["B"]["criteria"],
+        )
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_decisions.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_decisions.py:150: in locked
+    execution = get_execution(controller.conn, execution_id)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = <sqlite3.Connection object at 0x1075d6110>
+execution_id = {'launcher': '/private/tmp/al-r4-delivery-authority-consumers-001/test_decision_authority_captur0/home/bin/alctl', 'pa...able': '/private/tmp/al-r4-delivery-authority-consumers-001/test_decision_authority_captur0/native-provider-bin/codex'}
+
+    def get_execution(conn, execution_id):
+>       row = conn.execute("SELECT * FROM executions WHERE id=?", (execution_id,)).fetchone()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.ProgrammingError: Error binding parameter 1: type 'dict' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_store.py:11: ProgrammingError
+=========================== short test summary info ============================
+FAILED tests/test_execution_decisions.py::test_decision_authority_captures_exact_validated_buffer
+1 failed, 9 passed in 14.61s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 99588, "pid": 99588, "sid": 99588, "start": [1795171972, 473301], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

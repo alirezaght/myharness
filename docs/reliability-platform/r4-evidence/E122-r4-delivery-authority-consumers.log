@@ -1,0 +1,123 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_execution.py tests/test_execution_decisions.py --basetemp=/private/tmp/al-r4-delivery-authority-consumers-002 --junitxml=/private/tmp/al-r4-delivery-authority-consumers-002.xml
+# cwd: .
+# started: Fri Nov 20 11:54:27 2026
+
+.........F                                                               [100%]
+=================================== FAILURES ===================================
+___________ test_decision_authority_captures_exact_validated_buffer ____________
+
+operations = (<harness.execution_operations.OperationController object at 0x1095e7a10>, {'thread_id': '0713963a-c72c-4d2e-ab1d-7f75...codex'}, {'id': 'exec-a6e03f6f212cb3abd73a5b8c', 'task_id': 't-351d22a2', 'approval_id': 1, 'host': 'codex', ...}, ...)
+
+    def test_decision_authority_captures_exact_validated_buffer(operations):
+        import hashlib
+        import json
+    
+        from harness.execution_models import ExecutionConflict
+        from tests.test_execution_continuity import prepare, report, state
+    
+        operation, principal, controller, _, _, execution, _ = operations
+        eid = execution["id"]
+        prepare(operation, principal)
+        report(
+            operation,
+            principal,
+            "blocker",
+            {
+                "id": "buffer-design",
+                "kind": "developer_engineering_decision",
+                "tasks": ["B"],
+                "question": "Choose architecture",
+                "context": "Explicit developer decision required",
+                "alternatives": ["one", "two"],
+                "recommendation": "one",
+            },
+        )
+>       decided = record_execution_decision(
+            controller,
+            eid,
+            "buffer-design",
+            blocker_revision=1,
+            request_id="buffer-one",
+            verdict="reject",
+            decision_text="Reject this proposal and retain the open architecture decision.",
+            tasks=["B"],
+            criteria=state(operation)["integration"]["tasks"]["B"]["criteria"],
+        )
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_decisions.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_decisions.py:158: in locked
+    return function(controller, execution_id, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+controller = <harness.controller.HarnessController object at 0x1096bd310>
+execution_id = 'exec-a6e03f6f212cb3abd73a5b8c', blocker_id = 'buffer-design'
+blocker_revision = 1, request_id = 'buffer-one', verdict = 'reject'
+decision_text = 'Reject this proposal and retain the open architecture decision.'
+tasks = ['B'], criteria = ['AC-01'], amendment = False, expected_epoch_id = None
+expected_authority_generation = None
+
+    @_epoch_execution_action
+    def record_execution_decision(
+        controller,
+        execution_id,
+        blocker_id,
+        *,
+        blocker_revision,
+        request_id,
+        verdict,
+        decision_text,
+        tasks,
+        criteria,
+        amendment=False,
+        expected_epoch_id=None,
+        expected_authority_generation=None,
+    ):
+        identity(request_id)
+        request = {
+            "blocker_id": blocker_id,
+            "blocker_revision": blocker_revision,
+            "verdict": verdict,
+            "text": decision_text,
+            "tasks": tasks,
+            "criteria": criteria,
+            "amendment": amendment,
+        }
+        validate_decision_request(request)
+        request = request | {"tasks": sorted(tasks), "criteria": sorted(criteria)}
+        conn = controller.conn
+        with transaction(conn):
+            from harness.execution_epochs import require_active_epoch
+    
+            current = require_active_epoch(
+                conn,
+                execution_id,
+                expected_epoch_id=expected_epoch_id,
+                expected_authority_generation=expected_authority_generation,
+                mutation=True,
+            )
+            require_execution_authority(controller, execution_id)
+            previous = conn.execute(
+                (
+                    "SELECT * FROM execution_decisions WHERE execution_id=? AND epoch_id=? AND "
+                    "request_id=?"
+                ),
+                (execution_id, current["epoch_id"], request_id),
+            ).fetchone()
+            if previous:
+                if previous["request"] != canonical(request):
+                    raise ExecutionConflict("decision request ID reused with changed content")
+                delivery_id = previous["id"]
+            else:
+                blocker = entity(conn, execution_id, "blocker", blocker_id)
+                if not blocker or blocker["state"] != "Open" or blocker["revision"] != blocker_revision:
+>                   raise ExecutionConflict("blocker no longer matches this decision")
+E                   harness.execution_models.ExecutionConflict: blocker no longer matches this decision
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_decisions.py:217: ExecutionConflict
+=========================== short test summary info ============================
+FAILED tests/test_execution_decisions.py::test_decision_authority_captures_exact_validated_buffer
+1 failed, 9 passed in 14.51s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 99944, "pid": 99944, "sid": 99944, "start": [1795172067, 218011], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

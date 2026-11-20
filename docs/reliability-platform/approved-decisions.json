@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "kind": "harness-proposal-developer-acceptance",
+  "task_id": "t-73243652",
+  "user_text": "approved",
+  "interpretation": "Approve P1-P5 recommendations, including Knowledge-first sequencing; retain the narrow early R1 path as an unselected alternative.",
+  "source": "User reply to Phase 0 delivery and concrete pending P1-P5 proposals in this chat, 2026-11-19",
+  "accepted": [
+    {
+      "audit_id": "RP1",
+      "proposal": {
+        "id": 1,
+        "task_id": "t-73243652",
+        "question_id": 13,
+        "title": "Reliability sequencing",
+        "recommendation": "Complete current Knowledge K1-K9 acceptance first. Alternative: explicitly permit only R1 closed boundary observations, incident persistence/search and read-only dashboard integration before acceptance, preserving all observer refusals and Knowledge obligations.",
+        "rationale": "The latest recovery record explicitly leaves Knowledge acceptance open and excludes Reliability implementation until acceptance.",
+        "status": "accepted",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": "2026-11-19T17:19:47+00:00",
+        "impact": "Controls when R1 may begin; this does not authorize observer access, adaptive recovery or promotion."
+      },
+      "registry_record": {
+        "id": "DEC-0048",
+        "title": "Reliability sequencing",
+        "status": "approved",
+        "version": 1,
+        "timestamp": "2026-11-19T17:19:47+00:00",
+        "scope": "component_responsibilities",
+        "supersedes": null,
+        "decision": "Complete current Knowledge K1-K9 acceptance first. Alternative: explicitly permit only R1 closed boundary observations, incident persistence/search and read-only dashboard integration before acceptance, preserving all observer refusals and Knowledge obligations.",
+        "rationale": "The latest recovery record explicitly leaves Knowledge acceptance open and excludes Reliability implementation until acceptance.",
+        "impact": "Controls when R1 may begin; this does not authorize observer access, adaptive recovery or promotion.",
+        "path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/docs/decisions/DEC-0048-reliability-sequencing.md",
+        "superseded_by": null
+      }
+    },
+    {
+      "audit_id": "RP2",
+      "proposal": {
+        "id": 2,
+        "task_id": "t-73243652",
+        "question_id": 14,
+        "title": "Improvement activation authority",
+        "recommendation": "Automatically collect incidents and draft proposals; require explicit developer approval for every activation initially. Security, authority and approval changes always require explicit human approval.",
+        "rationale": "Failure evidence creates hypotheses rather than authority; existing spec and decision gates remain authoritative.",
+        "status": "accepted",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": "2026-11-19T17:19:47+00:00",
+        "impact": "No automatic self-modification or activation; later low-risk automation requires separate evaluated approval."
+      },
+      "registry_record": {
+        "id": "DEC-0049",
+        "title": "Improvement activation authority",
+        "status": "approved",
+        "version": 1,
+        "timestamp": "2026-11-19T17:19:47+00:00",
+        "scope": "security",
+        "supersedes": null,
+        "decision": "Automatically collect incidents and draft proposals; require explicit developer approval for every activation initially. Security, authority and approval changes always require explicit human approval.",
+        "rationale": "Failure evidence creates hypotheses rather than authority; existing spec and decision gates remain authoritative.",
+        "impact": "No automatic self-modification or activation; later low-risk automation requires separate evaluated approval.",
+        "path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/docs/decisions/DEC-0049-improvement-activation-authority.md",
+        "superseded_by": null
+      }
+    },
+    {
+      "audit_id": "RP3",
+      "proposal": {
+        "id": 3,
+        "task_id": "t-73243652",
+        "question_id": 15,
+        "title": "Initial runtime boundary",
+        "recommendation": "Guarantee supported supervised operation paths and document native host/provider authentication as a separate trusted boundary. Full hostile-host containment requires a separate approved design and qualification.",
+        "rationale": "The operation sandbox intentionally leaves native authentication infrastructure outside the contained operation tree.",
+        "status": "accepted",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": "2026-11-19T17:19:47+00:00",
+        "impact": "Test supported alternatives/subprocess/delegation paths without claiming universal hostile-host isolation."
+      },
+      "registry_record": {
+        "id": "DEC-0050",
+        "title": "Initial runtime boundary",
+        "status": "approved",
+        "version": 1,
+        "timestamp": "2026-11-19T17:19:47+00:00",
+        "scope": "security",
+        "supersedes": null,
+        "decision": "Guarantee supported supervised operation paths and document native host/provider authentication as a separate trusted boundary. Full hostile-host containment requires a separate approved design and qualification.",
+        "rationale": "The operation sandbox intentionally leaves native authentication infrastructure outside the contained operation tree.",
+        "impact": "Test supported alternatives/subprocess/delegation paths without claiming universal hostile-host isolation.",
+        "path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/docs/decisions/DEC-0050-initial-runtime-boundary.md",
+        "superseded_by": null
+      }
+    },
+    {
+      "audit_id": "RP4",
+      "proposal": {
+        "id": 4,
+        "task_id": "t-73243652",
+        "question_id": 16,
+        "title": "Observation retention and export",
+        "recommendation": "Keep closed records local with no external exporter initially. Propose 30 days for derived diagnostic detail; retain sanitized incident facts and version/evaluation/approval/rollout provenance until explicit retirement. Use bounded explicit backfill.",
+        "rationale": "Existing storage is local and new telemetry must redact before persistence/export without importing private provider transcripts.",
+        "status": "accepted",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": "2026-11-19T17:19:47+00:00",
+        "impact": "New retention/deletion behavior needs exact approved policy; no external collector or raw transcript storage."
+      },
+      "registry_record": {
+        "id": "DEC-0051",
+        "title": "Observation retention and export",
+        "status": "approved",
+        "version": 1,
+        "timestamp": "2026-11-19T17:19:47+00:00",
+        "scope": "observability",
+        "supersedes": null,
+        "decision": "Keep closed records local with no external exporter initially. Propose 30 days for derived diagnostic detail; retain sanitized incident facts and version/evaluation/approval/rollout provenance until explicit retirement. Use bounded explicit backfill.",
+        "rationale": "Existing storage is local and new telemetry must redact before persistence/export without importing private provider transcripts.",
+        "impact": "New retention/deletion behavior needs exact approved policy; no external collector or raw transcript storage.",
+        "path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/docs/decisions/DEC-0051-observation-retention-and-export.md",
+        "superseded_by": null
+      }
+    },
+    {
+      "audit_id": "RP5",
+      "proposal": {
+        "id": 5,
+        "task_id": "t-73243652",
+        "question_id": 17,
+        "title": "Evaluation release standard",
+        "recommendation": "Use a frozen paired benchmark, predeclared per-proposal improvement threshold, no material acceptance regression, zero demonstrated approval/isolation/privacy bypass, independent review and explicit activation approval. Missing or contaminated evidence cannot pass.",
+        "rationale": "Current byte accounting and AL simulations do not establish general engineering-quality improvements.",
+        "status": "accepted",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": "2026-11-19T17:19:47+00:00",
+        "impact": "Evaluation thresholds must be fixed before results; canary stop conditions and rollback retain exact version provenance."
+      },
+      "registry_record": {
+        "id": "DEC-0052",
+        "title": "Evaluation release standard",
+        "status": "approved",
+        "version": 1,
+        "timestamp": "2026-11-19T17:19:47+00:00",
+        "scope": "acceptance_criteria",
+        "supersedes": null,
+        "decision": "Use a frozen paired benchmark, predeclared per-proposal improvement threshold, no material acceptance regression, zero demonstrated approval/isolation/privacy bypass, independent review and explicit activation approval. Missing or contaminated evidence cannot pass.",
+        "rationale": "Current byte accounting and AL simulations do not establish general engineering-quality improvements.",
+        "impact": "Evaluation thresholds must be fixed before results; canary stop conditions and rollback retain exact version provenance.",
+        "path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/docs/decisions/DEC-0052-evaluation-release-standard.md",
+        "superseded_by": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m ruff check .
+# cwd: .
+# started: Fri Nov 20 11:49:29 2026
+
+F811 Redefinition of unused `operations` from line 10
+   --> tests/test_execution_decisions.py:171:61
+    |
+171 | def test_decision_authority_captures_exact_validated_buffer(operations):
+    |                                                             ^^^^^^^^^^ `operations` redefined here
+172 |     import hashlib
+173 |     import json
+    |
+   ::: tests/test_execution_decisions.py:10:45
+    |
+  8 | from harness.execution_store import get_execution
+  9 | from tests.execution_helpers import approved_execution, event, started
+ 10 | from tests.test_execution_operations import operations  # noqa: F401
+    |                                             ---------- previous definition of `operations` here
+help: Remove definition: `operations`
+
+Found 1 error.
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 95980, "pid": 95980, "sid": 95980, "start": [1795171769, 823567], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

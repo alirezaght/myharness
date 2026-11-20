@@ -80,7 +80,18 @@ def authority(st, operation, task=None, delivery=None):
                 proc.wait()
                 raise
         reply = loads(output)
-        if len(output) > 65536 or proc.returncode != 0 or reply != {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'], 'task': task, 'delivery': delivery, 'scope_revision': revision}:
+        expected = {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'], 'task': task, 'delivery': delivery, 'scope_revision': revision}
+        if not isinstance(reply, dict):
+            raise ValueError('authority response mismatch')
+        if operation == 'decision':
+            receipt = reply.get('delivery_receipt')
+            if (not isinstance(receipt, dict) or set(receipt) != {'schema_version', 'sha256'}
+                    or type(receipt['schema_version']) is not int or receipt['schema_version'] != 1
+                    or not isinstance(receipt['sha256'], str) or len(receipt['sha256']) != 64
+                    or any(c not in '0123456789abcdef' for c in receipt['sha256'])):
+                raise ValueError('authenticated decision receipt unavailable')
+            expected['delivery_receipt'] = receipt
+        if len(output) > 65536 or proc.returncode != 0 or reply != expected:
             raise ValueError('authority response mismatch')
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         refuse('execution authority unavailable: ' + str(exc))
@@ -125,6 +136,8 @@ def require_task_admission(st, task_id, *, files=(), check_scope=(), verify_auth
         refuse('task dependencies have no current authored output or verified completion')
     for blocker in i['blockers'].values():
         if blocker['state'] != 'Resolved' and task_id in affected_tasks(st, blocker['tasks']):
+            from al_agent_exchange import consume_escalation
+            consume_escalation(st, blocker['id'], blocker, historical=True)
             refuse('task is blocked by ' + blocker['id'])
     for obligation in i['revalidations'].values():
         if task_id in obligation['tasks']:
@@ -218,9 +231,15 @@ def _input(action, data):
         'graph-update': ({'id'}, {'files','dependencies'}),
         'agent-update': ({'id','status'}, {'activity','progress','latest_output'}),
         'task-progress': ({'id','activity'}, {'progress'}),
-        'handoff': ({'from','to','text'}, set()),
+        'handoff': ({'from','to'}, {'text','contract_ref'}),
     }
     required, optional = fields[action]
+    if action == 'handoff' and isinstance(data, dict):
+        from al_agent_contracts import ContractError
+        if 'contract_ref' in data and set(data) != {'from', 'to', 'contract_ref'}:
+            raise ContractError('/required_inputs', kind='task-assignment')
+        if {'from','to'} <= data.keys() and ('text' in data) == ('contract_ref' in data):
+            raise ContractError('/required_inputs', kind='task-assignment')
     missing = sorted(required-set(data)) if isinstance(data,dict) else sorted(required)
     extra = sorted(set(data)-required-optional) if isinstance(data,dict) else []
     if not isinstance(data,dict) or missing or extra:
@@ -289,6 +308,10 @@ def _blocker(st, data):
     _input('blocker', data)
     bid = identity(data['id'])
     if bid in i['blockers']:
+        from al_agent_exchange import consume_escalation
+        consume_escalation(st, bid, i['blockers'][bid])
+        for task_id in i['blockers'][bid]['tasks']:
+            authority(st, 'revalidate', task_id)
         if i['blockers'][bid].get('registration') == digest(data):
             return
         refuse('blocker identity already registered')
@@ -304,6 +327,8 @@ def _blocker(st, data):
     _strings(row['alternatives'], 'alternatives')
     row.update(kind=data['kind'], revision=1, state='Open', affected=sorted(affected), registration=digest(data))
     i['blockers'][bid] = row
+    from al_agent_exchange import record_escalation
+    record_escalation(st, st['session_id'], bid)
     for tid in affected:
         task = i['tasks'][tid]
         task.pop('admission', None)
@@ -477,7 +502,26 @@ def cmd_integration(a, sid):
     elif a.action == 'handoff':
         if data['from'] not in i['tasks'] or data['to'] not in i['tasks']:
             refuse('handoff references unknown task')
-        text(data['text'], 'handoff')
+        if 'contract_ref' in data:
+            import al_artifacts as A
+            from al_agent_contracts import reference, ref, validate, fingerprint, ContractError
+            from al_agent_exchange import specification, reader
+            reference(data['contract_ref'])
+            output = next((r for r in st.get('agent_outputs', {}).values()
+                           if ref(r['artifact']) == data['contract_ref']), None)
+            if not output or not output.get('contract'):
+                raise ContractError('/required_inputs')
+            value = output['contract']
+            validate(value, specification=specification(st), resolve=reader(st))
+            producer = i['agents'].get(value['context']['producer'])
+            if (not producer or producer.get('task') != data['from']
+                    or value['context']['subtask'] != data['from']
+                    or value['context']['graph_revision'] != i['graph_revision']
+                    or value['payload']['record_digest'] != fingerprint(A.read(output['artifact']).decode('utf-8'))):
+                raise ContractError('/context', kind=value['kind'])
+            data = dict(data, text='Typed authored exchange; independent task admission remains required.')
+        else:
+            text(data['text'], 'handoff')
         E.queue(st, 'handoff.created', data)
     elif a.action in {'decision', 'revalidate'}:
         import al_execution_decisions as D

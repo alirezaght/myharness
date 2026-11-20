@@ -1,0 +1,11 @@
+{
+  "harness/execution_operations.py": "a765afc925615c674f7838cdc81616aa6248d4a32653711dd844a03924560f1c",
+  "harness/task_environment.py": "5fc28563317d8bf899f19c84f1f4b9c7e7bf7d527b9deb59e33ecc5aec3d4ac3",
+  "al/claude/skills/al/reference/parity-manifest.json": "b08519bc5f306c1f0c7868f79bd8346d2192303a4e919caca88d2a3a232e7100",
+  "al/codex/skills/al/reference/parity-manifest.json": "b08519bc5f306c1f0c7868f79bd8346d2192303a4e919caca88d2a3a232e7100",
+  "tests/test_agent_contracts_mutable.py": "c9cf1278ab6404caeded966f86b7f28be6f0f03721812eec0ef1d54bbf40e72d",
+  "tests/test_agent_contracts_setup.py": "c05a093e85da4fa25cdccd5905aea9ecb16dc59c89755e03a09233623e47e97a",
+  "tests/test_execution_continuity.py": "5b19efb86fc38455e4eb2ccb5f793eae87eb2b253d03bfe7ec24b3ba5b03742e",
+  "tests/test_execution_operations.py": "6e369a8368a7bf5a6ed076084ea78d29a705379dbb219e8b44e60ec7758d8c70",
+  "tests/test_task_tooling.py": "8a218c682f5331d50e7b78fd2567169f3cf6782c022eee0a49a017581a3612ad"
+}

@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="11" time="12.492" timestamp="2026-11-20T11:34:04.851387+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_graph_growth" time="1.705" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_real_resolution" time="1.256" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[registration]" time="1.018" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[scope]" time="1.071" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[revision]" time="1.020" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[original]" time="1.015" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[current]" time="1.035" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[unsupported]" time="1.025" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[missing]" time="1.014"><failure message="FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/al-r4-escalation-codex-repro-002/test_r4_escalation_repair_refu6/repo/.codex/al-runtime/sessions/harness-ba26c123f0ba475cfa5926f1/harness-ba26c123f0ba475cfa5926f1/artifacts/d1f6b4d6bd49ce351c9560558c1dde12f3d213278bf7ba462cfde97f8fb1ae54'">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x107bb96c0&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-repro-002/test_r4_escalation_repair_refu6')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-repro-002/test_r4_escalation_repair_refu6/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107ab65d0&gt;
+tamper = 'missing'
+
+    @pytest.mark.parametrize('tamper', ['registration', 'scope', 'revision', 'original', 'current',
+                                       'unsupported', 'missing', 'authority', 'foreign-delivery'])
+    def test_r4_escalation_repair_refuses_tampering_and_stale_authority(cli, tmp_path, repo, monkeypatch, tamper):
+        import json
+        from pathlib import Path
+        import al_artifacts as A
+        controller, eid, sid, blocker = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        assert register_task(cli, tmp_path, 'B', ['docs'])[0] == 0
+        st = al_store.load(sid)
+        if tamper in {'registration', 'revision'}:
+            st['integration']['blockers']['design'][tamper] = 'forged' if tamper == 'registration' else 2
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'scope':
+            blocker = dict(blocker, tasks=['B'])
+        elif tamper == 'current':
+            st['agent_contracts']['escalation-request:design']['acceptance_criteria'] = ['forged']
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'original':
+            path = Path(st['escalation_observations']['design'][0]['stored_path'])
+            path.write_bytes(path.read_bytes() + b' changed original observation')
+        elif tamper == 'missing':
+            Path(st['escalation_observations']['design'][0]['stored_path']).unlink()
+        elif tamper == 'unsupported':
+            ref = st['escalation_observations']['design'][0]
+            value = A.read_json(ref);value['schema_version'] = 99
+            st['escalation_observations']['design'][0] = A.snapshot_bytes(sid, json.dumps(value).encode(), 'escalation-observation-v1', 'negative fixture')
+            al_store.state_path(sid).write_text(json.dumps(st))
+        elif tamper == 'authority':
+            controller.conn.execute("UPDATE executions SET status='Completed' WHERE id=?", (eid,))
+        else:
+            from harness.execution_decisions import record_execution_decision
+            _r4_sync(controller, eid, sid)
+            decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
+                request_id='foreign-one', verdict='accept', decision_text='Use the recommended architecture with explicit acceptance limited to task A.', tasks=['A'], criteria=['AC-01'])
+            delivery = json.loads(decided['delivery']);delivery['binding']['approval_id'] += 1
+            before = al_store.state_path(sid).read_bytes()
+            assert report(cli, tmp_path, 'decision', delivery)[0] != 0
+            assert al_store.state_path(sid).read_bytes() == before
+            controller.conn.close()
+            return
+        before = al_store.state_path(sid).read_bytes()
+&gt;       assert report(cli, tmp_path, 'blocker', blocker)[0] != 0
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:197: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/execution_helpers.py:65: in report
+    return cli('integration', action, '--file', str(path))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/launcher_context.py:418: in run
+    return call(*args)
+           ^^^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/conftest.py:137: in _run
+    launcher.run(Path.cwd(), session, start, al_state._main)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/launcher_context.py:88: in run
+    main()
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_state.py:292: in _main
+    _dispatch(a, al_recovery_guidance)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_state.py:313: in _dispatch
+    a.fn(a, sid)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_execution_tasks.py:438: in cmd_integration
+    _blocker(st, data)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_execution_tasks.py:301: in _blocker
+    consume_escalation(st, bid, i['blockers'][bid])
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_agent_exchange.py:263: in consume_escalation
+    observed = A.read_json(ref)
+               ^^^^^^^^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_artifacts.py:37: in read_json
+    return json.loads(read(ref))
+                      ^^^^^^^^^
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/scripts/al_artifacts.py:32: in read
+    raw = Path(ref['stored_path']).read_bytes()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/private/tmp/al-reliability-python/cpython-3.13.18-macos-aarch64-none/lib/python3.13/pathlib/_abc.py:625: in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/private/tmp/al-r4-escalation-codex-repro-002/test_r4_escalation_repair_refu6/repo/.codex/al-runtime/sessio...cfa5926f1/harness-ba26c123f0ba475cfa5926f1/artifacts/d1f6b4d6bd49ce351c9560558c1dde12f3d213278bf7ba462cfde97f8fb1ae54')
+mode = 'rb', buffering = -1, encoding = None, errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/private/tmp/al-r4-escalation-codex-repro-002/test_r4_escalation_repair_refu6/repo/.codex/al-runtime/sessions/harness-ba26c123f0ba475cfa5926f1/harness-ba26c123f0ba475cfa5926f1/artifacts/d1f6b4d6bd49ce351c9560558c1dde12f3d213278bf7ba462cfde97f8fb1ae54'
+
+/private/tmp/al-reliability-python/cpython-3.13.18-macos-aarch64-none/lib/python3.13/pathlib/_local.py:537: FileNotFoundError</failure></testcase><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[authority]" time="1.132" /><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_refuses_tampering_and_stale_authority[foreign-delivery]" time="1.126" /></testsuite></testsuites>

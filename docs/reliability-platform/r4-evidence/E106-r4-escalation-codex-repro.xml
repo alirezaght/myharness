@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="2.705" timestamp="2026-11-20T11:29:35.340434+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_graph_growth" time="1.581"><failure message="AssertionError: ('al_run: {&quot;code&quot;: &quot;INVALID_AGENT_CONTRACT&quot;, &quot;contract_kind&quot;: &quot;escalation-request&quot;, &quot;expected&quot;: &quot;current versioned dec...date · run admission lock acquired · 0.0s elapsed&#10;  AL · execution update · loading guarded run state · 0.0s elapsed&#10;  ')&#10;assert 'al_run: {&quot;code&quot;: &quot;INVALID_AGENT_CONTRACT&quot;, &quot;contract_kind&quot;: &quot;escalation-request&quot;, &quot;expected&quot;: &quot;current versioned decl...epair_action&quot;: &quot;regenerate from current assignment and immutable inputs&quot;, &quot;schema_version&quot;: 1, &quot;state_changed&quot;: false}' == 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x10b41b380&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-repro-001/test_r4_escalation_repair_iden0')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-repro-001/test_r4_escalation_repair_iden0/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10b2aec40&gt;
+
+    def test_r4_escalation_repair_identical_registration_after_graph_growth(cli, tmp_path, repo, monkeypatch):
+        controller, _, sid, blocker = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        original = copy.deepcopy(al_store.load(sid)['integration']['blockers']['design'])
+        original_contract = copy.deepcopy(al_store.load(sid)['agent_contracts']['escalation-request:design'])
+        assert register_task(cli, tmp_path, 'B', ['docs'])[0] == 0
+        before = al_store.load(sid)
+        assert before['integration']['graph_revision'] == 2
+        result = report(cli, tmp_path, 'blocker', blocker)
+&gt;       assert result[0] == 0, result
+E       AssertionError: ('al_run: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "escalation-request", "expected": "current versioned dec...date · run admission lock acquired · 0.0s elapsed
+E         AL · execution update · loading guarded run state · 0.0s elapsed
+E         ')
+E       assert 'al_run: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "escalation-request", "expected": "current versioned decl...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:109: AssertionError</failure></testcase><testcase classname="al.codex.skills.al.tests.test_execution_decisions" name="test_r4_escalation_repair_identical_registration_after_real_resolution" time="1.084"><failure message="AssertionError: ('al_run: {&quot;code&quot;: &quot;INVALID_AGENT_CONTRACT&quot;, &quot;contract_kind&quot;: &quot;escalation-request&quot;, &quot;expected&quot;: &quot;current versioned dec...date · run admission lock acquired · 0.0s elapsed&#10;  AL · execution update · loading guarded run state · 0.0s elapsed&#10;  ')&#10;assert 'al_run: {&quot;code&quot;: &quot;INVALID_AGENT_CONTRACT&quot;, &quot;contract_kind&quot;: &quot;escalation-request&quot;, &quot;expected&quot;: &quot;current versioned decl...epair_action&quot;: &quot;regenerate from current assignment and immutable inputs&quot;, &quot;schema_version&quot;: 1, &quot;state_changed&quot;: false}' == 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x10b912480&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-escalation-codex-repro-001/test_r4_escalation_repair_iden1')
+repo = PosixPath('/private/tmp/al-r4-escalation-codex-repro-001/test_r4_escalation_repair_iden1/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10b34b2f0&gt;
+
+    def test_r4_escalation_repair_identical_registration_after_real_resolution(cli, tmp_path, repo, monkeypatch):
+        import json
+        from harness.execution_decisions import record_execution_decision
+        controller, eid, sid, blocker = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
+        original = copy.deepcopy(al_store.load(sid)['integration']['blockers']['design'])
+        _r4_sync(controller, eid, sid)
+        decided = record_execution_decision(
+            controller, eid, 'design', blocker_revision=1, request_id='resolve-one', verdict='accept',
+            decision_text='Use the recommended architecture with explicit acceptance limited to task A.',
+            tasks=['A'], criteria=['AC-01'])
+        delivery = json.loads(decided['delivery'])
+        result = report(cli, tmp_path, 'decision', delivery)
+        assert result[0] == 0, result
+        _r4_sync(controller, eid, sid)
+        before = al_store.load(sid)
+        resolved = copy.deepcopy(before['integration']['blockers']['design'])
+        assert original['state'] == 'Open' and resolved['state'] == 'Resolved'
+        assert resolved['delivery_id'] == delivery['id']
+        result = report(cli, tmp_path, 'blocker', blocker)
+&gt;       assert result[0] == 0, result
+E       AssertionError: ('al_run: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "escalation-request", "expected": "current versioned dec...date · run admission lock acquired · 0.0s elapsed
+E         AL · execution update · loading guarded run state · 0.0s elapsed
+E         ')
+E       assert 'al_run: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "escalation-request", "expected": "current versioned decl...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_decisions.py:137: AssertionError</failure></testcase></testsuite></testsuites>

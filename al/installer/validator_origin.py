@@ -90,6 +90,13 @@ def interpreter_identity():
 
 
 def repository_identity(root):
+    from .runtime_retry_control import current
+    control=current()
+    if control:
+        raw=control.git("repository_identity",root=root)
+        lines=raw.decode().splitlines()
+        if len(lines)!=3:raise ValueError("invalid sealed repository identity")
+        return {"root":str(Path(lines[0]).resolve()),"git_dir":str((Path(root)/lines[1]).resolve()),"common_dir":str((Path(root)/lines[2]).resolve())}
     env = dict(os.environ, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull,
                GIT_OPTIONAL_LOCKS='0', GIT_NO_REPLACE_OBJECTS='1')
     env = {k:v for k,v in env.items() if not k.startswith(('GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_', 'GIT_DIR', 'GIT_WORK_TREE'))}

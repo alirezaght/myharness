@@ -1,0 +1,16 @@
+{
+  "evidence": "E22",
+  "run_id": "0d32430a",
+  "result": "FAIL",
+  "counts": {
+    "failed": 32,
+    "passed": 34
+  },
+  "cause": "Unvalidated per-event semantic extras leak text/hash values or break otherwise valid ingestion with SQLite collection binding.",
+  "artifact": {
+    "path": "docs/reliability-platform/r2-evidence/E22-red/al-r2-semantic-privacy-001.xml",
+    "sha256": "24bc26b15632074f18fd834a6576377f6c4591386835c062e96a3c51a8bad56d"
+  },
+  "protected_log": ".codex/al-runtime/reliability-r2-active-20261119/logs/0d32430a-E22-r2-semantic-privacy-test.log",
+  "rerun_note": "Red XML and immutable failed ledger/log retained before exact same-command repaired proof."
+}

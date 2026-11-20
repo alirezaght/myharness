@@ -60,6 +60,9 @@ def test_selection_repeat_generation_and_harness_route(cli, tmp_path, repo, stat
                          'approval': {'approval_id': 1, 'spec_version': 1,
                                       'content_hash': 'sha256:' + 'a' * 64,
                                       'revision': 'fixture', 'review_state_hash': 'sha256:' + 'b' * 64}}, body)
+    from al_agent_exchange import refresh_analysis
+    # This fixture attaches its authenticated protocol after standalone initialization.
+    refresh_analysis(current)
     state_file().write_text(json.dumps(current))
     _, prompt, _ = invoke(cli, 'writer', 'handoff', '--id', 'worker', '--body-file', str(body),
                           '--area', 'unit', '--area', 'unit')

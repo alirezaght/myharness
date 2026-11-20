@@ -1,0 +1,52 @@
+{
+  "viewport": 1280,
+  "initialCount": 25,
+  "olderCount": 27,
+  "hasPending": true,
+  "literalSafe": true,
+  "focusSurvivesRefresh": true,
+  "controlFits": true,
+  "maliciousNodes": 0,
+  "overflow": false,
+  "fenced": true,
+  "activeEpoch": "legacy-0",
+  "privateAPI": true,
+  "privateUI": true,
+  "evidenceFocusOnStart": true,
+  "evidenceFocusAfterResponse": true,
+  "delayedDetailSurvivesRefresh": true,
+  "summaryFocusOnToggle": true,
+  "collapsedLocally": true,
+  "collapsedAfterParentAndList": true,
+  "summaryFocusAfterParentAndList": true,
+  "independentListAndDetail": true,
+  "loadedHistorySurvivesRefresh": true,
+  "oldInvestigationSurvivesRefresh": true,
+  "passiveWindowPreserved": false,
+  "newArrivalsSignaled": false,
+  "burstComplete": false,
+  "deepComplete": false,
+  "renderedHistoryBounded": true,
+  "burstFacts": {
+    "total": 57,
+    "added": 30,
+    "missing": [
+      "1c2d67024301c636e103d4aad5fc189b",
+      "458f8cb324b7e15812fa4ac659c6656d",
+      "eeb9f439579fde4363f3626a89b53535",
+      "fc3b5eac36151196852c824fc9c330d1",
+      "fcf71b48441ed328203c842334b3e14f"
+    ],
+    "traversed": 52,
+    "pages": 2
+  },
+  "deepFacts": {
+    "total": 101,
+    "missing": [
+      "49d763a1d5ac9f20e90a70a9f793c781"
+    ],
+    "traversed": 100,
+    "pages": 4,
+    "maximumRendered": 100
+  }
+}

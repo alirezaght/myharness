@@ -38,7 +38,13 @@ def cmd_artifact(a, sid):
     if a.action == 'show':
         record = st.get('agent_outputs', {}).get(a.name)
         if not record: refuse('unknown named agent output: ' + a.name)
-        A.read(record['artifact'])
+        raw = A.read(record['artifact'])
+        if record.get('contract') is not None:
+            from al_agent_contracts import validate, fingerprint, ContractError
+            from al_agent_exchange import reader
+            validate(record['contract'], resolve=reader(st))
+            if record['contract']['payload']['record_digest'] != fingerprint(raw.decode('utf-8')):
+                raise ContractError('/payload', kind='implementation-result')
         print(json.dumps(record, sort_keys=True))
         return
     if a.action == 'record':
@@ -56,6 +62,29 @@ def cmd_artifact(a, sid):
     if a.name.endswith('.json'):
         import al_proof_json as J
         J.loads(raw)
+    contract = None
+    if getattr(a, 'contract_file', None):
+        from al_agent_exchange import context, specification, reader
+        from al_agent_contracts import validate
+        import al_proof_json as J
+        writer = st['writers'].get(a.writer)
+        if not writer or writer['state'] != 'ACTIVE':
+            refuse('typed output requires its current active writer')
+        contract = J.loads(Path(a.contract_file).read_bytes())
+        validate(contract, context=context(st, writer.get('agent') or writer['id'], writer.get('task')),
+                 specification=specification(st), resolve=reader(st))
+        from al_agent_contracts import fingerprint, ContractError
+        declared = (writer.get('handoffs') or [{}])[-1].get('contract')
+        if declared:
+            if ({'name': contract['payload']['record_id'], 'kind': contract['kind']} not in declared['expected_outputs']
+                    or any(r not in contract['required_inputs'] for r in declared['required_inputs'] if r['required'])):
+                raise ContractError('/expected_outputs', kind='implementation-result')
+        if contract['kind'] != 'implementation-result' or contract['payload']['record_digest'] != fingerprint(raw.decode('utf-8')):
+            raise ContractError('/payload', kind='implementation-result')
+        expected_criteria = st.get('integration', {}).get('tasks', {}).get(
+            writer.get('task'), {}).get('criteria', A.read_json(st['task_package'])['criteria'])
+        if contract['acceptance_criteria'] != expected_criteria:
+            raise ContractError('/acceptance_criteria', kind='implementation-result')
     prior = st.get('agent_outputs', {}).get(a.name)
     if prior:
         if A.digest(raw) == prior['artifact']['sha256']:
@@ -77,6 +106,8 @@ def cmd_artifact(a, sid):
         with os.fdopen(fd, 'wb') as stream:
             stream.write(raw);stream.flush();os.fsync(stream.fileno())
     record = {'name': a.name, 'path': str(path), 'artifact': ref}
+    if contract is not None:
+        record['contract'] = contract
     if prior: st.setdefault('agent_output_history', []).append(prior)
     st.setdefault('agent_outputs', {})[a.name] = record
     al_store.save(sid, st)
@@ -90,5 +121,5 @@ def register(sub):
     p = children.add_parser('output');p.add_argument('--name', required=True)
     source = p.add_mutually_exclusive_group(required=True)
     source.add_argument('--file');source.add_argument('--stdin', action='store_true')
-    p.add_argument('--expected-sha256');p.set_defaults(fn=cmd_artifact)
+    p.add_argument('--expected-sha256');p.add_argument('--contract-file');p.add_argument('--writer');p.set_defaults(fn=cmd_artifact)
     p = children.add_parser('show');p.add_argument('--name', required=True);p.set_defaults(fn=cmd_artifact)

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.094" timestamp="2026-11-20T08:13:27.720816+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="al.codex.skills.al.tests.test_parity" name="test_manifest_is_exhaustive_and_only_names_platform_adapters" time="0.068"><failure message="AssertionError: assert {'al_acceptan...heck.py', ...} == {'al_acceptan...heck.py', ...}&#10;  &#10;  Extra items in the left set:&#10;  'al_policy_retry.py'&#10;  'al_retry_control.py'&#10;  Use -v to get more diff">def test_manifest_is_exhaustive_and_only_names_platform_adapters():
+        manifest = json.loads((CODEX / "reference" / "parity-manifest.json").read_text())
+        codex_files = {p.name for p in (CODEX / "scripts").glob("*.py")}
+        claude_files = {p.name for p in (CLAUDE / "scripts").glob("*.py")}
+        adapters = manifest["platform_adapters"]
+        codex_only = set(adapters["codex_only"])
+        claude_only = {"_".join(adapter["stem"]) + adapter["extension"]
+                       for adapter in adapters["claude_only"]}
+        different = set(adapters["different_content"])
+        shared = set(manifest["shared_files"])
+        coverage_resources = {
+            "al_architecture_check.py", "al_ci_verification.py", "al_python_imports.py",
+            "al_repo_adapters.py", "al_repo_contract.py", "al_repo_python.py",
+            "al_repository_facts.py", "al_service_coverage.py",
+        }
+        assert coverage_resources &lt;= shared
+        assert {"schemas/service-coverage.json", "schemas/repository-facts.json",
+                "examples/service-coverage.json", "service-coverage.md"} &lt;= set(manifest["shared_reference_files"])
+        assert len(shared) == len(manifest["shared_files"])
+        assert codex_files - claude_files == codex_only
+        assert claude_files - codex_files == claude_only
+&gt;       assert (codex_files &amp; claude_files) == shared | different
+E       AssertionError: assert {'al_acceptan...heck.py', ...} == {'al_acceptan...heck.py', ...}
+E         
+E         Extra items in the left set:
+E         'al_policy_retry.py'
+E         'al_retry_control.py'
+E         Use -v to get more diff
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_parity.py:31: AssertionError</failure></testcase></testsuite></testsuites>

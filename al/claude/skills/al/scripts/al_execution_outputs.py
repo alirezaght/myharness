@@ -121,11 +121,14 @@ def current(st, task_id, _seen=()):
     if receipt is None:
         return False
     validate_authored(receipt)
+    from al_agent_exchange import consume
+    consume(st, 'implementation-result', task_id, receipt, task=task_id)
     if (receipt['task_revision'] != row['revision']
             or receipt['graph_revision'] != st['integration']['graph_revision']
             or receipt['requirement_hash'] != al_task.task_hash(st)):
         return False
     _settled(st, {task_id})
+    require_results(st, task_id)
     for aid in receipt['producer_invocation_ids']:
         _producer(st, aid, task_id)
     for wid in receipt['writer_ids']:
@@ -151,6 +154,7 @@ def authored(st, task_id, data):
         refuse('invalid authored output input')
     row = require_task_admission(st, task_id)
     _settled(st, {task_id})
+    require_results(st, task_id)
     outputs, writers, producers = [], set(), set()
     for ref in data['output_refs']:
         if isinstance(ref, dict) and set(ref) == {'kind', 'path'} and ref['kind'] == 'source':
@@ -191,6 +195,8 @@ def authored(st, task_id, data):
         return value
     if row.get('authored_output'):
         invalidate(st, task_id, 'authored output receipt replaced')
+    from al_agent_exchange import produce
+    produce(st, 'implementation-result', task_id, value, task=task_id, status='authored')
     row['authored_output'] = copy.deepcopy(value)
     E.queue(st, 'output.authored', value)
     return value
@@ -243,3 +249,10 @@ def reopen_stale_completion(st, task_id):
     row.update(status='Waiting', revision=row['revision'] + 1, progress=None)
     E.queue(st, 'task.updated', row)
     return True
+
+
+def require_results(st, task_id):
+    # Harness-owned output reports are checked by the existing authority channel below.
+    if 'integration' in st:
+        authority = __import__('al_execution_tasks').authority
+        authority(st, 'typed-output', task_id)

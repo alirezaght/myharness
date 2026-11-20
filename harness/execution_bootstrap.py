@@ -12,6 +12,59 @@ def _knowledge_modules(source):
     hand-kept list silently drops new ones from the trusted snapshot."""
     return sorted(p.name for p in (source / "knowledge").glob("*.py"))
 
+_RELIABILITY_MODULES = (
+    "catalog.py",
+    "legacy_projection.py",
+    "investigation_contracts.py",
+    "investigations.py",
+    "grouping.py",
+    "source_queries.py",
+    "event_sources.py",
+    "rejection_sources.py",
+    "component_evidence.py",
+    "operator_verdicts.py",
+    "__init__.py",
+    "contracts.py",
+    "identity.py",
+    "store.py",
+    "query.py",
+    "timeline_contracts.py",
+    "timeline_store.py",
+    "process_context.py",
+    "process_store.py",
+    "timeline_query.py",
+)
+
+
+_POLICY_MODULES = (
+    "__init__.py",
+    "contracts.py",
+    "claims.py",
+    "domains.py",
+    "resource_bindings.py",
+    "source_dependencies.py",
+    "native_presence.py",
+    "control_git.py",
+    "control_boundary.py",
+    "control_qualification.py",
+    "control_channel.py",
+    "control_sources_installer.py",
+    "control_sources_codex.py",
+    "control_sources_claude.py",
+    "provenance.py",
+    "configuration.py",
+    "composition.py",
+    "capabilities.py",
+    "deadlines.py",
+    "admission.py",
+    "resources.py",
+    "context.py",
+    "processes.py",
+    "retry.py",
+    "retry_channel.py",
+    "reconciliation.py",
+)
+
 
 def module_argv(module):
     if module not in {
@@ -55,6 +108,10 @@ def authority_snapshot(directory, *, versioned=False):
 
     for name, raw in core_sources().items():
         files["_storage_core/" + name] = raw
+    for name in _RELIABILITY_MODULES:
+        files["reliability/" + name] = (source / "reliability" / name).read_bytes()
+    for name in _POLICY_MODULES:
+        files["policy/" + name] = (source / "policy" / name).read_bytes()
     fingerprint = hashlib.sha256(
         b"".join(k.encode() + v for k, v in sorted(files.items()))
     ).hexdigest()

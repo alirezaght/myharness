@@ -1,0 +1,134 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_agent_contracts.py tests/test_writer_handoff.py tests/test_artifact_consumers.py tests/test_output_contracts.py tests/test_implementation_continuity.py tests/test_evidence_integrity.py tests/test_evidence_cancellation.py tests/test_execution_events.py tests/test_execution_receipts.py tests/test_runtime_batch5.py::test_retry_requires_crashed_check_reconciliation --basetemp=/private/tmp/al-r4-review-al-codex-broad-001 --junitxml=/private/tmp/al-r4-review-al-codex-broad-001.xml
+# cwd: al/codex/skills/al
+# started: Fri Nov 20 10:32:51 2026
+
+........................................................................ [ 51%]
+.........................................FF.......................F      [100%]
+=================================== FAILURES ===================================
+_ test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[False] _
+
+cli = <function current_protocol.<locals>.run at 0x10755f920>
+tmp_path = PosixPath('/private/tmp/al-r4-review-al-codex-broad-001/test_pre_task_base_gate_is_rea0')
+repo = PosixPath('/private/tmp/al-r4-review-al-codex-broad-001/test_pre_task_base_gate_is_rea0/repo')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107673070>
+bind_source = False
+
+    @pytest.mark.parametrize('bind_source', [False, True])
+    def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cli, tmp_path, repo, monkeypatch, bind_source):
+        from execution_helpers import register_task
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch, bind_source=bind_source)
+        from harness.execution_store import get_execution
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        gate = _planning_gate(cli, tmp_path, sid)
+        state = al_store.load(sid)
+        assert state['phase'] == 'PLANNING' and state['integration']['tasks'] == {}
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'candidate')[0] != 0
+        result = cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check',
+                     '--scope', ','.join(gate['scope']), '--', *gate['argv'])
+        assert result[0] != 0, result
+        assert al_store.state_path(sid).read_bytes() == before
+        result = cli('gates', 'run', '--stage', 'base')
+        assert result[0] == 0, result
+        state = al_store.load(sid)
+        assert state['integration']['tasks'] == {} and state['integration']['graph_revision'] == 0
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        # A cached real gate result cannot be reused through a label-only public call.
+        assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+        assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+        admit_planning(cli)
+        assert cli('phase', 'IMPLEMENTATION')[0] == 0
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'base')[0] != 0
+        assert al_store.state_path(sid).read_bytes() == before
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+>       assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+E       assert 'al_state: corrupt state: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "implementation-plan", "expected": "curr...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_events.py:137: AssertionError
+_ test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[True] _
+
+cli = <function current_protocol.<locals>.run at 0x107305300>
+tmp_path = PosixPath('/private/tmp/al-r4-review-al-codex-broad-001/test_pre_task_base_gate_is_rea1')
+repo = PosixPath('/private/tmp/al-r4-review-al-codex-broad-001/test_pre_task_base_gate_is_rea1/repo')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1072b0130>
+bind_source = True
+
+    @pytest.mark.parametrize('bind_source', [False, True])
+    def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cli, tmp_path, repo, monkeypatch, bind_source):
+        from execution_helpers import register_task
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch, bind_source=bind_source)
+        from harness.execution_store import get_execution
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        gate = _planning_gate(cli, tmp_path, sid)
+        state = al_store.load(sid)
+        assert state['phase'] == 'PLANNING' and state['integration']['tasks'] == {}
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'candidate')[0] != 0
+        result = cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check',
+                     '--scope', ','.join(gate['scope']), '--', *gate['argv'])
+        assert result[0] != 0, result
+        assert al_store.state_path(sid).read_bytes() == before
+        result = cli('gates', 'run', '--stage', 'base')
+        assert result[0] == 0, result
+        state = al_store.load(sid)
+        assert state['integration']['tasks'] == {} and state['integration']['graph_revision'] == 0
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        # A cached real gate result cannot be reused through a label-only public call.
+        assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+        assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+        admit_planning(cli)
+        assert cli('phase', 'IMPLEMENTATION')[0] == 0
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'base')[0] != 0
+        assert al_store.state_path(sid).read_bytes() == before
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+>       assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+E       assert 'al_state: corrupt state: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "implementation-plan", "expected": "curr...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_events.py:137: AssertionError
+_______________ test_retry_requires_crashed_check_reconciliation _______________
+
+cli = <function current_protocol.<locals>.run at 0x107022700>
+repo = PosixPath('/private/tmp/al-r4-review-al-codex-broad-001/test_retry_requires_crashed_ch0/repo')
+tmp_path = PosixPath('/private/tmp/al-r4-review-al-codex-broad-001/test_retry_requires_crashed_ch0')
+state_file = <function state_file.<locals>._path at 0x107023ec0>
+
+    def test_retry_requires_crashed_check_reconciliation(cli,repo,tmp_path,state_file):
+        begin(cli,tmp_path,repo)
+        s=state(cli);entry=s['evidence']['entries'][-1]
+        runner=subprocess.Popen(['python3','-c','pass']);runner.wait()
+        entry.update(status='RUNNING',interrupted=True,owner_pid=runner.pid,pid=runner.pid)
+        state_file().write_text(json.dumps(s))
+        invoke(cli,'agent-failed','al-engineer','--reason','runner failed','--retry-safe','yes')
+        before=state_file().read_bytes();invoke(cli,'retry','al-engineer','--reason','retry',ok=False)
+        assert state_file().read_bytes()==before
+        proof=tmp_path/'proof.txt';proof.write_text('Crashed runner inspected.\n')
+>       invoke(cli,'check-reconcile','--id',entry['id'],'--reason','dead runner','--artifact',str(proof))
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_runtime_batch5.py:155: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+cli = <function current_protocol.<locals>.run at 0x107022700>, ok = True
+args = ('check-reconcile', '--id', 'E3', '--reason', 'dead runner', '--artifact', ...)
+
+    def invoke(cli, *args, ok=True):
+        code, out, err = cli(*args)
+        if ok:
+>           assert code == 0, f"{args!r} failed ({code}): {out}{err}"
+                   ^^^^^^^^^
+E           AssertionError: ('check-reconcile', '--id', 'E3', '--reason', 'dead runner', '--artifact', '/private/tmp/al-r4-review-al-codex-broad-001/test_retry_requires_crashed_ch0/proof.txt') failed (al_run: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "verification-result", "expected": "current versioned declared exchange", "field_pointer": "/payload", "repair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}): AL · check reconciliation · checking guarded command · 0.0s elapsed
+E           AL · check reconciliation · acquiring run admission lock · 0.0s elapsed
+E           AL · check reconciliation · run admission lock acquired · 0.0s elapsed
+E           AL · check reconciliation · loading guarded run state · 0.0s elapsed
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/hook_regression_helpers.py:66: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_execution_events.py::test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[False]
+FAILED tests/test_execution_events.py::test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[True]
+FAILED tests/test_runtime_batch5.py::test_retry_requires_crashed_check_reconciliation
+3 failed, 136 passed in 476.68s (0:07:56)
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 91812, "pid": 91812, "sid": 91812, "start": [1795167171, 953031], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

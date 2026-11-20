@@ -71,10 +71,18 @@ def _concurrent_reservation(db, task, out):
 def test_independent_processes_reserve_one_approval(controller, sample_repo, monkeypatch, db_path):
     import multiprocessing
 
-    tid, eid = approved_execution(controller, sample_repo, monkeypatch)
-    # Start from the actual approved task before its first execution reservation.
-    controller.conn.execute("DELETE FROM execution_epochs WHERE execution_id=?", (eid,))
-    controller.conn.execute("DELETE FROM executions WHERE id=?", (eid,))
+    from harness.approval import ApprovalGate
+    from harness.spec_store import SpecStore
+    from tests.complete_task import settle
+
+    monkeypatch.chdir(sample_repo)
+    tid = controller.create_task("Implement a safe and verifiable fixture change", "trivial").id
+    settle(controller, tid)
+    controller.advance(tid)
+    ApprovalGate(
+        controller, tid, SpecStore(sample_repo / "docs/specs" / tid), sample_repo
+    ).approve()
+    assert controller.conn.execute("SELECT COUNT(*) FROM executions").fetchone()[0] == 0
     ctx = multiprocessing.get_context("fork")
     out = ctx.Queue()
     processes = [

@@ -179,6 +179,8 @@ def cmd_report(a,sid):
     ref=A.snapshot_bytes(sid,raw,'architect-'+stage+('-v2' if Behavior.enabled(st) else ''),a.file)
     if Behavior.enabled(st):Behavior.retain_lineage(st,sid,ref,stage)
     r['fresh' if stage=='fresh' else 'comparison']=ref; r['stage']='fresh-saved' if stage=='fresh' else 'comparison-saved'
+    from al_incident_sources import review_accepted
+    review_accepted(st, ref, stage)
     if stage=='compare':
         st['review_status']=data['status']; st['findings']=dict(NO_FINDINGS,blocking=blocking,nonblocking=notes)
         st['review_history'].append({'review':st['review_iteration'],'status':data['status'],'blocking':blocking,'nonblocking':notes,'fresh':r['fresh'],'comparison':ref,'resolution_validation':al_review_history.receipt(st,sid,r['fresh'],ref),'at':time.time()})

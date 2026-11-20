@@ -89,6 +89,8 @@ def cmd_start(a, sid):
         from al_rework_recovery_contract import initial_state
         st["rework_recovery"] = initial_state(st)
         st["rework"].update(batch=0)
+        from al_agent_exchange import produce
+        produce(st, 'requirement-analysis', reference['id'], package, status='observed')
         save(sid, st)
         write_current(sid, publication)
         # Snapshot trees of approved runs were released at approval; orphans of abandoned runs

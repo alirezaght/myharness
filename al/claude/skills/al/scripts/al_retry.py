@@ -38,6 +38,36 @@ def cmd_peer(a,sid):
     al_store.save(sid,st)
 
 
+POLICY_RETRY_PROTOCOL = 1
+
+
+def retry_preconditions(st, a):
+    failure = st.get('failure')
+    if st['status'] not in {'AGENT_FAILED','WAITING_FOR_USER','INTERRUPTED','TRANSFERRED'} or not failure or failure.get('agent')!=a.agent:
+        refuse('retry requires the matching pending agent failure')
+    if not a.reason.strip() or failure.get('retry_safe')!='yes':refuse('retry requires nonempty reason and retry_safe=yes')
+    if operation_gaps(st):refuse('reconcile outstanding writers/checks before retry')
+    if failure.get('parallel') or failure.get('peer'):
+        peer=failure.get('peer_reconciliation')
+        if not peer or peer['agent']==a.agent or (failure.get('peer') and peer['agent']!=failure['peer']):refuse('peer state needs explicit reconciliation proof')
+        A.read(peer['artifact'])
+    ref=failure.get('checkpoint')
+    if not ref or ref not in st.get('checkpoints',[]):refuse('failure checkpoint missing')
+    data = A.read_json(ref)
+    return {'failure': failure, 'checkpoint': ref, 'checkpoint_data': data,
+            'payload': {'run_id': st['run_id'], 'binding': st.get('integration', {}).get('binding'),
+                        'agent': a.agent, 'reason': a.reason, 'failure': failure,
+                        'used': st.get('retries', {}).get(a.agent, 0)}}
+
+
+def require_retry_grant(st, a, preflight):
+    import os
+    if os.environ.get('HARNESS_POLICY_RETRY_REQUIRED') != '1':
+        return None
+    import al_policy_retry
+    return al_policy_retry.claim(preflight['payload'])
+
+
 def cmd_retry(a,sid):
     st=al_store.load(sid)
     if a.agent not in al_models.ROLES:refuse('invalid retry role')
@@ -54,19 +84,14 @@ def cmd_retry(a,sid):
         st['stop_reason']=al_models.display(a.agent)+' already retried once; no retry budget left'
         al_store.save(sid,st);print('AL: '+st['stop_reason'],file=sys.stderr);sys.exit(7)
     failure=st.get('failure')
-    if st['status'] not in {'AGENT_FAILED','WAITING_FOR_USER','INTERRUPTED','TRANSFERRED'} or not failure or failure.get('agent')!=a.agent:
-        refuse('retry requires the matching pending agent failure')
-    if not a.reason.strip() or failure.get('retry_safe')!='yes':refuse('retry requires nonempty reason and retry_safe=yes')
-    if operation_gaps(st):refuse('reconcile outstanding writers/checks before retry')
-    if failure.get('parallel') or failure.get('peer'):
-        peer=failure.get('peer_reconciliation')
-        if not peer or peer['agent']==a.agent or (failure.get('peer') and peer['agent']!=failure['peer']):refuse('peer state needs explicit reconciliation proof')
-        A.read(peer['artifact'])
-    ref=failure.get('checkpoint')
-    if not ref or ref not in st.get('checkpoints',[]):refuse('failure checkpoint missing')
+    preflight = retry_preconditions(st, a)
+    ref = preflight['checkpoint']
+    grant = require_retry_grant(st, a, preflight)
     changed=R.apply_checkpoint(st,A.read_json(ref),ref['id'],restoration='agent-retry',retry_agent=a.agent)
-    st.setdefault('retry_history',[]).append({'agent':a.agent,'reason':a.reason,'failure':failure,'checkpoint':ref,
-                                             'changed':changed,'phase_occurrence':len(st['phase_occurrences'])-1,'at':time.time()})
+    st.setdefault('retry_history',[]).append({'agent':a.agent,'reason':a.reason,'failure':failure,'checkpoint':ref,'changed':changed,'phase_occurrence':len(st['phase_occurrences'])-1,'at':time.time()})
+    if grant:
+        st['retry_history'][-1]['policy_attempt_id'] = grant['attempt_id']
+        st['retry_history'][-1]['policy_grant_id'] = grant['grant_id']
     st.setdefault('retries',{})[a.agent]=used+1;st['failure']=None
     al_store.save(sid,st);print('AL · retrying '+al_models.display(a.agent)+' (1/1) · '+a.reason)
 

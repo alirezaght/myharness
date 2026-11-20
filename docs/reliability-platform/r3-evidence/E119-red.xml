@@ -1,0 +1,1031 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="10" skipped="0" tests="32" time="23.352" timestamp="2026-11-20T05:04:27.819020+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_policy_deadlines" name="test_required_unqualified_usage_refuses_before_patch[generation_tokens]" time="0.229" /><testcase classname="tests.test_policy_deadlines" name="test_required_unqualified_usage_refuses_before_patch[monetary_cost]" time="0.210" /><testcase classname="tests.test_policy_deadlines" name="test_subsecond_remaining_is_not_rounded_or_restarted" time="0.369" /><testcase classname="tests.test_policy_deadlines" name="test_clock_rollback_refuses_new_work" time="0.254" /><testcase classname="tests.test_policy_deadlines" name="test_boot_change_refuses_time_budget_instead_of_resetting_interval" time="0.250" /><testcase classname="tests.test_policy_deadlines" name="test_elapsed_remainder_uses_original_root_interval_without_rounding" time="0.263" /><testcase classname="tests.test_policy_deadlines" name="test_historical_missing_origin_is_not_backfilled_or_reconstructed" time="0.232" /><testcase classname="tests.test_policy_deadlines" name="test_new_execution_origin_is_one_trusted_atomic_receipt_and_never_resets" time="0.219" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[before-operation_deadline_ms]" time="0.256"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x10750f680&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10759cae0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10759f380&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10759c370&gt;
+dimension = 'operation_deadline_ms', boundary = 'before'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[before-execution_elapsed_ms]" time="0.247"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x10750f9b0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10759ca40&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107639d00&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107636e70&gt;
+dimension = 'execution_elapsed_ms', boundary = 'before'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[hash-operation_deadline_ms]" time="0.251"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x10750fac0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10763a7a0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10763bd80&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1075a0550&gt;
+dimension = 'operation_deadline_ms', boundary = 'hash'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[hash-execution_elapsed_ms]" time="0.248"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x10750fce0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10763ba60&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1076398a0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1075f3930&gt;
+dimension = 'execution_elapsed_ms', boundary = 'hash'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[pread-operation_deadline_ms]" time="0.247"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x10750fbd0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10759c680&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1074f8ea0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1075f3540&gt;
+dimension = 'operation_deadline_ms', boundary = 'pread'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[pread-execution_elapsed_ms]" time="0.269"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x10750fdf0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107639260&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107639800&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x106ff1160&gt;
+dimension = 'execution_elapsed_ms', boundary = 'pread'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[metadata-operation_deadline_ms]" time="0.276"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1075e1040&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10763bba0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107639940&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1075f0ec0&gt;
+dimension = 'operation_deadline_ms', boundary = 'metadata'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[metadata-execution_elapsed_ms]" time="0.249"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1075e1150&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10763bec0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10763a7a0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107588c90&gt;
+dimension = 'execution_elapsed_ms', boundary = 'metadata'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[decode-operation_deadline_ms]" time="0.253"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1075e1370&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10763a2a0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107674f40&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10758acf0&gt;
+dimension = 'operation_deadline_ms', boundary = 'decode'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[decode-execution_elapsed_ms]" time="0.247"><failure message="Failed: DID NOT RAISE ValueError">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1075e19d0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107675940&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107676f20&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10767ec80&gt;
+dimension = 'execution_elapsed_ms', boundary = 'decode'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["before", "hash", "pread", "metadata", "decode"])
+    def test_public_read_never_returns_a_page_after_its_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness import execution_files
+        from harness.policy.admission import Attempt
+        from harness.policy.context import CURRENT
+    
+        r = policy_runtime
+        path = Path(r.operation.envelope["repository"]) / "svc/read.txt"
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b"ordinary confined read\n" * 7000)
+        if boundary in {"pread", "decode"}:
+            with path.open("r+b") as stream:
+                stream.truncate(execution_files.MAX_HASH_BYTES + 1)
+        inode = path.stat().st_ino
+        configure(r, document(r, dimension=dimension, maximum=5000))
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        opened, closed, reads = [], [], []
+        real_open, real_close, real_read, real_pread, real_stat = (
+            os.open,
+            os.close,
+            os.read,
+            os.pread,
+            os.stat,
+        )
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+    
+        def target(fd):
+            return os.fstat(fd).st_ino == inode
+    
+        def opening(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            if target(fd):
+                opened.append(fd)
+            return fd
+    
+        def closing(fd):
+            if target(fd):
+                closed.append(fd)
+            return real_close(fd)
+    
+        def reading(fd, amount):
+            raw = real_read(fd, amount)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "hash":
+                    expire()
+            return raw
+    
+        class DecodeBoundary(bytes):
+            def decode(self, *args, **kwargs):
+                value = super().decode(*args, **kwargs)
+                expire()
+                return value
+    
+        def paging(fd, amount, offset):
+            raw = real_pread(fd, amount, offset)
+            if target(fd):
+                reads.append(amount)
+                if boundary == "pread":
+                    expire()
+                elif boundary == "decode":
+                    return DecodeBoundary(raw)
+            return raw
+    
+        def stating(*args, **kwargs):
+            info = real_stat(*args, **kwargs)
+            if boundary == "metadata" and info.st_ino == inode and kwargs.get("dir_fd") is not None:
+                expire()
+            return info
+    
+        if boundary == "before":
+            real_start = Attempt.start
+    
+            def starting(current, **kwargs):
+                permit = real_start(current, **kwargs)
+                expire()
+                return permit
+    
+            monkeypatch.setattr(Attempt, "start", starting)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "close", closing)
+        monkeypatch.setattr(os, "read", reading)
+        monkeypatch.setattr(os, "pread", paging)
+        monkeypatch.setattr(os, "stat", stating)
+&gt;       with pytest.raises(ValueError, match="^BUDGET_EXHAUSTED$"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:207: Failed</failure></testcase><testcase classname="tests.test_execution_files" name="test_source_proof_is_for_full_bytes_on_every_page" time="0.003" /><testcase classname="tests.test_execution_files" name="test_source_proof_refuses_movement_during_hash[write]" time="0.001" /><testcase classname="tests.test_execution_files" name="test_source_proof_refuses_movement_during_hash[replace]" time="0.001" /><testcase classname="tests.test_execution_files" name="test_source_proof_refuses_movement_during_hash[replace-parent]" time="0.001" /><testcase classname="tests.test_execution_files" name="test_ordinary_proofs_preserve_secret_alias_and_special_file_refusals" time="0.001" /><testcase classname="tests.test_execution_files" name="test_large_source_keeps_pages_without_claiming_a_full_hash" time="0.001" /><testcase classname="tests.test_policy_dispatch" name="test_untouched_legacy_timeout_remains_best_effort_without_strict_claims" time="1.335" /><testcase classname="tests.test_policy_dispatch" name="test_enrolled_arbitrary_process_refuses_before_effect_or_budget_charge" time="0.252" /><testcase classname="tests.test_policy_dispatch" name="test_explicit_strict_time_refuses_arbitrary_command_before_effect[operation_deadline_ms]" time="0.254" /><testcase classname="tests.test_policy_dispatch" name="test_explicit_strict_time_refuses_arbitrary_command_before_effect[execution_elapsed_ms]" time="0.251" /><testcase classname="tests.test_policy_dispatch" name="test_actual_protected_al_retry_is_one_shared_charge_and_saves_grant[False]" time="5.460" /><testcase classname="tests.test_policy_dispatch" name="test_actual_protected_al_retry_is_one_shared_charge_and_saves_grant[True]" time="5.366" /><testcase classname="tests.test_policy_dispatch" name="test_escaped_session_is_not_cleared_by_initial_group_absence" time="0.328" /><testcase classname="tests.test_policy_dispatch" name="test_actual_post_grant_checkpoint_drift_retains_charge_without_recovery" time="5.388" /></testsuite></testsuites>

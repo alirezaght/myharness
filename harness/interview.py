@@ -123,6 +123,18 @@ class InterviewEngine:
         )
 
     def summary(self) -> InterviewSummary:
+        from harness.agent_preexecution import consume
+
+        prior = self.ws.latest_checkpoint("interview")
+        if prior and prior.payload.get("contract"):
+            record = {k: v for k, v in prior.payload.items() if k != "contract"}
+            consume(
+                self.controller,
+                self.task_id,
+                "requirement-analysis",
+                record,
+                prior.payload["contract"],
+            )
         return build_summary(
             self.effective_questions(),
             self.effective_proposals(),
@@ -394,8 +406,18 @@ class InterviewEngine:
         checklist = build_checklist(
             self.effective_questions(), self.effective_proposals(), None, self.coverage()
         )
-        return {
+        from harness.agent_preexecution import records
+
+        result = {
+            "questions": records(self.effective_questions()),
+            "proposals": records(self.effective_proposals()),
             "next_question_id": upcoming[0].id if upcoming else None,
             "unresolved": [item.ref for item in checklist.items],
             "blocking": checklist.blocking,
         }
+        from harness.agent_preexecution import produce
+
+        result["contract"] = produce(
+            self.controller, self.task_id, "requirement-analysis", "interview", result
+        )
+        return result

@@ -98,8 +98,34 @@ def cmd_reconcile(a,sid):
     if not e or (e['status']!='RUNNING' and not e.get('interrupted')) or e.get('reconciliation'): refuse('check is not unresolved')
     import al_ledger as L
     if L._alive(e.get('owner_pid')) or L._alive(e.get('pid')): refuse('cannot reconcile a living check')
-    e.update(status='INFRA',note='interrupted check explicitly reconciled',ended_at=time.time(),
-             reconciliation={'reason':a.reason,'artifact':A.snapshot_artifact(sid,Path(a.artifact),'check-reconciliation')})
+    from al_agent_exchange import consume_verification, produce
+    from al_artifact_cli import read_input
+    from types import SimpleNamespace
+    import copy
+    consume_verification(st, e)
+    if 'integration' in st:
+        from al_execution_tasks import authority
+        authority(st, 'revalidate')
+    if not a.reason.strip(): refuse('check reconciliation requires a reason')
+    # Typed terminal observations must still have their original authenticated log.
+    if ('verification-result:' + e['id']) in st.get('agent_contracts', {}):
+        if L.assess(e)[0] in {'LOG_MISSING', 'LOG_ALTERED'}:
+            refuse('original check log provenance changed')
+    raw, source = read_input(SimpleNamespace(file=a.artifact, stdin=False))
+    original = {'schema_version': 1, 'entry': copy.deepcopy(e),
+                'contract': copy.deepcopy(st.get('agent_contracts', {}).get('verification-result:' + e['id']))}
+    observation = A.snapshot_bytes(sid, json.dumps(original, sort_keys=True).encode(),
+                                   'check-observation-v1', 'authorized check reconciliation')
+    artifact = A.snapshot_bytes(sid, raw, 'check-reconciliation', source)
+    e.update(status='INFRA', note='interrupted check explicitly reconciled', ended_at=time.time(),
+             reconciliation={'schema_version': 1, 'reason': a.reason, 'artifact': artifact,
+                             'observation': observation})
+    # The authorized transition precedes outbox verdict calculation in save().
+    produce(st, 'verification-result', e['id'], e, status='observed', refs=[
+        {'reference': {'kind': ref['kind'], 'id': ref['id'], 'sha256': ref['sha256']},
+         'purpose': purpose, 'required': True}
+        for ref, purpose in ((observation, 'immutable original check observation'),
+                             (artifact, 'actual reconciliation artifact'))])
     al_store.save(sid,st)
 
 def register(sub):

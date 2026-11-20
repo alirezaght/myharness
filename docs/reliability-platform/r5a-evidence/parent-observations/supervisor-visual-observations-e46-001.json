@@ -1,0 +1,122 @@
+{
+  "evidence": "E46",
+  "recorded_outcome": "PASS2",
+  "qualification": "Parent independently visually inspected all10 actual captures. This is bounded incident-section functional/visual verification, not formal AL approval, whole-app certification or full-mission completion.",
+  "artifacts": [
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-advanced-controls-1280x800.png",
+      "sha256": "15384d9f4bcdbc9fe5898629c963a524d13c969ca46baaa18a2e91879b7d7bec",
+      "bytes": 134809,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-editor-1280x800.png",
+      "sha256": "2f512393ac4a0e9e3de3c52abfa12719aad9dc8364599c599c284fe62dc448a7",
+      "bytes": 150034,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-groups-1280x800.png",
+      "sha256": "b90a01e620aa80c3b40fd30385abadb5a6bf9a02bb3020281abde430b274f657",
+      "bytes": 186665,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-history-1280x800.png",
+      "sha256": "b6b4c55c2f58e0acf9abc4ae309c53f8b53c4b1708f10e7830e03b719b4e9010",
+      "bytes": 166413,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "sha256": "ec449c526f30e3f7bfb65f6b939bb5cc12decf1869707ec7930a62a1f2172a49",
+      "bytes": 192196,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-advanced-controls-390x844.png",
+      "sha256": "e5110392f42ead6378dad22a2425d91ec322e0c2aa077199b0a61f0994a455b4",
+      "bytes": 70209,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-editor-390x844.png",
+      "sha256": "cc57794254c05c8f01f5f750e6e6bc0432055f0d3e4455da2e714d28afe157e2",
+      "bytes": 77255,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-groups-390x844.png",
+      "sha256": "cdbf15e3ac44f4c064d040109d48d839aa999144b9b06bf65965fd74fc70edef",
+      "bytes": 92597,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-history-390x844.png",
+      "sha256": "7879397d5f3fa87ec95b75166caaa38612ee3b230893b77e0b42b4b1df3f2986",
+      "bytes": 59405,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-outputs-verdict-390x844.png",
+      "sha256": "d80dfa23685bb12e2eca9b35808746ae29d2f12269976dfd09430b903c8587ff",
+      "bytes": 71003,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    }
+  ],
+  "functional_artifacts": [
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/functional-result.json",
+      "sha256": "ec8d49ef19e2d592664de86c790450a1a14a1d1a6c3bcda5874bde7c9890a2f8",
+      "bytes": 38522
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/functional-result.json",
+      "sha256": "595c7d12fbf38226a8a2c9365eec1afe092bc7f3463922398779997b1c5ca8b1",
+      "bytes": 40186
+    }
+  ],
+  "visual_result": "No remaining concrete incident-section alignment/overflow/usability defect found in these captured views. Primary editor visible outside optional controls; checkbox inline; evidence choices visibly populated after final scope/search restoration; short-ID-first labels distinguish choices; observed fact rows remain inside panel; output filename/role/size readable with optional provenance.",
+  "limits": "Captures cover incident history, primary editor, open advanced controls, groups, output/verdict at1280x800 and390x844. No full-shell visual certification; tab rail source interpretation recorded separately. Final compatibility/source-closure/lint/format and independent source review remain.",
+  "workspace_tab_observation": "Source inspection: workspace.css:33 intentionally makes .workspace-tabs overflow:auto; line105 thin scrollbar and scroll padding. Offscreen child button rectangles in this scroll rail alone do not establish page overflow. Recorded E46 narrow document/body/visual viewport390 and finalOverflowfalse. No unrelated shell modification requested."
+}

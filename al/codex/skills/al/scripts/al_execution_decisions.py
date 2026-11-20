@@ -15,6 +15,10 @@ def apply_delivery(st, sid, delivery):
     i = T.integration(st)
     if delivery['binding'] != i['binding']:
         refuse('foreign decision binding')
+    from al_agent_exchange import consume_escalation, record_escalation
+    observed_blocker = i['blockers'].get(delivery['blocker_id'])
+    if observed_blocker is not None:
+        consume_escalation(st, delivery['blocker_id'], observed_blocker)
     dh = digest(delivery)
     old = i['deliveries'].get(delivery['id'])
     if old:
@@ -22,7 +26,22 @@ def apply_delivery(st, sid, delivery):
             refuse('conflicting duplicate delivery')
         return old
     # Authority checks the exact frozen private inbox and Registry bytes.
-    T.authority(st, 'decision', delivery=delivery['id'])
+    authority_receipt = T.authority(st, 'decision', delivery=delivery['id'])
+    from al_artifact_cli import read_input
+    from types import SimpleNamespace
+    from al_execution_contract import loads
+    try:
+        delivery_bytes, _ = read_input(SimpleNamespace(
+            file=str(Path(i['handoff']).parent / 'inbox' / (delivery['id'] + '.json')), stdin=False))
+        import hashlib
+        if hashlib.sha256(delivery_bytes).hexdigest() != authority_receipt['delivery_receipt']['sha256']:
+            refuse('authenticated developer delivery bytes changed')
+        authenticated = loads(delivery_bytes)
+        if authenticated != delivery:
+            refuse('developer delivery differs from authenticated inbox')
+        delivery = authenticated
+    except (OSError, ValueError):
+        refuse('authenticated developer delivery input unavailable')
     blocker = i['blockers'].get(delivery['blocker_id'])
     if not blocker or blocker['state'] != 'Open' or blocker['revision'] != delivery['blocker_revision']:
         refuse('stale decision blocker')
@@ -49,6 +68,8 @@ def apply_delivery(st, sid, delivery):
             raw = __import__('json').dumps(amendment, sort_keys=True).encode()
             amendment['artifact'] = A.snapshot_bytes(sid, raw, 'scoped-amendment', delivery['registry']['path'])
             st['amendments'].append(amendment)
+            from al_agent_exchange import refresh_analysis
+            refresh_analysis(st)
             st['review'] = None
             st['review_status'] = None
             at = time.time()
@@ -84,6 +105,10 @@ def apply_delivery(st, sid, delivery):
             E.queue(st, 'blocker.resolved', {'id': blocker['id'], 'delivery_id': delivery['id']})
     ack = {'delivery_id': delivery['id'], 'blocker_id': blocker['id'], 'state': state, 'decision_hash': dh}
     i['deliveries'][delivery['id']] = ack
+    if delivery['verdict'] != 'reject':
+        reference = A.snapshot_bytes(sid, delivery_bytes,
+                                     'escalation-delivery-v1', 'authenticated developer delivery')
+        record_escalation(st, sid, blocker['id'], {'kind': 'decision', 'artifact': reference})
     E.queue(st, 'decision.acknowledged', ack)
     return ack
 
@@ -113,6 +138,9 @@ def revalidate(st, sid, data):
     obligation.update(state='Validated', artifact=A.snapshot_bytes(sid, __import__('json').dumps(data, sort_keys=True).encode(), 'scoped-revalidation', 'actual Architect ' + data['agent']))
     for b in i['blockers'].values():
         if b.get('delivery_id') == data['id'] and b['state'] == 'RevalidationRequired':
+            from al_agent_exchange import consume_escalation, record_escalation
+            consume_escalation(st, b['id'], b)
             b['state'] = 'Resolved'
+            record_escalation(st, sid, b['id'], {'kind': 'revalidation', 'artifact': obligation['artifact']})
             E.queue(st, 'blocker.resolved', {'id': b['id'], 'delivery_id': data['id']})
     E.queue(st, 'amendment.revalidated', obligation)

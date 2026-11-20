@@ -1,0 +1,763 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m ruff check .
+# cwd: .
+# started: Fri Nov 20 15:39:07 2026
+
+F401 [*] `contextlib.closing` imported but unused
+  --> tests/test_reliability_incident_intelligence_browser.py:11:24
+   |
+ 9 | import subprocess
+10 | import time
+11 | from contextlib import closing
+   |                        ^^^^^^^
+12 | from importlib.resources import as_file
+13 | from pathlib import Path
+   |
+help: Remove unused import: `contextlib.closing`
+   |
+10 | import time
+   - from contextlib import closing
+11 | from importlib.resources import as_file
+   |
+
+E501 Line too long (105 > 100)
+  --> tests/test_reliability_incident_intelligence_browser.py:77:101
+   |
+75 |     await waitFor("persisted incidents", () =>
+76 |       document.querySelectorAll("#incident-intelligence .ii-item").length >= 3
+77 |       && !document.querySelector("#incident-intelligence .ii-results")?.textContent.includes("Loading"));
+   |                                                                                                     ^^^^^
+78 |     const section = () => document.querySelector("#incident-intelligence");
+79 |     const first = () => section()?.querySelector(".ii-item");
+   |
+
+E501 Line too long (120 > 100)
+  --> tests/test_reliability_incident_intelligence_browser.py:83:101
+   |
+81 |     result.initialCount = section().querySelectorAll(".ii-item").length;
+82 |     result.initialScope = section().querySelector("#ii-scope").value;
+83 |     result.initialOverflow = document.documentElement.scrollWidth > (window.visualViewport?.width || window.innerWidth);
+   |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+84 |     result.initialViewport = {
+85 |       innerWidth: window.innerWidth,
+   |
+
+E501 Line too long (151 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:102:101
+    |
+100 | …
+101 | …ii-category", "#ii-source-kind"]
+102 | ….getBoundingClientRect().right <= (window.visualViewport?.width || window.innerWidth) + 1);
+    |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+103 | …
+104 | …
+    |
+
+E501 Line too long (119 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:107:101
+    |
+105 |       section().querySelector(".ii-detail .ii-facts")
+106 |       && section().querySelector(".ii-detail").textContent.includes(incidentId));
+107 |     result.originalFactVisible = section().querySelector(".ii-detail").textContent.includes("Immutable observed fact");
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+108 |     result.provenanceVisible = section().querySelector(".ii-detail").textContent.includes("Source provenance");
+109 |     const cause = section().querySelector("#ii-cause");
+    |
+
+E501 Line too long (111 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:108:101
+    |
+106 |       && section().querySelector(".ii-detail").textContent.includes(incidentId));
+107 |     result.originalFactVisible = section().querySelector(".ii-detail").textContent.includes("Immutable observed fact");
+108 |     result.provenanceVisible = section().querySelector(".ii-detail").textContent.includes("Source provenance");
+    |                                                                                                     ^^^^^^^^^^^
+109 |     const cause = section().querySelector("#ii-cause");
+110 |     const advanced = section().querySelector("#ii-advanced-controls");
+    |
+
+E501 Line too long (142 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:111:101
+    |
+109 | …
+110 | …ced-controls");
+111 | …nfidence", "#ii-supporting", "#ii-status", "#ii-rationale", "#ii-evidence", "#ii-save"]
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+112 | …
+113 | …);
+    |
+
+E501 Line too long (111 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:117:101
+    |
+115 |           return node.getClientRects().length > 0 && rect.width > 0 && rect.height > 0;
+116 |         });
+117 |     result.primaryOutsideOptionalDisclosure = !advanced.contains(section().querySelector(".ii-editor > form"));
+    |                                                                                                     ^^^^^^^^^^^
+118 |     cause.focus();
+119 |     result.primaryEditorFocusable = document.activeElement === cause;
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:124:101
+    |
+122 |     selectValues(section().querySelector("#ii-supporting"), [incidentId]);
+123 |     result.supportEvidenceOptionCount = section().querySelector("#ii-supporting").options.length;
+124 |     result.supportEvidenceSelectionVisible = [...section().querySelector("#ii-supporting").selectedOptions]
+    |                                                                                                     ^^^^^^^
+125 |       .some((option) => option.value === incidentId);
+126 |     section().querySelector("#ii-include-hypothesis").checked = true;
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:127:101
+    |
+125 |       .some((option) => option.value === incidentId);
+126 |     section().querySelector("#ii-include-hypothesis").checked = true;
+127 |     section().querySelector("#ii-include-hypothesis").dispatchEvent(new Event("change", { bubbles: true }));
+    |                                                                                                     ^^^^^^^^
+128 |     setValue(section().querySelector("#ii-status"), "investigating");
+129 |     const explanation = section().querySelector("#ii-explanation");
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:134:101
+    |
+132 |     section().querySelector("#ii-save").click();
+133 |     await waitFor("appended investigation", () =>
+134 |       [...section().querySelectorAll(".ii-status")].some((node) => node.textContent.includes("investigating"))
+    |                                                                                                     ^^^^^^^^^^
+135 |       && section().querySelector(".ii-detail").textContent.includes("A persisted verification refusal"));
+136 |     result.hypothesisAndHistoryPersisted = true;
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:135:101
+    |
+133 |     await waitFor("appended investigation", () =>
+134 |       [...section().querySelectorAll(".ii-status")].some((node) => node.textContent.includes("investigating"))
+135 |       && section().querySelector(".ii-detail").textContent.includes("A persisted verification refusal"));
+    |                                                                                                     ^^^^^
+136 |     result.hypothesisAndHistoryPersisted = true;
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:163:101
+    |
+161 |     section().querySelector("#ii-save").click();
+162 |     await waitFor("status-only revision", () =>
+163 |       [...section().querySelectorAll(".ii-status")].some((node) => node.textContent.includes("resolved")));
+    |                                                                                                     ^^^^^^^
+164 |     const currentDoc = section().querySelector(".ii-detail .ii-subsection");
+165 |     result.statusOnlyKeepsSingleHypothesis = currentDoc.querySelectorAll(".ii-record").length === 1
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:177:101
+    |
+175 |     await waitFor("historical Knowledge membership verification", () =>
+176 |       section().querySelector(".ii-detail").textContent.includes('"verification":"verified"'));
+177 |     result.verifiedSourceBasisVisible = section().querySelector(".ii-detail").textContent.includes(snapshot);
+    |                                                                                                     ^^^^^^^^^
+178 |
+179 |     section().querySelector("#ii-advanced-controls").open = true;
+    |
+
+E501 Line too long (114 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:181:101
+    |
+179 |     section().querySelector("#ii-advanced-controls").open = true;
+180 |     section().querySelector("#ii-suggest").click();
+181 |     await waitFor("bounded related symptom suggestion", () => section().querySelectorAll(".ii-group").length > 0);
+    |                                                                                                     ^^^^^^^^^^^^^^
+182 |     const groupArticle = section().querySelector(".ii-group");
+183 |     const groupButton = groupArticle.querySelector("button");
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:186:101
+    |
+184 |     groupButton.click();
+185 |     await waitFor("group decision form", () => section().querySelector("#ii-group-save"));
+186 |     result.groupEvidenceOptionCount = section().querySelector("#ii-group-evidence")?.options.length || 0;
+    |                                                                                                     ^^^^^
+187 |     result.groupEvidenceOptionTexts = [...(section().querySelector("#ii-group-evidence")?.options || [])]
+188 |       .map((option) => option.textContent);
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:187:101
+    |
+185 |     await waitFor("group decision form", () => section().querySelector("#ii-group-save"));
+186 |     result.groupEvidenceOptionCount = section().querySelector("#ii-group-evidence")?.options.length || 0;
+187 |     result.groupEvidenceOptionTexts = [...(section().querySelector("#ii-group-evidence")?.options || [])]
+    |                                                                                                     ^^^^^
+188 |       .map((option) => option.textContent);
+189 |     result.groupEvidenceStyle = (() => {
+    |
+
+E501 Line too long (119 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:191:101
+    |
+189 |     result.groupEvidenceStyle = (() => {
+190 |       const node = section().querySelector("#ii-group-evidence");
+191 |       return node ? { color: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor } : null;
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+192 |     })();
+193 |     setValue(section().querySelector("#ii-group-action"), "reject");
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:199:101
+    |
+197 |     result.groupDecisionPersisted = true;
+198 |
+199 |     await waitFor("published output descriptor", () => section().querySelector(".ii-output-item input"));
+    |                                                                                                     ^^^^^
+200 |     result.verdictEvidenceOptionCount = section().querySelector("#ii-verdict-evidence")?.options.length || 0;
+201 |     result.verdictEvidenceOptionTexts = [...(section().querySelector("#ii-verdict-evidence")?.options || [])]
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:200:101
+    |
+199 |     await waitFor("published output descriptor", () => section().querySelector(".ii-output-item input"));
+200 |     result.verdictEvidenceOptionCount = section().querySelector("#ii-verdict-evidence")?.options.length || 0;
+    |                                                                                                     ^^^^^^^^^
+201 |     result.verdictEvidenceOptionTexts = [...(section().querySelector("#ii-verdict-evidence")?.options || [])]
+202 |       .map((option) => option.textContent);
+    |
+
+E501 Line too long (109 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:201:101
+    |
+199 |     await waitFor("published output descriptor", () => section().querySelector(".ii-output-item input"));
+200 |     result.verdictEvidenceOptionCount = section().querySelector("#ii-verdict-evidence")?.options.length || 0;
+201 |     result.verdictEvidenceOptionTexts = [...(section().querySelector("#ii-verdict-evidence")?.options || [])]
+    |                                                                                                     ^^^^^^^^^
+202 |       .map((option) => option.textContent);
+203 |     result.verdictEvidenceStyle = (() => {
+    |
+
+E501 Line too long (119 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:205:101
+    |
+203 |     result.verdictEvidenceStyle = (() => {
+204 |       const node = section().querySelector("#ii-verdict-evidence");
+205 |       return node ? { color: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor } : null;
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^
+206 |     })();
+207 |     const verdictRationale = section().querySelector("#ii-verdict-rationale");
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:226:101
+    |
+224 |     outputRadio.checked = true;
+225 |     outputRadio.dispatchEvent(new Event("change", { bubbles: true }));
+226 |     section().querySelector("#ii-verdict-explanation").value = "The actual published result needs a follow-up.";
+    |                                                                                                     ^^^^^^^^^^^^
+227 |     section().querySelector("#ii-verdict-explanation").dispatchEvent(new Event("input", { bubbles: true }));
+228 |     section().querySelector("#ii-verdict").click();
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:227:101
+    |
+225 |     outputRadio.dispatchEvent(new Event("change", { bubbles: true }));
+226 |     section().querySelector("#ii-verdict-explanation").value = "The actual published result needs a follow-up.";
+227 |     section().querySelector("#ii-verdict-explanation").dispatchEvent(new Event("input", { bubbles: true }));
+    |                                                                                                     ^^^^^^^^
+228 |     section().querySelector("#ii-verdict").click();
+229 |     await waitFor("historical output verdict", () =>
+    |
+
+E501 Line too long (121 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:230:101
+    |
+228 |     section().querySelector("#ii-verdict").click();
+229 |     await waitFor("historical output verdict", () =>
+230 |       section().querySelector(".ii-detail [role=status]")?.textContent.includes("Historical operator verdict recorded"));
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+231 |     result.verdictResponse = verdictResponse;
+232 |     result.verdictReasonCode = verdictResponse?.request?.reason?.code;
+    |
+
+E501 Line too long (171 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:234:101
+    |
+232 | …
+233 | …
+234 | …-outputs-card").textContent.includes("does not approve, verify, deploy, or change execution status");
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+235 | …-card").textContent.includes("published agent report or result")
+236 | …es("result.md")
+    |
+
+E501 Line too long (134 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:235:101
+    |
+233 | …
+234 | ….querySelector(".ii-outputs-card").textContent.includes("does not approve, verify, deploy, or change execution status");
+235 | …lector(".ii-outputs-card").textContent.includes("published agent report or result")
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+236 | ….textContent.includes("result.md")
+237 | ….textContent.includes("Output provenance and integrity");
+    |
+
+E501 Line too long (108 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:237:101
+    |
+235 |     result.outputPickerReadable = section().querySelector(".ii-outputs-card").textContent.includes("published agent report or result")
+236 |       && section().querySelector(".ii-output-item").textContent.includes("result.md")
+237 |       && section().querySelector(".ii-output-item").textContent.includes("Output provenance and integrity");
+    |                                                                                                     ^^^^^^^^
+238 |
+239 |     await waitFor("reloaded incident list", () => section().querySelectorAll(".ii-item").length >= 4);
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:239:101
+    |
+237 |       && section().querySelector(".ii-output-item").textContent.includes("Output provenance and integrity");
+238 |
+239 |     await waitFor("reloaded incident list", () => section().querySelectorAll(".ii-item").length >= 4);
+    |                                                                                                     ^^
+240 |     const originalButton = section().querySelector(`#ii-select-${incidentId}`);
+241 |     originalButton.click();
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:242:101
+    |
+240 |     const originalButton = section().querySelector(`#ii-select-${incidentId}`);
+241 |     originalButton.click();
+242 |     await waitFor("reselected incident after output verdict", () => section().querySelector(".ii-editor"));
+    |                                                                                                     ^^^^^^^
+243 |     const currentCount = section().querySelectorAll(".ii-item").length;
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:252:101
+    |
+250 |     window.fetch = async (input, options) => {
+251 |       const url = new URL(String(input), location.href);
+252 |       if (url.pathname === "/api/reliability/incidents" && url.searchParams.get("task") === scope.task
+    |                                                                                                     ^^
+253 |           && !url.searchParams.has("execution")) {
+254 |         taskScopeList += 1;
+    |
+
+E501 Line too long (116 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:267:101
+    |
+265 |     search.value = "not-a-real-source";
+266 |     holdNextList = true;
+267 |     section().querySelector("#ii-filters")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+268 |     await waitFor("held old-scope response", () => heldList);
+269 |     setValue(section().querySelector("#ii-scope"), "task");
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:273:101
+    |
+271 |     const taskScopeSection = section();
+272 |     const taskScopeHasNoEpoch = !taskScopeParameters.includes("execution")
+273 |       && !taskScopeParameters.includes("epoch") && taskScopeSection.querySelector("#ii-scope").value === "task";
+    |                                                                                                     ^^^^^^^^^^^^
+274 |     heldList();
+275 |     await painted();
+    |
+
+E501 Line too long (113 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:280:101
+    |
+278 |     result.taskScopeWasRequestedWithoutEpoch = taskScopeHasNoEpoch;
+279 |     setValue(section().querySelector("#ii-scope"), "execution");
+280 |     await waitFor("execution scope restored", () => section().querySelector("#ii-scope")?.value === "execution");
+    |                                                                                                     ^^^^^^^^^^^^^
+281 |     setValue(section().querySelector("#ii-query"), "", "input");
+282 |     section().querySelector("#ii-filters")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    |
+
+E501 Line too long (116 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:282:101
+    |
+280 |     await waitFor("execution scope restored", () => section().querySelector("#ii-scope")?.value === "execution");
+281 |     setValue(section().querySelector("#ii-query"), "", "input");
+282 |     section().querySelector("#ii-filters")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+283 |     await waitFor("execution list restored", () => section().querySelectorAll(".ii-item").length >= currentCount);
+284 |     section().querySelector(`#ii-select-${incidentId}`).click();
+    |
+
+E501 Line too long (114 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:283:101
+    |
+281 |     setValue(section().querySelector("#ii-query"), "", "input");
+282 |     section().querySelector("#ii-filters")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+283 |     await waitFor("execution list restored", () => section().querySelectorAll(".ii-item").length >= currentCount);
+    |                                                                                                     ^^^^^^^^^^^^^^
+284 |     section().querySelector(`#ii-select-${incidentId}`).click();
+285 |     await waitFor("final detail for screenshots", () => section().querySelector(".ii-editor"));
+    |
+
+E501 Line too long (118 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:292:101
+    |
+290 |     section().querySelector("#ii-advanced-controls").open = true;
+291 |     await painted();
+292 |     result.finalOverflow = document.documentElement.scrollWidth > (window.visualViewport?.width || window.innerWidth);
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+293 |     result.viewportWidth = window.visualViewport?.width || window.innerWidth;
+294 |     result.layoutViewportWidth = window.innerWidth;
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:324:101
+    |
+322 |     result.verdictResponse = verdictResponse;
+323 |     result.failureState = {
+324 |       outputPanel: document.querySelector("#incident-intelligence .ii-outputs-card")?.innerText || "",
+    |                                                                                                     ^^
+325 |       detailAlerts: [...document.querySelectorAll("#incident-intelligence .ii-detail [role=alert]")].map((node) => node.textContent),
+326 |       detailStatuses: [...document.querySelectorAll("#incident-intelligence .ii-detail [role=status]")].map((node) => node.textConten…
+    |
+
+E501 Line too long (133 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:325:101
+    |
+323 | …
+324 | …t-intelligence .ii-outputs-card")?.innerText || "",
+325 | …#incident-intelligence .ii-detail [role=alert]")].map((node) => node.textContent),
+    |                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+326 | …("#incident-intelligence .ii-detail [role=status]")].map((node) => node.textContent),
+327 | …dent-intelligence .ii-output-item input:checked")?.value || null,
+    |
+
+E501 Line too long (136 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:326:101
+    |
+324 | …-intelligence .ii-outputs-card")?.innerText || "",
+325 | …incident-intelligence .ii-detail [role=alert]")].map((node) => node.textContent),
+326 | …"#incident-intelligence .ii-detail [role=status]")].map((node) => node.textContent),
+    |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+327 | …ent-intelligence .ii-output-item input:checked")?.value || null,
+328 | …
+    |
+
+E501 Line too long (116 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:327:101
+    |
+325 |       detailAlerts: [...document.querySelectorAll("#incident-intelligence .ii-detail [role=alert]")].map((node) => node.textContent),
+326 |       detailStatuses: [...document.querySelectorAll("#incident-intelligence .ii-detail [role=status]")].map((node) => node.textConten…
+327 |       selectedOutput: document.querySelector("#incident-intelligence .ii-output-item input:checked")?.value || null,
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+328 |     };
+329 |     finish(result);
+    |
+
+E501 Line too long (117 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:350:101
+    |
+348 |     assert html.count(anchor) == 1
+349 |     page.write_text(
+350 |         html.replace(anchor, anchor + '\n    <script src="/static/incident-intelligence-driver.js" defer></script>'),
+    |                                                                                                     ^^^^^^^^^^^^^^^^^
+351 |         encoding="utf-8",
+352 |     )
+    |
+
+E501 Line too long (125 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:358:101
+    |
+356 |         "STATIC",
+357 |         server_module.STATIC
+358 |         | {"/static/incident-intelligence-driver.js": ("incident-intelligence-driver.js", "text/javascript; charset=utf-8")},
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+359 |     )
+    |
+
+E501 Line too long (145 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:429:101
+    |
+427 | …
+428 | …
+429 | …se(document.getElementById('incident-intelligence-browser-result').textContent) : null",
+    |                                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+430 | …
+431 | …
+    |
+
+E501 Line too long (132 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:440:101
+    |
+438 |         if result.get("error"):
+439 |             call("Runtime.evaluate", {
+440 |                 "expression": "document.querySelector('#incident-intelligence .ii-outputs-card')?.scrollIntoView({block:'center'})",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+441 |             })
+442 |             call("Runtime.evaluate", {"expression": "new Promise(requestAnimationFrame)", "awaitPromise": True})
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:442:101
+    |
+440 |                 "expression": "document.querySelector('#incident-intelligence .ii-outputs-card')?.scrollIntoView({block:'center'})",
+441 |             })
+442 |             call("Runtime.evaluate", {"expression": "new Promise(requestAnimationFrame)", "awaitPromise": True})
+    |                                                                                                     ^^^^^^^^^^^^
+443 |             shot = call("Page.captureScreenshot", {"format": "png", "fromSurface": True, "captureBeyondViewport": False})
+444 |             failure_path = output_dir / f"incident-intelligence-failure-{width}x{height}.png"
+    |
+
+E501 Line too long (121 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:443:101
+    |
+441 |             })
+442 |             call("Runtime.evaluate", {"expression": "new Promise(requestAnimationFrame)", "awaitPromise": True})
+443 |             shot = call("Page.captureScreenshot", {"format": "png", "fromSurface": True, "captureBeyondViewport": False})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+444 |             failure_path = output_dir / f"incident-intelligence-failure-{width}x{height}.png"
+445 |             failure_path.write_bytes(base64.b64decode(shot["data"]))
+    |
+
+E501 Line too long (114 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:447:101
+    |
+445 |             failure_path.write_bytes(base64.b64decode(shot["data"]))
+446 |             result["failureScreenshot"] = str(failure_path)
+447 |             (output_dir / "failure-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    |                                                                                                     ^^^^^^^^^^^^^^
+448 |             raise RuntimeError(
+449 |                 f"Chrome interaction failed: {result['error']}\n{result.get('stack', '')}\n"
+    |
+
+E501 Line too long (131 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:462:101
+    |
+460 | …
+461 | …
+462 | …ctor('#ii-advanced-controls').open = {str(name == 'advanced-controls').lower()}",
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+463 | …
+464 | …: f"document.querySelector({json.dumps(selector)})?.scrollIntoView({{block:'start'}})"})
+    |
+
+E501 Line too long (138 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:464:101
+    |
+462 | …r('#ii-advanced-controls').open = {str(name == 'advanced-controls').lower()}",
+463 | …
+464 | …"document.querySelector({json.dumps(selector)})?.scrollIntoView({{block:'start'}})"})
+    |                                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+465 | …new Promise(requestAnimationFrame)", "awaitPromise": True})
+466 | … {
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:465:101
+    |
+463 | …     })
+464 | …     call("Runtime.evaluate", {"expression": f"document.querySelector({json.dumps(selector)})?.scrollIntoView({{block:'start'}})"})
+465 | …     call("Runtime.evaluate", {"expression": "new Promise(requestAnimationFrame)", "awaitPromise": True})
+    |                                                                                               ^^^^^^^^^^^^
+466 | …     evidence_state = call("Runtime.evaluate", {
+467 | …         "expression": "(() => { const root=document.querySelector('#incident-intelligence'); return Object.fromEntries(['ii-support…
+    |
+
+E501 Line too long (796 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:467:101
+    |
+465 | …tPromise": True})
+466 | …
+467 | …ce'); return Object.fromEntries(['ii-supporting',…option)=>option.value)} : null]; })); })()",
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^…^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+468 | …
+469 | …
+    |
+
+E501 Line too long (1117 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:473:101
+    |
+471 | …
+472 | …
+473 | …igence'); const details=root.querySelector('#ii-a…ckbox.getBoundingClientRect().width}; })()",
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^…^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+474 | …
+475 | …
+    |
+
+E501 Line too long (121 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:476:101
+    |
+474 |                     "returnByValue": True,
+475 |                 }).get("result", {}).get("value", {})
+476 |             shot = call("Page.captureScreenshot", {"format": "png", "fromSurface": True, "captureBeyondViewport": False})
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+477 |             path = output_dir / f"incident-intelligence-{name}-{width}x{height}.png"
+478 |             path.write_bytes(base64.b64decode(shot["data"]))
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:495:101
+    |
+494 | @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+495 | def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+    |                                                                                                     ^^^^^^^
+496 |     from harness.dashboard import incident_actions
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:526:101
+    |
+524 |         (snapshot, approved_spec),
+525 |     ).fetchone()
+526 |     assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+    |                                                                                                     ^^^^^^^^^^^^
+527 |     _install_driver(monkeypatch, tmp_path, source["version_id"], snapshot, source["locator"])
+528 |     monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:545:101
+    |
+543 |     with serve(operation.database, actual_execution["task_id"]) as server:
+544 |         try:
+545 |             result = _capture(server, tmp_path / f"chrome-profile-{name}", screenshot_dir, width, height)
+    |                                                                                                     ^^^^^
+546 |         except RuntimeError as error:
+547 |             raise AssertionError(f"{error}; operator verdict cause={verdict_errors}") from error
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:556:101
+    |
+554 |     assert result["verifiedSourceBasisVisible"] and result["groupDecisionPersisted"], result
+555 |     assert result["realOutputVerdictPersisted"] and result["verdictDoesNotGrantAuthority"], result
+556 |     assert result["verdictRationaleSelected"] and result["verdictReasonCode"] == "evidence_updated", result
+    |                                                                                                     ^^^^^^^
+557 |     assert result["staleScopeResponseFenced"] and result["taskScopeWasRequestedWithoutEpoch"], result
+558 |     assert result["supportEvidenceOptionCount"] >= 3 and result["supportEvidenceSelectionVisible"], result
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:557:101
+    |
+555 |     assert result["realOutputVerdictPersisted"] and result["verdictDoesNotGrantAuthority"], result
+556 |     assert result["verdictRationaleSelected"] and result["verdictReasonCode"] == "evidence_updated", result
+557 |     assert result["staleScopeResponseFenced"] and result["taskScopeWasRequestedWithoutEpoch"], result
+    |                                                                                                     ^
+558 |     assert result["supportEvidenceOptionCount"] >= 3 and result["supportEvidenceSelectionVisible"], result
+559 |     assert result["supportSelectionRestored"] and result["outputPickerReadable"], result
+    |
+
+E501 Line too long (106 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:558:101
+    |
+556 |     assert result["verdictRationaleSelected"] and result["verdictReasonCode"] == "evidence_updated", result
+557 |     assert result["staleScopeResponseFenced"] and result["taskScopeWasRequestedWithoutEpoch"], result
+558 |     assert result["supportEvidenceOptionCount"] >= 3 and result["supportEvidenceSelectionVisible"], result
+    |                                                                                                     ^^^^^^
+559 |     assert result["supportSelectionRestored"] and result["outputPickerReadable"], result
+560 |     assert result["primaryEditorVisible"] and result["primaryEditorFocusable"] and result["primaryOutsideOptionalDisclosure"], result
+    |
+
+E501 Line too long (133 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:560:101
+    |
+558 |     assert result["supportEvidenceOptionCount"] >= 3 and result["supportEvidenceSelectionVisible"], result
+559 |     assert result["supportSelectionRestored"] and result["outputPickerReadable"], result
+560 |     assert result["primaryEditorVisible"] and result["primaryEditorFocusable"] and result["primaryOutsideOptionalDisclosure"], result
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+561 |     assert result["groupEvidenceOptionCount"] >= 3 and result["verdictEvidenceOptionCount"] >= 3, result
+562 |     editor_state = result["editorScreenshotState"]
+    |
+
+E501 Line too long (104 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:561:101
+    |
+559 |     assert result["supportSelectionRestored"] and result["outputPickerReadable"], result
+560 |     assert result["primaryEditorVisible"] and result["primaryEditorFocusable"] and result["primaryOutsideOptionalDisclosure"], result
+561 |     assert result["groupEvidenceOptionCount"] >= 3 and result["verdictEvidenceOptionCount"] >= 3, result
+    |                                                                                                     ^^^^
+562 |     editor_state = result["editorScreenshotState"]
+563 |     assert not editor_state["advancedOpen"] and not editor_state["optionalFocusable"] and all(editor_state["primary"].values()), edit…
+    |
+
+E501 Line too long (141 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:563:101
+    |
+561 | …result["verdictEvidenceOptionCount"] >= 3, result
+562 | …
+563 | …tor_state["optionalFocusable"] and all(editor_state["primary"].values()), editor_state
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+564 | …x" and editor_state["checkboxWidth"] < 30, editor_state
+565 | …ce"), ("outputs-verdict", "ii-verdict-evidence")):
+    |
+
+E501 Line too long (110 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:564:101
+    |
+562 |     editor_state = result["editorScreenshotState"]
+563 |     assert not editor_state["advancedOpen"] and not editor_state["optionalFocusable"] and all(editor_state["primary"].values()), edit…
+564 |     assert editor_state["checkboxLabelDisplay"] == "flex" and editor_state["checkboxWidth"] < 30, editor_state
+    |                                                                                                     ^^^^^^^^^^
+565 |     for name, picker_id in (("groups", "ii-group-evidence"), ("outputs-verdict", "ii-verdict-evidence")):
+566 |         state = result["screenshotEvidenceState"][name][picker_id]
+    |
+
+E501 Line too long (105 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:565:101
+    |
+563 |     assert not editor_state["advancedOpen"] and not editor_state["optionalFocusable"] and all(editor_state["primary"].values()), edit…
+564 |     assert editor_state["checkboxLabelDisplay"] == "flex" and editor_state["checkboxWidth"] < 30, editor_state
+565 |     for name, picker_id in (("groups", "ii-group-evidence"), ("outputs-verdict", "ii-verdict-evidence")):
+    |                                                                                                     ^^^^^
+566 |         state = result["screenshotEvidenceState"][name][picker_id]
+567 |         assert state["visible"] and state["optionCount"] >= 3 and state["optionTexts"][0].startswith("#"), state
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:567:101
+    |
+565 |     for name, picker_id in (("groups", "ii-group-evidence"), ("outputs-verdict", "ii-verdict-evidence")):
+566 |         state = result["screenshotEvidenceState"][name][picker_id]
+567 |         assert state["visible"] and state["optionCount"] >= 3 and state["optionTexts"][0].startswith("#"), state
+    |                                                                                                     ^^^^^^^^^^^^
+568 |     assert result["filterControlsFit"] and not result["initialOverflow"] and not result["finalOverflow"], result
+569 |     assert result["viewportWidth"] == width, result
+    |
+
+E501 Line too long (112 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:568:101
+    |
+566 |         state = result["screenshotEvidenceState"][name][picker_id]
+567 |         assert state["visible"] and state["optionCount"] >= 3 and state["optionTexts"][0].startswith("#"), state
+568 |     assert result["filterControlsFit"] and not result["initialOverflow"] and not result["finalOverflow"], result
+    |                                                                                                     ^^^^^^^^^^^^
+569 |     assert result["viewportWidth"] == width, result
+570 |     assert len(result["screenshots"]) == 5, result
+    |
+
+E501 Line too long (107 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:571:101
+    |
+569 |     assert result["viewportWidth"] == width, result
+570 |     assert len(result["screenshots"]) == 5, result
+571 |     assert all(Path(path).is_file() and Path(path).stat().st_size > 1024 for path in result["screenshots"])
+    |                                                                                                     ^^^^^^^
+572 |     (screenshot_dir / "functional-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    |
+
+E501 Line too long (113 > 100)
+   --> tests/test_reliability_incident_intelligence_browser.py:572:101
+    |
+570 |     assert len(result["screenshots"]) == 5, result
+571 |     assert all(Path(path).is_file() and Path(path).stat().st_size > 1024 for path in result["screenshots"])
+572 |     (screenshot_dir / "functional-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    |                                                                                                     ^^^^^^^^^^^^^
+
+Found 69 errors.
+[*] 1 fixable with `--fix`.
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 30139, "pid": 30139, "sid": 30139, "start": [1795185547, 895626], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

@@ -1,0 +1,833 @@
+{
+  "initialCount": 3,
+  "initialScope": "execution",
+  "initialOverflow": false,
+  "initialViewport": {
+    "innerWidth": 390,
+    "visualWidth": 390,
+    "documentWidth": 390,
+    "bodyWidth": 390,
+    "offenders": [
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-review",
+        "className": "",
+        "left": 364,
+        "right": 414,
+        "width": 50
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-implementation",
+        "className": "",
+        "left": 428,
+        "right": 532,
+        "width": 104
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-checks",
+        "className": "",
+        "left": 546,
+        "right": 598,
+        "width": 52
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-delivery",
+        "className": "",
+        "left": 612,
+        "right": 668,
+        "width": 56
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-history",
+        "className": "",
+        "left": 682,
+        "right": 733,
+        "width": 50
+      }
+    ]
+  },
+  "filterControlsFit": true,
+  "originalFactVisible": true,
+  "provenanceVisible": true,
+  "primaryEditorVisible": true,
+  "primaryOutsideOptionalDisclosure": true,
+  "primaryEditorFocusable": true,
+  "supportEvidenceOptionCount": 3,
+  "supportEvidenceSelectionVisible": true,
+  "hypothesisAndHistoryPersisted": true,
+  "concurrentAppendStatus": 200,
+  "conflictVisible": true,
+  "statusOnlyKeepsSingleHypothesis": true,
+  "verifiedSourceBasisVisible": true,
+  "groupEvidenceOptionCount": 3,
+  "groupEvidenceOptionTexts": [
+    "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+    "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+    "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+  ],
+  "groupEvidenceStyle": {
+    "color": "rgb(0, 0, 0)",
+    "background": "rgb(255, 255, 255)"
+  },
+  "groupDecisionPersisted": true,
+  "verdictEvidenceOptionCount": 3,
+  "verdictEvidenceOptionTexts": [
+    "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+    "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+    "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+  ],
+  "verdictEvidenceStyle": {
+    "color": "rgb(0, 0, 0)",
+    "background": "rgb(255, 255, 255)"
+  },
+  "verdictRationaleSelected": true,
+  "verdictResponse": {
+    "status": 200,
+    "request": {
+      "schema_version": 1,
+      "scope": {
+        "task": "t-9ca8c0f8",
+        "execution": "exec-c33ee024a1057ce2f1ef6054",
+        "epoch": "legacy-0"
+      },
+      "request_id": "1909531c-dc6c-4059-971f-768ecc3e8c81",
+      "target": {
+        "artifact_id": "artifact-db7731745145a2ede4f65c0ae7145f0a",
+        "sha256": "sha256:7fc63dc3c0bf9b0e9d8402c68af98615592bed886a8c5f5bd8bb6126db4c2e2b"
+      },
+      "reason": {
+        "code": "evidence_updated",
+        "evidence": [],
+        "operator_explanation": "The actual published result needs a follow-up."
+      },
+      "evidence": []
+    },
+    "body": {
+      "authority": "local_dashboard_operator; no execution or approval grant",
+      "result": {
+        "incident_id": "69e75ece65c88cf442411ac1caa1a373",
+        "verdict_revision": 1
+      },
+      "schema_version": 1,
+      "scope": {
+        "epoch": "legacy-0",
+        "execution": "exec-c33ee024a1057ce2f1ef6054",
+        "task": "t-9ca8c0f8"
+      }
+    }
+  },
+  "verdictReasonCode": "evidence_updated",
+  "realOutputVerdictPersisted": true,
+  "verdictDoesNotGrantAuthority": true,
+  "outputPickerReadable": true,
+  "staleScopeResponseFenced": true,
+  "taskScopeWasRequestedWithoutEpoch": true,
+  "supportSelectionRestored": true,
+  "finalOverflow": false,
+  "viewportWidth": 390,
+  "layoutViewportWidth": 390,
+  "finalViewport": {
+    "innerWidth": 390,
+    "visualWidth": 390,
+    "documentWidth": 390,
+    "bodyWidth": 390,
+    "offenders": [
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-review",
+        "className": "",
+        "left": 364,
+        "right": 414,
+        "width": 50
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-implementation",
+        "className": "",
+        "left": 428,
+        "right": 532,
+        "width": 104
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-checks",
+        "className": "",
+        "left": 546,
+        "right": 598,
+        "width": 52
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-delivery",
+        "className": "",
+        "left": 612,
+        "right": 668,
+        "width": 56
+      },
+      {
+        "tag": "BUTTON",
+        "id": "workspace-tab-history",
+        "className": "",
+        "left": 682,
+        "right": 733,
+        "width": 50
+      }
+    ]
+  },
+  "controlsInViewport": [
+    {
+      "selector": "#ii-query",
+      "left": 12,
+      "right": 378,
+      "width": 366
+    },
+    {
+      "selector": "#ii-source-kind",
+      "left": 12,
+      "right": 378,
+      "width": 366
+    },
+    {
+      "selector": "#ii-save",
+      "left": 23.390625,
+      "right": 366.609375,
+      "width": 343.21875
+    },
+    {
+      "selector": "#ii-verdict",
+      "left": 34.78125,
+      "right": 355.21875,
+      "width": 320.4375
+    }
+  ],
+  "screenshotEvidenceState": {
+    "history": {
+      "ii-supporting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-contradicting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-control-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-correction-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-group-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "0715c3e49783d197a40219295f59ee25"
+        ]
+      },
+      "ii-verdict-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      }
+    },
+    "editor": {
+      "ii-supporting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-contradicting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-control-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-correction-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-group-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "0715c3e49783d197a40219295f59ee25"
+        ]
+      },
+      "ii-verdict-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      }
+    },
+    "advanced-controls": {
+      "ii-supporting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-contradicting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-control-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-correction-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-group-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "0715c3e49783d197a40219295f59ee25"
+        ]
+      },
+      "ii-verdict-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      }
+    },
+    "groups": {
+      "ii-supporting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-contradicting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-control-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-correction-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-group-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "0715c3e49783d197a40219295f59ee25"
+        ]
+      },
+      "ii-verdict-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      }
+    },
+    "outputs-verdict": {
+      "ii-supporting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-contradicting": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "af3ff91c43267dd4c4450ac904621e9a"
+        ]
+      },
+      "ii-control-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-correction-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      },
+      "ii-group-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": [
+          "0715c3e49783d197a40219295f59ee25"
+        ]
+      },
+      "ii-verdict-evidence": {
+        "visible": true,
+        "display": "block",
+        "visibility": "visible",
+        "color": "rgb(0, 0, 0)",
+        "background": "rgb(255, 255, 255)",
+        "scrollTop": 0,
+        "optionCount": 4,
+        "optionTexts": [
+          "#69e75ece \u00b7 14:44:48 \u00b7 human_rejected_deliverable \u00b7 OPERATOR_REJECTED \u00b7 operator_verdict \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#af3ff91c \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#9c7cecdb \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054",
+          "#0715c3e4 \u00b7 14:44:46 \u00b7 operation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-c33ee024a1057ce2f1ef6054"
+        ],
+        "selected": []
+      }
+    }
+  },
+  "screenshots": [
+    "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-history-390x844.png",
+    "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-editor-390x844.png",
+    "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-advanced-controls-390x844.png",
+    "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-groups-390x844.png",
+    "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-outputs-verdict-390x844.png"
+  ],
+  "editorScreenshotState": {
+    "advancedOpen": false,
+    "primary": {
+      "ii-cause": true,
+      "ii-confidence": true,
+      "ii-supporting": true,
+      "ii-status": true,
+      "ii-rationale": true,
+      "ii-evidence": true,
+      "ii-save": true
+    },
+    "optionalCheckVisibility": false,
+    "optionalFocusable": false,
+    "optionalDisplay": "block",
+    "checkboxLabelDisplay": "flex",
+    "checkboxWidth": 13
+  }
+}

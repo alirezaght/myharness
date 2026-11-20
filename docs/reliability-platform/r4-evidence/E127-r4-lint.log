@@ -1,0 +1,7 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m ruff check .
+# cwd: .
+# started: Fri Nov 20 12:01:01 2026
+
+All checks passed!
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 5688, "pid": 5688, "sid": 5688, "start": [1795172461, 907059], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

@@ -1,0 +1,35 @@
+{
+  "evidence": "E36",
+  "area": "r1-browser-005",
+  "outcome": "PASS",
+  "counts": {
+    "passed": 1
+  },
+  "same_recipe_as_red": "E31",
+  "artifacts": [
+    {
+      "path": "docs/reliability-platform/r1-evidence/E36-green/al-r1-browser-005.xml",
+      "sha256": "4459334aacef395b9c284227f68df3b4bd0e76de333a1f3514a93cbfa8853751"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E36-green/operation-incidents-1280x800.json",
+      "sha256": "796eb8a80c3e395860e5abb1e5c02da5e7745e7b3b57eba1800031ec82807463"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E36-green/operation-incidents-1280x800.png",
+      "sha256": "7ca55106b3f3087f18b2ae4b3982cfc132a489a9480d29e12b0e90fee4e95040"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E36-green/operation-incidents-390x844.json",
+      "sha256": "7d59f599eb946bb3c99e42510b9ebbc8f2d2a44eecd24cc7f2c35435831dd163"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E36-green/operation-incidents-390x844.png",
+      "sha256": "b5b3834d28603899028c2985326adb729646147b9b4c19a74fc8b73ffe8ca3dd"
+    }
+  ],
+  "limitations": [
+    "Diagnostic review repairs; not formal AL approval or full mission completion.",
+    "Red artifacts preserved separately at E31-red."
+  ]
+}

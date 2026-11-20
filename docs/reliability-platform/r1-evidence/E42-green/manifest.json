@@ -1,0 +1,41 @@
+{
+  "evidence": "E42",
+  "area": "r1-browser-006",
+  "outcome": "PASS",
+  "counts": {
+    "passed": 2
+  },
+  "same_recipe_red": "E39",
+  "artifacts": [
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/al-r1-browser-006.xml",
+      "sha256": "ba6974938da59e15e8e93a90f8f52a102bd7d8628b202e7d5ad4e8a1cf32bd20"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/operation-incidents-1280x800.json",
+      "sha256": "5d96a64facc84c0dc33edfd53d892c707fac3733851fe7b2eccf97502218b7fd"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/operation-incidents-1280x800.png",
+      "sha256": "7db31a868d33b49c0df13d1b9654621b27ea3bcf620ff379a4b25e4e458bba17"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/operation-incidents-390x844.json",
+      "sha256": "7849037ac7cb07822752bdeac3b4ef42d44ec0c14fb4a33fc49282a7470ad4b5"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/operation-incidents-390x844.png",
+      "sha256": "15ae5595fdb7227fb1cc79229a8e169e364fb6cc55850a9eec079b4c2696014d"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/operation-incidents-390x844.json",
+      "sha256": "7849037ac7cb07822752bdeac3b4ef42d44ec0c14fb4a33fc49282a7470ad4b5"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/E42-green/operation-incidents-390x844.png",
+      "sha256": "15ae5595fdb7227fb1cc79229a8e169e364fb6cc55850a9eec079b4c2696014d"
+    }
+  ],
+  "visual_inspection": "Root inspected desktop/narrow: aligned controls/cards, no material clipping or horizontal overflow.",
+  "formal_approval": false
+}

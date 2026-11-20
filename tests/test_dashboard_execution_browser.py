@@ -332,8 +332,23 @@ def _cdp_capture(
             "workspace_plan.js",
             "workspace_diagram.js",
             "workspace.css",
+            "reliability.js",
+            "reliability.css",
+            "timeline.js",
+            "timeline.css",
+            "policy.js",
+            "policy.css",
         } <= resource_files, resources
-        assert len(resource_names) <= 24, resources
+        incident_requests = sum(
+            "/api/execution/incidents?" in resource for resource in resource_names
+        )
+        assert 1 <= incident_requests <= 2, resources
+        timeline_requests = sum("/api/execution/timeline?" in url for url in resource_names)
+        assert 1 <= timeline_requests <= 2, resources
+        policy_requests = sum("/api/execution/policy?" in url for url in resource_names)
+        assert 1 <= policy_requests <= 2, resources
+        # Two policy assets and its scoped list add three measured resources.
+        assert len(resource_names) <= 33, resources
         capture = call(
             "Page.captureScreenshot",
             {

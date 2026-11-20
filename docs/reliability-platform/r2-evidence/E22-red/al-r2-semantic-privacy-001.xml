@@ -1,0 +1,1751 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="32" skipped="0" tests="66" time="29.668" timestamp="2026-11-19T23:30:36.551328+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_reliability_timeline" name="test_reservation_allocates_trace_before_launch_and_duplicate_keeps_it" time="0.216" /><testcase classname="tests.test_reliability_timeline" name="test_reservation_rollback_removes_execution_and_trace" time="0.206" /><testcase classname="tests.test_reliability_timeline" name="test_validated_semantic_links_are_atomic_replay_safe_and_provenance_typed" time="0.197" /><testcase classname="tests.test_reliability_timeline" name="test_actual_authorized_query_links_only_returned_bundle_receipt" time="0.314" /><testcase classname="tests.test_reliability_timeline" name="test_trace_survives_launch_failure_and_recorded_cancellation" time="0.219" /><testcase classname="tests.test_reliability_timeline" name="test_actual_assignment_result_links_issued_receipt_without_content" time="0.305" /><testcase classname="tests.test_reliability_timeline" name="test_real_foreground_al_dispatch_links_its_process_without_changing_result" time="5.656" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[Authorization: Bearer r2-semantic-private-8641-run.started]" time="0.202"><failure message="AssertionError: assert 'Authorization: Bearer r2-semantic-private-8641' == None">observed = (&lt;harness.execution_operations.OperationController object at 0x10b456140&gt;, {'thread_id': 'a901d3dc-88ef-4012-ad98-adc9..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b46d850&gt;)
+kind = 'run.started'
+extra_value = 'Authorization: Bearer r2-semantic-private-8641'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'Authorization: Bearer r2-semantic-private-8641' == None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[Authorization: Bearer r2-semantic-private-8641-run.ended]" time="0.199"><failure message="AssertionError: assert 'Authorization: Bearer r2-semantic-private-8641' == None">observed = (&lt;harness.execution_operations.OperationController object at 0x10b456580&gt;, {'thread_id': '8d5796aa-dc59-4d3b-a425-6c7a..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b462c50&gt;)
+kind = 'run.ended'
+extra_value = 'Authorization: Bearer r2-semantic-private-8641'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'Authorization: Bearer r2-semantic-private-8641' == None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[Authorization: Bearer r2-semantic-private-8641-task.updated]" time="0.201" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[Authorization: Bearer r2-semantic-private-8641-output.invalidated]" time="0.198"><failure message="AssertionError: assert 'Authorizatio...-private-8641' == 'safe-task'&#10;  &#10;  - safe-task&#10;  + Authorization: Bearer r2-semantic-private-8641">observed = (&lt;harness.execution_operations.OperationController object at 0x10b413950&gt;, {'thread_id': '882b71bf-ee6e-4e20-96c7-f109..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4a1250&gt;)
+kind = 'output.invalidated'
+extra_value = 'Authorization: Bearer r2-semantic-private-8641'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'Authorizatio...-private-8641' == 'safe-task'
+E         
+E         - safe-task
+E         + Authorization: Bearer r2-semantic-private-8641
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[Authorization: Bearer r2-semantic-private-8641-test.result]" time="0.201" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[Authorization: Bearer r2-semantic-private-8641-decision.acknowledged]" time="0.197"><failure message="AssertionError: assert 'Authorizatio...-private-8641' == 'safe-delivery'&#10;  &#10;  - safe-delivery&#10;  + Authorization: Bearer r2-semantic-private-8641">observed = (&lt;harness.execution_operations.OperationController object at 0x10b413d50&gt;, {'thread_id': '1c04bb16-952b-4c11-9cb1-328b..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4c3590&gt;)
+kind = 'decision.acknowledged'
+extra_value = 'Authorization: Bearer r2-semantic-private-8641'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'Authorizatio...-private-8641' == 'safe-delivery'
+E         
+E         - safe-delivery
+E         + Authorization: Bearer r2-semantic-private-8641
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-run.started]" time="0.202"><failure message="AssertionError: assert 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0350&gt;, {'thread_id': '084b9e2d-dcf0-4d94-b529-3802..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b52b890&gt;)
+kind = 'run.started'
+extra_value = 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-run.ended]" time="0.203"><failure message="AssertionError: assert 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0850&gt;, {'thread_id': '01e19c85-5eb7-4b5e-96cb-3bd0..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4bce60&gt;)
+kind = 'run.ended'
+extra_value = 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-task.updated]" time="0.206" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-output.invalidated]" time="0.198"><failure message="AssertionError: assert 'd5b06e0eaccd...3cf84321157b7' == 'safe-task'&#10;  &#10;  - safe-task&#10;  + d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0750&gt;, {'thread_id': 'ed6a9ba1-1a5e-4be5-aad6-1168..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b541db0&gt;)
+kind = 'output.invalidated'
+extra_value = 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'd5b06e0eaccd...3cf84321157b7' == 'safe-task'
+E         
+E         - safe-task
+E         + d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-test.result]" time="0.201" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-decision.acknowledged]" time="0.198"><failure message="AssertionError: assert 'd5b06e0eaccd...3cf84321157b7' == 'safe-delivery'&#10;  &#10;  - safe-delivery&#10;  + d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0c50&gt;, {'thread_id': '2f83ca6b-dbda-4d82-871f-44d2..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b540500&gt;)
+kind = 'decision.acknowledged'
+extra_value = 'd5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'd5b06e0eaccd...3cf84321157b7' == 'safe-delivery'
+E         
+E         - safe-delivery
+E         + d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-run.started]" time="0.195"><failure message="AssertionError: assert 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None">observed = (&lt;harness.execution_operations.OperationController object at 0x10b413750&gt;, {'thread_id': 'b5c428bf-1b6f-4202-bff0-c746..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b571b30&gt;)
+kind = 'run.started'
+extra_value = 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-run.ended]" time="0.197"><failure message="AssertionError: assert 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None">observed = (&lt;harness.execution_operations.OperationController object at 0x10b411650&gt;, {'thread_id': 'ab25ce46-f8b5-4086-a4a5-0e0c..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b572a30&gt;)
+kind = 'run.ended'
+extra_value = 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7' == None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-task.updated]" time="0.198" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-output.invalidated]" time="0.201"><failure message="AssertionError: assert 'sha256:d5b06...3cf84321157b7' == 'safe-task'&#10;  &#10;  - safe-task&#10;  + sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0150&gt;, {'thread_id': 'f1c5f338-6e44-4de9-8db0-d00b..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b529d60&gt;)
+kind = 'output.invalidated'
+extra_value = 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'sha256:d5b06...3cf84321157b7' == 'safe-task'
+E         
+E         - safe-task
+E         + sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-test.result]" time="0.197" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7-decision.acknowledged]" time="0.217"><failure message="AssertionError: assert 'sha256:d5b06...3cf84321157b7' == 'safe-delivery'&#10;  &#10;  - safe-delivery&#10;  + sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1050&gt;, {'thread_id': 'a2dfc27b-3b0c-4036-b80d-5bff..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4a7d90&gt;)
+kind = 'decision.acknowledged'
+extra_value = 'sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        row = controller.conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE source_id=?", (record["event_id"],)
+        ).fetchone()
+&gt;       assert row["reference_id"] == expected
+E       AssertionError: assert 'sha256:d5b06...3cf84321157b7' == 'safe-delivery'
+E         
+E         - safe-delivery
+E         + sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:380: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value3-run.started]" time="0.209"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0950&gt;, {'thread_id': '4218f35b-bc9d-4047-9799-b7c9..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4a9c20&gt;)
+kind = 'run.started'
+extra_value = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b4ac7c0&gt;
+execution = {'id': 'exec-c26497d6bdbf37e4e50924ce', 'task_id': 't-64480845', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-2', event_kind = 'semantic.run'
+provenance = 'validated_semantic_report', principal_id = None
+parent_observation_id = None, parent_span_id = None
+reference_id = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value3-run.ended]" time="0.206"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1550&gt;, {'thread_id': '754bf413-0086-4b36-891f-d165..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4fc410&gt;)
+kind = 'run.ended'
+extra_value = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b51c130&gt;
+execution = {'id': 'exec-5a68413ad268a23b8c02416c', 'task_id': 't-156b118c', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-2', event_kind = 'semantic.run'
+provenance = 'validated_semantic_report', principal_id = None
+parent_observation_id = None, parent_span_id = None
+reference_id = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value3-task.updated]" time="0.207" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value3-output.invalidated]" time="0.204"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1950&gt;, {'thread_id': 'aa36d6d0-2917-4743-a1b5-67ab..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b579c70&gt;)
+kind = 'output.invalidated'
+extra_value = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b51c310&gt;
+execution = {'id': 'exec-5a8adf6dcdc69728f2135935', 'task_id': 't-45ea24a6', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-3', event_kind = 'semantic.output'
+provenance = 'validated_semantic_report', principal_id = None
+parent_observation_id = None, parent_span_id = None
+reference_id = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value3-test.result]" time="0.206" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value3-decision.acknowledged]" time="0.208"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1c50&gt;, {'thread_id': 'abf70d0e-e47b-47e8-a2e4-1a43..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b552210&gt;)
+kind = 'decision.acknowledged'
+extra_value = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b51d7b0&gt;
+execution = {'id': 'exec-7d916d28c45dc9468d81e646', 'task_id': 't-47368517', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-4'
+event_kind = 'semantic.decision', provenance = 'validated_semantic_report'
+principal_id = None, parent_observation_id = None, parent_span_id = None
+reference_id = {'private': 'Authorization: Bearer r2-semantic-private-8641'}
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'dict' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value4-run.started]" time="0.199"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b413b50&gt;, {'thread_id': '3f12d64f-2ebc-48bd-8298-4282..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b58a260&gt;)
+kind = 'run.started'
+extra_value = ['Authorization: Bearer r2-semantic-private-8641']
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b4ac7c0&gt;
+execution = {'id': 'exec-5f3f9d4b2e81bfe5ff7d5237', 'task_id': 't-16798b88', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-2', event_kind = 'semantic.run'
+provenance = 'validated_semantic_report', principal_id = None
+parent_observation_id = None, parent_span_id = None
+reference_id = ['Authorization: Bearer r2-semantic-private-8641']
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value4-run.ended]" time="0.197"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b412d50&gt;, {'thread_id': '4de5e2ff-3099-4275-af73-2643..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4a8cd0&gt;)
+kind = 'run.ended'
+extra_value = ['Authorization: Bearer r2-semantic-private-8641']
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b4ae020&gt;
+execution = {'id': 'exec-bb9f8c0fba9db387040f4983', 'task_id': 't-50fd8d45', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-2', event_kind = 'semantic.run'
+provenance = 'validated_semantic_report', principal_id = None
+parent_observation_id = None, parent_span_id = None
+reference_id = ['Authorization: Bearer r2-semantic-private-8641']
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value4-task.updated]" time="0.208" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value4-output.invalidated]" time="0.197"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1650&gt;, {'thread_id': 'ee8e111c-f0fc-4024-8b26-6baa..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4fcdc0&gt;)
+kind = 'output.invalidated'
+extra_value = ['Authorization: Bearer r2-semantic-private-8641']
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b4ae6b0&gt;
+execution = {'id': 'exec-51201c1a095a33d1ddc04339', 'task_id': 't-72242267', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-3', event_kind = 'semantic.output'
+provenance = 'validated_semantic_report', principal_id = None
+parent_observation_id = None, parent_span_id = None
+reference_id = ['Authorization: Bearer r2-semantic-private-8641']
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value4-test.result]" time="0.198" /><testcase classname="tests.test_reliability_timeline" name="test_semantic_privacy_only_validated_kind_reference_is_projected[extra_value4-decision.acknowledged]" time="0.199"><failure message="sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1150&gt;, {'thread_id': '6918ceb6-e64c-4b9d-ac10-b65c..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b540870&gt;)
+kind = 'decision.acknowledged'
+extra_value = ['Authorization: Bearer r2-semantic-private-8641']
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", semantic_privacy_values())
+    def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, kind, extra_value):
+        import hashlib
+        import json
+    
+        record, expected = semantic_privacy_event(
+            observed, kind, semantic_privacy_extra(kind, extra_value)
+        )
+        operation, _, controller = observed
+&gt;       assert ingest_event(controller.conn, operation.execution_id, record)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline.py:376: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_projection.py:313: in ingest_event
+    semantic_link(conn, execution, event)
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:83: in semantic_link
+    link(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x10b4af010&gt;
+execution = {'id': 'exec-d96c5a6f85a3c9f1331ad1e7', 'task_id': 't-22e80f7a', 'approval_id': 1, 'host': 'codex', ...}
+source_kind = 'semantic', source_id = 'event-4'
+event_kind = 'semantic.decision', provenance = 'validated_semantic_report'
+principal_id = None, parent_observation_id = None, parent_span_id = None
+reference_id = ['Authorization: Bearer r2-semantic-private-8641']
+bundle_hash = None, snapshot_id = None, receipt_id = None, at = None
+
+    def link(
+        conn,
+        execution,
+        *,
+        source_kind,
+        source_id,
+        event_kind,
+        provenance,
+        principal_id=None,
+        parent_observation_id=None,
+        parent_span_id=None,
+        reference_id=None,
+        bundle_hash=None,
+        snapshot_id=None,
+        receipt_id=None,
+        at=None,
+    ):
+        trace = ensure_trace(conn, execution["id"])
+        row = {
+            "trace_id": trace,
+            "execution_id": execution["id"],
+            "epoch_id": execution["epoch_id"],
+            "source_kind": source_kind,
+            "source_id": source_id,
+            "event_kind": event_kind,
+            "provenance": provenance,
+            "principal_id": principal_id,
+            "parent_observation_id": parent_observation_id,
+            "parent_span_id": parent_span_id,
+            "reference_id": reference_id,
+            "bundle_hash": bundle_hash,
+            "snapshot_id": snapshot_id,
+            "receipt_id": receipt_id,
+        }
+        old = conn.execute(
+            "SELECT * FROM reliability_timeline_links WHERE execution_id=? AND epoch_id=? "
+            "AND source_kind=? AND source_id=? AND event_kind=?",
+            (execution["id"], execution["epoch_id"], source_kind, source_id, event_kind),
+        ).fetchone()
+        if old:
+            if any(old[key] != value for key, value in row.items()):
+                raise ValueError("conflicting timeline reference")
+            return old["link_id"]
+        lid = secrets.token_hex(16)
+        row = {"link_id": lid, **row, "created_at": at or utcnow()}
+&gt;       conn.execute(
+            "INSERT INTO reliability_timeline_links ("
+            + ",".join(row)
+            + ") VALUES ("
+            + ",".join("?" for _ in row)
+            + ")",
+            tuple(row.values()),
+        )
+E       sqlite3.ProgrammingError: Error binding parameter 12: type 'list' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/reliability/timeline_store.py:65: ProgrammingError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_real_http_process_detail_scope_pagination_and_privacy" time="0.786" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;epoch=duplicate]" time="0.223" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;unknown=1]" time="0.198" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;kind=untrusted]" time="0.197" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;limit=101]" time="0.199" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;limit=0]" time="0.198" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;before_id=missing-pair]" time="0.201" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;before_time=bad]" time="0.206" /><testcase classname="tests.test_reliability_timeline_api" name="test_strict_query_fields[&amp;principal=&lt;script&gt;]" time="0.199" /><testcase classname="tests.test_reliability_timeline_api" name="test_missing_historical_trace_does_not_write_or_backfill" time="0.201" /><testcase classname="tests.test_reliability_timeline_api" name="test_missing_optional_r2_tables_leave_r1_reads_compatible" time="0.207" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[raw-run.started]" time="0.726"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...fecab0062c&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;Authorization: Bearer r2-semantic-private-8641&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-2&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:30:52+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.run&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;7a28537c610bac0fc33a4ecf3300e65e&quot;,...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1250&gt;, {'thread_id': '4884beb4-8f72-467c-ba48-5524..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b529900&gt;)
+kind = 'run.started', extra_value = 'raw'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...fecab0062c"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "Authorization: Bearer r2-semantic-private-8641", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-2", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:30:52+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.run", "incident_id": null, "item_id": "7a28537c610bac0fc33a4ecf3300e65e",...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[raw-run.ended]" time="0.744"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...95b5fae493&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;Authorization: Bearer r2-semantic-private-8641&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-2&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}], &quot;measurement_availability&quot;: {&quot;cost&quot;: &quot;unavailable&quot;, &quot;duration_ms&quot;: &quot;monotonic_when_observed&quot;, &quot;native_children&quot;: &quot;unavailable&quot;, &quot;tokens&quot;: &quot;unavailable&quot;}, &quot;next_cursor&quot;: null, &quot;schema_version&quot;: 1, &quot;scope&quot;: {&quot;epoch&quot;: &quot;legacy-0&quot;, &quot;execution&quot;: &quot;...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f2f50&gt;, {'thread_id': '4c9c15cc-5046-47e4-94dc-c5bf..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b541cc0&gt;)
+kind = 'run.ended', extra_value = 'raw'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...95b5fae493"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "Authorization: Bearer r2-semantic-private-8641", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-2", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}], "measurement_availability": {"cost": "unavailable", "duration_ms": "monotonic_when_observed", "native_children": "unavailable", "tokens": "unavailable"}, "next_cursor": null, "schema_version": 1, "scope": {"epoch": "legacy-0", "execution": "...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[raw-task.updated]" time="0.746" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[raw-output.invalidated]" time="0.742"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...f8c52914b2&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;Authorization: Bearer r2-semantic-private-8641&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-3&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:30:55+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.task&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;713ce20645ab3d9bb5fbf3ce5bb5bdb4&quot;...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f3350&gt;, {'thread_id': 'ed6f2bca-689c-4580-af86-aefb..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b6cc050&gt;)
+kind = 'output.invalidated', extra_value = 'raw'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...f8c52914b2"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "Authorization: Bearer r2-semantic-private-8641", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-3", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:30:55+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.task", "incident_id": null, "item_id": "713ce20645ab3d9bb5fbf3ce5bb5bdb4"...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[raw-test.result]" time="0.736" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[raw-decision.acknowledged]" time="0.744"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...5a77a65de9&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;Authorization: Bearer r2-semantic-private-8641&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-4&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}], &quot;measurement_availability&quot;: {&quot;cost&quot;: &quot;unavailable&quot;, &quot;duration_ms&quot;: &quot;monotonic_when_observed&quot;, &quot;native_children&quot;: &quot;unavailable&quot;, &quot;tokens&quot;: &quot;unavailable&quot;}, &quot;next_cursor&quot;: null, &quot;schema_version&quot;: 1, &quot;scope&quot;: {&quot;epoch&quot;: &quot;legacy-0&quot;, &quot;execution&quot;: &quot;...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b412d50&gt;, {'thread_id': 'aeef4e23-51e1-4e05-b29b-9320..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b4db660&gt;)
+kind = 'decision.acknowledged', extra_value = 'raw'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...5a77a65de9"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "Authorization: Bearer r2-semantic-private-8641", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-4", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}], "measurement_availability": {"cost": "unavailable", "duration_ms": "monotonic_when_observed", "native_children": "unavailable", "tokens": "unavailable"}, "next_cursor": null, "schema_version": 1, "scope": {"epoch": "legacy-0", "execution": "...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[hash-run.started]" time="0.744"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...0b57deaca6&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    b57deaca6&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...0b57deaca6&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-2&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:30:57+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.run&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;3efa86dcefc05d6cd504cc70d3cc9ebc&quot;, &quot;missing_fields...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b412150&gt;, {'thread_id': '0933df0f-1d82-4f93-a55c-30f3..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b731310&gt;)
+kind = 'run.started', extra_value = 'hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...0b57deaca6"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           b57deaca6"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...0b57deaca6"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-2", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:30:57+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.run", "incident_id": null, "item_id": "3efa86dcefc05d6cd504cc70d3cc9ebc", "missing_fields...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[hash-run.ended]" time="0.744"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...4adaabdf29&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    adaabdf29&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...4adaabdf29&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-2&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}], &quot;measurement_availability&quot;: {&quot;cost&quot;: &quot;unavailable&quot;, &quot;duration_ms&quot;: &quot;monotonic_when_observed&quot;, &quot;native_children&quot;: &quot;unavailable&quot;, &quot;tokens&quot;: &quot;unavailable&quot;}, &quot;next_cursor&quot;: null, &quot;schema_version&quot;: 1, &quot;scope&quot;: {&quot;epoch&quot;: &quot;legacy-0&quot;, &quot;...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f1150&gt;, {'thread_id': '16287f34-b7b5-4980-b173-48de..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b5516d0&gt;)
+kind = 'run.ended', extra_value = 'hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...4adaabdf29"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           adaabdf29"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...4adaabdf29"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-2", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}], "measurement_availability": {"cost": "unavailable", "duration_ms": "monotonic_when_observed", "native_children": "unavailable", "tokens": "unavailable"}, "next_cursor": null, "schema_version": 1, "scope": {"epoch": "legacy-0", "...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[hash-task.updated]" time="0.742" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[hash-output.invalidated]" time="0.761"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...42c6049a09&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    2c6049a09&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...42c6049a09&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-3&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:30:59+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.task&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;089823d1a02936f56b9aabea9a76cea9&quot;, &quot;missing_field...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f0350&gt;, {'thread_id': 'bfe38a7f-739b-4796-82d6-66a5..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b6887d0&gt;)
+kind = 'output.invalidated', extra_value = 'hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...42c6049a09"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           2c6049a09"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...42c6049a09"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-3", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:30:59+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.task", "incident_id": null, "item_id": "089823d1a02936f56b9aabea9a76cea9", "missing_field...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[hash-test.result]" time="0.742" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[hash-decision.acknowledged]" time="0.752"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...3f8caf58b7&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    f8caf58b7&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...3f8caf58b7&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    nce_id&quot;: &quot;d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-4&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:31:01+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.task&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;77aafcf8607300afff90a27e009b2081&quot;, &quot;missing_field...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f3e50&gt;, {'thread_id': '36b56614-f3c6-4e11-add7-5920..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b6a8c80&gt;)
+kind = 'decision.acknowledged', extra_value = 'hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...3f8caf58b7"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           f8caf58b7"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...3f8caf58b7"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           nce_id": "d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-4", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:31:01+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.task", "incident_id": null, "item_id": "77aafcf8607300afff90a27e009b2081", "missing_field...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[prefixed_hash-run.started]" time="0.742"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...0333620b19&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    333620b19&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...0333620b19&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    : &quot;sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-2&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:31:01+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.run&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;c2a9fda5531e931a2138bd6cff96a464&quot;, &quot;missing_fields...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f3b50&gt;, {'thread_id': '7fdc091b-b581-40f5-84cc-cb49..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b6a8910&gt;)
+kind = 'run.started', extra_value = 'prefixed_hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...0333620b19"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           333620b19"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...0333620b19"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           : "sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-2", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:31:01+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.run", "incident_id": null, "item_id": "c2a9fda5531e931a2138bd6cff96a464", "missing_fields...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[prefixed_hash-run.ended]" time="0.738"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...dfd3833b80&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    fd3833b80&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...dfd3833b80&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    : &quot;sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-2&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}], &quot;measurement_availability&quot;: {&quot;cost&quot;: &quot;unavailable&quot;, &quot;duration_ms&quot;: &quot;monotonic_when_observed&quot;, &quot;native_children&quot;: &quot;unavailable&quot;, &quot;tokens&quot;: &quot;unavailable&quot;}, &quot;next_cursor&quot;: null, &quot;schema_version&quot;: 1, &quot;scope&quot;: {&quot;epoch&quot;: &quot;legacy-0&quot;, &quot;...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f3450&gt;, {'thread_id': '2276248c-c094-4e33-b18c-7dfd..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b67d0e0&gt;)
+kind = 'run.ended', extra_value = 'prefixed_hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...dfd3833b80"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           fd3833b80"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...dfd3833b80"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           : "sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-2", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}], "measurement_availability": {"cost": "unavailable", "duration_ms": "monotonic_when_observed", "native_children": "unavailable", "tokens": "unavailable"}, "next_cursor": null, "schema_version": 1, "scope": {"epoch": "legacy-0", "...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[prefixed_hash-task.updated]" time="0.741" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[prefixed_hash-output.invalidated]" time="0.757"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...10cfac4a57&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    0cfac4a57&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...10cfac4a57&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    : &quot;sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-3&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}], &quot;measurement_availability&quot;: {&quot;cost&quot;: &quot;unavailable&quot;, &quot;duration_ms&quot;: &quot;monotonic_when_observed&quot;, &quot;native_children&quot;: &quot;unavailable&quot;, &quot;tokens&quot;: &quot;unavailable&quot;}, &quot;next_cursor&quot;: null, &quot;schema_version&quot;: 1, &quot;scope&quot;: {&quot;epoch&quot;: &quot;legacy-0&quot;, &quot;...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b4f3a50&gt;, {'thread_id': '0cc36009-14ac-4349-a40c-86bd..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b587070&gt;)
+kind = 'output.invalidated', extra_value = 'prefixed_hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...10cfac4a57"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           0cfac4a57"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...10cfac4a57"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           : "sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-3", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}], "measurement_availability": {"cost": "unavailable", "duration_ms": "monotonic_when_observed", "native_children": "unavailable", "tokens": "unavailable"}, "next_cursor": null, "schema_version": 1, "scope": {"epoch": "legacy-0", "...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[prefixed_hash-test.result]" time="0.725" /><testcase classname="tests.test_reliability_timeline_api" name="test_semantic_privacy_real_http_never_exports_extra_payload_reference[prefixed_hash-decision.acknowledged]" time="0.748"><failure message="assert ('Authorizati...private-8641' not in '{&quot;compariso...512003d6c6&quot;}'&#10;  &#10;  'Authorization: Bea...mantic-private-8641' is contained here:&#10;    12003d6c6&quot;} and 'd5b06e0eacc...cf84321157b7' not in '{&quot;compariso...512003d6c6&quot;}'&#10;  &#10;  'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:&#10;  ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^&#10;    : &quot;sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7&quot;, &quot;returncode&quot;: null, &quot;role&quot;: null, &quot;snapshot_id&quot;: null, &quot;source_id&quot;: &quot;event-4&quot;, &quot;source_kind&quot;: &quot;semantic&quot;, &quot;span_id&quot;: null, &quot;stop_reason&quot;: null, &quot;tool&quot;: null}, {&quot;at&quot;: &quot;2026-11-19T22:31:05+00:00&quot;, &quot;bundle_hash&quot;: null, &quot;cleanup_status&quot;: null, &quot;code&quot;: null, &quot;duration_ms&quot;: null, &quot;event_kind&quot;: &quot;semantic.task&quot;, &quot;incident_id&quot;: null, &quot;item_id&quot;: &quot;6fbc4f5a2bb7012e1993e30572f4f495&quot;, &quot;missing_field...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show)">observed = (&lt;harness.execution_operations.OperationController object at 0x10b658550&gt;, {'thread_id': '270531d4-dcac-4efa-b3db-ce99..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x10b61f4d0&gt;)
+kind = 'decision.acknowledged', extra_value = 'prefixed_hash'
+
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "run.started",
+            "run.ended",
+            "task.updated",
+            "output.invalidated",
+            "test.result",
+            "decision.acknowledged",
+        ],
+    )
+    @pytest.mark.parametrize("extra_value", ["raw", "hash", "prefixed_hash"])
+    def test_semantic_privacy_real_http_never_exports_extra_payload_reference(
+        observed, kind, extra_value
+    ):
+        from harness.execution_projection import ingest_event
+        from tests.test_reliability_timeline import (
+            SEMANTIC_PRIVATE_TEXT,
+            semantic_privacy_event,
+            semantic_privacy_extra,
+        )
+    
+        raw_hash = hashlib.sha256(SEMANTIC_PRIVATE_TEXT.encode()).hexdigest()
+        value = {"raw": SEMANTIC_PRIVATE_TEXT, "hash": raw_hash, "prefixed_hash": "sha256:" + raw_hash}[
+            extra_value
+        ]
+        record, expected = semantic_privacy_event(observed, kind, semantic_privacy_extra(kind, value))
+        operation, _, controller = observed
+        assert ingest_event(controller.conn, operation.execution_id, record)
+        with serve(operation.database, None) as server:
+            status, _, body = fetch(server, "/api/execution/timeline?" + query_for(observed, limit=100))
+        assert status == 200
+        data = json.loads(body)
+        item = next(item for item in data["items"] if item["source_id"] == record["event_id"])
+&gt;       assert SEMANTIC_PRIVATE_TEXT not in body.decode() and raw_hash not in body.decode()
+E       assert ('Authorizati...private-8641' not in '{"compariso...512003d6c6"}'
+E         
+E         'Authorization: Bea...mantic-private-8641' is contained here:
+E           12003d6c6"} and 'd5b06e0eacc...cf84321157b7' not in '{"compariso...512003d6c6"}'
+E         
+E         'd5b06e0eaccd62d219...37c3503cf84321157b7' is contained here:
+E         ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           : "sha256:d5b06e0eaccd62d219ff97a881e66f179b3a477b099d237c3503cf84321157b7", "returncode": null, "role": null, "snapshot_id": null, "source_id": "event-4", "source_kind": "semantic", "span_id": null, "stop_reason": null, "tool": null}, {"at": "2026-11-19T22:31:05+00:00", "bundle_hash": null, "cleanup_status": null, "code": null, "duration_ms": null, "event_kind": "semantic.task", "incident_id": null, "item_id": "6fbc4f5a2bb7012e1993e30572f4f495", "missing_field...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_api.py:172: AssertionError</failure></testcase></testsuite></testsuites>

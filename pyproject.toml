@@ -30,6 +30,11 @@ extend-exclude = ["al"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.format]
+# Retained captured planning artifacts are source records, not formatter input.
+# Keep this formatter-only so Python lint and format coverage remains unchanged.
+exclude = ["docs/reliability-platform/planning/**/*.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

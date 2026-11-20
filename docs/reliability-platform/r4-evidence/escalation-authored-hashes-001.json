@@ -1,0 +1,12 @@
+{
+  "al/codex/skills/al/scripts/al_agent_exchange.py": "999e1c9ade510a2893b1a5fba6c3b55bcd83bcf3e183c1d796cc930b12957848",
+  "al/codex/skills/al/scripts/al_execution_tasks.py": "d8c46a9970775c652ca0f03b2c3770e200cc0ea493e2c4a225143f1fb6d54ccc",
+  "al/codex/skills/al/scripts/al_execution_decisions.py": "3f1d9a0abc418936c605e5d51f4fa420c2743c485a9dbff93723c485e43895f0",
+  "al/codex/skills/al/tests/test_execution_decisions.py": "3ea1e0f7d335e52ec92170d79239d1f9490ba02b0ed55d3a1d7a6e58b5c5c449",
+  "al/claude/skills/al/scripts/al_agent_exchange.py": "999e1c9ade510a2893b1a5fba6c3b55bcd83bcf3e183c1d796cc930b12957848",
+  "al/claude/skills/al/scripts/al_execution_tasks.py": "d8c46a9970775c652ca0f03b2c3770e200cc0ea493e2c4a225143f1fb6d54ccc",
+  "al/claude/skills/al/scripts/al_execution_decisions.py": "3f1d9a0abc418936c605e5d51f4fa420c2743c485a9dbff93723c485e43895f0",
+  "al/claude/skills/al/tests/test_execution_decisions.py": "3ea1e0f7d335e52ec92170d79239d1f9490ba02b0ed55d3a1d7a6e58b5c5c449",
+  "harness/policy/control_sources_codex.py": "97b5183bf22ac2e469ec221d09a59b30b53d2ed66bae4e3b1ed3379bbf0c6544",
+  "harness/policy/control_sources_claude.py": "bfb3060f6dfed4dc934fb8f811e4530c8c1145f907e2938340250ce2f2b0e0ff"
+}

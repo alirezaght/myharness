@@ -1,0 +1,310 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q -m browser tests/test_reliability_incident_intelligence_browser.py --basetemp=/private/tmp/al-r5a-incident-browser-004 --junitxml=/private/tmp/al-r5a-incident-browser-004.xml
+# cwd: .
+# started: Fri Nov 20 14:55:36 2026
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_persisted_incident_intelligence_in_chrome[desktop-1280-800] _______
+
+operations = (<harness.execution_operations.OperationController object at 0x107769d30>, {'thread_id': 'e97a0e04-68d6-448e-b3d9-6580...codex'}, {'id': 'exec-df3e56b97e15fa4b1ddafee4', 'task_id': 't-8094af2a', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x1076a7100>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell0')
+name = 'desktop', width = 1280, height = 800
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        approved_spec = f"docs/specs/{actual_execution['task_id']}/v1.md"
+        snapshot = refresh(
+            controller.conn, scope, RefreshRequest(included_paths=(approved_spec,))
+        ).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND s.locator=? AND m.membership_state='present'",
+            (snapshot, approved_spec),
+        ).fetchone()
+        assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+        _install_driver(monkeypatch, tmp_path, source["version_id"], snapshot, source["locator"])
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+    
+        screenshot_dir = tmp_path / f"screenshots-{name}"
+        with serve(operation.database, actual_execution["task_id"]) as server:
+>           result = _capture(server, tmp_path / f"chrome-profile-{name}", screenshot_dir, width, height)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:432: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+server = <harness.dashboard.server.DashboardServer object at 0x10776be00>
+profile = PosixPath('/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell0/chrome-profile-desktop')
+output_dir = PosixPath('/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell0/screenshots-desktop')
+width = 1280, height = 800
+
+    def _capture(server, profile: Path, output_dir: Path, width: int, height: int):
+        profile.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        process = subprocess.Popen(
+            [
+                CHROME,
+                "--headless=new",
+                "--incognito",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-sync",
+                "--disable-extensions",
+                f"--user-data-dir={profile}",
+                "--remote-debugging-port=0",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            port_file = profile / "DevToolsActivePort"
+            deadline = time.monotonic() + 10
+            while not port_file.exists() and time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise RuntimeError("Chrome exited before opening its DevTools port")
+                time.sleep(0.05)
+            if not port_file.exists():
+                raise RuntimeError("Chrome DevTools port did not become ready")
+            port = int(port_file.read_text(encoding="utf-8").splitlines()[0])
+            with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as response:
+                target = next(row for row in json.load(response) if row.get("type") == "page")
+            parsed = urlparse(target["webSocketDebuggerUrl"])
+            sock = socket.create_connection((parsed.hostname, parsed.port), timeout=5)
+            key = base64.b64encode(os.urandom(16)).decode()
+            sock.sendall(
+                (
+                    f"GET {parsed.path} HTTP/1.1\r\nHost: {parsed.hostname}:{parsed.port}\r\n"
+                    "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                    f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+                ).encode()
+            )
+            handshake = bytearray()
+            while not handshake.endswith(b"\r\n\r\n"):
+                handshake.extend(sock.recv(1))
+            if b" 101 " not in handshake:
+                raise RuntimeError("Chrome DevTools websocket handshake failed")
+            sock.settimeout(10)
+            call_id = 0
+    
+            def call(method, params=None):
+                nonlocal call_id
+                call_id += 1
+                return _cdp_call(sock, call_id, method, params)
+    
+            call("Page.enable")
+            call("Runtime.enable")
+            call("Emulation.setDeviceMetricsOverride", {
+                "width": width, "height": height, "deviceScaleFactor": 1, "mobile": width < 600,
+            })
+            call("Page.navigate", {"url": server.url})
+            deadline = time.monotonic() + 90
+            result = None
+            while time.monotonic() < deadline:
+                value = call("Runtime.evaluate", {
+                    "expression": "window.__iiDone ? JSON.parse(document.getElementById('incident-intelligence-browser-result').textContent) : null",
+                    "returnByValue": True,
+                }).get("result", {}).get("value")
+                if value is not None:
+                    result = value
+                    break
+                time.sleep(0.1)
+            if result is None:
+                raise RuntimeError("Incident Intelligence Chrome flow did not settle")
+            if result.get("error"):
+                call("Runtime.evaluate", {"expression": "new Promise(requestAnimationFrame)", "awaitPromise": True})
+                shot = call("Page.captureScreenshot", {"format": "png", "fromSurface": True, "captureBeyondViewport": False})
+                failure_path = output_dir / f"incident-intelligence-failure-{width}x{height}.png"
+                failure_path.write_bytes(base64.b64decode(shot["data"]))
+                result["failureScreenshot"] = str(failure_path)
+                (output_dir / "failure-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+>               raise RuntimeError(
+                    f"Chrome interaction failed: {result['error']}\n{result.get('stack', '')}\n"
+                    f"Diagnostics: {json.dumps(result.get('failureState'), sort_keys=True)}; "
+                    f"verdict={json.dumps(result.get('verdictResponse'), sort_keys=True)}; "
+                    f"screenshot={failure_path}"
+                )
+E               RuntimeError: Chrome interaction failed: timed out: historical output verdict
+E               Error: timed out: historical output verdict
+E                   at poll (http://127.0.0.1:54796/static/incident-intelligence-driver.js:8:51)
+E               Diagnostics: {"detailAlerts": [], "detailStatuses": ["Group decision appended. Source incidents remain unchanged."], "outputPanel": "Record an operator verdict\n\nChoose an actual published native-agent-output from this recorded epoch. The descriptor list contains metadata only; verdict submission independently checks the selected immutable output. This does not approve, verify, deploy, or change execution status.\n\nThis verdict request conflicts with a prior request. Refresh outputs and incident history.\n\nresult.md \u00b7 al-engineer \u00b7 fa563288-60fc-5727-bd39-0390806f69dc \u00b7 64 bytes\nVerdict rationale\nevidence updated\ninterpretation corrected\nevidence sufficient\nnot reproduced\nduplicate symptom\nunrelated symptoms\nscope changed\nSeparate operator explanation\nSupporting incidents\noperation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-df3e56b97e15fa4b1ddafee4 \u00b7 fe35b897\noperation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-df3e56b97e15fa4b1ddafee4 \u00b7 ad0fc444\noperation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-df3e56b97e15fa4b1ddafee4 \u00b7 556e7e58\nRecord historical operator verdict", "selectedOutput": "artifact-b2d5bdbf52d18b551013b7a6903b4aeb"}; verdict={"body": {"error": "Invalid incident action or unavailable supporting evidence"}, "status": 409}; screenshot=/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-failure-1280x800.png
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:367: RuntimeError
+________ test_persisted_incident_intelligence_in_chrome[narrow-390-844] ________
+
+operations = (<harness.execution_operations.OperationController object at 0x1078cd1d0>, {'thread_id': '982cd618-443b-461c-a505-bfe5...codex'}, {'id': 'exec-3e566e08b386416a7db4a4b4', 'task_id': 't-1a2f4341', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10704e780>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell1')
+name = 'narrow', width = 390, height = 844
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        approved_spec = f"docs/specs/{actual_execution['task_id']}/v1.md"
+        snapshot = refresh(
+            controller.conn, scope, RefreshRequest(included_paths=(approved_spec,))
+        ).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND s.locator=? AND m.membership_state='present'",
+            (snapshot, approved_spec),
+        ).fetchone()
+        assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+        _install_driver(monkeypatch, tmp_path, source["version_id"], snapshot, source["locator"])
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+    
+        screenshot_dir = tmp_path / f"screenshots-{name}"
+        with serve(operation.database, actual_execution["task_id"]) as server:
+>           result = _capture(server, tmp_path / f"chrome-profile-{name}", screenshot_dir, width, height)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:432: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+server = <harness.dashboard.server.DashboardServer object at 0x1078cdd10>
+profile = PosixPath('/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell1/chrome-profile-narrow')
+output_dir = PosixPath('/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell1/screenshots-narrow')
+width = 390, height = 844
+
+    def _capture(server, profile: Path, output_dir: Path, width: int, height: int):
+        profile.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        process = subprocess.Popen(
+            [
+                CHROME,
+                "--headless=new",
+                "--incognito",
+                "--disable-gpu",
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-background-networking",
+                "--disable-component-update",
+                "--disable-sync",
+                "--disable-extensions",
+                f"--user-data-dir={profile}",
+                "--remote-debugging-port=0",
+                "about:blank",
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            port_file = profile / "DevToolsActivePort"
+            deadline = time.monotonic() + 10
+            while not port_file.exists() and time.monotonic() < deadline:
+                if process.poll() is not None:
+                    raise RuntimeError("Chrome exited before opening its DevTools port")
+                time.sleep(0.05)
+            if not port_file.exists():
+                raise RuntimeError("Chrome DevTools port did not become ready")
+            port = int(port_file.read_text(encoding="utf-8").splitlines()[0])
+            with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as response:
+                target = next(row for row in json.load(response) if row.get("type") == "page")
+            parsed = urlparse(target["webSocketDebuggerUrl"])
+            sock = socket.create_connection((parsed.hostname, parsed.port), timeout=5)
+            key = base64.b64encode(os.urandom(16)).decode()
+            sock.sendall(
+                (
+                    f"GET {parsed.path} HTTP/1.1\r\nHost: {parsed.hostname}:{parsed.port}\r\n"
+                    "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+                    f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n"
+                ).encode()
+            )
+            handshake = bytearray()
+            while not handshake.endswith(b"\r\n\r\n"):
+                handshake.extend(sock.recv(1))
+            if b" 101 " not in handshake:
+                raise RuntimeError("Chrome DevTools websocket handshake failed")
+            sock.settimeout(10)
+            call_id = 0
+    
+            def call(method, params=None):
+                nonlocal call_id
+                call_id += 1
+                return _cdp_call(sock, call_id, method, params)
+    
+            call("Page.enable")
+            call("Runtime.enable")
+            call("Emulation.setDeviceMetricsOverride", {
+                "width": width, "height": height, "deviceScaleFactor": 1, "mobile": width < 600,
+            })
+            call("Page.navigate", {"url": server.url})
+            deadline = time.monotonic() + 90
+            result = None
+            while time.monotonic() < deadline:
+                value = call("Runtime.evaluate", {
+                    "expression": "window.__iiDone ? JSON.parse(document.getElementById('incident-intelligence-browser-result').textContent) : null",
+                    "returnByValue": True,
+                }).get("result", {}).get("value")
+                if value is not None:
+                    result = value
+                    break
+                time.sleep(0.1)
+            if result is None:
+                raise RuntimeError("Incident Intelligence Chrome flow did not settle")
+            if result.get("error"):
+                call("Runtime.evaluate", {"expression": "new Promise(requestAnimationFrame)", "awaitPromise": True})
+                shot = call("Page.captureScreenshot", {"format": "png", "fromSurface": True, "captureBeyondViewport": False})
+                failure_path = output_dir / f"incident-intelligence-failure-{width}x{height}.png"
+                failure_path.write_bytes(base64.b64decode(shot["data"]))
+                result["failureScreenshot"] = str(failure_path)
+                (output_dir / "failure-result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+>               raise RuntimeError(
+                    f"Chrome interaction failed: {result['error']}\n{result.get('stack', '')}\n"
+                    f"Diagnostics: {json.dumps(result.get('failureState'), sort_keys=True)}; "
+                    f"verdict={json.dumps(result.get('verdictResponse'), sort_keys=True)}; "
+                    f"screenshot={failure_path}"
+                )
+E               RuntimeError: Chrome interaction failed: timed out: historical output verdict
+E               Error: timed out: historical output verdict
+E                   at poll (http://127.0.0.1:54890/static/incident-intelligence-driver.js:8:51)
+E               Diagnostics: {"detailAlerts": [], "detailStatuses": ["Group decision appended. Source incidents remain unchanged."], "outputPanel": "Record an operator verdict\n\nChoose an actual published native-agent-output from this recorded epoch. The descriptor list contains metadata only; verdict submission independently checks the selected immutable output. This does not approve, verify, deploy, or change execution status.\n\nThis verdict request conflicts with a prior request. Refresh outputs and incident history.\n\nresult.md \u00b7 al-engineer \u00b7 e5b64ad0-8ea1-5d7a-a72d-4e4cda298405 \u00b7 64 bytes\nVerdict rationale\nevidence updated\ninterpretation corrected\nevidence sufficient\nnot reproduced\nduplicate symptom\nunrelated symptoms\nscope changed\nSeparate operator explanation\nSupporting incidents\noperation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-3e566e08b386416a7db4a4b4 \u00b7 9ad60b22\noperation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-3e566e08b386416a7db4a4b4 \u00b7 93817d41\noperation_denied \u00b7 AUTHORITY_REJECTED \u00b7 operation_dispatch \u00b7 exec-3e566e08b386416a7db4a4b4 \u00b7 469d9ec5\nRecord historical operator verdict", "selectedOutput": "artifact-daec5e8de13c4fe9d494095c6221ac42"}; verdict={"body": {"error": "Invalid incident action or unavailable supporting evidence"}, "status": 409}; screenshot=/private/tmp/al-r5a-incident-browser-004/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-failure-390x844.png
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:367: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[desktop-1280-800]
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[narrow-390-844]
+2 failed in 39.06s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 74109, "pid": 74109, "sid": 74109, "start": [1795182936, 907685], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

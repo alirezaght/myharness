@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="14.991" timestamp="2026-11-20T11:04:49.812372+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="al.claude.skills.al.tests.test_execution_events" name="test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[False]" time="7.781"><failure message="assert 'al_state: corrupt state: {&quot;code&quot;: &quot;INVALID_AGENT_CONTRACT&quot;, &quot;contract_kind&quot;: &quot;implementation-plan&quot;, &quot;expected&quot;: &quot;curr...epair_action&quot;: &quot;regenerate from current assignment and immutable inputs&quot;, &quot;schema_version&quot;: 1, &quot;state_changed&quot;: false}' == 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x106a6a2a0&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-plan-claude-repro-001/test_pre_task_base_gate_is_rea0')
+repo = PosixPath('/private/tmp/al-r4-plan-claude-repro-001/test_pre_task_base_gate_is_rea0/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10683de00&gt;
+bind_source = False
+
+    @pytest.mark.parametrize('bind_source', [False, True])
+    def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cli, tmp_path, repo, monkeypatch, bind_source):
+        from execution_helpers import register_task
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch, bind_source=bind_source)
+        from harness.execution_store import get_execution
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        gate = _planning_gate(cli, tmp_path, sid)
+        state = al_store.load(sid)
+        assert state['phase'] == 'PLANNING' and state['integration']['tasks'] == {}
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'candidate')[0] != 0
+        result = cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check',
+                     '--scope', ','.join(gate['scope']), '--', *gate['argv'])
+        assert result[0] != 0, result
+        assert al_store.state_path(sid).read_bytes() == before
+        result = cli('gates', 'run', '--stage', 'base')
+        assert result[0] == 0, result
+        state = al_store.load(sid)
+        assert state['integration']['tasks'] == {} and state['integration']['graph_revision'] == 0
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        # A cached real gate result cannot be reused through a label-only public call.
+        assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+        assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+        admit_planning(cli)
+        assert cli('phase', 'IMPLEMENTATION')[0] == 0
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'base')[0] != 0
+        assert al_store.state_path(sid).read_bytes() == before
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+&gt;       assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+E       assert 'al_state: corrupt state: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "implementation-plan", "expected": "curr...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/claude/skills/al/tests/test_execution_events.py:137: AssertionError</failure></testcase><testcase classname="al.claude.skills.al.tests.test_execution_events" name="test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[True]" time="7.168"><failure message="assert 'al_state: corrupt state: {&quot;code&quot;: &quot;INVALID_AGENT_CONTRACT&quot;, &quot;contract_kind&quot;: &quot;implementation-plan&quot;, &quot;expected&quot;: &quot;curr...epair_action&quot;: &quot;regenerate from current assignment and immutable inputs&quot;, &quot;schema_version&quot;: 1, &quot;state_changed&quot;: false}' == 0">cli = &lt;function current_protocol.&lt;locals&gt;.run at 0x106e194e0&gt;
+tmp_path = PosixPath('/private/tmp/al-r4-plan-claude-repro-001/test_pre_task_base_gate_is_rea1')
+repo = PosixPath('/private/tmp/al-r4-plan-claude-repro-001/test_pre_task_base_gate_is_rea1/repo')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x106ad7e30&gt;
+bind_source = True
+
+    @pytest.mark.parametrize('bind_source', [False, True])
+    def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cli, tmp_path, repo, monkeypatch, bind_source):
+        from execution_helpers import register_task
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch, bind_source=bind_source)
+        from harness.execution_store import get_execution
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        gate = _planning_gate(cli, tmp_path, sid)
+        state = al_store.load(sid)
+        assert state['phase'] == 'PLANNING' and state['integration']['tasks'] == {}
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'candidate')[0] != 0
+        result = cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check',
+                     '--scope', ','.join(gate['scope']), '--', *gate['argv'])
+        assert result[0] != 0, result
+        assert al_store.state_path(sid).read_bytes() == before
+        result = cli('gates', 'run', '--stage', 'base')
+        assert result[0] == 0, result
+        state = al_store.load(sid)
+        assert state['integration']['tasks'] == {} and state['integration']['graph_revision'] == 0
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        # A cached real gate result cannot be reused through a label-only public call.
+        assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+        assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+        admit_planning(cli)
+        assert cli('phase', 'IMPLEMENTATION')[0] == 0
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'base')[0] != 0
+        assert al_store.state_path(sid).read_bytes() == before
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+&gt;       assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+E       assert 'al_state: corrupt state: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "implementation-plan", "expected": "curr...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/claude/skills/al/tests/test_execution_events.py:137: AssertionError</failure></testcase></testsuite></testsuites>

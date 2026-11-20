@@ -1,3 +1,4 @@
+# ruff: noqa: F811
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,7 @@ from harness.execution_decisions import materialize_decision, record_execution_d
 from harness.execution_projection import ingest_event
 from harness.execution_store import get_execution
 from tests.execution_helpers import approved_execution, event, started
+from tests.test_execution_operations import operations  # noqa: F401
 
 
 def test_registry_intent_retries_keep_frozen_id_and_base_authority(
@@ -165,3 +167,68 @@ def test_inbox_publication_is_complete_at_first_visibility_and_never_overwrites(
     with pytest.raises(ValueError, match="conflicts"):
         atomic_file(target, b'{"changed":true}')
     assert target.read_bytes() == raw
+
+
+def test_decision_authority_captures_exact_validated_buffer(operations):
+    import hashlib
+    import json
+
+    from harness.execution_models import ExecutionConflict
+    from tests.test_execution_continuity import prepare, report, state
+
+    operation, principal, controller, _, _, execution, _ = operations
+    eid = execution["id"]
+    prepare(operation, principal)
+    report(
+        operation,
+        principal,
+        "blocker",
+        {
+            "id": "buffer-design",
+            "kind": "developer_engineering_decision",
+            "tasks": ["B"],
+            "question": "Choose architecture",
+            "context": "Explicit developer decision required",
+            "alternatives": ["one", "two"],
+            "recommendation": "one",
+        },
+    )
+    from harness.execution_worker import replay_source
+
+    replay_source(controller.conn, eid, "test-owner")
+    decided = record_execution_decision(
+        controller,
+        eid,
+        "buffer-design",
+        blocker_revision=1,
+        request_id="buffer-one",
+        verdict="reject",
+        decision_text="Reject this proposal and retain the open architecture decision.",
+        tasks=["B"],
+        criteria=state(operation)["integration"]["tasks"]["B"]["criteria"],
+    )
+    observed = {}
+    require_execution_authority(
+        controller, eid, operation="decision", delivery=decided["id"], decision_observation=observed
+    )
+    assert observed == {
+        "schema_version": 1,
+        "sha256": hashlib.sha256(decided["delivery"].encode()).hexdigest(),
+    }
+    before = dict(observed)
+    execution = get_execution(controller.conn, eid)
+    inbox = Path(execution["handoff_path"]).parent / "inbox" / (decided["id"] + ".json")
+    changed = json.loads(decided["delivery"])
+    changed["verdict"] = "accept"
+    inbox.write_text(json.dumps(changed))
+    assert observed == before
+    refused = {}
+    with pytest.raises(ExecutionConflict, match="inbox/Registry bytes changed"):
+        require_execution_authority(
+            controller,
+            eid,
+            operation="decision",
+            delivery=decided["id"],
+            decision_observation=refused,
+        )
+    assert refused == {}

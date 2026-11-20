@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="6" time="0.070" timestamp="2026-11-19T17:32:24.726787+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_sqlite_capabilities" name="test_report_runtime_facts" time="0.014"><properties><property name="sqlite_version" value="3.50.4" /><property name="python_version" value="3.13.12" /><property name="platform" value="macOS-26.6.2-arm64-arm-64bit-Mach-O" /></properties></testcase><testcase classname="tests.test_sqlite_capabilities" name="test_fts5_is_usable" time="0.002" /><testcase classname="tests.test_sqlite_capabilities" name="test_unknown_virtual_table_module_fails" time="0.001" /><testcase classname="tests.test_sqlite_capabilities" name="test_connect_activates_wal_journal_mode" time="0.012" /><testcase classname="tests.test_sqlite_capabilities" name="test_connect_wal_is_persistent_across_connections" time="0.014" /><testcase classname="tests.test_sqlite_capabilities" name="test_wal_reset_advisory_fixed" time="0.001"><failure message="AssertionError: SQLite 3.50.4 is affected by the WAL-reset advisory (fixed in 3.51.3+; allowlisted backports: none). Operator repair: OPS-sqlite-wal-advisory. sqlite3.sqlite_version=3.50.4 python=3.13.12 platform=macOS-26.6.2-arm64-arm-64bit-Mach-O&#10;assert False&#10; +  where False = _is_wal_reset_fixed((3, 50, 4))&#10; +    where (3, 50, 4) = sqlite3.sqlite_version_info">def test_wal_reset_advisory_fixed():
+        """Fail visibly on a runtime affected by https://www.sqlite.org/wal.html#walreset.
+    
+        Requires SQLite &gt;= 3.51.3 or an explicitly allowlisted, sourced fixed backport. This test
+        must never be skipped, xfailed or relaxed: its result is the operational evidence.
+        """
+&gt;       assert _is_wal_reset_fixed(sqlite3.sqlite_version_info), (
+            f"SQLite {sqlite3.sqlite_version} is affected by the WAL-reset advisory "
+            f"(fixed in {'.'.join(map(str, FIXED_VERSION))}+; allowlisted backports: "
+            f"{sorted(FIXED_BACKPORTS) or 'none'}). Operator repair: OPS-sqlite-wal-advisory. "
+            f"{_runtime_facts()}"
+        )
+E       AssertionError: SQLite 3.50.4 is affected by the WAL-reset advisory (fixed in 3.51.3+; allowlisted backports: none). Operator repair: OPS-sqlite-wal-advisory. sqlite3.sqlite_version=3.50.4 python=3.13.12 platform=macOS-26.6.2-arm64-arm-64bit-Mach-O
+E       assert False
+E        +  where False = _is_wal_reset_fixed((3, 50, 4))
+E        +    where (3, 50, 4) = sqlite3.sqlite_version_info
+
+tests/test_sqlite_capabilities.py:106: AssertionError</failure></testcase></testsuite></testsuites>

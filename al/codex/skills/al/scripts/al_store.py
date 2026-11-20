@@ -19,6 +19,9 @@ from al_phases import MAIN_PHASES, PHASE_AGENT  # noqa: E402
 
 def _resolve_repo_root():
     cwd = Path.cwd().resolve()
+    import al_retry_control
+    controlled=al_retry_control.git(("rev-parse","--show-toplevel"),root=cwd)
+    if controlled is not None:return Path(controlled.decode().strip()).resolve()
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -141,6 +144,13 @@ def save(sid, st):
         prepare_publication(st, previous)
     from al_rework_recovery_contract import prepare_save as prepare_recovery
     prepare_recovery(st, previous)
+    from al_agent_exchange import produce
+    for entry in st['evidence']['entries']:
+        key = 'verification-result:' + entry['id']
+        if entry['status'] != 'RUNNING' and entry.get('ended_at') and key not in st.get('agent_contracts', {}):
+            produce(st, 'verification-result', entry['id'], entry, status='observed')
+    from al_incident_sources import prepare_results
+    prepare_results(st, previous)
     prepare_commit(previous, st)
     from al_new_origin import prepare_save
     prepare_save(st, previous)

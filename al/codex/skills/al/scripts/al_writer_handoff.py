@@ -70,7 +70,18 @@ def cmd_handoff(a, sid):
     plan_digest = digest(json.dumps({area: plan[area] for area in areas}, sort_keys=True,
                                   separators=(',', ':')).encode('utf-8'))
     artifact = snapshot_bytes(sid, raw, 'writer-handoff', a.body_file)
-    writer.setdefault('handoffs', []).append({'artifact': artifact, 'areas': areas, 'plan_digest': plan_digest})
+    receipt = {'artifact': artifact, 'areas': areas, 'plan_digest': plan_digest}
+    from al_agent_exchange import produce
+    import al_agent_contracts as C
+    dependency_inputs = []
+    for dep, record in C.dependency_records(st, writer.get('task')).items():
+        reference = snapshot_bytes(sid, json.dumps(record, sort_keys=True, separators=(',', ':')).encode(),
+                                   'dependency-receipt-v1', 'admitted dependency ' + dep)
+        st.setdefault('recorded_artifacts', []).append(reference)
+        dependency_inputs.append({'reference': C.ref(reference), 'purpose': 'dependency:' + dep, 'required': True})
+    receipt['contract'] = produce(st, 'task-assignment', a.id, receipt, producer=writer.get('agent') or a.id,
+                                  task=writer.get('task'), refs=[{'reference': C.ref(artifact), 'purpose': 'current assignment prompt', 'required': True}, *dependency_inputs], outputs=[{'name': 'implementation-result', 'kind': 'implementation-result'}])
+    writer.setdefault('handoffs', []).append(receipt)
     import al_agents
     if getattr(a, 'agent_id', None):
         al_agents.record(st, writer['role'], a.agent_id, writer=a.id, purpose='handoff', fresh_reason=getattr(a, 'fresh_reason', None))

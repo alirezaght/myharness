@@ -1,0 +1,110 @@
+{
+  "evidence": "E36",
+  "recorded_outcome": "FAIL2",
+  "qualification": "Actual parent visual inspection, not formal review/approval or successful viewport proof. PNG dimensions do not establish live DOM viewport width. Source still in active Builder authoring.",
+  "artifacts": [
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-groups-1280x800.png",
+      "sha256": "943a9d6b8156796dcca0ff57bf6b2131730f13763372f158601015ce9e329b81",
+      "bytes": 175419,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-history-1280x800.png",
+      "sha256": "b9f49b073ff399cb0b07012e39dca8f3d6f3b76ee6a49e1d6f94ca46f61045e6",
+      "bytes": 169870,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-investigation-1280x800.png",
+      "sha256": "3535d105d4746222f6751d76edd0c69979e2c3e39f7f4190c7e5015873db07ca",
+      "bytes": 163471,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "sha256": "65a8123d7fdc8ae5ecd5f6360b97fe0863e99ff6268061ea46934692a5c595f7",
+      "bytes": 175929,
+      "png_dimensions": [
+        1280,
+        800
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-groups-390x844.png",
+      "sha256": "a717d29825ec965c0f1590eda9f3737fab9b286b4c33d0bc124e4b338424baaf",
+      "bytes": 77682,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-history-390x844.png",
+      "sha256": "9a8a8bac5b7e2a9b8d7f64a5ebb5bed4f85d7c9f2519bbf1c9cdb8f4c558b9c4",
+      "bytes": 58487,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-investigation-390x844.png",
+      "sha256": "461080becb2a8b74506ee6f48da3790153e6709b161d893ae3d394c96382222d",
+      "bytes": 83237,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    },
+    {
+      "path": "/private/tmp/al-r5a-incident-browser-006/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-outputs-verdict-390x844.png",
+      "sha256": "26542a905f7c488074926651a2f87989ac2781324801285e97c9a2e1dacd3da2",
+      "bytes": 65010,
+      "png_dimensions": [
+        390,
+        844
+      ],
+      "independently_visually_inspected_by_root": true
+    }
+  ],
+  "observations": [
+    {
+      "id": "E36-V1",
+      "scope": "desktop outputs-verdict bottom Immutable observed fact",
+      "finding": "Fact grid spills beyond selected incident panel toward inspector; source-kind value has narrow vertical-letter wrapping. Actual offending DOM/grid sizing under investigation."
+    },
+    {
+      "id": "E36-V2",
+      "scope": "group/output supporting-incident selects",
+      "finding": "Appeared blank despite visible incident history. Inspect option count/list-load-render timing before concluding cause."
+    },
+    {
+      "id": "E36-V3",
+      "scope": "member/evidence multi-select labels",
+      "finding": "Long identical category/code/execution prefixes truncate before short unique ID at end, making repeated symptoms hard to distinguish. Use differentiated readable prefix/wrapped choices; retain exact references as values/provenance."
+    },
+    {
+      "id": "E36-V4",
+      "scope": "investigation screenshot coverage",
+      "finding": "Capture scrolled to Save button and mostly shows Save/groups; final captures must include editor top and open advanced-controls fields."
+    }
+  ],
+  "functional_context": "E36 reached successful persisted verdict and earlier interactions, but desktop finalOverflow=true and narrow JS viewportWidth807 vs requested390 remain failing assertions; no browser PASS."
+}

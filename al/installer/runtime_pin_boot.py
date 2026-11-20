@@ -54,6 +54,8 @@ if 'installer/runtime_pin_cache.py' in captured:
     verified=verify_pin_cached(base/'pins',pin,captured=captured,write=False)
 else:verified=verify_pin(base/'pins',pin)
 if verified['bytes']!=captured:raise ValueError('runtime pin moved before import')
+from installer.runtime_retry_control import activate,complete
+activate('pin',repository=transaction['repository_identity']['root'],platform=platform,session=transaction['session_id'],argv=request['argv'],pin=pin['pin_identity'])
 value=subject(transaction['repository_identity']['root'],platform,transaction['session_id'])
 if request.get('prepared_start'):
     from installer.runtime_successor_channel import InitializationClient,fingerprint
@@ -91,13 +93,18 @@ import al_state
 # A Claude conversation's implicit command keeps al_state's native selection and pointer path.
 explicit=[] if request.get('native_implicit') else ['--session',transaction['session_id']]
 sys.argv=[str(payload/prefix/'al_state.py'),*explicit,*request['argv']]
-al_state.main()
+control_exit=None
+try:al_state.main()
+except SystemExit as exit:
+    control_exit=exit
 transaction=run_context.transaction
 if run_context.readonly:
     with coordinated(value) as path:
         if read(path)!=request['transaction']:raise ValueError('existing-run protected binding changed')
     if read_state(transaction) is None:raise ValueError('existing-run state disappeared')
 elif not request.get('prepared_start') and read_state(transaction) is not None:commit_run_binding(transaction)
+complete(control_exit.code if control_exit is not None and isinstance(control_exit.code,int) else 0)
+if control_exit is not None:raise control_exit
 """
 )
 

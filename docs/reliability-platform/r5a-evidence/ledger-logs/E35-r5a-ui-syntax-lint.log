@@ -1,0 +1,6 @@
+$ /Users/alirezaghiastabari/.nvm/versions/node/v24.14.0/bin/node --check harness/dashboard/static/reliability.js
+# cwd: .
+# started: Fri Nov 20 15:01:00 2026
+
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 93534, "pid": 93534, "sid": 93534, "start": [1795183260, 418781], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

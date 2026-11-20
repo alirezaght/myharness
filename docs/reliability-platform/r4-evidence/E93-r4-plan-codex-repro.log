@@ -1,0 +1,96 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_execution_events.py -k pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused --basetemp=/private/tmp/al-r4-plan-codex-repro-001 --junitxml=/private/tmp/al-r4-plan-codex-repro-001.xml
+# cwd: al/codex/skills/al
+# started: Fri Nov 20 11:04:19 2026
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[False] _
+
+cli = <function current_protocol.<locals>.run at 0x10b583ec0>
+tmp_path = PosixPath('/private/tmp/al-r4-plan-codex-repro-001/test_pre_task_base_gate_is_rea0')
+repo = PosixPath('/private/tmp/al-r4-plan-codex-repro-001/test_pre_task_base_gate_is_rea0/repo')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b47cc30>
+bind_source = False
+
+    @pytest.mark.parametrize('bind_source', [False, True])
+    def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cli, tmp_path, repo, monkeypatch, bind_source):
+        from execution_helpers import register_task
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch, bind_source=bind_source)
+        from harness.execution_store import get_execution
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        gate = _planning_gate(cli, tmp_path, sid)
+        state = al_store.load(sid)
+        assert state['phase'] == 'PLANNING' and state['integration']['tasks'] == {}
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'candidate')[0] != 0
+        result = cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check',
+                     '--scope', ','.join(gate['scope']), '--', *gate['argv'])
+        assert result[0] != 0, result
+        assert al_store.state_path(sid).read_bytes() == before
+        result = cli('gates', 'run', '--stage', 'base')
+        assert result[0] == 0, result
+        state = al_store.load(sid)
+        assert state['integration']['tasks'] == {} and state['integration']['graph_revision'] == 0
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        # A cached real gate result cannot be reused through a label-only public call.
+        assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+        assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+        admit_planning(cli)
+        assert cli('phase', 'IMPLEMENTATION')[0] == 0
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'base')[0] != 0
+        assert al_store.state_path(sid).read_bytes() == before
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+>       assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+E       assert 'al_state: corrupt state: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "implementation-plan", "expected": "curr...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_events.py:137: AssertionError
+_ test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[True] _
+
+cli = <function current_protocol.<locals>.run at 0x10b92c9a0>
+tmp_path = PosixPath('/private/tmp/al-r4-plan-codex-repro-001/test_pre_task_base_gate_is_rea1')
+repo = PosixPath('/private/tmp/al-r4-plan-codex-repro-001/test_pre_task_base_gate_is_rea1/repo')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b518710>
+bind_source = True
+
+    @pytest.mark.parametrize('bind_source', [False, True])
+    def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cli, tmp_path, repo, monkeypatch, bind_source):
+        from execution_helpers import register_task
+        controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch, bind_source=bind_source)
+        from harness.execution_store import get_execution
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        gate = _planning_gate(cli, tmp_path, sid)
+        state = al_store.load(sid)
+        assert state['phase'] == 'PLANNING' and state['integration']['tasks'] == {}
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'candidate')[0] != 0
+        result = cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check',
+                     '--scope', ','.join(gate['scope']), '--', *gate['argv'])
+        assert result[0] != 0, result
+        assert al_store.state_path(sid).read_bytes() == before
+        result = cli('gates', 'run', '--stage', 'base')
+        assert result[0] == 0, result
+        state = al_store.load(sid)
+        assert state['integration']['tasks'] == {} and state['integration']['graph_revision'] == 0
+        assert bool(get_execution(controller.conn, eid)['al_run_id']) == bind_source
+        # A cached real gate result cannot be reused through a label-only public call.
+        assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+        assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+        admit_planning(cli)
+        assert cli('phase', 'IMPLEMENTATION')[0] == 0
+        before = al_store.state_path(sid).read_bytes()
+        assert cli('gates', 'run', '--stage', 'base')[0] != 0
+        assert al_store.state_path(sid).read_bytes() == before
+        assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+        assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+>       assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+E       assert 'al_state: corrupt state: {"code": "INVALID_AGENT_CONTRACT", "contract_kind": "implementation-plan", "expected": "curr...epair_action": "regenerate from current assignment and immutable inputs", "schema_version": 1, "state_changed": false}' == 0
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/al/codex/skills/al/tests/test_execution_events.py:137: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_execution_events.py::test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[False]
+FAILED tests/test_execution_events.py::test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[True]
+2 failed, 7 deselected in 15.28s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 42102, "pid": 42102, "sid": 42102, "start": [1795169059, 204756], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

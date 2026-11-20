@@ -1,0 +1,68 @@
+.operation-incidents h4 { margin: 1rem 0 .45rem; }
+.incident-filters { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
+.incident-filters label { display: grid; gap: .25rem; min-width: min(100%, 14rem); }
+.incident-filters input, .incident-filters select { box-sizing: border-box; max-width: 100%; min-width: 0; padding: .5rem; }
+.incident-content { min-width: 0; }
+.incident-authority-note { font-weight: 600; }
+.incident-results { display: grid; gap: .65rem; }
+.incident-item { min-width: 0; padding: .65rem .8rem; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: .55rem; }
+.incident-item h5 { margin: 0 0 .3rem; }
+.incident-item p { margin: .2rem 0; overflow-wrap: anywhere; }
+.incident-item button, #incident-older { margin-top: .4rem; padding: .45rem .65rem; }
+.incident-field { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: .7rem; padding: .25rem 0; border-bottom: 1px solid color-mix(in srgb, currentColor 10%, transparent); }
+.incident-field dt { font-weight: 600; }
+.incident-field dd { margin: 0; overflow-wrap: anywhere; }
+.incident-pending { margin-top: .8rem; padding-top: .5rem; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+.incident-pending li { overflow-wrap: anywhere; }
+.incident-filters :focus-visible, .incident-item button:focus-visible, #incident-older:focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+
+@media (max-width: 36rem) {
+  .incident-field { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+  .incident-field dd { padding-bottom: .2rem; }
+}
+
+.incident-intelligence { min-width: 0; margin-top: 1.5rem; padding-top: 1rem; border-top: 2px solid color-mix(in srgb, currentColor 24%, transparent); }
+.incident-intelligence > p { max-width: 78ch; }
+.ii-filters, .ii-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .7rem; align-items: end; min-width: 0; }
+.ii-filters label, .ii-form label { display: grid; gap: .3rem; min-width: 0; font-weight: 600; }
+.ii-filters input, .ii-filters select, .ii-form input, .ii-form select, .ii-form textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: .55rem; }
+.ii-form > label.ii-checkbox-label { display: flex; align-items: center; gap: .5rem; }
+.ii-form > label.ii-checkbox-label input[type="checkbox"] { width: auto; max-width: none; padding: 0; }
+.ii-form textarea { min-height: 5.5rem; resize: vertical; }
+.ii-advanced-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .7rem; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.ii-advanced-controls > summary, .ii-advanced-controls > form { grid-column: 1 / -1; }
+.ii-advanced-controls > label { display: grid; gap: .3rem; min-width: 0; font-weight: 600; }
+.ii-advanced-controls > label.ii-checkbox-label { display: flex; align-items: center; gap: .5rem; }
+.ii-advanced-controls input:not([type="checkbox"]):not([type="radio"]), .ii-advanced-controls select, .ii-advanced-controls textarea { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: .55rem; }
+.ii-filters button, .ii-form button, .ii-detail button, .ii-results button, .ii-groups button, .ii-outputs button { min-height: 2.5rem; padding: .5rem .75rem; }
+.ii-coverage { margin: .8rem 0; padding: .65rem .8rem; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: .45rem; }
+.ii-coverage p, .ii-authority-note { max-width: 82ch; overflow-wrap: anywhere; }
+.ii-body { display: grid; grid-template-columns: minmax(15rem, .85fr) minmax(0, 1.5fr); gap: 1rem; margin-top: 1rem; align-items: start; }
+.ii-list-panel, .ii-detail-panel, .ii-groups-card, .ii-projection-card, .ii-outputs-card { min-width: 0; padding: .8rem; border: 1px solid color-mix(in srgb, currentColor 17%, transparent); border-radius: .55rem; }
+.ii-list-panel h4, .ii-detail-panel h4, .ii-groups-card h4, .ii-projection-card h4, .ii-outputs-card h4 { margin-top: 0; }
+.ii-results { display: grid; gap: .55rem; min-width: 0; }
+.ii-item, .ii-group, .ii-record { min-width: 0; padding: .65rem; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: .45rem; overflow-wrap: anywhere; }
+.ii-item h5, .ii-group h5 { margin: 0 0 .35rem; }
+.ii-item p, .ii-group p { margin: .2rem 0; }
+.ii-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: .6rem 0; }
+.ii-facts .incident-field { grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); }
+.ii-subsection { margin: .8rem 0; padding: .65rem; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: .45rem; min-width: 0; }
+.ii-subsection h4, .ii-subsection h5 { margin: 0 0 .4rem; }
+.ii-subsection ul, .ii-group ul { padding-left: 1.25rem; overflow-wrap: anywhere; }
+.ii-editor { margin-top: .8rem; padding-top: .65rem; border-top: 1px solid color-mix(in srgb, currentColor 18%, transparent); min-width: 0; }
+.ii-authority-note, .ii-status { font-size: .95rem; }
+.ii-groups { margin-top: .8rem; min-width: 0; }
+.ii-group { margin: .5rem 0; }
+.ii-output-list { display: grid; gap: .45rem; margin: .65rem 0; }
+.ii-output-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .35rem .55rem; align-items: start; padding: .55rem; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: .4rem; overflow-wrap: anywhere; }
+.ii-output-item input { margin-top: .2rem; }
+.ii-output-item label { min-width: 0; overflow-wrap: anywhere; }
+.ii-output-provenance { grid-column: 2; margin: 0; overflow-wrap: anywhere; }
+.incident-intelligence :focus-visible { outline: 3px solid Highlight; outline-offset: 2px; }
+
+@media (max-width: 48rem) {
+  .ii-body { grid-template-columns: minmax(0, 1fr); }
+  .ii-facts .incident-field { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+  .ii-facts .incident-field dd { padding-bottom: .2rem; }
+  .ii-list-panel, .ii-detail-panel, .ii-groups-card, .ii-projection-card, .ii-outputs-card { padding: .65rem; }
+}

@@ -268,6 +268,7 @@ SCHEMAS["submit_output"] = _schema(
     {
         "name": STRING,
         "content": {"type": "string", "maxLength": 262144},
+        "contract": {"type": "object"},
         "expected_graph_revision": INTEGER,
     },
     ["name", "content", "expected_graph_revision"],

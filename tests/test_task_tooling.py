@@ -7,7 +7,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -17,9 +16,10 @@ from harness.execution_isolation import (
     prepare_operation_isolation,
     provisioning_profile,
 )
-from harness.execution_processes import ProcessManager
-from harness.task_environment import SetupReport, context_revision, prepare
+from harness.task_environment import SetupReport, context_revision
 from harness.task_tooling import TaskTooling
+from tests.test_agent_contracts_setup import admitted_setup, registered_setup
+from tests.test_execution_operations import operations  # noqa: F401
 
 
 def test_runtime_path_is_curated_and_credentials_are_not_forwarded(tmp_path, monkeypatch):
@@ -82,12 +82,13 @@ def test_setup_failure_is_not_test_failure_or_ready_environment(tmp_path):
     assert not (tooling.directory / "environments.json").exists()
 
 
-def test_genuine_frozen_node_setup_never_runs_repository_hooks(tmp_path):
+def test_genuine_frozen_node_setup_never_runs_repository_hooks(tmp_path, operations):  # noqa: F811
     import shutil
 
     if sys.platform != "darwin" or not shutil.which("pnpm"):
         pytest.skip("local macOS pnpm integration")
-    root = tmp_path / "repo"
+    operation, principal, controller, state = registered_setup(operations, ["app"])
+    root = Path(operation.envelope["repository"])
     app = root / "app"
     app.mkdir(parents=True)
     version = subprocess.check_output([shutil.which("pnpm"), "--version"], text=True).strip()
@@ -122,36 +123,12 @@ def test_genuine_frozen_node_setup_never_runs_repository_hooks(tmp_path):
     )
     subprocess.run(["git", "add", "."], cwd=root, check=True)
     original = {p: p.read_bytes() for p in root.rglob("package.json")}
-    tooling = TaskTooling(tmp_path / "tooling", root, {})
-    directory = tmp_path / "operations"
-    directory.mkdir()
-    manager = ProcessManager()
-    operation = SimpleNamespace(
-        tooling=tooling,
-        envelope={"repository": str(root)},
-        directory=directory,
-        processes=manager,
-        setup_pending={},
-        profile=lambda writable: prepare_operation_isolation(
-            root,
-            writable=writable,
-            protected=[tooling.directory],
-            hidden=[],
-            directory=directory / os.urandom(8).hex(),
-        ),
-    )
-    state = {
-        "amendments": [],
-        "integration": {
-            "graph_revision": 1,
-            "tasks": {"T": {"revision": 1, "files": ["app"]}},
-        },
-    }
+    manager = operation.processes
     try:
-        result = prepare(
+        result = admitted_setup(
             operation,
-            None,
-            {"role": "orchestrator", "thread_id": "root"},
+            principal,
+            controller,
             state,
             {
                 "operation": "prepare",
@@ -162,7 +139,7 @@ def test_genuine_frozen_node_setup_never_runs_repository_hooks(tmp_path):
         )
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
-            observed = manager.poll("root", result["handle"])
+            observed = operation.dispatch(principal, "poll_process", {"handle": result["handle"]})
             if observed["status"] != "Running":
                 break
             time.sleep(0.05)
@@ -174,14 +151,15 @@ def test_genuine_frozen_node_setup_never_runs_repository_hooks(tmp_path):
         manager.close()
 
 
-def test_genuine_private_locked_python_setup(tmp_path):
+def test_genuine_private_locked_python_setup(tmp_path, operations):  # noqa: F811
     if sys.platform != "darwin":
         pytest.skip("local macOS sandbox integration")
     import shutil
 
     if not shutil.which("uv"):
         pytest.skip("uv unavailable")
-    root = tmp_path / "repo"
+    operation, principal, controller, state = registered_setup(operations, ["app"])
+    root = Path(operation.envelope["repository"])
     app = root / "app"
     app.mkdir(parents=True)
     (app / "pyproject.toml").write_text(
@@ -192,38 +170,13 @@ def test_genuine_private_locked_python_setup(tmp_path):
         '[[package]]\nname = "setup-fixture"\nversion = "0.1.0"\nsource = { virtual = "." }\n'
     )
     (root / ".env").write_text("SECRET=DO_NOT_READ")
-    tooling = TaskTooling(tmp_path / "tooling", root, {})
-    manager = ProcessManager()
-    directory = tmp_path / "operations"
-    directory.mkdir()
-
-    def profile(writable):
-        return prepare_operation_isolation(
-            root,
-            writable=writable,
-            protected=[tooling.directory],
-            hidden=[],
-            directory=directory / os.urandom(8).hex(),
-        )
-
-    operation = SimpleNamespace(
-        tooling=tooling,
-        envelope={"repository": str(root)},
-        directory=directory,
-        processes=manager,
-        setup_pending={},
-        profile=profile,
-    )
-    state = {
-        "amendments": [],
-        "integration": {"graph_revision": 1, "tasks": {"T": {"revision": 1, "files": ["app"]}}},
-    }
-    principal = {"role": "orchestrator", "thread_id": "root"}
+    tooling, manager, directory = operation.tooling, operation.processes, operation.directory
+    profile = operation.profile
     try:
-        result = prepare(
+        result = admitted_setup(
             operation,
-            None,
             principal,
+            controller,
             state,
             {
                 "operation": "prepare",
@@ -234,7 +187,7 @@ def test_genuine_private_locked_python_setup(tmp_path):
         )
         deadline = time.monotonic() + 25
         while time.monotonic() < deadline:
-            observed = manager.poll("root", result["handle"])
+            observed = operation.dispatch(principal, "poll_process", {"handle": result["handle"]})
             if observed["status"] != "Running":
                 break
             time.sleep(0.05)
@@ -353,31 +306,27 @@ def test_registry_setup_rejects_local_secrets_and_executable_git_dependencies(tm
         )
 
 
-def test_failed_setup_is_cached_without_becoming_ready(tmp_path):
-    root = tmp_path / "repo"
+def test_failed_setup_is_cached_without_becoming_ready(tmp_path, operations):  # noqa: F811
+    operation, principal, controller, state = registered_setup(operations, ["app"])
+    root = Path(operation.envelope["repository"])
     app = root / "app"
     app.mkdir(parents=True)
     (app / "pyproject.toml").write_text('[project]\nname="fixture"\nversion="0.1.0"\n')
     (app / "uv.lock").write_text("version=1\n")
-    tooling = TaskTooling(tmp_path / "tooling", root, {})
+    tooling = operation.tooling
     catalog = tooling.catalog()
     inputs = {
         f"app/{name}": digest((app / name).read_bytes()) for name in ("pyproject.toml", "uv.lock")
     }
     fp = digest({"inputs": inputs, "tools": catalog["tools"], "capability": catalog["binding"]})
     tooling.failure("app", {"fingerprint": fp}, {"status": "Unavailable", "test_evidence": False})
-    operation = SimpleNamespace(tooling=tooling, envelope={"repository": str(root)})
-    state = {
-        "amendments": [],
-        "integration": {"graph_revision": 1, "tasks": {"T": {"revision": 1, "files": ["app"]}}},
-    }
     request = {
         "operation": "prepare",
         "cwd": "app",
         "task_id": "T",
         "expected_revision": context_revision(state, "T"),
     }
-    result = prepare(operation, None, {"role": "orchestrator"}, state, request)
+    result = admitted_setup(operation, principal, controller, state, request)
     assert result["status"] == "Unavailable" and result["cached"] is True
     assert not (tooling.directory / "environments.json").exists()
 
@@ -395,7 +344,7 @@ def test_environment_prepare_absolute_cwd_has_contract_retry(tmp_path):
         "cwd": str(tmp_path),
     }
     with pytest.raises(ValueError, match="repository-relative.*inspect"):
-        task_unit(None, None, state, {"role": "orchestrator"}, request)
+        task_unit(None, None, state, {"role": "orchestrator"}, request, verify_outputs=False)
 
 
 def test_inspected_prepare_templates_use_current_relative_locked_units(tmp_path):
@@ -421,10 +370,13 @@ def test_inspected_prepare_templates_use_current_relative_locked_units(tmp_path)
     assert {r["cwd"] for r in requests} == {".", "apps/web"}
     for request in requests:
         assert set(request) == {"operation", "cwd", "task_id", "expected_revision"}
-        assert task_unit(None, None, state, {"role": "orchestrator"}, request) == request["cwd"]
+        assert (
+            task_unit(None, None, state, {"role": "orchestrator"}, request, verify_outputs=False)
+            == request["cwd"]
+        )
     state["integration"]["graph_revision"] += 1
     with pytest.raises(ValueError, match="revision"):
-        task_unit(None, None, state, {"role": "orchestrator"}, requests[0])
+        task_unit(None, None, state, {"role": "orchestrator"}, requests[0], verify_outputs=False)
     (app / "package.json").unlink()
     assert [r["cwd"] for r in preparation_requests(tmp_path, state, "T")] == ["."]
     (tmp_path / "pnpm-lock.yaml").unlink()
@@ -432,26 +384,22 @@ def test_inspected_prepare_templates_use_current_relative_locked_units(tmp_path)
 
 
 @pytest.mark.parametrize("unit", [".", "app"])
-def test_mixed_manifest_templates_follow_prepare_python_precedence(tmp_path, unit):
+def test_mixed_manifest_templates_follow_prepare_python_precedence(tmp_path, unit, operations):  # noqa: F811
     from harness.task_environment import preparation_requests
 
-    app = tmp_path / unit
+    operation, principal, controller, state = registered_setup(operations, ["app"])
+    # Root setup remains allowed for this specific task scope; root product ownership is refused.
+    root = Path(operation.envelope["repository"])
+    app = root / unit
     app.mkdir(parents=True, exist_ok=True)
     for path in (
-        tmp_path / "package.json",
-        tmp_path / "pnpm-lock.yaml",
-        tmp_path / "pnpm-workspace.yaml",
+        root / "package.json",
+        root / "pnpm-lock.yaml",
+        root / "pnpm-workspace.yaml",
         app / "package.json",
     ):
         path.write_text("synthetic Node manifest")
-    state = {
-        "amendments": [],
-        "integration": {
-            "tasks": {"T": {"revision": 1, "files": [unit]}},
-            "graph_revision": 1,
-        },
-    }
-    assert unit in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+    assert unit in {r["cwd"] for r in preparation_requests(root, state, "T")}
     (app / "pyproject.toml").write_text('[project]\nname="mixed"\nversion="0.1.0"\n')
     request = {
         "operation": "prepare",
@@ -459,9 +407,8 @@ def test_mixed_manifest_templates_follow_prepare_python_precedence(tmp_path, uni
         "task_id": "T",
         "expected_revision": context_revision(state, "T"),
     }
-    operation = SimpleNamespace(tooling=None, envelope={"repository": str(tmp_path)})
     with pytest.raises(FileNotFoundError, match="uv.lock"):
-        prepare(operation, None, {"role": "orchestrator"}, state, request)
-    assert unit not in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+        admitted_setup(operation, principal, controller, state, request)
+    assert unit not in {r["cwd"] for r in preparation_requests(root, state, "T")}
     (app / "uv.lock").write_text("synthetic Python lock")
-    assert unit in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+    assert unit in {r["cwd"] for r in preparation_requests(root, state, "T")}

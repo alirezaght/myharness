@@ -13,6 +13,9 @@ from al_profile import measured
 from al_schema import refuse
 
 def git_bytes(*args, root=None):
+    import al_retry_control
+    controlled=al_retry_control.git(args,root=root or al_store.REPO_ROOT)
+    if controlled is not None:return controlled
     from al_analysis_cache import CURRENT
     context = CURRENT.get()
     options = ['-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null']
@@ -116,6 +119,11 @@ def _blob_hashes(root, oids):
 @measured('indexed-blob-hashing')
 def _blob_hashes_uncached(root, oids):
     """Consume bounded cat-file frames; never buffer the request or blob set."""
+    import al_retry_control
+    control=al_retry_control.current()
+    if control:
+        values=control.blobs(root,list(dict.fromkeys(oids)),8*1024*1024,2*1024*1024)
+        return {oid:hashlib.sha256(value).hexdigest() for oid,value in values.items()}
     result = {}
     unique = list(dict.fromkeys(oids))
     if not unique: return result

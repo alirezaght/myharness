@@ -12,7 +12,7 @@ from pathlib import Path
 
 from harness.command_safety import safe_environment
 from harness.controller import HarnessController
-from harness.db import connect, utcnow
+from harness.db import connect
 from harness.execution_artifacts import ArtifactStore
 from harness.execution_authority import require_execution_authority
 from harness.execution_check_channel import CheckChannel
@@ -130,6 +130,7 @@ class OperationController:
         self.check_channels = []
         self.al_service = None
         self.setup_pending = {}
+        self.policy_setup_pending = {}
         self.setup_outcomes = {}
         self.generated = {}
         self.active_report = None
@@ -364,7 +365,7 @@ class OperationController:
             raise ValueError("native principal AL run is stale")
         return execution, state
 
-    def admitted(self, controller, principal, task_id, revision, *, paths=()):
+    def admitted(self, controller, principal, task_id, revision, *, paths=(), verify_outputs=True):
         execution, state = self.authority(controller, principal)
         integration = state["integration"]
         task = integration["tasks"].get(task_id)
@@ -395,7 +396,6 @@ class OperationController:
             raise ValueError("task lacks current dependency admission")
         from harness.execution_authority import require_dependency_outputs
 
-        require_dependency_outputs(state, task_id, self.envelope["repository"], execution)
         if any(
             b["state"] != "Resolved" and task_id in b.get("affected", b["tasks"])
             for b in integration["blockers"].values()
@@ -423,9 +423,42 @@ class OperationController:
                 for scope in (task["files"], writers[0]["files"])
             ):
                 raise ValueError("operation exceeds admitted writer files")
+        from harness.policy import claims
+        from harness.policy.context import CURRENT
+        from harness.policy.resource_bindings import derive
+
+        current = CURRENT.get()
+        if not hasattr(self, "_policy_repository"):
+            self._policy_repository = str(Path(self.envelope["repository"]).resolve())
+        affected = (
+            current.intent.claims
+            if current
+            else derive(
+                self,
+                principal,
+                state,
+                task_id=task_id,
+                resources=tuple("file:" + path for path in (paths or writers[0]["files"])),
+                mutating=True,
+                boundary="closed_handler",
+            )
+        )
+        if verify_outputs:
+            claims.require_clear(
+                controller.conn, affected, own_attempt_id=current.intent.id if current else None
+            )
+        require_dependency_outputs(
+            state,
+            task_id,
+            self.envelope["repository"],
+            execution,
+            verify_outputs=verify_outputs,
+            consumption=current,
+            connection=controller.conn,
+        )
         return execution, state, writers[0]["files"]
 
-    def profile(self, writable=(), *, al=False):
+    def profile(self, writable=(), *, al=False, al_optimizations=True):
         root = Path(self.envelope["repository"])
         database = Path(self.envelope["database"])
         from harness.template_classification import selected_reference
@@ -493,7 +526,7 @@ class OperationController:
             # The AL ledger process keeps operation scratch as TMPDIR: its disposable gate
             # checkouts must stay under the protected scratch the check channel admits.
             process_temporary=not al,
-            al_grants=self.al_cache_grants() if al else None,
+            al_grants=self.al_cache_grants() if al and al_optimizations else None,
         )
 
     def al_cache_grants(self):
@@ -541,30 +574,10 @@ class OperationController:
             return self.await_assignment(principal, arguments.get("timeout", 1))
         with self.lock, closing(connect(self.database)) as conn:
             controller = HarnessController(conn)
-            audit = secrets.token_hex(16)
-            conn.execute(
-                "INSERT INTO operation_audit VALUES (?,?,?,?,?,?)",
-                (
-                    audit,
-                    self.execution_id,
-                    canonical(
-                        redact_value(
-                            {
-                                "principal": principal["thread_id"],
-                                "tool": name,
-                                "arguments": (
-                                    {"request_sha256": digest(canonical(arguments).encode())}
-                                    if name in {"knowledge_query", "knowledge_explain"}
-                                    else arguments
-                                ),
-                            }
-                        )
-                    ),
-                    "guarded",
-                    None,
-                    utcnow(),
-                ),
-            )
+            from harness.reliability import store as observations
+
+            observation = observations.begin(self, principal, name)
+            stage = "authority"
             try:
                 mode = "delivery" if name == "delivery_operation" else "admit"
                 args = arguments.get("arguments") or [None]
@@ -582,31 +595,77 @@ class OperationController:
                 } or (name == "al_command" and read_only(args)):
                     mode = "read"
                 _, state = self.authority(controller, principal, operation=mode)
-                result = self._dispatch(controller, principal, name, arguments, state)
+                stage = "dispatch"
+                from harness.reliability.process_context import dispatch_scope
+
+                with dispatch_scope(self, observation, principal["thread_id"]):
+                    from harness.policy.context import scope, start_effect
+                    from harness.policy.resources import prepare
+
+                    attempt = prepare(self, controller, principal, name, arguments, state)
+                    with scope(attempt):
+                        try:
+                            if name not in {"apply_patch", "run_command", "al_command"}:
+                                start_effect()
+                            result = self._dispatch(controller, principal, name, arguments, state)
+                        except BaseException:
+                            if attempt:
+                                attempt.owner_finished(outcome="failed")
+                            raise
+                        else:
+                            if attempt:
+                                queued = getattr(self, "policy_setup_pending", {})
+                                if not any(value is attempt for value in queued.values()):
+                                    attempt.owner_finished()
             except (ValueError, OSError, LookupError, subprocess.SubprocessError) as error:
-                conn.execute(
-                    "UPDATE operation_audit SET outcome=? WHERE id=?",
-                    (canonical({"error": str(error)[:2048]}), audit),
+                code = (
+                    "AUTHORITY_REJECTED"
+                    if stage == "authority"
+                    else "DISPATCH_OS_ERROR"
+                    if isinstance(error, OSError)
+                    else "DISPATCH_PROCESS_ERROR"
+                    if isinstance(error, subprocess.SubprocessError)
+                    else "DISPATCH_REJECTED"
+                )
+                from harness.agent_contracts import ContractError
+
+                observations.finish(
+                    self,
+                    observation,
+                    code,
+                    rejection=error if isinstance(error, ContractError) else None,
                 )
                 raise ValueError(str(error)) from None
+            except Exception:
+                observations.finish(self, observation, "DISPATCH_INTERNAL_ERROR")
+                raise
+            if isinstance(result, dict):
+                from harness.policy.source_dependencies import selected
+
+                if name == "submit_output" and arguments.get("contract") is not None:
+                    from harness.agent_exchange import SNAPSHOT_COVERAGE
+
+                    result["coverage"] = dict(SNAPSHOT_COVERAGE)
+                elif attempt and selected(attempt.intent.claims) and not attempt.legacy:
+                    result["coverage"] = {
+                        "immutable_snapshot_validated": None,
+                        "mutable_source_not_checked": False,
+                        "coordinated_source_consumption": True,
+                        "legacy_uncoordinated": False,
+                    }
+                elif (
+                    attempt
+                    and attempt.legacy
+                    and attempt.intent.boundary == "unqualified_process_tree"
+                ):
+                    result["coverage"] = {
+                        "immutable_snapshot_validated": None,
+                        "mutable_source_not_checked": True,
+                        "coordinated_source_consumption": False,
+                        "legacy_uncoordinated": True,
+                    }
             result = redact_value(result)
-            conn.execute(
-                "UPDATE operation_audit SET outcome=? WHERE id=?",
-                (
-                    canonical(
-                        {"bundle_hash": result.get("bundle_hash"), "status": "returned"}
-                        if name in {"knowledge_query", "knowledge_explain"}
-                        else {
-                            "target": result.get("target"),
-                            "status": result.get("status"),
-                            "consumers": len(result.get("consumers") or []),
-                        }
-                        if name == "knowledge_consumers"
-                        else result
-                    ),
-                    audit,
-                ),
-            )
+            observations.finish(self, observation, "RETURNED", result)
             return result
 
     def _dispatch(self, controller, principal, name, a, state):
@@ -662,6 +721,14 @@ class OperationController:
                 )
                 if policy_digest(current) != policy_digest(scope):
                     raise PermissionError("knowledge scope changed before delivery")
+                from harness.reliability.process_context import CURRENT
+                from harness.reliability.timeline_store import retrieval_link
+
+                observed = CURRENT.get()
+                reference = (
+                    result if name == "knowledge_query" else {"bundle_hash": a["bundle_hash"]}
+                )
+                retrieval_link(self, observed.observation_id if observed else None, reference)
                 return result
             except sqlite3.OperationalError:
                 raise ValueError("knowledge:busy-or-unavailable") from None
@@ -678,6 +745,13 @@ class OperationController:
             from harness.task_environment import prepare
 
             result = prepare(self, controller, principal, state, a)
+            if result.get("status") == "Queued":
+                from harness.policy.context import CURRENT
+
+                if CURRENT.get():
+                    if not hasattr(self, "policy_setup_pending"):
+                        self.policy_setup_pending = {}
+                    self.policy_setup_pending[(a["task_id"], a["cwd"])] = CURRENT.get()
             self.setup_outcomes[a["cwd"]] = result
             return result
         if name == "diagram_operation":
@@ -827,6 +901,18 @@ class OperationController:
                 principal, current_graph_revision=state["integration"]["graph_revision"], **a
             )
         if name == "submit_output":
+            execution, state = self.authority(controller, principal, operation="read")
+            if a.get("contract") is not None:
+                from harness.agent_exchange import validate_output
+
+                validate_output(
+                    self,
+                    execution,
+                    state,
+                    principal,
+                    a["content"],
+                    a["contract"],
+                )
             from harness.knowledge.contribution_contract import feedback
 
             result = self.artifacts.submit_output(
@@ -879,9 +965,18 @@ class OperationController:
             from harness.task_environment import SetupReport, task_unit
 
             if isinstance(record.get("report"), SetupReport):
-                task_unit(self, controller, state, principal, record["report"].request)
+                task_unit(
+                    self,
+                    controller,
+                    state,
+                    principal,
+                    record["report"].request,
+                    verify_outputs=False,
+                )
             elif record["task"]:
-                self.admitted(controller, principal, record["task"], record["revision"])
+                self.admitted(
+                    controller, principal, record["task"], record["revision"], verify_outputs=False
+                )
             if name == "poll_process":
                 result = self.processes.poll(owner, a["handle"], limit=a.get("limit", 16384))
                 if result["status"] != "Running" and a["handle"] in self.generated:
@@ -1081,7 +1176,14 @@ class OperationController:
                 get_execution(controller.conn, self.execution_id)
             )
         )
-        profile = self.profile(al=True)
+        from harness.policy.context import CURRENT as POLICY_CURRENT
+
+        policy_attempt = POLICY_CURRENT.get()
+        profile = (
+            policy_attempt.control.main_isolation
+            if policy_attempt and policy_attempt.control
+            else self.profile(al=True)
+        )
         context_path = Path(profile.policy).parent / "check-context.json"
         durable_file(
             context_path,
@@ -1185,8 +1287,48 @@ class OperationController:
                 return entry
 
         storage = ExecutionStorage(storage_context, validate_storage_entry)
-        channel = CheckChannel(context_path, validate_check, storage=storage)
+        from harness.policy.retry import prepare_retry
+
+        retry_channel = prepare_retry(self, principal, original_arguments, state)
+        if retry_channel:
+            environment["HARNESS_POLICY_RETRY_REQUIRED"] = "1"
+            environment["HARNESS_POLICY_RETRY_FD"] = str(retry_channel.descriptor)
+            environment["HARNESS_POLICY_RETRY_NONCE"] = retry_channel.nonce
+            self.check_channels.append(retry_channel)
+        from harness.policy.context import CURRENT as POLICY_CURRENT
+
+        policy_attempt = POLICY_CURRENT.get()
+        control_channel = None
+        if policy_attempt and policy_attempt.control:
+            from harness.policy.control_channel import ControlChannel
+
+            policy_attempt.control.validate()
+            control_channel = ControlChannel(policy_attempt, policy_attempt.control)
+            environment["HARNESS_RETRY_CONTROL_FD"] = str(control_channel.descriptor)
+            environment["HARNESS_RETRY_CONTROL_NONCE"] = control_channel.nonce
+            self.check_channels.append(control_channel)
+        channel = CheckChannel(context_path, validate_check, storage=storage, policy_attempt=policy_attempt)
         self.check_channels.append(channel)
+        descriptors = (
+            (channel.descriptor,)
+            + ((retry_channel.descriptor,) if retry_channel else ())
+            + ((control_channel.descriptor,) if control_channel else ())
+        )
+
+        def spawned_channels():
+            if control_channel:
+                control_channel.spawned()
+            channel.spawned()
+            if retry_channel:
+                retry_channel.spawned()
+
+        def close_channels():
+            if control_channel:
+                control_channel.close()
+            channel.close()
+            if retry_channel:
+                retry_channel.close()
+
         environment["HARNESS_CHECK_FD"] = str(channel.descriptor)
         if request.get("background"):
             if agent:
@@ -1204,21 +1346,36 @@ class OperationController:
                     timeout=timeout,
                     environment=environment,
                     max_timeout=900,
-                    pass_fds=(channel.descriptor,),
-                    completion=channel.close,
+                    pass_fds=descriptors,
+                    completion=close_channels,
                     report=report,
                 )
             except (OSError, ValueError):
                 try:
-                    channel.close()
+                    close_channels()
                 finally:
                     if report:
                         report.close()
                 raise
-            channel.spawned()
+            spawned_channels()
             self.generated[result["handle"]] = outputs
             return result
+        from harness.reliability.process_store import annotate, pending_process
+
+        observer = None
         try:
+            observer = pending_process(
+                principal["thread_id"],
+                child_task["task"] if child_task else None,
+                child_task["revision"] if child_task else None,
+            )
+            capture_started = time.monotonic()
+            from harness.policy.context import process_hooks
+
+            policy = process_hooks()
+            policy_deadline = (
+                policy.prepare("foreground-" + secrets.token_hex(24), observer) if policy else None
+            )
             proc = operation_popen(
                 profile,
                 command,
@@ -1228,25 +1385,54 @@ class OperationController:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 start_new_session=True,
-                pass_fds=(channel.descriptor,),
+                pass_fds=descriptors,
             )
-            channel.spawned()
+            if policy:
+                try:
+                    policy.spawned(proc)
+                except BaseException:
+                    ProcessManager._kill(proc)
+                    proc.wait(timeout=5)
+                    proc.stdout.close()
+                    proc.stderr.close()
+                    raise
+            if observer:
+                observer.notify("process.started")
+            spawned_channels()
             try:
-                stdout, stderr = bounded_capture(proc, timeout=timeout, report=report)
+                stdout, stderr = bounded_capture(
+                    proc,
+                    timeout=timeout,
+                    report=report,
+                    lifecycle=observer,
+                    monotonic_start=capture_started,
+                    absolute_deadline=policy_deadline,
+                    policy=policy,
+                )
             finally:
-                channel.close()
+                close_channels()
             from harness.template_classification import validate_reference
 
             validate_reference(profile.classification)
             if report:
-                return report.publish(proc.returncode)
+                return annotate(report.publish(proc.returncode), observer)
         except (OSError, ValueError, LookupError, subprocess.SubprocessError) as error:
+            if "policy" in locals() and policy and "proc" not in locals():
+                policy.finish(closed=False, outcome="failed")
+            if observer and "proc" not in locals():
+                observer.notify(
+                    "process.launch_failed",
+                    duration_ms=(time.monotonic() - capture_started) * 1000,
+                    stop_reason="io_error" if isinstance(error, OSError) else "internal_error",
+                )
             if report:
-                return report.failure(proc.returncode if "proc" in locals() else None, error)
+                return annotate(
+                    report.failure(proc.returncode if "proc" in locals() else None, error), observer
+                )
             raise
         finally:
             try:
-                channel.close()
+                close_channels()
             finally:
                 if report:
                     report.close()
@@ -1334,7 +1520,7 @@ class OperationController:
             result["knowledge_contributions"] = contributions
         if setup is not None:
             result["dependency_setup"] = setup
-        return result
+        return annotate(result, observer)
 
     def capture_outputs(self, outputs):
         result = []
@@ -1410,11 +1596,18 @@ class OperationController:
 
                     try:
                         handoff = descriptor(self, HarnessController(conn), principal)
-                    except (ValueError, OSError, LookupError):
+                    except (ValueError, OSError, LookupError) as error:
                         handoff = {
                             "status": "unavailable",
                             "reason": "current generated handoff unavailable",
                         }
+                        from harness.agent_contracts import ContractError
+
+                        if isinstance(error, ContractError):
+                            from harness.reliability.store import reject_assignment
+
+                            reject_assignment(self, principal, error)
+                            handoff["contract_error"] = error.feedback
                     context = {"status": "unavailable"}
                     if handoff["status"] == "available":
                         from harness.knowledge.integration import assignment_context
@@ -1433,7 +1626,9 @@ class OperationController:
             time.sleep(0.1)
 
     def tick(self):
-        if self.setup_pending:
+        from harness.policy.context import CURRENT
+
+        if self.setup_pending and CURRENT.get() is None:
             from harness.task_environment import prepare
 
             with self.lock, closing(connect(self.database)) as conn:
@@ -1442,14 +1637,32 @@ class OperationController:
                     principal, request, plan_defaults = pending
                     try:
                         _, state = self.authority(controller, principal)
-                        result = prepare(
-                            self, controller, principal, state, request, plan_defaults=plan_defaults
-                        )
+                        from harness.policy import capabilities
+                        from harness.policy.context import check_deadline, scope
+
+                        attempt = getattr(self, "policy_setup_pending", {}).get(key)
+                        if attempt:
+                            with attempt.authority() as (policy_conn, current_execution):
+                                approvals, _ = attempt.current(policy_conn, current_execution)
+                                capabilities.validate(
+                                    policy_conn, attempt.intent, attempt.digest, approvals
+                                )
+                            with scope(attempt):
+                                check_deadline()
+                                result = prepare(self, controller, principal, state, request, plan_defaults=plan_defaults)
+                        else:
+                            result = self.dispatch(principal, "environment_operation", request)
                         self.setup_outcomes[request["cwd"]] = result
                         if result.get("status") != "Queued":
                             self.setup_pending.pop(key, None)
+                            getattr(self, "policy_setup_pending", {}).pop(key, None)
+                            if attempt and not any(
+                                value is attempt for value in self.policy_setup_pending.values()
+                            ):
+                                attempt.owner_finished()
                     except (OSError, ValueError, LookupError):
                         self.setup_pending.pop(key, None)
+                        getattr(self, "policy_setup_pending", {}).pop(key, None)
 
         def validate(record):
             with closing(connect(self.database)) as conn:
@@ -1465,7 +1678,12 @@ class OperationController:
                     report = record["report"]
                     execution, current = self.authority(HarnessController(conn), report.principal)
                     task_unit(
-                        self, HarnessController(conn), current, report.principal, report.request
+                        self,
+                        HarnessController(conn),
+                        current,
+                        report.principal,
+                        report.request,
+                        verify_outputs=False,
                     )
                 elif record["task"]:
                     actual = (
@@ -1474,7 +1692,11 @@ class OperationController:
                         else principal | self.claude_child(record["owner"]) | {"writable": True}
                     )
                     self.admitted(
-                        HarnessController(conn), actual, record["task"], record["revision"]
+                        HarnessController(conn),
+                        actual,
+                        record["task"],
+                        record["revision"],
+                        verify_outputs=False,
                     )
 
         self.processes.revalidate(validate)
@@ -1483,3 +1705,15 @@ class OperationController:
         self.processes.close()
         for channel in self.check_channels:
             channel.close()
+        queued = list(
+            {
+                id(value): value for value in getattr(self, "policy_setup_pending", {}).values()
+            }.values()
+        )
+        self.setup_pending.clear()
+        getattr(self, "policy_setup_pending", {}).clear()
+        for attempt in queued:
+            try:
+                attempt.owner_finished(outcome="cancelled")
+            except (OSError, ValueError, LookupError):
+                pass

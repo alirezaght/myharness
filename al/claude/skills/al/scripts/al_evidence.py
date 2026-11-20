@@ -513,7 +513,7 @@ def cmd_evidence_plan(a, sid):
         storage=al_evidence_storage.default_declaration()
     _require_scope(scope,sources,a.cwd or ".")
     spec = {"area": a.area, "kind": a.kind, "tier": a.tier, "argv": argv, "cwd": a.cwd or ".",
-            "scope": scope, "sources": sources, "env": env_names, "preflight": a.preflight or None,
+            "scope": scope, "sources": sources, "purpose": getattr(a, "purpose", None) or "verification", "env": env_names, "preflight": a.preflight or None,
             "needs": _split(a.needs)}
     if getattr(a, "non_hermetic", False):spec["hermetic"] = False
     if storage is not None:spec["storage"] = storage
@@ -624,7 +624,7 @@ def cmd_evidence_run(a, sid):
         env_names, assignments = env_options(a.env)
         argv = with_env(a.command_argv, assignments, getattr(a, "storage_file", None))
         spec = {"area": a.area, "kind": a.kind, "tier": a.tier or "focused", "argv": argv,
-                "cwd": a.cwd or ".", "scope": scope, "sources": sources, "env": env_names,
+                "cwd": a.cwd or ".", "scope": scope, "sources": sources, "purpose": getattr(a, "purpose", None) or "verification", "env": env_names,
                 "preflight": a.preflight or None, "needs": _split(a.needs)}
         if not getattr(a, "storage_file", None):
             import al_evidence_storage
@@ -675,7 +675,7 @@ def cmd_evidence_run(a, sid):
     entry = _create(sid, st.get("run_id"), area=spec["area"], kind=spec["kind"], tier=spec["tier"], argv=spec["argv"],
                     cwd=spec["cwd"], scope=spec["scope"], env_names=spec["env"],
                     preflight=spec.get("preflight"), needs=spec.get("needs") or (), sources=spec.get("sources", []),
-                    own_writer=getattr(a, "writer", None), storage=spec.get("storage"))
+                    purpose=spec.get("purpose", "verification"), own_writer=getattr(a, "writer", None), storage=spec.get("storage"))
     if hit:
         _replay(sid, entry, cache, hit)
         print(f"AL · evidence {entry['id']} · {entry['area']} · {entry['status']} · {L.counts_text(entry)} · "
@@ -797,6 +797,7 @@ def register(sub):
         p.add_argument("--recipe-descriptor-file")
         p.add_argument("--env", action="append", metavar="NAME[=VALUE]",
                        help="repeatable; NAME declares a fingerprinted dependency, NAME=VALUE sets a non-secret literal")
+        p.add_argument("--purpose", choices=("verification", "unit", "integration", "security", "ci", "staging", "build", "lint"))
         p.add_argument("--preflight")
         p.add_argument("--needs")
     ev = sub.add_parser("evidence").add_subparsers(dest="action", required=True)

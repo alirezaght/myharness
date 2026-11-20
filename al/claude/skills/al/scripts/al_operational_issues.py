@@ -17,11 +17,22 @@ def update(st, data):
     if data['paths']:
         from al_writers import canonical_paths
         canonical_paths(data['paths'])
+    from al_execution_tasks import authority, _overlap
+    for task_id in data['task_ids']:
+        authority(st, 'revalidate', task_id)
+    if not data['task_ids']:
+        authority(st, 'revalidate')
+    if data['task_ids'] and any(not any(_overlap(path, scope) for tid in data['task_ids']
+                   for scope in integration['tasks'][tid]['files']) for path in data['paths']):
+        refuse('operational issue paths exceed current task scope')
     ref = data['diagnostic_ref']
     if ref not in st.get('recorded_artifacts', []):
         refuse('issue diagnostic must be a retained run artifact')
     A.read(ref)
     old = st.setdefault('operational_issues', {}).get(data['id'])
+    if old:
+        from al_agent_exchange import consume_issue
+        consume_issue(st, data['id'], old)
     if old == data:
         return
     if data['revision'] != (old['revision'] + 1 if old else 1):
@@ -45,5 +56,10 @@ def update(st, data):
         from al_parallel import overlaps
         if data['paths'] and not overlaps(data['paths'], entry['scope']):
             refuse('repair evidence does not cover issue scope')
+    if old and st.get('agent_contracts', {}).get('failure-report:' + data['id']):
+        st.setdefault('agent_contract_history', []).append(copy.deepcopy(
+            st['agent_contracts']['failure-report:' + data['id']]))
+    from al_agent_exchange import produce
+    produce(st, 'failure-report', data['id'], data, status='resolved' if data['state'] == 'Resolved' else 'observed')
     st['operational_issues'][data['id']] = copy.deepcopy(data)
     E.queue(st, 'issue.updated', data)

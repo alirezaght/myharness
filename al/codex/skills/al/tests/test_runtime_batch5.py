@@ -142,19 +142,39 @@ def test_retry_requires_writer_reconciliation_and_new_lifetime(cli,repo,tmp_path
     invoke(cli,'writer','start','--id','second','--role','al-engineer','--files','svc/app.py')
 
 
-def test_retry_requires_crashed_check_reconciliation(cli, repo, tmp_path, state_file, run_state):
-    run_state("verified")
-    s=state(cli);entry=s['evidence']['entries'][-1]
-    runner=subprocess.Popen(['python3','-c','pass']);runner.wait()
-    entry.update(status='RUNNING',interrupted=True,owner_pid=runner.pid,pid=runner.pid)
-    state_file().write_text(json.dumps(s))
+def test_retry_requires_crashed_check_reconciliation(cli,cli_process,repo,tmp_path,state_file):
+    import copy
+    import signal
+    import sys
+    begin(cli,tmp_path,repo)
+    from evidence_helpers import wait_running
+    area='retry-reconciliation-observation'
+    invoke(cli,'evidence','plan','--area',area,'--kind','check','--scope','svc','--',
+           sys.executable,'-c','import time;time.sleep(60)')
+    proc=cli_process('evidence','run','--area',area)
+    try:
+        wait_running(state_file,area,process=proc)
+        proc.send_signal(signal.SIGINT)
+        proc.communicate(timeout=15)
+        assert proc.poll() is not None
+    finally:
+        if proc.poll() is None:
+            proc.kill();proc.communicate(timeout=5)
+    entry=copy.deepcopy(state(cli)['evidence']['entries'][-1])
+    assert entry['area']==area and entry['status']=='INFRA' and entry['interrupted'] and entry['ended_at']
+    companion=copy.deepcopy(state(cli)['agent_contracts']['verification-result:'+entry['id']])
     invoke(cli,'agent-failed','al-engineer','--reason','runner failed','--retry-safe','yes')
     before=state_file().read_bytes();invoke(cli,'retry','al-engineer','--reason','retry',ok=False)
     assert state_file().read_bytes()==before
-    proof=tmp_path/'proof.txt';proof.write_text('Crashed runner inspected.\n')
+    proof=tmp_path/'proof.json'
+    proof.write_text(json.dumps({'runner_returncode':proc.returncode,'cleanup':entry.get('cleanup'),
+                                 'observation_id':entry['id']}))
     invoke(cli,'check-reconcile','--id',entry['id'],'--reason','dead runner','--artifact',str(proof))
     invoke(cli,'retry','al-engineer','--reason','retry')
-    assert state(cli)['evidence']['entries'][-1]['reconciliation']
+    reconciled=state(cli)['evidence']['entries'][-1]
+    retained=A.read_json(reconciled['reconciliation']['observation'])
+    assert retained=={'schema_version':1,'entry':entry,'contract':companion}
+    assert reconciled['status']=='INFRA' and reconciled['reconciliation']['schema_version']==1
 
 
 @pytest.mark.parametrize('label',['unknown','running','completed'])

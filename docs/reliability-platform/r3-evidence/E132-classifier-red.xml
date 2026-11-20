@@ -1,0 +1,768 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="16" skipped="0" tests="83" time="21.926" timestamp="2026-11-20T05:41:44.616349+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_policy_composition" name="test_explicit_deny_in_global_scope_wins_execution_allow" time="0.311" /><testcase classname="tests.test_policy_composition" name="test_limit_replacement_keeps_consumption_and_old_reservation_cannot_start" time="0.324" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change0]" time="0.201" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change1]" time="0.197" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change2]" time="0.203" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change3]" time="0.204" /><testcase classname="tests.test_policy_composition" name="test_workflow_membership_is_approved_immutable_and_uses_same_pool" time="0.289" /><testcase classname="tests.test_policy_composition" name="test_parent_role_restrictions_are_inherited_by_child_writer" time="0.248" /><testcase classname="tests.test_policy_composition" name="test_historical_parent_bound_is_not_widened_by_shared_pool_replacement" time="0.343" /><testcase classname="tests.test_policy_composition" name="test_v2_only_consumer_can_use_increased_pool_without_reset" time="0.321" /><testcase classname="tests.test_policy_deadlines" name="test_required_unqualified_usage_refuses_before_patch[generation_tokens]" time="0.211" /><testcase classname="tests.test_policy_deadlines" name="test_required_unqualified_usage_refuses_before_patch[monetary_cost]" time="0.207" /><testcase classname="tests.test_policy_deadlines" name="test_subsecond_remaining_is_not_rounded_or_restarted" time="0.381" /><testcase classname="tests.test_policy_deadlines" name="test_clock_rollback_refuses_new_work" time="0.264" /><testcase classname="tests.test_policy_deadlines" name="test_boot_change_refuses_time_budget_instead_of_resetting_interval" time="0.243" /><testcase classname="tests.test_policy_deadlines" name="test_elapsed_remainder_uses_original_root_interval_without_rounding" time="0.257" /><testcase classname="tests.test_policy_deadlines" name="test_historical_missing_origin_is_not_backfilled_or_reconstructed" time="0.242" /><testcase classname="tests.test_policy_deadlines" name="test_new_execution_origin_is_one_trusted_atomic_receipt_and_never_resets" time="0.256" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[before-operation_deadline_ms]" time="0.282" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[before-execution_elapsed_ms]" time="0.267" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[hash-operation_deadline_ms]" time="0.250" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[hash-execution_elapsed_ms]" time="0.251" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[pread-operation_deadline_ms]" time="0.248" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[pread-execution_elapsed_ms]" time="0.251" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[metadata-operation_deadline_ms]" time="0.257" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[metadata-execution_elapsed_ms]" time="0.266" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[decode-operation_deadline_ms]" time="0.251" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[decode-execution_elapsed_ms]" time="0.252" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-delete-operation_deadline_ms]" time="0.271" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-delete-execution_elapsed_ms]" time="0.275" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-update-operation_deadline_ms]" time="0.274" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-update-execution_elapsed_ms]" time="0.292" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[write-operation_deadline_ms]" time="0.275" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[write-execution_elapsed_ms]" time="0.279" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[fsync-operation_deadline_ms]" time="0.311" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[fsync-execution_elapsed_ms]" time="0.283" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_retains_historical_parent_time_ceiling[operation_deadline_ms]" time="0.330" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_retains_historical_parent_time_ceiling[execution_elapsed_ms]" time="0.343" /><testcase classname="tests.test_policy_deadlines" name="test_patch_post_commit_expiry_reports_failure_without_rollback_or_refund" time="0.270" /><testcase classname="tests.test_policy_deadlines" name="test_patch_expired_traversal_does_not_create_later_directory" time="0.276" /><testcase classname="tests.test_policy_resources" name="test_command_effects_cannot_bypass_actual_write_scope" time="0.248" /><testcase classname="tests.test_policy_resources" name="test_unqualified_resource_enforcement_denies_before_subprocess[network]" time="0.211" /><testcase classname="tests.test_policy_resources" name="test_unqualified_resource_enforcement_denies_before_subprocess[database]" time="0.209" /><testcase classname="tests.test_policy_resources" name="test_unqualified_resource_enforcement_denies_before_subprocess[production]" time="0.211" /><testcase classname="tests.test_policy_resources" name="test_supplied_role_does_not_erase_role_policy" time="0.262" /><testcase classname="tests.test_policy_resources" name="test_narrow_file_policy_does_not_silently_allow_unresolved_alternative_reads[knowledge_query-arguments0]" time="0.250" /><testcase classname="tests.test_policy_resources" name="test_narrow_file_policy_does_not_silently_allow_unresolved_alternative_reads[read_file-arguments1]" time="0.244" /><testcase classname="tests.test_policy_resources" name="test_unknown_dispatch_preserves_fixed_closed_error" time="0.241" /><testcase classname="tests.test_policy_resources" name="test_repository_audit_refuses_unresolved_source_before_traversal[overlap]" time="0.293" /><testcase classname="tests.test_policy_resources" name="test_repository_audit_refuses_unresolved_source_before_traversal[unknown]" time="0.283" /><testcase classname="tests.test_policy_resources" name="test_repository_audit_holds_source_claim_against_racing_governed_writer" time="0.260" /><testcase classname="tests.test_policy_resources" name="test_live_audit_has_no_unmatched_or_removed_policy_fallback[unmatched-role]" time="0.294" /><testcase classname="tests.test_policy_resources" name="test_live_audit_has_no_unmatched_or_removed_policy_fallback[removed-binding]" time="0.277" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[selected-fallback]" time="0.291"><failure message="AssertionError: F003 route=fallback selection=selected returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109465040&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1094c2fc0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1094c2f20&gt;)
+route = 'fallback', selection = 'selected'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=fallback selection=selected returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[selected-source]" time="0.284"><failure message="AssertionError: F003 route=source selection=selected returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1094649e0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1094c3b00&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10954a160&gt;)
+route = 'source', selection = 'selected'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=source selection=selected returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[selected-log]" time="0.299"><failure message="AssertionError: F003 route=log selection=selected returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109465590&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1095498a0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10954bc40&gt;)
+route = 'log', selection = 'selected'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=log selection=selected returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[selected-config]" time="0.288"><failure message="AssertionError: F003 route=config selection=selected returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1092fb9b0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1094c0c20&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1094c2ac0&gt;)
+route = 'config', selection = 'selected'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=config selection=selected returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[unmatched-role-fallback]" time="0.266"><failure message="AssertionError: F003 route=fallback selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1092faad0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1094c0220&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10954a660&gt;)
+route = 'fallback', selection = 'unmatched-role'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=fallback selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[unmatched-role-source]" time="0.264"><failure message="AssertionError: F003 route=source selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1094657b0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10954b060&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10954a0c0&gt;)
+route = 'source', selection = 'unmatched-role'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=source selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[unmatched-role-log]" time="0.264"><failure message="AssertionError: F003 route=log selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1094649e0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10954b9c0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x109549da0&gt;)
+route = 'log', selection = 'unmatched-role'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=log selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[unmatched-role-config]" time="0.278"><failure message="AssertionError: F003 route=config selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109465480&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10954b740&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10954afc0&gt;)
+route = 'config', selection = 'unmatched-role'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=config selection=unmatched-role returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[removed-binding-fallback]" time="0.267"><failure message="AssertionError: F003 route=fallback selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1094656a0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10954be20&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10954a5c0&gt;)
+route = 'fallback', selection = 'removed-binding'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=fallback selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[removed-binding-source]" time="0.263"><failure message="AssertionError: F003 route=source selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109465e10&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x109549f80&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x109578220&gt;)
+route = 'source', selection = 'removed-binding'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=source selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[removed-binding-log]" time="0.264"><failure message="AssertionError: F003 route=log selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109466470&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x109578720&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10957a5c0&gt;)
+route = 'log', selection = 'removed-binding'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=log selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_do_not_skip_known_liability[removed-binding-config]" time="0.266"><failure message="AssertionError: F003 route=config selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27&#10;assert None == 'ATTEMPT_NOT_EXECUTABLE'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109466690&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x109578a40&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10957ad40&gt;)
+route = 'config', selection = 'removed-binding'
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
+    def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        _audit_fixture(r, role_only=selection == "unmatched-role")
+        _unresolved_public_producer(r, "unknown")
+        if selection == "removed-binding":
+            r.controller.conn.execute("DELETE FROM policy_bindings")
+        # This genuinely metadata-only diagnostic still has no repository byte dependency.
+        assert r.operation.dispatch(
+            r.root, "diagnostic", {"request": {"kind": "attribution-compatibility"}}
+        )["status"] in {"unsupported", "unverified"}
+        rejected = None
+        page = None
+        try:
+            page = r.operation.dispatch(r.root, name, request)
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert rejected == "ATTEMPT_NOT_EXECUTABLE", (
+            f"F003 route={route} selection={selection} returned source despite unknown liability; "
+            f"error={rejected}, page_bytes={page.get('page_bytes') if page else None}"
+        )
+E       AssertionError: F003 route=config selection=removed-binding returned source despite unknown liability; error=None, page_bytes=27
+E       assert None == 'ATTEMPT_NOT_EXECUTABLE'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:297: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_respect_configured_read_scope[fallback]" time="0.252" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_respect_configured_read_scope[source]" time="0.264" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_respect_configured_read_scope[log]" time="0.249" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_respect_configured_read_scope[config]" time="0.247" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[False-fallback]" time="0.210" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[False-source]" time="0.217" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[False-log]" time="0.212" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[False-config]" time="0.215" /><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[True-fallback]" time="0.253"><failure message="ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x109466e00&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x109579e40&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10957bce0&gt;)
+route = 'fallback', configured = True
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("configured", [False, True])
+    def test_descriptor_backed_routes_preserve_legacy_and_matching_scope(
+        policy_runtime, route, configured
+    ):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        if configured:
+            configure(
+                r,
+                document(
+                    r,
+                    maximum=20,
+                    rules={
+                        "read_paths": [
+                            target.relative_to(r.operation.envelope["repository"]).as_posix()
+                        ]
+                    },
+                ),
+            )
+&gt;       page = r.operation.dispatch(r.root, name, request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;harness.execution_operations.OperationController object at 0x109466e00&gt;
+principal = {'thread_id': 'cc33f64f-45e5-435e-9017-60fc1f96b18e', 'session_id': 'cc33f64f-45e5-435e-9017-60fc1f96b18e', 'parent_thread_id': None, 'role': 'orchestrator', ...}
+name = 'read_file', arguments = {'path': 'harness:unrecognized.py'}
+
+    def dispatch(self, principal, name, arguments):
+        from harness.execution_epochs import require_active_epoch
+    
+        with closing(connect(self.database)) as epoch_conn:
+            require_active_epoch(
+                epoch_conn,
+                self.execution_id,
+                expected_epoch_id=self.epoch_id,
+                expected_authority_generation=self.authority_generation,
+                mutation=True,
+            )
+        if name == "await_assignment":
+            return self.await_assignment(principal, arguments.get("timeout", 1))
+        with self.lock, closing(connect(self.database)) as conn:
+            controller = HarnessController(conn)
+            from harness.reliability import store as observations
+    
+            observation = observations.begin(self, principal, name)
+            stage = "authority"
+            try:
+                mode = "delivery" if name == "delivery_operation" else "admit"
+                args = arguments.get("arguments") or [None]
+                if name == "al_command" and args[0] == "publication":
+                    mode = "delivery"
+                if name in {
+                    "read_file",
+                    "knowledge_query",
+                    "knowledge_explain",
+                    "poll_process",
+                    "cancel_process",
+                    "diagnostic",
+                    "submit_output",
+                } or (name == "al_command" and args[0] in READ_COMMANDS):
+                    mode = "read"
+                _, state = self.authority(controller, principal, operation=mode)
+                stage = "dispatch"
+                from harness.reliability.process_context import dispatch_scope
+    
+                with dispatch_scope(self, observation, principal["thread_id"]):
+                    from harness.policy.context import scope, start_effect
+                    from harness.policy.resources import prepare
+    
+                    attempt = prepare(self, controller, principal, name, arguments, state)
+                    with scope(attempt):
+                        try:
+                            if name not in {"apply_patch", "run_command", "al_command"}:
+                                start_effect()
+                            result = self._dispatch(controller, principal, name, arguments, state)
+                        except BaseException:
+                            if attempt:
+                                attempt.owner_finished(outcome="failed")
+                            raise
+                        else:
+                            if attempt:
+                                queued = getattr(self, "policy_setup_pending", {})
+                                if not any(value is attempt for value in queued.values()):
+                                    attempt.owner_finished()
+            except (ValueError, OSError, LookupError, subprocess.SubprocessError) as error:
+                code = (
+                    "AUTHORITY_REJECTED"
+                    if stage == "authority"
+                    else "DISPATCH_OS_ERROR"
+                    if isinstance(error, OSError)
+                    else "DISPATCH_PROCESS_ERROR"
+                    if isinstance(error, subprocess.SubprocessError)
+                    else "DISPATCH_REJECTED"
+                )
+                observations.finish(self, observation, code)
+&gt;               raise ValueError(str(error)) from None
+E               ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_operations.py:472: ValueError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[True-source]" time="0.270"><failure message="ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1092fb9b0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x109578400&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10957b560&gt;)
+route = 'source', configured = True
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("configured", [False, True])
+    def test_descriptor_backed_routes_preserve_legacy_and_matching_scope(
+        policy_runtime, route, configured
+    ):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        if configured:
+            configure(
+                r,
+                document(
+                    r,
+                    maximum=20,
+                    rules={
+                        "read_paths": [
+                            target.relative_to(r.operation.envelope["repository"]).as_posix()
+                        ]
+                    },
+                ),
+            )
+&gt;       page = r.operation.dispatch(r.root, name, request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;harness.execution_operations.OperationController object at 0x1092fb9b0&gt;
+principal = {'thread_id': '502e5e27-0fa5-405b-ac11-c251ad6b18ef', 'session_id': '502e5e27-0fa5-405b-ac11-c251ad6b18ef', 'parent_thread_id': None, 'role': 'orchestrator', ...}
+name = 'diagnostic'
+arguments = {'request': {'kind': 'source', 'path': 'svc/diagnostic.py'}}
+
+    def dispatch(self, principal, name, arguments):
+        from harness.execution_epochs import require_active_epoch
+    
+        with closing(connect(self.database)) as epoch_conn:
+            require_active_epoch(
+                epoch_conn,
+                self.execution_id,
+                expected_epoch_id=self.epoch_id,
+                expected_authority_generation=self.authority_generation,
+                mutation=True,
+            )
+        if name == "await_assignment":
+            return self.await_assignment(principal, arguments.get("timeout", 1))
+        with self.lock, closing(connect(self.database)) as conn:
+            controller = HarnessController(conn)
+            from harness.reliability import store as observations
+    
+            observation = observations.begin(self, principal, name)
+            stage = "authority"
+            try:
+                mode = "delivery" if name == "delivery_operation" else "admit"
+                args = arguments.get("arguments") or [None]
+                if name == "al_command" and args[0] == "publication":
+                    mode = "delivery"
+                if name in {
+                    "read_file",
+                    "knowledge_query",
+                    "knowledge_explain",
+                    "poll_process",
+                    "cancel_process",
+                    "diagnostic",
+                    "submit_output",
+                } or (name == "al_command" and args[0] in READ_COMMANDS):
+                    mode = "read"
+                _, state = self.authority(controller, principal, operation=mode)
+                stage = "dispatch"
+                from harness.reliability.process_context import dispatch_scope
+    
+                with dispatch_scope(self, observation, principal["thread_id"]):
+                    from harness.policy.context import scope, start_effect
+                    from harness.policy.resources import prepare
+    
+                    attempt = prepare(self, controller, principal, name, arguments, state)
+                    with scope(attempt):
+                        try:
+                            if name not in {"apply_patch", "run_command", "al_command"}:
+                                start_effect()
+                            result = self._dispatch(controller, principal, name, arguments, state)
+                        except BaseException:
+                            if attempt:
+                                attempt.owner_finished(outcome="failed")
+                            raise
+                        else:
+                            if attempt:
+                                queued = getattr(self, "policy_setup_pending", {})
+                                if not any(value is attempt for value in queued.values()):
+                                    attempt.owner_finished()
+            except (ValueError, OSError, LookupError, subprocess.SubprocessError) as error:
+                code = (
+                    "AUTHORITY_REJECTED"
+                    if stage == "authority"
+                    else "DISPATCH_OS_ERROR"
+                    if isinstance(error, OSError)
+                    else "DISPATCH_PROCESS_ERROR"
+                    if isinstance(error, subprocess.SubprocessError)
+                    else "DISPATCH_REJECTED"
+                )
+                observations.finish(self, observation, code)
+&gt;               raise ValueError(str(error)) from None
+E               ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_operations.py:472: ValueError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[True-log]" time="0.255"><failure message="ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1092faad0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10957a980&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x109579f80&gt;)
+route = 'log', configured = True
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("configured", [False, True])
+    def test_descriptor_backed_routes_preserve_legacy_and_matching_scope(
+        policy_runtime, route, configured
+    ):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        if configured:
+            configure(
+                r,
+                document(
+                    r,
+                    maximum=20,
+                    rules={
+                        "read_paths": [
+                            target.relative_to(r.operation.envelope["repository"]).as_posix()
+                        ]
+                    },
+                ),
+            )
+&gt;       page = r.operation.dispatch(r.root, name, request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;harness.execution_operations.OperationController object at 0x1092faad0&gt;
+principal = {'thread_id': 'c3bd8626-6d3e-4601-a1f9-e29aee4ab12c', 'session_id': 'c3bd8626-6d3e-4601-a1f9-e29aee4ab12c', 'parent_thread_id': None, 'role': 'orchestrator', ...}
+name = 'diagnostic'
+arguments = {'request': {'kind': 'log', 'path': 'svc/diagnostic.py'}}
+
+    def dispatch(self, principal, name, arguments):
+        from harness.execution_epochs import require_active_epoch
+    
+        with closing(connect(self.database)) as epoch_conn:
+            require_active_epoch(
+                epoch_conn,
+                self.execution_id,
+                expected_epoch_id=self.epoch_id,
+                expected_authority_generation=self.authority_generation,
+                mutation=True,
+            )
+        if name == "await_assignment":
+            return self.await_assignment(principal, arguments.get("timeout", 1))
+        with self.lock, closing(connect(self.database)) as conn:
+            controller = HarnessController(conn)
+            from harness.reliability import store as observations
+    
+            observation = observations.begin(self, principal, name)
+            stage = "authority"
+            try:
+                mode = "delivery" if name == "delivery_operation" else "admit"
+                args = arguments.get("arguments") or [None]
+                if name == "al_command" and args[0] == "publication":
+                    mode = "delivery"
+                if name in {
+                    "read_file",
+                    "knowledge_query",
+                    "knowledge_explain",
+                    "poll_process",
+                    "cancel_process",
+                    "diagnostic",
+                    "submit_output",
+                } or (name == "al_command" and args[0] in READ_COMMANDS):
+                    mode = "read"
+                _, state = self.authority(controller, principal, operation=mode)
+                stage = "dispatch"
+                from harness.reliability.process_context import dispatch_scope
+    
+                with dispatch_scope(self, observation, principal["thread_id"]):
+                    from harness.policy.context import scope, start_effect
+                    from harness.policy.resources import prepare
+    
+                    attempt = prepare(self, controller, principal, name, arguments, state)
+                    with scope(attempt):
+                        try:
+                            if name not in {"apply_patch", "run_command", "al_command"}:
+                                start_effect()
+                            result = self._dispatch(controller, principal, name, arguments, state)
+                        except BaseException:
+                            if attempt:
+                                attempt.owner_finished(outcome="failed")
+                            raise
+                        else:
+                            if attempt:
+                                queued = getattr(self, "policy_setup_pending", {})
+                                if not any(value is attempt for value in queued.values()):
+                                    attempt.owner_finished()
+            except (ValueError, OSError, LookupError, subprocess.SubprocessError) as error:
+                code = (
+                    "AUTHORITY_REJECTED"
+                    if stage == "authority"
+                    else "DISPATCH_OS_ERROR"
+                    if isinstance(error, OSError)
+                    else "DISPATCH_PROCESS_ERROR"
+                    if isinstance(error, subprocess.SubprocessError)
+                    else "DISPATCH_REJECTED"
+                )
+                observations.finish(self, observation, code)
+&gt;               raise ValueError(str(error)) from None
+E               ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_operations.py:472: ValueError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_backed_routes_preserve_legacy_and_matching_scope[True-config]" time="0.259"><failure message="ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1094668b0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10957b880&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10957a5c0&gt;)
+route = 'config', configured = True
+
+    @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
+    @pytest.mark.parametrize("configured", [False, True])
+    def test_descriptor_backed_routes_preserve_legacy_and_matching_scope(
+        policy_runtime, route, configured
+    ):
+        r = policy_runtime
+        target, name, request = _descriptor_route(r, route)
+        if configured:
+            configure(
+                r,
+                document(
+                    r,
+                    maximum=20,
+                    rules={
+                        "read_paths": [
+                            target.relative_to(r.operation.envelope["repository"]).as_posix()
+                        ]
+                    },
+                ),
+            )
+&gt;       page = r.operation.dispatch(r.root, name, request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;harness.execution_operations.OperationController object at 0x1094668b0&gt;
+principal = {'thread_id': '515912f7-855c-46a5-95c3-61dbd0e5b8fa', 'session_id': '515912f7-855c-46a5-95c3-61dbd0e5b8fa', 'parent_thread_id': None, 'role': 'orchestrator', ...}
+name = 'diagnostic'
+arguments = {'request': {'kind': 'config', 'path': 'svc/diagnostic.py'}}
+
+    def dispatch(self, principal, name, arguments):
+        from harness.execution_epochs import require_active_epoch
+    
+        with closing(connect(self.database)) as epoch_conn:
+            require_active_epoch(
+                epoch_conn,
+                self.execution_id,
+                expected_epoch_id=self.epoch_id,
+                expected_authority_generation=self.authority_generation,
+                mutation=True,
+            )
+        if name == "await_assignment":
+            return self.await_assignment(principal, arguments.get("timeout", 1))
+        with self.lock, closing(connect(self.database)) as conn:
+            controller = HarnessController(conn)
+            from harness.reliability import store as observations
+    
+            observation = observations.begin(self, principal, name)
+            stage = "authority"
+            try:
+                mode = "delivery" if name == "delivery_operation" else "admit"
+                args = arguments.get("arguments") or [None]
+                if name == "al_command" and args[0] == "publication":
+                    mode = "delivery"
+                if name in {
+                    "read_file",
+                    "knowledge_query",
+                    "knowledge_explain",
+                    "poll_process",
+                    "cancel_process",
+                    "diagnostic",
+                    "submit_output",
+                } or (name == "al_command" and args[0] in READ_COMMANDS):
+                    mode = "read"
+                _, state = self.authority(controller, principal, operation=mode)
+                stage = "dispatch"
+                from harness.reliability.process_context import dispatch_scope
+    
+                with dispatch_scope(self, observation, principal["thread_id"]):
+                    from harness.policy.context import scope, start_effect
+                    from harness.policy.resources import prepare
+    
+                    attempt = prepare(self, controller, principal, name, arguments, state)
+                    with scope(attempt):
+                        try:
+                            if name not in {"apply_patch", "run_command", "al_command"}:
+                                start_effect()
+                            result = self._dispatch(controller, principal, name, arguments, state)
+                        except BaseException:
+                            if attempt:
+                                attempt.owner_finished(outcome="failed")
+                            raise
+                        else:
+                            if attempt:
+                                queued = getattr(self, "policy_setup_pending", {})
+                                if not any(value is attempt for value in queued.values()):
+                                    attempt.owner_finished()
+            except (ValueError, OSError, LookupError, subprocess.SubprocessError) as error:
+                code = (
+                    "AUTHORITY_REJECTED"
+                    if stage == "authority"
+                    else "DISPATCH_OS_ERROR"
+                    if isinstance(error, OSError)
+                    else "DISPATCH_PROCESS_ERROR"
+                    if isinstance(error, subprocess.SubprocessError)
+                    else "DISPATCH_REJECTED"
+                )
+                observations.finish(self, observation, code)
+&gt;               raise ValueError(str(error)) from None
+E               ValueError: UNSUPPORTED_ENFORCEMENT_CAPABILITY
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_operations.py:472: ValueError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_descriptor_diagnostic_name_does_not_exempt_or_qualify_time[operation_deadline_ms-source]" time="0.253" /><testcase classname="tests.test_policy_resources" name="test_descriptor_diagnostic_name_does_not_exempt_or_qualify_time[operation_deadline_ms-log]" time="0.252" /><testcase classname="tests.test_policy_resources" name="test_descriptor_diagnostic_name_does_not_exempt_or_qualify_time[operation_deadline_ms-config]" time="0.263" /><testcase classname="tests.test_policy_resources" name="test_descriptor_diagnostic_name_does_not_exempt_or_qualify_time[execution_elapsed_ms-source]" time="0.246" /><testcase classname="tests.test_policy_resources" name="test_descriptor_diagnostic_name_does_not_exempt_or_qualify_time[execution_elapsed_ms-log]" time="0.249" /><testcase classname="tests.test_policy_resources" name="test_descriptor_diagnostic_name_does_not_exempt_or_qualify_time[execution_elapsed_ms-config]" time="0.243" /></testsuite></testsuites>

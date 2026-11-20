@@ -297,6 +297,11 @@ def _cmd_writer(a,sid):
         if not w: refuse('unknown writer')
         if a.action=='finish':
             if w['state']!='ACTIVE': refuse('writer is not active')
+            import al_retry_control
+            control=al_retry_control.current()
+            if control:
+                fields=('id','agent','task','role','state','files','contribution_before')
+                control.request('writer-binding',{key:w.get(key) for key in fields})
             w.update(state='FINISHED' if a.outcome=='success' else 'UNRESOLVED',outcome=a.outcome,ended_at=time.time())
             from al_task_attribution import finish_contribution
             finish_contribution(st,w,w.get('contribution_before'))

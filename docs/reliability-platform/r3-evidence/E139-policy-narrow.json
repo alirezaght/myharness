@@ -1,0 +1,17 @@
+{
+  "independent": true,
+  "distinctLabels": true,
+  "capIndependent": true,
+  "capHistory": true,
+  "capEndFocus": true,
+  "capSeen": 105,
+  "liveCompletion": true,
+  "drafts": true,
+  "focus": true,
+  "collapsed": true,
+  "history": true,
+  "seen": 106,
+  "controls": true,
+  "overflow": false,
+  "safe": true
+}

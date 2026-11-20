@@ -1,0 +1,10 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_agent_contracts.py tests/test_writer_handoff.py tests/test_artifact_consumers.py tests/test_output_contracts.py tests/test_implementation_continuity.py tests/test_evidence_integrity.py tests/test_evidence_cancellation.py tests/test_execution_events.py tests/test_execution_receipts.py tests/test_runtime_batch5.py::test_retry_requires_crashed_check_reconciliation --basetemp=/private/tmp/al-r4-review-al-codex-broad-002 --junitxml=/private/tmp/al-r4-review-al-codex-broad-002.xml
+# cwd: al/codex/skills/al
+# started: Fri Nov 20 12:10:14 2026
+
+........................................................................ [ 48%]
+........................................................................ [ 97%]
+....                                                                     [100%]
+148 passed in 507.60s (0:08:27)
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 11744, "pid": 11744, "sid": 11744, "start": [1795173014, 411500], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

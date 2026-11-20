@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="22" time="21.719" timestamp="2026-11-19T17:24:29.155677+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_operation_isolation" name="test_actual_operation_boundary" time="0.011"><failure message="AssertionError: (b'', b&quot;sandbox-exec: execvp() of '/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.venv/bin/python' failed: Operation not permitted&#10;  &quot;)&#10;assert 71 == 0&#10; +  where 71 = &lt;Popen: returncode: 71 args: ['/usr/bin/sandbox-exec', '-f', '/private/var/f...&gt;.returncode">tmp_path = PosixPath('/private/var/folders/9q/tzh5j4z91x96rt0l69gsfq240000gn/T/pytest-of-alirezaghiastabari/pytest-103/test_actual_operation_boundary0')
+
+    def test_actual_operation_boundary(tmp_path):
+        repository = tmp_path / "repo"
+        repository.mkdir()
+        source = repository / "source"
+        source.mkdir()
+        metadata = tmp_path / "native-metadata"
+        metadata.write_text("protected-native-identity")
+        profile = prepare_operation_isolation(
+            repository,
+            writable=["source"],
+            protected=[metadata],
+            hidden=[metadata],
+            directory=tmp_path / "operation",
+        )
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        socket_root = tempfile.TemporaryDirectory(dir="/tmp", prefix="hipc-")
+        endpoint = Path(socket_root.name) / "s"
+        listener.bind(str(endpoint))
+        listener.listen()
+        listener.settimeout(0.1)
+        code = """import os,socket,sys,asyncio,ctypes,struct
+    from pathlib import Path
+    repo,metadata,endpoint=sys.argv[1:]
+    assert Path.cwd() == Path(repo) / 'source', 'operation cwd did not reach admitted unit'
+    Path('cwd-relative').write_text('correct unit')
+    asyncio.run(asyncio.sleep(0))
+    if sys.platform.startswith('linux'):
+        try:socket.socketpair(socket.AF_UNIX,socket.SOCK_DGRAM)
+        except PermissionError:pass
+        else:raise SystemExit('reconnectable Unix datagram socketpair allowed')
+        a,b=socket.socketpair(socket.AF_UNIX,socket.SOCK_STREAM)
+        for change in [lambda:None, lambda:a.shutdown(socket.SHUT_RDWR),
+                       lambda:ctypes.CDLL(None).connect(a.fileno(),struct.pack('H',0),2)]:
+            try:change()
+            except OSError:pass
+            try:a.connect(endpoint)
+            except OSError:pass
+            else:raise SystemExit('anonymous IPC socket reached host Unix endpoint')
+        a.close();b.close()
+    Path(repo+'/source/allowed').write_text('approved')
+    try:
+        if Path(metadata).read_text()=='protected-native-identity':
+            raise SystemExit('protected read escaped')
+    except PermissionError:pass
+    for action in [lambda:Path(metadata).write_text('escape'),
+                   lambda:os.link(metadata,repo+'/source/alias'),
+                   lambda:Path(repo+'/outside').write_text('escape')]:
+        try:action()
+        except (PermissionError,OSError):pass
+        else:raise SystemExit('operation escaped boundary')
+    for family,address in [(socket.AF_INET,('127.0.0.1',9)),(socket.AF_UNIX,'/var/run/docker.sock')]:
+        try:
+            s=socket.socket(family,socket.SOCK_STREAM);s.settimeout(.1);s.connect(address)
+        except OSError:pass
+        else:raise SystemExit('operation reached host service')
+    """
+        env = safe_environment() | {"TMPDIR": profile.temporary}
+        process = operation_popen(
+            profile,
+            [sys.executable, "-I", "-c", code, str(repository), str(metadata), str(endpoint)],
+            cwd=source,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        stdout, stderr = process.communicate(timeout=15)
+&gt;       assert process.returncode == 0, (stdout, stderr)
+E       AssertionError: (b'', b"sandbox-exec: execvp() of '/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.venv/bin/python' failed: Operation not permitted
+E         ")
+E       assert 71 == 0
+E        +  where 71 = &lt;Popen: returncode: 71 args: ['/usr/bin/sandbox-exec', '-f', '/private/var/f...&gt;.returncode
+
+tests/test_operation_isolation.py:89: AssertionError</failure></testcase><testcase classname="tests.test_operation_isolation" name="test_parent_arguments_and_environment_are_not_a_read_capability" time="0.072" /><testcase classname="tests.test_operation_isolation" name="test_operation_cwd_refuses_before_spawn[outside]" time="0.002" /><testcase classname="tests.test_operation_isolation" name="test_operation_cwd_refuses_before_spawn[alias]" time="0.002" /><testcase classname="tests.test_operation_isolation" name="test_operation_cwd_refuses_before_spawn[ancestor]" time="0.002" /><testcase classname="tests.test_operation_isolation" name="test_operation_cwd_refuses_before_spawn[missing]" time="0.002" /><testcase classname="tests.test_operation_isolation" name="test_operation_cwd_refuses_before_spawn[file]" time="0.002" /><testcase classname="tests.test_operation_isolation" name="test_operation_cwd_refuses_before_spawn[traversal]" time="0.002" /><testcase classname="tests.test_operation_isolation" name="test_linux_operation_cwd_preserves_grants_and_exec" time="0.002" /><testcase classname="tests.test_execution_files" name="test_source_proof_is_for_full_bytes_on_every_page" time="0.004" /><testcase classname="tests.test_execution_files" name="test_source_proof_refuses_movement_during_hash[write]" time="0.001" /><testcase classname="tests.test_execution_files" name="test_source_proof_refuses_movement_during_hash[replace]" time="0.001" /><testcase classname="tests.test_execution_files" name="test_source_proof_refuses_movement_during_hash[replace-parent]" time="0.001" /><testcase classname="tests.test_execution_files" name="test_ordinary_proofs_preserve_secret_alias_and_special_file_refusals" time="0.001" /><testcase classname="tests.test_execution_files" name="test_large_source_keeps_pages_without_claiming_a_full_hash" time="0.001" /><testcase classname="tests.test_epoch_principals" name="test_successor_root_resume_and_fresh_child_metadata_boundary[0.164.0]" time="0.004" /><testcase classname="tests.test_epoch_principals" name="test_successor_root_resume_and_fresh_child_metadata_boundary[0.165.0]" time="0.003" /><testcase classname="tests.test_epoch_principals" name="test_native_metadata_unknown_version_remains_refused[0.166.0]" time="0.001" /><testcase classname="tests.test_epoch_principals" name="test_native_metadata_unknown_version_remains_refused[version1]" time="0.001" /><testcase classname="tests.test_epoch_principals" name="test_native_metadata_unknown_version_remains_refused[None]" time="0.001" /><testcase classname="tests.test_epoch_principals" name="test_explicit_settled_capability_replacement_revokes_old_cached_principal" time="21.502" /><testcase classname="tests.test_epoch_principals" name="test_native_epoch_membership_is_immutable_and_does_not_read_transcripts" time="0.003" /></testsuite></testsuites>

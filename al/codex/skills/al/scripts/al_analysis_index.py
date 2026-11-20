@@ -40,6 +40,9 @@ _DIGESTS = {}
 
 
 def enabled():
+    import al_retry_control
+    if al_retry_control.current() is not None:
+        return False
     return os.environ.get('AL_ANALYSIS_CACHE', '1') != '0'
 
 

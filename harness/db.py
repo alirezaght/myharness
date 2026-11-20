@@ -88,10 +88,14 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 
         guard_legacy_transaction(conn)
         yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
+        conn.execute("COMMIT")
+    except BaseException as error:
+        if conn.in_transaction:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                error.add_note("SQLite transaction rollback could not be completed")
         raise
-    conn.execute("COMMIT")
 
 
 def _migrations() -> list[tuple[int, str, str]]:
@@ -108,35 +112,58 @@ def _migrations() -> list[tuple[int, str, str]]:
 
 
 def apply_migrations(conn: sqlite3.Connection) -> list[str]:
-    """Apply pending migrations, each atomically with its schema_migrations row."""
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS schema_migrations "
-        "(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+    """Recognized histories only; canonical current databases require no write lock."""
+    from harness.migration_compatibility import (
+        execute_migration, reconcile_checkpoint_history, validate_history,
     )
-    applied = []
-    # Only a pending migration takes the write lock: opening an up-to-date DB must keep
-    # working while another harness command holds a long write transaction.
-    done_versions = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
-    for version, name, sql in _migrations():
-        if version in done_versions:
-            continue
-        conn.execute("BEGIN IMMEDIATE")
+
+    migrations = _migrations()
+    target = {version: name for version, name, _ in migrations}
+
+    def ledger():
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_schema WHERE name='schema_migrations'"
+        ).fetchone()
+        return dict(conn.execute("SELECT version,name FROM schema_migrations")) if exists else {}
+
+    @contextmanager
+    def internal_transaction(mode):
+        conn.execute(mode)
         try:
-            done = conn.execute(
-                "SELECT 1 FROM schema_migrations WHERE version = ?", (version,)
-            ).fetchone()
-            if not done:
-                conn.executescript(sql)
-                conn.execute(
-                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                    (version, name, utcnow()),
-                )
-                applied.append(name)
+            yield
+            conn.execute("COMMIT")
         except BaseException:
             if conn.in_transaction:
                 conn.execute("ROLLBACK")
             raise
-        conn.execute("COMMIT")
+
+    with internal_transaction("BEGIN"):
+        history = validate_history(conn, migrations)
+        if not history.checkpoint and ledger() == target:
+            return []
+    with internal_transaction("BEGIN IMMEDIATE"):
+        reconcile_checkpoint_history(conn, migrations)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations "
+            "(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+        )
+    applied = []
+    for version, name, sql in migrations:
+        # No preliminary read can authorize mutation: revalidate after acquiring this lock.
+        with internal_transaction("BEGIN IMMEDIATE"):
+            validate_history(conn, migrations)
+            done = ledger().get(version)
+            if done is not None:
+                if done != name:
+                    raise RuntimeError("migration identity differs at version " + str(version))
+                continue
+            execute_migration(conn, sql)
+            conn.execute(
+                "INSERT INTO schema_migrations(version,name,applied_at) VALUES (?,?,?)",
+                (version, name, utcnow()),
+            )
+            validate_history(conn, migrations)
+            applied.append(name)
     return applied
 
 

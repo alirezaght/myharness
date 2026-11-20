@@ -3,7 +3,7 @@
 const EXECUTION_DRAFTS = new Map();
 const RECONCILIATION_DRAFTS = new Map();
 const ACTIVE_EXECUTION_STATUSES = new Set(["Running", "Launching", "WorkerOwned"]);
-const EXECUTION_FOCUS_IDS = new Set(["execution-decision-text", "execution-decision-verdict", "execution-reconcile-evidence", "execution-reconcile-outcome"]);
+const EXECUTION_FOCUS_IDS = new Set(["execution-decision-text", "execution-decision-verdict", "execution-reconcile-evidence", "execution-reconcile-outcome", "incident-search", "incident-category", "incident-older"]);
 let executionTaskId = null;
 let executionSnapshot = null;
 const EXECUTION_ACTIONS = new Map();
@@ -1137,6 +1137,11 @@ function renderExecution(taskId, execution) {
     renderLogs(execution),
   );
   section.append(details, renderDecisionsExecution(execution));
+  if (typeof renderOperationIncidents === "function") {
+    section.append(renderOperationIncidents(execution));
+  }
+  if (typeof renderExecutionTimeline === "function") section.append(renderExecutionTimeline(execution));
+  if (typeof renderExecutionPolicy === "function") section.append(renderExecutionPolicy(execution));
   return section;
 }
 
@@ -1266,15 +1271,19 @@ function repaintExecution() {
 function withExecutionFocus(fn) {
   const active = document.activeElement;
   const identity = document.getElementById("execution")?.dataset.viewIdentity;
-  const id = active && EXECUTION_FOCUS_IDS.has(active.id) ? active.id : null;
+  const id = active && (EXECUTION_FOCUS_IDS.has(active.id)
+    || active.closest?.(".operation-incidents, .execution-timeline, .execution-policy")) ? active.id : null;
   const key = active?.closest?.(".execution-blocker")?.querySelector("textarea")?.value;
   const result = fn();
   if (identity !== document.getElementById("execution")?.dataset.viewIdentity) return result;
   if (id) {
-    const next = document.getElementById(id);
+    let next = document.getElementById(id);
+    if (id === "policy-caps-more" && next?.disabled) next = document.getElementById("policy-caps-first");
     if (next) {
       next.focus({ preventScroll: true });
-      if ((id === "execution-decision-text" && key !== undefined) || id === "execution-reconcile-evidence") {
+      if ((id === "execution-decision-text" && key !== undefined)
+        || id === "execution-reconcile-evidence" || id === "incident-search"
+        || id === "timeline-principal" || id === "policy-decision") {
         const start = active.selectionStart;
         const end = active.selectionEnd;
         next.setSelectionRange(start, end);

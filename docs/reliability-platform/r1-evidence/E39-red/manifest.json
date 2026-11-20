@@ -1,0 +1,47 @@
+{
+  "evidence": "E39",
+  "area": "r1-browser-006",
+  "outcome": "FAIL",
+  "counts": {
+    "failed": 2
+  },
+  "artifacts": [
+    {
+      "original_path": "/private/tmp/al-r1-browser-006.xml",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/al-r1-browser-006.xml",
+      "sha256": "0c084d42030a009041f9c7dd42fd0a028d0c3f5c3c81cac806189ce6aaee88c0"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-006/test_persisted_operation_incid0/incident-shots/operation-incidents-1280x800.json",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/operation-incidents-1280x800.json",
+      "sha256": "b80c8ed5f5c856b227c3c719f7613a9aebd40dfcf0c275b899c04300fb0cc2ae"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-006/test_persisted_operation_incid0/incident-shots/operation-incidents-1280x800.png",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/operation-incidents-1280x800.png",
+      "sha256": "85b0516da864b2cd12c21ee055c5349c03dfcbd4cb1a778e5bfe6406af2dd5fb"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-006/test_persisted_operation_incid1/incident-shots/operation-incidents-390x844.json",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/operation-incidents-390x844.json",
+      "sha256": "8db2f8de76efff557e472118c34d3c0c128f4cb12cc5b26927284db4c108fa06"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-006/test_persisted_operation_incid1/incident-shots/operation-incidents-390x844.png",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/operation-incidents-390x844.png",
+      "sha256": "3ba7b6421ae0ee7e75e4e6a0193cd3557d49388778b40351c9408e5165f597d1"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-006/test_persisted_operation_incidcurrent/incident-shots/operation-incidents-390x844.json",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/operation-incidents-390x844.json",
+      "sha256": "8db2f8de76efff557e472118c34d3c0c128f4cb12cc5b26927284db4c108fa06"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-006/test_persisted_operation_incidcurrent/incident-shots/operation-incidents-390x844.png",
+      "path": "docs/reliability-platform/r1-evidence/E39-red/operation-incidents-390x844.png",
+      "sha256": "3ba7b6421ae0ee7e75e4e6a0193cd3557d49388778b40351c9408e5165f597d1"
+    }
+  ],
+  "cause": "R1-F04: burst traversal skips5 of57; deep traversal stops at100 of101. Prior scenarios remain passing in collected JSON.",
+  "rerun_note": "Failed artifacts copied before authorized exact006 repaired rerun; protected red ledger/log remains immutable."
+}

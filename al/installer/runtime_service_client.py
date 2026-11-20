@@ -280,7 +280,7 @@ def namespace():
 def launcher_prelude(services_root, launcher_identity):
     """Launcher text run before self-verification: serve `run` warm or fall through."""
     return ('PROTOCOL=' + repr(PROTOCOL) + '\n' + CLIENT + '\n'
-            "if len(sys.argv)>2 and sys.argv[1]=='run':\n"
+            "if len(sys.argv)>2 and sys.argv[1]=='run' and 'HARNESS_RETRY_CONTROL_FD' not in os.environ:\n"
             '    _al_status=_al_service_run(' + repr(str(services_root)) + ',' + repr(launcher_identity)
             + ',sys.argv[2:],os.environ)\n'
             '    if _al_status is not None:os._exit(_al_status)\n')

@@ -136,6 +136,13 @@ def priority(path):
 
 def git_records(root,args,limits):
     """Consume a bounded NUL stream and always reap our child, including on overflow."""
+    import al_retry_control
+    controlled=al_retry_control.git(args,root=root)
+    if controlled is not None:
+        rows=controlled.split(b'\0')
+        if rows[-1]!=b'' or len(rows)-1>limits['files'] or len(controlled)>max(4096,min(64*1024*1024,limits['files']*4096)):
+            raise ValueError('sealed inventory byte/file limit')
+        return rows[:-1]
     cap=limits['files'];byte_cap=max(4096,min(64*1024*1024,cap*4096))
     rows=[];pending=b'';total=0;deadline=time.monotonic()+10
     proc=subprocess.Popen(['git','--no-optional-locks','-c','core.excludesFile=/dev/null','-c','core.fsmonitor=false','-c','core.untrackedCache=false',*args],cwd=root,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)

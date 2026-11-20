@@ -1,0 +1,8 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q -m browser tests/test_reliability_incident_intelligence_browser.py --basetemp=/private/tmp/al-r5a-incident-browser-018 --junitxml=/private/tmp/al-r5a-incident-browser-018.xml
+# cwd: .
+# started: Fri Nov 20 15:44:28 2026
+
+..                                                                       [100%]
+2 passed in 23.10s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 37931, "pid": 37931, "sid": 37931, "start": [1795185868, 311451], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

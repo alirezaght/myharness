@@ -1,0 +1,907 @@
+--- /private/tmp/al-r4-frozen-review-005/al/claude/skills/al/scripts/al_agent_exchange.py	2026-11-20 09:41:28
++++ al/claude/skills/al/scripts/al_agent_exchange.py	2026-11-20 10:08:30
+@@ -86,6 +86,14 @@
+     value = st.get("agent_contracts", {}).get(kind + ":" + str(identifier))
+     if value is None:
+         return {"coverage": "legacy"}
++    return consume_value(st, kind, identifier, record, value, producer=producer, task=task,
++                         resolve=resolve, current=current)
++
++
++def consume_value(st, kind, identifier, record, value, *, producer=None, task=None,
++                  resolve=True, current=True):
++    if not isinstance(value, dict):
++        raise C.ContractError('/', kind=kind)
+     if value.get("context", {}).get("al_run") != st['run_id'] or value.get("context", {}).get("al_session") != st['session_id']:
+         raise C.ContractError('/context', kind=kind)
+     read = reader(st)
+@@ -114,6 +122,9 @@
+     references += [
+         h["artifact"] for w in st.get("writers", {}).values() for h in w.get("handoffs", [])
+     ]
++    references += [ref for entry in st.get('evidence', {}).get('entries', [])
++                   for key, ref in (entry.get('reconciliation') or {}).items()
++                   if key in {'artifact', 'observation'}]
+ 
+     def read(ref):
+         actual = next((r for r in references if C.ref(r) == ref), None)
+@@ -145,3 +156,54 @@
+     expected['graph_revision'] = value['context']['graph_revision']
+     C.validate(value, context=expected, specification=specification(st))
+     return value
++
++
++def consume_verification(st, entry):
++    """A reconciliation authenticates both observations; it never rewrites the original."""
++    value = consume(st, 'verification-result', entry['id'], entry, resolve=False, current=False)
++    reconciliation = entry.get('reconciliation')
++    if not reconciliation or 'schema_version' not in reconciliation:
++        return value  # explicit existing legacy representation
++    try:
++        if (set(reconciliation) != {'schema_version', 'reason', 'artifact', 'observation'}
++                or type(reconciliation['schema_version']) is not int
++                or reconciliation['schema_version'] != 1 or entry['status'] != 'INFRA'
++                or not isinstance(reconciliation['reason'], str) or not reconciliation['reason'].strip()):
++            raise C.ContractError('/payload', kind='verification-result')
++        retained = A.read_json(reconciliation['observation'])
++        if set(retained) != {'schema_version', 'entry', 'contract'} or retained['schema_version'] != 1:
++            raise C.ContractError('/payload', kind='verification-result')
++        original = retained['entry']
++        if original.get('reconciliation') or original['id'] != entry['id']:
++            raise C.ContractError('/payload', kind='verification-result')
++        if retained['contract'] is not None:
++            consume_value(st, 'verification-result', original['id'], original,
++                          retained['contract'], current=False)
++        allowed = {'status', 'note', 'ended_at', 'reconciliation'}
++        if ({k: v for k, v in original.items() if k not in allowed}
++                != {k: v for k, v in entry.items() if k not in allowed}
++                or entry['note'] != 'interrupted check explicitly reconciled'):
++            raise C.ContractError('/payload', kind='verification-result')
++        A.read(reconciliation['artifact'])
++    except (OSError, KeyError, TypeError, ValueError):
++        raise C.ContractError('/required_inputs', kind='verification-result') from None
++    return value
++
++
++def consume_issue(st, identifier, record):
++    """Authenticate the captured observation, allowing only later independent graph growth."""
++    value = consume(st, 'failure-report', identifier, record, current=False)
++    if value.get('coverage') == 'legacy':
++        return value
++    expected = record_context(st, 'failure-report', record, None, None)
++    captured = value['context']['graph_revision']
++    if (type(captured) is not int or type(expected['graph_revision']) is not int
++            or not 0 <= captured <= expected['graph_revision']):
++        raise C.ContractError('/context', kind='failure-report')
++    expected['graph_revision'] = captured
++    C.validate(value, context=expected, resolve=reader(st))
++    old, current = value['source_specification'], specification(st)
++    if (old['reference'] != current['reference']
++            or old['amendments'] != current['amendments'][:len(old['amendments'])]):
++        raise C.ContractError('/source_specification', kind='failure-report')
++    return value
+--- /private/tmp/al-r4-frozen-review-005/al/claude/skills/al/scripts/al_artifact_cli.py	2026-11-20 09:41:28
++++ al/claude/skills/al/scripts/al_artifact_cli.py	2026-11-20 10:05:15
+@@ -81,6 +81,10 @@
+                 raise ContractError('/expected_outputs', kind='implementation-result')
+         if contract['kind'] != 'implementation-result' or contract['payload']['record_digest'] != fingerprint(raw.decode('utf-8')):
+             raise ContractError('/payload', kind='implementation-result')
++        expected_criteria = st.get('integration', {}).get('tasks', {}).get(
++            writer.get('task'), {}).get('criteria', A.read_json(st['task_package'])['criteria'])
++        if contract['acceptance_criteria'] != expected_criteria:
++            raise ContractError('/acceptance_criteria', kind='implementation-result')
+     prior = st.get('agent_outputs', {}).get(a.name)
+     if prior:
+         if A.digest(raw) == prior['artifact']['sha256']:
+--- /private/tmp/al-r4-frozen-review-005/al/claude/skills/al/scripts/al_ledger.py	2026-11-20 09:41:28
++++ al/claude/skills/al/scripts/al_ledger.py	2026-11-20 10:05:15
+@@ -418,8 +418,8 @@
+ def entry_verdict(st, e, _seen=()):
+     """assess() plus the prerequisites this run recorded (its plan's, when it
+     matches one), checked recursively."""
+-    from al_agent_exchange import consume
+-    consume(st, 'verification-result', e['id'], e, resolve=False, current=False)
++    from al_agent_exchange import consume_verification
++    consume_verification(st, e)
+     verdict, why = assess(e)
+     for invalidation in ledger(st).get('scope_invalidations', []):
+         from al_execution_tasks import _overlap
+--- /private/tmp/al-r4-frozen-review-005/al/claude/skills/al/scripts/al_operational_issues.py	2026-11-20 09:41:28
++++ al/claude/skills/al/scripts/al_operational_issues.py	2026-11-20 10:09:05
+@@ -17,14 +17,22 @@
+     if data['paths']:
+         from al_writers import canonical_paths
+         canonical_paths(data['paths'])
++    from al_execution_tasks import authority, _overlap
++    for task_id in data['task_ids']:
++        authority(st, 'revalidate', task_id)
++    if not data['task_ids']:
++        authority(st, 'revalidate')
++    if data['task_ids'] and any(not any(_overlap(path, scope) for tid in data['task_ids']
++                   for scope in integration['tasks'][tid]['files']) for path in data['paths']):
++        refuse('operational issue paths exceed current task scope')
+     ref = data['diagnostic_ref']
+     if ref not in st.get('recorded_artifacts', []):
+         refuse('issue diagnostic must be a retained run artifact')
+     A.read(ref)
+     old = st.setdefault('operational_issues', {}).get(data['id'])
+     if old:
+-        from al_agent_exchange import consume
+-        consume(st, 'failure-report', data['id'], old)
++        from al_agent_exchange import consume_issue
++        consume_issue(st, data['id'], old)
+     if old == data:
+         return
+     if data['revision'] != (old['revision'] + 1 if old else 1):
+@@ -48,6 +56,9 @@
+         from al_parallel import overlaps
+         if data['paths'] and not overlaps(data['paths'], entry['scope']):
+             refuse('repair evidence does not cover issue scope')
++    if old and st.get('agent_contracts', {}).get('failure-report:' + data['id']):
++        st.setdefault('agent_contract_history', []).append(copy.deepcopy(
++            st['agent_contracts']['failure-report:' + data['id']]))
+     from al_agent_exchange import produce
+     produce(st, 'failure-report', data['id'], data, status='resolved' if data['state'] == 'Resolved' else 'observed')
+     st['operational_issues'][data['id']] = copy.deepcopy(data)
+--- /private/tmp/al-r4-frozen-review-005/al/claude/skills/al/scripts/al_recovery.py	2026-11-20 09:41:28
++++ al/claude/skills/al/scripts/al_recovery.py	2026-11-20 10:05:15
+@@ -86,8 +86,34 @@
+     if not e or (e['status']!='RUNNING' and not e.get('interrupted')) or e.get('reconciliation'): refuse('check is not unresolved')
+     import al_ledger as L
+     if L._alive(e.get('owner_pid')) or L._alive(e.get('pid')): refuse('cannot reconcile a living check')
+-    e.update(status='INFRA',note='interrupted check explicitly reconciled',ended_at=time.time(),
+-             reconciliation={'reason':a.reason,'artifact':A.snapshot_artifact(sid,Path(a.artifact),'check-reconciliation')})
++    from al_agent_exchange import consume_verification, produce
++    from al_artifact_cli import read_input
++    from types import SimpleNamespace
++    import copy
++    consume_verification(st, e)
++    if 'integration' in st:
++        from al_execution_tasks import authority
++        authority(st, 'revalidate')
++    if not a.reason.strip(): refuse('check reconciliation requires a reason')
++    # Typed terminal observations must still have their original authenticated log.
++    if ('verification-result:' + e['id']) in st.get('agent_contracts', {}):
++        if L.assess(e)[0] in {'LOG_MISSING', 'LOG_ALTERED'}:
++            refuse('original check log provenance changed')
++    raw, source = read_input(SimpleNamespace(file=a.artifact, stdin=False))
++    original = {'schema_version': 1, 'entry': copy.deepcopy(e),
++                'contract': copy.deepcopy(st.get('agent_contracts', {}).get('verification-result:' + e['id']))}
++    observation = A.snapshot_bytes(sid, json.dumps(original, sort_keys=True).encode(),
++                                   'check-observation-v1', 'authorized check reconciliation')
++    artifact = A.snapshot_bytes(sid, raw, 'check-reconciliation', source)
++    e.update(status='INFRA', note='interrupted check explicitly reconciled', ended_at=time.time(),
++             reconciliation={'schema_version': 1, 'reason': a.reason, 'artifact': artifact,
++                             'observation': observation})
++    # The authorized transition precedes outbox verdict calculation in save().
++    produce(st, 'verification-result', e['id'], e, status='observed', refs=[
++        {'reference': {'kind': ref['kind'], 'id': ref['id'], 'sha256': ref['sha256']},
++         'purpose': purpose, 'required': True}
++        for ref, purpose in ((observation, 'immutable original check observation'),
++                             (artifact, 'actual reconciliation artifact'))])
+     al_store.save(sid,st)
+ 
+ def register(sub):
+--- /private/tmp/al-r4-frozen-review-005/al/claude/skills/al/tests/test_agent_contracts.py	2026-11-20 09:41:28
++++ al/claude/skills/al/tests/test_agent_contracts.py	2026-11-20 10:12:18
+@@ -273,3 +273,153 @@
+         assert result[0] != 0
+         assert state_file().read_bytes() == before
+     complete_review(cli, tmp_path, blocking=False, inspect_report=inspect)
++
++
++def _r4_interrupted_check(cli, cli_process, state_file):
++    import signal
++    import sys
++    from evidence_helpers import wait_running
++    invoke(cli, 'start', '--spec', 'Retain interrupted evidence and authenticate explicit reconciliation.')
++    invoke(cli, 'evidence', 'plan', '--area', 'interrupt-observation', '--kind', 'check', '--scope', 'svc', '--',
++           sys.executable, '-c', 'import time;time.sleep(60)')
++    proc = cli_process('evidence', 'run', '--area', 'interrupt-observation')
++    try:
++        wait_running(state_file, 'interrupt-observation', process=proc)
++        proc.send_signal(signal.SIGINT)
++        proc.communicate(timeout=15)
++        assert proc.poll() is not None
++    finally:
++        if proc.poll() is None:
++            proc.kill();proc.communicate(timeout=5)
++    original = copy.deepcopy(state(cli)['evidence']['entries'][-1])
++    assert original['status'] == 'INFRA' and original['interrupted'] and original['ended_at']
++    companion = copy.deepcopy(state(cli)['agent_contracts']['verification-result:' + original['id']])
++    return original, companion, proc.returncode
++
++
++def test_r4_repair_interrupted_public_check_reconciles_and_retains_observation(cli, cli_process, tmp_path, state_file):
++    original, companion, runner_code = _r4_interrupted_check(cli, cli_process, state_file)
++    proof = tmp_path / 'reconciliation.json'
++    proof.write_text(json.dumps({'runner_returncode': runner_code, 'cleanup': original.get('cleanup'),
++                                'observation_id': original['id']}))
++    invoke(cli, 'check-reconcile', '--id', original['id'], '--reason', 'Observed own runner termination and inspected cleanup.', '--artifact', str(proof))
++    invoke(cli, 'evidence', 'status')
++    current = state(cli)['evidence']['entries'][-1]
++    assert current['status'] == 'INFRA'
++    retained = A.read_json(current['reconciliation']['observation'])
++    assert retained == {'schema_version': 1, 'entry': original, 'contract': companion}
++    assert current['reconciliation']['schema_version'] == 1
++    before = state_file().read_bytes()
++    assert cli('check-reconcile', '--id', original['id'], '--reason', 'duplicate', '--artifact', str(proof))[0] != 0
++    assert state_file().read_bytes() == before
++    from pathlib import Path
++    Path(current['reconciliation']['artifact']['stored_path']).write_text('altered retained proof')
++    assert cli('evidence', 'status')[0] != 0
++    assert state_file().read_bytes() == before
++
++
++def test_r4_repair_issue_updates_across_unrelated_graph_growth(cli, tmp_path, repo, monkeypatch):
++    import sys
++    import al_store as S
++    from execution_helpers import register_task, report
++    from test_implementation_continuity import setup, ok
++    controller, _, sid = setup(cli, tmp_path, repo, monkeypatch)
++    try:
++        diagnostic = tmp_path / 'graph-diagnostic.md';diagnostic.write_text('Observed repairable fixture tool failure.')
++        ref = json.loads(ok(cli, 'artifact', 'record', '--file', str(diagnostic), '--kind', 'operational-diagnostic')[1])
++        issue = {'id': 'graph-tool', 'revision': 1, 'cause': 'tool_unavailable', 'task_ids': ['A'], 'paths': ['svc'],
++                 'capability_or_check_ref': 'graph-health', 'diagnostic_ref': ref, 'state': 'Repairing',
++                 'next_action': 'Repair fixture runtime', 'observed_binding': S.load(sid)['integration']['binding']}
++        assert report(cli, tmp_path, 'issue-update', issue)[0] == 0
++        historical = copy.deepcopy(S.load(sid)['agent_contracts']['failure-report:graph-tool'])
++        assert register_task(cli, tmp_path, 'Independent', ['other'])[0] == 0
++        assert report(cli, tmp_path, 'issue-update', issue)[0] == 0
++        for invalid in (
++            issue | {'revision': 1, 'next_action': 'stale revision mutation'},
++            issue | {'revision': 2, 'paths': ['web']},
++            issue | {'revision': 2, 'observed_binding': issue['observed_binding'] | {'al_run_id': 'foreign'}},
++            issue | {'revision': 2, 'state': 'Resolved', 'resolution_ref': {'evidence_id': 'E999', 'diagnostic_sha256': ref['sha256']}},
++        ):
++            before = S.state_path(sid).read_bytes()
++            assert report(cli, tmp_path, 'issue-update', invalid)[0] != 0
++            assert S.state_path(sid).read_bytes() == before
++        update = issue | {'revision': 2, 'next_action': 'Verify repaired fixture runtime'}
++        result = report(cli, tmp_path, 'issue-update', update);assert result[0] == 0, result
++        assert S.load(sid)['agent_contracts']['failure-report:graph-tool']['context']['graph_revision'] > historical['context']['graph_revision']
++        ok(cli, 'evidence', 'plan', '--area', 'graph-health', '--scope', 'svc', '--', sys.executable, '-c', 'print("1 passed")')
++        ok(cli, 'evidence', 'run', '--area', 'graph-health')
++        entry = S.load(sid)['evidence']['entries'][-1]
++        diagnostic.write_text('Fresh health observation after the actual successful check.')
++        fresh = json.loads(ok(cli, 'artifact', 'record', '--file', str(diagnostic), '--kind', 'operational-diagnostic')[1])
++        resolved = update | {'revision': 3, 'state': 'Resolved', 'diagnostic_ref': fresh,
++                             'resolution_ref': {'evidence_id': entry['id'], 'diagnostic_sha256': fresh['sha256']}}
++        result = report(cli, tmp_path, 'issue-update', resolved);assert result[0] == 0, result
++        assert S.load(sid)['operational_issues']['graph-tool'] == resolved
++    finally:
++        controller.conn.close()
++
++
++@pytest.mark.parametrize('criteria', [['invented criterion'], []])
++@pytest.mark.parametrize('existing', [False, True])
++def test_r4_repair_actual_criteria_reject_before_publication(cli, tmp_path, repo, criteria, existing):
++    body = ready(cli, tmp_path, repo)
++    invoke(cli, 'writer', 'handoff', '--id', 'worker', '--body-file', str(body))
++    st = state(cli);declared = st['writers']['worker']['handoffs'][-1]['contract']
++    content = 'Actual authored content remains subject to the declared criteria.'
++    value = C.make('implementation-result', X.context(st, 'worker'), X.specification(st),
++                   'implementation-result', content, status='authored', inputs=declared['required_inputs'],
++                   criteria=criteria, constraints=declared['constraints'])
++    path = tmp_path / 'criteria-result.md';path.write_text(content)
++    contract = tmp_path / 'criteria-contract.json';contract.write_text(json.dumps(value))
++    if existing:
++        valid = copy.deepcopy(value)
++        valid['acceptance_criteria'] = declared['acceptance_criteria']
++        valid['field_applicability'].pop('acceptance_criteria', None)
++        contract.write_text(json.dumps(valid))
++        invoke(cli, 'artifact', 'output', '--name', 'criteria.md', '--file', str(path),
++               '--contract-file', str(contract), '--writer', 'worker')
++        assert json.loads(invoke(cli, 'artifact', 'show', '--name', 'criteria.md')[1])['contract'] == valid
++        contract.write_text(json.dumps(value))
++    before = state(cli)
++    code, out, err = cli('artifact', 'output', '--name', 'criteria.md', '--file', str(path),
++                         '--contract-file', str(contract), '--writer', 'worker')
++    assert code != 0, 'invented/empty criteria were accepted'
++    assert '/acceptance_criteria' in str(code) + out + err
++    assert state(cli) == before
++
++
++@pytest.mark.parametrize('tamper', ['observation', 'log', 'artifact'])
++def test_r4_repair_reconciliation_refuses_changed_provenance(cli, cli_process, tmp_path, state_file, tamper):
++    from pathlib import Path
++    original, _, _ = _r4_interrupted_check(cli, cli_process, state_file)
++    proof = tmp_path / 'proof.md';proof.write_text('Observed owned runner termination and actual cleanup.')
++    if tamper == 'observation':
++        data = json.loads(state_file().read_bytes())
++        data['evidence']['entries'][-1]['note'] = 'altered observation'
++        state_file().write_text(json.dumps(data))
++    elif tamper == 'log':
++        Path(original['log']).write_text('altered original log')
++    else:
++        target = tmp_path / 'proof-target.md';target.write_text('fixture')
++        proof.unlink();proof.symlink_to(target)
++    before = state_file().read_bytes()
++    assert cli('check-reconcile', '--id', original['id'], '--reason', 'Inspect actual proof', '--artifact', str(proof))[0] != 0
++    assert state_file().read_bytes() == before
++
++
++def test_r4_repair_living_check_cannot_be_reconciled(cli, cli_process, state_file, tmp_path):
++    import signal
++    import sys
++    from evidence_helpers import wait_running
++    invoke(cli, 'start', '--spec', 'Do not reconcile a living owned check.')
++    invoke(cli, 'evidence', 'plan', '--area', 'living', '--kind', 'check', '--scope', 'svc', '--', sys.executable, '-c', 'import time;time.sleep(60)')
++    proc = cli_process('evidence', 'run', '--area', 'living')
++    try:
++        wait_running(state_file, 'living', process=proc)
++        current = state(cli)['evidence']['entries'][-1]
++        proof = tmp_path / 'living-proof.md';proof.write_text('A living check cannot have a valid reconciliation.')
++        before = state_file().read_bytes()
++        assert cli('check-reconcile', '--id', current['id'], '--reason', 'living', '--artifact', str(proof))[0] != 0
++        assert state_file().read_bytes() == before
++    finally:
++        proc.send_signal(signal.SIGINT);proc.communicate(timeout=15)
+--- /private/tmp/al-r4-frozen-review-005/al/codex/skills/al/scripts/al_agent_exchange.py	2026-11-20 09:41:28
++++ al/codex/skills/al/scripts/al_agent_exchange.py	2026-11-20 10:08:30
+@@ -86,6 +86,14 @@
+     value = st.get("agent_contracts", {}).get(kind + ":" + str(identifier))
+     if value is None:
+         return {"coverage": "legacy"}
++    return consume_value(st, kind, identifier, record, value, producer=producer, task=task,
++                         resolve=resolve, current=current)
++
++
++def consume_value(st, kind, identifier, record, value, *, producer=None, task=None,
++                  resolve=True, current=True):
++    if not isinstance(value, dict):
++        raise C.ContractError('/', kind=kind)
+     if value.get("context", {}).get("al_run") != st['run_id'] or value.get("context", {}).get("al_session") != st['session_id']:
+         raise C.ContractError('/context', kind=kind)
+     read = reader(st)
+@@ -114,6 +122,9 @@
+     references += [
+         h["artifact"] for w in st.get("writers", {}).values() for h in w.get("handoffs", [])
+     ]
++    references += [ref for entry in st.get('evidence', {}).get('entries', [])
++                   for key, ref in (entry.get('reconciliation') or {}).items()
++                   if key in {'artifact', 'observation'}]
+ 
+     def read(ref):
+         actual = next((r for r in references if C.ref(r) == ref), None)
+@@ -145,3 +156,54 @@
+     expected['graph_revision'] = value['context']['graph_revision']
+     C.validate(value, context=expected, specification=specification(st))
+     return value
++
++
++def consume_verification(st, entry):
++    """A reconciliation authenticates both observations; it never rewrites the original."""
++    value = consume(st, 'verification-result', entry['id'], entry, resolve=False, current=False)
++    reconciliation = entry.get('reconciliation')
++    if not reconciliation or 'schema_version' not in reconciliation:
++        return value  # explicit existing legacy representation
++    try:
++        if (set(reconciliation) != {'schema_version', 'reason', 'artifact', 'observation'}
++                or type(reconciliation['schema_version']) is not int
++                or reconciliation['schema_version'] != 1 or entry['status'] != 'INFRA'
++                or not isinstance(reconciliation['reason'], str) or not reconciliation['reason'].strip()):
++            raise C.ContractError('/payload', kind='verification-result')
++        retained = A.read_json(reconciliation['observation'])
++        if set(retained) != {'schema_version', 'entry', 'contract'} or retained['schema_version'] != 1:
++            raise C.ContractError('/payload', kind='verification-result')
++        original = retained['entry']
++        if original.get('reconciliation') or original['id'] != entry['id']:
++            raise C.ContractError('/payload', kind='verification-result')
++        if retained['contract'] is not None:
++            consume_value(st, 'verification-result', original['id'], original,
++                          retained['contract'], current=False)
++        allowed = {'status', 'note', 'ended_at', 'reconciliation'}
++        if ({k: v for k, v in original.items() if k not in allowed}
++                != {k: v for k, v in entry.items() if k not in allowed}
++                or entry['note'] != 'interrupted check explicitly reconciled'):
++            raise C.ContractError('/payload', kind='verification-result')
++        A.read(reconciliation['artifact'])
++    except (OSError, KeyError, TypeError, ValueError):
++        raise C.ContractError('/required_inputs', kind='verification-result') from None
++    return value
++
++
++def consume_issue(st, identifier, record):
++    """Authenticate the captured observation, allowing only later independent graph growth."""
++    value = consume(st, 'failure-report', identifier, record, current=False)
++    if value.get('coverage') == 'legacy':
++        return value
++    expected = record_context(st, 'failure-report', record, None, None)
++    captured = value['context']['graph_revision']
++    if (type(captured) is not int or type(expected['graph_revision']) is not int
++            or not 0 <= captured <= expected['graph_revision']):
++        raise C.ContractError('/context', kind='failure-report')
++    expected['graph_revision'] = captured
++    C.validate(value, context=expected, resolve=reader(st))
++    old, current = value['source_specification'], specification(st)
++    if (old['reference'] != current['reference']
++            or old['amendments'] != current['amendments'][:len(old['amendments'])]):
++        raise C.ContractError('/source_specification', kind='failure-report')
++    return value
+--- /private/tmp/al-r4-frozen-review-005/al/codex/skills/al/scripts/al_artifact_cli.py	2026-11-20 09:41:28
++++ al/codex/skills/al/scripts/al_artifact_cli.py	2026-11-20 10:05:15
+@@ -81,6 +81,10 @@
+                 raise ContractError('/expected_outputs', kind='implementation-result')
+         if contract['kind'] != 'implementation-result' or contract['payload']['record_digest'] != fingerprint(raw.decode('utf-8')):
+             raise ContractError('/payload', kind='implementation-result')
++        expected_criteria = st.get('integration', {}).get('tasks', {}).get(
++            writer.get('task'), {}).get('criteria', A.read_json(st['task_package'])['criteria'])
++        if contract['acceptance_criteria'] != expected_criteria:
++            raise ContractError('/acceptance_criteria', kind='implementation-result')
+     prior = st.get('agent_outputs', {}).get(a.name)
+     if prior:
+         if A.digest(raw) == prior['artifact']['sha256']:
+--- /private/tmp/al-r4-frozen-review-005/al/codex/skills/al/scripts/al_ledger.py	2026-11-20 09:41:28
++++ al/codex/skills/al/scripts/al_ledger.py	2026-11-20 10:05:15
+@@ -418,8 +418,8 @@
+ def entry_verdict(st, e, _seen=()):
+     """assess() plus the prerequisites this run recorded (its plan's, when it
+     matches one), checked recursively."""
+-    from al_agent_exchange import consume
+-    consume(st, 'verification-result', e['id'], e, resolve=False, current=False)
++    from al_agent_exchange import consume_verification
++    consume_verification(st, e)
+     verdict, why = assess(e)
+     for invalidation in ledger(st).get('scope_invalidations', []):
+         from al_execution_tasks import _overlap
+--- /private/tmp/al-r4-frozen-review-005/al/codex/skills/al/scripts/al_operational_issues.py	2026-11-20 09:41:28
++++ al/codex/skills/al/scripts/al_operational_issues.py	2026-11-20 10:09:05
+@@ -17,14 +17,22 @@
+     if data['paths']:
+         from al_writers import canonical_paths
+         canonical_paths(data['paths'])
++    from al_execution_tasks import authority, _overlap
++    for task_id in data['task_ids']:
++        authority(st, 'revalidate', task_id)
++    if not data['task_ids']:
++        authority(st, 'revalidate')
++    if data['task_ids'] and any(not any(_overlap(path, scope) for tid in data['task_ids']
++                   for scope in integration['tasks'][tid]['files']) for path in data['paths']):
++        refuse('operational issue paths exceed current task scope')
+     ref = data['diagnostic_ref']
+     if ref not in st.get('recorded_artifacts', []):
+         refuse('issue diagnostic must be a retained run artifact')
+     A.read(ref)
+     old = st.setdefault('operational_issues', {}).get(data['id'])
+     if old:
+-        from al_agent_exchange import consume
+-        consume(st, 'failure-report', data['id'], old)
++        from al_agent_exchange import consume_issue
++        consume_issue(st, data['id'], old)
+     if old == data:
+         return
+     if data['revision'] != (old['revision'] + 1 if old else 1):
+@@ -48,6 +56,9 @@
+         from al_parallel import overlaps
+         if data['paths'] and not overlaps(data['paths'], entry['scope']):
+             refuse('repair evidence does not cover issue scope')
++    if old and st.get('agent_contracts', {}).get('failure-report:' + data['id']):
++        st.setdefault('agent_contract_history', []).append(copy.deepcopy(
++            st['agent_contracts']['failure-report:' + data['id']]))
+     from al_agent_exchange import produce
+     produce(st, 'failure-report', data['id'], data, status='resolved' if data['state'] == 'Resolved' else 'observed')
+     st['operational_issues'][data['id']] = copy.deepcopy(data)
+--- /private/tmp/al-r4-frozen-review-005/al/codex/skills/al/scripts/al_recovery.py	2026-11-20 09:41:28
++++ al/codex/skills/al/scripts/al_recovery.py	2026-11-20 10:05:15
+@@ -86,8 +86,34 @@
+     if not e or (e['status']!='RUNNING' and not e.get('interrupted')) or e.get('reconciliation'): refuse('check is not unresolved')
+     import al_ledger as L
+     if L._alive(e.get('owner_pid')) or L._alive(e.get('pid')): refuse('cannot reconcile a living check')
+-    e.update(status='INFRA',note='interrupted check explicitly reconciled',ended_at=time.time(),
+-             reconciliation={'reason':a.reason,'artifact':A.snapshot_artifact(sid,Path(a.artifact),'check-reconciliation')})
++    from al_agent_exchange import consume_verification, produce
++    from al_artifact_cli import read_input
++    from types import SimpleNamespace
++    import copy
++    consume_verification(st, e)
++    if 'integration' in st:
++        from al_execution_tasks import authority
++        authority(st, 'revalidate')
++    if not a.reason.strip(): refuse('check reconciliation requires a reason')
++    # Typed terminal observations must still have their original authenticated log.
++    if ('verification-result:' + e['id']) in st.get('agent_contracts', {}):
++        if L.assess(e)[0] in {'LOG_MISSING', 'LOG_ALTERED'}:
++            refuse('original check log provenance changed')
++    raw, source = read_input(SimpleNamespace(file=a.artifact, stdin=False))
++    original = {'schema_version': 1, 'entry': copy.deepcopy(e),
++                'contract': copy.deepcopy(st.get('agent_contracts', {}).get('verification-result:' + e['id']))}
++    observation = A.snapshot_bytes(sid, json.dumps(original, sort_keys=True).encode(),
++                                   'check-observation-v1', 'authorized check reconciliation')
++    artifact = A.snapshot_bytes(sid, raw, 'check-reconciliation', source)
++    e.update(status='INFRA', note='interrupted check explicitly reconciled', ended_at=time.time(),
++             reconciliation={'schema_version': 1, 'reason': a.reason, 'artifact': artifact,
++                             'observation': observation})
++    # The authorized transition precedes outbox verdict calculation in save().
++    produce(st, 'verification-result', e['id'], e, status='observed', refs=[
++        {'reference': {'kind': ref['kind'], 'id': ref['id'], 'sha256': ref['sha256']},
++         'purpose': purpose, 'required': True}
++        for ref, purpose in ((observation, 'immutable original check observation'),
++                             (artifact, 'actual reconciliation artifact'))])
+     al_store.save(sid,st)
+ 
+ def register(sub):
+--- /private/tmp/al-r4-frozen-review-005/al/codex/skills/al/tests/test_agent_contracts.py	2026-11-20 09:41:28
++++ al/codex/skills/al/tests/test_agent_contracts.py	2026-11-20 10:12:18
+@@ -273,3 +273,153 @@
+         assert result[0] != 0
+         assert state_file().read_bytes() == before
+     complete_review(cli, tmp_path, blocking=False, inspect_report=inspect)
++
++
++def _r4_interrupted_check(cli, cli_process, state_file):
++    import signal
++    import sys
++    from evidence_helpers import wait_running
++    invoke(cli, 'start', '--spec', 'Retain interrupted evidence and authenticate explicit reconciliation.')
++    invoke(cli, 'evidence', 'plan', '--area', 'interrupt-observation', '--kind', 'check', '--scope', 'svc', '--',
++           sys.executable, '-c', 'import time;time.sleep(60)')
++    proc = cli_process('evidence', 'run', '--area', 'interrupt-observation')
++    try:
++        wait_running(state_file, 'interrupt-observation', process=proc)
++        proc.send_signal(signal.SIGINT)
++        proc.communicate(timeout=15)
++        assert proc.poll() is not None
++    finally:
++        if proc.poll() is None:
++            proc.kill();proc.communicate(timeout=5)
++    original = copy.deepcopy(state(cli)['evidence']['entries'][-1])
++    assert original['status'] == 'INFRA' and original['interrupted'] and original['ended_at']
++    companion = copy.deepcopy(state(cli)['agent_contracts']['verification-result:' + original['id']])
++    return original, companion, proc.returncode
++
++
++def test_r4_repair_interrupted_public_check_reconciles_and_retains_observation(cli, cli_process, tmp_path, state_file):
++    original, companion, runner_code = _r4_interrupted_check(cli, cli_process, state_file)
++    proof = tmp_path / 'reconciliation.json'
++    proof.write_text(json.dumps({'runner_returncode': runner_code, 'cleanup': original.get('cleanup'),
++                                'observation_id': original['id']}))
++    invoke(cli, 'check-reconcile', '--id', original['id'], '--reason', 'Observed own runner termination and inspected cleanup.', '--artifact', str(proof))
++    invoke(cli, 'evidence', 'status')
++    current = state(cli)['evidence']['entries'][-1]
++    assert current['status'] == 'INFRA'
++    retained = A.read_json(current['reconciliation']['observation'])
++    assert retained == {'schema_version': 1, 'entry': original, 'contract': companion}
++    assert current['reconciliation']['schema_version'] == 1
++    before = state_file().read_bytes()
++    assert cli('check-reconcile', '--id', original['id'], '--reason', 'duplicate', '--artifact', str(proof))[0] != 0
++    assert state_file().read_bytes() == before
++    from pathlib import Path
++    Path(current['reconciliation']['artifact']['stored_path']).write_text('altered retained proof')
++    assert cli('evidence', 'status')[0] != 0
++    assert state_file().read_bytes() == before
++
++
++def test_r4_repair_issue_updates_across_unrelated_graph_growth(cli, tmp_path, repo, monkeypatch):
++    import sys
++    import al_store as S
++    from execution_helpers import register_task, report
++    from test_implementation_continuity import setup, ok
++    controller, _, sid = setup(cli, tmp_path, repo, monkeypatch)
++    try:
++        diagnostic = tmp_path / 'graph-diagnostic.md';diagnostic.write_text('Observed repairable fixture tool failure.')
++        ref = json.loads(ok(cli, 'artifact', 'record', '--file', str(diagnostic), '--kind', 'operational-diagnostic')[1])
++        issue = {'id': 'graph-tool', 'revision': 1, 'cause': 'tool_unavailable', 'task_ids': ['A'], 'paths': ['svc'],
++                 'capability_or_check_ref': 'graph-health', 'diagnostic_ref': ref, 'state': 'Repairing',
++                 'next_action': 'Repair fixture runtime', 'observed_binding': S.load(sid)['integration']['binding']}
++        assert report(cli, tmp_path, 'issue-update', issue)[0] == 0
++        historical = copy.deepcopy(S.load(sid)['agent_contracts']['failure-report:graph-tool'])
++        assert register_task(cli, tmp_path, 'Independent', ['other'])[0] == 0
++        assert report(cli, tmp_path, 'issue-update', issue)[0] == 0
++        for invalid in (
++            issue | {'revision': 1, 'next_action': 'stale revision mutation'},
++            issue | {'revision': 2, 'paths': ['web']},
++            issue | {'revision': 2, 'observed_binding': issue['observed_binding'] | {'al_run_id': 'foreign'}},
++            issue | {'revision': 2, 'state': 'Resolved', 'resolution_ref': {'evidence_id': 'E999', 'diagnostic_sha256': ref['sha256']}},
++        ):
++            before = S.state_path(sid).read_bytes()
++            assert report(cli, tmp_path, 'issue-update', invalid)[0] != 0
++            assert S.state_path(sid).read_bytes() == before
++        update = issue | {'revision': 2, 'next_action': 'Verify repaired fixture runtime'}
++        result = report(cli, tmp_path, 'issue-update', update);assert result[0] == 0, result
++        assert S.load(sid)['agent_contracts']['failure-report:graph-tool']['context']['graph_revision'] > historical['context']['graph_revision']
++        ok(cli, 'evidence', 'plan', '--area', 'graph-health', '--scope', 'svc', '--', sys.executable, '-c', 'print("1 passed")')
++        ok(cli, 'evidence', 'run', '--area', 'graph-health')
++        entry = S.load(sid)['evidence']['entries'][-1]
++        diagnostic.write_text('Fresh health observation after the actual successful check.')
++        fresh = json.loads(ok(cli, 'artifact', 'record', '--file', str(diagnostic), '--kind', 'operational-diagnostic')[1])
++        resolved = update | {'revision': 3, 'state': 'Resolved', 'diagnostic_ref': fresh,
++                             'resolution_ref': {'evidence_id': entry['id'], 'diagnostic_sha256': fresh['sha256']}}
++        result = report(cli, tmp_path, 'issue-update', resolved);assert result[0] == 0, result
++        assert S.load(sid)['operational_issues']['graph-tool'] == resolved
++    finally:
++        controller.conn.close()
++
++
++@pytest.mark.parametrize('criteria', [['invented criterion'], []])
++@pytest.mark.parametrize('existing', [False, True])
++def test_r4_repair_actual_criteria_reject_before_publication(cli, tmp_path, repo, criteria, existing):
++    body = ready(cli, tmp_path, repo)
++    invoke(cli, 'writer', 'handoff', '--id', 'worker', '--body-file', str(body))
++    st = state(cli);declared = st['writers']['worker']['handoffs'][-1]['contract']
++    content = 'Actual authored content remains subject to the declared criteria.'
++    value = C.make('implementation-result', X.context(st, 'worker'), X.specification(st),
++                   'implementation-result', content, status='authored', inputs=declared['required_inputs'],
++                   criteria=criteria, constraints=declared['constraints'])
++    path = tmp_path / 'criteria-result.md';path.write_text(content)
++    contract = tmp_path / 'criteria-contract.json';contract.write_text(json.dumps(value))
++    if existing:
++        valid = copy.deepcopy(value)
++        valid['acceptance_criteria'] = declared['acceptance_criteria']
++        valid['field_applicability'].pop('acceptance_criteria', None)
++        contract.write_text(json.dumps(valid))
++        invoke(cli, 'artifact', 'output', '--name', 'criteria.md', '--file', str(path),
++               '--contract-file', str(contract), '--writer', 'worker')
++        assert json.loads(invoke(cli, 'artifact', 'show', '--name', 'criteria.md')[1])['contract'] == valid
++        contract.write_text(json.dumps(value))
++    before = state(cli)
++    code, out, err = cli('artifact', 'output', '--name', 'criteria.md', '--file', str(path),
++                         '--contract-file', str(contract), '--writer', 'worker')
++    assert code != 0, 'invented/empty criteria were accepted'
++    assert '/acceptance_criteria' in str(code) + out + err
++    assert state(cli) == before
++
++
++@pytest.mark.parametrize('tamper', ['observation', 'log', 'artifact'])
++def test_r4_repair_reconciliation_refuses_changed_provenance(cli, cli_process, tmp_path, state_file, tamper):
++    from pathlib import Path
++    original, _, _ = _r4_interrupted_check(cli, cli_process, state_file)
++    proof = tmp_path / 'proof.md';proof.write_text('Observed owned runner termination and actual cleanup.')
++    if tamper == 'observation':
++        data = json.loads(state_file().read_bytes())
++        data['evidence']['entries'][-1]['note'] = 'altered observation'
++        state_file().write_text(json.dumps(data))
++    elif tamper == 'log':
++        Path(original['log']).write_text('altered original log')
++    else:
++        target = tmp_path / 'proof-target.md';target.write_text('fixture')
++        proof.unlink();proof.symlink_to(target)
++    before = state_file().read_bytes()
++    assert cli('check-reconcile', '--id', original['id'], '--reason', 'Inspect actual proof', '--artifact', str(proof))[0] != 0
++    assert state_file().read_bytes() == before
++
++
++def test_r4_repair_living_check_cannot_be_reconciled(cli, cli_process, state_file, tmp_path):
++    import signal
++    import sys
++    from evidence_helpers import wait_running
++    invoke(cli, 'start', '--spec', 'Do not reconcile a living owned check.')
++    invoke(cli, 'evidence', 'plan', '--area', 'living', '--kind', 'check', '--scope', 'svc', '--', sys.executable, '-c', 'import time;time.sleep(60)')
++    proc = cli_process('evidence', 'run', '--area', 'living')
++    try:
++        wait_running(state_file, 'living', process=proc)
++        current = state(cli)['evidence']['entries'][-1]
++        proof = tmp_path / 'living-proof.md';proof.write_text('A living check cannot have a valid reconciliation.')
++        before = state_file().read_bytes()
++        assert cli('check-reconcile', '--id', current['id'], '--reason', 'living', '--artifact', str(proof))[0] != 0
++        assert state_file().read_bytes() == before
++    finally:
++        proc.send_signal(signal.SIGINT);proc.communicate(timeout=15)
+--- /private/tmp/al-r4-frozen-review-005/docs/reliability-platform/r4-api-contract.md	2026-11-20 09:41:29
++++ docs/reliability-platform/r4-api-contract.md	2026-11-20 10:08:30
+@@ -6,7 +6,7 @@
+ 
+ - Standalone AL creates pre-execution companions for requirement-analysis, architecture-proposal and design-decision records from their actual task and decision state. These use `pre-execution` applicability for fields that do not exist yet; they do not invent an execution or agent identity.
+ - `al writer handoff` creates a task-assignment companion in the authenticated writer receipt alongside the existing prompt and evidence block. Harness `read_file` for the authenticated `harness:assignment-handoff` descriptor/pages validates and returns the selected immutable prompt buffer with its typed receipt.
+-- AL `al artifact submit --contract-file PATH` publishes an explicitly declared implementation-result companion. The Harness `submit_output` operation accepts the optional `contract` object. A generic supporting artifact without that field remains a legacy/free-form artifact; generic JSON is not automatically a contract.
++- AL `al artifact output --name result.md --file result.md --contract-file contract.json --writer WRITER_ID` publishes an explicitly declared implementation-result companion. The Harness `submit_output` operation accepts the optional `contract` object. A generic supporting artifact without that field remains a legacy/free-form artifact; generic JSON is not automatically a contract.
+ - Typed `integration handoff` may reference an implementation-result artifact through `contract_ref`. Existing free-form `text` handoffs remain readable under their previous behavior.
+ - Existing interview, design, decision, planning, issue/blocker, evidence and publication seams produce or consume the remaining families through their actual adapters and specialized validators.
+ 
+@@ -84,3 +84,5 @@
+ The focused and compatibility evidence is recorded in [implementation-progress.md](implementation-progress.md). Both vendored AL manifests and source copies are covered by parity and isolated-source checks. Harness trusted snapshots list the new contract/exchange modules. The formatter excludes only captured planning Markdown from format input; production Python lint and formatter coverage remain enabled.
+ 
+ These checks establish only the recorded local paths and source state. Hosted CI, complete service/check discovery, formal AL review/approval, broader native/provider boundaries and full-mission completion remain separate obligations. R5a remains a future plan; it is not implemented by this contract.
++
++`WRITER_ID` is the current active writer. `contract.json` must bind the actual current assignment, its acceptance criteria and the exact content of `result.md`.
+--- /private/tmp/al-r4-frozen-review-005/docs/reliability-platform/user-guide.md	2026-11-20 09:41:29
++++ docs/reliability-platform/user-guide.md	2026-11-20 10:08:30
+@@ -71,7 +71,7 @@
+ 
+ ## Typed AL and Harness exchanges
+ 
+-Newly generated handoffs and explicit typed outputs carry a closed version-1 companion for one of ten families: requirement analysis, architecture proposal, design decision, implementation plan, task assignment, implementation result, verification result, failure report, escalation request or final delivery. The generated assignment binds the actual writer/task/graph/specification context, immutable inputs and expected output kind. To publish a typed implementation result through standalone AL, submit an explicit contract file with `al artifact submit --contract-file PATH`; Harness `submit_output` accepts the corresponding optional `contract` object. Supporting files without a declaration remain free-form legacy artifacts.
++Newly generated handoffs and explicit typed outputs carry a closed version-1 companion for one of ten families: requirement analysis, architecture proposal, design decision, implementation plan, task assignment, implementation result, verification result, failure report, escalation request or final delivery. The generated assignment binds the actual writer/task/graph/specification context, immutable inputs and expected output kind. To publish a typed implementation result through standalone AL, submit an explicit contract file with `al artifact output --name result.md --file result.md --contract-file contract.json --writer WRITER_ID`; Harness `submit_output` accepts the corresponding optional `contract` object. Supporting files without a declaration remain free-form legacy artifacts.
+ 
+ The companion describes its source record and exact immutable references. It does not approve a decision, prove a test passed, verify a task, complete a writer, or authorize publication. Existing producer identity, current epoch/revision, dependency graph, protected decision, specialized planning/review/evidence and publication checks still apply. If a required contract is invalid or stale, the affected publication/consumption is refused with a bounded field pointer and repair action; rejected values are not echoed. Normal AL release and attempt-accounting rules still apply.
+ 
+@@ -84,3 +84,5 @@
+ When an AL registration discovers local dependency units, `auto_prepare()` performs bounded metadata/path checks and queues concrete setup requests. A `Queued` result is pending work; it is not evidence that lockfiles were read, packages were installed, or tests ran. The outer AL command does not own or execute these setup effects.
+ 
+ The controller processes setup after the ambient Attempt has ended. It revalidates an explicitly retained setup owner or sends a fresh request through the normal `environment_operation` dispatch. The admitted attempt must match the same execution, principal, task and revision before the setup handler reads dependency manifests. Polling or cancellation does not clear unresolved old setup/process liability or demonstrate that an installer stopped. The archived E51 causal red and E59/E60 functional passes are recorded with current currency and later test corrections in [implementation-progress.md](implementation-progress.md); the native and arbitrary installer boundaries remain unqualified.
++
++`WRITER_ID` is the current active writer. `contract.json` must bind the actual current assignment, its acceptance criteria and the exact content of `result.md`.
+--- /private/tmp/al-r4-frozen-review-005/harness/policy/control_sources_claude.py	2026-11-20 09:41:29
++++ harness/policy/control_sources_claude.py	2026-11-20 10:09:05
+@@ -158,10 +158,10 @@
+ HASHES = """b379a41ae5fc87a9f84ae80e7e3f45259e22068727863d6a8d03296648c7a2cc
+ d9fd553783049689c6960ead0f45b13f133f8af434e57d9438e9ae5322fa95a8
+ 0ce4ff994fd6af5a46225d1b364447f62a81f0a4b567812387a0cfe20525b8d6
+-dfe136602979278280b6132281c3d35b2c5e158389185f8f82692c5e403224c1
++93b99fc92e7bbbbb170fbb89faab7900947063aed4c23f13bed58a8707a91432
+ a6c8c78927ac64d631912d14300a118f1184c782ade32aa697fe3a43f4b915db
+ 2e823b02093e468ae51639f439fa6f1aa9d5cc9ac27aec3e77bdfe9e95ddc538
+-e2528b9608811aea2d0798f699563baa8d9424671bd6a5f77127f2aa5da9d4fc
++cf0fcc2a00afc06d2e791fa1286139853b044c6b879fdfdc867604713f08ab16
+ 13d81ff00307abf3810bc82631a28049351c376cd1f4270983e51ce1dedbcbba
+ 9e1f1332d8e3beab3324d0f70412e4b43cdcc81f86ae9025cd5d590c6f90a89d
+ 526da61fff9dcd0b205542f784092c8441bb9c0cc73be43d27c0eb91b5f246a1
+@@ -224,11 +224,11 @@
+ d04390e2f923b65607c646736a766283b82894a6254552e37cf2543355efd6dd
+ 46dfc41ac9486ea901c4f799b4c228c4345610683b6bb739f2b2e204aafb5f77
+ d37d61732cf957fb2e921a98e58eb3d5a85f779393c4ccce49f15dedff3f8222
+-e163e7a89a9ab5c141f4941344387c2af19cc287413fff84a8ed5d34f986f741
++55818ceee8a5e14e77d8ef7a7695b7083162eb768a4c94a1df80081d30cc015f
+ 12c38558b1be74f8e77d23c16cdca285c7c112bdc3106576fd4451794aabca08
+ 8f1105d316a2f866a94098177f773ee79391f408c9679849b198ef0160b6ded7
+ 94cebabfc0d1ffb250971f22e32695e827ee081ef0d4c40f4b73b52353126554
+-42fc51e8fcf97fc52ebd6f92462cb90204171ce2b8b287635d0cfee8d5f2761f
++62562ba54e5846678c56d767fa2f35e09a441c9e5d6fa40eaeb1d8183cfd233c
+ 605424814ceb6cedc999365c4881796ddd4aca98878549ae52b122fbf9df6e60
+ c30647a9531a83e30f43989d39cb7b165263ab9e1387162cd04018519125a7a3
+ 2e614bb6b6805150372d2d16745f165a5ed9c3547469c5a6514d000ff58c61ca
+@@ -253,7 +253,7 @@
+ cec8fa0ce054570df5652c2974c5631365b7e7e436c9454110a41a15ce6cc343
+ 62de3a8b716571ccaedb3c1c47cef319ddeca862dd4a75029c696218a81deff8
+ a7cec7415c1f8df55ccf0f30272a2b2d29237fe7329df61fefe3baae39fb432a
+-969f2ec7c6678eb311bb78f45bd2e509b333b5ccf8b4add2a40351b927066c80
++30a24ba79b38016e74183bbc15db0c1e147b197e7881554dfeec43239d6f35ef
+ aed73c664f2c1cc7277f726ed96b6ba64ce96b7ff2f66d9a767ee5a80830d719
+ 1b2072056631a952ce3552541de1f2b5ab6ceafc3b93b0e04f01c9d83e88564b
+ aa5efec16434a0ebe2a17b72a291e32685232a1d515867fc55fefab6f084e09d
+--- /private/tmp/al-r4-frozen-review-005/harness/policy/control_sources_codex.py	2026-11-20 09:41:29
++++ harness/policy/control_sources_codex.py	2026-11-20 10:09:05
+@@ -155,10 +155,10 @@
+ HASHES = """b379a41ae5fc87a9f84ae80e7e3f45259e22068727863d6a8d03296648c7a2cc
+ d9fd553783049689c6960ead0f45b13f133f8af434e57d9438e9ae5322fa95a8
+ 0ce4ff994fd6af5a46225d1b364447f62a81f0a4b567812387a0cfe20525b8d6
+-dfe136602979278280b6132281c3d35b2c5e158389185f8f82692c5e403224c1
++93b99fc92e7bbbbb170fbb89faab7900947063aed4c23f13bed58a8707a91432
+ a6c8c78927ac64d631912d14300a118f1184c782ade32aa697fe3a43f4b915db
+ 2e823b02093e468ae51639f439fa6f1aa9d5cc9ac27aec3e77bdfe9e95ddc538
+-e2528b9608811aea2d0798f699563baa8d9424671bd6a5f77127f2aa5da9d4fc
++cf0fcc2a00afc06d2e791fa1286139853b044c6b879fdfdc867604713f08ab16
+ 13d81ff00307abf3810bc82631a28049351c376cd1f4270983e51ce1dedbcbba
+ 9e1f1332d8e3beab3324d0f70412e4b43cdcc81f86ae9025cd5d590c6f90a89d
+ 526da61fff9dcd0b205542f784092c8441bb9c0cc73be43d27c0eb91b5f246a1
+@@ -221,10 +221,10 @@
+ d04390e2f923b65607c646736a766283b82894a6254552e37cf2543355efd6dd
+ 46dfc41ac9486ea901c4f799b4c228c4345610683b6bb739f2b2e204aafb5f77
+ d37d61732cf957fb2e921a98e58eb3d5a85f779393c4ccce49f15dedff3f8222
+-e163e7a89a9ab5c141f4941344387c2af19cc287413fff84a8ed5d34f986f741
++55818ceee8a5e14e77d8ef7a7695b7083162eb768a4c94a1df80081d30cc015f
+ 12a65cdebe3c2fb6e95569d905d20c8cee6f20ca494c55c793b1654a05a3323f
+ 94cebabfc0d1ffb250971f22e32695e827ee081ef0d4c40f4b73b52353126554
+-42fc51e8fcf97fc52ebd6f92462cb90204171ce2b8b287635d0cfee8d5f2761f
++62562ba54e5846678c56d767fa2f35e09a441c9e5d6fa40eaeb1d8183cfd233c
+ 605424814ceb6cedc999365c4881796ddd4aca98878549ae52b122fbf9df6e60
+ c30647a9531a83e30f43989d39cb7b165263ab9e1387162cd04018519125a7a3
+ 2e614bb6b6805150372d2d16745f165a5ed9c3547469c5a6514d000ff58c61ca
+@@ -248,7 +248,7 @@
+ 17dcc3b393206173e5a97d62d703ac58f6cd4124cfa0f284ee21fb5d70f1afa8
+ cec8fa0ce054570df5652c2974c5631365b7e7e436c9454110a41a15ce6cc343
+ 62de3a8b716571ccaedb3c1c47cef319ddeca862dd4a75029c696218a81deff8
+-969f2ec7c6678eb311bb78f45bd2e509b333b5ccf8b4add2a40351b927066c80
++30a24ba79b38016e74183bbc15db0c1e147b197e7881554dfeec43239d6f35ef
+ aed73c664f2c1cc7277f726ed96b6ba64ce96b7ff2f66d9a767ee5a80830d719
+ 1b2072056631a952ce3552541de1f2b5ab6ceafc3b93b0e04f01c9d83e88564b
+ aa5efec16434a0ebe2a17b72a291e32685232a1d515867fc55fefab6f084e09d
+--- /dev/null	2026-11-20 10:18:21
++++ tests/test_agent_contracts_recovery.py	2026-11-20 10:08:30
+@@ -0,0 +1,115 @@
++# ruff: noqa: F811
++"""Actual Harness-bound interrupted evidence preserves its authenticated observation."""
++
++import copy
++import json
++import os
++import signal
++import sys
++import time
++from pathlib import Path
++
++from tests.test_execution_continuity import command, prepare, state
++from tests.test_execution_operations import operations  # noqa: F401
++
++
++def test_interrupted_public_harness_check_reconciliation(operations):
++    operation, principal, _, _, _, _, envelope = operations
++    prepare(operation, principal)
++    target = Path(envelope["repository"]) / "work/probe.txt"
++    target.parent.mkdir()
++    target.write_text("scoped interruption fixture\n")
++    command(
++        operation,
++        principal,
++        "evidence",
++        "plan",
++        "--area",
++        "owned-interruption",
++        "--kind",
++        "check",
++        "--scope",
++        "work/probe.txt",
++        "--",
++        sys.executable,
++        "-c",
++        "import time;time.sleep(60)",
++    )
++    run = operation.dispatch(
++        principal,
++        "al_command",
++        {
++            "arguments": ["evidence", "run", "--area", "owned-interruption"],
++            "background": True,
++        },
++    )
++    assert run.get("handle"), run
++    record = operation.processes.records[run["handle"]]
++    deadline = time.monotonic() + 20
++    while time.monotonic() < deadline:
++        entries = state(operation)["evidence"]["entries"]
++        if record["status"] != "Running":
++            raise AssertionError(record["output"])
++        if entries and entries[-1]["status"] == "RUNNING" and entries[-1].get("pid"):
++            runner = entries[-1]["owner_pid"]
++            assert os.getpgid(runner) == record["process"].pid
++            os.kill(runner, signal.SIGINT)
++            break
++        time.sleep(0.05)
++    else:
++        raise AssertionError("actual evidence child did not start")
++    deadline = time.monotonic() + 20
++    while time.monotonic() < deadline:
++        observed = operation.dispatch(principal, "poll_process", {"handle": run["handle"]})
++        if observed["status"] != "Running":
++            break
++        time.sleep(0.05)
++    assert observed["status"] != "Running", observed
++    original = copy.deepcopy(state(operation)["evidence"]["entries"][-1])
++    assert original["status"] == "INFRA" and original["interrupted"]
++    companion = copy.deepcopy(
++        state(operation)["agent_contracts"]["verification-result:" + original["id"]]
++    )
++    legacy = {
++        r["attempt_id"]
++        for r in operations[2].conn.execute("SELECT attempt_id FROM policy_legacy_admissions")
++    }
++    proof = operation.dispatch(
++        principal,
++        "write_artifact",
++        {
++            "name": "reconciliation.json",
++            "expected_graph_revision": state(operation)["integration"]["graph_revision"],
++            "content": json.dumps(
++                {
++                    "runner_returncode": observed["returncode"],
++                    "cleanup": original.get("cleanup"),
++                    "entry_id": original["id"],
++                }
++            ),
++        },
++    )
++    resource = "artifact:" + proof["artifact_id"] + ":" + proof["sha256"]
++    command(
++        operation,
++        principal,
++        "check-reconcile",
++        "--id",
++        original["id"],
++        "--reason",
++        "Observed own runner termination and inspected the retained cleanup.",
++        "--artifact",
++        resource,
++    )
++    command(operation, principal, "evidence", "status")
++    current = state(operation)["evidence"]["entries"][-1]
++    ref = current["reconciliation"]["observation"]
++    retained = json.loads(Path(ref["stored_path"]).read_bytes())
++    assert retained == {"schema_version": 1, "entry": original, "contract": companion}
++    assert current["status"] == "INFRA"
++
++    after = {
++        r["attempt_id"]
++        for r in operations[2].conn.execute("SELECT attempt_id FROM policy_legacy_admissions")
++    }
++    assert legacy <= after

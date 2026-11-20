@@ -72,15 +72,40 @@ def operations(controller, monkeypatch, launched, request):
         registry,
         Path(execution["handoff_path"]).parent / "operations",
     )
-    principal = {
-        "thread_id": registry.root,
-        "role": "orchestrator",
-        "writable": False,
-        "binding": execution["binding"],
-        "policy": registry.policy,
-    }
+    principal = observed_principal(operations, registry.root, "orchestrator")
     yield operations, principal, controller, initialization, package, execution, envelope
     operations.close()
+
+
+def observed_principal(operation, thread_id, role):
+    """Synthetic native observation exercises the real registry, not caller-selected metadata."""
+    registry = operation.registry
+    try:
+        thread_id = str(uuid.UUID(thread_id))
+    except ValueError:
+        thread_id = str(uuid.uuid5(uuid.UUID(registry.root), thread_id))
+    records = registry.native_root / "sessions/2026/10/29"
+    records.mkdir(parents=True, exist_ok=True)
+    source = (
+        "exec"
+        if role == "orchestrator"
+        else {"subagent": {"thread_spawn": {"parent_thread_id": registry.root, "agent_role": role}}}
+    )
+    (records / ("rollout-" + thread_id + ".jsonl")).write_text(
+        json.dumps(
+            {
+                "type": "session_meta",
+                "payload": {
+                    "id": thread_id,
+                    "session_id": thread_id,
+                    "cli_version": "0.164.0",
+                    "source": source,
+                },
+            }
+        )
+        + "\n"
+    )
+    return registry.resolve({"threadId": thread_id, "sessionId": thread_id})
 
 
 @pytest.mark.native
@@ -281,7 +306,7 @@ def test_guarded_check_cannot_write_the_ledger_or_repository(operations):
 
 def test_read_only_agent_can_submit_only_a_named_report_outbox(operations):
     operation, principal, _, _, _, _, _ = operations
-    scout = principal | {"thread_id": "scout-output", "role": "al-scout", "writable": False}
+    scout = observed_principal(operation, "scout-output", "al-scout")
     context = operation.dispatch(scout, "await_assignment", {"timeout": 1})
     assert context["status"] == "ReadOnly"
     result = operation.dispatch(
@@ -327,7 +352,7 @@ def test_owned_read_process_and_revision_rejection(operations):
         "run_command",
         {"argv": ["pwd"], "cwd": ".", "task_id": "none", "expected_revision": "none"},
     )
-    other = principal | {"thread_id": "different-principal"}
+    other = observed_principal(operation, "different-principal", "al-scout")
     with pytest.raises(ValueError, match="owned"):
         operation.dispatch(other, "poll_process", {"handle": result["handle"]})
     deadline, output = time.monotonic() + 10, ""
@@ -346,6 +371,9 @@ def test_owned_read_process_and_revision_rejection(operations):
 def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(operations):
     operation, principal, _, initialization, _, _, _ = operations
     from harness.task_environment import context_revision
+    from tests.test_agent_contracts_setup import registered_setup
+
+    _, _, _, state = registered_setup(operations, ["setup-app"], "setup-task")
 
     root = Path(operation.envelope["repository"])
     unit = root / "setup-app"
@@ -358,11 +386,6 @@ def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(oper
         '[[package]]\nname="setup-app"\nversion="0.1.0"\nsource={virtual="."}\n'
     )
     path = Path(initialization["source"])
-    state = json.loads(path.read_bytes())
-    state["integration"].update(
-        tasks={"setup-task": {"revision": 1, "files": ["setup-app"]}}, graph_revision=1
-    )
-    path.write_text(json.dumps(state))
     inspection = operation.dispatch(principal, "environment_operation", {"operation": "inspect"})
     task = next(t for t in inspection["tasks"] if t["task_id"] == "setup-task")
     request = next(r for r in task["prepare_requests"] if r["cwd"] == "setup-app")
@@ -377,7 +400,7 @@ def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(oper
     result = operation.dispatch(principal, "environment_operation", request)
     with pytest.raises(ValueError, match="owned"):
         operation.dispatch(
-            principal | {"thread_id": "other"},
+            observed_principal(operation, "other", "al-scout"),
             "poll_process",
             {
                 "handle": result["handle"],
@@ -520,7 +543,7 @@ def test_child_write_requires_its_exact_current_writer(operations):
     operation, principal, controller, initialization, _, execution, _ = operations
     path = Path(initialization["source"])
     state = json.loads(path.read_bytes())
-    child = principal | {"thread_id": "child-A", "role": "al-engineer", "writable": True}
+    child = observed_principal(operation, "child-A", "al-engineer")
     state["status"] = "RUNNING"
     task = {
         "revision": 1,
@@ -532,8 +555,9 @@ def test_child_write_requires_its_exact_current_writer(operations):
     state["integration"].update(tasks={"A": task}, graph_revision=1)
     state["writers"] = {
         "w1": {
+            "id": "w1",
             "task": "A",
-            "agent": "child-A",
+            "agent": child["thread_id"],
             "role": "al-engineer",
             "state": "ACTIVE",
             "files": ["source"],
@@ -541,7 +565,7 @@ def test_child_write_requires_its_exact_current_writer(operations):
     }
     path.write_text(json.dumps(state))
     revision = digest({"task": "A", "revision": 1, "graph_revision": 1, "amendments": []})
-    operation.assignments["child-A"] = {"task": "A", "revision": revision}
+    operation.assignments[child["thread_id"]] = {"task": "A", "revision": revision}
     operation.admitted(controller, child, "A", revision, paths=["source/good.py"])
     for wrong, rev, files in (
         (child | {"thread_id": "child-B"}, revision, ["source/good.py"]),
@@ -561,6 +585,7 @@ def test_child_write_requires_its_exact_current_writer(operations):
 def generated_handoff_fixture(operations, child_id="handoff-child", body=None):
     """Synthetic admission fixture; handoff generation uses the actual protected AL command."""
     operation, principal, controller, initialization, _, execution, _ = operations
+    child_id = observed_principal(operation, child_id, "al-engineer")["thread_id"]
     path = Path(initialization["source"])
     state = json.loads(path.read_bytes())
     task_id = "handoff-task"
@@ -615,7 +640,7 @@ def generated_handoff_fixture(operations, child_id="handoff-child", body=None):
     path.write_text(json.dumps(state))
     revision = digest({"task": task_id, "revision": 1, "graph_revision": 1, "amendments": []})
     operation.assignments[child_id] = {"task": task_id, "revision": revision}
-    child = principal | {"thread_id": child_id, "role": "al-engineer", "writable": True}
+    child = observed_principal(operation, child_id, "al-engineer")
     body = body or "ORIGINAL SPEC\n" + "bounded α🧭 text\n" * 1900 + "TAIL_SENTINEL\n"
     draft = operation.artifacts.write_artifact(principal, "handoff-body.md", body, 1, 1)
     resource = "artifact:" + draft["artifact_id"] + ":" + draft["sha256"]
@@ -758,7 +783,7 @@ def test_mcp_supervisor_control_contract_without_product_assignment(operations):
     stale = request | {"expected_graph_revision": assignment["graph_revision"] + 1}
     assert "stale" in call("diagram_operation", stale)["content"][0]["text"]
     for role in ("al-architect", "al-designer"):
-        child = principal | {"thread_id": role, "role": role}
+        child = observed_principal(operation, role, role)
         assert operation.dispatch(child, "await_assignment", {"timeout": 1})["status"] == "ReadOnly"
         with pytest.raises(ValueError, match="only orchestrator"):
             operation.dispatch(child, "diagram_operation", request)
@@ -796,3 +821,28 @@ def test_supervisor_confined_source_proof_via_mcp(operations):
     assert page["sha256"] == digest(raw) and page["size"] == len(raw)
     assert page["page_bytes"] == page["next_offset"] == 19 and page["truncated"]
     assert principal["writable"] is False and not operation.assignments
+
+
+def test_shared_fixture_keeps_one_canonical_root_through_continuity_child(operations):
+    from tests.test_execution_continuity import child
+
+    operation, principal, *_ = operations
+    native = child(operation, "al-engineer")
+    assert native["parent_thread_id"] == principal["thread_id"]
+    assert (
+        len(
+            list(
+                operation.registry.native_root.glob(
+                    "sessions/*/*/*/*" + principal["thread_id"] + ".jsonl"
+                )
+            )
+        )
+        == 1
+    )
+    assert (
+        operation.registry.resolve(
+            {"threadId": principal["thread_id"], "sessionId": principal["session_id"]}
+        )
+        == principal
+    )
+    assert operation.dispatch(principal, "read_file", {"path": "harness:handoff"})

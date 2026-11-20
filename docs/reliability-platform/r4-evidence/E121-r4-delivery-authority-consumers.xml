@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="10" time="14.609" timestamp="2026-11-20T11:52:52.565947+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_execution" name="test_exact_private_handoff_and_idempotent_reservation" time="0.320" /><testcase classname="tests.test_execution" name="test_stale_and_tampered_authority_refused" time="0.256" /><testcase classname="tests.test_execution" name="test_draft_cannot_start" time="0.098" /><testcase classname="tests.test_execution" name="test_explicit_relative_specs_survive_detached_authority_cwd" time="0.269" /><testcase classname="tests.test_execution" name="test_new_reservation_canonicalizes_private_runtime_alias" time="0.263" /><testcase classname="tests.test_execution" name="test_legacy_database_alias_authority_preserves_envelope" time="0.219" /><testcase classname="tests.test_execution_decisions" name="test_registry_intent_retries_keep_frozen_id_and_base_authority" time="0.240" /><testcase classname="tests.test_execution_decisions" name="test_frozen_intent_recovers_crash_before_registry_file" time="0.229" /><testcase classname="tests.test_execution_decisions" name="test_inbox_publication_is_complete_at_first_visibility_and_never_overwrites" time="0.002" /><testcase classname="tests.test_execution_decisions" name="test_decision_authority_captures_exact_validated_buffer" time="12.620"><failure message="sqlite3.ProgrammingError: Error binding parameter 1: type 'dict' is not supported">operations = (&lt;harness.execution_operations.OperationController object at 0x1075a78c0&gt;, {'thread_id': '82ccacd6-76cc-4fd0-83aa-db1e...codex'}, {'id': 'exec-089abeb1f28d1ed01595bea9', 'task_id': 't-ff23a9b1', 'approval_id': 1, 'host': 'codex', ...}, ...)
+
+    def test_decision_authority_captures_exact_validated_buffer(operations):
+        import hashlib
+        import json
+    
+        from harness.execution_models import ExecutionConflict
+        from tests.test_execution_continuity import prepare, report, state
+    
+        operation, principal, controller, _, eid, _, _ = operations
+        prepare(operation, principal)
+        report(
+            operation,
+            principal,
+            "blocker",
+            {
+                "id": "buffer-design",
+                "kind": "developer_engineering_decision",
+                "tasks": ["B"],
+                "question": "Choose architecture",
+                "context": "Explicit developer decision required",
+                "alternatives": ["one", "two"],
+                "recommendation": "one",
+            },
+        )
+&gt;       decided = record_execution_decision(
+            controller,
+            eid,
+            "buffer-design",
+            blocker_revision=1,
+            request_id="buffer-one",
+            verdict="reject",
+            decision_text="Reject this proposal and retain the open architecture decision.",
+            tasks=["B"],
+            criteria=state(operation)["integration"]["tasks"]["B"]["criteria"],
+        )
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_decisions.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_decisions.py:150: in locked
+    execution = get_execution(controller.conn, execution_id)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+conn = &lt;sqlite3.Connection object at 0x1075d6110&gt;
+execution_id = {'launcher': '/private/tmp/al-r4-delivery-authority-consumers-001/test_decision_authority_captur0/home/bin/alctl', 'pa...able': '/private/tmp/al-r4-delivery-authority-consumers-001/test_decision_authority_captur0/native-provider-bin/codex'}
+
+    def get_execution(conn, execution_id):
+&gt;       row = conn.execute("SELECT * FROM executions WHERE id=?", (execution_id,)).fetchone()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       sqlite3.ProgrammingError: Error binding parameter 1: type 'dict' is not supported
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_store.py:11: ProgrammingError</failure></testcase></testsuite></testsuites>

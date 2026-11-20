@@ -1,0 +1,10 @@
+{
+  "al/codex/skills/al/scripts/al_agent_exchange.py": "cc5093b40fa369c0cd50c5570f9b639fd9c0aabb71242c335ac315068818b18d",
+  "al/codex/skills/al/scripts/al_planning.py": "cff470d3821e6722ded26c5ef5a717ee960f3630812e4bedc5065e6c95500a76",
+  "al/codex/skills/al/tests/test_execution_events.py": "25235de8081fcb68c2e0299c1415771f9df37c8c75426670c4ff8fdb4d50cb22",
+  "al/claude/skills/al/scripts/al_agent_exchange.py": "cc5093b40fa369c0cd50c5570f9b639fd9c0aabb71242c335ac315068818b18d",
+  "al/claude/skills/al/scripts/al_planning.py": "cff470d3821e6722ded26c5ef5a717ee960f3630812e4bedc5065e6c95500a76",
+  "al/claude/skills/al/tests/test_execution_events.py": "25235de8081fcb68c2e0299c1415771f9df37c8c75426670c4ff8fdb4d50cb22",
+  "harness/policy/control_sources_codex.py": "9f719e889b0e2f53f808c794b27e43ce7706aab9c10b3498fdb2dac73fd4bae3",
+  "harness/policy/control_sources_claude.py": "03001e3d298a08c37e8307956c6849f2f12dc85e9fc367be203a4e7ee627dc3b"
+}

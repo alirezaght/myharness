@@ -69,7 +69,7 @@ def publication_readiness(st, request=None):
             status = "pending"
         elif status == "published" and not independent["review"]["ready"]:
             status = "published_review_pending"
-    return {
+    result = {
         "schema_version": 1,
         "kind": "publication-readiness-v1",
         **R.identity(st),
@@ -83,6 +83,14 @@ def publication_readiness(st, request=None):
         "code": code,
         **independent,
     }
+
+    from al_agent_exchange import produce, consume
+    view = dict(st, agent_contracts=dict(st.get('agent_contracts', {})))
+    contract = produce(view, 'final-delivery', 'publication-readiness', result, status='observed')
+    if contract is not None:
+        consume(view, 'final-delivery', 'publication-readiness', result)
+        result['contract'] = contract
+    return result
 
 
 def validate_publication_record(st, record):

@@ -1,0 +1,39 @@
+{"purpose": "Capacity repair; settled disposable test basetemps only. XML, public logs/evidence/state/pins, reports, source, review snapshots, browsers and active deadline001 retained."}
+{"path": "/private/tmp/al-r3-core-002", "retained_xml": "/private/tmp/al-r3-core-002.xml", "xml_sha256": "de3d5b8dd10e1ab6a2fcebf76247c404012d607324ce4887f9883b8a1f2bbf9f", "removed": true}
+{"path": "/private/tmp/al-r3-core-003", "retained_xml": "/private/tmp/al-r3-core-003.xml", "xml_sha256": "8b96a6e0e3bd9ada8594ae96996ce522a295142000a713654c473bd762b28fc0", "removed": true}
+{"path": "/private/tmp/al-r3-core-004", "retained_xml": "/private/tmp/al-r3-core-004.xml", "xml_sha256": "4dcaa1f18b744e6c4fbb519156b15e29dbdc9e4352183534dd3eb6314125c387", "removed": true}
+{"path": "/private/tmp/al-r3-core-005", "retained_xml": "/private/tmp/al-r3-core-005.xml", "xml_sha256": "4d9239433dbf674b91d22afd2d98b81f0e566e7c185d328f039a17f6ab38c3cf", "removed": true}
+{"path": "/private/tmp/al-r3-core-006", "retained_xml": "/private/tmp/al-r3-core-006.xml", "xml_sha256": "d56f33551eb70a4c454ec05a52568d27cae6f4f54eb93b40835149319b0ed922", "removed": true}
+{"path": "/private/tmp/al-r3-core-007", "retained_xml": "/private/tmp/al-r3-core-007.xml", "xml_sha256": "f30566e3e19e143743a94c8b00cb75d84edc721df30f6f6d9b329298ddc46c6d", "removed": true}
+{"path": "/private/tmp/al-r3-core-008", "retained_xml": "/private/tmp/al-r3-core-008.xml", "xml_sha256": "85743d37abd3e149fc21a0f9ad26ad2c4c865252a109115c5604e8b6a8b5330a", "removed": true}
+{"path": "/private/tmp/al-r3-core-009", "retained_xml": "/private/tmp/al-r3-core-009.xml", "xml_sha256": "1b06159d8b2c866aed6a1ca033ab5b8241aca4ab905c8e9fec5c685473a0106c", "removed": true}
+{"path": "/private/tmp/al-r3-core-010", "retained_xml": "/private/tmp/al-r3-core-010.xml", "xml_sha256": "ecdd0086a7af65f2a6dfb092f660f62b6f157c1669cc71252379289510ff2ab4", "removed": true}
+{"path": "/private/tmp/al-r3-core-011", "retained_xml": "/private/tmp/al-r3-core-011.xml", "xml_sha256": "597f55de84f0688876353469aa89aa8bc57e325cec7d6fe1c4b7f1ec86f37c5d", "removed": true}
+{"path": "/private/tmp/al-r3-core-012", "retained_xml": "/private/tmp/al-r3-core-012.xml", "xml_sha256": "32ca738893a8410d6c7478ab5631b38f4be6945ee239e5e861f22042b4937952", "removed": true}
+{"path": "/private/tmp/al-r3-core-013", "retained_xml": "/private/tmp/al-r3-core-013.xml", "xml_sha256": "d5cc88f92bb0cb96e888fe8c492aafc825581050e45000b438344c1468255aa6", "removed": true}
+{"path": "/private/tmp/al-r3-core-014", "retained_xml": "/private/tmp/al-r3-core-014.xml", "xml_sha256": "811269118a1e594f9b806ec64003e1f3cb8022b511cd12500fe308dc8a2faa0e", "removed": true}
+{"path": "/private/tmp/al-r3-core-015", "retained_xml": "/private/tmp/al-r3-core-015.xml", "xml_sha256": "4f0c080415c4cbd7ff4dd06164f0b6489e33569c1ef7992370a841b6ecb0b346", "removed": true}
+{"path": "/private/tmp/al-r3-core-016", "retained_xml": "/private/tmp/al-r3-core-016.xml", "xml_sha256": "73111f1cc4d3f286b9df0cd8074fe1611d82d45b99ff46c1dfe7e612f1bf92b1", "removed": true}
+{"path": "/private/tmp/al-r3-core-017", "retained_xml": "/private/tmp/al-r3-core-017.xml", "xml_sha256": "9157a4a4036cf49de93c4b3563b86c4b6f71d276af65a61ffb8666586b763ddb", "removed": true}
+{"path": "/private/tmp/al-r3-core-018", "retained_xml": "/private/tmp/al-r3-core-018.xml", "xml_sha256": "7f2004c9aea9353ea18bf9ba0af056eff5f42598d9c718cc542c68a3852fdbd0", "removed": true}
+{"path": "/private/tmp/al-r3-core-019", "retained_xml": "/private/tmp/al-r3-core-019.xml", "xml_sha256": "2357168eafeacaa3c8e78dee86289d96cf54325ba887f4bb7ea478757e4f88e4", "removed": true}
+{"path": "/private/tmp/al-r3-core-020", "retained_xml": "/private/tmp/al-r3-core-020.xml", "xml_sha256": "33d77fb2cf652e30485c8151df75681d68f669f7e5faece4784b83c362238158", "removed": true}
+{"path": "/private/tmp/al-r3-core-021", "retained_xml": "/private/tmp/al-r3-core-021.xml", "xml_sha256": "7625c843dd1234148a9c941b8725c01d7b23ccb54c3347b59068e6a36fafcc9e", "removed": true}
+{"path": "/private/tmp/al-r3-core-022", "retained_xml": "/private/tmp/al-r3-core-022.xml", "xml_sha256": "773ab15b0cbd631d43ead55d378f791c87d2babbd5fc6d9a359b09fc51e105f7", "removed": true}
+{"path": "/private/tmp/al-r3-authority-001", "retained_xml": "/private/tmp/al-r3-authority-001.xml", "xml_sha256": "ae932cd4d82cd8dd2d4ad78d0977af3b46e762c83524f5a42cbee62cef4a3c38", "removed": true}
+{"path": "/private/tmp/al-r3-authority-002", "retained_xml": "/private/tmp/al-r3-authority-002.xml", "xml_sha256": "b8b72bb19390a22f7120d933b24f4e6184497a586890ac546596330de8fb2136", "removed": true}
+{"path": "/private/tmp/al-r3-observation-001", "retained_xml": "/private/tmp/al-r3-observation-001.xml", "xml_sha256": "7813766a2c96c3b30751cf52e036e7b6e4e456f9b194afdd525f516f4dc8a6b1", "removed": true}
+{"path": "/private/tmp/al-r3-observation-002", "retained_xml": "/private/tmp/al-r3-observation-002.xml", "xml_sha256": "168c4eec73ef82009b04df9dc57e66c014526b2a77e12914d17ff5c6ecfd20a0", "removed": true}
+{"path": "/private/tmp/al-r3-boundary-001", "retained_xml": "/private/tmp/al-r3-boundary-001.xml", "xml_sha256": "f79fdedf4934ac6f82cdf2bd516059a9861fce8ee94e8c588f148f3a0937896d", "removed": true}
+{"path": "/private/tmp/al-r3-boundary-002", "retained_xml": "/private/tmp/al-r3-boundary-002.xml", "xml_sha256": "980b6438ebe030bd064f139281a7e1984952ee3459165ce941cc02c9cdb4defd", "removed": true}
+{"path": "/private/tmp/al-r3-boundary-003", "retained_xml": "/private/tmp/al-r3-boundary-003.xml", "xml_sha256": "0e89d9a038fb3eea9cd49fdd48b2f24a2da427899e33ce9f7b17a6141bb9fdfb", "removed": true}
+{"path": "/private/tmp/al-r3-boundary-004", "retained_xml": "/private/tmp/al-r3-boundary-004.xml", "xml_sha256": "628ff7f885bea399ad75b4442a1278f0358bcb610d68416479fd84a5a5a45e13", "removed": true}
+{"path": "/private/tmp/al-r3-retry-control-002", "retained_xml": "/private/tmp/al-r3-retry-control-002.xml", "xml_sha256": "e30a156df4fc7c7449cb50c7790eb934ae479606912616acb9cac66d453acf0b", "removed": true}
+{"path": "/private/tmp/al-r3-retry-control-003", "retained_xml": "/private/tmp/al-r3-retry-control-003.xml", "xml_sha256": "a1a05e9ac73630e28dcb915d545a1bc15e5e70b6e3128e9f222c6e8b91d58c9a", "removed": true}
+{"path": "/private/tmp/al-r3-retry-control-004", "retained_xml": "/private/tmp/al-r3-retry-control-004.xml", "xml_sha256": "f729aa7d28866e6e1b7c103ce2fa6ebaa6751b8b37686681e239a879ec40ce6b", "removed": true}
+{"path": "/private/tmp/al-r3-retry-control-005", "retained_xml": "/private/tmp/al-r3-retry-control-005.xml", "xml_sha256": "2caf3e02791cf1f95e76bffcfe53b7ac8f851c44b91225976b9f81df63e8d9b5", "removed": true}
+{"path": "/private/tmp/al-r3-retry-control-006", "retained_xml": "/private/tmp/al-r3-retry-control-006.xml", "xml_sha256": "0676ab3c4e54f418f097fa1aa9c44bcad39664a9d8df5a8ed8f684e0266732b3", "removed": true}
+{"path": "/private/tmp/al-r3-retry-control-007", "retained_xml": "/private/tmp/al-r3-retry-control-007.xml", "xml_sha256": "6c358a07b94b74ed8bb8b70debd41149afc2325c816a298e5be7020f210c541e", "removed": true}
+{"path": "/private/tmp/al-r3-core-001", "retained_xml": "/private/tmp/al-r3-core-001.xml", "xml_sha256": "512d89fc304a00e84bdf64fc9d6121d88b66c7b508db26bb8640148c0a1d04ba", "removed": true, "note": "Initial exact-root capacity repair before batch cleanup; completed tool receipts retained."}
+{"path": "/private/tmp/al-r3-al-claude-001", "retained_xml": "/private/tmp/al-r3-al-claude-001.xml", "xml_sha256": "2bf438331866a58d84b77c132e6fd55da379c08cd198cd56848230ff49eecf80", "removed": true, "note": "Initial exact-root capacity repair before batch cleanup; completed tool receipts retained."}
+{"path": "/private/tmp/al-r3-al-codex-001", "retained_xml": "/private/tmp/al-r3-al-codex-001.xml", "xml_sha256": "b29c7bffe2b3c1628459420af8690f03298b65056a1229cec55c7f1e435d27d0", "removed": true, "note": "Initial exact-root capacity repair before batch cleanup; completed tool receipts retained."}

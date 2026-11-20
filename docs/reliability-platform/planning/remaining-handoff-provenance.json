@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "purpose": "Provenance for the user-requested portable remaining-features handoff. These captured plans/reports are inputs, not implementation proof or final approval.",
+  "handoff": {
+    "file": "remaining-features-handoff.md",
+    "source": "/private/tmp/myharness-remaining-features-handoff-20261120.md",
+    "bytes": 19518,
+    "sha256": "d1301e25669984cc1fb036b05fa74f64ca99bfede759ec76846b1394f71c9a0e"
+  },
+  "copy_manifest": {
+    "source": "/private/tmp/al-r5a-handoff-docs-copy-manifest-004.json",
+    "bytes": 3364,
+    "sha256": "7cf1e4531dd79bd23d38667d23edacb5db7ee13288595777035b9e5788376737"
+  },
+  "source_revalidation_required": "Revalidate all task packages and planning against the verified integrated main source. Main integration, independent review and publication have not been completed by this handoff.",
+  "reports": [
+    {
+      "file": "planning/publication-integration-architect.md",
+      "source": "/private/tmp/al-publication-integration-actual-architect-001.md",
+      "bytes": 9934,
+      "sha256": "8c6e59375249b6e44977eab1c8981bf7b145cdfe374f0e069829399e6247cc95",
+      "role": "al-architect",
+      "description": "Current source-backed publication/integration plan; Designer integration work remains pending.",
+      "provenance": "Exact bytes copied from the named captured report; role attribution follows the original report, not this Builder."
+    },
+    {
+      "file": "planning/r5b-actual-source-architect-addendum.md",
+      "source": "/private/tmp/al-r5b-actual-r5a-source-architect-addendum-001.md",
+      "bytes": 9415,
+      "sha256": "f593e03f0de9c2e0e1801ff82155ca85118a1fde512f7d42469105cbc776303e",
+      "role": "al-architect",
+      "description": "Corrected source addendum for R5b; supersedes the old nullable-Harness assumptions.",
+      "provenance": "Exact bytes copied from the named captured report; role attribution follows the original report, not this Builder."
+    },
+    {
+      "file": "planning/r5b-actual-source-designer.md",
+      "source": "/private/tmp/al-r5b-actual-r5a-source-designer-pseudocode-001.md",
+      "bytes": 24072,
+      "sha256": "e04e93cc60afc30f0a44b968853bd6c6d41da2e7f5ed05d8af50d9f96a1c72df",
+      "role": "al-designer",
+      "description": "Actual R5b source pseudocode; use with its corrected Architect addendum.",
+      "provenance": "Exact bytes copied from the named captured report; role attribution follows the original report, not this Builder."
+    },
+    {
+      "file": "planning/r5b-engineer-readiness.md",
+      "source": "/private/tmp/al-r5b-actual-engineer-readiness-001.md",
+      "bytes": 3159,
+      "sha256": "f9904eb0c3817cb297d729799fb45d14d40e94c0609579868753732cedfe9b1e",
+      "role": "al-engineer",
+      "description": "Read-only R5b readiness report; not implementation or qualification.",
+      "provenance": "Exact bytes copied from the named captured report; role attribution follows the original report, not this Builder."
+    },
+    {
+      "file": "planning/r11-current-provider-qualification-preparation.md",
+      "source": "/private/tmp/al-r11-current-provider-qualification-preparation-001.md",
+      "bytes": 7768,
+      "sha256": "e8507d870546a37723c519c24e34358205833e7a428cdfb254cc17d68d7cf796",
+      "role": "al-architect",
+      "description": "Read-only current provider qualification preparation; re-observe actual native environment before work.",
+      "provenance": "Exact bytes copied from the named captured report; role attribution follows the original report, not this Builder."
+    }
+  ]
+}

@@ -18,6 +18,13 @@ from harness.owned_subprocess import run_owned
 def record_closed_context(execution, token, process, runtime):
     if getattr(runtime, "operations", None) is None:
         return
+    from contextlib import closing
+
+    from harness.db import connect
+    from harness.policy.reconciliation import require_closed
+
+    with closing(connect(runtime.operations.database)) as conn:
+        require_closed(conn, execution)
     records = list(runtime.operations.processes.records.values())
     if process.poll() is None or any(
         r["process"].poll() is None or r.get("thread") and r["thread"].is_alive() for r in records

@@ -80,7 +80,10 @@ def _locks(execution):
 
 
 def _settled(controller, execution):
+    from harness.policy.reconciliation import require_closed
+
     conn = controller.conn
+    require_closed(conn, execution)
     if conn.execute(
         (
             "SELECT 1 FROM browser_runs WHERE execution_id=? AND state IN "

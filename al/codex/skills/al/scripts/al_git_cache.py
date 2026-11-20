@@ -37,6 +37,12 @@ def object_binding(root):
 
 
 def _object_binding(root):
+    import al_retry_control
+    controlled=al_retry_control.git(("rev-parse","--git-common-dir","--show-object-format"),root=root)
+    if controlled is not None:
+        common,algorithm=controlled.decode().strip().splitlines()
+        if algorithm not in {"sha1","sha256"}:raise ValueError("unsupported Git object format")
+        return [str(Path(root).resolve()),str((Path(root)/common).resolve()),algorithm]
     result = subprocess.run(['git', '--no-optional-locks', 'rev-parse', '--git-common-dir', '--show-object-format'], cwd=root, capture_output=True, check=True)
     common, algorithm = result.stdout.decode().strip().splitlines()
     if algorithm not in {'sha1', 'sha256'}:
@@ -64,6 +70,9 @@ def store(binding, oid, data):
 
 @measured('base-object-read')
 def blobs(root, oids, *, max_bytes=64 * 1024 * 1024, file_bytes=2 * 1024 * 1024):
+    import al_retry_control
+    control=al_retry_control.current()
+    if control:return control.blobs(root,list(dict.fromkeys(oids)),max_bytes,file_bytes)
     binding = object_binding(root)
     result, missing, total = {}, [], 0
     for oid in dict.fromkeys(oids):

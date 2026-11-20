@@ -169,8 +169,10 @@ def test_public_scoped_write_while_proof_pending(operations):  # noqa: F811
     from harness.execution_models import ExecutionConflict
 
     (Path(envelope["repository"]) / "work/result.py").write_text("external drift\n")
-    with pytest.raises(ExecutionConflict, match="bytes changed"):
+    with pytest.raises(ExecutionConflict, match="owning reserved attempt"):
         require_dependency_outputs(saved, "B", envelope["repository"])
+    # The real AL predecessors remain unknown; strict success/drift is tested separately.
+    assert controller.conn.execute("SELECT 1 FROM policy_legacy_admissions").fetchone()
     with pytest.raises(ValueError):
         operation.dispatch(
             engineer,

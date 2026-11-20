@@ -1,0 +1,314 @@
+--- /private/tmp/al-r4-frozen-review-006/al/codex/skills/al/scripts/al_agent_exchange.py	2026-11-20 10:22:09
++++ al/codex/skills/al/scripts/al_agent_exchange.py	2026-11-20 11:09:35
+@@ -207,3 +207,26 @@
+             or old['amendments'] != current['amendments'][:len(old['amendments'])]):
+         raise C.ContractError('/source_specification', kind='failure-report')
+     return value
++
++
++def consume_plan(st, current, report):
++    """The immutable publication authenticates historical graph observation only."""
++    reference = current.get('contract_observation')
++    value = consume(st, 'implementation-plan', current['report']['id'], report,
++                    producer=report['invocation_id'], current=reference is None)
++    if reference is None:
++        return value
++    if value.get('coverage') == 'legacy':
++        raise C.ContractError('/required_inputs', kind='implementation-plan')
++    if A.read_json(reference) != value:
++        raise C.ContractError('/payload', kind='implementation-plan')
++    expected = record_context(st, 'implementation-plan', report, report['invocation_id'], None)
++    captured = value['context']['graph_revision']
++    actual = expected['graph_revision']
++    if ((captured is None) != (actual is None)
++            or captured is not None and (type(captured) is not int or type(actual) is not int
++                                        or not 0 <= captured <= actual)):
++        raise C.ContractError('/context', kind='implementation-plan')
++    expected['graph_revision'] = captured
++    C.validate(value, context=expected, specification=specification(st), resolve=reader(st))
++    return value
+--- /private/tmp/al-r4-frozen-review-006/al/codex/skills/al/scripts/al_planning.py	2026-11-20 10:22:09
++++ al/codex/skills/al/scripts/al_planning.py	2026-11-20 11:06:56
+@@ -262,8 +262,10 @@
+     )
+     current.update(report=reference, obligations=obligations)
+     from al_agent_exchange import produce
+-    produce(st, 'implementation-plan', reference['id'], report,
+-            producer=report['invocation_id'])
++    contract = produce(st, 'implementation-plan', reference['id'], report,
++                       producer=report['invocation_id'])
++    if contract is not None:
++        current['contract_observation'] = J.snapshot(sid, contract, 'implementation-plan-contract-v1')
+     al_store.save(sid, st)
+     print(J.raw({"report": reference, "materialized_obligations": obligations,
+                  "authoring": authoring_view(st)}).decode())
+@@ -275,9 +277,8 @@
+         refuse("admission lacks immutable Architect report and obligations")
+     report = J.read(current["report"])
+     expected = validate_report(st, report, current, contents, attempt, current["report"])
+-    from al_agent_exchange import consume
+-    consume(st, 'implementation-plan', current['report']['id'], report,
+-            producer=report['invocation_id'])
++    from al_agent_exchange import consume_plan
++    consume_plan(st, current, report)
+     actual = J.read(current["obligations"])
+     if J.raw(actual) != J.raw(expected):
+         refuse("materialized obligations differ beyond sole noncircular report_ref substitution")
+--- /private/tmp/al-r4-frozen-review-006/al/codex/skills/al/tests/test_execution_events.py	2026-11-20 10:22:09
++++ al/codex/skills/al/tests/test_execution_events.py	2026-11-20 11:09:35
+@@ -128,11 +128,21 @@
+     assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+     assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+     admit_planning(cli)
++    admitted = al_store.load(sid)
++    observation = admitted['planning_authorship']['contract_observation']
++    from al_artifacts import read_json
++    original_contract = read_json(observation)
++    assert original_contract['context']['graph_revision'] == 0
+     assert cli('phase', 'IMPLEMENTATION')[0] == 0
+     before = al_store.state_path(sid).read_bytes()
+     assert cli('gates', 'run', '--stage', 'base')[0] != 0
+     assert al_store.state_path(sid).read_bytes() == before
+     assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
++    current = al_store.load(sid)
++    assert current['integration']['graph_revision'] == 1
++    assert current['planning_authorship']['contract_observation'] == observation
++    assert read_json(observation) == original_contract
++    assert current['agent_contracts']['implementation-plan:' + current['planning_authorship']['report']['id']] == original_contract
+     assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+     assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+     before = al_store.state_path(sid).read_bytes()
+@@ -187,3 +197,56 @@
+         tasks.admit_check(historical, spec, gate_context=context)
+     assert al_store.state_path(sid).read_bytes() == before
+     controller.conn.close()
++
++
++@pytest.mark.parametrize('tamper', ['report', 'companion', 'observation', 'context',
++                                   'binding', 'terminal', 'approved-bytes', 'missing-observation', 'missing-companion'])
++def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused_plan_tamper(
++        cli, tmp_path, repo, monkeypatch, tamper):
++    from pathlib import Path
++    import al_artifacts as A
++    from execution_helpers import register_task
++    controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch)
++    _planning_gate(cli, tmp_path, sid)
++    admit_planning(cli)
++    assert cli('phase', 'IMPLEMENTATION')[0] == 0
++    assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
++    st = al_store.load(sid)
++    assert cli('integration', 'task-admit', '--task', 'A')[0] == 0
++    st = al_store.load(sid)
++    current = st['planning_authorship']
++    key = 'implementation-plan:' + current['report']['id']
++    if tamper in {'report', 'observation'}:
++        ref = current['report' if tamper == 'report' else 'contract_observation']
++        path = Path(ref['stored_path'])
++        path.write_bytes(path.read_bytes() + b' altered immutable observation')
++    elif tamper == 'companion':
++        st['agent_contracts'][key]['acceptance_criteria'] = ['forged criteria']
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'context':
++        value = st['agent_contracts'][key]
++        value['context']['execution'] = 'foreign-execution'
++        current['contract_observation'] = A.snapshot_bytes(
++            sid, json.dumps(value).encode(), 'implementation-plan-contract-v1', 'negative fixture')
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'binding':
++        st['integration']['binding']['approval_id'] += 1
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'missing-companion':
++        del st['agent_contracts'][key]
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'missing-observation':
++        del current['contract_observation']
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'terminal':
++        controller.conn.execute("UPDATE executions SET status='Completed' WHERE id=?", (eid,))
++    else:
++        from harness.execution_store import get_execution
++        approval = get_execution(controller.conn, eid)['binding']['approval_id']
++        path = Path(controller.conn.execute('SELECT path FROM approvals WHERE id=?', (approval,)).fetchone()['path'])
++        path.write_bytes(path.read_bytes() + b'\nUnapproved changed requirement.\n')
++    before = al_store.state_path(sid).read_bytes()
++    result = cli('integration', 'task-admit', '--task', 'A')
++    assert result[0] != 0, result
++    assert al_store.state_path(sid).read_bytes() == before
++    controller.conn.close()
+--- /private/tmp/al-r4-frozen-review-006/al/claude/skills/al/scripts/al_agent_exchange.py	2026-11-20 10:22:09
++++ al/claude/skills/al/scripts/al_agent_exchange.py	2026-11-20 11:09:35
+@@ -207,3 +207,26 @@
+             or old['amendments'] != current['amendments'][:len(old['amendments'])]):
+         raise C.ContractError('/source_specification', kind='failure-report')
+     return value
++
++
++def consume_plan(st, current, report):
++    """The immutable publication authenticates historical graph observation only."""
++    reference = current.get('contract_observation')
++    value = consume(st, 'implementation-plan', current['report']['id'], report,
++                    producer=report['invocation_id'], current=reference is None)
++    if reference is None:
++        return value
++    if value.get('coverage') == 'legacy':
++        raise C.ContractError('/required_inputs', kind='implementation-plan')
++    if A.read_json(reference) != value:
++        raise C.ContractError('/payload', kind='implementation-plan')
++    expected = record_context(st, 'implementation-plan', report, report['invocation_id'], None)
++    captured = value['context']['graph_revision']
++    actual = expected['graph_revision']
++    if ((captured is None) != (actual is None)
++            or captured is not None and (type(captured) is not int or type(actual) is not int
++                                        or not 0 <= captured <= actual)):
++        raise C.ContractError('/context', kind='implementation-plan')
++    expected['graph_revision'] = captured
++    C.validate(value, context=expected, specification=specification(st), resolve=reader(st))
++    return value
+--- /private/tmp/al-r4-frozen-review-006/al/claude/skills/al/scripts/al_planning.py	2026-11-20 10:22:09
++++ al/claude/skills/al/scripts/al_planning.py	2026-11-20 11:06:56
+@@ -262,8 +262,10 @@
+     )
+     current.update(report=reference, obligations=obligations)
+     from al_agent_exchange import produce
+-    produce(st, 'implementation-plan', reference['id'], report,
+-            producer=report['invocation_id'])
++    contract = produce(st, 'implementation-plan', reference['id'], report,
++                       producer=report['invocation_id'])
++    if contract is not None:
++        current['contract_observation'] = J.snapshot(sid, contract, 'implementation-plan-contract-v1')
+     al_store.save(sid, st)
+     print(J.raw({"report": reference, "materialized_obligations": obligations,
+                  "authoring": authoring_view(st)}).decode())
+@@ -275,9 +277,8 @@
+         refuse("admission lacks immutable Architect report and obligations")
+     report = J.read(current["report"])
+     expected = validate_report(st, report, current, contents, attempt, current["report"])
+-    from al_agent_exchange import consume
+-    consume(st, 'implementation-plan', current['report']['id'], report,
+-            producer=report['invocation_id'])
++    from al_agent_exchange import consume_plan
++    consume_plan(st, current, report)
+     actual = J.read(current["obligations"])
+     if J.raw(actual) != J.raw(expected):
+         refuse("materialized obligations differ beyond sole noncircular report_ref substitution")
+--- /private/tmp/al-r4-frozen-review-006/al/claude/skills/al/tests/test_execution_events.py	2026-11-20 10:22:09
++++ al/claude/skills/al/tests/test_execution_events.py	2026-11-20 11:09:35
+@@ -128,11 +128,21 @@
+     assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
+     assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
+     admit_planning(cli)
++    admitted = al_store.load(sid)
++    observation = admitted['planning_authorship']['contract_observation']
++    from al_artifacts import read_json
++    original_contract = read_json(observation)
++    assert original_contract['context']['graph_revision'] == 0
+     assert cli('phase', 'IMPLEMENTATION')[0] == 0
+     before = al_store.state_path(sid).read_bytes()
+     assert cli('gates', 'run', '--stage', 'base')[0] != 0
+     assert al_store.state_path(sid).read_bytes() == before
+     assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
++    current = al_store.load(sid)
++    assert current['integration']['graph_revision'] == 1
++    assert current['planning_authorship']['contract_observation'] == observation
++    assert read_json(observation) == original_contract
++    assert current['agent_contracts']['implementation-plan:' + current['planning_authorship']['report']['id']] == original_contract
+     assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
+     assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
+     before = al_store.state_path(sid).read_bytes()
+@@ -187,3 +197,56 @@
+         tasks.admit_check(historical, spec, gate_context=context)
+     assert al_store.state_path(sid).read_bytes() == before
+     controller.conn.close()
++
++
++@pytest.mark.parametrize('tamper', ['report', 'companion', 'observation', 'context',
++                                   'binding', 'terminal', 'approved-bytes', 'missing-observation', 'missing-companion'])
++def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused_plan_tamper(
++        cli, tmp_path, repo, monkeypatch, tamper):
++    from pathlib import Path
++    import al_artifacts as A
++    from execution_helpers import register_task
++    controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch)
++    _planning_gate(cli, tmp_path, sid)
++    admit_planning(cli)
++    assert cli('phase', 'IMPLEMENTATION')[0] == 0
++    assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
++    st = al_store.load(sid)
++    assert cli('integration', 'task-admit', '--task', 'A')[0] == 0
++    st = al_store.load(sid)
++    current = st['planning_authorship']
++    key = 'implementation-plan:' + current['report']['id']
++    if tamper in {'report', 'observation'}:
++        ref = current['report' if tamper == 'report' else 'contract_observation']
++        path = Path(ref['stored_path'])
++        path.write_bytes(path.read_bytes() + b' altered immutable observation')
++    elif tamper == 'companion':
++        st['agent_contracts'][key]['acceptance_criteria'] = ['forged criteria']
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'context':
++        value = st['agent_contracts'][key]
++        value['context']['execution'] = 'foreign-execution'
++        current['contract_observation'] = A.snapshot_bytes(
++            sid, json.dumps(value).encode(), 'implementation-plan-contract-v1', 'negative fixture')
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'binding':
++        st['integration']['binding']['approval_id'] += 1
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'missing-companion':
++        del st['agent_contracts'][key]
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'missing-observation':
++        del current['contract_observation']
++        al_store.state_path(sid).write_text(json.dumps(st))
++    elif tamper == 'terminal':
++        controller.conn.execute("UPDATE executions SET status='Completed' WHERE id=?", (eid,))
++    else:
++        from harness.execution_store import get_execution
++        approval = get_execution(controller.conn, eid)['binding']['approval_id']
++        path = Path(controller.conn.execute('SELECT path FROM approvals WHERE id=?', (approval,)).fetchone()['path'])
++        path.write_bytes(path.read_bytes() + b'\nUnapproved changed requirement.\n')
++    before = al_store.state_path(sid).read_bytes()
++    result = cli('integration', 'task-admit', '--task', 'A')
++    assert result[0] != 0, result
++    assert al_store.state_path(sid).read_bytes() == before
++    controller.conn.close()
+--- /private/tmp/al-r4-frozen-review-006/harness/policy/control_sources_codex.py	2026-11-20 10:22:09
++++ harness/policy/control_sources_codex.py	2026-11-20 11:09:35
+@@ -155,7 +155,7 @@
+ HASHES = """b379a41ae5fc87a9f84ae80e7e3f45259e22068727863d6a8d03296648c7a2cc
+ d9fd553783049689c6960ead0f45b13f133f8af434e57d9438e9ae5322fa95a8
+ 0ce4ff994fd6af5a46225d1b364447f62a81f0a4b567812387a0cfe20525b8d6
+-93b99fc92e7bbbbb170fbb89faab7900947063aed4c23f13bed58a8707a91432
++cc5093b40fa369c0cd50c5570f9b639fd9c0aabb71242c335ac315068818b18d
+ a6c8c78927ac64d631912d14300a118f1184c782ade32aa697fe3a43f4b915db
+ 2e823b02093e468ae51639f439fa6f1aa9d5cc9ac27aec3e77bdfe9e95ddc538
+ cf0fcc2a00afc06d2e791fa1286139853b044c6b879fdfdc867604713f08ab16
+@@ -232,7 +232,7 @@
+ de02883154eda204ca9386b662ce615dafaf2014b1615efd08fbc506c6cfea04
+ 13da4c69148d2d67a178f9d0c92d1c7938dbb0cc846a58c8443d674d5d797a67
+ 541e2da98b1ffe523bc509f8e0f16f12c60de02765b2b6c54f6a55a1530c6cf6
+-6d866d31f10b93fe4591e424c4661df7cddb0dce43c5d58300665182d4675de6
++cff470d3821e6722ded26c5ef5a717ee960f3630812e4bedc5065e6c95500a76
+ 700c0c71233dc7aae7c9e3a25740056595bf587ea85e5d7265722a3b46f90dd3
+ 867b3d53c979e475ddda401510e43d70ec87326cfa29fcd624d900c82755afec
+ 891760934e216806caacf7cdb0331fee7e76f5353c4587ca911d8d6477ce9137
+--- /private/tmp/al-r4-frozen-review-006/harness/policy/control_sources_claude.py	2026-11-20 10:22:09
++++ harness/policy/control_sources_claude.py	2026-11-20 11:09:35
+@@ -158,7 +158,7 @@
+ HASHES = """b379a41ae5fc87a9f84ae80e7e3f45259e22068727863d6a8d03296648c7a2cc
+ d9fd553783049689c6960ead0f45b13f133f8af434e57d9438e9ae5322fa95a8
+ 0ce4ff994fd6af5a46225d1b364447f62a81f0a4b567812387a0cfe20525b8d6
+-93b99fc92e7bbbbb170fbb89faab7900947063aed4c23f13bed58a8707a91432
++cc5093b40fa369c0cd50c5570f9b639fd9c0aabb71242c335ac315068818b18d
+ a6c8c78927ac64d631912d14300a118f1184c782ade32aa697fe3a43f4b915db
+ 2e823b02093e468ae51639f439fa6f1aa9d5cc9ac27aec3e77bdfe9e95ddc538
+ cf0fcc2a00afc06d2e791fa1286139853b044c6b879fdfdc867604713f08ab16
+@@ -236,7 +236,7 @@
+ de02883154eda204ca9386b662ce615dafaf2014b1615efd08fbc506c6cfea04
+ 13da4c69148d2d67a178f9d0c92d1c7938dbb0cc846a58c8443d674d5d797a67
+ 541e2da98b1ffe523bc509f8e0f16f12c60de02765b2b6c54f6a55a1530c6cf6
+-6d866d31f10b93fe4591e424c4661df7cddb0dce43c5d58300665182d4675de6
++cff470d3821e6722ded26c5ef5a717ee960f3630812e4bedc5065e6c95500a76
+ 700c0c71233dc7aae7c9e3a25740056595bf587ea85e5d7265722a3b46f90dd3
+ 867b3d53c979e475ddda401510e43d70ec87326cfa29fcd624d900c82755afec
+ 891760934e216806caacf7cdb0331fee7e76f5353c4587ca911d8d6477ce9137

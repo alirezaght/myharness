@@ -1,0 +1,1014 @@
+{
+  "attempt_id": "597da68e27ccb3b2721e971a",
+  "authored_obligations": {
+    "authorship": {
+      "planning_occurrence": 0,
+      "report_ref": null,
+      "role": "al-architect"
+    },
+    "binding": {
+      "document_hash_at_authoring": "2315fce6d48182eaf72c370e6207ae85aa3453957b8910280b01dd2d5d9eb4a5",
+      "repository_identity": {
+        "common_dir": "/Users/alirezaghiastabari/personal/myharness/.git",
+        "cwd": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness",
+        "git_dir": "/Users/alirezaghiastabari/personal/myharness/.git/worktrees/myharness",
+        "merge_base": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+        "root": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness",
+        "target": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+        "target_oid": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d"
+      },
+      "requirement_lineage_hash": "2315fce6d48182eaf72c370e6207ae85aa3453957b8910280b01dd2d5d9eb4a5",
+      "run_id": "c0b8fa62",
+      "session_id": "reliability-r5a-20261120"
+    },
+    "criteria_registry": [
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-01: Existing R1 incident IDs, observations and API behavior survive migration.",
+        "pointer": "/criteria/0",
+        "value_sha256": "9b4e5b557d255a6a20a2b88a45cd7956d3ff833a223d30bf9a3853dbec94a267"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-02: An actual failed ledger check creates a canonical incident without any operation observation.",
+        "pointer": "/criteria/1",
+        "value_sha256": "b50572e309f3e950b719a611ee4d956a2ebc24b77bb57cdcc281c974d8a5bb29"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-03: Accepted review findings, contract rejections, budget decisions and operator verdicts each create correctly attributed incidents through their real producer.",
+        "pointer": "/criteria/2",
+        "value_sha256": "0320aff24cb1c489ab83d9324fc12e80b38391db668cdcda0499344b34947f1e"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-04: Event/incident/cursor publication is atomic; duplicate/conflicting/stale delivery behaves correctly.",
+        "pointer": "/criteria/3",
+        "value_sha256": "62ce2473cb11a86d38e38c7ce3a62fc1108b8cdb86109fb59694dd2362b0531c"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-05: Missing or altered report bytes prevent acceptance; no arbitrary path import occurs.",
+        "pointer": "/criteria/4",
+        "value_sha256": "41c389e24c17da94db0fd4520551c3ce9438c4dfe3808011dca4e3d21f6f4d98"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-06: Categories derive from supporting evidence, not generic process failure or an area-name heuristic.",
+        "pointer": "/criteria/5",
+        "value_sha256": "90970764644b3493e60f3c6a7110c2250d9b03bbfe83df222008cc18b2020af9"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-07: Historical operator reports use operator authority; stale runtime callbacks remain refused.",
+        "pointer": "/criteria/6",
+        "value_sha256": "13a0b136cb7842862e6abd112e57f5005bce103cb730b9ee06bc90e8e07bd4d1"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-08: Standalone reports contain real AL identities and no fabricated Harness binding.",
+        "pointer": "/criteria/7",
+        "value_sha256": "4d3a13f451a2f8a6ef12ba1a6cdc374b157592db13ff6e945888002b34e79059"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-09: A unified standalone ingestion claim requires the separately designed and verified protocol.",
+        "pointer": "/criteria/8",
+        "value_sha256": "21e424aed7201c31484e1e42d0f4b7edc9ccb6668174c074ae304c17c595f24b"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-10: Investigation, grouping and R6 candidate generation consume the canonical catalog across source types, while retaining facts versus findings versus human-report distinctions.",
+        "pointer": "/criteria/9",
+        "value_sha256": "6be0e73b8965e792654bcb1d52b62d92f0fcc4017debafc84eae2de8f0e63e71"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-11 investigations distinguish append-only observed facts, hypotheses, ordinal confidence, human corrections, controls held/failed/unknown and resolution rationale",
+        "pointer": "/criteria/10",
+        "value_sha256": "404288c9eb238e087d0337c9e78ef374012f26199a173b740be2964f1d45ef3d"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-12 related-group suggestions are bounded, reproducible and human-correctable without merging/deleting source incidents",
+        "pointer": "/criteria/11",
+        "value_sha256": "22a8458741d17554ddbd409b1ff3b6324ae8b6273426401716c1969e18a80ee8"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-13 startup is schema-only and performs no historical scan; mixed readonly legacy/catalog reads show each exact R1 incident once",
+        "pointer": "/criteria/12",
+        "value_sha256": "e597947be6f066a31ca6569b2a4521d2ce4d8c96c53167268efd01fc00a01ac0"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-14 explicit bounded legacy projection preserves IDs, safely discovers late old-pin rows regardless of timestamps, and has exact request/checkpoint replay",
+        "pointer": "/criteria/13",
+        "value_sha256": "7c17ffaf0f1d2502b5d4c7940437bfd68849f846eb22e428311cc12e52fd2eea"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-15 all requested failure categories are supported through real typed producers where available, never inferred from arbitrary area names or generic exits",
+        "pointer": "/criteria/14",
+        "value_sha256": "5c9ce5246962b0694cf5e61fea0614eb9ab0be19ef34658a0de410fbd81d295d"
+      },
+      {
+        "artifact": {
+          "captured_at": 1795164134.425379,
+          "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "kind": "task-package",
+          "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+          "source": "/private/tmp/al-r5a-package.json",
+          "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+        },
+        "id": "R5a-16 existing dashboard performs actual source-scoped search, investigation, correction, grouping and provenance navigation with functional/visual verification",
+        "pointer": "/criteria/15",
+        "value_sha256": "4df46732ec9642a6b40781f60077596b957a66252f44f8eb29cfa23bbaa43ede"
+      }
+    ],
+    "id": "task-behavior",
+    "implementation_context": {
+      "observation_ref": null,
+      "status": "not_started"
+    },
+    "kind": "behavior-obligations-v1",
+    "obligations": [
+      {
+        "applicability": {
+          "reason": "The accepted R5a slice requires real failure producers to feed one identity-preserving incident catalog, investigation and grouping controls, and the existing dashboard. It also preserves explicit downstream R6 and R7 verification obligations and the separately designed R5b standalone ingestion boundary.",
+          "status": "required"
+        },
+        "consumer_inventory": {
+          "applicability": "applicable",
+          "discovery_refs": [],
+          "entries": [
+            {
+              "id": "operation-producer",
+              "role": "producer",
+              "kind": "code",
+              "contract": "Existing R1 observation and incident publication; typed contract rejection receipt must be inserted within the observation finish transaction, preserving the original operation incident identity.",
+              "locations": [
+                "harness/execution_operations.py:467",
+                "harness/execution_operations.py:1311",
+                "harness/reliability/store.py:27",
+                "harness/reliability/store.py:109",
+                "harness/agent_contracts.py:49"
+              ],
+              "source_refs": []
+            },
+            {
+              "id": "policy-producer",
+              "role": "producer",
+              "kind": "code",
+              "contract": "Actual policy decision ID, execution and epoch from audit(conn, execution, intent, verdict, code, digest); preserve eight-column positional inserts and nullable attempt identity. Optional measured details require an actual rejecting-check producer.",
+              "locations": [
+                "harness/policy/admission.py:27",
+                "harness/policy/admission.py:30"
+              ],
+              "source_refs": []
+            },
+            {
+              "id": "al-evidence-producers",
+              "role": "producer",
+              "kind": "message",
+              "contract": "Versioned immutable failed-ledger and accepted-review references emitted through the guarded AL save/outbox path in both distributions, retaining real issuing identities and source distinctions.",
+              "locations": [
+                "al/codex/skills/al/scripts/al_events.py:56",
+                "al/codex/skills/al/scripts/al_review.py:115",
+                "al/claude/skills/al/scripts/"
+              ],
+              "source_refs": []
+            },
+            {
+              "id": "event-consumer",
+              "role": "consumer",
+              "kind": "code",
+              "contract": "Prepare bounded immutable evidence from server-selected issuing roots before publication; consume those exact validated buffers in the existing current-epoch event, projection, timeline and cursor transaction.",
+              "locations": [
+                "harness/execution_worker.py:320",
+                "harness/execution_projection.py:239",
+                "harness/execution_artifacts.py"
+              ],
+              "source_refs": []
+            },
+            {
+              "id": "operator-and-dashboard",
+              "role": "consumer",
+              "kind": "code",
+              "contract": "Scoped catalog search, investigation revisions, correction and group actions use the existing local dashboard authority and request-ID/expected-revision pattern. Historical operator actions are not stale runtime publications.",
+              "locations": [
+                "harness/workspace_proposals.py",
+                "harness/execution_decisions.py:164",
+                "harness/reliability/",
+                "harness/dashboard/"
+              ],
+              "source_refs": []
+            },
+            {
+              "id": "future-consumers",
+              "role": "consumer",
+              "kind": "other",
+              "contract": "R6 must consume the actual canonical catalog for candidate generation; R7 must supply a real evaluation-result adapter; R5b must establish standalone collection authority and replay. None exists merely because the R5a schema can represent a future reference.",
+              "locations": [
+                "docs/reliability-platform/planning/r5-r6-architect.md",
+                "docs/reliability-platform/planning/r5a-source-correction-architect.md",
+                "docs/reliability-platform/planning/r5b-late-legacy-designer-addendum.md"
+              ],
+              "source_refs": []
+            }
+          ],
+          "reason": "Source consumers and producers have been inspected and named. No consumer-discovery artifact was supplied or authored in this read-only turn, so the typed discovery-reference arrays remain empty rather than inventing recorded evidence.",
+          "uncertainties": [
+            "Final required-check and consumer-discovery artifacts must be recorded against the implemented candidate; these source locations are planning inputs, not executed verification.",
+            "R6 candidate consumption and the R7 evaluation adapter remain explicit downstream obligations until their actual implementations are available.",
+            "Actual remote CI/staging and native-provider qualification are not established by registered check purpose, deterministic local fixtures or this report."
+          ]
+        },
+        "criterion_ids": [
+          "R5a-01: Existing R1 incident IDs, observations and API behavior survive migration.",
+          "R5a-02: An actual failed ledger check creates a canonical incident without any operation observation.",
+          "R5a-03: Accepted review findings, contract rejections, budget decisions and operator verdicts each create correctly attributed incidents through their real producer.",
+          "R5a-04: Event/incident/cursor publication is atomic; duplicate/conflicting/stale delivery behaves correctly.",
+          "R5a-05: Missing or altered report bytes prevent acceptance; no arbitrary path import occurs.",
+          "R5a-06: Categories derive from supporting evidence, not generic process failure or an area-name heuristic.",
+          "R5a-07: Historical operator reports use operator authority; stale runtime callbacks remain refused.",
+          "R5a-08: Standalone reports contain real AL identities and no fabricated Harness binding.",
+          "R5a-09: A unified standalone ingestion claim requires the separately designed and verified protocol.",
+          "R5a-10: Investigation, grouping and R6 candidate generation consume the canonical catalog across source types, while retaining facts versus findings versus human-report distinctions.",
+          "R5a-11 investigations distinguish append-only observed facts, hypotheses, ordinal confidence, human corrections, controls held/failed/unknown and resolution rationale",
+          "R5a-12 related-group suggestions are bounded, reproducible and human-correctable without merging/deleting source incidents",
+          "R5a-13 startup is schema-only and performs no historical scan; mixed readonly legacy/catalog reads show each exact R1 incident once",
+          "R5a-14 explicit bounded legacy projection preserves IDs, safely discovers late old-pin rows regardless of timestamps, and has exact request/checkpoint replay",
+          "R5a-15 all requested failure categories are supported through real typed producers where available, never inferred from arbitrary area names or generic exits",
+          "R5a-16 existing dashboard performs actual source-scoped search, investigation, correction, grouping and provenance navigation with functional/visual verification"
+        ],
+        "id": "primary-behavior",
+        "initial_state": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "description": "An existing disposable Harness database contains R1 observations and operation-only incidents; policy_decisions retains its eight-column schema and may contain denials with no attempt. R4 returns typed contract feedback but has no dedicated durable rejection receipt.",
+              "id": "before"
+            },
+            {
+              "description": "A current Harness-bound execution has an authoritative AL issuing root and accepted failed-ledger or review evidence, or an authenticated dispatch/assignment boundary produces a real typed rejection or policy denial.",
+              "id": "source-ready"
+            },
+            {
+              "description": "Canonical incidents have typed source relations, preserved provenance and scoped read APIs; investigation and grouping revisions may be absent or have a current expected revision.",
+              "id": "catalog-ready"
+            },
+            {
+              "description": "Old and current runtimes may coexist, with unindexed R1 incidents including late rows whose timestamps precede earlier projection batches.",
+              "id": "mixed-legacy"
+            },
+            {
+              "description": "An execution is terminal or its previous epoch has been superseded; a local operator can still make an attributed historical report, while the old runtime callback has no mutation authority.",
+              "id": "historical"
+            },
+            {
+              "description": "Standalone AL evidence has real AL identities but no Harness execution binding; R6/R7 consumers and R5b collection are not assumed implemented.",
+              "id": "downstream-pending"
+            }
+          ],
+          "reason": "These states distinguish current runtime authority, historical operator authority, old-pin compatibility and genuinely future producer/consumer integration."
+        },
+        "journey_end": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "expected_observation": "A failed registered check published through the real guarded ledger/outbox path is visible through the canonical catalog and scoped API with an AL evidence source relation and no fabricated operation observation.",
+              "id": "ledger-visible",
+              "subject": "Failed-ledger incident"
+            },
+            {
+              "expected_observation": "Accepted review findings, exact typed contract rejections, actual budget decisions and operator verdicts are visible with distinct source attribution and conservative categories.",
+              "id": "typed-sources-visible",
+              "subject": "Typed producer integration"
+            },
+            {
+              "expected_observation": "The operator can search by supported source/category scope, inspect provenance, append an investigation correction, accept or reject a related-group suggestion and reload the resulting state in the existing dashboard.",
+              "id": "operator-journey",
+              "subject": "Investigation and grouping UI"
+            },
+            {
+              "expected_observation": "Legacy and catalog reads show each original incident once, including a late old-pin row; explicit bounded projection preserves its identity and exact request replay.",
+              "id": "legacy-visible",
+              "subject": "Mixed-runtime catalog compatibility"
+            },
+            {
+              "expected_observation": "Standalone output retains its actual AL provenance. Unified standalone ingestion is not claimed before R5b verification; R6 candidate consumption and R7 evaluation adaptation remain visible pending obligations until exercised through real implementations.",
+              "id": "coverage-honest",
+              "subject": "Downstream and qualification coverage"
+            }
+          ],
+          "reason": "End observations are externally checkable API/UI outcomes and explicit coverage limits, not schema-existence or test-pass claims."
+        },
+        "observable_outcome": "Real authorized failure sources appear in one scoped, durable catalog with preserved R1 identities and typed provenance. The existing dashboard supports actual investigation, human correction and bounded grouping without converting findings into proven causes, changing execution authority or hiding unsupported downstream coverage. Publication is idempotent and atomic within existing source transactions; reads never project or launch work.",
+        "operational_failures": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "expected_observation": "Reject without publishing a partial event, incident or cursor advancement; expose a bounded diagnostic and permit a later valid delivery.",
+              "id": "bad-artifact",
+              "trigger": "A referenced accepted report is missing, changed, oversized, from the wrong issuing root or supplied as an arbitrary path."
+            },
+            {
+              "expected_observation": "Exact duplicate delivery returns the existing identity; conflicting content under the same source key is refused; an injected transaction failure leaves no partial publication.",
+              "id": "publication-conflict",
+              "trigger": "Duplicate/conflicting evidence delivery or a database failure between source and catalog writes."
+            },
+            {
+              "expected_observation": "The old runtime produces no historical incident append or successor mutation; separately authorized operator reporting remains possible.",
+              "id": "stale-runtime",
+              "trigger": "Epoch or authority generation changes before incident publication."
+            },
+            {
+              "expected_observation": "Reject invalid Host/Origin, oversized or invalid bodies, unknown scope and stale expected revision; exact request replay returns its prior result and conflicting reuse is refused.",
+              "id": "operator-conflict",
+              "trigger": "Unauthorized or conflicting investigation, group or legacy-projection POST."
+            },
+            {
+              "expected_observation": "Retain unknown measurement/provenance and bounded generic failure attribution; do not infer budget dimension, CI/staging origin, correctness cause or native qualification.",
+              "id": "unsupported-attribution",
+              "trigger": "A generic process error, arbitrary area name, unsupported accounting capability or unqualified native result is offered as stronger failure evidence."
+            },
+            {
+              "expected_observation": "A queued environment preparation uses its actual admitted environment_operation owner; it cannot inherit the outer AL attempt or create a second fabricated dispatch observation for a retained continuation.",
+              "id": "setup-owner-mismatch",
+              "trigger": "Setup resumes under the wrong execution, principal, task, revision or ambient attempt."
+            }
+          ],
+          "reason": "Failure handling preserves current authority, exact source identity, privacy and transaction boundaries while leaving defined independent implementation eligible."
+        },
+        "owners": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "id": "core-owner",
+              "responsible_component_id": "catalog-runtime",
+              "subject": "AL-Engineer owns canonical schema/source relations, transaction integration, current-epoch rejection capture, legacy projection, investigation/grouping logic and focused integration/security tests."
+            },
+            {
+              "id": "producer-owner",
+              "responsible_component_id": "al-producers",
+              "subject": "AL-Engineer owns equivalent guarded immutable-evidence producers in both AL distributions and their Harness ingestion binding."
+            },
+            {
+              "id": "support-owner",
+              "responsible_component_id": "dashboard-runtime",
+              "subject": "AL-Builder follows sequentially for existing dashboard integration, browser/visual evidence, formatting and required regression verification against stable core interfaces."
+            }
+          ],
+          "reason": "Core and dashboard work consume changing interfaces and share verification state, so Engineer then Builder remains sequential."
+        },
+        "permitted_simulated_boundaries": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "boundary": "A deterministic local command executed through the actual registered-check ledger path deliberately exits unsuccessfully.",
+              "description": "The task failure is synthetic; ledger capture, immutable source publication, event ingestion, catalog and API remain real.",
+              "id": "synthetic-check"
+            },
+            {
+              "boundary": "Fault injection at named transaction boundaries and barriers immediately before epoch validation or publication.",
+              "description": "Simulated crash/race timing proves atomicity and stale-delivery behavior; it does not establish real external side-effect settlement.",
+              "id": "publication-fault"
+            },
+            {
+              "boundary": "Disposable repository, database and immutable report fixtures accepted through actual public validators.",
+              "description": "Fixtures may represent deterministic review findings and old-pin rows, but may not bypass accepted-report validation, issuer checks, operator authority or source relations.",
+              "id": "disposable-fixture"
+            }
+          ],
+          "reason": "Controlled failures and disposable inputs are permitted; mocks replacing the actual producer-to-catalog path cannot satisfy integration criteria or establish native/remote CI efficacy."
+        },
+        "persistence_observations": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "expected_observation": "After closing and reopening the disposable database, query the scoped API and source relations to observe one stable catalog identity per authoritative source/item, with exactly its valid typed relation.",
+              "id": "catalog-persisted",
+              "subject": "Canonical incident and provenance"
+            },
+            {
+              "expected_observation": "Read event, projection, incident/source and cursor state after successful delivery, exact replay and injected failure; success commits all required rows and failure advances none.",
+              "id": "atomic-persisted",
+              "subject": "Event and incident transaction"
+            },
+            {
+              "expected_observation": "After reload, original facts, attributed hypotheses, ordinal confidence, control statuses, correction rationale and group decision revisions remain separately visible and request replay is stable.",
+              "id": "investigation-persisted",
+              "subject": "Append-only investigation and group history"
+            },
+            {
+              "expected_observation": "Replay a completed projection request after restart and obtain its exact retained receipt; a new bounded request discovers a subsequently inserted older-timestamp legacy row.",
+              "id": "projection-persisted",
+              "subject": "Legacy projection request and checkpoint"
+            }
+          ],
+          "reason": "Persistence checks observe actual restart/replay behavior rather than only returned in-memory objects."
+        },
+        "preserve": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "expected_observation": "Original R1 IDs, observation rows, safe facts and existing API behavior remain unchanged after migration and projection; mixed queries contain no duplicate identities.",
+              "id": "r1-preserved",
+              "subject": "R1 compatibility"
+            },
+            {
+              "expected_observation": "Old eight-value policy inserts still succeed; missing attempt, pool, dimension and measured value stay absent/unknown, and no fake execution event is created to represent a policy decision.",
+              "id": "policy-preserved",
+              "subject": "Existing policy producer compatibility"
+            },
+            {
+              "expected_observation": "Current-epoch/principal checks and exact setup-owner checks remain enforced. Typed incident data grants no execution, approval, dependency stability or completion authority.",
+              "id": "authority-preserved",
+              "subject": "Runtime authority and setup ownership"
+            },
+            {
+              "expected_observation": "Persisted/API/browser outputs contain only allowlisted safe summaries and source references, never rejected payloads, arbitrary exception prose, secret hashes or unrestricted report diagnostics.",
+              "id": "privacy-preserved",
+              "subject": "Diagnostic minimization"
+            },
+            {
+              "expected_observation": "Startup performs schema work without historical data copying; GET/search/detail calls cause no projection, runtime launch, source import or other database mutation.",
+              "id": "readonly-preserved",
+              "subject": "Bounded startup and read-only queries"
+            },
+            {
+              "expected_observation": "Accepting, rejecting or splitting a suggested group never merges/deletes source incidents or rewrites their observed facts, and an operator correction remains distinguishable from a source fact.",
+              "id": "facts-preserved",
+              "subject": "Evidence integrity"
+            }
+          ],
+          "reason": "R5a adds canonical source handling without weakening existing compatibility, authority, privacy or evidence semantics."
+        },
+        "required_real_components": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "boundary": "Real local schema migration, reliability store, typed source insertion, investigation/grouping/query APIs and persistent SQLite transactions.",
+              "description": "Use disposable storage and the actual production code. reliability.store.finish owns _publication; new inserts run on its connection, not a nested writer.",
+              "id": "catalog-runtime"
+            },
+            {
+              "boundary": "Actual guarded AL ledger/review acceptance, immutable snapshot and outbox publication in both distributions.",
+              "description": "al_events.prepare_commit and al_review.cmd_report are producer seams; source metadata must reference the exact accepted immutable bytes and real issuing identity.",
+              "id": "al-producers"
+            },
+            {
+              "boundary": "Actual Harness worker preparation and execution_projection.ingest_event current-epoch transaction.",
+              "description": "Validate bounded source buffers before the transaction and reuse them; preserve event bindings, sequence, replay, projection, timeline and cursor semantics.",
+              "id": "event-runtime"
+            },
+            {
+              "boundary": "Actual OperationController.dispatch/await_assignment, ContractError and policy.admission.audit.",
+              "description": "Exercise typed rejection and policy outcomes through authenticated real boundaries, preserving null attempts, safe fields, setup ownership and the existing source transaction.",
+              "id": "boundary-runtime"
+            },
+            {
+              "boundary": "Existing dashboard HTTP authority, scoped APIs and browser UI connected to the disposable production backend.",
+              "description": "Exercise actual search, provenance navigation, investigation/correction/group actions and reload. Inspect screenshots at required viewports for alignment, clipping and interaction problems.",
+              "id": "dashboard-runtime"
+            }
+          ],
+          "reason": "The requested behavior is an integrated producer-to-persistent-catalog-to-operator journey; disconnected schemas or mocked success responses cannot prove it."
+        },
+        "requirement_refs": [
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-01: Existing R1 incident IDs, observations and API behavior survive migration.",
+            "pointer": "/criteria/0",
+            "value_sha256": "9b4e5b557d255a6a20a2b88a45cd7956d3ff833a223d30bf9a3853dbec94a267"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-02: An actual failed ledger check creates a canonical incident without any operation observation.",
+            "pointer": "/criteria/1",
+            "value_sha256": "b50572e309f3e950b719a611ee4d956a2ebc24b77bb57cdcc281c974d8a5bb29"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-03: Accepted review findings, contract rejections, budget decisions and operator verdicts each create correctly attributed incidents through their real producer.",
+            "pointer": "/criteria/2",
+            "value_sha256": "0320aff24cb1c489ab83d9324fc12e80b38391db668cdcda0499344b34947f1e"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-04: Event/incident/cursor publication is atomic; duplicate/conflicting/stale delivery behaves correctly.",
+            "pointer": "/criteria/3",
+            "value_sha256": "62ce2473cb11a86d38e38c7ce3a62fc1108b8cdb86109fb59694dd2362b0531c"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-05: Missing or altered report bytes prevent acceptance; no arbitrary path import occurs.",
+            "pointer": "/criteria/4",
+            "value_sha256": "41c389e24c17da94db0fd4520551c3ce9438c4dfe3808011dca4e3d21f6f4d98"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-06: Categories derive from supporting evidence, not generic process failure or an area-name heuristic.",
+            "pointer": "/criteria/5",
+            "value_sha256": "90970764644b3493e60f3c6a7110c2250d9b03bbfe83df222008cc18b2020af9"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-07: Historical operator reports use operator authority; stale runtime callbacks remain refused.",
+            "pointer": "/criteria/6",
+            "value_sha256": "13a0b136cb7842862e6abd112e57f5005bce103cb730b9ee06bc90e8e07bd4d1"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-08: Standalone reports contain real AL identities and no fabricated Harness binding.",
+            "pointer": "/criteria/7",
+            "value_sha256": "4d3a13f451a2f8a6ef12ba1a6cdc374b157592db13ff6e945888002b34e79059"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-09: A unified standalone ingestion claim requires the separately designed and verified protocol.",
+            "pointer": "/criteria/8",
+            "value_sha256": "21e424aed7201c31484e1e42d0f4b7edc9ccb6668174c074ae304c17c595f24b"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-10: Investigation, grouping and R6 candidate generation consume the canonical catalog across source types, while retaining facts versus findings versus human-report distinctions.",
+            "pointer": "/criteria/9",
+            "value_sha256": "6be0e73b8965e792654bcb1d52b62d92f0fcc4017debafc84eae2de8f0e63e71"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-11 investigations distinguish append-only observed facts, hypotheses, ordinal confidence, human corrections, controls held/failed/unknown and resolution rationale",
+            "pointer": "/criteria/10",
+            "value_sha256": "404288c9eb238e087d0337c9e78ef374012f26199a173b740be2964f1d45ef3d"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-12 related-group suggestions are bounded, reproducible and human-correctable without merging/deleting source incidents",
+            "pointer": "/criteria/11",
+            "value_sha256": "22a8458741d17554ddbd409b1ff3b6324ae8b6273426401716c1969e18a80ee8"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-13 startup is schema-only and performs no historical scan; mixed readonly legacy/catalog reads show each exact R1 incident once",
+            "pointer": "/criteria/12",
+            "value_sha256": "e597947be6f066a31ca6569b2a4521d2ce4d8c96c53167268efd01fc00a01ac0"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-14 explicit bounded legacy projection preserves IDs, safely discovers late old-pin rows regardless of timestamps, and has exact request/checkpoint replay",
+            "pointer": "/criteria/13",
+            "value_sha256": "7c17ffaf0f1d2502b5d4c7940437bfd68849f846eb22e428311cc12e52fd2eea"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-15 all requested failure categories are supported through real typed producers where available, never inferred from arbitrary area names or generic exits",
+            "pointer": "/criteria/14",
+            "value_sha256": "5c9ce5246962b0694cf5e61fea0614eb9ab0be19ef34658a0de410fbd81d295d"
+          },
+          {
+            "artifact": {
+              "captured_at": 1795164134.425379,
+              "id": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "kind": "task-package",
+              "sha256": "bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6",
+              "source": "/private/tmp/al-r5a-package.json",
+              "stored_path": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/artifacts/bfb2f4e4e41b4b547ac47ebbd0e9012ff95db6c331d25149197331db1deea1f6"
+            },
+            "id": "R5a-16 existing dashboard performs actual source-scoped search, investigation, correction, grouping and provenance navigation with functional/visual verification",
+            "pointer": "/criteria/15",
+            "value_sha256": "4df46732ec9642a6b40781f60077596b957a66252f44f8eb29cfa23bbaa43ede"
+          }
+        ],
+        "reset": {
+          "applicability": "not_applicable",
+          "items": [],
+          "reason": "R5a introduces no destructive reset. Corrections and group decisions append revisions; old incidents, source facts, runtime liabilities, approvals and pins remain intact."
+        },
+        "scenarios": [
+          {
+            "failure_case_ids": [],
+            "id": "legacy-migration-and-read",
+            "initial_state_ids": ["before", "mixed-legacy"],
+            "outcome_ids": ["legacy-visible", "r1-preserved", "readonly-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["catalog-runtime", "dashboard-runtime"],
+            "transition_ids": ["schema-upgrade", "scoped-read"]
+          },
+          {
+            "failure_case_ids": [],
+            "id": "real-failed-ledger-to-catalog",
+            "initial_state_ids": ["source-ready"],
+            "outcome_ids": ["ledger-visible", "catalog-persisted", "atomic-persisted", "privacy-preserved"],
+            "permitted_simulated_component_ids": ["synthetic-check"],
+            "real_component_ids": ["al-producers", "event-runtime", "catalog-runtime"],
+            "transition_ids": ["publish-ledger", "ingest-evidence"]
+          },
+          {
+            "failure_case_ids": [],
+            "id": "accepted-review-findings",
+            "initial_state_ids": ["source-ready"],
+            "outcome_ids": ["typed-sources-visible", "catalog-persisted", "facts-preserved", "privacy-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["al-producers", "event-runtime", "catalog-runtime"],
+            "transition_ids": ["publish-review", "ingest-evidence"]
+          },
+          {
+            "failure_case_ids": ["unsupported-attribution"],
+            "id": "actual-policy-denial",
+            "initial_state_ids": ["source-ready"],
+            "outcome_ids": ["typed-sources-visible", "catalog-persisted", "policy-preserved", "privacy-preserved", "coverage-honest"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["boundary-runtime", "catalog-runtime"],
+            "transition_ids": ["publish-policy"]
+          },
+          {
+            "failure_case_ids": ["setup-owner-mismatch"],
+            "id": "typed-rejection-and-setup-owner",
+            "initial_state_ids": ["source-ready"],
+            "outcome_ids": ["typed-sources-visible", "catalog-persisted", "authority-preserved", "privacy-preserved", "r1-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["boundary-runtime", "catalog-runtime"],
+            "transition_ids": ["publish-contract-rejection"]
+          },
+          {
+            "failure_case_ids": ["bad-artifact", "publication-conflict", "stale-runtime"],
+            "id": "event-integrity-replay-and-rollback",
+            "initial_state_ids": ["source-ready", "catalog-ready", "historical"],
+            "outcome_ids": ["atomic-persisted", "authority-preserved", "facts-preserved", "privacy-preserved"],
+            "permitted_simulated_component_ids": ["publication-fault", "disposable-fixture"],
+            "real_component_ids": ["al-producers", "event-runtime", "catalog-runtime"],
+            "transition_ids": ["ingest-evidence"]
+          },
+          {
+            "failure_case_ids": ["operator-conflict", "stale-runtime"],
+            "id": "historical-operator-correction",
+            "initial_state_ids": ["historical", "catalog-ready"],
+            "outcome_ids": ["typed-sources-visible", "operator-journey", "investigation-persisted", "authority-preserved", "facts-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["catalog-runtime", "dashboard-runtime", "boundary-runtime"],
+            "transition_ids": ["operator-investigate"]
+          },
+          {
+            "failure_case_ids": ["operator-conflict"],
+            "id": "bounded-grouping-and-dashboard",
+            "initial_state_ids": ["catalog-ready"],
+            "outcome_ids": ["operator-journey", "investigation-persisted", "facts-preserved", "readonly-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["catalog-runtime", "dashboard-runtime"],
+            "transition_ids": ["scoped-read", "group-decision", "operator-investigate"]
+          },
+          {
+            "failure_case_ids": ["operator-conflict"],
+            "id": "late-old-pin-bounded-projection",
+            "initial_state_ids": ["mixed-legacy"],
+            "outcome_ids": ["legacy-visible", "projection-persisted", "r1-preserved", "readonly-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["catalog-runtime", "dashboard-runtime"],
+            "transition_ids": ["project-legacy", "scoped-read"]
+          },
+          {
+            "failure_case_ids": ["unsupported-attribution"],
+            "id": "standalone-and-downstream-coverage",
+            "initial_state_ids": ["downstream-pending"],
+            "outcome_ids": ["coverage-honest", "authority-preserved", "privacy-preserved"],
+            "permitted_simulated_component_ids": ["disposable-fixture"],
+            "real_component_ids": ["al-producers", "catalog-runtime", "dashboard-runtime"],
+            "transition_ids": ["retain-downstream-obligations"]
+          }
+        ],
+        "transitions": {
+          "applicability": "applicable",
+          "items": [
+            {
+              "action": "Run the actual additive schema migration in disposable storage. Create canonical/source/investigation/projection structures without scanning or copying all historical R1 rows; retain original tables and positional-insert compatibility.",
+              "from_state": "before",
+              "id": "schema-upgrade",
+              "to_state": "mixed-legacy"
+            },
+            {
+              "action": "Execute a deterministic failed registered check through the real AL ledger and guarded save path; snapshot a closed immutable accepted-entry receipt and publish its versioned source reference in both distributions.",
+              "from_state": "source-ready",
+              "id": "publish-ledger",
+              "to_state": "source-ready"
+            },
+            {
+              "action": "Submit a real structurally valid review report through cmd_report acceptance, retain the exact immutable accepted bytes, and publish finding source references through the same guarded save/outbox path.",
+              "from_state": "source-ready",
+              "id": "publish-review",
+              "to_state": "source-ready"
+            },
+            {
+              "action": "Resolve only server-selected issuing roots/indexed references; read bounded bytes once before publication; validate actual issuer/event/report binding; within ingest_event's existing epoch transaction insert event, canonical typed sources, projection, timeline and cursor, preserving replay and conflict checks.",
+              "from_state": "source-ready",
+              "id": "ingest-evidence",
+              "to_state": "catalog-ready"
+            },
+            {
+              "action": "At policy.admission.audit insert the actual decision and its canonical source using the caller's connection and transaction. Keep attempt nullable and retain the eight-value legacy insert. Capture any available typed measured detail at the actual rejecting check in a sidecar; otherwise retain unknown values.",
+              "from_state": "source-ready",
+              "id": "publish-policy",
+              "to_state": "catalog-ready"
+            },
+            {
+              "action": "Recognize actual ContractError before dispatch stringification and atomically add its safe receipt/source inside reliability.store.finish's owned publication using internal connection-taking inserts. For await_assignment, publish after descriptor validation unwinds under fresh epoch checks. Preserve exact environment-operation ownership and do not classify generic errors as contract failures.",
+              "from_state": "source-ready",
+              "id": "publish-contract-rejection",
+              "to_state": "catalog-ready"
+            },
+            {
+              "action": "Through the existing local dashboard POST authority, validate scope, bounded content, request identity and expected revision; append attributed historical reports or investigation corrections without changing observed facts or using stale execution publication.",
+              "from_state": "historical",
+              "id": "operator-investigate",
+              "to_state": "catalog-ready"
+            },
+            {
+              "action": "Compute bounded reproducible related-group suggestions from safe canonical facts, then record the authorized operator's accept/reject/split decision with revision checks; preserve every source incident.",
+              "from_state": "catalog-ready",
+              "id": "group-decision",
+              "to_state": "catalog-ready"
+            },
+            {
+              "action": "Use an explicit operator request to project at most 100 currently unindexed R1 rows with identity-preserving inserts and an atomic request/checkpoint receipt. A new request searches unindexed rows again rather than trusting timestamps; exact replay returns its prior receipt.",
+              "from_state": "mixed-legacy",
+              "id": "project-legacy",
+              "to_state": "mixed-legacy"
+            },
+            {
+              "action": "Read scoped catalog/legacy UNION results with NOT EXISTS deduplication, stable pagination and provenance navigation through real API and dashboard controls; no GET path performs migration, projection, import or execution.",
+              "from_state": "mixed-legacy",
+              "id": "scoped-read",
+              "to_state": "catalog-ready"
+            },
+            {
+              "action": "Retain actual standalone AL identities and explicit unsupported-ingestion status until R5b is verified. Track R5a-10's actual R6 candidate consumer and the later R7 evaluation adapter as pending integration obligations, and require their real producer/consumer journeys before claiming those portions complete. Keep remote CI/staging and native qualification unknown without evidence.",
+              "from_state": "downstream-pending",
+              "id": "retain-downstream-obligations",
+              "to_state": "downstream-pending"
+            }
+          ],
+          "reason": "Each transition follows an inspected current producer or authority seam. The same-database publication additions use established transactions; the genuinely new standalone cross-store protocol remains R5b."
+        }
+      }
+    ],
+    "revision": 1,
+    "schema_version": 1,
+    "supersedes": null
+  },
+  "binding": {
+    "document_hash": "2315fce6d48182eaf72c370e6207ae85aa3453957b8910280b01dd2d5d9eb4a5",
+    "planning_occurrence": 0,
+    "repository_identity": {
+      "common_dir": "/Users/alirezaghiastabari/personal/myharness/.git",
+      "cwd": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness",
+      "git_dir": "/Users/alirezaghiastabari/personal/myharness/.git/worktrees/myharness",
+      "merge_base": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+      "root": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness",
+      "target": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+      "target_oid": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d"
+    },
+    "requirement_lineage_hash": "2315fce6d48182eaf72c370e6207ae85aa3453957b8910280b01dd2d5d9eb4a5",
+    "routing": {
+      "classification": "STANDARD",
+      "designer_required": false
+    },
+    "run_id": "c0b8fa62",
+    "runtime_pin": {
+      "pin_identity": "e3c123926004494c26a5e064a0d6a55a6d48f13db53b066f2c357ddd58be7768",
+      "pin_manifest_digest": "7bf43c6b70dfa9832bb27f34346a988d65251ddeb220f69f78d8809b3d5bc9b0"
+    },
+    "session_id": "reliability-r5a-20261120",
+    "source_observation_sha256": "523c4e48549505d054d2618358bad6501389ac3147819bdaf227028db64ee5db",
+    "verifier_policy": {
+      "digest": "640842d41f00a212a99f4180b26069b565d807d77bf1bef6cca000c9065c2f79",
+      "id": "al-proof-policy",
+      "version": 1
+    }
+  },
+  "effort": "medium",
+  "invocation_id": "/root/architecture_audit",
+  "kind": "architect-planning-report-v1",
+  "model": "astra",
+  "packet_sha256": "24c2b18fd55c1983075e8ef4ef050b73db9ae5c470071cceb54cb6e97be0fc58",
+  "policy_digest": "88fa7f7437af4b67d9c579d461c79714897d1f2783fa5ebd1e34fff141f9d784",
+  "routing": {
+    "classification": "STANDARD",
+    "designer_required": false
+  },
+  "schema_version": 1,
+  "specification": {
+    "reason": "The accepted task and retained source-corrected R5a plan are implementable without a new material developer decision. Revalidation against repaired R4 source confirmed unchanged six source-risk hashes and the actual setup owner repair. Policy publication is a direct caller-transaction audit with nullable attempt, not an AL event; typed R4 rejection receipts still require implementation; reliability.store.finish owns its epoch publication transaction and must receive internal same-connection inserts. Immutable accepted AL evidence is prepared before the existing event transaction and bound to the exact buffers consumed. Canonical source relations, bounded legacy projection and operator revisions follow inspected existing patterns, so STANDARD with sequential Engineer then Builder remains justified. This is planning authoring, not implementation admission, executed proof or R4 review. Actual R6 consumption under R5a-10, R7 evaluation adaptation, R5b standalone collection, complete required-check discovery and applicable native/CI/browser evidence remain honest verification obligations; none creates a blanket Knowledge or user-approval gate on defined implementation.",
+    "status": "SPEC_READY"
+  }
+}

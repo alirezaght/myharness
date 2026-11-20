@@ -128,11 +128,21 @@ def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused(cl
     assert cli('evidence', 'run', '--area', 'gate-base-' + gate['id'], '--kind', 'check', '--scope', ','.join(gate['scope']), '--', *gate['argv'])[0] != 0
     assert state['gate_runs'] and all(e['status'] == 'PASS' and e['gate_stage'] == 'base' for e in state['evidence']['entries'])
     admit_planning(cli)
+    admitted = al_store.load(sid)
+    observation = admitted['planning_authorship']['contract_observation']
+    from al_artifacts import read_json
+    original_contract = read_json(observation)
+    assert original_contract['context']['graph_revision'] == 0
     assert cli('phase', 'IMPLEMENTATION')[0] == 0
     before = al_store.state_path(sid).read_bytes()
     assert cli('gates', 'run', '--stage', 'base')[0] != 0
     assert al_store.state_path(sid).read_bytes() == before
     assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+    current = al_store.load(sid)
+    assert current['integration']['graph_revision'] == 1
+    assert current['planning_authorship']['contract_observation'] == observation
+    assert read_json(observation) == original_contract
+    assert current['agent_contracts']['implementation-plan:' + current['planning_authorship']['report']['id']] == original_contract
     assert cli('evidence', 'run', '--area', 'unmapped', '--kind', 'check', '--scope', 'docs', '--', 'python3', '-V')[0] != 0
     assert report(cli, tmp_path, 'blocker', {'id': 'design', 'kind': 'developer_engineering_decision', 'tasks': ['A'], 'question': 'Choose architecture', 'context': 'Explicit authority required', 'alternatives': ['one', 'two'], 'recommendation': 'one'})[0] == 0
     before = al_store.state_path(sid).read_bytes()
@@ -185,5 +195,58 @@ def test_pre_worker_bootstrap_rejects_foreign_binding_and_dispatch_spec(cli, tmp
     historical['integration']['graph_revision'] = 1
     with pytest.raises(SystemExit, match='unmapped'):
         tasks.admit_check(historical, spec, gate_context=context)
+    assert al_store.state_path(sid).read_bytes() == before
+    controller.conn.close()
+
+
+@pytest.mark.parametrize('tamper', ['report', 'companion', 'observation', 'context',
+                                   'binding', 'terminal', 'approved-bytes', 'missing-observation', 'missing-companion'])
+def test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused_plan_tamper(
+        cli, tmp_path, repo, monkeypatch, tamper):
+    from pathlib import Path
+    import al_artifacts as A
+    from execution_helpers import register_task
+    controller, eid, sid = bound(cli, tmp_path, repo, monkeypatch)
+    _planning_gate(cli, tmp_path, sid)
+    admit_planning(cli)
+    assert cli('phase', 'IMPLEMENTATION')[0] == 0
+    assert register_task(cli, tmp_path, 'A', ['svc'])[0] == 0
+    st = al_store.load(sid)
+    assert cli('integration', 'task-admit', '--task', 'A')[0] == 0
+    st = al_store.load(sid)
+    current = st['planning_authorship']
+    key = 'implementation-plan:' + current['report']['id']
+    if tamper in {'report', 'observation'}:
+        ref = current['report' if tamper == 'report' else 'contract_observation']
+        path = Path(ref['stored_path'])
+        path.write_bytes(path.read_bytes() + b' altered immutable observation')
+    elif tamper == 'companion':
+        st['agent_contracts'][key]['acceptance_criteria'] = ['forged criteria']
+        al_store.state_path(sid).write_text(json.dumps(st))
+    elif tamper == 'context':
+        value = st['agent_contracts'][key]
+        value['context']['execution'] = 'foreign-execution'
+        current['contract_observation'] = A.snapshot_bytes(
+            sid, json.dumps(value).encode(), 'implementation-plan-contract-v1', 'negative fixture')
+        al_store.state_path(sid).write_text(json.dumps(st))
+    elif tamper == 'binding':
+        st['integration']['binding']['approval_id'] += 1
+        al_store.state_path(sid).write_text(json.dumps(st))
+    elif tamper == 'missing-companion':
+        del st['agent_contracts'][key]
+        al_store.state_path(sid).write_text(json.dumps(st))
+    elif tamper == 'missing-observation':
+        del current['contract_observation']
+        al_store.state_path(sid).write_text(json.dumps(st))
+    elif tamper == 'terminal':
+        controller.conn.execute("UPDATE executions SET status='Completed' WHERE id=?", (eid,))
+    else:
+        from harness.execution_store import get_execution
+        approval = get_execution(controller.conn, eid)['binding']['approval_id']
+        path = Path(controller.conn.execute('SELECT path FROM approvals WHERE id=?', (approval,)).fetchone()['path'])
+        path.write_bytes(path.read_bytes() + b'\nUnapproved changed requirement.\n')
+    before = al_store.state_path(sid).read_bytes()
+    result = cli('integration', 'task-admit', '--task', 'A')
+    assert result[0] != 0, result
     assert al_store.state_path(sid).read_bytes() == before
     controller.conn.close()

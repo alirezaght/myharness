@@ -1,0 +1,14 @@
+{
+  "evidence": "E25",
+  "run_id": "0d32430a",
+  "result": "PASS",
+  "counts": {
+    "passed": 66
+  },
+  "same_recipe_red": "E22",
+  "artifact": {
+    "path": "docs/reliability-platform/r2-evidence/E25-green/al-r2-semantic-privacy-001.xml",
+    "sha256": "5bf0a6e1444447d6140270a955763b0e080fcad5460e2288563a9e781e28c0c2"
+  },
+  "formal_approval": false
+}

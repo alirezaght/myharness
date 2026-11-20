@@ -23,6 +23,7 @@ def require_execution_authority(
     operation="admit",
     delivery=None,
     _transition_validation=False,
+    decision_observation=None,
 ):
     from harness.execution_epochs import require_active_epoch
 
@@ -89,6 +90,7 @@ def require_execution_authority(
         from harness.delivery_routing import validate_correction_authority
 
         validate_correction_authority(controller, execution, delivery)
+    decision_bytes = None
     if operation == "decision":
         row = controller.conn.execute(
             "SELECT * FROM execution_decisions WHERE id=? AND execution_id=?",
@@ -97,8 +99,9 @@ def require_execution_authority(
         if row is None or row["delivery"] is None:
             raise ExecutionConflict("unknown developer delivery")
         path = Path(execution["handoff_path"]).parent / "inbox" / (row["id"] + ".json")
+        decision_bytes = row["delivery"].encode()
         if (
-            path.read_bytes() != row["delivery"].encode()
+            path.read_bytes() != decision_bytes
             or digest(Path(row["registry_path"]).read_bytes()) != row["registry_hash"]
         ):
             raise ExecutionConflict("decision inbox/Registry bytes changed")
@@ -110,6 +113,10 @@ def require_execution_authority(
     ):
         if digest(Path(row["registry_path"]).read_bytes()) != row["registry_hash"]:
             raise ExecutionConflict("execution Decision Registry provenance changed")
+    if decision_observation is not None and decision_bytes is not None:
+        from hashlib import sha256
+
+        decision_observation.update(schema_version=1, sha256=sha256(decision_bytes).hexdigest())
     return envelope
 
 
@@ -135,10 +142,45 @@ def require_authored_report(execution, state, task_id, resource):
     record = index["records"][row["artifact_id"]]
     if record["graph_revision"] != state["integration"]["graph_revision"]:
         raise ExecutionConflict("submitted report graph revision is stale")
+    from harness.agent_contracts import ContractError, fingerprint, validate
+
+    contract = record.get("contract")
+    required = any(
+        w.get("agent") == row["owner"]
+        and w.get("task") == task_id
+        and w.get("handoffs")
+        and w["handoffs"][-1].get("contract")
+        for w in state["writers"].values()
+    )
+    if required and contract is None:
+        raise ContractError("/expected_outputs", kind="implementation-result")
+    if contract is not None:
+        from harness.agent_exchange import specification
+
+        validate(contract, specification=specification(state))
+        if (
+            contract["context"]["producer"] != row["owner"]
+            or contract["context"]["subtask"] != task_id
+            or contract["context"]["task_revision"]
+            != state["integration"]["tasks"][task_id]["revision"]
+            or contract["context"]["graph_revision"] != state["integration"]["graph_revision"]
+            or contract["payload"]["record_digest"] != fingerprint(Path(record["path"]).read_text())
+        ):
+            raise ContractError("/context", kind="implementation-result")
     return row
 
 
-def require_dependency_outputs(state, task_id, repository, execution=None, _seen=()):
+def require_dependency_outputs(
+    state,
+    task_id,
+    repository,
+    execution=None,
+    _seen=(),
+    *,
+    verify_outputs=True,
+    consumption=None,
+    connection=None,
+):
     import os
     import stat
 
@@ -156,6 +198,23 @@ def require_dependency_outputs(state, task_id, repository, execution=None, _seen
             info.st_ctime_ns,
         )
 
+    if verify_outputs:
+        from harness.policy.context import CURRENT
+        from harness.policy.resource_bindings import dependency_claims
+        from harness.policy.source_dependencies import require_covered
+
+        required = dependency_claims(
+            str(Path(repository).resolve()),
+            execution["id"] if execution else "unknown",
+            state,
+            task_id,
+        )
+        if required:
+            if consumption is not CURRENT.get() or connection is None or connection.in_transaction:
+                raise ExecutionConflict(
+                    "mutable dependency consumption requires its owning reserved attempt"
+                )
+            require_covered(connection, consumption, required)
     if task_id in _seen:
         raise ExecutionConflict("cyclic dependency authority")
     integration = state["integration"]
@@ -170,7 +229,16 @@ def require_dependency_outputs(state, task_id, repository, execution=None, _seen
             raise ExecutionConflict(
                 "dependency has no current authored output or verified completion"
             )
-        require_dependency_outputs(state, dep, repository, execution, (*_seen, task_id))
+        require_dependency_outputs(
+            state,
+            dep,
+            repository,
+            execution,
+            (*_seen, task_id),
+            verify_outputs=verify_outputs,
+            consumption=consumption,
+            connection=connection,
+        )
         verified = task["status"] == "Completed"
         receipt = (
             task.get("authored_output")
@@ -224,6 +292,18 @@ def require_dependency_outputs(state, task_id, repository, execution=None, _seen
                 or producer["task"] != dep
             ):
                 raise ExecutionConflict("dependency producer lifecycle differs")
+        from harness.agent_contracts import validate
+
+        for writer in state["writers"].values():
+            if writer.get("task") == dep and writer.get("handoffs"):
+                contract = writer["handoffs"][-1].get("contract")
+                if contract is not None:
+                    validate(contract)
+        if not verify_outputs:
+            continue
+        from harness.agent_results import require_typed_result
+
+        require_typed_result(execution, state, dep)
         for output in receipt["output_refs_and_hashes"]:
             if output["kind"] == "report":
                 if execution is None:
@@ -267,6 +347,7 @@ def main():
             "approve",
             "delivery-correction",
             "authored-output",
+            "typed-output",
         ],
     )
     parser.add_argument("--nonce", required=True)
@@ -287,12 +368,14 @@ def main():
         if not same_path(execution["handoff_path"], args.handoff):
             raise ExecutionConflict("unrecognized authority handoff")
         binding = loads(args.binding)
+        decision_observation = {}
         require_execution_authority(
             HarnessController(conn),
             execution["id"],
             binding=binding,
             operation=args.operation,
             delivery=args.delivery,
+            decision_observation=decision_observation,
         )
         if args.task:
             from harness.execution_hosts import al_source
@@ -341,6 +424,12 @@ def main():
                     raise ExecutionConflict(
                         "scoped authority lacks its exact acknowledged developer amendment"
                     )
+        if args.operation == "typed-output":
+            from harness.agent_results import require_typed_result
+
+            if not args.task:
+                raise ExecutionConflict("typed output requires a task scope")
+            require_typed_result(execution, state, args.task)
         if args.operation == "authored-output":
             if not args.task:
                 raise ExecutionConflict("authored report requires a task scope")
@@ -355,6 +444,11 @@ def main():
                     "task": args.task,
                     "delivery": args.delivery,
                     "scope_revision": args.scope_revision,
+                    **(
+                        {"delivery_receipt": decision_observation}
+                        if args.operation == "decision"
+                        else {}
+                    ),
                 }
             )
         )

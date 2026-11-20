@@ -1,0 +1,1312 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="12" skipped="0" tests="47" time="12.231" timestamp="2026-11-20T05:25:21.642698+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_policy_composition" name="test_explicit_deny_in_global_scope_wins_execution_allow" time="0.281" /><testcase classname="tests.test_policy_composition" name="test_limit_replacement_keeps_consumption_and_old_reservation_cannot_start" time="0.316" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change0]" time="0.196" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change1]" time="0.191" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change2]" time="0.195" /><testcase classname="tests.test_policy_composition" name="test_closed_grammar_refuses_unsupported_fields[change3]" time="0.191" /><testcase classname="tests.test_policy_composition" name="test_workflow_membership_is_approved_immutable_and_uses_same_pool" time="0.269" /><testcase classname="tests.test_policy_composition" name="test_parent_role_restrictions_are_inherited_by_child_writer" time="0.256" /><testcase classname="tests.test_policy_composition" name="test_historical_parent_bound_is_not_widened_by_shared_pool_replacement" time="0.388"><failure message="AssertionError: R3-FRESH-001: unchanged historical parent allowed second mutation; consumed=2, target_exists=True&#10;assert None == 'BUDGET_EXHAUSTED'">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1072cecf0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107271760&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1072725c0&gt;)
+
+    def test_historical_parent_bound_is_not_widened_by_shared_pool_replacement(policy_runtime):
+        from pathlib import Path
+    
+        r = policy_runtime
+        configure(r, document(r, policy="parent", maximum=1))
+        child = document(r, policy="child", maximum=20)
+        child["parents"] = ["parent-v1"]
+        configure(r, child)
+        r.operation.dispatch(r.principal, "apply_patch", patch(r, "svc/first.txt"))
+        configure(r, document(r, policy="parent", maximum=10, version=2), revision=1)
+        assert (
+            r.controller.conn.execute(
+                "SELECT consumed FROM policy_pools WHERE id='parent-pool'"
+            ).fetchone()[0]
+            == 1
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(r.principal, "apply_patch", patch(r, "svc/forbidden-second.txt"))
+        except ValueError as error:
+            rejected = str(error)
+        consumed = r.controller.conn.execute(
+            "SELECT consumed FROM policy_pools WHERE id='parent-pool'"
+        ).fetchone()[0]
+        exists = (Path(r.operation.envelope["repository"]) / "svc/forbidden-second.txt").exists()
+&gt;       assert rejected == "BUDGET_EXHAUSTED", (
+            f"R3-FRESH-001: unchanged historical parent allowed second mutation; consumed={consumed}, target_exists={exists}"
+        )
+E       AssertionError: R3-FRESH-001: unchanged historical parent allowed second mutation; consumed=2, target_exists=True
+E       assert None == 'BUDGET_EXHAUSTED'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_composition.py:124: AssertionError</failure></testcase><testcase classname="tests.test_policy_composition" name="test_v2_only_consumer_can_use_increased_pool_without_reset" time="0.329" /><testcase classname="tests.test_policy_deadlines" name="test_required_unqualified_usage_refuses_before_patch[generation_tokens]" time="0.212" /><testcase classname="tests.test_policy_deadlines" name="test_required_unqualified_usage_refuses_before_patch[monetary_cost]" time="0.215" /><testcase classname="tests.test_policy_deadlines" name="test_subsecond_remaining_is_not_rounded_or_restarted" time="0.357" /><testcase classname="tests.test_policy_deadlines" name="test_clock_rollback_refuses_new_work" time="0.254" /><testcase classname="tests.test_policy_deadlines" name="test_boot_change_refuses_time_budget_instead_of_resetting_interval" time="0.239" /><testcase classname="tests.test_policy_deadlines" name="test_elapsed_remainder_uses_original_root_interval_without_rounding" time="0.254" /><testcase classname="tests.test_policy_deadlines" name="test_historical_missing_origin_is_not_backfilled_or_reconstructed" time="0.235" /><testcase classname="tests.test_policy_deadlines" name="test_new_execution_origin_is_one_trusted_atomic_receipt_and_never_resets" time="0.214" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[before-operation_deadline_ms]" time="0.256" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[before-execution_elapsed_ms]" time="0.246" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[hash-operation_deadline_ms]" time="0.258" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[hash-execution_elapsed_ms]" time="0.251" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[pread-operation_deadline_ms]" time="0.248" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[pread-execution_elapsed_ms]" time="0.249" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[metadata-operation_deadline_ms]" time="0.253" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[metadata-execution_elapsed_ms]" time="0.245" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[decode-operation_deadline_ms]" time="0.258" /><testcase classname="tests.test_policy_deadlines" name="test_public_read_never_returns_a_page_after_its_bound[decode-execution_elapsed_ms]" time="0.253" /><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-delete-operation_deadline_ms]" time="0.267"><failure message="AssertionError: R3-FRESH-002: after metadata-delete, rejection=None, target_mutations=['unlink']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f0d10&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107409bc0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10740b2e0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10736cbb0&gt;
+dimension = 'operation_deadline_ms', boundary = 'metadata-delete'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after metadata-delete, rejection=None, target_mutations=['unlink']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-delete-execution_elapsed_ms]" time="0.271"><failure message="AssertionError: R3-FRESH-002: after metadata-delete, rejection=None, target_mutations=['unlink']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1072cf680&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107270fe0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10740aac0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107412890&gt;
+dimension = 'execution_elapsed_ms', boundary = 'metadata-delete'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after metadata-delete, rejection=None, target_mutations=['unlink']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-update-operation_deadline_ms]" time="0.273"><failure message="AssertionError: R3-FRESH-002: after metadata-update, rejection=None, target_mutations=['replace']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1072cf8a0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10740b6a0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10740aa20&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x106d64d70&gt;
+dimension = 'operation_deadline_ms', boundary = 'metadata-update'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after metadata-update, rejection=None, target_mutations=['replace']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[metadata-update-execution_elapsed_ms]" time="0.267"><failure message="AssertionError: R3-FRESH-002: after metadata-update, rejection=None, target_mutations=['replace']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1072cf130&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10740b100&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107409120&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10736eeb0&gt;
+dimension = 'execution_elapsed_ms', boundary = 'metadata-update'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after metadata-update, rejection=None, target_mutations=['replace']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[write-operation_deadline_ms]" time="0.271"><failure message="AssertionError: R3-FRESH-002: after write, rejection=None, target_mutations=['replace']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f0e20&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10740bec0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1074751c0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1072f1780&gt;
+dimension = 'operation_deadline_ms', boundary = 'write'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after write, rejection=None, target_mutations=['replace']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[write-execution_elapsed_ms]" time="0.266"><failure message="AssertionError: R3-FRESH-002: after write, rejection=None, target_mutations=['replace']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f0af0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107475da0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x1074776a0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1072e9240&gt;
+dimension = 'execution_elapsed_ms', boundary = 'write'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after write, rejection=None, target_mutations=['replace']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[fsync-operation_deadline_ms]" time="0.270"><failure message="AssertionError: R3-FRESH-002: after fsync, rejection=None, target_mutations=['replace']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f1370&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1074779c0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107476160&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107413e70&gt;
+dimension = 'operation_deadline_ms', boundary = 'fsync'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after fsync, rejection=None, target_mutations=['replace']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_deadlines" name="test_patch_never_commits_target_after_original_bound[fsync-execution_elapsed_ms]" time="0.269"><failure message="AssertionError: R3-FRESH-002: after fsync, rejection=None, target_mutations=['replace']&#10;assert (None == 'BUDGET_EXHAUSTED')">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f1590&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x107476520&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107475ee0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10749da20&gt;
+dimension = 'execution_elapsed_ms', boundary = 'fsync'
+
+    @pytest.mark.parametrize("dimension", ["operation_deadline_ms", "execution_elapsed_ms"])
+    @pytest.mark.parametrize("boundary", ["metadata-delete", "metadata-update", "write", "fsync"])
+    def test_patch_never_commits_target_after_original_bound(
+        policy_runtime, monkeypatch, dimension, boundary
+    ):
+        import os
+        from pathlib import Path
+    
+        from harness.policy.context import CURRENT
+        from tests.test_policy_capabilities import grant
+    
+        r = policy_runtime
+        target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
+        target.parent.mkdir(exist_ok=True)
+        target.write_text("old\n")
+        doc = document(r, maximum=5, rules={"required_approvals": ["grant"]})
+        doc["limits"].append(
+            {
+                "pool_id": "time-pool",
+                "dimension": dimension,
+                "domain": "execution_tree",
+                "owner_ref": r.operation.execution_id,
+                "maximum": 5000,
+            }
+        )
+        configure(r, doc)
+        grant(r)
+        clock = [time.monotonic()]
+        monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+        real_stat, real_open, real_fsync, real_fdopen, real_replace, real_unlink = (
+            os.stat,
+            os.open,
+            os.fsync,
+            os.fdopen,
+            os.replace,
+            os.unlink,
+        )
+        temporary_fds, commits, boundaries = set(), [], []
+    
+        def expire():
+            current = CURRENT.get()
+            assert current.started and current.deadline is not None
+            clock[0] = current.deadline
+            boundaries.append(boundary)
+    
+        def stating(path, *args, **kwargs):
+            result = real_stat(path, *args, **kwargs)
+            current = CURRENT.get()
+            if (
+                boundary.startswith("metadata")
+                and path == "new.txt"
+                and kwargs.get("dir_fd") is not None
+                and current
+                and current.started
+            ):
+                expire()
+            return result
+    
+        def opening(path, *args, **kwargs):
+            fd = real_open(path, *args, **kwargs)
+            if str(path).startswith(".harness-patch-"):
+                temporary_fds.add(fd)
+            return fd
+    
+        class Writing:
+            def __init__(self, stream):
+                self.stream = stream
+    
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+    
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+    
+            def write(self, raw):
+                count = self.stream.write(raw)
+                expire()
+                return count
+    
+            def flush(self):
+                return self.stream.flush()
+    
+            def fileno(self):
+                return self.stream.fileno()
+    
+        def opening_stream(fd, *args, **kwargs):
+            stream = real_fdopen(fd, *args, **kwargs)
+            return Writing(stream) if boundary == "write" and fd in temporary_fds else stream
+    
+        def syncing(fd):
+            result = real_fsync(fd)
+            if boundary == "fsync" and fd in temporary_fds:
+                expire()
+            return result
+    
+        def replacing(source, destination, **kwargs):
+            if destination == "new.txt":
+                commits.append("replace")
+            return real_replace(source, destination, **kwargs)
+    
+        def unlinking(path, *args, **kwargs):
+            if path == "new.txt":
+                commits.append("unlink")
+            return real_unlink(path, *args, **kwargs)
+    
+        monkeypatch.setattr(os, "stat", stating)
+        monkeypatch.setattr(os, "open", opening)
+        monkeypatch.setattr(os, "fdopen", opening_stream)
+        monkeypatch.setattr(os, "fsync", syncing)
+        monkeypatch.setattr(os, "replace", replacing)
+        monkeypatch.setattr(os, "unlink", unlinking)
+        edit = (
+            "*** Delete File: svc/new.txt\n"
+            if boundary == "metadata-delete"
+            else "*** Update File: svc/new.txt\n@@\n-old\n+new\n"
+        )
+        rejected = None
+        try:
+            r.operation.dispatch(
+                r.principal,
+                "apply_patch",
+                {
+                    "patch": "*** Begin Patch\n" + edit + "*** End Patch",
+                    "task_id": "work",
+                    "expected_revision": r.revision,
+                },
+            )
+        except ValueError as error:
+            rejected = str(error)
+        assert boundaries, "fixture must cross bound during actual target metadata or temporary IO"
+&gt;       assert rejected == "BUDGET_EXHAUSTED" and not commits, (
+            f"R3-FRESH-002: after {boundary}, rejection={rejected}, target_mutations={commits}"
+        )
+E       AssertionError: R3-FRESH-002: after fsync, rejection=None, target_mutations=['replace']
+E       assert (None == 'BUDGET_EXHAUSTED')
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_deadlines.py:354: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_command_effects_cannot_bypass_actual_write_scope" time="0.263" /><testcase classname="tests.test_policy_resources" name="test_unqualified_resource_enforcement_denies_before_subprocess[network]" time="0.237" /><testcase classname="tests.test_policy_resources" name="test_unqualified_resource_enforcement_denies_before_subprocess[database]" time="0.232" /><testcase classname="tests.test_policy_resources" name="test_unqualified_resource_enforcement_denies_before_subprocess[production]" time="0.211" /><testcase classname="tests.test_policy_resources" name="test_supplied_role_does_not_erase_role_policy" time="0.237" /><testcase classname="tests.test_policy_resources" name="test_narrow_file_policy_does_not_silently_allow_unresolved_alternative_reads[knowledge_query-arguments0]" time="0.241" /><testcase classname="tests.test_policy_resources" name="test_narrow_file_policy_does_not_silently_allow_unresolved_alternative_reads[read_file-arguments1]" time="0.238" /><testcase classname="tests.test_policy_resources" name="test_unknown_dispatch_preserves_fixed_closed_error" time="0.246" /><testcase classname="tests.test_policy_resources" name="test_repository_audit_refuses_unresolved_source_before_traversal[overlap]" time="0.309"><failure message="AssertionError: R3-FRESH-003: overlap producer did not fence actual audit; rejection=None, inventoried=17, source_reads=['pyproject.toml', 'tests/test_export.py', 'svc/producer.py', 'svc/live.py', 'demo/export.py', 'demo/api/routes.py', 'demo/__init__.py']&#10;assert (None in {'ATTEMPT_NOT_EXECUTABLE', 'UNSUPPORTED_ENFORCEMENT_CAPABILITY'})">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f2360&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10750bba0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10750aac0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10749c6e0&gt;
+producer = 'overlap'
+
+    @pytest.mark.parametrize("producer", ["overlap", "unknown"])
+    def test_repository_audit_refuses_unresolved_source_before_traversal(
+        policy_runtime, monkeypatch, producer
+    ):
+        from harness import repository_audit
+    
+        r = policy_runtime
+        _audit_fixture(r)
+        _unresolved_public_producer(r, producer)
+        traversed, texts = [], []
+        original_inventory, original_text = repository_audit.inventory, repository_audit._text
+    
+        def inventory(root):
+            value = original_inventory(root)
+            traversed.extend(value[0])
+            return value
+    
+        def text(root, path):
+            value = original_text(root, path)
+            texts.append(path)
+            return value
+    
+        monkeypatch.setattr(repository_audit, "inventory", inventory)
+        monkeypatch.setattr(repository_audit, "_text", text)
+        rejected = None
+        try:
+            r.operation.dispatch(r.root, "read_file", {"path": "harness:repository-audit"})
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert (
+            rejected in {"ATTEMPT_NOT_EXECUTABLE", "UNSUPPORTED_ENFORCEMENT_CAPABILITY"}
+            and not traversed
+            and not texts
+        ), (
+            f"R3-FRESH-003: {producer} producer did not fence actual audit; rejection={rejected}, inventoried={len(traversed)}, source_reads={texts}"
+        )
+E       AssertionError: R3-FRESH-003: overlap producer did not fence actual audit; rejection=None, inventoried=17, source_reads=['pyproject.toml', 'tests/test_export.py', 'svc/producer.py', 'svc/live.py', 'demo/export.py', 'demo/api/routes.py', 'demo/__init__.py']
+E       assert (None in {'ATTEMPT_NOT_EXECUTABLE', 'UNSUPPORTED_ENFORCEMENT_CAPABILITY'})
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:155: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_repository_audit_refuses_unresolved_source_before_traversal[unknown]" time="0.303"><failure message="AssertionError: R3-FRESH-003: unknown producer did not fence actual audit; rejection=None, inventoried=16, source_reads=['pyproject.toml', 'tests/test_export.py', 'svc/live.py', 'demo/export.py', 'demo/api/routes.py', 'demo/__init__.py']&#10;assert (None in {'ATTEMPT_NOT_EXECUTABLE', 'UNSUPPORTED_ENFORCEMENT_CAPABILITY'})">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1073f1bf0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x10750a660&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x107509a80&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x10749cc90&gt;
+producer = 'unknown'
+
+    @pytest.mark.parametrize("producer", ["overlap", "unknown"])
+    def test_repository_audit_refuses_unresolved_source_before_traversal(
+        policy_runtime, monkeypatch, producer
+    ):
+        from harness import repository_audit
+    
+        r = policy_runtime
+        _audit_fixture(r)
+        _unresolved_public_producer(r, producer)
+        traversed, texts = [], []
+        original_inventory, original_text = repository_audit.inventory, repository_audit._text
+    
+        def inventory(root):
+            value = original_inventory(root)
+            traversed.extend(value[0])
+            return value
+    
+        def text(root, path):
+            value = original_text(root, path)
+            texts.append(path)
+            return value
+    
+        monkeypatch.setattr(repository_audit, "inventory", inventory)
+        monkeypatch.setattr(repository_audit, "_text", text)
+        rejected = None
+        try:
+            r.operation.dispatch(r.root, "read_file", {"path": "harness:repository-audit"})
+        except ValueError as error:
+            rejected = str(error)
+&gt;       assert (
+            rejected in {"ATTEMPT_NOT_EXECUTABLE", "UNSUPPORTED_ENFORCEMENT_CAPABILITY"}
+            and not traversed
+            and not texts
+        ), (
+            f"R3-FRESH-003: {producer} producer did not fence actual audit; rejection={rejected}, inventoried={len(traversed)}, source_reads={texts}"
+        )
+E       AssertionError: R3-FRESH-003: unknown producer did not fence actual audit; rejection=None, inventoried=16, source_reads=['pyproject.toml', 'tests/test_export.py', 'svc/live.py', 'demo/export.py', 'demo/api/routes.py', 'demo/__init__.py']
+E       assert (None in {'ATTEMPT_NOT_EXECUTABLE', 'UNSUPPORTED_ENFORCEMENT_CAPABILITY'})
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:155: AssertionError</failure></testcase><testcase classname="tests.test_policy_resources" name="test_repository_audit_holds_source_claim_against_racing_governed_writer" time="0.318"><failure message="AssertionError: R3-FRESH-003: racing writer entered live audit window: ['committed']&#10;assert ['committed'] == ['ATTEMPT_NOT_EXECUTABLE']&#10;  &#10;  At index 0 diff: 'committed' != 'ATTEMPT_NOT_EXECUTABLE'&#10;  Use -v to get more diff">policy_runtime = namespace(operation=&lt;harness.execution_operations.OperationController object at 0x1072cf8a0&gt;, principal={'thread_id': ...on policy_runtime.&lt;locals&gt;.save at 0x1075093a0&gt;, authorize=&lt;function policy_runtime.&lt;locals&gt;.authorize at 0x10750b740&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107505ef0&gt;
+
+    def test_repository_audit_holds_source_claim_against_racing_governed_writer(
+        policy_runtime, monkeypatch
+    ):
+        import copy
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+    
+        from harness import repository_audit
+        from harness.execution_operations import OperationController
+    
+        r = policy_runtime
+        root = _audit_fixture(r)
+        other = copy.copy(r.operation)
+        other.lock = threading.RLock()
+        other.state = OperationController.state.__get__(other)
+        original_inventory, original_text = repository_audit.inventory, repository_audit._text
+        traversed, texts, outcomes = [], [], []
+    
+        def write():
+            try:
+                request = patch(r)
+                request["patch"] = (
+                    "*** Begin Patch\n*** Update File: svc/live.py\n@@\n-value = 1\n+value = 2\n*** End Patch"
+                )
+                other.dispatch(r.principal, "apply_patch", request)
+                return "committed"
+            except ValueError as error:
+                return str(error)
+    
+        def inventory(path):
+            value = original_inventory(path)
+            traversed.extend(value[0])
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                outcomes.append(pool.submit(write).result(timeout=10))
+            return value
+    
+        def text(path, name):
+            value = original_text(path, name)
+            texts.append(name)
+            return value
+    
+        monkeypatch.setattr(repository_audit, "inventory", inventory)
+        monkeypatch.setattr(repository_audit, "_text", text)
+        rejected = None
+        try:
+            r.operation.dispatch(r.root, "read_file", {"path": "harness:repository-audit"})
+        except ValueError as error:
+            rejected = str(error)
+        if rejected in {"ATTEMPT_NOT_EXECUTABLE", "UNSUPPORTED_ENFORCEMENT_CAPABILITY"}:
+            assert not traversed and not texts and not outcomes
+        else:
+            assert traversed and texts, "actual audit inventory and source reader must execute"
+&gt;           assert outcomes == ["ATTEMPT_NOT_EXECUTABLE"], (
+                f"R3-FRESH-003: racing writer entered live audit window: {outcomes}"
+            )
+E           AssertionError: R3-FRESH-003: racing writer entered live audit window: ['committed']
+E           assert ['committed'] == ['ATTEMPT_NOT_EXECUTABLE']
+E             
+E             At index 0 diff: 'committed' != 'ATTEMPT_NOT_EXECUTABLE'
+E             Use -v to get more diff
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_policy_resources.py:220: AssertionError</failure></testcase></testsuite></testsuites>

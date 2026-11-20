@@ -44,6 +44,9 @@ def parent_descriptor(root, path, *, create=False):
     try:
         for part in relative.parts[:-1]:
             if create:
+                from harness.policy.context import check_deadline
+
+                check_deadline()
                 try:
                     os.mkdir(part, mode=0o700, dir_fd=descriptor)
                 except FileExistsError:
@@ -77,11 +80,16 @@ def _source_version(info):
 
 
 def read_file(root, path, *, offset=0, limit=16384):
+    from harness.policy.context import check_deadline
+
+    check_deadline()
     if type(offset) is not int or type(limit) is not int or offset < 0 or not 1 <= limit <= 65536:
         raise ValueError("bounded file read required")
     with parent_descriptor(root, path) as (directory, name):
+        check_deadline()
         descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
         try:
+            check_deadline()
             before = os.fstat(descriptor)
             _ordinary(before)
             version = _source_version(before)
@@ -89,7 +97,9 @@ def read_file(root, path, *, offset=0, limit=16384):
             if before.st_size <= MAX_HASH_BYTES:
                 hasher, page, position = hashlib.sha256(), bytearray(), 0
                 while position <= MAX_HASH_BYTES:
+                    check_deadline()
                     chunk = os.read(descriptor, min(65536, MAX_HASH_BYTES + 1 - position))
+                    check_deadline()
                     if not chunk:
                         break
                     hasher.update(chunk)
@@ -104,7 +114,9 @@ def read_file(root, path, *, offset=0, limit=16384):
                     raise ValueError("source changed or exceeded full-source hash budget")
                 sha, hash_bytes, raw = "sha256:" + hasher.hexdigest(), position, bytes(page)
             else:
+                check_deadline()
                 raw = os.pread(descriptor, limit, offset)
+                check_deadline()
             after = os.fstat(descriptor)
             with parent_descriptor(root, path) as (current_directory, current_name):
                 named = os.stat(current_name, dir_fd=current_directory, follow_symlinks=False)
@@ -112,7 +124,8 @@ def read_file(root, path, *, offset=0, limit=16384):
                 raise ValueError("source changed during confined read")
         finally:
             os.close(descriptor)
-    return {
+    check_deadline()
+    result = {
         "text": raw.decode(errors="replace"),
         "truncated": offset + len(raw) < before.st_size,
         "offset": offset,
@@ -125,6 +138,8 @@ def read_file(root, path, *, offset=0, limit=16384):
         "hash_bytes": hash_bytes,
         "max_hash_bytes": MAX_HASH_BYTES,
     }
+    check_deadline()
+    return result
 
 
 def parse_patch(patch):
@@ -213,7 +228,7 @@ def _read_edit_target(root, path):
             os.close(descriptor)
 
 
-def apply_patch(root, patch, authorize_paths):
+def apply_patch(root, patch, authorize_paths, *, before_mutation=None):
     edits = parse_patch(patch)
     authorize_paths([e["path"] for e in edits])
     prepared = []
@@ -231,7 +246,15 @@ def apply_patch(root, patch, authorize_paths):
             text, version = _read_edit_target(root, edit["path"])
             prepared.append((edit, transform(text, edit), version))
     authorize_paths([e["path"] for e in edits])
+    if before_mutation is None:
+        from harness.policy.context import start_effect
+
+        before_mutation = start_effect
+    before_mutation()
     for edit, content, expected in prepared:
+        from harness.policy.context import check_deadline
+
+        check_deadline()
         with parent_descriptor(root, edit["path"], create=True) as (directory, name):
             if expected:
                 info = os.stat(name, dir_fd=directory, follow_symlinks=False)
@@ -240,6 +263,7 @@ def apply_patch(root, patch, authorize_paths):
                     raise ValueError("patch target changed before commit")
             elif _exists(directory, name):
                 raise ValueError("add-file target appeared before commit")
+            check_deadline()
             if content is None:
                 os.unlink(name, dir_fd=directory)
             else:
@@ -252,15 +276,23 @@ def apply_patch(root, patch, authorize_paths):
                 )
                 try:
                     with os.fdopen(fd, "wb") as stream:
-                        stream.write(content.encode())
+                        check_deadline()
+                        raw = content.encode()
+                        check_deadline()
+                        stream.write(raw)
+                        check_deadline()
                         stream.flush()
+                        check_deadline()
                         os.fsync(stream.fileno())
+                        check_deadline()
+                    check_deadline()
                     os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
                 finally:
                     try:
                         os.unlink(temporary, dir_fd=directory)
                     except FileNotFoundError:
                         pass
+    check_deadline()
     return {"changed": [e["path"] for e in edits]}
 
 

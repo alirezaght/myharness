@@ -333,6 +333,9 @@ def _checked_tree(root, answer):
 
 
 def snapshot(root=None):
+    import al_retry_control
+    if al_retry_control.current() is not None:
+        raise Unavailable("snapshot optimization disabled for sealed control")
     """The tree id of the working copy with AL's membership: every tracked file, wherever it
     lives (generated-looking directories included), plus untracked files by AL's rule."""
     root = _root(root)

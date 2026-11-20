@@ -1,0 +1,24 @@
+{
+  "evidence": "E31",
+  "outcome": "FAIL",
+  "cause": "Real keyboard activation followed by content replacement lost evidence-button focus (R1-F02). Other collected booleans not independently claimed red.",
+  "artifacts": [
+    {
+      "original_path": "/private/tmp/al-r1-browser-005.xml",
+      "path": "docs/reliability-platform/r1-evidence/E31-red/al-r1-browser-005.xml",
+      "sha256": "7445de8c6b88e8124f9e33db2c8492e2e7714b7214e33399212d8542bab48c8d"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-005/test_persisted_operation_incid0/incident-shots/operation-incidents-1280x800.png",
+      "path": "docs/reliability-platform/r1-evidence/E31-red/operation-incidents-1280x800.png",
+      "sha256": "177e78e1aca17c5f19a45a3585e3906bd6fc7c826d23b621f45134b1f125f4e7"
+    },
+    {
+      "original_path": "/private/tmp/al-r1-browser-005/test_persisted_operation_incid0/incident-shots/operation-incidents-390x844.png",
+      "path": "docs/reliability-platform/r1-evidence/E31-red/operation-incidents-390x844.png",
+      "sha256": "76f817fb917deedb33f859a3e93a605851a2ba9978c0f90548d0a1704489a3de"
+    }
+  ],
+  "protected_log": ".codex/al-runtime/reliability-r1-20261119/logs/923dc63e-E31-r1-browser-005-test.log",
+  "rerun_note": "Exact-command rework proof requires running the original recipe again after repair; these failed artifacts remain immutable copies before any destination reuse."
+}

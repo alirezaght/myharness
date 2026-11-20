@@ -40,6 +40,7 @@ KINDS = {
     "decision.acknowledged",
     "test.started",
     "test.result",
+    "review.accepted",
     "implementation.result",
     "delivery.updated",
     "writer.updated",
@@ -264,6 +265,7 @@ def validate_event(value):
         "decision.acknowledged": {"delivery_id", "blocker_id", "state", "decision_hash"},
         "test.started": {"id", "area", "status", "scope"},
         "test.result": {"id", "area", "status", "scope", "validity"},
+        "review.accepted": {"review_id", "stage", "reference"},
         "implementation.result": {"status", "approval"},
         "delivery.updated": {"status"},
         "writer.updated": {"id", "state"},
@@ -324,6 +326,29 @@ def validate_event(value):
         identity(p["from"])
         identity(p["to"])
         text(p["text"], "handoff text")
+    if kind == "review.accepted" or (kind == "test.result" and "source_receipt" in p):
+        reference = p["reference"] if kind == "review.accepted" else p["source_receipt"]
+        allowed = (
+            {"architect-fresh", "architect-compare", "architect-fresh-v2", "architect-compare-v2"}
+            if kind == "review.accepted"
+            else {"accepted-ledger-result-v1"}
+        )
+        if (
+            not isinstance(reference, dict)
+            or set(reference) != {"kind", "id", "sha256"}
+            or reference.get("kind") not in allowed
+            or not isinstance(reference.get("sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", reference["sha256"])
+            or reference.get("id") != reference["sha256"]
+        ):
+            raise ValueError("invalid accepted source reference")
+        if kind == "review.accepted":
+            if set(p) != {"review_id", "stage", "reference"} or p["stage"] not in {
+                "fresh",
+                "compare",
+            }:
+                raise ValueError("invalid accepted review source")
+            identity(p["review_id"])
     if kind.startswith("test."):
         identity(p["id"])
         text(p["area"], "test area")

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "run_id": "923dc63e",
+  "evidence_id": "E23",
+  "area": "r1-browser-002",
+  "result": "PASS",
+  "counts": {
+    "passed": 1
+  },
+  "artifacts": [
+    {
+      "path": "docs/reliability-platform/r1-evidence/operation-incidents-1280x800.png",
+      "sha256": "76bb45b13109146a29ed7eac7f3871160180285e02ac355589eb92a78c408d01"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/operation-incidents-390x844.png",
+      "sha256": "ee36383a79c02aa9eff23b0344c518d963eabbca1afe4f304a1e1b24ce98ec4d"
+    },
+    {
+      "path": "docs/reliability-platform/r1-evidence/al-r1-browser-002.xml",
+      "sha256": "08016956b17fbc87d158a1708276ecf12791b0513fdc9e4c7bc4e65398f5c1da"
+    }
+  ],
+  "visual_inspection": {
+    "reviewer": "root",
+    "desktop": "Controls/cards and columns aligned; no clipping. Existing stale-state opacity is visible under the short-stream fixture.",
+    "narrow": "Labels and controls stack; cards wrap; no horizontal overflow or clipping observed."
+  },
+  "limitations": [
+    "This is R1 UI evidence, not full mission completion or formal AL approval.",
+    "Other test runs and failures remain in the protected ledger."
+  ]
+}

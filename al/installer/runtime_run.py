@@ -70,6 +70,8 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     implicit = session is None
     if implicit:
         session = native_session(repository, platform, argv)
+    from .runtime_retry_control import activate
+    control = activate("launcher", repository=repository, platform=platform, session=session, argv=argv)
     value = subject(repository, platform, session)
     from .runtime_successor_store import require_ordinary_authority
     storage(readonly=existing_run)
@@ -119,7 +121,7 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     # Skips only an unchanged payload re-hash after an earlier full verification (#36); the
     # manifest checks always run and any change to the pin verifies it in full.
     verified = verify_pin_cached(storage(readonly=existing_run) / "pins", transaction["pin"],
-                                 create=not existing_run)
+                                 create=not existing_run and not control, write=not bool(control))
     manifest = verified["manifest"]
     validate_live(
         manifest["interpreter_execution_identity"], manifest["interpreter"], observe(os.getpid())
@@ -127,11 +129,14 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     # Later commands of this run go to the resident service (#27) when its pin carries one;
     # this command still runs in process below.
     from .runtime_service_boot import ensure as ensure_service
-    ensure_service(storage(readonly=existing_run), repository, platform, None if implicit else session, transaction,
-                   manifest, argv, existing_run=existing_run, private_session=private_session)
+    if not control:
+        ensure_service(storage(readonly=existing_run), repository, platform, None if implicit else session, transaction,
+                       manifest, argv, existing_run=existing_run, private_session=private_session)
     request = {"transaction": transaction, "argv": list(argv), "storage": str(storage(readonly=existing_run)), "existing_run": existing_run,
                "native_implicit": implicit}
     executable = manifest["interpreter"]["executable"]
     _writer_progress(progress_started,
                      "delegating to pinned runtime for admission checks and repository snapshot")
-    os.execv(executable, [executable, "-I", "-S", "-B", "-c", program(request)])
+    child_argv = [executable, "-I", "-S", "-B", "-c", program(request)]
+    if control:control.allow_exec(executable, child_argv)
+    os.execv(executable, child_argv)

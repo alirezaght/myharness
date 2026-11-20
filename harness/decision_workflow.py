@@ -69,6 +69,11 @@ def record_approved_proposal(
     if proposal.status is ProposalStatus.MODIFIED:
         title = modified_title(title)
     record = registry.record(title, content, rationale, question.topic, impact)
+    from harness.agent_preexecution import decision_data, produce
+
+    contract = produce(
+        HarnessController(ws.conn), ws.task_id, "design-decision", record.id, decision_data(record)
+    )
     ws.record_event(
         RECORDED_EVENT,
         {
@@ -77,6 +82,7 @@ def record_approved_proposal(
             "path": str(record.path),
             "source": "interview",
             "proposal": proposal.id,
+            "contract": contract,
         },
     )
     return record
@@ -106,8 +112,13 @@ class DecisionWorkflow:
             targets = requirement_lineage.validate(self.ws, supersedes)
             record = self.registry.record(title, content, rationale, scope, impact)
             written.append(record)
+            from harness.agent_preexecution import decision_data, produce
+
+            contract = produce(
+                self.controller, self.task_id, "design-decision", record.id, decision_data(record)
+            )
             payload = {"id": record.id, "version": record.version, "path": str(record.path)}
-            payload |= {"source": source, "proposal": proposal_id}
+            payload |= {"source": source, "proposal": proposal_id, "contract": contract}
             self.ws.record_event(RECORDED_EVENT, payload)
             requirement_lineage.record(
                 self.ws, targets, f"{record.id} v{record.version}", record.decision, "decision"
@@ -126,6 +137,7 @@ class DecisionWorkflow:
         """Store a proposed new version and show what it replaces; writes no record file."""
         with self._mutation():
             current = self._approved(decision_id)
+            self.contract(current.id)
             for pending in self.ws.decision_changes(ChangeStatus.PENDING):
                 if pending.decision_id == current.id:
                     raise ValueError(
@@ -148,6 +160,7 @@ class DecisionWorkflow:
 
     def preview(self, change: DecisionChange) -> ChangePreview:
         current = self._approved(change.decision_id)
+        self.contract(current.id)
         if current.version != change.base_version:
             raise ValueError(f"{current.id} changed since the proposal (now v{current.version})")
         from harness.effective_records import effective_records
@@ -166,6 +179,8 @@ class DecisionWorkflow:
     ) -> tuple[DecisionChange, DecisionRecord | None]:
         """The developer's verdict; only accept/modify supersede the record on disk."""
         with self._mutation():
+            pending = self.ws.decision_change(change_id)
+            self.contract(pending.decision_id)
             change = self.ws.resolve_change(change_id, status, response)
             if change.status is ChangeStatus.REJECTED:
                 self.ws.record_event(
@@ -185,6 +200,11 @@ class DecisionWorkflow:
                 expected_version=change.base_version,
             )
             change = self.ws.set_change_result(change.id, str(record.path))
+            from harness.agent_preexecution import decision_data, produce
+
+            contract = produce(
+                self.controller, self.task_id, "design-decision", record.id, decision_data(record)
+            )
             self.ws.record_event(
                 "decision.superseded",
                 {
@@ -193,6 +213,7 @@ class DecisionWorkflow:
                     "from_version": change.base_version,
                     "version": record.version,
                     "path": str(record.path),
+                    "contract": contract,
                 },
             )
             requirement_lineage.record(
@@ -215,6 +236,27 @@ class DecisionWorkflow:
             if q.status is QuestionStatus.OPEN and q.kind is QuestionKind.DECISION
         ]
         return suggest(task.request, open_decisions, sources, exclude=self.registry.directory)
+
+    def contract(self, decision_id: str):
+        from harness.agent_preexecution import consume, decision_data
+
+        current = self._approved(decision_id)
+        events = [
+            e
+            for e in self.ws.events()
+            if e.kind in {RECORDED_EVENT, "decision.superseded"}
+            and e.payload.get("id") == current.id
+            and e.payload.get("version") == current.version
+        ]
+        if not events or "contract" not in events[-1].payload:
+            return {"coverage": "legacy"}
+        return consume(
+            self.controller,
+            self.task_id,
+            "design-decision",
+            decision_data(current),
+            events[-1].payload["contract"],
+        )
 
     def _approved(self, decision_id: str) -> DecisionRecord:
         current = self.registry.get(decision_id)

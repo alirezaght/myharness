@@ -12,6 +12,9 @@ class GitlinkError(ValueError):
 
 
 def git(root, *args):
+    import al_retry_control
+    controlled=al_retry_control.git(args,root=root)
+    if controlled is not None:return controlled
     try:
         result = subprocess.run(['git', '--no-optional-locks', '--literal-pathspecs', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null', *args], cwd=root, capture_output=True, timeout=30)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -167,6 +170,9 @@ _LISTINGS = {}
 
 def long_tree(root, revision):
     """Raw `ls-tree -rlz --full-tree` bytes, reused for an unchanged exact object id."""
+    import al_retry_control
+    controlled=al_retry_control.git(("ls-tree","-rlz","--full-tree",revision),root=root)
+    if controlled is not None:return controlled
     key = _tree_key(root, revision)
     if key is None or key not in _LISTINGS:
         value = subprocess.run(['git', 'ls-tree', '-rlz', '--full-tree', key[1] if key else revision], cwd=root,

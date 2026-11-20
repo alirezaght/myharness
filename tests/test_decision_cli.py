@@ -91,12 +91,19 @@ def test_accepting_a_decision_recommendation_records_it(run, task, sample_repo, 
         "Exports need a role check",
     )
     [recorded] = [e for e in events(task) if e.kind == "decision.recorded"]
+    from harness.agent_contracts import fingerprint, validate
+    from harness.agent_preexecution import decision_data
+
+    contract = validate(recorded.payload["contract"])
+    assert contract["kind"] == "design-decision" and contract["context"]["task"] == task
+    assert contract["payload"]["record_digest"] == fingerprint(decision_data(record))
     assert recorded.payload == {
         "id": "DEC-0003",
         "version": 1,
         "path": str(path),
         "source": "interview",
         "proposal": int(pid),
+        "contract": contract,
     }
 
 

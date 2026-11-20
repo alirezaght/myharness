@@ -1,0 +1,8 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q tests/test_incident_catalog.py tests/test_incident_investigations.py tests/test_incident_legacy.py tests/test_db.py --basetemp=/private/tmp/al-r5a-foundation-005 --junitxml=/private/tmp/al-r5a-foundation-005.xml
+# cwd: .
+# started: Fri Nov 20 15:47:01 2026
+
+.....................................                                    [100%]
+37 passed in 6.76s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 42233, "pid": 42233, "sid": 42233, "start": [1795186021, 904672], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

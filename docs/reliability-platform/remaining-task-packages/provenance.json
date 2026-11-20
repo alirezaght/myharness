@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "purpose": "Provenance for portable R5b and R6\u2013R11 task packages in the remaining-features handoff.",
+  "source_revalidation_required": "Revalidate packages against actual integrated predecessors after main integration; packages do not substitute for source-backed planning where required.",
+  "packages": [
+    {
+      "file": "remaining-task-packages/r5b.json",
+      "source": "/private/tmp/al-r5b-package.json",
+      "bytes": 24206,
+      "sha256": "115bf3f091b001553bc72af8d0b86df9f699ed3d5a7bae7afd9094c2398bbe61",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    },
+    {
+      "file": "remaining-task-packages/r6.json",
+      "source": "/private/tmp/al-r6-package.json",
+      "bytes": 24072,
+      "sha256": "c67bd731c0373e7d1259fe36317e454aad1e939d53b7759bc5909313e1086249",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    },
+    {
+      "file": "remaining-task-packages/r7.json",
+      "source": "/private/tmp/al-r7-package.json",
+      "bytes": 24293,
+      "sha256": "5b9080700b0937dd60a830e7be94c2d9744ce1017fb365fecd22d4c5030da20c",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    },
+    {
+      "file": "remaining-task-packages/r8.json",
+      "source": "/private/tmp/al-r8-package.json",
+      "bytes": 23648,
+      "sha256": "438441da60c3b5305e95bb68e5ca012869e2593d0253cc8ff58e55e59a86939b",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    },
+    {
+      "file": "remaining-task-packages/r9.json",
+      "source": "/private/tmp/al-r9-package.json",
+      "bytes": 23696,
+      "sha256": "9cd28b87c5e56111b80e2c1a81abdf6a45850f5c68659181b1788a77a9e68a3c",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    },
+    {
+      "file": "remaining-task-packages/r10.json",
+      "source": "/private/tmp/al-r10-package.json",
+      "bytes": 23598,
+      "sha256": "01514e27e4bb6d051cba9553f2626b11548c4fd56d7c538a38489946db62e05b",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    },
+    {
+      "file": "remaining-task-packages/r11.json",
+      "source": "/private/tmp/al-r11-package.json",
+      "bytes": 23773,
+      "sha256": "9edfd14dbce6494e404caaa7b9fc407208109e29cf327be96599606016d6300c",
+      "provenance": "Exact immutable prepared task package copied from the named source; it preserves the original accepted specification and criteria. It is not implementation evidence, a source review or a completion claim."
+    }
+  ]
+}

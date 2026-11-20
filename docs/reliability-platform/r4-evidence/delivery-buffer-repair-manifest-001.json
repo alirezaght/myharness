@@ -1,0 +1,432 @@
+{
+  "schema_version": 1,
+  "purpose": "R4 closure evidence and provenance. The supervisor recovery report is factual handoff, not an Engineer report or approval. Logs/XMLs preserve each original outcome; current-currency and qualification limits remain separate.",
+  "authored_contribution": {
+    "writer": "r4-delivery-buffer-repair-005",
+    "paths": 10,
+    "hashes": "delivery-buffer-authored-hashes-001.json",
+    "delta": "delivery-buffer-authored-delta-001.diff",
+    "contribution_ref": "delivery-buffer-contribution-ref-001.json",
+    "actual_summary": "harness.execution_authority emits a closed decision-only delivery_receipt schema v1 with raw SHA-256 of the exact authenticated Registry/inbox bytes. Both AL consumers validate that receipt and compare bytes read once before parse/use/snapshot/mutation. Nondecision reply shape remains unchanged."
+  },
+  "reports": [
+    {
+      "file": "escalation-repair-engineer-partial-report-001.md",
+      "source": "/private/tmp/al-r4-escalation-repair-engineer-report-001.md",
+      "bytes": 9275,
+      "sha256": "5fa26294cd96ba779dadfb519fe1df30bc8e91cfbce2323f59c9a7f221e5c016",
+      "description": "Exact earlier partial Engineer report; explicitly superseded on the authenticated-buffer gap by the successor contribution and root factual recovery report."
+    },
+    {
+      "file": "delivery-buffer-supervisor-recovery-report-001.md",
+      "source": "/private/tmp/al-r4-delivery-buffer-supervisor-recovery-report-001.md",
+      "bytes": 3935,
+      "sha256": "534c110dbbf22f2b0bf7516bcca6b6e1a049e884d1ca732bd3855de625c646d2",
+      "description": "Exact supervisor factual recovery after Engineer provider reporting errors; not represented as an Engineer final report or approval."
+    },
+    {
+      "file": "delivery-buffer-authored-hashes-001.json",
+      "source": "/private/tmp/al-r4-delivery-buffer-authored-hashes-001.json",
+      "bytes": 1192,
+      "sha256": "ff57f7ac9b5f5667c71ea2114a962d378763b8425bed4f4db651062c89a5ee5f",
+      "description": "Exact ten-path authored successor hash manifest."
+    },
+    {
+      "file": "delivery-buffer-authored-delta-001.diff",
+      "source": "/private/tmp/al-r4-delivery-buffer-authored-delta-001.diff",
+      "bytes": 20982,
+      "sha256": "fbd3ddee06ddb3347cd4c056445eb212d4c65d7e6945e9bdeac8adb4f3478172",
+      "description": "Exact successor-only ten-path source delta."
+    },
+    {
+      "file": "delivery-buffer-contribution-ref-001.json",
+      "source": "/private/tmp/al-r4-delivery-buffer-contribution-ref-001.json",
+      "bytes": 481,
+      "sha256": "060980973565672cca7c89a6b066d6ef22638290748e0af38031c48fd4595000",
+      "description": "Exact AL task-contribution reference for source attribution."
+    },
+    {
+      "file": "plan-repair-engineer-report-001.md",
+      "source": "/private/tmp/al-r4-plan-repair-engineer-report-001.md",
+      "bytes": 9808,
+      "sha256": "b59b9fdf20677fd1fada852bafe92a6280e279184de8a17cdd31d4049a47a3eb",
+      "description": "Exact Engineer report for immutable implementation-plan graph-observation repair."
+    },
+    {
+      "file": "plan-repair-authored-hashes-001.json",
+      "source": "/private/tmp/al-r4-plan-repair-authored-hashes-001.json",
+      "bytes": 951,
+      "sha256": "152676f8700209a7ef1d2da0e9f228e544e5339c2fe630e9b2027fbfae9ae362",
+      "description": "Exact source hash manifest for the plan repair."
+    },
+    {
+      "file": "plan-repair-authored-delta-001.diff",
+      "source": "/private/tmp/al-r4-plan-repair-authored-delta-001.diff",
+      "bytes": 18750,
+      "sha256": "a15034f6e7d8f7c77b7989ff22057a4c4c57096ae15807d97f3206ba68b83736",
+      "description": "Exact plan repair source delta."
+    },
+    {
+      "file": "escalation-authored-hashes-001.json",
+      "source": "/private/tmp/al-r4-escalation-authored-hashes-001.json",
+      "bytes": 1224,
+      "sha256": "abd3a1d5c58246d1e1746a283af6c48ee9b7fff6217c16f30cb10b9968103f53",
+      "description": "Exact earlier ten-path escalation mechanics source hash manifest, separate from the later authenticated-buffer successor."
+    }
+  ],
+  "checks": [
+    {
+      "eid": "E93",
+      "area": "r4-plan-codex-repro",
+      "status": "FAIL",
+      "counts": "2 failed, 7 deselected",
+      "meaning": "Plan graph-context causal red, Codex.",
+      "ledger_log_archive": "E93-r4-plan-codex-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E93-r4-plan-codex-repro-test.log",
+      "ledger_log_bytes": 7961,
+      "ledger_log_sha256": "c43f77fdd5ce5e7bb98eaa68ccfcd755bf3e4c761fb98792bbccf9f9fd567928",
+      "junit_xml": {
+        "archive": "E93-r4-plan-codex-repro.xml",
+        "source": "/private/tmp/al-r4-plan-codex-repro-001.xml",
+        "bytes": 7845,
+        "sha256": "93c93f79a4abf178cb008522b86a4a084ec92a6caeb06ea83f578f2398279523"
+      }
+    },
+    {
+      "eid": "E94",
+      "area": "r4-plan-claude-repro",
+      "status": "FAIL",
+      "counts": "2 failed, 7 deselected",
+      "meaning": "Plan graph-context causal red, Claude.",
+      "ledger_log_archive": "E94-r4-plan-claude-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E94-r4-plan-claude-repro-test.log",
+      "ledger_log_bytes": 7970,
+      "ledger_log_sha256": "d645b147fd310b6d0d173dacd1b6aade4235aeab921d0c400f041a41f56a83bd",
+      "junit_xml": {
+        "archive": "E94-r4-plan-claude-repro.xml",
+        "source": "/private/tmp/al-r4-plan-claude-repro-001.xml",
+        "bytes": 7853,
+        "sha256": "6863c2c4ba0cd07bb32ddcc566538e9400d41af722e4c464e6ab21164ab53df5"
+      }
+    },
+    {
+      "eid": "E106",
+      "area": "r4-escalation-codex-repro",
+      "status": "FAIL",
+      "counts": "2 failed, 3 deselected",
+      "meaning": "Real public escalation after-resolution same-registration refusal before repair.",
+      "ledger_log_archive": "E106-r4-escalation-codex-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E106-r4-escalation-codex-repro-test.log",
+      "ledger_log_bytes": 5484,
+      "ledger_log_sha256": "70da73c65d7017dbe69aa7a20150a53b515c29924d75ea620ea22a3b1d87c6f9",
+      "junit_xml": {
+        "archive": "E106-r4-escalation-codex-repro.xml",
+        "source": "/private/tmp/al-r4-escalation-codex-repro-001.xml",
+        "bytes": 6070,
+        "sha256": "ba21626ffeb625dc683a15ec92302cf38a5af23a3402a041c881a0dae5192223"
+      }
+    },
+    {
+      "eid": "E107",
+      "area": "r4-escalation-claude-repro",
+      "status": "FAIL",
+      "counts": "2 failed, 3 deselected",
+      "meaning": "Corresponding Claude public escalation causal red.",
+      "ledger_log_archive": "E107-r4-escalation-claude-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E107-r4-escalation-claude-repro-test.log",
+      "ledger_log_bytes": 5493,
+      "ledger_log_sha256": "e4c7e12d76bf82342fd1f8d6d0ce6b3cfd92afbfa14fd0efd404fd782d23c85e",
+      "junit_xml": {
+        "archive": "E107-r4-escalation-claude-repro.xml",
+        "source": "/private/tmp/al-r4-escalation-claude-repro-001.xml",
+        "bytes": 6078,
+        "sha256": "b50bab7e919129b179d033d7eb10b2db14a811acf9f0740776f35099a12d8137"
+      }
+    },
+    {
+      "eid": "E109",
+      "area": "r4-escalation-codex-repro",
+      "status": "FAIL",
+      "counts": "1 failed, 10 passed, 3 deselected",
+      "meaning": "Missing immutable observation leaked FileNotFoundError before fixed safe refusal.",
+      "ledger_log_archive": "E109-r4-escalation-codex-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E109-r4-escalation-codex-repro-test.log",
+      "ledger_log_bytes": 8736,
+      "ledger_log_sha256": "1e7f3bd2caf0845812b15bb91fe1542e6b424745b3b427bfb23e652350d8aef9",
+      "junit_xml": {
+        "archive": "E109-r4-escalation-codex-repro.xml",
+        "source": "/private/tmp/al-r4-escalation-codex-repro-002.xml",
+        "bytes": 9574,
+        "sha256": "ab997e336d377d487136fca4dd22f91f0b2e12fafa4e5ff9bd22151c1152aff0"
+      }
+    },
+    {
+      "eid": "E110",
+      "area": "r4-escalation-codex-repro",
+      "status": "FAIL",
+      "counts": "2 failed, 10 passed, 3 deselected",
+      "meaning": "Missing-file fault plus genuine Registry-backed forged accept replacement returned success.",
+      "ledger_log_archive": "E110-r4-escalation-codex-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E110-r4-escalation-codex-repro-test.log",
+      "ledger_log_bytes": 12555,
+      "ledger_log_sha256": "493cb2c2371c0442449d1ddca056cd5198a62aa6fcb18a356fad7bcb10161024",
+      "junit_xml": {
+        "archive": "E110-r4-escalation-codex-repro.xml",
+        "source": "/private/tmp/al-r4-escalation-codex-repro-003.xml",
+        "bytes": 13431,
+        "sha256": "8a51d06fb7c675f4d920f5bb859f54c826f49627fdcc33c0f487e4dffba79f7e"
+      }
+    },
+    {
+      "eid": "E116",
+      "area": "r4-escalation-codex-repro",
+      "status": "FAIL",
+      "counts": "1 failed, 12 passed",
+      "meaning": "Real Registry-backed reject-to-accept replacement red.",
+      "ledger_log_archive": "E116-r4-escalation-codex-repro.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E116-r4-escalation-codex-repro-test.log",
+      "ledger_log_bytes": 3763,
+      "ledger_log_sha256": "add7bc3a3846e7b119a6d58be888a3664fcbf0dcc767b23974f32def43867c61",
+      "junit_xml": {
+        "archive": "E116-r4-escalation-codex-repro.xml",
+        "source": "/private/tmp/al-r4-escalation-codex-repro-004.xml",
+        "bytes": 5311,
+        "sha256": "4854012f383220d2e04ab1e69b95ac8cae06200ecb5b7292518ed0d3bcfc1087"
+      }
+    },
+    {
+      "eid": "E117",
+      "area": "r4-lint",
+      "status": "FAIL",
+      "counts": "counts unknown",
+      "meaning": "F811 helper re-export fixture lint failure.",
+      "ledger_log_archive": "E117-r4-lint.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E117-r4-lint-lint.log",
+      "ledger_log_bytes": 1378,
+      "ledger_log_sha256": "de56622110eaf7935fcf0d399e1c88d069163a5f913fce3233056b7c9ee1fde3"
+    },
+    {
+      "eid": "E118",
+      "area": "r4-escalation-codex-consumers",
+      "status": "FAIL",
+      "counts": "3 failed, 17 passed",
+      "meaning": "Prefix/raw-digest grammar mismatch safely refused; fixed with plain SHA-256.",
+      "ledger_log_archive": "E118-r4-escalation-codex-consumers.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E118-r4-escalation-codex-consumers-test.log",
+      "ledger_log_bytes": 8586,
+      "ledger_log_sha256": "19a8ba4c4ab048fe74ca20c958ebf8ed6ad6a6563879306d665fc4c1da5adbf0",
+      "junit_xml": {
+        "archive": "E118-r4-escalation-codex-consumers.xml",
+        "source": "/private/tmp/al-r4-escalation-codex-consumers-002.xml",
+        "bytes": 11204,
+        "sha256": "733e16eba0be0bb3b355365033216797ba5f8abd35f94971a915621df092ff57"
+      }
+    },
+    {
+      "eid": "E119",
+      "area": "r4-escalation-codex-consumers",
+      "status": "PASS",
+      "counts": "20 passed",
+      "meaning": "Full Codex decision module, including authenticated receipt replacement refusal.",
+      "ledger_log_archive": "E119-r4-escalation-codex-consumers.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E119-r4-escalation-codex-consumers-test.log",
+      "ledger_log_bytes": 890,
+      "ledger_log_sha256": "5c9a542092f07c42037e7fd5dcbf8be56ca1c8f75bd731921c9d5ecfa3e0d9f5",
+      "junit_xml": {
+        "archive": "E119-r4-escalation-codex-consumers.xml",
+        "source": "/private/tmp/al-r4-escalation-codex-consumers-003.xml",
+        "bytes": 3546,
+        "sha256": "69f8c1db8a6bf4b6f3b60ddac0434caaf301315b81b9da17fbd2fa92cc02281a"
+      }
+    },
+    {
+      "eid": "E120",
+      "area": "r4-escalation-claude-consumers",
+      "status": "PASS",
+      "counts": "20 passed",
+      "meaning": "Full Claude decision module, including authenticated receipt replacement refusal.",
+      "ledger_log_archive": "E120-r4-escalation-claude-consumers.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E120-r4-escalation-claude-consumers-test.log",
+      "ledger_log_bytes": 893,
+      "ledger_log_sha256": "cf230e94c03668b0c62e7d3cd13140e26ad4e75d725aa6e69dfc40756f413006",
+      "junit_xml": {
+        "archive": "E120-r4-escalation-claude-consumers.xml",
+        "source": "/private/tmp/al-r4-escalation-claude-consumers-002.xml",
+        "bytes": 3566,
+        "sha256": "a6e41e03f5704475c0e2df66d6fd47b107ca38d25aa47a460e0c7ea164528479"
+      }
+    },
+    {
+      "eid": "E121",
+      "area": "r4-delivery-authority-consumers",
+      "status": "FAIL",
+      "counts": "1 failed, 9 passed",
+      "meaning": "Fixture tuple slot mismatch.",
+      "ledger_log_archive": "E121-r4-delivery-authority-consumers.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E121-r4-delivery-authority-consumers-test.log",
+      "ledger_log_bytes": 4041,
+      "ledger_log_sha256": "9fd8279d3fb1bc05296b9b7245bd44f3fec180e2b3e61d6d3afc683f532c7110",
+      "junit_xml": {
+        "archive": "E121-r4-delivery-authority-consumers.xml",
+        "source": "/private/tmp/al-r4-delivery-authority-consumers-001.xml",
+        "bytes": 4424,
+        "sha256": "9fb201db488be380fd3b122a5efd3caa911a20db1df6a8b6737c7a46ba92cf0f"
+      }
+    },
+    {
+      "eid": "E122",
+      "area": "r4-delivery-authority-consumers",
+      "status": "FAIL",
+      "counts": "1 failed, 9 passed",
+      "meaning": "Fixture omitted actual source replay; real authority correctly refused.",
+      "ledger_log_archive": "E122-r4-delivery-authority-consumers.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E122-r4-delivery-authority-consumers-test.log",
+      "ledger_log_bytes": 6080,
+      "ledger_log_sha256": "9610e5dfe5acdb55c18449ab8ea31da6201dd3be6d85616c34f30a16646ebad0",
+      "junit_xml": {
+        "archive": "E122-r4-delivery-authority-consumers.xml",
+        "source": "/private/tmp/al-r4-delivery-authority-consumers-002.xml",
+        "bytes": 6465,
+        "sha256": "0833f5b46d0ce1d3f44078c465e14b9dd6019c3c843ef1249ff9d3a3451773d5"
+      }
+    },
+    {
+      "eid": "E123",
+      "area": "r4-delivery-authority-consumers",
+      "status": "PASS",
+      "counts": "10 passed",
+      "meaning": "Supported replay correction; Harness decision and authority consumer modules.",
+      "ledger_log_archive": "E123-r4-delivery-authority-consumers.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E123-r4-delivery-authority-consumers-test.log",
+      "ledger_log_bytes": 898,
+      "ledger_log_sha256": "97ceb337c56d1fe3dbe9e711ec1c97e9c755b951b9ba7a53ff8e606fa379bb27",
+      "junit_xml": {
+        "archive": "E123-r4-delivery-authority-consumers.xml",
+        "source": "/private/tmp/al-r4-delivery-authority-consumers-003.xml",
+        "bytes": 1498,
+        "sha256": "564b8fe40320ce6d0b329831352062a619bc5b32e1d6333fee48ea7e5b8946f2"
+      }
+    },
+    {
+      "eid": "E124",
+      "area": "r4-parity",
+      "status": "PASS",
+      "counts": "1 passed",
+      "meaning": "Parity after final source and fixture changes.",
+      "ledger_log_archive": "E124-r4-parity.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E124-r4-parity-test.log",
+      "ledger_log_bytes": 833,
+      "ledger_log_sha256": "f11cb946936e647623da880a2abdf32775dbdb3ad7ddd4882d176389a97fa3e4",
+      "junit_xml": {
+        "archive": "E124-r4-parity.xml",
+        "source": "/private/tmp/al-r4-parity-040.xml",
+        "bytes": 404,
+        "sha256": "04f464cb7ab3642010e724f50c6874fdf22bc2e9872362b0cab5dc3859a88479"
+      }
+    },
+    {
+      "eid": "E125",
+      "area": "r4-control-regressions",
+      "status": "PASS",
+      "counts": "24 passed",
+      "meaning": "Controls after final source and fixture changes.",
+      "ledger_log_archive": "E125-r4-control-regressions.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E125-r4-control-regressions-test.log",
+      "ledger_log_bytes": 868,
+      "ledger_log_sha256": "a4465375b183a6b009eb608ff9aafc30ecc9cd80dfa084d52dd3d8c6d8bfed7e",
+      "junit_xml": {
+        "archive": "E125-r4-control-regressions.xml",
+        "source": "/private/tmp/al-r4-control-regressions-030.xml",
+        "bytes": 4008,
+        "sha256": "b886aa3ebf58fe60892b44f3f40b2ad7151fc4ae916706a9b48514e77b76b12a"
+      }
+    },
+    {
+      "eid": "E126",
+      "area": "r4-installer-closure",
+      "status": "PASS",
+      "counts": "18 passed",
+      "meaning": "Installer closure after final source and fixture changes.",
+      "ledger_log_archive": "E126-r4-installer-closure.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E126-r4-installer-closure-test.log",
+      "ledger_log_bytes": 881,
+      "ledger_log_sha256": "7a33d82888ae906c863909ce30a58fdae42207cf4b68f0bd0a56d068cbb189db",
+      "junit_xml": {
+        "archive": "E126-r4-installer-closure.xml",
+        "source": "/private/tmp/al-r4-installer-closure-030.xml",
+        "bytes": 2494,
+        "sha256": "26d2a8db13c99b59b20b40e3447b9aa82d9bf63c37cce4a3686c53c83761f76e"
+      }
+    },
+    {
+      "eid": "E127",
+      "area": "r4-lint",
+      "status": "PASS",
+      "counts": "counts unknown",
+      "meaning": "Final lint after source and fixture changes.",
+      "ledger_log_archive": "E127-r4-lint.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E127-r4-lint-lint.log",
+      "ledger_log_bytes": 632,
+      "ledger_log_sha256": "66bc159e4f1c6326ebca00b44cbf1b55d7d8c5f851c394765027fdff6a95f70c"
+    },
+    {
+      "eid": "E128",
+      "area": "r4-format",
+      "status": "PASS",
+      "counts": "654 files formatted",
+      "meaning": "Final formatter after source and fixture changes.",
+      "ledger_log_archive": "E128-r4-format.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E128-r4-format-lint.log",
+      "ledger_log_bytes": 650,
+      "ledger_log_sha256": "dacd419bd33ef588e67c7b49cb21a853562ac27e6d7cc0f2df929c8697d09764"
+    },
+    {
+      "eid": "E129",
+      "area": "r4-review-al-codex-broad",
+      "status": "PASS",
+      "counts": "148 passed",
+      "elapsed": "507.60s",
+      "ledger_log_archive": "E129-r4-review-al-codex-broad.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E129-r4-review-al-codex-broad-test.log",
+      "ledger_log_bytes": 1393,
+      "ledger_log_sha256": "3169035da0b3ce4da7d0d604625ac646e361b55850fe8e9f7859ba4060194e8b",
+      "junit_xml": {
+        "archive": "E129-r4-review-al-codex-broad.xml",
+        "source": "/private/tmp/al-r4-review-al-codex-broad-002.xml",
+        "bytes": 23588,
+        "sha256": "ca74da3cdca548303ac516b7c926eb299a65dcbb262c373206156e9d19d7658d"
+      },
+      "meaning": "Fresh registered broad platform suite after plan, escalation history and authenticated decision-buffer repairs."
+    },
+    {
+      "eid": "E130",
+      "area": "r4-review-al-claude-broad",
+      "status": "PASS",
+      "counts": "127 passed",
+      "elapsed": "338.72s",
+      "ledger_log_archive": "E130-r4-review-al-claude-broad.log",
+      "ledger_log_source": ".codex/al-runtime/reliability-r4-20261120/logs/0aacaf92-E130-r4-review-al-claude-broad-test.log",
+      "ledger_log_bytes": 1204,
+      "ledger_log_sha256": "c1ae703fb6811fadc475eabe6ce4470b68bc3848a96815c2ca7504ac1dc53e37",
+      "junit_xml": {
+        "archive": "E130-r4-review-al-claude-broad.xml",
+        "source": "/private/tmp/al-r4-review-al-claude-broad-002.xml",
+        "bytes": 20214,
+        "sha256": "e5a0f76d02a44f4ccd97aa0d015c6c8a6cefc39a2c98305ccff9fb91d0bfc028"
+      },
+      "meaning": "Fresh registered broad platform suite after plan, escalation history and authenticated decision-buffer repairs."
+    }
+  ],
+  "currency_notes": [
+    "E119/E120 are full decision-module functional passes after final code; the later root-only fixture repairs did not change platform test or production bytes, but broader areas remain the current platform suite obligations.",
+    "E121/E122 are distinct fixture setup failures and remain preserved; E123 uses the actual supported source replay and passes.",
+    "E90 plan failure cause is corrected from the earlier Builder hypothesis: actual cause is stale implementation-plan graph context (/context); E90 literal /payload was from the separate synthetic crashed-check fixture. See the appended progress correction; earlier report remains unchanged.",
+    "Every process log reports descendant_settlement_unproven; no descendant/native/process-tree or hosted CI qualification.",
+    "E93/E94 are the preserved cross-platform plan causal reds before `contract_observation` repair. E106/E107/E109/E110 preserve the earlier actual escalation lifecycle reds before its successor exact-buffer receipt repair."
+  ],
+  "limits": [
+    "RR1 remains pending; the rework re-request exit 10 and refused Architect-recommended publication do not create an accepted receipt or new credit.",
+    "The ordinary implementation-continuity writer admission permits defined work but does not clear RR1, authorize review acceptance or amount to formal approval.",
+    "No full-mission completion or named-user authentication claim."
+  ]
+}

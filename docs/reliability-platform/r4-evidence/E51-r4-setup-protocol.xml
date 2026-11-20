@@ -1,0 +1,783 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="11" skipped="4" tests="32" time="148.652" timestamp="2026-11-20T08:40:30.502759+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_agent_contracts_setup" name="test_unowned_no_budget_queue_enters_actual_dispatch_before_bytes" time="11.800"><failure message="AssertionError: setup bytes read without a dispatch Attempt&#10;assert ([None, None, None, None, None] and False)&#10; +  where False = all(&lt;generator object test_unowned_no_budget_queue_enters_actual_dispatch_before_bytes.&lt;locals&gt;.&lt;genexpr&gt; at 0x1095e1b10&gt;)">operations = (&lt;harness.execution_operations.OperationController object at 0x1095306e0&gt;, {'thread_id': 'c5b2ecf4-b5cc-4084-a38d-2218...codex'}, {'id': 'exec-09d238124044920fab907327', 'task_id': 't-010fcc0c', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1093d3100&gt;
+
+    def test_unowned_no_budget_queue_enters_actual_dispatch_before_bytes(operations, monkeypatch):
+        operation, principal = locked_unit(operations)
+        current = state(operation)
+        request = dict(
+            operation="prepare",
+            cwd="work",
+            task_id="A",
+            expected_revision=context_revision(current, "A"),
+        )
+        # A scheduler request has no effect permission of its own.
+        operation.setup_pending[("A", "work")] = principal, request
+        seen = read_owners(monkeypatch)
+        operation.tick()
+&gt;       assert seen and all(v is not None for v in seen), "setup bytes read without a dispatch Attempt"
+E       AssertionError: setup bytes read without a dispatch Attempt
+E       assert ([None, None, None, None, None] and False)
+E        +  where False = all(&lt;generator object test_unowned_no_budget_queue_enters_actual_dispatch_before_bytes.&lt;locals&gt;.&lt;genexpr&gt; at 0x1095e1b10&gt;)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_agent_contracts_setup.py:53: AssertionError</failure></testcase><testcase classname="tests.test_agent_contracts_setup" name="test_agent_registration_defers_setup_bytes_to_own_dispatch" time="12.574"><failure message="AssertionError: auto-setup read bytes under the unrelated outer AL Attempt&#10;assert [OperationInt...ters': ()},))] == []&#10;  &#10;  Left contains 5 more items, first extra item: OperationIntent(id='71b2fa749cb6c943ddd6e2646accc5fa', execution_id='exec-75ee4775ed33b500b5704818', epoch_id='legacy-...ucer_task': None, 'producer_revision': None, 'principals': ('8bfbab10-1d92-42e7-9692-7fa6f7002e77',), 'writers': ()},))&#10;  Use -v to get more diff">operations = (&lt;harness.execution_operations.OperationController object at 0x1095b9950&gt;, {'thread_id': '8bfbab10-1d92-42e7-9692-7fa6...codex'}, {'id': 'exec-75ee4775ed33b500b5704818', 'task_id': 't-3cb581e9', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x108f62780&gt;
+
+    def test_agent_registration_defers_setup_bytes_to_own_dispatch(operations, monkeypatch):
+        operation, principal = locked_unit(operations)
+        engineer = child(operation, "al-engineer")
+        seen = read_owners(monkeypatch)
+        report(
+            operation,
+            principal,
+            "agent-register",
+            {
+                "id": engineer["thread_id"],
+                "name": "Observed queued engineer",
+                "role": "al-engineer",
+                "task": "A",
+            },
+        )
+&gt;       assert seen == [], "auto-setup read bytes under the unrelated outer AL Attempt"
+E       AssertionError: auto-setup read bytes under the unrelated outer AL Attempt
+E       assert [OperationInt...ters': ()},))] == []
+E         
+E         Left contains 5 more items, first extra item: OperationIntent(id='71b2fa749cb6c943ddd6e2646accc5fa', execution_id='exec-75ee4775ed33b500b5704818', epoch_id='legacy-...ucer_task': None, 'producer_revision': None, 'principals': ('8bfbab10-1d92-42e7-9692-7fa6f7002e77',), 'writers': ()},))
+E         Use -v to get more diff
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_agent_contracts_setup.py:73: AssertionError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_runtime_path_is_curated_and_credentials_are_not_forwarded" time="0.286" /><testcase classname="tests.test_task_tooling" name="test_prepared_dependencies_reject_changed_locks_and_map_base_sources" time="0.005" /><testcase classname="tests.test_task_tooling" name="test_setup_failure_is_not_test_failure_or_ready_environment" time="0.002" /><testcase classname="tests.test_task_tooling" name="test_genuine_frozen_node_setup_never_runs_repository_hooks" time="0.338"><failure message="AttributeError: 'NoneType' object has no attribute 'conn'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_genuine_frozen_node_setup0')
+
+    def test_genuine_frozen_node_setup_never_runs_repository_hooks(tmp_path):
+        import shutil
+    
+        if sys.platform != "darwin" or not shutil.which("pnpm"):
+            pytest.skip("local macOS pnpm integration")
+        root = tmp_path / "repo"
+        app = root / "app"
+        app.mkdir(parents=True)
+        version = subprocess.check_output([shutil.which("pnpm"), "--version"], text=True).strip()
+        (root / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "setup-root",
+                    "private": True,
+                    "packageManager": "pnpm@" + version,
+                    "dependencies": {"setup-app": "workspace:*"},
+                    "scripts": {"postinstall": "node -e 'process.exit(99)'"},
+                }
+            )
+        )
+        (app / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "setup-app",
+                    "private": True,
+                    "scripts": {"postinstall": "node -e 'process.exit(98)'"},
+                }
+            )
+        )
+        (root / "pnpm-workspace.yaml").write_text("packages:\n  - app\n")
+        (root / ".gitignore").write_text("node_modules/\n")
+        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+        subprocess.run(
+            [shutil.which("pnpm"), "install", "--lockfile-only", "--offline", "--ignore-scripts"],
+            cwd=root,
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        original = {p: p.read_bytes() for p in root.rglob("package.json")}
+        tooling = TaskTooling(tmp_path / "tooling", root, {})
+        directory = tmp_path / "operations"
+        directory.mkdir()
+        manager = ProcessManager()
+        operation = SimpleNamespace(
+            tooling=tooling,
+            envelope={"repository": str(root)},
+            directory=directory,
+            processes=manager,
+            setup_pending={},
+            profile=lambda writable: prepare_operation_isolation(
+                root,
+                writable=writable,
+                protected=[tooling.directory],
+                hidden=[],
+                directory=directory / os.urandom(8).hex(),
+            ),
+        )
+        state = {
+            "amendments": [],
+            "integration": {
+                "graph_revision": 1,
+                "tasks": {"T": {"revision": 1, "files": ["app"]}},
+            },
+        }
+        try:
+&gt;           result = prepare(
+                operation,
+                None,
+                {"role": "orchestrator", "thread_id": "root"},
+                state,
+                {
+                    "operation": "prepare",
+                    "cwd": "app",
+                    "task_id": "T",
+                    "expected_revision": context_revision(state, "T"),
+                },
+            )
+
+tests/test_task_tooling.py:151: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+harness/task_environment.py:176: in prepare
+    unit = task_unit(operation, controller, state, principal, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = namespace(tooling=&lt;harness.task_tooling.TaskTooling object at 0x10950e9f0&gt;, envelope={'repository': '/private/tmp/al-r...ing={}, profile=&lt;function test_genuine_frozen_node_setup_never_runs_repository_hooks.&lt;locals&gt;.&lt;lambda&gt; at 0x109662fc0&gt;)
+controller = None
+state = {'amendments': [], 'integration': {'graph_revision': 1, 'tasks': {'T': {'revision': 1, 'files': ['app']}}}}
+principal = {'role': 'orchestrator', 'thread_id': 'root'}
+request = {'operation': 'prepare', 'cwd': 'app', 'task_id': 'T', 'expected_revision': 'sha256:8edb7996c2464428ae3d8c596a79f5e1f7576cd44157eac2e581e8dafccdabf3'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+                    operation.envelope["repository"],
+&gt;                   get_execution(controller.conn, operation.execution_id),
+                                  ^^^^^^^^^^^^^^^
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'conn'
+
+harness/task_environment.py:54: AttributeError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_genuine_private_locked_python_setup" time="0.002"><failure message="AttributeError: 'NoneType' object has no attribute 'conn'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_genuine_private_locked_py0')
+
+    def test_genuine_private_locked_python_setup(tmp_path):
+        if sys.platform != "darwin":
+            pytest.skip("local macOS sandbox integration")
+        import shutil
+    
+        if not shutil.which("uv"):
+            pytest.skip("uv unavailable")
+        root = tmp_path / "repo"
+        app = root / "app"
+        app.mkdir(parents=True)
+        (app / "pyproject.toml").write_text(
+            '[project]\nname="setup-fixture"\nversion="0.1.0"\nrequires-python="&gt;=3.11"\ndependencies=[]\n'
+        )
+        (app / "uv.lock").write_text(
+            'version = 1\nrevision = 3\nrequires-python = "&gt;=3.11"\n\n'
+            '[[package]]\nname = "setup-fixture"\nversion = "0.1.0"\nsource = { virtual = "." }\n'
+        )
+        (root / ".env").write_text("SECRET=DO_NOT_READ")
+        tooling = TaskTooling(tmp_path / "tooling", root, {})
+        manager = ProcessManager()
+        directory = tmp_path / "operations"
+        directory.mkdir()
+    
+        def profile(writable):
+            return prepare_operation_isolation(
+                root,
+                writable=writable,
+                protected=[tooling.directory],
+                hidden=[],
+                directory=directory / os.urandom(8).hex(),
+            )
+    
+        operation = SimpleNamespace(
+            tooling=tooling,
+            envelope={"repository": str(root)},
+            directory=directory,
+            processes=manager,
+            setup_pending={},
+            profile=profile,
+        )
+        state = {
+            "amendments": [],
+            "integration": {"graph_revision": 1, "tasks": {"T": {"revision": 1, "files": ["app"]}}},
+        }
+        principal = {"role": "orchestrator", "thread_id": "root"}
+        try:
+&gt;           result = prepare(
+                operation,
+                None,
+                principal,
+                state,
+                {
+                    "operation": "prepare",
+                    "cwd": "app",
+                    "task_id": "T",
+                    "expected_revision": context_revision(state, "T"),
+                },
+            )
+
+tests/test_task_tooling.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+harness/task_environment.py:176: in prepare
+    unit = task_unit(operation, controller, state, principal, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = namespace(tooling=&lt;harness.task_tooling.TaskTooling object at 0x1096389e0&gt;, envelope={'repository': '/private/tmp/al-r...54de00&gt;, setup_pending={}, profile=&lt;function test_genuine_private_locked_python_setup.&lt;locals&gt;.profile at 0x109661080&gt;)
+controller = None
+state = {'amendments': [], 'integration': {'graph_revision': 1, 'tasks': {'T': {'revision': 1, 'files': ['app']}}}}
+principal = {'role': 'orchestrator', 'thread_id': 'root'}
+request = {'operation': 'prepare', 'cwd': 'app', 'task_id': 'T', 'expected_revision': 'sha256:8edb7996c2464428ae3d8c596a79f5e1f7576cd44157eac2e581e8dafccdabf3'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+                    operation.envelope["repository"],
+&gt;                   get_execution(controller.conn, operation.execution_id),
+                                  ^^^^^^^^^^^^^^^
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'conn'
+
+harness/task_environment.py:54: AttributeError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_installer_network_does_not_grant_source_or_secret_access" time="0.052" /><testcase classname="tests.test_task_tooling" name="test_setup_manifest_read_never_blocks_on_fifo_or_follows_alias" time="0.001" /><testcase classname="tests.test_task_tooling" name="test_registry_setup_rejects_local_secrets_and_executable_git_dependencies" time="0.001" /><testcase classname="tests.test_task_tooling" name="test_failed_setup_is_cached_without_becoming_ready" time="0.002"><failure message="AttributeError: 'NoneType' object has no attribute 'conn'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_failed_setup_is_cached_wi0')
+
+    def test_failed_setup_is_cached_without_becoming_ready(tmp_path):
+        root = tmp_path / "repo"
+        app = root / "app"
+        app.mkdir(parents=True)
+        (app / "pyproject.toml").write_text('[project]\nname="fixture"\nversion="0.1.0"\n')
+        (app / "uv.lock").write_text("version=1\n")
+        tooling = TaskTooling(tmp_path / "tooling", root, {})
+        catalog = tooling.catalog()
+        inputs = {
+            f"app/{name}": digest((app / name).read_bytes()) for name in ("pyproject.toml", "uv.lock")
+        }
+        fp = digest({"inputs": inputs, "tools": catalog["tools"], "capability": catalog["binding"]})
+        tooling.failure("app", {"fingerprint": fp}, {"status": "Unavailable", "test_evidence": False})
+        operation = SimpleNamespace(tooling=tooling, envelope={"repository": str(root)})
+        state = {
+            "amendments": [],
+            "integration": {"graph_revision": 1, "tasks": {"T": {"revision": 1, "files": ["app"]}}},
+        }
+        request = {
+            "operation": "prepare",
+            "cwd": "app",
+            "task_id": "T",
+            "expected_revision": context_revision(state, "T"),
+        }
+&gt;       result = prepare(operation, None, {"role": "orchestrator"}, state, request)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task_tooling.py:380: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+harness/task_environment.py:176: in prepare
+    unit = task_unit(operation, controller, state, principal, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = namespace(tooling=&lt;harness.task_tooling.TaskTooling object at 0x109638270&gt;, envelope={'repository': '/private/tmp/al-r4-setup-protocol-001/test_failed_setup_is_cached_wi0/repo'})
+controller = None
+state = {'amendments': [], 'integration': {'graph_revision': 1, 'tasks': {'T': {'revision': 1, 'files': ['app']}}}}
+principal = {'role': 'orchestrator'}
+request = {'operation': 'prepare', 'cwd': 'app', 'task_id': 'T', 'expected_revision': 'sha256:8edb7996c2464428ae3d8c596a79f5e1f7576cd44157eac2e581e8dafccdabf3'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+                    operation.envelope["repository"],
+&gt;                   get_execution(controller.conn, operation.execution_id),
+                                  ^^^^^^^^^^^^^^^
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'conn'
+
+harness/task_environment.py:54: AttributeError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_environment_prepare_absolute_cwd_has_contract_retry" time="0.001"><failure message="AttributeError: 'NoneType' object has no attribute 'envelope'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_environment_prepare_absol0')
+
+    def test_environment_prepare_absolute_cwd_has_contract_retry(tmp_path):
+        from harness.task_environment import task_unit
+    
+        state = {
+            "amendments": [],
+            "integration": {"tasks": {"T": {"revision": 1, "files": ["app"]}}, "graph_revision": 1},
+        }
+        request = {
+            "task_id": "T",
+            "expected_revision": context_revision(state, "T"),
+            "cwd": str(tmp_path),
+        }
+        with pytest.raises(ValueError, match="repository-relative.*inspect"):
+&gt;           task_unit(None, None, state, {"role": "orchestrator"}, request)
+
+tests/test_task_tooling.py:398: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = None, controller = None
+state = {'amendments': [], 'integration': {'tasks': {'T': {'revision': 1, 'files': ['app']}}, 'graph_revision': 1}}
+principal = {'role': 'orchestrator'}
+request = {'task_id': 'T', 'expected_revision': 'sha256:8edb7996c2464428ae3d8c596a79f5e1f7576cd44157eac2e581e8dafccdabf3', 'cwd': '/private/tmp/al-r4-setup-protocol-001/test_environment_prepare_absol0'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+&gt;                   operation.envelope["repository"],
+                    ^^^^^^^^^^^^^^^^^^
+                    get_execution(controller.conn, operation.execution_id),
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'envelope'
+
+harness/task_environment.py:53: AttributeError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_inspected_prepare_templates_use_current_relative_locked_units" time="0.001"><failure message="AttributeError: 'NoneType' object has no attribute 'envelope'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_inspected_prepare_templat0')
+
+    def test_inspected_prepare_templates_use_current_relative_locked_units(tmp_path):
+        from harness.task_environment import preparation_requests, task_unit
+    
+        app = tmp_path / "apps/web"
+        app.mkdir(parents=True)
+        for path in (
+            tmp_path / "package.json",
+            tmp_path / "pnpm-lock.yaml",
+            tmp_path / "pnpm-workspace.yaml",
+            app / "package.json",
+        ):
+            path.write_text("synthetic manifest")
+        state = {
+            "amendments": [],
+            "integration": {
+                "tasks": {"T": {"revision": 1, "files": ["apps/web/source.py"]}},
+                "graph_revision": 2,
+            },
+        }
+        requests = preparation_requests(tmp_path, state, "T")
+        assert {r["cwd"] for r in requests} == {".", "apps/web"}
+        for request in requests:
+            assert set(request) == {"operation", "cwd", "task_id", "expected_revision"}
+&gt;           assert task_unit(None, None, state, {"role": "orchestrator"}, request) == request["cwd"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_task_tooling.py:424: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = None, controller = None
+state = {'amendments': [], 'integration': {'tasks': {'T': {'revision': 1, 'files': ['apps/web/source.py']}}, 'graph_revision': 2}}
+principal = {'role': 'orchestrator'}
+request = {'operation': 'prepare', 'cwd': '.', 'task_id': 'T', 'expected_revision': 'sha256:cf61096b7140dbd83170d02738c595f17e435dd1b5c112eadce67ec29a68a827'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+&gt;                   operation.envelope["repository"],
+                    ^^^^^^^^^^^^^^^^^^
+                    get_execution(controller.conn, operation.execution_id),
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'envelope'
+
+harness/task_environment.py:53: AttributeError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_mixed_manifest_templates_follow_prepare_python_precedence[.]" time="0.001"><failure message="AttributeError: 'NoneType' object has no attribute 'conn'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_mixed_manifest_templates_0')
+unit = '.'
+
+    @pytest.mark.parametrize("unit", [".", "app"])
+    def test_mixed_manifest_templates_follow_prepare_python_precedence(tmp_path, unit):
+        from harness.task_environment import preparation_requests
+    
+        app = tmp_path / unit
+        app.mkdir(parents=True, exist_ok=True)
+        for path in (
+            tmp_path / "package.json",
+            tmp_path / "pnpm-lock.yaml",
+            tmp_path / "pnpm-workspace.yaml",
+            app / "package.json",
+        ):
+            path.write_text("synthetic Node manifest")
+        state = {
+            "amendments": [],
+            "integration": {
+                "tasks": {"T": {"revision": 1, "files": [unit]}},
+                "graph_revision": 1,
+            },
+        }
+        assert unit in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+        (app / "pyproject.toml").write_text('[project]\nname="mixed"\nversion="0.1.0"\n')
+        request = {
+            "operation": "prepare",
+            "cwd": unit,
+            "task_id": "T",
+            "expected_revision": context_revision(state, "T"),
+        }
+        operation = SimpleNamespace(tooling=None, envelope={"repository": str(tmp_path)})
+        with pytest.raises(FileNotFoundError, match="uv.lock"):
+&gt;           prepare(operation, None, {"role": "orchestrator"}, state, request)
+
+tests/test_task_tooling.py:464: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+harness/task_environment.py:176: in prepare
+    unit = task_unit(operation, controller, state, principal, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = namespace(tooling=None, envelope={'repository': '/private/tmp/al-r4-setup-protocol-001/test_mixed_manifest_templates_0'})
+controller = None
+state = {'amendments': [], 'integration': {'tasks': {'T': {'revision': 1, 'files': ['.']}}, 'graph_revision': 1}}
+principal = {'role': 'orchestrator'}
+request = {'operation': 'prepare', 'cwd': '.', 'task_id': 'T', 'expected_revision': 'sha256:8edb7996c2464428ae3d8c596a79f5e1f7576cd44157eac2e581e8dafccdabf3'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+                    operation.envelope["repository"],
+&gt;                   get_execution(controller.conn, operation.execution_id),
+                                  ^^^^^^^^^^^^^^^
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'conn'
+
+harness/task_environment.py:54: AttributeError</failure></testcase><testcase classname="tests.test_task_tooling" name="test_mixed_manifest_templates_follow_prepare_python_precedence[app]" time="0.001"><failure message="AttributeError: 'NoneType' object has no attribute 'conn'">tmp_path = PosixPath('/private/tmp/al-r4-setup-protocol-001/test_mixed_manifest_templates_1')
+unit = 'app'
+
+    @pytest.mark.parametrize("unit", [".", "app"])
+    def test_mixed_manifest_templates_follow_prepare_python_precedence(tmp_path, unit):
+        from harness.task_environment import preparation_requests
+    
+        app = tmp_path / unit
+        app.mkdir(parents=True, exist_ok=True)
+        for path in (
+            tmp_path / "package.json",
+            tmp_path / "pnpm-lock.yaml",
+            tmp_path / "pnpm-workspace.yaml",
+            app / "package.json",
+        ):
+            path.write_text("synthetic Node manifest")
+        state = {
+            "amendments": [],
+            "integration": {
+                "tasks": {"T": {"revision": 1, "files": [unit]}},
+                "graph_revision": 1,
+            },
+        }
+        assert unit in {r["cwd"] for r in preparation_requests(tmp_path, state, "T")}
+        (app / "pyproject.toml").write_text('[project]\nname="mixed"\nversion="0.1.0"\n')
+        request = {
+            "operation": "prepare",
+            "cwd": unit,
+            "task_id": "T",
+            "expected_revision": context_revision(state, "T"),
+        }
+        operation = SimpleNamespace(tooling=None, envelope={"repository": str(tmp_path)})
+        with pytest.raises(FileNotFoundError, match="uv.lock"):
+&gt;           prepare(operation, None, {"role": "orchestrator"}, state, request)
+
+tests/test_task_tooling.py:464: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+harness/task_environment.py:176: in prepare
+    unit = task_unit(operation, controller, state, principal, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+operation = namespace(tooling=None, envelope={'repository': '/private/tmp/al-r4-setup-protocol-001/test_mixed_manifest_templates_1'})
+controller = None
+state = {'amendments': [], 'integration': {'tasks': {'T': {'revision': 1, 'files': ['app']}}, 'graph_revision': 1}}
+principal = {'role': 'orchestrator'}
+request = {'operation': 'prepare', 'cwd': 'app', 'task_id': 'T', 'expected_revision': 'sha256:8edb7996c2464428ae3d8c596a79f5e1f7576cd44157eac2e581e8dafccdabf3'}
+verify_outputs = True
+
+    def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
+        task = state["integration"]["tasks"].get(request["task_id"])
+        if not task:
+            raise ValueError("registered task required for dependency setup")
+        if principal["role"] == "orchestrator":
+            if context_revision(state, request["task_id"]) != request["expected_revision"]:
+                raise ValueError("current registered task revision required for dependency setup")
+            if verify_outputs:
+                from harness.execution_authority import require_dependency_outputs
+                from harness.execution_store import get_execution
+                from harness.policy.context import CURRENT
+    
+                require_dependency_outputs(
+                    state,
+                    request["task_id"],
+                    operation.envelope["repository"],
+&gt;                   get_execution(controller.conn, operation.execution_id),
+                                  ^^^^^^^^^^^^^^^
+                    consumption=CURRENT.get(),
+                    connection=controller.conn,
+                )
+E               AttributeError: 'NoneType' object has no attribute 'conn'
+
+harness/task_environment.py:54: AttributeError</failure></testcase><testcase classname="tests.test_execution_operations" name="test_existing_signed_in_native_start_and_resume[codex]" time="4.229"><skipped type="pytest.skip" message="live signed-in smoke is opt-in; synthetic boundary checks run separately">/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_operations.py:116: live signed-in smoke is opt-in; synthetic boundary checks run separately</skipped></testcase><testcase classname="tests.test_execution_operations" name="test_existing_signed_in_native_start_and_resume[claude]" time="4.111"><skipped type="pytest.skip" message="live signed-in smoke is opt-in; synthetic boundary checks run separately">/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_operations.py:116: live signed-in smoke is opt-in; synthetic boundary checks run separately</skipped></testcase><testcase classname="tests.test_execution_operations" name="test_root_fixed_documents_guarded_al_and_no_unadmitted_writes" time="6.964" /><testcase classname="tests.test_execution_operations" name="test_guarded_check_cannot_write_the_ledger_or_repository" time="5.609" /><testcase classname="tests.test_execution_operations" name="test_read_only_agent_can_submit_only_a_named_report_outbox" time="4.242" /><testcase classname="tests.test_execution_operations" name="test_owned_read_process_and_revision_rejection" time="4.234" /><testcase classname="tests.test_execution_operations" name="test_supervisor_polls_its_scoped_setup_without_product_writer_authority" time="4.354"><failure message="ValueError: 'dependencies'">operations = (&lt;harness.execution_operations.OperationController object at 0x1096bc830&gt;, {'thread_id': '559fa56b-da37-4cd7-810b-ac65...codex'}, {'id': 'exec-0f3b6cfbb3345c56b11339a1', 'task_id': 't-4d93637e', 'approval_id': 1, 'host': 'codex', ...}, ...)
+
+    def test_supervisor_polls_its_scoped_setup_without_product_writer_authority(operations):
+        operation, principal, _, initialization, _, _, _ = operations
+        from harness.task_environment import context_revision
+    
+        root = Path(operation.envelope["repository"])
+        unit = root / "setup-app"
+        unit.mkdir()
+        (unit / "pyproject.toml").write_text(
+            '[project]\nname="setup-app"\nversion="0.1.0"\nrequires-python="&gt;=3.11"\ndependencies=[]\n'
+        )
+        (unit / "uv.lock").write_text(
+            'version=1\nrevision=3\nrequires-python="&gt;=3.11"\n'
+            '[[package]]\nname="setup-app"\nversion="0.1.0"\nsource={virtual="."}\n'
+        )
+        path = Path(initialization["source"])
+        state = json.loads(path.read_bytes())
+        state["integration"].update(
+            tasks={"setup-task": {"revision": 1, "files": ["setup-app"]}}, graph_revision=1
+        )
+        path.write_text(json.dumps(state))
+        inspection = operation.dispatch(principal, "environment_operation", {"operation": "inspect"})
+        task = next(t for t in inspection["tasks"] if t["task_id"] == "setup-task")
+        request = next(r for r in task["prepare_requests"] if r["cwd"] == "setup-app")
+        assert request == {
+            "operation": "prepare",
+            "cwd": "setup-app",
+            "task_id": "setup-task",
+            "expected_revision": context_revision(state, "setup-task"),
+        }
+        with pytest.raises(ValueError, match="repository-relative"):
+            operation.dispatch(principal, "environment_operation", request | {"cwd": str(unit)})
+&gt;       result = operation.dispatch(principal, "environment_operation", request)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_operations.py:399: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = &lt;harness.execution_operations.OperationController object at 0x1096bc830&gt;
+principal = {'thread_id': '559fa56b-da37-4cd7-810b-ac65830afb50', 'session_id': '559fa56b-da37-4cd7-810b-ac65830afb50', 'parent_thread_id': None, 'role': 'orchestrator', ...}
+name = 'environment_operation'
+arguments = {'operation': 'prepare', 'cwd': 'setup-app', 'task_id': 'setup-task', 'expected_revision': 'sha256:4023eedb2c855cbddceeaac070d5e764a646c8dba2680e0b0df43666fe5b356b'}
+
+    def dispatch(self, principal, name, arguments):
+        from harness.execution_epochs import require_active_epoch
+    
+        with closing(connect(self.database)) as epoch_conn:
+            require_active_epoch(
+                epoch_conn,
+                self.execution_id,
+                expected_epoch_id=self.epoch_id,
+                expected_authority_generation=self.authority_generation,
+                mutation=True,
+            )
+        if name == "await_assignment":
+            return self.await_assignment(principal, arguments.get("timeout", 1))
+        with self.lock, closing(connect(self.database)) as conn:
+            controller = HarnessController(conn)
+            from harness.reliability import store as observations
+    
+            observation = observations.begin(self, principal, name)
+            stage = "authority"
+            try:
+                mode = "delivery" if name == "delivery_operation" else "admit"
+                args = arguments.get("arguments") or [None]
+                if name == "al_command" and args[0] == "publication":
+                    mode = "delivery"
+                if name in {
+                    "read_file",
+                    "knowledge_query",
+                    "knowledge_explain",
+                    "poll_process",
+                    "cancel_process",
+                    "diagnostic",
+                    "submit_output",
+                } or (name == "al_command" and args[0] in READ_COMMANDS):
+                    mode = "read"
+                _, state = self.authority(controller, principal, operation=mode)
+                stage = "dispatch"
+                from harness.reliability.process_context import dispatch_scope
+    
+                with dispatch_scope(self, observation, principal["thread_id"]):
+                    from harness.policy.context import scope, start_effect
+                    from harness.policy.resources import prepare
+    
+                    attempt = prepare(self, controller, principal, name, arguments, state)
+                    with scope(attempt):
+                        try:
+                            if name not in {"apply_patch", "run_command", "al_command"}:
+                                start_effect()
+                            result = self._dispatch(controller, principal, name, arguments, state)
+                        except BaseException:
+                            if attempt:
+                                attempt.owner_finished(outcome="failed")
+                            raise
+                        else:
+                            if attempt:
+                                queued = getattr(self, "policy_setup_pending", {})
+                                if not any(value is attempt for value in queued.values()):
+                                    attempt.owner_finished()
+            except (ValueError, OSError, LookupError, subprocess.SubprocessError) as error:
+                code = (
+                    "AUTHORITY_REJECTED"
+                    if stage == "authority"
+                    else "DISPATCH_OS_ERROR"
+                    if isinstance(error, OSError)
+                    else "DISPATCH_PROCESS_ERROR"
+                    if isinstance(error, subprocess.SubprocessError)
+                    else "DISPATCH_REJECTED"
+                )
+                observations.finish(self, observation, code)
+&gt;               raise ValueError(str(error)) from None
+E               ValueError: 'dependencies'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_operations.py:478: ValueError</failure></testcase><testcase classname="tests.test_execution_operations" name="test_native_auth_selection_and_profile_tamper" time="4.405"><skipped type="pytest.skip" message="installed codex 0.164.0 unavailable; native integration check not run">/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/native_model_fixture.py:48: installed codex 0.164.0 unavailable; native integration check not run</skipped></testcase><testcase classname="tests.test_execution_operations" name="test_actual_native_controller_reads_guarded_al_and_resume" time="4.196"><skipped type="pytest.skip" message="installed codex 0.164.0 unavailable; native integration check not run">/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/native_model_fixture.py:48: installed codex 0.164.0 unavailable; native integration check not run</skipped></testcase><testcase classname="tests.test_execution_operations" name="test_child_write_requires_its_exact_current_writer" time="4.287" /><testcase classname="tests.test_execution_operations" name="test_authenticated_generated_handoff_pages_and_current_binding" time="5.810" /><testcase classname="tests.test_execution_operations" name="test_handoff_redacts_before_paging_and_uses_presentation_cursors" time="5.705" /><testcase classname="tests.test_execution_operations" name="test_mcp_supervisor_control_contract_without_product_assignment" time="8.666" /><testcase classname="tests.test_execution_operations" name="test_supervisor_confined_source_proof_via_mcp" time="4.493" /><testcase classname="tests.test_execution_operations" name="test_shared_fixture_keeps_one_canonical_root_through_continuity_child" time="4.360" /><testcase classname="tests.test_execution_continuity" name="test_public_scoped_write_while_proof_pending" time="27.394"><failure message="AssertionError: Regex pattern did not match.&#10;  Expected regex: 'bytes changed'&#10;  Actual message: 'mutable dependency consumption requires its owning reserved attempt'">operations = (&lt;harness.execution_operations.OperationController object at 0x10950e8d0&gt;, {'thread_id': '855c3da1-2425-48da-8a76-438d...codex'}, {'id': 'exec-80c3b04a91d7c2396b2c47a8', 'task_id': 't-9a4fc6dc', 'approval_id': 1, 'host': 'codex', ...}, ...)
+
+    def test_public_scoped_write_while_proof_pending(operations):  # noqa: F811
+        operation, principal, controller, _, _, execution, envelope = operations
+        prepare(operation, principal)
+        engineer = child(operation, "al-engineer")
+        aid = engineer["thread_id"]
+        report(
+            operation,
+            principal,
+            "agent-register",
+            {
+                "id": aid,
+                "name": "Observed fixture engineer",
+                "role": "al-engineer",
+                "task": "A",
+            },
+        )
+        report(operation, principal, "agent-update", {"id": aid, "status": "Running"})
+        command(operation, principal, "integration", "task-start", "--task", "A")
+        command(
+            operation,
+            principal,
+            "writer",
+            "start",
+            "--id",
+            "source-writer",
+            "--role",
+            "al-engineer",
+            "--files",
+            "work",
+            "--task",
+            "A",
+            "--agent",
+            aid,
+        )
+        revision = operation.assignments[aid]["revision"]
+        operation.dispatch(
+            engineer,
+            "apply_patch",
+            {
+                "patch": "*** Begin Patch\n*** Add File: work/result.py\n+answer = 42\n*** End Patch\n",
+                "task_id": "A",
+                "expected_revision": revision,
+            },
+        )
+        assert (Path(envelope["repository"]) / "work/result.py").read_text() == "answer = 42\n"
+        command(
+            operation, principal, "writer", "finish", "--id", "source-writer", "--outcome", "success"
+        )
+        report(operation, principal, "agent-update", {"id": aid, "status": "Completed"})
+        report(
+            operation,
+            principal,
+            "task-authored",
+            {
+                "schema_version": 1,
+                "task_id": "A",
+                "output_refs": [{"kind": "source", "path": "work/result.py"}],
+            },
+            task="A",
+        )
+        command(operation, principal, "integration", "task-admit", "--task", "B")
+        saved = state(operation)
+        assert saved["integration"]["tasks"]["A"]["status"] != "Completed"
+        assert saved["implementation_readiness"]["obligations"]
+        from harness.execution_projection import execution_view
+        from harness.execution_worker import replay_source
+    
+        replay_source(controller.conn, execution["id"], "test-owner")
+        view = execution_view(controller.conn, execution["id"])
+        assert view["authored_work"]["kind"] == "authored_work_recorded_verification_pending"
+        assert view["authored_work"]["source_file_count"] == 1 and view["status"] != "Completed"
+        assert view["verification"]["status"] == "incomplete"
+        command(operation, principal, "integration", "task-finish", "--task", "A", success=False)
+        command(operation, principal, "approved", success=False)
+        from harness.execution_authority import require_dependency_outputs
+        from harness.execution_models import ExecutionConflict
+    
+        (Path(envelope["repository"]) / "work/result.py").write_text("external drift\n")
+&gt;       with pytest.raises(ExecutionConflict, match="bytes changed"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AssertionError: Regex pattern did not match.
+E         Expected regex: 'bytes changed'
+E         Actual message: 'mutable dependency consumption requires its owning reserved attempt'
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_continuity.py:172: AssertionError</failure></testcase><testcase classname="tests.test_execution_continuity" name="test_readonly_observed_report_has_authored_milestone_without_writer" time="20.355" /></testsuite></testsuites>

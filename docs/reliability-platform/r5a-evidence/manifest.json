@@ -1,0 +1,819 @@
+{
+  "schema_version": 1,
+  "purpose": "R5a dashboard implementation and support evidence archive; scoped evidence, not mission completion or formal AL approval.",
+  "session": "reliability-r5a-20261120",
+  "run": "c0b8fa62",
+  "writer": "r5a-dashboard-support-003",
+  "current_browser_eid": "E52",
+  "current_browser_result": "PASS; 2 passed in 23.10s after a test-only formatting repair. Actual Chrome at desktop 1280x800 and narrow 390x844.",
+  "descendant_settlement": "The protected ledger records descendant_settlement_unproven. Owned process-group exit is not whole descendant-tree settlement.",
+  "artifacts": [
+    {
+      "file": "reports/r4-postclosure-diagnostic-reinspection-report-007.md",
+      "sha256": "b752e2a4fcf3f8bbf35affb52e03d7c42b66ebcc972f050604e39035759475cd",
+      "bytes": 6097,
+      "source": "/private/tmp/al-r4-postclosure-diagnostic-reinspection-report-007.md",
+      "provenance": "Root-provided bounded diagnostic reinspection against frozen R4 snapshot007; not formal approval.",
+      "classification": "diagnostic-not-approval"
+    },
+    {
+      "file": "planning/actual-architect-planning-report-001.json",
+      "sha256": "33197de4d9a1a976bfd0ee1fd101efc8e4dad823a685ff11fb004b3154bf5a81",
+      "bytes": 67605,
+      "source": "/private/tmp/al-r5a-actual-architect-planning-report-001.json",
+      "provenance": "Earlier captured R5a planning report, superseded by report002; preserved unchanged.",
+      "classification": "planning-history"
+    },
+    {
+      "file": "planning/actual-architect-planning-report-002.json",
+      "sha256": "e99d67c8b6da06fa5b9ff943e4358bc9a13051916cbb36e5aaf33b6a98cc4b02",
+      "bytes": 72044,
+      "source": "/private/tmp/al-r5a-actual-architect-planning-report-002.json",
+      "provenance": "Admitted actual Architect planning report; publication receipt is separate.",
+      "classification": "planning"
+    },
+    {
+      "file": "reports/foundation-engineer-report-001.md",
+      "sha256": "856e78604cc15c2be054b045be5d231d969005f520ca61c2b0d3031db92a74c1",
+      "bytes": 9010,
+      "source": "/private/tmp/al-r5a-foundation-engineer-report-001.md",
+      "provenance": "Authored foundation implementation report.",
+      "classification": "authored-report"
+    },
+    {
+      "file": "reports/foundation-api-contract-001.md",
+      "sha256": "aee9b0db3bb1da706cd2327f888e8f8d48dc06e7b7474851ebfc5d15ef2401e2",
+      "bytes": 8294,
+      "source": "/private/tmp/al-r5a-foundation-api-contract-001.md",
+      "provenance": "Foundation API contract.",
+      "classification": "contract"
+    },
+    {
+      "file": "reports/foundation-authored-hashes-001.json",
+      "sha256": "28ec6ccc0f8bbcfddec6079150421a3ed5af05d10a222c6b0d79491b36fae11f",
+      "bytes": 1293,
+      "source": "/private/tmp/al-r5a-foundation-authored-hashes-001.json",
+      "provenance": "Foundation source hash manifest; authored closure only.",
+      "classification": "source-hash-manifest"
+    },
+    {
+      "file": "reports/producer-engineer-report-001.md",
+      "sha256": "6e8b8b4c2a8c8a159da0b1afcc5d8f261350f0850c8e1357af01429462ad1841",
+      "bytes": 12131,
+      "source": "/private/tmp/al-r5a-producer-engineer-report-001.md",
+      "provenance": "Final backend producer/integration Engineer handoff.",
+      "classification": "authored-report"
+    },
+    {
+      "file": "reports/backend-api-contract-001.md",
+      "sha256": "890c1828ffa4b3c3c4d0c61c8c02de808064078d241ea3e9bbaa84e640443f6c",
+      "bytes": 16829,
+      "source": "/private/tmp/al-r5a-backend-api-contract-001.md",
+      "provenance": "Current API contract from backend producer; supersedes changed details in foundation contract.",
+      "classification": "contract"
+    },
+    {
+      "file": "reports/producer-authored-hashes-001.json",
+      "sha256": "853ab6cfaf054b8dce62e741d1c67328e0d5e69031235f65091b8b0f06cfd2f1",
+      "bytes": 5933,
+      "source": "/private/tmp/al-r5a-producer-authored-hashes-001.json",
+      "provenance": "Producer source closure hash manifest; current closure, not baseline delta or full-source freeze.",
+      "classification": "source-hash-manifest"
+    },
+    {
+      "file": "planning/actual-producer-revalidation-architect-captured.md",
+      "sha256": "0ac12fc3762444f26ae570798dfece4aeef1b55c491d52267884b95ba2179582",
+      "bytes": 9637,
+      "source": "/private/tmp/al-r5a-actual-producer-revalidation-architect.md",
+      "provenance": "Exact captured source has one terminal newline beyond canonical normalized planning copy; original bytes preserved here.",
+      "classification": "planning"
+    },
+    {
+      "file": "planning/repaired-source-architect-addendum.md",
+      "sha256": "25c52c69b1d14a661645e25e1e98dfbafb954e59babfa1377016b2ff2586ee06",
+      "bytes": 4391,
+      "source": "/private/tmp/al-r5a-repaired-source-architect-addendum.md",
+      "provenance": "Exact captured Architect addendum; planning only.",
+      "classification": "planning"
+    },
+    {
+      "file": "planning/final-r4-source-architect-prevalidation-001.md",
+      "sha256": "16b814063d132627ce31cc68ae64187d6533b6abd219ccf65097c7fef1896737",
+      "bytes": 8508,
+      "source": "/private/tmp/al-r5a-final-r4-source-architect-prevalidation-001.md",
+      "provenance": "Actual Architect planning/source prevalidation report; not post-R5 review.",
+      "classification": "planning"
+    },
+    {
+      "file": "planning/final-r4-source-prevalidation-hashes-001.json",
+      "sha256": "a911da296ca614119596de133b27e5aae85fcbbb01d26a964d8c77fc80981305",
+      "bytes": 2667,
+      "source": "/private/tmp/al-r5a-final-r4-source-prevalidation-hashes-001.json",
+      "provenance": "Source hash evidence attached to the prevalidation report.",
+      "classification": "source-hash-manifest"
+    },
+    {
+      "file": "planning/planning-publication-receipt-003.json",
+      "sha256": "5106d28572f4abb76673865494316cc4092f347c3f462c975e60f055648bb9ee",
+      "bytes": 1187,
+      "source": "/private/tmp/al-r5a-planning-publication-receipt-003.json",
+      "provenance": "Publication receipt only; not source proof, admission or implementation approval.",
+      "classification": "publication-receipt"
+    },
+    {
+      "file": "parent-observations/supervisor-visual-observations-e36-001.json",
+      "sha256": "329eddd14242101ac8d492594b47bf6c0e77fc7c5b87c5105c7aa576bd82efa9",
+      "bytes": 4765,
+      "source": "/private/tmp/al-r5a-supervisor-visual-observations-e36-001.json",
+      "provenance": "Parent visual observations from E36; not formal independent review or approval.",
+      "classification": "parent-visual-observation"
+    },
+    {
+      "file": "parent-observations/supervisor-visual-observations-e46-001.json",
+      "sha256": "e9cc89761abe121f682cb7f3da3b4a3dcdb8b9058be5ba8a9550678e82254f21",
+      "bytes": 5832,
+      "source": "/private/tmp/al-r5a-supervisor-visual-observations-e46-001.json",
+      "provenance": "Parent visual observations of all ten E46 screenshots; not formal independent review or approval.",
+      "classification": "parent-visual-observation"
+    },
+    {
+      "file": "browser/E46/desktop/incident-intelligence-advanced-controls-1280x800.png",
+      "sha256": "15384d9f4bcdbc9fe5898629c963a524d13c969ca46baaa18a2e91879b7d7bec",
+      "bytes": 134809,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-advanced-controls-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/desktop/incident-intelligence-editor-1280x800.png",
+      "sha256": "2f512393ac4a0e9e3de3c52abfa12719aad9dc8364599c599c284fe62dc448a7",
+      "bytes": 150034,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-editor-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/desktop/incident-intelligence-groups-1280x800.png",
+      "sha256": "b90a01e620aa80c3b40fd30385abadb5a6bf9a02bb3020281abde430b274f657",
+      "bytes": 186665,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-groups-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/desktop/incident-intelligence-history-1280x800.png",
+      "sha256": "b6b4c55c2f58e0acf9abc4ae309c53f8b53c4b1708f10e7830e03b719b4e9010",
+      "bytes": 166413,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-history-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "sha256": "ec449c526f30e3f7bfb65f6b939bb5cc12decf1869707ec7930a62a1f2172a49",
+      "bytes": 192196,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/narrow/incident-intelligence-advanced-controls-390x844.png",
+      "sha256": "e5110392f42ead6378dad22a2425d91ec322e0c2aa077199b0a61f0994a455b4",
+      "bytes": 70209,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-advanced-controls-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/narrow/incident-intelligence-editor-390x844.png",
+      "sha256": "cc57794254c05c8f01f5f750e6e6bc0432055f0d3e4455da2e714d28afe157e2",
+      "bytes": 77255,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-editor-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/narrow/incident-intelligence-groups-390x844.png",
+      "sha256": "cdbf15e3ac44f4c064d040109d48d839aa999144b9b06bf65965fd74fc70edef",
+      "bytes": 92597,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-groups-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/narrow/incident-intelligence-history-390x844.png",
+      "sha256": "7879397d5f3fa87ec95b75166caaa38612ee3b230893b77e0b42b4b1df3f2986",
+      "bytes": 59405,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-history-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/narrow/incident-intelligence-outputs-verdict-390x844.png",
+      "sha256": "d80dfa23685bb12e2eca9b35808746ae29d2f12269976dfd09430b903c8587ff",
+      "bytes": 71003,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-outputs-verdict-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E46; inspected visually by Builder and parent.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E46/desktop/functional-result.json",
+      "sha256": "ec8d49ef19e2d592664de86c790450a1a14a1d1a6c3bcda5874bde7c9890a2f8",
+      "bytes": 38522,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell0/screenshots-desktop/functional-result.json",
+      "provenance": "Persisted behavioral/layout assertions and captured request/DOM evidence from actual Chrome run E46.",
+      "classification": "functional-result"
+    },
+    {
+      "file": "browser/E46/narrow/functional-result.json",
+      "sha256": "595c7d12fbf38226a8a2c9365eec1afe092bc7f3463922398779997b1c5ca8b1",
+      "bytes": 40186,
+      "source": "/private/tmp/al-r5a-incident-browser-017/test_persisted_incident_intell1/screenshots-narrow/functional-result.json",
+      "provenance": "Persisted behavioral/layout assertions and captured request/DOM evidence from actual Chrome run E46.",
+      "classification": "functional-result"
+    },
+    {
+      "file": "browser/E46/pytest.xml",
+      "sha256": "567bde69db2db23586db83ef48b4dec461c543fc6abcac879e74aba9a657eba4",
+      "bytes": 587,
+      "source": "/private/tmp/al-r5a-incident-browser-017.xml",
+      "provenance": "Actual pytest JUnit output for AL ledger E46.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-logs/E29-r5a-ui-syntax-lint.log",
+      "sha256": "9871b76b3d3e1f4f626a9774fbd74ea8994e1c064bbed2d8a6330fdf9122a751",
+      "bytes": 658,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E29-r5a-ui-syntax-lint.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E29.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E30-r5a-incident-browser-test.log",
+      "sha256": "2fb4389e6f5989729dea7bc496e176920c8a5ad5fcf95910d3bb6bb2807570ee",
+      "bytes": 6210,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E30-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E30.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E31-r5a-incident-browser-test.log",
+      "sha256": "63c381d984638c22ae3738d3bd9111407242de33e30a4080678d2daa31155613",
+      "bytes": 6587,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E31-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E31.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E32-r5a-incident-browser-test.log",
+      "sha256": "68f9d84dc46bb57a3d396c20dfa0a11748bb22dfd7240ed0605a51f678756e0c",
+      "bytes": 16660,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E32-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E32.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E33-r5a-incident-browser-test.log",
+      "sha256": "0a16bad5ccdbdc24052023da30d32318d8470284b64cf3b35fc7edddaac83dcd",
+      "bytes": 21508,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E33-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E33.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E34-r5a-incident-browser-test.log",
+      "sha256": "32ad6ddcb1c3f0becc34016e58bc9f00028f35eda9ab9757019a565d7ced81e5",
+      "bytes": 36068,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E34-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E34.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E35-r5a-ui-syntax-lint.log",
+      "sha256": "f98f8588d99aabefb414dac57986ae8290bd2b63875a0f5aa006f425502f92cc",
+      "bytes": 658,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E35-r5a-ui-syntax-lint.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E35.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E36-r5a-incident-browser-test.log",
+      "sha256": "91e21737a137907c0719dadb3dad99980683125574a92316b87d12aa23d681f6",
+      "bytes": 11032,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E36-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E36.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E37-r5a-incident-browser-test.log",
+      "sha256": "0a319683a26204d0164bf6de5e498045f6d01275b7a93b824df717ba5390e41a",
+      "bytes": 11192,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E37-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E37.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E38-r5a-incident-browser-test.log",
+      "sha256": "497047f27f39d10a9c178151fbcf4fa151e61fe9db36a578a7248f4a447b2058",
+      "bytes": 11567,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E38-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E38.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E39-r5a-incident-browser-test.log",
+      "sha256": "0188c0489a1159a1439b96b5ee1c7aa00683369e7a20ac4f9b17b73a516eecdc",
+      "bytes": 11567,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E39-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E39.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E40-r5a-incident-browser-test.log",
+      "sha256": "5e3169e7fc1be835b23655ed9b47ac96c6d527605265650d2112a8a813788d45",
+      "bytes": 11567,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E40-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E40.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E41-r5a-incident-browser-test.log",
+      "sha256": "492318c8a78a991a3f5fbc5beae04de0b96fb7acc3b41c36ad18456ebad3e1de",
+      "bytes": 887,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E41-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E41.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E42-r5a-incident-browser-test.log",
+      "sha256": "0de55fdff2fcc59a57e7a42b3a5b59cb333ba8cf676a63a26eba3fd846cea53b",
+      "bytes": 887,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E42-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E42.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E43-r5a-incident-browser-test.log",
+      "sha256": "b59878f33748290c2c8821ed60e8a561164db762f5b92a7674d2f81f242dfb63",
+      "bytes": 887,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E43-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E43.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E44-r5a-incident-browser-test.log",
+      "sha256": "81c7c8d4ca15bfb7bb6aca4e312993ae947a2253a9b02e459225417303e42432",
+      "bytes": 11463,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E44-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E44.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E45-r5a-incident-browser-test.log",
+      "sha256": "ed4fb8905b8c397c96e11d6a5af492e2e9f003fb97a14fdab310b1168fae522d",
+      "bytes": 12117,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E45-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E45.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E46-r5a-incident-browser-test.log",
+      "sha256": "70d1d21d98b8e7edf968849d7d978dcb34c9fafbcc8ff6fea9a93c3cf5cdd07e",
+      "bytes": 884,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E46-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E46.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "browser/E52/desktop/incident-intelligence-advanced-controls-1280x800.png",
+      "sha256": "04162762bf802bc93a0f993a4965e2526da8df98ba3fb8aa9e484f8bb50e5bd4",
+      "bytes": 136293,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-advanced-controls-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/desktop/incident-intelligence-editor-1280x800.png",
+      "sha256": "6ee54ae3d8b9143ec6c2518439f59fcb4baa25b55e3924e7921843e6b157ca9d",
+      "bytes": 151274,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-editor-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/desktop/incident-intelligence-groups-1280x800.png",
+      "sha256": "492ff4e3e1f959d251cc0a56440dd40f12240a5615c9b4841612d4825de34704",
+      "bytes": 188859,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-groups-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/desktop/incident-intelligence-history-1280x800.png",
+      "sha256": "67ede704c0d587508ded2796442680690b610af08aab045d5ec9683c64095abc",
+      "bytes": 167190,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-history-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "sha256": "447f548555c854a0fd191bd217961efbd7e12974e5353f89aed74135f051b848",
+      "bytes": 188526,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/narrow/incident-intelligence-advanced-controls-390x844.png",
+      "sha256": "79dc7522051a64ea0767be87f6a80b57fdf1c2a5cbb03a287768c521b8bf8fd5",
+      "bytes": 71299,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-advanced-controls-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/narrow/incident-intelligence-editor-390x844.png",
+      "sha256": "848dd4ab1012e602f3fdbb38e342cb5f63bbf1ed12118dd85687f11039afd3d5",
+      "bytes": 79479,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-editor-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/narrow/incident-intelligence-groups-390x844.png",
+      "sha256": "368bf6fa680496b9f7a1d6a899fa5cd8aab7bd671b93e408dcbb8d2b93260e2e",
+      "bytes": 90461,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-groups-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/narrow/incident-intelligence-history-390x844.png",
+      "sha256": "d947ca4212e521a12b3a6c3e4c57b59109a8129c2593b218302aa34a900c6aab",
+      "bytes": 57962,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-history-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/narrow/incident-intelligence-outputs-verdict-390x844.png",
+      "sha256": "94619f9cb207ea41ce6452e6ac2bad58296c2abb9453f7f1933652928ccb2cb4",
+      "bytes": 71753,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-outputs-verdict-390x844.png",
+      "provenance": "Actual Chrome fixture output from AL ledger E52; Builder inspected representative desktop and narrow captures.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E52/desktop/functional-result.json",
+      "sha256": "5be332d420bdb09ebea67dfb6b8b3be48b7ea93e2d6b95612f06d27ec5fc969c",
+      "bytes": 38522,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell0/screenshots-desktop/functional-result.json",
+      "provenance": "Persisted browser behavior/layout evidence after test-only formatting; same UI source as E46.",
+      "classification": "functional-result"
+    },
+    {
+      "file": "browser/E52/narrow/functional-result.json",
+      "sha256": "d3b560b6cedd129f928844f0544cf19b026a3592a072230b43d9975b044007f2",
+      "bytes": 40186,
+      "source": "/private/tmp/al-r5a-incident-browser-018/test_persisted_incident_intell1/screenshots-narrow/functional-result.json",
+      "provenance": "Persisted browser behavior/layout evidence after test-only formatting; same UI source as E46.",
+      "classification": "functional-result"
+    },
+    {
+      "file": "browser/E52/pytest.xml",
+      "sha256": "322831937dc610fce82503b4b563cd69d81d33ef09c4cc3992f8f2a65593f046",
+      "bytes": 587,
+      "source": "/private/tmp/al-r5a-incident-browser-018.xml",
+      "provenance": "Actual pytest JUnit output for AL ledger E52.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-logs/E47-r5a-ui-syntax-lint.log",
+      "sha256": "91cf059f910659ce281e28357325a8ee6901b5b7051e95f90fa63efc75cfa320",
+      "bytes": 658,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E47-r5a-ui-syntax-lint.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E47.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E48-r5a-browser-regression-test.log",
+      "sha256": "4535f704b1e9f07d9b2497e9f6eedd02104f915f86085f1211e17bf3db9a2e55",
+      "bytes": 912,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E48-r5a-browser-regression-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E48.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E49-r5a-api-test.log",
+      "sha256": "5c80363c8a6c456e51967cc5d72e6392df4ce2c304f1da530f3f9d82df7f99f2",
+      "bytes": 821,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E49-r5a-api-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E49.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E50-r5a-compatibility-test.log",
+      "sha256": "12aceb67088e50db7577d688b4fd8cb7cc9001a6127b540ba5b50ec84f3babd4",
+      "bytes": 1169,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E50-r5a-compatibility-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E50.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E51-r5a-lint-lint.log",
+      "sha256": "b4b87474a91172985c4bb81171cdab4e091b9118d10925cd2e8f0e6023b3cd1f",
+      "bytes": 42365,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E51-r5a-lint-lint.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E51.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E52-r5a-incident-browser-test.log",
+      "sha256": "3357671cd840ac9f862ac43a79a73708366eacb18ec838528f2eac2447ee109a",
+      "bytes": 887,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E52-r5a-incident-browser-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E52.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E53-r5a-lint-lint.log",
+      "sha256": "c0b7f69e648ca99cf29508d94d88037bcdf6334108683d3478c4b04666b79791",
+      "bytes": 635,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E53-r5a-lint-lint.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E53.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "browser/E48/timeline/timeline-1280x800.png",
+      "sha256": "381766c4a278e49f4712f90bce079377197e43f92ca06e00af167caf7141080a",
+      "bytes": 167292,
+      "source": "/private/tmp/al-r5a-browser-regression-001/test_real_process_timeline_in_0/timeline-shots/timeline-1280x800.png",
+      "provenance": "Actual Chrome capture from E48 regression; visually inspected by Builder.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E48/timeline/timeline-390x844.png",
+      "sha256": "39fe2d4fd69862d74d62ff4662acc0c44d0ad6e60c00e6bbdedc6a21f4a335d6",
+      "bytes": 80076,
+      "source": "/private/tmp/al-r5a-browser-regression-001/test_real_process_timeline_in_1/timeline-shots/timeline-390x844.png",
+      "provenance": "Actual Chrome capture from E48 regression; visually inspected by Builder.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E48/operation-incidents/operation-incidents-1280x800.png",
+      "sha256": "c20f05ff068904b7e3d9e52e6ff662fb32f911a17685b22a8c8e42ec574850a7",
+      "bytes": 133489,
+      "source": "/private/tmp/al-r5a-browser-regression-001/test_persisted_operation_incid0/incident-shots/operation-incidents-1280x800.png",
+      "provenance": "Actual Chrome capture from E48 regression; visually inspected by Builder.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "browser/E48/operation-incidents/operation-incidents-390x844.png",
+      "sha256": "ba7371cc4fbcfd4b3d4be5a0a39e60845bff1c124149ebeec528d8df8c6b75f1",
+      "bytes": 67884,
+      "source": "/private/tmp/al-r5a-browser-regression-001/test_persisted_operation_incid1/incident-shots/operation-incidents-390x844.png",
+      "provenance": "Actual Chrome capture from E48 regression; visually inspected by Builder.",
+      "classification": "screenshot"
+    },
+    {
+      "file": "ledger-xml/E48.xml",
+      "sha256": "2900e88e850cb78b043aabd3e2b0063eb600685723f5f82c2c1f52b89d965b32",
+      "bytes": 817,
+      "source": "/private/tmp/al-r5a-browser-regression-001.xml",
+      "provenance": "Actual JUnit XML for protected AL run evidence E48.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-xml/E49.xml",
+      "sha256": "03d2b39590f1ad23048c07ccafe0b4f03484007e1584ee1f1ea003861c9ca303",
+      "bytes": 1424,
+      "source": "/private/tmp/al-r5a-api-004.xml",
+      "provenance": "Actual JUnit XML for protected AL run evidence E49.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-xml/E50.xml",
+      "sha256": "3f8bb6dcc93d752a8bd20302c2bcd2bd190822e30806f562b25d19572545782d",
+      "bytes": 18852,
+      "source": "/private/tmp/al-r5a-compatibility-001.xml",
+      "provenance": "Actual JUnit XML for protected AL run evidence E50.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-xml/E54.xml",
+      "sha256": "bde2d973170a08ad9eb0983ab1cb33e460b675bbdf86dc803bbd5556035d182f",
+      "bytes": 4740,
+      "source": "/private/tmp/al-r5a-foundation-005.xml",
+      "provenance": "Actual JUnit XML for protected AL run evidence E54.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-xml/E55.xml",
+      "sha256": "e4c724d6ae222fc3ebe5352e58cb4100964707f24db57e63414da802d55d4ce6",
+      "bytes": 404,
+      "source": "/private/tmp/al-r5a-parity-001.xml",
+      "provenance": "Actual JUnit XML for protected AL run evidence E55.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-xml/E56.xml",
+      "sha256": "26ea2a31b1034f0cab858df576ec21724ab581e31c310b0c3d5966b2b14959ee",
+      "bytes": 7723,
+      "source": "/private/tmp/al-r5a-source-closure-001.xml",
+      "provenance": "Actual JUnit XML for protected AL run evidence E56.",
+      "classification": "test-result"
+    },
+    {
+      "file": "ledger-logs/E54-r5a-foundation-test.log",
+      "sha256": "e31aa6125db65488623e7a695bd9287aed4fb4bfaef65a4a018342b6774f424d",
+      "bytes": 924,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E54-r5a-foundation-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E54.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E55-r5a-parity-test.log",
+      "sha256": "aee3324fd3e9187d92a877d903a621ccd7a7a5810a9056c887dcec72adc82be4",
+      "bytes": 839,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E55-r5a-parity-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E55.",
+      "classification": "ledger-log"
+    },
+    {
+      "file": "ledger-logs/E56-r5a-source-closure-test.log",
+      "sha256": "15b16df77048a08bcef3f68259a1d45fd2f410fddf4284310b0d020eb8c2e2fb",
+      "bytes": 959,
+      "source": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/al-runtime/reliability-r5a-20261120/logs/c0b8fa62-E56-r5a-source-closure-test.log",
+      "provenance": "Exact protected AL run log, session reliability-r5a-20261120/run c0b8fa62, evidence E56.",
+      "classification": "ledger-log"
+    }
+  ],
+  "historical_outcomes": [
+    {
+      "eid": "E29",
+      "result": "PASS",
+      "detail": "JavaScript syntax check."
+    },
+    {
+      "eid": "E30",
+      "result": "FAIL",
+      "detail": "2 browser cases; initial fixture had no eligible present Knowledge snapshot source."
+    },
+    {
+      "eid": "E31",
+      "result": "FAIL",
+      "detail": "2 browser cases; tracked-file inventory omitted approval-created untracked spec; later fixture uses supported included_paths refresh."
+    },
+    {
+      "eid": "E32",
+      "result": "FAIL",
+      "detail": "2 browser cases timed out waiting for a historical output verdict."
+    },
+    {
+      "eid": "E33",
+      "result": "FAIL",
+      "detail": "2 browser cases; actual service rejected malformed verdict rationale with HTTP 409."
+    },
+    {
+      "eid": "E34",
+      "result": "FAIL",
+      "detail": "2 browser cases retained decisive cause: default rationale was not one of accepted codes, leaving selected value empty."
+    },
+    {
+      "eid": "E35",
+      "result": "PASS",
+      "detail": "JavaScript syntax check."
+    },
+    {
+      "eid": "E36",
+      "result": "FAIL",
+      "detail": "2 browser cases; viewport widened from advanced controls and source facts overflowed."
+    },
+    {
+      "eid": "E37",
+      "result": "FAIL",
+      "detail": "2 browser cases; advanced-control layout overflow persisted."
+    },
+    {
+      "eid": "E38",
+      "result": "FAIL",
+      "detail": "2 browser cases; evidence selects widened beyond narrow view."
+    },
+    {
+      "eid": "E39",
+      "result": "FAIL",
+      "detail": "2 browser cases; first scoped CSS selector did not match details element."
+    },
+    {
+      "eid": "E40",
+      "result": "FAIL",
+      "detail": "2 browser cases; advanced form geometry still overflowed."
+    },
+    {
+      "eid": "E41",
+      "result": "PASS",
+      "detail": "2 browser cases after details grid correction."
+    },
+    {
+      "eid": "E42",
+      "result": "PASS",
+      "detail": "2 browser cases; later visual review found stale group/output evidence options at final screenshot sequence."
+    },
+    {
+      "eid": "E43",
+      "result": "PASS",
+      "detail": "2 browser cases; screenshot-time options were not yet recorded at the final UI state; subsequent diagnosis/fix updates pickers after list restoration."
+    },
+    {
+      "eid": "E44",
+      "result": "FAIL",
+      "detail": "2 browser cases; combined primary-control visibility assertion was too strict even though rendered controls were visible."
+    },
+    {
+      "eid": "E45",
+      "result": "FAIL",
+      "detail": "2 browser cases; getClientRects incorrectly treated descendants of closed details as visible."
+    },
+    {
+      "eid": "E46",
+      "result": "PASS",
+      "detail": "2 browser cases; final screenshot-time option, scope, focus/visibility, rationale, verdict, and layout assertions passed."
+    },
+    {
+      "eid": "E47",
+      "result": "PASS",
+      "detail": "Registered node --check for reliability.js; counts unknown."
+    },
+    {
+      "eid": "E48",
+      "result": "PASS",
+      "detail": "Existing dashboard and timeline browser regressions; 4 passed."
+    },
+    {
+      "eid": "E49",
+      "result": "PASS",
+      "detail": "Incident API tests; 8 passed."
+    },
+    {
+      "eid": "E50",
+      "result": "PASS",
+      "detail": "Reliability store, API, timeline, fencing, snapshot and database compatibility suite; 123 passed."
+    },
+    {
+      "eid": "E51",
+      "result": "FAIL",
+      "detail": "Initial registered ruff check found 69 findings in the owned browser test, principally line length plus one unused import. Preserved; no assertions removed."
+    },
+    {
+      "eid": "E52",
+      "result": "PASS",
+      "detail": "Same two-case persisted desktop/narrow Chrome test after test-only formatting repair; 2 passed in 23.10s."
+    },
+    {
+      "eid": "E53",
+      "result": "PASS",
+      "detail": "Registered `ruff check .`; counts unknown."
+    },
+    {
+      "eid": "E54",
+      "result": "PASS",
+      "detail": "Incident catalog/investigation/legacy and database foundation suite; 37 passed."
+    },
+    {
+      "eid": "E55",
+      "result": "PASS",
+      "detail": "Codex/Claude AL parity check; 1 passed."
+    },
+    {
+      "eid": "E56",
+      "result": "PASS",
+      "detail": "Trusted source-closure/snapshot tests; 53 passed."
+    }
+  ],
+  "authored_surface_sha256": {
+    "harness/dashboard/static/reliability.js": "c610dff7eac60756f44b19209ed71b34170e6ed4aa861b9159300bf19c08e197",
+    "harness/dashboard/static/reliability.css": "8dd1f4779d57a0e6f762c4cf921f9843c45255973a1caf0864fb1057df1bf837",
+    "harness/dashboard/static/index.html": "0692e5e055baa3ddf51e59c9162ff96cf1c45bd310a64c8ce1e9715a626fc384",
+    "harness/dashboard/server.py": "4a45cfc4799ab16ba7acdcb1d3d542541b668209752ee75b5f7ad4845d6ea2ff",
+    "harness/dashboard/reliability_view.py": "733a11f0e1fae6e8ea8e0ad994f936f22a0e9358dcefa06f38120976032853c6",
+    "harness/dashboard/incident_view.py": "6f3d397ca46a9605f0154235a6ee3979e96e5a0edcae10169e8d60eb084917f9",
+    "harness/dashboard/incident_actions.py": "efcec1fa2f2f09b0c036821880ce2a417a9cfbf8ef269f0fa987b1f2c54035dd",
+    "harness/dashboard/incident_outputs.py": "627d96e816f24fd08262dfca3049ae8b5f6c234f87a5678ce07bbdecac71dd2d",
+    "harness/dashboard/incident_scope.py": "32d3f425ebdedcdfcdc368b033fa8582267b21ffef17c3dace04fdfae0e0df5f",
+    "tests/test_reliability_incident_intelligence_browser.py": "5f08aad878bb800f9fb918d6736f033bcf5be1d39e19354f4c3ad42eec55f1ca"
+  },
+  "authored_surface_note": "Hashes identify the actual R5a UI/test support surface observed after E46; server and backend modules include preserved Engineer changes and this is not a baseline-relative diff.",
+  "visual_review_currency": "Parent inspected all ten E46 images and recorded no remaining concrete UI issue; Builder also visually inspected representative E52 editor, groups and output screenshots. E52 changed only browser-test formatting, not UI source.",
+  "current_support_checks": {
+    "E47": "PASS syntax",
+    "E48": "PASS 4 existing dashboard/timeline browser regressions",
+    "E49": "PASS 8 incident API tests",
+    "E50": "PASS 123 compatibility tests",
+    "E52": "PASS 2 actual persisted Chrome cases after test-only formatting",
+    "E53": "PASS ruff check .",
+    "E54": "PASS 37 foundation tests",
+    "E55": "PASS 1 parity test",
+    "E56": "PASS 53 source-closure tests"
+  }
+}

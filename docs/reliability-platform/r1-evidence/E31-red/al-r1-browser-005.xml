@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="6.073" timestamp="2026-11-19T22:21:11.612471+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_reliability_browser" name="test_persisted_operation_incidents_in_chrome" time="5.990"><failure message="AssertionError: ('evidenceFocusOnStart', {'viewport': 1280, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})&#10;assert False">observed = (&lt;harness.execution_operations.OperationController object at 0x109acc590&gt;, {'thread_id': '64f3a68b-b84c-4fed-9622-3558..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x1099cfcb0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x109a222c0&gt;
+tmp_path = PosixPath('/private/tmp/al-r1-browser-005/test_persisted_operation_incid0')
+
+    def test_persisted_operation_incidents_in_chrome(observed, monkeypatch, tmp_path):
+        operation, principal, _ = observed
+        from tests.test_reliability_api import record_private_dispatches
+    
+        private_terms = record_private_dispatches(observed)
+        for _index in range(25):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "DISPATCH_REJECTED")
+        store.begin(operation, principal, "run_command")
+    
+        output = Path(os.environ.get("HARNESS_DASHBOARD_SCREENSHOT_DIR", tmp_path / "incident-shots"))
+        output.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("HARNESS_DASHBOARD_SCREENSHOT_DIR", str(output))
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+        _install_driver(monkeypatch, tmp_path, private_terms)
+        task_id = operation.envelope["task_id"]
+        with serve(operation.database, task_id) as server:
+            results = []
+            for name, width, height in (("1280x800", 1280, 800), ("390x844", 390, 844)):
+                profile = tmp_path / f"chrome-{name}"
+                screenshot = output / f"operation-incidents-{name}.png"
+                results.append(_capture_incident_view(
+                    server, task_id, profile / "shot", screenshot, width, height
+                ))
+    
+        for result in results:
+            assert "error" not in result, result
+            assert result["initialCount"] == 25 and result["olderCount"] == 27, result
+            assert result["hasPending"] and result["literalSafe"] and result["focusSurvivesRefresh"], (
+                result
+            )
+            assert result["controlFits"] and result["maliciousNodes"] == 0 and not result["overflow"], (
+                result
+            )
+            assert result["fenced"], result
+            for scenario in (
+                "privateAPI", "privateUI", "evidenceFocusOnStart", "evidenceFocusAfterResponse",
+                "delayedDetailSurvivesRefresh", "summaryFocusOnToggle", "collapsedLocally",
+                "collapsedAfterParentAndList", "summaryFocusAfterParentAndList",
+                "independentListAndDetail", "loadedHistorySurvivesRefresh",
+                "oldInvestigationSurvivesRefresh",
+            ):
+&gt;               assert result[scenario], (scenario, result)
+E               AssertionError: ('evidenceFocusOnStart', {'viewport': 1280, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})
+E               assert False
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_browser.py:434: AssertionError</failure></testcase></testsuite></testsuites>

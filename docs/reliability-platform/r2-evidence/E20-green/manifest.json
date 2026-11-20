@@ -1,0 +1,39 @@
+{
+  "evidence": "E20",
+  "run_id": "0d32430a",
+  "result": "PASS",
+  "counts": {
+    "passed": 2
+  },
+  "artifacts": [
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/al-r2-browser-003.xml",
+      "sha256": "6b0622f9725a6fd7dd063630c6d7fcfc8eadf360c88c36aa9a565a5a31b523c4"
+    },
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/timeline-1280x800.json",
+      "sha256": "9a26c680a6d6c29eaf12287dd865a0dead540beb6f18895edf74c113ae60de66"
+    },
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/timeline-1280x800.png",
+      "sha256": "0d5579b8536bd24c6233270c068ae945fd298c60465e5e16deb22de894145701"
+    },
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/timeline-390x844.png",
+      "sha256": "18bed17164e0fd562c3df1d3e4ed32e222ba9469b75cea722dc725f7364b3a91"
+    },
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/timeline-390x844.json",
+      "sha256": "eefa9ee19c82e850fc0d7e2e9f3ffe720df096994f34dc2fd662f2fac41445f6"
+    },
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/timeline-390x844.png",
+      "sha256": "18bed17164e0fd562c3df1d3e4ed32e222ba9469b75cea722dc725f7364b3a91"
+    },
+    {
+      "path": "docs/reliability-platform/r2-evidence/E20-green/timeline-390x844.json",
+      "sha256": "eefa9ee19c82e850fc0d7e2e9f3ffe720df096994f34dc2fd662f2fac41445f6"
+    }
+  ],
+  "formal_approval": false
+}

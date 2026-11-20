@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="8.598" timestamp="2026-11-19T23:00:45.401119+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_reliability_timeline_browser" name="test_real_process_timeline_in_chrome[1280x800-1280-800]" time="4.239"><failure message="AssertionError: ('focusSurvivesRefresh', {'viewport': 1280, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})&#10;assert False">processes = (&lt;harness.execution_operations.OperationController object at 0x107998ad0&gt;, {'thread_id': '0efedae3-a584-4e4d-bb1f-705d..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x1072f6ba0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1078e2d70&gt;
+tmp_path = PosixPath('/private/tmp/al-r2-browser-001/test_real_process_timeline_in_0')
+name = '1280x800', width = 1280, height = 800
+
+    @pytest.mark.parametrize("name,width,height", [("1280x800", 1280, 800), ("390x844", 390, 844)])
+    def test_real_process_timeline_in_chrome(processes, monkeypatch, tmp_path, name, width, height):
+        operation, principal, _ = processes
+        ticks, epoch = count(), datetime.now(UTC)
+    
+        def clock():
+            return (epoch + timedelta(seconds=next(ticks))).isoformat()
+    
+        for module in (store, process_store, timeline_store):
+            monkeypatch.setattr(module, "utcnow", clock)
+        secret = "timeline-browser-private-process-5281"
+        _, handle = start_process(processes, f"print({secret!r})")
+        assert secret in settled(processes, handle)["output"]
+        terms = record_private_dispatches(processes) + [
+            secret,
+            hashlib.sha256(secret.encode()).hexdigest(),
+        ]
+        for _ in range(8):
+            oid = store.begin(operation, principal, "read_file")
+            store.finish(operation, oid, "DISPATCH_REJECTED")
+        output = tmp_path / "timeline-shots"
+        output.mkdir()
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+        install_driver(monkeypatch, tmp_path, terms)
+        params = {
+            "task": operation.envelope["task_id"],
+            "execution": operation.execution_id,
+            "epoch": operation.epoch_id,
+            "limit": 100,
+        }
+    
+        def source_ids():
+            ids, cursor = [], None
+            while True:
+                status, data = read_timeline(operation.database, urlencode(params | (cursor or {})))
+                assert status == 200
+                ids.extend(item["item_id"] for item in data["items"])
+                cursor = data["next_cursor"]
+                if not cursor:
+                    return ids
+    
+        assert len(source_ids()) == 27
+    
+        def fixture_action(action):
+            before = len(source_ids())
+            entries = 30 if action == "burst" else 101 - before
+            assert entries &gt; 0 and entries % 2 == 0
+            for _ in range(entries // 2):
+                oid = store.begin(operation, principal, "read_file")
+                store.finish(operation, oid, "DISPATCH_REJECTED")
+            ids = source_ids()
+            assert len(ids) == before + entries
+            return {"ids": ids, "added": entries}
+    
+        with serve(operation.database, operation.envelope["task_id"]) as server:
+            result = _capture_timeline(
+                server,
+                operation.envelope["task_id"],
+                tmp_path / "chrome",
+                output / f"timeline-{name}.png",
+                width,
+                height,
+                fixture_action,
+            )
+        assert "error" not in result, result
+        assert result["initialCount"] == 25 and result["olderCount"] == 27
+        assert result["overflow"] is False and result["maliciousNodes"] == 0
+        for key in (
+            "hasPending",
+            "literalSafe",
+            "focusSurvivesRefresh",
+            "controlFits",
+            "fenced",
+            "privateAPI",
+            "privateUI",
+            "evidenceFocusOnStart",
+            "evidenceFocusAfterResponse",
+            "delayedDetailSurvivesRefresh",
+            "summaryFocusOnToggle",
+            "collapsedLocally",
+            "collapsedAfterParentAndList",
+            "summaryFocusAfterParentAndList",
+            "independentListAndDetail",
+            "loadedHistorySurvivesRefresh",
+            "oldInvestigationSurvivesRefresh",
+            "passiveWindowPreserved",
+            "newArrivalsSignaled",
+            "burstComplete",
+            "deepComplete",
+            "renderedHistoryBounded",
+        ):
+&gt;           assert result[key], (key, result)
+E           AssertionError: ('focusSurvivesRefresh', {'viewport': 1280, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})
+E           assert False
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_browser.py:346: AssertionError</failure></testcase><testcase classname="tests.test_reliability_timeline_browser" name="test_real_process_timeline_in_chrome[390x844-390-844]" time="4.251"><failure message="AssertionError: ('focusSurvivesRefresh', {'viewport': 390, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})&#10;assert False">processes = (&lt;harness.execution_operations.OperationController object at 0x1079834d0&gt;, {'thread_id': 'f5f045a8-1474-4b43-ad0a-4e8f..., 'parent_thread_id': None, 'role': 'orchestrator', ...}, &lt;harness.controller.HarnessController object at 0x107ae2da0&gt;)
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x107a39370&gt;
+tmp_path = PosixPath('/private/tmp/al-r2-browser-001/test_real_process_timeline_in_1')
+name = '390x844', width = 390, height = 844
+
+    @pytest.mark.parametrize("name,width,height", [("1280x800", 1280, 800), ("390x844", 390, 844)])
+    def test_real_process_timeline_in_chrome(processes, monkeypatch, tmp_path, name, width, height):
+        operation, principal, _ = processes
+        ticks, epoch = count(), datetime.now(UTC)
+    
+        def clock():
+            return (epoch + timedelta(seconds=next(ticks))).isoformat()
+    
+        for module in (store, process_store, timeline_store):
+            monkeypatch.setattr(module, "utcnow", clock)
+        secret = "timeline-browser-private-process-5281"
+        _, handle = start_process(processes, f"print({secret!r})")
+        assert secret in settled(processes, handle)["output"]
+        terms = record_private_dispatches(processes) + [
+            secret,
+            hashlib.sha256(secret.encode()).hexdigest(),
+        ]
+        for _ in range(8):
+            oid = store.begin(operation, principal, "read_file")
+            store.finish(operation, oid, "DISPATCH_REJECTED")
+        output = tmp_path / "timeline-shots"
+        output.mkdir()
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+        install_driver(monkeypatch, tmp_path, terms)
+        params = {
+            "task": operation.envelope["task_id"],
+            "execution": operation.execution_id,
+            "epoch": operation.epoch_id,
+            "limit": 100,
+        }
+    
+        def source_ids():
+            ids, cursor = [], None
+            while True:
+                status, data = read_timeline(operation.database, urlencode(params | (cursor or {})))
+                assert status == 200
+                ids.extend(item["item_id"] for item in data["items"])
+                cursor = data["next_cursor"]
+                if not cursor:
+                    return ids
+    
+        assert len(source_ids()) == 27
+    
+        def fixture_action(action):
+            before = len(source_ids())
+            entries = 30 if action == "burst" else 101 - before
+            assert entries &gt; 0 and entries % 2 == 0
+            for _ in range(entries // 2):
+                oid = store.begin(operation, principal, "read_file")
+                store.finish(operation, oid, "DISPATCH_REJECTED")
+            ids = source_ids()
+            assert len(ids) == before + entries
+            return {"ids": ids, "added": entries}
+    
+        with serve(operation.database, operation.envelope["task_id"]) as server:
+            result = _capture_timeline(
+                server,
+                operation.envelope["task_id"],
+                tmp_path / "chrome",
+                output / f"timeline-{name}.png",
+                width,
+                height,
+                fixture_action,
+            )
+        assert "error" not in result, result
+        assert result["initialCount"] == 25 and result["olderCount"] == 27
+        assert result["overflow"] is False and result["maliciousNodes"] == 0
+        for key in (
+            "hasPending",
+            "literalSafe",
+            "focusSurvivesRefresh",
+            "controlFits",
+            "fenced",
+            "privateAPI",
+            "privateUI",
+            "evidenceFocusOnStart",
+            "evidenceFocusAfterResponse",
+            "delayedDetailSurvivesRefresh",
+            "summaryFocusOnToggle",
+            "collapsedLocally",
+            "collapsedAfterParentAndList",
+            "summaryFocusAfterParentAndList",
+            "independentListAndDetail",
+            "loadedHistorySurvivesRefresh",
+            "oldInvestigationSurvivesRefresh",
+            "passiveWindowPreserved",
+            "newArrivalsSignaled",
+            "burstComplete",
+            "deepComplete",
+            "renderedHistoryBounded",
+        ):
+&gt;           assert result[key], (key, result)
+E           AssertionError: ('focusSurvivesRefresh', {'viewport': 390, 'initialCount': 25, 'olderCount': 27, 'hasPending': True, ...})
+E           assert False
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_timeline_browser.py:346: AssertionError</failure></testcase></testsuite></testsuites>

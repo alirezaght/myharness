@@ -142,6 +142,7 @@ def test_successor_public_guard_can_author_while_old_principal_is_fenced(
     from harness.execution_principals import PrincipalRegistry
     from harness.execution_runtime_recovery import verify_selected_authority
     from tests.test_execution_continuity import command, report
+    from tests.test_execution_operations import observed_principal
 
     old_operation, old_principal, controller, _, package, old_execution, envelope = registered[0]
     amendment_id = None
@@ -223,7 +224,6 @@ def test_successor_public_guard_can_author_while_old_principal_is_fenced(
         epoch_fence=selected,
     )
     registry.observe_root_start(old_operation.registry.root)
-    principal = dict(old_principal, policy=registry.policy)
     operation = OperationController(
         Path(envelope["database"]),
         current,
@@ -233,6 +233,7 @@ def test_successor_public_guard_can_author_while_old_principal_is_fenced(
         registry,
         Path(current["handoff_path"]).parent / "operations",
     )
+    principal = observed_principal(operation, registry.root, "orchestrator")
     try:
         command(operation, principal, "spec-gate", "SPEC_READY")
         command(
@@ -271,7 +272,6 @@ def test_successor_public_guard_can_author_while_old_principal_is_fenced(
         root.mkdir(parents=True, exist_ok=True)
         aid = str(uuid.uuid4())
         for tid, source in [
-            (registry.root, "exec"),
             (
                 aid,
                 {

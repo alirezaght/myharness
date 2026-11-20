@@ -90,6 +90,10 @@ def prepare_commit(previous, proposed):
             from al_ledger import entry_verdict
             p['validity'] = entry_verdict(proposed, e)[0]
             kind = 'test.result'
+        source = i.get('incident_results', {}).get(e['id'])
+        if source and kind == 'test.result':
+            p['purpose'] = e.get('purpose', 'verification')
+            p['source_receipt'] = {key: source[key] for key in ('kind', 'id', 'sha256')}
         if facts.get(e['id']) != p:
             pending.append({'kind': kind, 'payload': p})
             facts[e['id']] = copy.deepcopy(p)

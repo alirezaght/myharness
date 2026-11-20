@@ -117,6 +117,9 @@ class FingerprintError(RuntimeError):
 
 
 def _git_bytes(*args):
+    import al_retry_control
+    controlled=al_retry_control.git(args,root=al_store.REPO_ROOT)
+    if controlled is not None:return controlled
     try:
         r = subprocess.run(["git", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", *args], cwd=al_store.REPO_ROOT, capture_output=True, timeout=300)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -395,7 +398,7 @@ def classify(kind, exit_code, counts, timed_out, before, after, *, output=None):
     return "PASS", ""
 
 
-def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=None, needs=(), sources=(), storage=None, recipe=None, recipe_assignment=None, recipe_context=None):
+def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=None, needs=(), sources=(), storage=None, recipe=None, recipe_assignment=None, recipe_context=None, purpose="verification"):
     import al_evidence_storage
     storage = al_evidence_storage.normalize_declaration(storage)
     import al_evidence_recipe
@@ -404,7 +407,7 @@ def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=No
     ev = ledger(st)
     ev["seq"] += 1
     entry = {
-        "id": f"E{ev['seq']}", "area": area, "kind": kind, "tier": tier,
+        "id": f"E{ev['seq']}", "area": area, "kind": kind, "tier": tier, "purpose": purpose,
         "argv": list(argv), "cwd": cwd or ".", "scope": list(scope), "sources": Sources.validate_sources(sources),
         "env": sorted(env_names or ()), "preflight": preflight, "needs": list(needs),
         "status": "RUNNING", "exit": None, "note": "", "counts": {},
@@ -481,6 +484,7 @@ def same_command(e, spec):
             and sorted(e.get("env") or ()) == sorted(spec.get("env") or ())
             and e.get("sources", []) == spec.get("sources", [])
             and al_evidence_storage.normalize_declaration(e.get("storage")) == al_evidence_storage.normalize_declaration(spec.get("storage"))
+            and e.get("purpose", "verification") == spec.get("purpose", "verification")
             and e.get("preflight") == spec.get("preflight")
             and sorted(e.get("needs") or ()) == sorted(spec.get("needs") or ()))
 
@@ -613,6 +617,8 @@ def planned_verdict(st, area, spec, _seen=()):
 def entry_verdict(st, e, _seen=()):
     """assess() plus the prerequisites this run recorded (its plan's, when it
     matches one), checked recursively."""
+    from al_agent_exchange import consume_verification
+    consume_verification(st, e)
     verdict, why = assess(e)
     if verdict == "STALE" and e.get("kind") != "preflight":
         source = mutation_source(st, e)

@@ -35,15 +35,34 @@ def context_revision(state, task_id):
     )
 
 
-def task_unit(operation, controller, state, principal, request):
+def task_unit(operation, controller, state, principal, request, *, verify_outputs=True):
     task = state["integration"]["tasks"].get(request["task_id"])
     if not task:
         raise ValueError("registered task required for dependency setup")
     if principal["role"] == "orchestrator":
         if context_revision(state, request["task_id"]) != request["expected_revision"]:
             raise ValueError("current registered task revision required for dependency setup")
+        if verify_outputs:
+            from harness.execution_authority import require_dependency_outputs
+            from harness.execution_store import get_execution
+            from harness.policy.context import CURRENT
+
+            require_dependency_outputs(
+                state,
+                request["task_id"],
+                operation.envelope["repository"],
+                get_execution(controller.conn, operation.execution_id),
+                consumption=CURRENT.get(),
+                connection=controller.conn,
+            )
     else:
-        operation.admitted(controller, principal, request["task_id"], request["expected_revision"])
+        operation.admitted(
+            controller,
+            principal,
+            request["task_id"],
+            request["expected_revision"],
+            verify_outputs=verify_outputs,
+        )
     unit = request["cwd"]
     if Path(unit).is_absolute():
         raise ValueError(
@@ -158,6 +177,18 @@ class SetupReport:
 
 
 def prepare(operation, controller, principal, state, request, *, plan_defaults=True):
+    from harness.policy.context import CURRENT
+
+    owner = CURRENT.get()
+    if (
+        owner is None
+        or owner.intent.operation != "environment_operation"
+        or owner.intent.execution_id != operation.execution_id
+        or owner.intent.principal_id != principal["thread_id"]
+        or owner.intent.task_id != request["task_id"]
+        or owner.intent.revision != request["expected_revision"]
+    ):
+        raise ValueError("dependency setup requires its owning admitted attempt")
     unit = task_unit(operation, controller, state, principal, request)
 
     def ready_checks(record):
@@ -393,7 +424,7 @@ def prepare(operation, controller, principal, state, request, *, plan_defaults=T
 
 
 def auto_prepare(operation, controller, principal, state, task_id):
-    """Prepare only the registered writer's concrete units; never scan artifacts."""
+    """Queue concrete units; the outer AL control invocation does not own setup effects."""
     task = state["integration"]["tasks"][task_id]
     root, units = Path(operation.envelope["repository"]), set()
     for name in task["files"]:
@@ -411,19 +442,15 @@ def auto_prepare(operation, controller, principal, state, task_id):
     results = []
     for unit in sorted(units, key=lambda name: (not (root / name / "uv.lock").is_file(), name))[:8]:
         try:
-            result = prepare(
-                operation,
-                controller,
-                principal,
-                state,
-                {
-                    "operation": "prepare",
-                    "task_id": task_id,
-                    "expected_revision": context_revision(state, task_id),
-                    "cwd": unit,
-                },
-                plan_defaults=False,
-            )
+            request = {
+                "operation": "prepare",
+                "task_id": task_id,
+                "expected_revision": context_revision(state, task_id),
+                "cwd": unit,
+            }
+            task_unit(operation, controller, state, principal, request, verify_outputs=False)
+            operation.setup_pending.setdefault((task_id, unit), (principal, request, False))
+            result = {"status": "Queued", "unit": unit, "test_evidence": False}
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             result = {"status": "Unavailable", "reason": str(error), "test_evidence": False}
         operation.setup_outcomes[unit] = result

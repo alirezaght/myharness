@@ -218,10 +218,18 @@ def assignment_context(operation, controller, principal):
         bundle = query(controller.conn, scope, ContextRequest(task["title"][:4096]))
     except (ValueError, OSError, LookupError, sqlite3.Error):
         return {"status": "unavailable"}
-    return {
+    result = {
         "status": "available",
         "bundle_hash": bundle.bundle_hash,
         "snapshot_id": bundle.payload["snapshot_id"],
         "assertion_ids": [a["assertion_id"] for a in bundle.payload["assertions"]],
         "receipt_id": bundle.receipt_id,
     }
+
+    from harness.reliability.timeline_store import assignment_link
+
+    try:
+        assignment_link(operation, principal, result)
+    except (OSError, ValueError, sqlite3.Error):
+        result["telemetry_status"] = "unavailable"
+    return result

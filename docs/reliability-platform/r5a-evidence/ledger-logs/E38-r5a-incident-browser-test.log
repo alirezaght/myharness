@@ -1,0 +1,168 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q -m browser tests/test_reliability_incident_intelligence_browser.py --basetemp=/private/tmp/al-r5a-incident-browser-008 --junitxml=/private/tmp/al-r5a-incident-browser-008.xml
+# cwd: .
+# started: Fri Nov 20 15:09:57 2026
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_persisted_incident_intelligence_in_chrome[desktop-1280-800] _______
+
+operations = (<harness.execution_operations.OperationController object at 0x1073ddd30>, {'thread_id': '41c47c9e-05e5-4edd-a90a-4174...codex'}, {'id': 'exec-1b248c674bbd0de51f72b005', 'task_id': 't-16191251', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107313100>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-008/test_persisted_incident_intell0')
+name = 'desktop', width = 1280, height = 800
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        from harness.dashboard import incident_actions
+    
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        approved_spec = f"docs/specs/{actual_execution['task_id']}/v1.md"
+        snapshot = refresh(
+            controller.conn, scope, RefreshRequest(included_paths=(approved_spec,))
+        ).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND s.locator=? AND m.membership_state='present'",
+            (snapshot, approved_spec),
+        ).fetchone()
+        assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+        _install_driver(monkeypatch, tmp_path, source["version_id"], snapshot, source["locator"])
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+    
+        verdict_errors = []
+        original_verdict = incident_actions.operator_verdicts.reject
+    
+        def trace_verdict(*args, **kwargs):
+            try:
+                return original_verdict(*args, **kwargs)
+            except Exception as error:
+                verdict_errors.append(f"{type(error).__name__}: {error}")
+                raise
+    
+        monkeypatch.setattr(incident_actions.operator_verdicts, "reject", trace_verdict)
+    
+        screenshot_dir = tmp_path / f"screenshots-{name}"
+        with serve(operation.database, actual_execution["task_id"]) as server:
+            try:
+                result = _capture(server, tmp_path / f"chrome-profile-{name}", screenshot_dir, width, height)
+            except RuntimeError as error:
+                raise AssertionError(f"{error}; operator verdict cause={verdict_errors}") from error
+    
+        assert result["initialScope"] == "execution", result
+        assert result["initialCount"] >= 3 and result["originalFactVisible"], result
+        assert result["provenanceVisible"] and result["hypothesisAndHistoryPersisted"], result
+        assert result["concurrentAppendStatus"] == 200 and result["conflictVisible"], result
+        assert result["statusOnlyKeepsSingleHypothesis"], result
+        assert result["verifiedSourceBasisVisible"] and result["groupDecisionPersisted"], result
+        assert result["realOutputVerdictPersisted"] and result["verdictDoesNotGrantAuthority"], result
+        assert result["verdictRationaleSelected"] and result["verdictReasonCode"] == "evidence_updated", result
+        assert result["staleScopeResponseFenced"] and result["taskScopeWasRequestedWithoutEpoch"], result
+        assert result["supportEvidenceOptionCount"] >= 3 and result["supportEvidenceSelectionVisible"], result
+        assert result["supportSelectionRestored"] and result["outputPickerReadable"], result
+>       assert result["filterControlsFit"] and not result["initialOverflow"] and not result["finalOverflow"], result
+E       AssertionError: {'initialCount': 3, 'initialScope': 'execution', 'initialOverflow': False, 'initialViewport': {'innerWidth': 1280, 'visualWidth': 1280, 'documentWidth': 1280, 'bodyWidth': 1280, ...}, ...}
+E       assert (True and not False and not True)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:520: AssertionError
+________ test_persisted_incident_intelligence_in_chrome[narrow-390-844] ________
+
+operations = (<harness.execution_operations.OperationController object at 0x107541090>, {'thread_id': '7ea2d387-00c2-4a6e-9bb6-b203...codex'}, {'id': 'exec-8b771f327bc8a61b6320580b', 'task_id': 't-6f1cbc5d', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x106cbe780>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-008/test_persisted_incident_intell1')
+name = 'narrow', width = 390, height = 844
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        from harness.dashboard import incident_actions
+    
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        approved_spec = f"docs/specs/{actual_execution['task_id']}/v1.md"
+        snapshot = refresh(
+            controller.conn, scope, RefreshRequest(included_paths=(approved_spec,))
+        ).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND s.locator=? AND m.membership_state='present'",
+            (snapshot, approved_spec),
+        ).fetchone()
+        assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+        _install_driver(monkeypatch, tmp_path, source["version_id"], snapshot, source["locator"])
+        monkeypatch.setattr(DashboardServer, "stream_lifetime", 0.5)
+    
+        verdict_errors = []
+        original_verdict = incident_actions.operator_verdicts.reject
+    
+        def trace_verdict(*args, **kwargs):
+            try:
+                return original_verdict(*args, **kwargs)
+            except Exception as error:
+                verdict_errors.append(f"{type(error).__name__}: {error}")
+                raise
+    
+        monkeypatch.setattr(incident_actions.operator_verdicts, "reject", trace_verdict)
+    
+        screenshot_dir = tmp_path / f"screenshots-{name}"
+        with serve(operation.database, actual_execution["task_id"]) as server:
+            try:
+                result = _capture(server, tmp_path / f"chrome-profile-{name}", screenshot_dir, width, height)
+            except RuntimeError as error:
+                raise AssertionError(f"{error}; operator verdict cause={verdict_errors}") from error
+    
+        assert result["initialScope"] == "execution", result
+        assert result["initialCount"] >= 3 and result["originalFactVisible"], result
+        assert result["provenanceVisible"] and result["hypothesisAndHistoryPersisted"], result
+        assert result["concurrentAppendStatus"] == 200 and result["conflictVisible"], result
+        assert result["statusOnlyKeepsSingleHypothesis"], result
+        assert result["verifiedSourceBasisVisible"] and result["groupDecisionPersisted"], result
+        assert result["realOutputVerdictPersisted"] and result["verdictDoesNotGrantAuthority"], result
+        assert result["verdictRationaleSelected"] and result["verdictReasonCode"] == "evidence_updated", result
+        assert result["staleScopeResponseFenced"] and result["taskScopeWasRequestedWithoutEpoch"], result
+        assert result["supportEvidenceOptionCount"] >= 3 and result["supportEvidenceSelectionVisible"], result
+        assert result["supportSelectionRestored"] and result["outputPickerReadable"], result
+>       assert result["filterControlsFit"] and not result["initialOverflow"] and not result["finalOverflow"], result
+E       AssertionError: {'initialCount': 3, 'initialScope': 'execution', 'initialOverflow': False, 'initialViewport': {'innerWidth': 390, 'visualWidth': 390, 'documentWidth': 390, 'bodyWidth': 390, ...}, ...}
+E       assert (True and not False and not True)
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:520: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[desktop-1280-800]
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[narrow-390-844]
+2 failed in 20.87s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 27697, "pid": 27697, "sid": 27697, "start": [1795183797, 939236], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

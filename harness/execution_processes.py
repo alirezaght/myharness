@@ -22,6 +22,7 @@ class ProcessManager:
     def __init__(self):
         self.records = {}
         self.lock = threading.RLock()
+        self.launching = 0
 
     def start(
         self,
@@ -38,6 +39,8 @@ class ProcessManager:
         pass_fds=(),
         completion=None,
         report=None,
+        lifecycle=None,
+        correlation=None,
     ):
         if type(timeout) is not int or not 1 <= timeout <= max_timeout:
             raise ValueError("operation timeout exceeds its capability limit")
@@ -46,10 +49,25 @@ class ProcessManager:
         validate_reference(getattr(profile, "classification", None), root=profile.repository)
         with self.lock:
             if (
-                len(self.records) >= 128
-                or sum(r["status"] == "Running" for r in self.records.values()) >= 4
+                len(self.records) + self.launching >= 128
+                or sum(r["status"] == "Running" for r in self.records.values()) + self.launching
+                >= 4
             ):
                 raise ValueError("operation process capacity reached")
+            self.launching += 1
+        observer = lifecycle
+        from harness.policy.context import process_hooks
+
+        policy = process_hooks()
+        handle = "process-" + secrets.token_hex(24)
+        policy_deadline = None
+        try:
+            from harness.reliability.process_store import pending_process
+
+            if observer:
+                observer.begin()
+            else:
+                observer = pending_process(owner, task, revision, context=correlation)
             environment = environment or safe_environment() | {
                 "TMPDIR": profile.temporary,
                 "UV_CACHE_DIR": profile.temporary + "/uv-cache",
@@ -57,6 +75,9 @@ class ProcessManager:
             }
             # Short private TMPDIR when the profile has one (AF_UNIX socket paths).
             environment = process_temporary_environment(profile, dict(environment))
+            started = time.monotonic()
+            if policy:
+                policy_deadline = policy.prepare(handle, observer)
             try:
                 proc = operation_popen(
                     profile,
@@ -70,34 +91,74 @@ class ProcessManager:
                     close_fds=True,
                     pass_fds=pass_fds,
                 )
-            except BaseException:
-                release_process_temporary(getattr(profile, "process_temporary", ""))
+                if policy:
+                    try:
+                        policy.spawned(proc)
+                    except BaseException:
+                        self._kill(proc)
+                        proc.wait(timeout=5)
+                        proc.stdout.close()
+                        proc.stderr.close()
+                        raise
+            except BaseException as error:
+                if not policy or not policy.launched:
+                    release_process_temporary(getattr(profile, "process_temporary", ""))
+                if policy:
+                    policy.finish(closed=False, outcome="failed")
+                if observer:
+                    observer.notify(
+                        "process.launch_failed",
+                        duration_ms=(time.monotonic() - started) * 1000,
+                        stop_reason="io_error" if isinstance(error, OSError) else "internal_error",
+                    )
                 raise
-            handle = "process-" + secrets.token_hex(24)
-            record = {
-                "owner": owner,
-                "task": task,
-                "revision": revision,
-                "process": proc,
-                "status": "Running",
-                "output": "",
-                "cursor": 0,
-                "returncode": None,
-                "error": None,
-                "cancel": threading.Event(),
-                "classification": getattr(profile, "classification", None),
-                "classification_root": profile.repository,
-                "completion": completion,
-                "report": report,
-                "result": None,
-                "exit_observed": False,
-                "process_temporary": getattr(profile, "process_temporary", ""),
-            }
+        except BaseException:
+            with self.lock:
+                self.launching -= 1
+            raise
+        record = {
+            "owner": owner,
+            "task": task,
+            "revision": revision,
+            "process": proc,
+            "status": "Running",
+            "output": "",
+            "cursor": 0,
+            "returncode": None,
+            "error": None,
+            "cancel": threading.Event(),
+            "classification": getattr(profile, "classification", None),
+            "classification_root": profile.repository,
+            "completion": completion,
+            "report": report,
+            "result": None,
+            "exit_observed": False,
+            "process_temporary": getattr(profile, "process_temporary", ""),
+            "observer": observer,
+            "monotonic_start": started,
+            "absolute_deadline": min(started + timeout, policy_deadline)
+            if policy_deadline
+            else started + timeout,
+            "policy": policy,
+            "stop_reason": None,
+            "cleanup_status": "unobserved",
+        }
+        with self.lock:
+            self.launching -= 1
             self.records[handle] = record
-            thread = threading.Thread(target=self._drain, args=(record, timeout), daemon=True)
-            record["thread"] = thread
-            thread.start()
-            return {"handle": handle, "status": "Running"}
+        self._notify(record, "process.started")
+        thread = threading.Thread(target=self._drain, args=(record, timeout), daemon=True)
+        record["thread"] = thread
+        thread.start()
+        result = {"handle": handle, "status": "Running"}
+        if observer and not observer.available:
+            result["telemetry_status"] = "unavailable"
+        return result
+
+    def _notify(self, record, kind, **snapshot):
+        observer = record.get("observer")
+        if observer:
+            observer.notify(kind, **snapshot)
 
     @staticmethod
     def _kill(proc):
@@ -108,7 +169,7 @@ class ProcessManager:
 
     def _drain(self, record, timeout):
         proc, size = record["process"], 0
-        deadline = time.monotonic() + timeout
+        deadline = record["absolute_deadline"]
         redactors = {stream: StreamRedactor() for stream in (proc.stdout, proc.stderr)}
         decoders = {
             stream: codecs.getincrementaldecoder("utf-8")("replace") for stream in redactors
@@ -118,9 +179,14 @@ class ProcessManager:
                 for stream in redactors:
                     selector.register(stream, selectors.EVENT_READ)
                 while selector.get_map() or proc.poll() is None:
-                    if record["cancel"].is_set() or time.monotonic() > deadline:
+                    if record["cancel"].is_set():
+                        record["stop_reason"] = "cancel_requested"
                         raise ValueError("operation cancelled or deadline exceeded")
-                    for key, _ in selector.select(0.1):
+                    if time.monotonic() > deadline:
+                        record["stop_reason"] = "deadline_exceeded"
+                        self._notify(record, "process.timeout_observed")
+                        raise ValueError("operation cancelled or deadline exceeded")
+                    for key, _ in selector.select(min(0.1, max(0, deadline - time.monotonic()))):
                         chunk = os.read(key.fd, 16384)
                         size += len(chunk)
                         if record.get("report"):
@@ -129,6 +195,7 @@ class ProcessManager:
                             )
                             text = ""
                         elif size > 1048576:
+                            record["stop_reason"] = "output_limit"
                             raise ValueError("operation output limit exceeded")
                         else:
                             text = redactors[key.fileobj].feed(
@@ -140,7 +207,11 @@ class ProcessManager:
                         if not chunk:
                             selector.unregister(key.fileobj)
             proc.wait(timeout=1)
-        except (OSError, ValueError, subprocess.SubprocessError) as error:
+        except Exception as error:
+            if record["stop_reason"] is None:
+                record["stop_reason"] = (
+                    "io_error" if isinstance(error, OSError) else "internal_error"
+                )
             with self.lock:
                 record["error"] = str(error)
         finally:
@@ -149,12 +220,16 @@ class ProcessManager:
                 self._kill(proc)
                 proc.wait(timeout=5)
                 release_process_temporary(record.get("process_temporary"))
+                record["cleanup_status"] = "observed"
             except (OSError, subprocess.SubprocessError) as error:
+                record["cleanup_status"] = "unconfirmed"
                 record["error"] = "operation cleanup failed: " + str(error)
             finally:
                 proc.stdout.close()
                 proc.stderr.close()
+            elapsed = (time.monotonic() - record["monotonic_start"]) * 1000
             if record["cancel"].is_set():
+                record["stop_reason"] = record["stop_reason"] or "cancel_requested"
                 record["error"] = "operation cancelled or deadline exceeded"
             try:
                 from harness.template_classification import validate_reference
@@ -166,7 +241,7 @@ class ProcessManager:
                 )
                 if record.get("report") and not record["error"]:
                     record["result"] = record["report"].publish(proc.returncode)
-            except (OSError, ValueError, LookupError) as error:
+            except Exception as error:
                 with self.lock:
                     record["output"] = ""
                     record["cursor"] = 0
@@ -181,6 +256,26 @@ class ProcessManager:
             with self.lock:
                 record["returncode"] = proc.returncode
                 record["status"] = "Failed" if record["error"] else "Exited"
+
+            if record.get("policy"):
+                record["policy"].finish(
+                    closed=record["cleanup_status"] == "observed",
+                    outcome="deadline"
+                    if record["stop_reason"] == "deadline_exceeded"
+                    else "failed"
+                    if record["error"] or proc.returncode
+                    else "returned",
+                )
+            snapshot = {
+                "returncode": proc.returncode,
+                "duration_ms": elapsed,
+                "stop_reason": record["stop_reason"],
+                "cleanup_status": record["cleanup_status"],
+            }
+            if proc.returncode is not None:
+                self._notify(record, "process.exited", **snapshot)
+            if record["cleanup_status"] == "unconfirmed":
+                self._notify(record, "process.cleanup_unconfirmed", **snapshot)
 
     def _owned(self, owner, handle):
         record = self.records.get(handle)
@@ -215,6 +310,11 @@ class ProcessManager:
                 "returncode": record["returncode"],
                 "error": record["error"],
                 **({"result": record["result"]} if record.get("report") else {}),
+                **(
+                    {"telemetry_status": "unavailable"}
+                    if record.get("observer") and not record["observer"].available
+                    else {}
+                ),
             }
 
     def pending(self):
@@ -233,30 +333,33 @@ class ProcessManager:
     def cancel(self, owner, handle):
         with self.lock:
             record = self._owned(owner, handle)
+            first = not record["cancel"].is_set()
             record["cancel"].set()
-            if record["status"] == "Running":
-                self._kill(record["process"])
+            running = record["status"] == "Running"
+        if first:
+            self._notify(record, "process.cancel_requested")
+        if running:
+            self._kill(record["process"])
         return {"handle": handle, "status": "CancellationRequested"}
 
     def revalidate(self, validator):
         with self.lock:
-            for record in self.records.values():
-                if record["status"] != "Running":
-                    continue
-                try:
-                    validator(record)
-                except (OSError, ValueError, LookupError):
-                    record["cancel"].set()
-                    self._kill(record["process"])
+            records = list(self.records.items())
+        for handle, record in records:
+            if record["status"] != "Running":
+                continue
+            try:
+                validator(record)
+            except (OSError, ValueError, LookupError):
+                self.cancel(record["owner"], handle)
 
     def close(self):
         with self.lock:
-            records = list(self.records.values())
-            for record in records:
-                if record["status"] == "Running":
-                    record["cancel"].set()
-                    self._kill(record["process"])
-        for record in records:
+            records = list(self.records.items())
+        for handle, record in records:
+            if record["status"] == "Running":
+                self.cancel(record["owner"], handle)
+        for _, record in records:
             record["process"].wait(timeout=5)
             if record.get("thread"):
                 record["thread"].join(timeout=20)
@@ -264,9 +367,24 @@ class ProcessManager:
                     raise ValueError("operation completion is unsettled; reconciliation required")
 
 
-def bounded_capture(proc, *, timeout=60, max_bytes=16 * 1024 * 1024, report=None):
+def bounded_capture(
+    proc,
+    *,
+    timeout=60,
+    max_bytes=16 * 1024 * 1024,
+    report=None,
+    lifecycle=None,
+    monotonic_start=None,
+    absolute_deadline=None,
+    policy=None,
+):
     """Limit capture while reading, including children keeping pipes open after parent exit."""
-    deadline, size = time.monotonic() + timeout, 0
+    started = time.monotonic() if monotonic_start is None else monotonic_start
+    deadline, size = (
+        min(started + timeout, absolute_deadline) if absolute_deadline else started + timeout,
+        0,
+    )
+    stop_reason = None
     outputs = {"stdout": [], "stderr": []}
     try:
         with selectors.DefaultSelector() as selector:
@@ -274,13 +392,17 @@ def bounded_capture(proc, *, timeout=60, max_bytes=16 * 1024 * 1024, report=None
             selector.register(proc.stderr, selectors.EVENT_READ, "stderr")
             while selector.get_map() or proc.poll() is None:
                 if time.monotonic() >= deadline:
+                    stop_reason = "deadline_exceeded"
+                    if lifecycle:
+                        lifecycle.notify("process.timeout_observed")
                     raise ValueError("AL command deadline exceeded; reconcile its recorded state")
-                for key, _ in selector.select(0.1):
+                for key, _ in selector.select(min(0.1, max(0, deadline - time.monotonic()))):
                     raw = os.read(key.fd, 65536)
                     size += len(raw)
                     if report:
                         report.consume(key.data, raw)
                     elif size > max_bytes:
+                        stop_reason = "output_limit"
                         raise ValueError("AL output limit exceeded; reconcile its recorded state")
                     if raw and not report:
                         outputs[key.data].append(raw)
@@ -288,8 +410,37 @@ def bounded_capture(proc, *, timeout=60, max_bytes=16 * 1024 * 1024, report=None
                         selector.unregister(key.fileobj)
         proc.wait(timeout=1)
         return b"".join(outputs["stdout"]), b"".join(outputs["stderr"])
+    except BaseException as error:
+        stop_reason = stop_reason or (
+            "io_error" if isinstance(error, OSError) else "internal_error"
+        )
+        raise
     finally:
-        ProcessManager._kill(proc)
-        proc.wait(timeout=5)
-        proc.stdout.close()
-        proc.stderr.close()
+        cleanup = "unconfirmed"
+        try:
+            ProcessManager._kill(proc)
+            proc.wait(timeout=5)
+            cleanup = "observed"
+        finally:
+            proc.stdout.close()
+            proc.stderr.close()
+            if policy:
+                policy.finish(
+                    closed=cleanup == "observed",
+                    outcome="deadline"
+                    if stop_reason == "deadline_exceeded"
+                    else "failed"
+                    if stop_reason or proc.returncode
+                    else "returned",
+                )
+            if lifecycle:
+                snapshot = {
+                    "returncode": proc.returncode,
+                    "duration_ms": (time.monotonic() - started) * 1000,
+                    "stop_reason": stop_reason,
+                    "cleanup_status": cleanup,
+                }
+                if proc.returncode is not None:
+                    lifecycle.notify("process.exited", **snapshot)
+                if cleanup == "unconfirmed":
+                    lifecycle.notify("process.cleanup_unconfirmed", **snapshot)

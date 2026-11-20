@@ -118,3 +118,31 @@ def test_malformed_batch_stream_refused(monkeypatch, stream):
     monkeypatch.setattr(S, 'git', fake)
     with pytest.raises(ValueError, match='batch'):
         S.batch_blobs(Path('/unused'), [oid])
+
+
+@pytest.mark.parametrize('platform', ['codex', 'claude'])
+def test_cached_standalone_bundle_uses_typed_contract_without_checkout(tmp_path, platform):
+    import sys
+    source = make_source(tmp_path)
+    release = resolve_release(str(source), version='1.0.0')
+    cache, manifest = cache_release(release, tmp_path / 'state')
+    scripts = cache / 'payload' / platform / 'skills/al/scripts'
+    elsewhere = tmp_path / 'unrelated';elsewhere.mkdir()
+    code = r'''
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import al_agent_contracts as C
+context = dict.fromkeys(C.CONTEXT - {'applicability'})
+context['applicability'] = dict.fromkeys(context, 'standalone')
+spec = {'reference': {'kind': 'task-package', 'id': 'fixture', 'sha256': C.fingerprint('request')}, 'amendments': []}
+value = C.make('implementation-result', context, spec, 'implementation-result', 'authored', status='authored')
+assert C.validate(value)['status'] == 'authored'
+assert Path(C.__file__).parent == Path(sys.argv[1])
+print('standalone typed contract used')
+'''
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', code, str(scripts)],
+                            cwd=elsewhere, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == 'standalone typed contract used'
+    assert verify_cache(cache, manifest['digest']) == manifest

@@ -2,22 +2,43 @@
 
 import hashlib
 import json
-from pathlib import Path
 
+from harness.agent_exchange import SNAPSHOT_COVERAGE
 from harness.execution_contract import digest
-from harness.execution_hosts import al_source
 from harness.execution_logs import MAX_TEXT, _redact
-from harness.knowledge.sources import read_artifact
 
 RESOURCE = "harness:assignment-handoff"
 
 
 def _selected(operation, controller, principal):
+    from harness.policy.context import CURRENT, scope, start_effect
+    from harness.policy.resources import prepare
+
+    if CURRENT.get() is not None:
+        return _selected_reserved(operation, controller, principal)
+    # await_assignment and descriptor callers have no outer dispatch Attempt.
+    _, state = operation.authority(controller, principal)
+    attempt = prepare(operation, controller, principal, "read_file", {"path": RESOURCE}, state)
+    with scope(attempt):
+        try:
+            start_effect()
+            selected = _selected_reserved(operation, controller, principal)
+        except BaseException:
+            if attempt:
+                attempt.owner_finished(outcome="failed")
+            raise
+        else:
+            if attempt:
+                attempt.owner_finished()
+            return selected
+
+
+def _selected_reserved(operation, controller, principal):
     assignment = operation.assignments.get(principal["thread_id"])
     if not principal.get("writable") or not assignment:
         raise ValueError("writer handoff requires this principal's writable assignment")
     execution, state, _ = operation.admitted(
-        controller, principal, assignment["task"], assignment["revision"]
+        controller, principal, assignment["task"], assignment["revision"], verify_outputs=False
     )
     writer = next(
         w
@@ -60,12 +81,12 @@ def _selected(operation, controller, principal):
         for e in state["integration"].get("outbox", [])
     ):
         raise ValueError("writer handoff predates changed task graph; regenerate it")
-    raw = read_artifact(
-        Path(al_source(execution, operation.envelope)).parent
-        / execution["al_session_id"]
-        / "artifacts",
-        reference,
-    )
+    from harness.agent_contracts import ref
+    from harness.agent_exchange import resolver, validate_assignment
+
+    read = resolver(operation, execution, state)
+    validate_assignment(receipt, state, writer, read)
+    raw = read(ref(reference))
     text = raw.decode("utf-8")
     begin, end = (
         "<!-- AL MANAGED WRITER EVIDENCE BEGIN -->",
@@ -103,7 +124,16 @@ def _selected(operation, controller, principal):
     }
     binding = digest(context).removeprefix("sha256:")
     rendered = _redact(text).encode()
-    return {"binding": binding, "raw": raw, "presentation": rendered, "reference": reference}
+    from harness.agent_exchange import context as output_context
+
+    return {
+        "binding": binding,
+        "raw": raw,
+        "presentation": rendered,
+        "reference": reference,
+        "contract": receipt.get("contract"),
+        "result_context": output_context(execution, state, principal, assignment["task"]),
+    }
 
 
 def descriptor(operation, controller, principal):
@@ -112,6 +142,9 @@ def descriptor(operation, controller, principal):
         return {"status": "not-generated"}
     return {
         "status": "available",
+        "contract": selected["contract"],
+        "result_context": selected["result_context"],
+        "coverage": dict(SNAPSHOT_COVERAGE),
         "resource": RESOURCE + ":" + selected["binding"],
         "sha256": selected["reference"]["sha256"],
         "size": len(selected["raw"]),
@@ -148,6 +181,9 @@ def page(operation, controller, principal, resource, *, offset=0, limit=16384):
         text = ""
     return {
         "status": "available",
+        "contract": selected["contract"],
+        "result_context": selected["result_context"],
+        "coverage": dict(SNAPSHOT_COVERAGE),
         "resource": expected,
         "text": text,
         "sha256": selected["reference"]["sha256"],

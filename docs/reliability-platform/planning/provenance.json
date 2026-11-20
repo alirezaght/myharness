@@ -1,0 +1,347 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "file": "r2-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff6187a23c87d29ea92278313fcd8e",
+      "characters": 13379,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "528fd53c76ce243cb7bc4470206ccf3b805a75e19809043d3481983222d17e01"
+    },
+    {
+      "file": "r3-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff5d55c27c87d2b66a253b980af249",
+      "characters": 13866,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "24bff902eaac6615376382aeecc57426de6414df1fa284824e3bb664cfc06489"
+    },
+    {
+      "file": "r4-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff64e5a16087d2a6678b57bbf2cd7a",
+      "characters": 16570,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "ecf362cd8917fcc77385531bd8709318a73f0107c4c5082e9d02bb0a7c782fd6"
+    },
+    {
+      "file": "r5-r6-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff6771a7d487d2863163e619ac4afb",
+      "characters": 21193,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "891216d54a2d33f463b5d6d5c869fd62139401f83db810680b8fee6bd03e6b78"
+    },
+    {
+      "file": "r7-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff6d9603b887d28006a118c5c7550d",
+      "characters": 20043,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "f845c8529513c9af1fa8d3e1f738b1265de7a933880bc6ff8a12117de3362ecf"
+    },
+    {
+      "file": "r3-designer.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff5f5c5e9087d2959315f69431ccc0",
+      "characters": 19965,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "a0d15ee4bcb7079f030a000f3b64b20b0b39ac41e85b80a559ba00a26993985b"
+    },
+    {
+      "file": "r3-designer-compatibility-addendum.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff61ab106087d281eca406eeb481df",
+      "characters": 729,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "510d9a3a405b553a8b4f25ee2b1321cbff8b013b83ec6ce1c057640e4839abca"
+    },
+    {
+      "file": "r7-designer.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff6e8dc7b087d29a996afb63d0010f",
+      "characters": 20335,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "1fbcab721b7cdc2356e22d2ae0b399b2378ac356c4e84a6b28fa22ee777354df"
+    },
+    {
+      "file": "r5b-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff7238c38087d2931a7ed1b494e69c",
+      "characters": 9729,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "b150522b6e886362514ac04cf40414df87fe607b88649e5613fbb3b102a20368"
+    },
+    {
+      "file": "r5a-source-correction-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff71265a5887d29d3259ce7a2e1e60",
+      "characters": 10700,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "44186d9d77ebb48334383179dfa69e01d9731ad4023801c18ca756455da55c5c"
+    },
+    {
+      "file": "r3-r2-integration-designer-addendum.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff7448cce487d29810e7ba855c4a05",
+      "characters": 7886,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "724f69cbeb84b24eea448307ca76e23fbe6aeec51c780a1807efb2d1bf010392"
+    },
+    {
+      "file": "r5b-late-legacy-designer-addendum.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff738f271087d2a8bb03cb8f8a39be",
+      "characters": 3160,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "82f44d685b9115b0c9575c7593982703d8c2b46109faf3888738bcdaad72d077"
+    },
+    {
+      "file": "r5b-designer.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff72eed0cc87d28a24f21604b0d51b",
+      "characters": 18285,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "6784e4c173200431075448647bb0b583d8ac9aa57b519449600ed173c7fb3c70"
+    },
+    {
+      "file": "r3-al-retry-designer-addendum.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff7b73047487d2bb0cf89694266640",
+      "characters": 8101,
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "f374753d71420b792ea79327c6427d598cf9e247dff5bc972443999133e7867f"
+    },
+    {
+      "file": "r9-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "capture": "verbatim final_answer through read-only app API",
+      "sha256": "edbbb1b56bfdab774fb6629c88999358522eb5bb385f2d53bdf5b47c13db8689",
+      "source_message_id": "msg_08ef57b401881d5d016aff7e98ce6087d29492f963c8168cb8",
+      "characters": 19010
+    },
+    {
+      "file": "r8-architect.md",
+      "source_capture": "/private/tmp/al-r8-architect-verbatim.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff7fa432e487d29cbdffbd15a00b8f",
+      "characters": 17710,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "72d1171869e772a89dd840de3eacdb4c423d38d06068f1e689beaf384cc27d8b",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r10-architect.md",
+      "source_capture": "/private/tmp/al-r10-architect-verbatim.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff8013887487d29943b49a754601b9",
+      "characters": 16659,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "ba04e2d0ca3a3d8a3495f32c6d11afb6cb13bf43462b541bcf2c18b2a8421ac0",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r11-architect.md",
+      "source_capture": "/private/tmp/al-r11-architect-verbatim.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff7f2b862c87d2ae786479a23d483f",
+      "characters": 15003,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "72de041b67913de8519cb028d994b496d2e9dd1aa5386a635e6e41dbe5a2cd30",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-closure-deadline-designer-addendum.md",
+      "source_capture": "/private/tmp/al-r3-closure-deadline-designer-addendum.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff868ef69487d292394fd1d8d7a311",
+      "characters": 6403,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "910ec0d7a1f7fb1dc2530b7169d100ab1c26b42e61fd1ef5a7e3a08e2a79cd44",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-unresolved-resource-designer-addendum.md",
+      "source_capture": "/private/tmp/al-r3-unresolved-resource-designer-addendum.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff92b047d087d298b0b74972e78d8b",
+      "characters": 7165,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "426125180b8a7fe66c1c14af22e42aeb82d8f77a5288c76654426dcd7a3a2474",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-enrollment-architect-resolution.md",
+      "source_capture": "/private/tmp/al-r3-enrollment-architect-resolution.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff93acb43887d2844135e45596b620",
+      "characters": 8056,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "641b693fb97a3d010c51ace5a18d047f60578c87ec413f9b7ab573f6aa2aa27d",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-enrollment-designer-correction.md",
+      "source_capture": "/private/tmp/al-r3-enrollment-designer-correction.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff93b8dcf487d2b98206ef3931d912",
+      "characters": 5212,
+      "capture": "verbatim final_answer through read-only app API; one capture-file terminal newline removed to match captured message text",
+      "sha256": "c81413a16a4e8a9ab5dbdbbea6bc1e3376ae10c35b7db76080ab8ffdc6a8330b",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-sealed-retry-architect-supplement.md",
+      "source_capture": "/private/tmp/al-r3-sealed-retry-architect-supplement.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff94d2b43887d2a5819cef3cac9f52",
+      "characters": 2787,
+      "capture": "final_answer text captured through read-only app API; terminal newline normalized; one capture-file terminal newline removed to match captured message text",
+      "sha256": "de1558ea33201d4c7d0a9c1c9017557b3753f9902d5abd18c3ae6512750a3cc7",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-sealed-retry-designer-pseudocode.md",
+      "source_capture": "/private/tmp/al-r3-sealed-retry-designer-pseudocode.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff94de93f887d2b6ac8048fe11cd91",
+      "characters": 10027,
+      "capture": "final_answer text captured through read-only app API; terminal newline normalized; one capture-file terminal newline removed to match captured message text",
+      "sha256": "dde9207f90d37842cfed1d450b3cb30aa62d67b624fb7321b6e96232c1a507b5",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-writer-finish-architect-supplement.md",
+      "source_capture": "/private/tmp/al-r3-writer-finish-architect-supplement.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff9e8539fc87d2a7296193df210509",
+      "characters": 2275,
+      "capture": "final_answer text captured through read-only app API; terminal newline normalized; one capture-file terminal newline removed to match captured message text",
+      "sha256": "c58c109c667e434c6139bcd478b80af83ed7c92c55e6de9c4010b933bb7452a9",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r3-writer-finish-designer-delta.md",
+      "source_capture": "/private/tmp/al-r3-writer-finish-designer-delta.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_message_id": "msg_0aca0bbb107293f4016aff9ee80a8c87d2a974a0207fe19d25",
+      "characters": 8753,
+      "capture": "final_answer text captured through read-only app API; terminal newline normalized; one capture-file terminal newline removed to match captured message text",
+      "sha256": "87bf84fb7e1c7be23d2b2ed19aeaf5f48b28d418ffc69bdc70794b7439224247",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r4-r3-integration-architect-addendum.md",
+      "source_capture": "/private/tmp/al-r4-r3-integration-architect-addendum.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_message_id": "msg_08ef57b401881d5d016aff9af833e487d297f234c4f014a037",
+      "characters": 5970,
+      "capture": "final_answer text captured through read-only app API; terminal newline normalized; one capture-file terminal newline removed to match captured message text",
+      "sha256": "9a33f4424a8e300e466e4e28e5dcd90d02a216070444526ca0f3337c18721bb1",
+      "authority": "retained planning artifact; not implementation evidence or activation approval"
+    },
+    {
+      "file": "r4-transient-claims-architect-resolution.md",
+      "source_capture": "/private/tmp/al-r4-transient-claims-architect-resolution.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_role": "Architect",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "medium",
+      "characters": 7681,
+      "bytes": 7703,
+      "capture": "exact captured artifact bytes copied; no terminal-newline normalization",
+      "sha256": "4334786a9b0240d2738f99a7ad37077908daf0c5884603a61b0993126294f9a3",
+      "sequence": 1,
+      "authority_note": "R4 source-delta resolution correcting transient immutable-presentation versus strict mutable-source claims; retained with later bounded override governing conflicting scope."
+    },
+    {
+      "file": "r4-native-launch-architect-addendum.md",
+      "source_capture": "/private/tmp/al-r4-native-launch-architect-addendum.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_role": "Architect",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "medium",
+      "characters": 3405,
+      "bytes": 3407,
+      "capture": "exact captured artifact bytes copied; no terminal-newline normalization",
+      "sha256": "a4725ed72867ff7e0f8631524e8e89047133f2329bd3be0de4ad8b982ad4332b",
+      "sequence": 2,
+      "authority_note": "R4 reciprocal native-launch guard addendum; retained as an earlier design artifact, with the later bounded overrides governing R4 scope."
+    },
+    {
+      "file": "r4-mutable-source-designer-pseudocode.md",
+      "source_capture": "/private/tmp/al-r4-mutable-source-designer-pseudocode.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_role": "Designer",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "low",
+      "characters": 17742,
+      "bytes": 17772,
+      "capture": "exact captured artifact bytes copied; no terminal-newline normalization",
+      "sha256": "cad57763887f757bdba6f9b44f9337fd52b7ab6d2d0cfe65546bf3bdd20eeb0e",
+      "sequence": 3,
+      "authority_note": "R4 mutable-source protocol pseudocode; superseded where inconsistent by the later bounded Architect resolution and Designer override."
+    },
+    {
+      "file": "r4-bounded-scope-architect-resolution.md",
+      "source_capture": "/private/tmp/al-r4-bounded-scope-architect-resolution.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_role": "Architect",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "medium",
+      "characters": 3197,
+      "bytes": 3199,
+      "capture": "exact captured artifact bytes copied; no terminal-newline normalization",
+      "sha256": "8e175744c86c40a85266601b5c34b6b5d7aa7d1c70c06344b86e1c74cce67ebf",
+      "sequence": 4,
+      "authority_note": "Final R4 scope resolution; removes writer-start/authority-helper qualification and handoff qualification as acceptance prerequisites."
+    },
+    {
+      "file": "r4-bounded-scope-designer-override.md",
+      "source_capture": "/private/tmp/al-r4-bounded-scope-designer-override.md",
+      "source_thread_id": "01a1f58b-b0c2-7e41-b185-21884c742997",
+      "source_role": "Designer",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "low",
+      "characters": 3126,
+      "bytes": 3132,
+      "capture": "exact captured artifact bytes copied; no terminal-newline normalization",
+      "sha256": "cbb514fde5f939c8ecb833cb99381c2e019ed68c6fc4b9d4245fe2c42f0bb8a5",
+      "sequence": 5,
+      "authority_note": "Final R4 pseudocode override implementing bounded scope; governs any conflict with earlier pseudocode."
+    },
+    {
+      "file": "r5a-actual-producer-revalidation-architect.md",
+      "source_capture": "/private/tmp/al-r5a-actual-producer-revalidation-architect.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_role": "Architect",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "medium",
+      "characters": 9598,
+      "bytes": 9636,
+      "capture": "captured artifact with one terminal newline removed to match the source conversation character count (9598)",
+      "sha256": "e8b3000c6591a8408a90c4683b8f639422485ed6dd531badeef7aa6fba09bdac",
+      "sequence": 6,
+      "authority_note": "Future R5a producer-source revalidation plan against frozen R4 authored core; planning only, no R5 implementation or current-final-source proof.",
+      "source_capture_bytes": 9637,
+      "source_capture_sha256": "0ac12fc3762444f26ae570798dfece4aeef1b55c491d52267884b95ba2179582",
+      "terminal_newline_normalization": "removed exactly one final LF inserted in capture file; no content lines changed"
+    },
+    {
+      "file": "r5a-repaired-source-architect-addendum.md",
+      "source_capture": "/private/tmp/al-r5a-repaired-source-architect-addendum.md",
+      "source_thread_id": "01a1f49d-796e-7b62-9cec-a4a52effa86f",
+      "source_role": "Architect",
+      "source_model": "gpt-6-astra",
+      "source_reasoning_effort": "medium",
+      "characters": 4388,
+      "bytes": 4391,
+      "capture": "exact captured artifact bytes copied; no terminal-newline normalization",
+      "sha256": "25c52c69b1d14a661645e25e1e98dfbafb954e59babfa1377016b2ff2586ee06",
+      "sequence": 7,
+      "authority_note": "Future R5a source revalidation addendum against frozen R4-003. Planning only; not R4 review or verification. Preserves exact setup-owner observations and corrects the reliability-store.finish transaction description."
+    }
+  ],
+  "authority": "Actual planning output, not implementation evidence or activation approval"
+}

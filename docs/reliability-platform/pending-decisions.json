@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "kind": "pending-harness-proposal-snapshot",
+  "task_id": "t-73243652",
+  "database": "/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/.codex/reliability-audit/state.db",
+  "phase": "interview",
+  "baseline": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+  "proposals": [
+    {
+      "audit_id": "RP1",
+      "question": {
+        "id": 13,
+        "task_id": "t-73243652",
+        "topic": "component_responsibilities",
+        "text": "May the first reliability slice precede unfinished Knowledge K1-K9 acceptance?",
+        "source": "interview",
+        "status": "open",
+        "answer": null,
+        "skip_reason": null,
+        "created_at": "2026-11-19T16:31:25+00:00",
+        "updated_at": "2026-11-19T16:31:25+00:00",
+        "kind": "decision",
+        "asked_at": null,
+        "skip_source": null,
+        "catalogue_key": null
+      },
+      "proposal": {
+        "id": 1,
+        "task_id": "t-73243652",
+        "question_id": 13,
+        "title": "Reliability sequencing",
+        "recommendation": "Complete current Knowledge K1-K9 acceptance first. Alternative: explicitly permit only R1 closed boundary observations, incident persistence/search and read-only dashboard integration before acceptance, preserving all observer refusals and Knowledge obligations.",
+        "rationale": "The latest recovery record explicitly leaves Knowledge acceptance open and excludes Reliability implementation until acceptance.",
+        "status": "pending",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": null,
+        "impact": "Controls when R1 may begin; this does not authorize observer access, adaptive recovery or promotion."
+      }
+    },
+    {
+      "audit_id": "RP2",
+      "question": {
+        "id": 14,
+        "task_id": "t-73243652",
+        "topic": "security",
+        "text": "Who may activate an evaluated Harness improvement?",
+        "source": "interview",
+        "status": "open",
+        "answer": null,
+        "skip_reason": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "updated_at": "2026-11-19T16:31:26+00:00",
+        "kind": "decision",
+        "asked_at": null,
+        "skip_source": null,
+        "catalogue_key": null
+      },
+      "proposal": {
+        "id": 2,
+        "task_id": "t-73243652",
+        "question_id": 14,
+        "title": "Improvement activation authority",
+        "recommendation": "Automatically collect incidents and draft proposals; require explicit developer approval for every activation initially. Security, authority and approval changes always require explicit human approval.",
+        "rationale": "Failure evidence creates hypotheses rather than authority; existing spec and decision gates remain authoritative.",
+        "status": "pending",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": null,
+        "impact": "No automatic self-modification or activation; later low-risk automation requires separate evaluated approval."
+      }
+    },
+    {
+      "audit_id": "RP3",
+      "question": {
+        "id": 15,
+        "task_id": "t-73243652",
+        "topic": "security",
+        "text": "Which runtime security guarantee should the initial reliability work support?",
+        "source": "interview",
+        "status": "open",
+        "answer": null,
+        "skip_reason": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "updated_at": "2026-11-19T16:31:26+00:00",
+        "kind": "decision",
+        "asked_at": null,
+        "skip_source": null,
+        "catalogue_key": null
+      },
+      "proposal": {
+        "id": 3,
+        "task_id": "t-73243652",
+        "question_id": 15,
+        "title": "Initial runtime boundary",
+        "recommendation": "Guarantee supported supervised operation paths and document native host/provider authentication as a separate trusted boundary. Full hostile-host containment requires a separate approved design and qualification.",
+        "rationale": "The operation sandbox intentionally leaves native authentication infrastructure outside the contained operation tree.",
+        "status": "pending",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": null,
+        "impact": "Test supported alternatives/subprocess/delegation paths without claiming universal hostile-host isolation."
+      }
+    },
+    {
+      "audit_id": "RP4",
+      "question": {
+        "id": 16,
+        "task_id": "t-73243652",
+        "topic": "observability",
+        "text": "What retention and export policy should new reliability observations use?",
+        "source": "interview",
+        "status": "open",
+        "answer": null,
+        "skip_reason": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "updated_at": "2026-11-19T16:31:26+00:00",
+        "kind": "decision",
+        "asked_at": null,
+        "skip_source": null,
+        "catalogue_key": null
+      },
+      "proposal": {
+        "id": 4,
+        "task_id": "t-73243652",
+        "question_id": 16,
+        "title": "Observation retention and export",
+        "recommendation": "Keep closed records local with no external exporter initially. Propose 30 days for derived diagnostic detail; retain sanitized incident facts and version/evaluation/approval/rollout provenance until explicit retirement. Use bounded explicit backfill.",
+        "rationale": "Existing storage is local and new telemetry must redact before persistence/export without importing private provider transcripts.",
+        "status": "pending",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": null,
+        "impact": "New retention/deletion behavior needs exact approved policy; no external collector or raw transcript storage."
+      }
+    },
+    {
+      "audit_id": "RP5",
+      "question": {
+        "id": 17,
+        "task_id": "t-73243652",
+        "topic": "acceptance_criteria",
+        "text": "What evidence must be satisfied before promoting a Harness improvement?",
+        "source": "interview",
+        "status": "open",
+        "answer": null,
+        "skip_reason": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "updated_at": "2026-11-19T16:31:26+00:00",
+        "kind": "decision",
+        "asked_at": null,
+        "skip_source": null,
+        "catalogue_key": null
+      },
+      "proposal": {
+        "id": 5,
+        "task_id": "t-73243652",
+        "question_id": 17,
+        "title": "Evaluation release standard",
+        "recommendation": "Use a frozen paired benchmark, predeclared per-proposal improvement threshold, no material acceptance regression, zero demonstrated approval/isolation/privacy bypass, independent review and explicit activation approval. Missing or contaminated evidence cannot pass.",
+        "rationale": "Current byte accounting and AL simulations do not establish general engineering-quality improvements.",
+        "status": "pending",
+        "response": null,
+        "created_at": "2026-11-19T16:31:26+00:00",
+        "resolved_at": null,
+        "impact": "Evaluation thresholds must be fixed before results; canary stop conditions and rollback retain exact version provenance."
+      }
+    }
+  ],
+  "authority": "Pending recommendations only; no verdict, sealed specification, execution or activation."
+}

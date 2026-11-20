@@ -1,0 +1,90 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q -m browser tests/test_reliability_incident_intelligence_browser.py --basetemp=/private/tmp/al-r5a-incident-browser-002 --junitxml=/private/tmp/al-r5a-incident-browser-002.xml
+# cwd: .
+# started: Fri Nov 20 14:47:22 2026
+
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_persisted_incident_intelligence_in_chrome[desktop-1280-800] _______
+
+operations = (<harness.execution_operations.OperationController object at 0x10b205d30>, {'thread_id': 'f97c90ba-c174-4270-9a3e-e0f3...codex'}, {'id': 'exec-f9434027932dbcbefa126a7b', 'task_id': 't-237a15dc', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b143100>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-002/test_persisted_incident_intell0')
+name = 'desktop', width = 1280, height = 800
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        snapshot = refresh(controller.conn, scope, RefreshRequest()).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND m.membership_state='present' ORDER BY s.locator LIMIT 1",
+            (snapshot,),
+        ).fetchone()
+>       assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+E       AssertionError: fixture needs one real present Knowledge source to verify historical membership
+E       assert None is not None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:394: AssertionError
+________ test_persisted_incident_intelligence_in_chrome[narrow-390-844] ________
+
+operations = (<harness.execution_operations.OperationController object at 0x10b20e490>, {'thread_id': '3042e78e-34f9-4253-8e23-3874...codex'}, {'id': 'exec-d27a84d8b7e67d643dac7466', 'task_id': 't-e175b54a', 'approval_id': 1, 'host': 'codex', ...}, ...)
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10aaea780>
+tmp_path = PosixPath('/private/tmp/al-r5a-incident-browser-002/test_persisted_incident_intell1')
+name = 'narrow', width = 390, height = 844
+
+    @pytest.mark.parametrize("name,width,height", [("desktop", 1280, 800), ("narrow", 390, 844)])
+    def test_persisted_incident_intelligence_in_chrome(operations, monkeypatch, tmp_path, name, width, height):
+        operation, principal, controller, initialization, _, execution, _ = operations
+        for _ in range(3):
+            observation = store.begin(operation, principal, "read_file")
+            store.finish(operation, observation, "AUTHORITY_REJECTED")
+    
+        child, _ = generated_handoff_fixture(operations)
+        assignment = operation.dispatch(child, "await_assignment", {"timeout": 1})["handoff"]
+        state = json.loads(Path(initialization["source"]).read_bytes())
+        actual_execution = get_execution(controller.conn, execution["id"])
+        content = "Persisted actual output selected for historical operator review."
+        contract = output_contract(operation, child, actual_execution, state, assignment, content)
+        operation.dispatch(child, "submit_output", {
+            "name": "result.md", "content": content, "expected_graph_revision": 1,
+            "contract": contract,
+        })
+    
+        repository = Path(operation.envelope["repository"])
+        scope = operator_scope(repository, task_id=actual_execution["task_id"])
+        snapshot = refresh(controller.conn, scope, RefreshRequest()).snapshot_id
+        source = controller.conn.execute(
+            "SELECT s.locator,m.version_id FROM knowledge_snapshot_sources m "
+            "JOIN knowledge_sources s USING(source_id) WHERE m.snapshot_id=? "
+            "AND m.membership_state='present' ORDER BY s.locator LIMIT 1",
+            (snapshot,),
+        ).fetchone()
+>       assert source is not None, "fixture needs one real present Knowledge source to verify historical membership"
+E       AssertionError: fixture needs one real present Knowledge source to verify historical membership
+E       assert None is not None
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_reliability_incident_intelligence_browser.py:394: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[desktop-1280-800]
+FAILED tests/test_reliability_incident_intelligence_browser.py::test_persisted_incident_intelligence_in_chrome[narrow-390-844]
+2 failed in 13.47s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 1, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 53977, "pid": 53977, "sid": 53977, "start": [1795182442, 759009], "zombie": false}}, "unresolved": []}, "error": null, "exit": 1, "interrupted": false, "timeout": false}

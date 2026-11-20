@@ -1,0 +1,431 @@
+--- a/al/claude/skills/al/scripts/al_execution_decisions.py
++++ b/al/claude/skills/al/scripts/al_execution_decisions.py
+@@ -26,15 +26,20 @@
+             refuse('conflicting duplicate delivery')
+         return old
+     # Authority checks the exact frozen private inbox and Registry bytes.
+-    T.authority(st, 'decision', delivery=delivery['id'])
++    authority_receipt = T.authority(st, 'decision', delivery=delivery['id'])
+     from al_artifact_cli import read_input
+     from types import SimpleNamespace
+     from al_execution_contract import loads
+     try:
+         delivery_bytes, _ = read_input(SimpleNamespace(
+             file=str(Path(i['handoff']).parent / 'inbox' / (delivery['id'] + '.json')), stdin=False))
+-        if loads(delivery_bytes) != delivery:
++        import hashlib
++        if hashlib.sha256(delivery_bytes).hexdigest() != authority_receipt['delivery_receipt']['sha256']:
++            refuse('authenticated developer delivery bytes changed')
++        authenticated = loads(delivery_bytes)
++        if authenticated != delivery:
+             refuse('developer delivery differs from authenticated inbox')
++        delivery = authenticated
+     except (OSError, ValueError):
+         refuse('authenticated developer delivery input unavailable')
+     blocker = i['blockers'].get(delivery['blocker_id'])
+--- a/al/claude/skills/al/scripts/al_execution_tasks.py
++++ b/al/claude/skills/al/scripts/al_execution_tasks.py
+@@ -80,7 +80,18 @@
+                 proc.wait()
+                 raise
+         reply = loads(output)
+-        if len(output) > 65536 or proc.returncode != 0 or reply != {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'], 'task': task, 'delivery': delivery, 'scope_revision': revision}:
++        expected = {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'], 'task': task, 'delivery': delivery, 'scope_revision': revision}
++        if not isinstance(reply, dict):
++            raise ValueError('authority response mismatch')
++        if operation == 'decision':
++            receipt = reply.get('delivery_receipt')
++            if (not isinstance(receipt, dict) or set(receipt) != {'schema_version', 'sha256'}
++                    or type(receipt['schema_version']) is not int or receipt['schema_version'] != 1
++                    or not isinstance(receipt['sha256'], str) or len(receipt['sha256']) != 64
++                    or any(c not in '0123456789abcdef' for c in receipt['sha256'])):
++                raise ValueError('authenticated decision receipt unavailable')
++            expected['delivery_receipt'] = receipt
++        if len(output) > 65536 or proc.returncode != 0 or reply != expected:
+             raise ValueError('authority response mismatch')
+     except (OSError, ValueError, subprocess.SubprocessError) as exc:
+         refuse('execution authority unavailable: ' + str(exc))
+--- a/al/claude/skills/al/tests/test_execution_decisions.py
++++ b/al/claude/skills/al/tests/test_execution_decisions.py
+@@ -211,3 +211,74 @@
+     assert report(cli, tmp_path, 'blocker', blocker)[0] != 0
+     assert al_store.state_path(sid).read_bytes() == before
+     controller.conn.close()
++
++
++
++def test_r4_escalation_repair_controlled_replacement_after_real_authority(cli, tmp_path, repo, monkeypatch):
++    import json
++    from pathlib import Path
++    import al_execution_tasks as T
++    from harness.execution_decisions import record_execution_decision
++    controller, eid, sid, _ = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
++    _r4_sync(controller, eid, sid)
++    decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
++        request_id='replace-one', verdict='reject',
++        decision_text='Reject this proposal and keep the architecture decision open for review.',
++        tasks=['A'], criteria=['AC-01'])
++    actual = json.loads(decided['delivery'])
++    forged = copy.deepcopy(actual);forged['verdict'] = 'accept'
++    real_authority = T.authority
++    witnessed = []
++    def replace_after_authority(st, operation, task=None, delivery=None):
++        receipt = real_authority(st, operation, task, delivery)
++        if operation == 'decision':
++            import hashlib
++            assert receipt['allowed'] is True
++            assert receipt['delivery_receipt'] == {'schema_version': 1, 'sha256': hashlib.sha256(decided['delivery'].encode()).hexdigest()}
++            path = Path(st['integration']['handoff']).parent / 'inbox' / (delivery + '.json')
++            assert json.loads(path.read_bytes()) == actual
++            witnessed.append(receipt)
++            path.write_text(json.dumps(forged))
++        return receipt
++    monkeypatch.setattr(T, 'authority', replace_after_authority)
++    before = al_store.state_path(sid).read_bytes()
++    result = report(cli, tmp_path, 'decision', forged)
++    assert len(witnessed) == 1
++    assert result[0] != 0, result
++    assert al_store.state_path(sid).read_bytes() == before
++    controller.conn.close()
++
++
++
++@pytest.mark.parametrize('damage', ['missing', 'version', 'digest', 'extra'])
++def test_r4_escalation_repair_closed_real_decision_receipt(cli, tmp_path, repo, monkeypatch, damage):
++    import json
++    import al_execution_tasks as T
++    from harness.execution_decisions import record_execution_decision
++    controller, eid, sid, _ = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
++    _r4_sync(controller, eid, sid)
++    decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
++        request_id='receipt-one', verdict='accept',
++        decision_text='Accept the recommended architecture with explicit scope limited to task A.',
++        tasks=['A'], criteria=['AC-01'])
++    real_loads = T.loads
++    witnessed = []
++    def damage_real_receipt(raw, *args, **kwargs):
++        value = real_loads(raw, *args, **kwargs)
++        if isinstance(value, dict) and value.get('allowed') is True:
++            witnessed.append(True)
++            if damage == 'missing':
++                value.pop('delivery_receipt')
++            elif damage == 'version':
++                value['delivery_receipt']['schema_version'] = True
++            elif damage == 'digest':
++                value['delivery_receipt']['sha256'] = 'G' * 64
++            else:
++                value['delivery_receipt']['untrusted'] = True
++        return value
++    monkeypatch.setattr(T, 'loads', damage_real_receipt)
++    before = al_store.state_path(sid).read_bytes()
++    result = report(cli, tmp_path, 'decision', json.loads(decided['delivery']))
++    assert result[0] != 0 and witnessed == [True], result
++    assert al_store.state_path(sid).read_bytes() == before
++    controller.conn.close()
+--- a/al/codex/skills/al/scripts/al_execution_decisions.py
++++ b/al/codex/skills/al/scripts/al_execution_decisions.py
+@@ -26,15 +26,20 @@
+             refuse('conflicting duplicate delivery')
+         return old
+     # Authority checks the exact frozen private inbox and Registry bytes.
+-    T.authority(st, 'decision', delivery=delivery['id'])
++    authority_receipt = T.authority(st, 'decision', delivery=delivery['id'])
+     from al_artifact_cli import read_input
+     from types import SimpleNamespace
+     from al_execution_contract import loads
+     try:
+         delivery_bytes, _ = read_input(SimpleNamespace(
+             file=str(Path(i['handoff']).parent / 'inbox' / (delivery['id'] + '.json')), stdin=False))
+-        if loads(delivery_bytes) != delivery:
++        import hashlib
++        if hashlib.sha256(delivery_bytes).hexdigest() != authority_receipt['delivery_receipt']['sha256']:
++            refuse('authenticated developer delivery bytes changed')
++        authenticated = loads(delivery_bytes)
++        if authenticated != delivery:
+             refuse('developer delivery differs from authenticated inbox')
++        delivery = authenticated
+     except (OSError, ValueError):
+         refuse('authenticated developer delivery input unavailable')
+     blocker = i['blockers'].get(delivery['blocker_id'])
+--- a/al/codex/skills/al/scripts/al_execution_tasks.py
++++ b/al/codex/skills/al/scripts/al_execution_tasks.py
+@@ -80,7 +80,18 @@
+                 proc.wait()
+                 raise
+         reply = loads(output)
+-        if len(output) > 65536 or proc.returncode != 0 or reply != {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'], 'task': task, 'delivery': delivery, 'scope_revision': revision}:
++        expected = {'allowed': True, 'nonce': nonce, 'operation': operation, 'binding': i['binding'], 'task': task, 'delivery': delivery, 'scope_revision': revision}
++        if not isinstance(reply, dict):
++            raise ValueError('authority response mismatch')
++        if operation == 'decision':
++            receipt = reply.get('delivery_receipt')
++            if (not isinstance(receipt, dict) or set(receipt) != {'schema_version', 'sha256'}
++                    or type(receipt['schema_version']) is not int or receipt['schema_version'] != 1
++                    or not isinstance(receipt['sha256'], str) or len(receipt['sha256']) != 64
++                    or any(c not in '0123456789abcdef' for c in receipt['sha256'])):
++                raise ValueError('authenticated decision receipt unavailable')
++            expected['delivery_receipt'] = receipt
++        if len(output) > 65536 or proc.returncode != 0 or reply != expected:
+             raise ValueError('authority response mismatch')
+     except (OSError, ValueError, subprocess.SubprocessError) as exc:
+         refuse('execution authority unavailable: ' + str(exc))
+--- a/al/codex/skills/al/tests/test_execution_decisions.py
++++ b/al/codex/skills/al/tests/test_execution_decisions.py
+@@ -211,3 +211,74 @@
+     assert report(cli, tmp_path, 'blocker', blocker)[0] != 0
+     assert al_store.state_path(sid).read_bytes() == before
+     controller.conn.close()
++
++
++
++def test_r4_escalation_repair_controlled_replacement_after_real_authority(cli, tmp_path, repo, monkeypatch):
++    import json
++    from pathlib import Path
++    import al_execution_tasks as T
++    from harness.execution_decisions import record_execution_decision
++    controller, eid, sid, _ = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
++    _r4_sync(controller, eid, sid)
++    decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
++        request_id='replace-one', verdict='reject',
++        decision_text='Reject this proposal and keep the architecture decision open for review.',
++        tasks=['A'], criteria=['AC-01'])
++    actual = json.loads(decided['delivery'])
++    forged = copy.deepcopy(actual);forged['verdict'] = 'accept'
++    real_authority = T.authority
++    witnessed = []
++    def replace_after_authority(st, operation, task=None, delivery=None):
++        receipt = real_authority(st, operation, task, delivery)
++        if operation == 'decision':
++            import hashlib
++            assert receipt['allowed'] is True
++            assert receipt['delivery_receipt'] == {'schema_version': 1, 'sha256': hashlib.sha256(decided['delivery'].encode()).hexdigest()}
++            path = Path(st['integration']['handoff']).parent / 'inbox' / (delivery + '.json')
++            assert json.loads(path.read_bytes()) == actual
++            witnessed.append(receipt)
++            path.write_text(json.dumps(forged))
++        return receipt
++    monkeypatch.setattr(T, 'authority', replace_after_authority)
++    before = al_store.state_path(sid).read_bytes()
++    result = report(cli, tmp_path, 'decision', forged)
++    assert len(witnessed) == 1
++    assert result[0] != 0, result
++    assert al_store.state_path(sid).read_bytes() == before
++    controller.conn.close()
++
++
++
++@pytest.mark.parametrize('damage', ['missing', 'version', 'digest', 'extra'])
++def test_r4_escalation_repair_closed_real_decision_receipt(cli, tmp_path, repo, monkeypatch, damage):
++    import json
++    import al_execution_tasks as T
++    from harness.execution_decisions import record_execution_decision
++    controller, eid, sid, _ = _r4_escalation_fixture(cli, tmp_path, repo, monkeypatch)
++    _r4_sync(controller, eid, sid)
++    decided = record_execution_decision(controller, eid, 'design', blocker_revision=1,
++        request_id='receipt-one', verdict='accept',
++        decision_text='Accept the recommended architecture with explicit scope limited to task A.',
++        tasks=['A'], criteria=['AC-01'])
++    real_loads = T.loads
++    witnessed = []
++    def damage_real_receipt(raw, *args, **kwargs):
++        value = real_loads(raw, *args, **kwargs)
++        if isinstance(value, dict) and value.get('allowed') is True:
++            witnessed.append(True)
++            if damage == 'missing':
++                value.pop('delivery_receipt')
++            elif damage == 'version':
++                value['delivery_receipt']['schema_version'] = True
++            elif damage == 'digest':
++                value['delivery_receipt']['sha256'] = 'G' * 64
++            else:
++                value['delivery_receipt']['untrusted'] = True
++        return value
++    monkeypatch.setattr(T, 'loads', damage_real_receipt)
++    before = al_store.state_path(sid).read_bytes()
++    result = report(cli, tmp_path, 'decision', json.loads(decided['delivery']))
++    assert result[0] != 0 and witnessed == [True], result
++    assert al_store.state_path(sid).read_bytes() == before
++    controller.conn.close()
+--- a/harness/execution_authority.py
++++ b/harness/execution_authority.py
+@@ -23,6 +23,7 @@
+     operation="admit",
+     delivery=None,
+     _transition_validation=False,
++    decision_observation=None,
+ ):
+     from harness.execution_epochs import require_active_epoch
+ 
+@@ -89,6 +90,7 @@
+         from harness.delivery_routing import validate_correction_authority
+ 
+         validate_correction_authority(controller, execution, delivery)
++    decision_bytes = None
+     if operation == "decision":
+         row = controller.conn.execute(
+             "SELECT * FROM execution_decisions WHERE id=? AND execution_id=?",
+@@ -97,8 +99,9 @@
+         if row is None or row["delivery"] is None:
+             raise ExecutionConflict("unknown developer delivery")
+         path = Path(execution["handoff_path"]).parent / "inbox" / (row["id"] + ".json")
++        decision_bytes = row["delivery"].encode()
+         if (
+-            path.read_bytes() != row["delivery"].encode()
++            path.read_bytes() != decision_bytes
+             or digest(Path(row["registry_path"]).read_bytes()) != row["registry_hash"]
+         ):
+             raise ExecutionConflict("decision inbox/Registry bytes changed")
+@@ -110,6 +113,10 @@
+     ):
+         if digest(Path(row["registry_path"]).read_bytes()) != row["registry_hash"]:
+             raise ExecutionConflict("execution Decision Registry provenance changed")
++    if decision_observation is not None and decision_bytes is not None:
++        from hashlib import sha256
++
++        decision_observation.update(schema_version=1, sha256=sha256(decision_bytes).hexdigest())
+     return envelope
+ 
+ 
+@@ -361,12 +368,14 @@
+         if not same_path(execution["handoff_path"], args.handoff):
+             raise ExecutionConflict("unrecognized authority handoff")
+         binding = loads(args.binding)
++        decision_observation = {}
+         require_execution_authority(
+             HarnessController(conn),
+             execution["id"],
+             binding=binding,
+             operation=args.operation,
+             delivery=args.delivery,
++            decision_observation=decision_observation,
+         )
+         if args.task:
+             from harness.execution_hosts import al_source
+@@ -435,6 +444,11 @@
+                     "task": args.task,
+                     "delivery": args.delivery,
+                     "scope_revision": args.scope_revision,
++                    **(
++                        {"delivery_receipt": decision_observation}
++                        if args.operation == "decision"
++                        else {}
++                    ),
+                 }
+             )
+         )
+--- a/harness/policy/control_sources_claude.py
++++ b/harness/policy/control_sources_claude.py
+@@ -195,11 +195,11 @@
+ 191df8d30a20f1fe2d458e597e6e88f17ba909c2f75943aca93806315b8c65dc
+ 3056632a3d930fd5a373d73039780095bd46012a82bde572905c8fa57c97b410
+ 34a51743a64d7c3bd5e6dad64f9ed0bd6023502cb68fa1fa2bdf70838910d83e
+-3f1d9a0abc418936c605e5d51f4fa420c2743c485a9dbff93723c485e43895f0
++db1606cfced09e84a235859c3aeb620fe02412bd25b05576391f21cffa56c9f1
+ 63e5e08238f1308d38c9ab9d06ba5d88bbe6d0f70259e7f56df1cc87f0b60b62
+ 31c345fa7e83922db8ecaeb851e5dd42a41a949545e73c41ecaef8eba2d3a145
+ d1aebf112b899588445294c446144687c2c32f5d918ae804c75e8ede7fe84675
+-d8c46a9970775c652ca0f03b2c3770e200cc0ea493e2c4a225143f1fb6d54ccc
++31092f2fa9d6f6e597f199244c8b391e0b564e2d304648c5fbb479975f874e90
+ b5a08c80cb804a384221c57d6b89f7b1dc3d19e3de254a710d271671bec5fd87
+ b6d8780b7752e37a4bb2803403f392a804d63a63c51175d5fd3e5ef648108026
+ 47a4f13de47b518a1accd8f2fe7490609b5a292de59d5bd2be5a39e1210b4e62
+--- a/harness/policy/control_sources_codex.py
++++ b/harness/policy/control_sources_codex.py
+@@ -192,11 +192,11 @@
+ 191df8d30a20f1fe2d458e597e6e88f17ba909c2f75943aca93806315b8c65dc
+ 3056632a3d930fd5a373d73039780095bd46012a82bde572905c8fa57c97b410
+ 34a51743a64d7c3bd5e6dad64f9ed0bd6023502cb68fa1fa2bdf70838910d83e
+-3f1d9a0abc418936c605e5d51f4fa420c2743c485a9dbff93723c485e43895f0
++db1606cfced09e84a235859c3aeb620fe02412bd25b05576391f21cffa56c9f1
+ 63e5e08238f1308d38c9ab9d06ba5d88bbe6d0f70259e7f56df1cc87f0b60b62
+ 31c345fa7e83922db8ecaeb851e5dd42a41a949545e73c41ecaef8eba2d3a145
+ d1aebf112b899588445294c446144687c2c32f5d918ae804c75e8ede7fe84675
+-d8c46a9970775c652ca0f03b2c3770e200cc0ea493e2c4a225143f1fb6d54ccc
++31092f2fa9d6f6e597f199244c8b391e0b564e2d304648c5fbb479975f874e90
+ b5a08c80cb804a384221c57d6b89f7b1dc3d19e3de254a710d271671bec5fd87
+ b6d8780b7752e37a4bb2803403f392a804d63a63c51175d5fd3e5ef648108026
+ 47a4f13de47b518a1accd8f2fe7490609b5a292de59d5bd2be5a39e1210b4e62
+--- a/tests/test_execution_decisions.py
++++ b/tests/test_execution_decisions.py
+@@ -1,3 +1,4 @@
++# ruff: noqa: F811
+ from pathlib import Path
+ 
+ import pytest
+@@ -7,6 +8,7 @@
+ from harness.execution_projection import ingest_event
+ from harness.execution_store import get_execution
+ from tests.execution_helpers import approved_execution, event, started
++from tests.test_execution_operations import operations  # noqa: F401
+ 
+ 
+ def test_registry_intent_retries_keep_frozen_id_and_base_authority(
+@@ -165,3 +167,68 @@
+     with pytest.raises(ValueError, match="conflicts"):
+         atomic_file(target, b'{"changed":true}')
+     assert target.read_bytes() == raw
++
++
++def test_decision_authority_captures_exact_validated_buffer(operations):
++    import hashlib
++    import json
++
++    from harness.execution_models import ExecutionConflict
++    from tests.test_execution_continuity import prepare, report, state
++
++    operation, principal, controller, _, _, execution, _ = operations
++    eid = execution["id"]
++    prepare(operation, principal)
++    report(
++        operation,
++        principal,
++        "blocker",
++        {
++            "id": "buffer-design",
++            "kind": "developer_engineering_decision",
++            "tasks": ["B"],
++            "question": "Choose architecture",
++            "context": "Explicit developer decision required",
++            "alternatives": ["one", "two"],
++            "recommendation": "one",
++        },
++    )
++    from harness.execution_worker import replay_source
++
++    replay_source(controller.conn, eid, "test-owner")
++    decided = record_execution_decision(
++        controller,
++        eid,
++        "buffer-design",
++        blocker_revision=1,
++        request_id="buffer-one",
++        verdict="reject",
++        decision_text="Reject this proposal and retain the open architecture decision.",
++        tasks=["B"],
++        criteria=state(operation)["integration"]["tasks"]["B"]["criteria"],
++    )
++    observed = {}
++    require_execution_authority(
++        controller, eid, operation="decision", delivery=decided["id"], decision_observation=observed
++    )
++    assert observed == {
++        "schema_version": 1,
++        "sha256": hashlib.sha256(decided["delivery"].encode()).hexdigest(),
++    }
++    before = dict(observed)
++    execution = get_execution(controller.conn, eid)
++    inbox = Path(execution["handoff_path"]).parent / "inbox" / (decided["id"] + ".json")
++    changed = json.loads(decided["delivery"])
++    changed["verdict"] = "accept"
++    inbox.write_text(json.dumps(changed))
++    assert observed == before
++    refused = {}
++    with pytest.raises(ExecutionConflict, match="inbox/Registry bytes changed"):
++        require_execution_authority(
++            controller,
++            eid,
++            operation="decision",
++            delivery=decided["id"],
++            decision_observation=refused,
++        )
++    assert refused == {}

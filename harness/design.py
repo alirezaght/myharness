@@ -33,6 +33,18 @@ class ArchitectureDesigner:
         return build_coverage(self.ws.design_entries())
 
     def document(self) -> DesignDocument:
+        from harness.agent_preexecution import consume
+
+        prior = self.ws.latest_checkpoint("design")
+        if prior and prior.payload.get("contract"):
+            record = {k: v for k, v in prior.payload.items() if k != "contract"}
+            consume(
+                self.controller,
+                self.task_id,
+                "architecture-proposal",
+                record,
+                prior.payload["contract"],
+            )
         return build_document(self.ws.design_entries())
 
     def entry(self, entry_id: int) -> DesignEntry:
@@ -120,12 +132,16 @@ class ArchitectureDesigner:
             raise DesignError(f"task {task.id} is in phase {task.phase}; run: {hint}")
         yield
         coverage = self.coverage()
-        self.ws.checkpoint(
-            "design",
-            {
-                "uncovered": [str(s) for s in DesignSection if s not in coverage.covered],
-                "unresolved": [i.ref for i in coverage.items],
-                "blocking": coverage.blocking,
-            },
+        from harness.agent_preexecution import produce, records
+
+        payload = {
+            "entries": records(self.ws.design_entries()),
+            "uncovered": [str(s) for s in DesignSection if s not in coverage.covered],
+            "unresolved": [i.ref for i in coverage.items],
+            "blocking": coverage.blocking,
+        }
+        payload["contract"] = produce(
+            self.controller, self.task_id, "architecture-proposal", "design", payload
         )
+        self.ws.checkpoint("design", payload)
         self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), self.task_id))

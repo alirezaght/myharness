@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "record_type": "explicit-user-publication-authorization",
+  "user_messages": [
+    "push to main",
+    "give me a handoff about the remaining features"
+  ],
+  "git_publication": {
+    "authorized": true,
+    "target": "main",
+    "actions": [
+      "commit the implemented checkpoint",
+      "push the integrated checkpoint to main"
+    ],
+    "status_at_capture": "authorized but not performed; main integration and independent review remain pending",
+    "execution_owner": "root/supervisor",
+    "conditions": [
+      "preserve upstream main history and changes",
+      "complete source-backed integration and required independent review",
+      "use the ordinary non-force publication path and verify the resulting remote commit"
+    ]
+  },
+  "other_constraints": "All other user instructions and repository safety rules remain unchanged. This record does not authorize force-push, bypassing AL workflow, unrelated external writes, or claiming the checkpoint is already published."
+}

@@ -17,7 +17,7 @@ from harness.db import connect, transaction, utcnow
 from harness.execution import database_path
 from harness.execution_authority import require_execution_authority
 from harness.execution_bootstrap import execution_environment, module_argv
-from harness.execution_contract import MAX_RECORD, canonical, loads
+from harness.execution_contract import MAX_RECORD, canonical, digest, loads
 from harness.execution_handoff import read_handoff, same_path
 from harness.execution_hosts import (
     al_argv,
@@ -245,7 +245,7 @@ def launch_worker(
             # Popen failed before creation; no native host was attempted by this worker.
             from harness.execution_recovery_settlement import record_not_started
 
-            record_not_started(execution, token, stage="worker-spawn")
+            record_not_started(execution, token, stage="worker-spawn", conn=conn)
             update_owned(
                 conn,
                 execution_id,
@@ -695,7 +695,7 @@ def _reconnect(controller, execution, token):
     finally:
         from harness.execution_recovery_settlement import record_not_started
 
-        record_not_started(execution, token, stage="reconnect")
+        record_not_started(execution, token, stage="reconnect", conn=conn)
         conn.execute(
             "UPDATE execution_attempts SET status='Exited',updated_at=? "
             "WHERE execution_id=? AND token=? AND mode='reconnect' "
@@ -760,7 +760,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             from harness.execution_recovery_settlement import record_not_started
 
             failure = native_failure(exc, "NATIVE_SETUP_FAILED")
-            record_not_started(execution, token, stage="native-setup")
+            record_not_started(execution, token, stage="native-setup", conn=conn)
             update_owned(
                 conn,
                 execution_id,
@@ -830,7 +830,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             isolation_stack.close()
             from harness.execution_recovery_settlement import record_not_started
 
-            record_not_started(execution, token, stage="native-setup")
+            record_not_started(execution, token, stage="native-setup", conn=conn)
             conn.execute(
                 "UPDATE execution_attempts SET status='PreSpawnFailed',updated_at=? WHERE token=?",
                 (utcnow(), token),
@@ -844,18 +844,38 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             )
             append_log(conn, execution_id, "worker", native_startup("NATIVE_SETUP_FAILED"))
             return
-        with transaction(conn):
+        from harness.execution_epoch_lock import epoch_action_lock
+        from harness.policy.native_presence import permit
+        from harness.policy.source_dependencies import local_identity
+
+        launch_manifest = digest(local_identity())
+        try:
+            with epoch_action_lock(execution), transaction(conn):
+                launch_permit = permit(conn, execution, token, launch_manifest)
+                update_owned(
+                    conn, execution_id, token, status="Launching", heartbeat=time.time(), error=None
+                )
+                conn.execute(
+                    "UPDATE execution_attempts SET status='Launching',worker_pid=?,native_id=?,"
+                    "package=?,"
+                    "updated_at=? WHERE token=?",
+                    (os.getpid(), native_id, canonical(package), utcnow(), token),
+                )
+                if native_id:
+                    bind_host(conn, execution_id, native_id, token)
+        except ValueError:
+            from harness.execution_recovery_settlement import record_not_started
+
+            isolation_stack.close()
+            record_not_started(execution, token, stage="native-setup", conn=conn)
             update_owned(
-                conn, execution_id, token, status="Launching", heartbeat=time.time(), error=None
+                conn,
+                execution_id,
+                token,
+                status="Unavailable",
+                error=native_message("NATIVE_SETUP_FAILED"),
             )
-            conn.execute(
-                "UPDATE execution_attempts SET status='Launching',worker_pid=?,native_id=?,"
-                "package=?,"
-                "updated_at=? WHERE token=?",
-                (os.getpid(), native_id, canonical(package), utcnow(), token),
-            )
-            if native_id:
-                bind_host(conn, execution_id, native_id, token)
+            return
         stage_failures = []
         closure_validated = False
         status_published = False
@@ -915,20 +935,32 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             require_execution_authority(
                 controller, execution_id, operation="resume" if mode == "resume" else "launch"
             )
-            proc = subprocess.Popen(
-                argv,
-                cwd=envelope["repository"],
-                env=env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                close_fds=True,
-                start_new_session=True,
-            )
+            from harness.policy.reconciliation import native_admission
+
+            native_admission(conn, get_execution(conn, execution_id))
+            launch_permit.begin_spawn()
+            try:
+                proc = subprocess.Popen(
+                    argv,
+                    cwd=envelope["repository"],
+                    env=env,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    close_fds=True,
+                    start_new_session=True,
+                )
+            except OSError:
+                launch_permit.spawn_failed()
+                raise
+            else:
+                launch_permit.spawned()
         except (OSError, ValueError):
             from harness.execution_recovery_settlement import record_not_started
 
-            record_not_started(execution, token, stage="native-spawn")
+            record_not_started(
+                execution, token, stage="native-spawn", conn=conn, launch_permit=launch_permit
+            )
             update_owned(
                 conn,
                 execution_id,
@@ -982,6 +1014,9 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             except (OSError, ValueError, KeyError):
                 events = None
             while closed < 2 or proc.poll() is None:
+                from harness.policy.reconciliation import native_deadline
+
+                native_deadline(conn, get_execution(conn, execution_id))
                 try:
                     channel, raw = output.get(timeout=0.2)
                 except queue.Empty:

@@ -1,0 +1,8 @@
+.execution-policy { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border, #bcc6d2); border-radius: .5rem; overflow-wrap: anywhere; }
+.policy-pools { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); gap: .75rem; }
+.policy-pool { padding: .75rem; border: 1px solid var(--border, #bcc6d2); border-radius: .3rem; }
+.policy-controls, .execution-policy form { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.execution-policy input, .execution-policy select, .execution-policy button { max-width: 100%; min-height: 2rem; }
+.execution-policy li { margin: .4rem 0; }
+.execution-policy li button { white-space: normal; text-align: left; }
+.policy-error { color: #a12424; }

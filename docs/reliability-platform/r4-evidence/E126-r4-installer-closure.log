@@ -1,0 +1,8 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q al/tests/test_manifest.py al/tests/test_policy_retry_control.py --basetemp=/private/tmp/al-r4-installer-closure-030 --junitxml=/private/tmp/al-r4-installer-closure-030.xml
+# cwd: .
+# started: Fri Nov 20 11:59:37 2026
+
+..................                                                       [100%]
+18 passed in 5.51s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 5075, "pid": 5075, "sid": 5075, "start": [1795172377, 325866], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}

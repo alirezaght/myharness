@@ -1,0 +1,60 @@
+{
+  "baseline": "2ad8bed9bdcaf82212f5f5ab3c8585b79943ca9d",
+  "original_mission_sha256": "3e0b03eed0862443255f7824a1a54530cd0ee11e339addec19b6120cf2bf4d09",
+  "evidence": [
+    {
+      "file": "evidence/boundaries.xml",
+      "sha256": "4d8b9ae7636b65f3932d6c0a137bb15b5ab2687a85aa2d2b38ca90b57b45cef4"
+    },
+    {
+      "file": "evidence/containment-external.xml",
+      "sha256": "76e5c3de05a86d76dccac96552a45a07912235cf954616cda611732513b2a65a"
+    },
+    {
+      "file": "evidence/containment-recheck.xml",
+      "sha256": "51ab1efc666d92cec64f43de9ca230d6e8d41e86a861dca6840bd5206fb1de04"
+    },
+    {
+      "file": "evidence/sqlite.xml",
+      "sha256": "f1fdb8fe09adde30839b7b93d7b43380db86dde9ba980474660a2857d950896e"
+    },
+    {
+      "file": "evidence/tests.xml",
+      "sha256": "e3403ef1e2b32d9bafebd861d2f2c69b1f683a5f69f39b12b943a6c66fa87e01"
+    }
+  ],
+  "r0_evidence": [
+    {
+      "file": "r0-evidence/browser-initial.xml",
+      "sha256": "c3cefa4678fab985510f0320f6d74281691d9ecd34561a7981a929e65a754d74"
+    },
+    {
+      "file": "r0-evidence/browser-recheck.xml",
+      "sha256": "930ac77819141761bcc1535f4ce97a9cec1c4fcc0a7a478e48dab94081560f83"
+    },
+    {
+      "file": "r0-evidence/knowledge-graph-desktop.png",
+      "sha256": "6cef928f50494fdb3271deb95ca4a87f5871d1766f51cc91ac8d0c2f3417317c"
+    },
+    {
+      "file": "r0-evidence/knowledge-graph-narrow.png",
+      "sha256": "a79217efe3dff94170ce5a2e12d9828e5be77b027402d3868b06a30b6824ce22"
+    },
+    {
+      "file": "r0-evidence/knowledge-ui-polish-desktop.png",
+      "sha256": "0e21cc5dc4ed76ac969abf45200c0287e76d72614312e98848892ed1f854996c"
+    },
+    {
+      "file": "r0-evidence/knowledge-ui-polish-narrow.png",
+      "sha256": "b989fb71edd93fbd6865adc10953ff34aceb01a49ea7033e32837b67afad29e4"
+    },
+    {
+      "file": "r0-evidence/knowledge.xml",
+      "sha256": "d8a1aa764042193ecefa4448bf8fa39b395b7fbe7e9b405835eced2e0093d158"
+    },
+    {
+      "file": "r0-evidence/sqlite-qualified.xml",
+      "sha256": "e739ccb15e797ea132f00b33bd701fe4c75d5285b0b5aa177006512b0fc8db0c"
+    }
+  ]
+}

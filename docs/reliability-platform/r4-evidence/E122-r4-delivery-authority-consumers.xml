@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="10" time="14.510" timestamp="2026-11-20T11:54:27.303554+01:00" hostname="Alirezas-MacBook-Pro.local"><testcase classname="tests.test_execution" name="test_exact_private_handoff_and_idempotent_reservation" time="0.280" /><testcase classname="tests.test_execution" name="test_stale_and_tampered_authority_refused" time="0.245" /><testcase classname="tests.test_execution" name="test_draft_cannot_start" time="0.095" /><testcase classname="tests.test_execution" name="test_explicit_relative_specs_survive_detached_authority_cwd" time="0.266" /><testcase classname="tests.test_execution" name="test_new_reservation_canonicalizes_private_runtime_alias" time="0.223" /><testcase classname="tests.test_execution" name="test_legacy_database_alias_authority_preserves_envelope" time="0.234" /><testcase classname="tests.test_execution_decisions" name="test_registry_intent_retries_keep_frozen_id_and_base_authority" time="0.276" /><testcase classname="tests.test_execution_decisions" name="test_frozen_intent_recovers_crash_before_registry_file" time="0.238" /><testcase classname="tests.test_execution_decisions" name="test_inbox_publication_is_complete_at_first_visibility_and_never_overwrites" time="0.002" /><testcase classname="tests.test_execution_decisions" name="test_decision_authority_captures_exact_validated_buffer" time="12.576"><failure message="harness.execution_models.ExecutionConflict: blocker no longer matches this decision">operations = (&lt;harness.execution_operations.OperationController object at 0x1095e7a10&gt;, {'thread_id': '0713963a-c72c-4d2e-ab1d-7f75...codex'}, {'id': 'exec-a6e03f6f212cb3abd73a5b8c', 'task_id': 't-351d22a2', 'approval_id': 1, 'host': 'codex', ...}, ...)
+
+    def test_decision_authority_captures_exact_validated_buffer(operations):
+        import hashlib
+        import json
+    
+        from harness.execution_models import ExecutionConflict
+        from tests.test_execution_continuity import prepare, report, state
+    
+        operation, principal, controller, _, _, execution, _ = operations
+        eid = execution["id"]
+        prepare(operation, principal)
+        report(
+            operation,
+            principal,
+            "blocker",
+            {
+                "id": "buffer-design",
+                "kind": "developer_engineering_decision",
+                "tasks": ["B"],
+                "question": "Choose architecture",
+                "context": "Explicit developer decision required",
+                "alternatives": ["one", "two"],
+                "recommendation": "one",
+            },
+        )
+&gt;       decided = record_execution_decision(
+            controller,
+            eid,
+            "buffer-design",
+            blocker_revision=1,
+            request_id="buffer-one",
+            verdict="reject",
+            decision_text="Reject this proposal and retain the open architecture decision.",
+            tasks=["B"],
+            criteria=state(operation)["integration"]["tasks"]["B"]["criteria"],
+        )
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/tests/test_execution_decisions.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_decisions.py:158: in locked
+    return function(controller, execution_id, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+controller = &lt;harness.controller.HarnessController object at 0x1096bd310&gt;
+execution_id = 'exec-a6e03f6f212cb3abd73a5b8c', blocker_id = 'buffer-design'
+blocker_revision = 1, request_id = 'buffer-one', verdict = 'reject'
+decision_text = 'Reject this proposal and retain the open architecture decision.'
+tasks = ['B'], criteria = ['AC-01'], amendment = False, expected_epoch_id = None
+expected_authority_generation = None
+
+    @_epoch_execution_action
+    def record_execution_decision(
+        controller,
+        execution_id,
+        blocker_id,
+        *,
+        blocker_revision,
+        request_id,
+        verdict,
+        decision_text,
+        tasks,
+        criteria,
+        amendment=False,
+        expected_epoch_id=None,
+        expected_authority_generation=None,
+    ):
+        identity(request_id)
+        request = {
+            "blocker_id": blocker_id,
+            "blocker_revision": blocker_revision,
+            "verdict": verdict,
+            "text": decision_text,
+            "tasks": tasks,
+            "criteria": criteria,
+            "amendment": amendment,
+        }
+        validate_decision_request(request)
+        request = request | {"tasks": sorted(tasks), "criteria": sorted(criteria)}
+        conn = controller.conn
+        with transaction(conn):
+            from harness.execution_epochs import require_active_epoch
+    
+            current = require_active_epoch(
+                conn,
+                execution_id,
+                expected_epoch_id=expected_epoch_id,
+                expected_authority_generation=expected_authority_generation,
+                mutation=True,
+            )
+            require_execution_authority(controller, execution_id)
+            previous = conn.execute(
+                (
+                    "SELECT * FROM execution_decisions WHERE execution_id=? AND epoch_id=? AND "
+                    "request_id=?"
+                ),
+                (execution_id, current["epoch_id"], request_id),
+            ).fetchone()
+            if previous:
+                if previous["request"] != canonical(request):
+                    raise ExecutionConflict("decision request ID reused with changed content")
+                delivery_id = previous["id"]
+            else:
+                blocker = entity(conn, execution_id, "blocker", blocker_id)
+                if not blocker or blocker["state"] != "Open" or blocker["revision"] != blocker_revision:
+&gt;                   raise ExecutionConflict("blocker no longer matches this decision")
+E                   harness.execution_models.ExecutionConflict: blocker no longer matches this decision
+
+/Users/alirezaghiastabari/.codex/worktrees/reliability-platform-audit/myharness/harness/execution_decisions.py:217: ExecutionConflict</failure></testcase></testsuite></testsuites>

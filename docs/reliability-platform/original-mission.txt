@@ -1,0 +1,655 @@
+Mission: Evolve AL Harness into a Self-Improving AI Engineering Platform
+
+You are acting as a Principal AI Systems Architect, Staff Software Engineer, Reliability Engineer, and AI Agent Infrastructure Engineer.
+
+Your mission is to evolve this repository into a production-grade, model-agnostic AI Software Engineering Control Plane with continuous reliability improvement.
+
+Do not build a prototype, demonstration, isolated proof of concept, or parallel replacement architecture. Extend and strengthen the existing system.
+
+The target architecture is:
+
+AL Harness = Engineering Governance + Agent Orchestration + Knowledge Intelligence + Continuous Reliability Improvement
+
+The fundamental principle is:
+
+Every meaningful execution failure should become structured evidence. That evidence should lead to a proposed improvement, which must be evaluated, approved where necessary, versioned, and monitored before becoming part of future executions.
+
+The system must improve through measured, controlled changes—not autonomous, unverified modifications to its own instructions.
+
+⸻
+
+Phase 0 — Mandatory Repository Investigation
+
+Before modifying any code, perform a comprehensive repository audit.
+
+Investigate:
+
+1. Existing AL orchestrator and agent implementations.
+2. Architect, Designer, Engineer, Builder, and any additional agent roles.
+3. Existing planning, specification, and approval workflows.
+4. Current permission and tool execution boundaries.
+5. Existing tests, linters, validators, and CI/CD integrations.
+6. Knowledge management, memory, indexing, and retrieval.
+7. Existing graph-related components, if any.
+8. SQLite schemas, Markdown artifacts, and persistent execution state.
+9. Existing dashboards, APIs, and event streaming.
+10. Existing tracing, logging, metrics, and failure-handling mechanisms.
+11. Model/provider integrations and their abstraction boundaries.
+12. Existing rule files, AGENTS.md, CLAUDE.md, and agent-specific instructions.
+
+For every requested capability, classify the repository state as:
+
+* Implemented and functional
+* Partially implemented
+* Implemented but insufficiently integrated
+* Missing
+* Duplicated or architecturally inconsistent
+
+Provide file-level evidence for your conclusions.
+
+Do not assume a feature is missing merely because its implementation uses a different name or architecture.
+
+Preserve existing working behavior, specifications, interfaces, and design decisions unless there is a documented reason to change them.
+
+Produce an architecture gap analysis and implementation plan before proceeding.
+
+Do not silently make major architectural choices. Use the existing Harness decision and approval process for unresolved decisions.
+
+⸻
+
+Phase 1 — Unified Execution Observability
+
+Implement or extend a structured observability system that captures the complete lifecycle of engineering executions.
+
+Every execution must have a stable trace identifier.
+
+Capture:
+
+* Execution and session IDs
+* Parent and child agent relationships
+* Agent role and model/provider identity
+* Harness and policy versions
+* Specification and decision versions
+* Tool calls and outcomes
+* Approval requests and decisions
+* Files modified and artifact references
+* Validation and test results
+* Retry attempts and reasons
+* Token usage, latency, and estimated cost
+* Context retrieval and evidence references
+* Errors, timeouts, and escalations
+* Final acceptance outcome
+
+Use a consistent, versioned event schema.
+
+Support trace correlation across multiple agents and workflows.
+
+Prefer existing observability infrastructure and open standards such as OpenTelemetry where appropriate.
+
+Add trace visualization to the existing dashboard.
+
+Include:
+
+* Agent execution timelines
+* Tool-call inspection
+* Retry and failure visualization
+* Cost and latency breakdowns
+* Policy violations
+* Verification outcomes
+* Historical run comparisons
+
+Sensitive information must be redacted before persistence or export.
+
+Observability must not depend on agents voluntarily reporting their own actions. Capture events at the orchestration and tool-execution boundaries.
+
+⸻
+
+Phase 2 — Runtime Policy Enforcement
+
+Implement a centralized, enforceable policy system.
+
+Instructions written in prompts are not security boundaries.
+
+The policy engine must control:
+
+* Allowed and prohibited tools
+* Filesystem read/write scopes
+* Command execution permissions
+* Network access
+* Database access
+* Maximum write operations
+* Retry budgets
+* Token and cost budgets
+* Execution time limits
+* Production environment access
+* Required human approvals
+* Agent delegation permissions
+
+Policies must support scopes such as:
+
+* Global
+* Project
+* Workflow
+* Agent role
+* Individual execution
+
+Define deterministic precedence and conflict resolution.
+
+Default to denying operations that require authorization when the relevant authorization is absent.
+
+Use structured, auditable approval tokens bound to the specific operation, resource, scope, and execution.
+
+Prevent agents from bypassing enforcement through alternative tools, subprocesses, delegated agents, or direct provider access.
+
+If true sandbox isolation is unavailable, document and test the actual security boundary rather than claiming complete enforcement.
+
+Provide explicit policy decision events for observability.
+
+Ensure existing AL approval gates remain authoritative.
+
+⸻
+
+Phase 3 — Typed Agent Contracts
+
+Replace fragile, free-form agent handoffs wherever practical with validated, versioned contracts.
+
+Define structured contracts for:
+
+* Requirement analysis
+* Architecture proposals
+* Design decisions
+* Implementation plans
+* Agent task assignments
+* Implementation results
+* Verification results
+* Failure reports
+* Escalation requests
+* Final delivery reports
+
+Every contract should include:
+
+* Schema version
+* Execution and task identifiers
+* Source specification version
+* Required inputs
+* Expected outputs
+* Acceptance criteria
+* Evidence references
+* Constraints
+* Status and failure classification
+
+Validate contracts at orchestration boundaries.
+
+Invalid contracts must be rejected with actionable feedback.
+
+Do not permit downstream execution when required approvals, decisions, or artifacts are missing.
+
+Support schema evolution and compatibility with existing persisted artifacts.
+
+Avoid forcing unnecessary structure on internal agent reasoning; enforce structure at system boundaries.
+
+⸻
+
+Phase 4 — Failure Intelligence Engine
+
+Build a persistent system for collecting, classifying, and analyzing failures.
+
+A failure may include:
+
+* Incorrect implementation
+* Failed tests
+* Architecture violations
+* Specification drift
+* Unauthorized operations
+* Repeated unsuccessful edits
+* Invalid agent handoffs
+* Hallucinated dependencies or APIs
+* Incorrect tool selection
+* Missing context
+* Excessive retries
+* Budget exhaustion
+* CI/CD failures
+* Staging acceptance failures
+* Human-rejected deliverables
+
+Create a structured incident record containing:
+
+* Incident ID
+* Execution trace
+* Failure category
+* Observable symptoms
+* Relevant evidence
+* Suspected root cause
+* Root-cause confidence
+* Affected components
+* Related historical incidents
+* Existing controls that failed
+* Proposed corrective actions
+* Resolution status
+
+Distinguish observed facts from inferred causes.
+
+Use deterministic classification where possible and model-assisted analysis where necessary.
+
+Group related incidents to avoid generating duplicate rules.
+
+Support incident search, investigation, and human correction.
+
+Integrate incidents with the existing knowledge and memory architecture.
+
+⸻
+
+Phase 5 — Failure-to-Improvement Engine
+
+Build a controlled mechanism that converts incident evidence into proposed Harness improvements.
+
+Supported improvement types:
+
+1. Agent instruction or guide update
+2. New deterministic validation rule
+3. Regression test
+4. Runtime permission constraint
+5. Agent handoff contract improvement
+6. Context retrieval improvement
+7. Planning checklist update
+8. Orchestration or routing policy change
+9. New observability sensor
+10. Escalation policy adjustment
+
+Each proposal must include:
+
+* Evidence and related incidents
+* Proposed change
+* Expected benefit
+* Affected workflows
+* Potential side effects
+* Evaluation plan
+* Rollback strategy
+* Approval requirements
+
+Prefer deterministic sensors and tests over prompt instructions when a failure can be detected programmatically.
+
+Do not append unlimited rules to AGENTS.md or CLAUDE.md.
+
+Implement rule ownership, deduplication, versioning, consolidation, and retirement.
+
+Every proposed rule must have a clear scope and measurable purpose.
+
+Never allow an agent to silently activate an improvement that changes its own authority, permissions, approval requirements, or security boundaries.
+
+High-impact changes require explicit human approval.
+
+⸻
+
+Phase 6 — Harness Evaluation Lab
+
+Implement an evaluation framework that measures whether Harness changes actually improve engineering outcomes.
+
+Create a versioned benchmark registry containing representative engineering tasks.
+
+Include:
+
+* Feature development
+* Bug fixing
+* Refactoring
+* API changes
+* Database migrations
+* Multi-file modifications
+* Architecture-sensitive changes
+* Ambiguous requirements
+* Tool failures
+* Permission boundary tests
+* Long-running workflows
+* Multi-agent coordination
+* Previously observed failures
+
+Support replay of historical incidents where the required inputs and environment can be reconstructed.
+
+When replay is impossible, clearly distinguish simulation from faithful reproduction.
+
+Allow controlled comparisons of:
+
+* Different Harness versions
+* Different policy configurations
+* Different agent workflows
+* Different context retrieval strategies
+* Different model providers
+
+Keep the model, task, tools, and environment fixed when evaluating the effect of a Harness change.
+
+Measure:
+
+* Task completion rate
+* Acceptance criteria satisfaction
+* Test pass rate
+* Regression rate
+* Policy violations
+* Human interventions
+* Retry count
+* Tool-call count
+* Execution duration
+* Token and monetary cost
+* Recovery success
+* Escalation frequency
+
+Do not use an agent’s self-reported confidence as the primary success metric.
+
+Use deterministic evaluation where possible, supplemented by independent review for subjective outcomes.
+
+Prevent benchmark contamination, evaluation data leakage, and overfitting to historical failures.
+
+Require evidence of improvement before promoting a change.
+
+Support baseline comparison, regression thresholds, canary rollout, and rollback.
+
+⸻
+
+Phase 7 — Cross-Agent Knowledge Intelligence
+
+Integrate the reliability system with the existing Knowledge & Context Intelligence architecture.
+
+Do not create a second disconnected memory platform.
+
+Extend the existing graph or retrieval architecture to represent relationships among:
+
+* Agents
+* Tasks
+* Specifications
+* Decisions
+* Code components
+* Dependencies
+* Tool executions
+* Incidents
+* Root causes
+* Tests
+* Sensors
+* Policies
+* Improvement proposals
+* Evaluation results
+* Harness versions
+
+Support queries such as:
+
+* Which architectural decisions contributed to this failure?
+* Have other agents encountered a similar problem?
+* Which tests detect this failure category?
+* Which policies prevent recurrence?
+* Which components may be affected by this change?
+* Has this proposed improvement previously failed?
+* Which Harness version introduced a regression?
+* Which incidents remain unresolved?
+
+Maintain provenance, timestamps, and source references.
+
+Distinguish facts, hypotheses, decisions, and superseded knowledge.
+
+Support incremental updates rather than rebuilding the entire graph after every execution.
+
+Use hybrid retrieval where appropriate, combining structured graph traversal with semantic and keyword retrieval.
+
+Ensure knowledge retrieved by one agent can improve another agent’s planning or validation without granting additional execution authority.
+
+⸻
+
+Phase 8 — Adaptive Agentic Recovery
+
+Improve the existing AL execution loop.
+
+The target lifecycle is:
+
+Plan → Approve → Execute → Verify → Diagnose → Recover or Escalate
+
+Recovery must be bounded and policy-controlled.
+
+Implement:
+
+* Failure-aware retry strategies
+* Repeated-failure detection
+* Retry and cost budgets
+* Stagnation detection
+* Recovery strategy selection
+* Checkpointing
+* Safe resumability
+* Human escalation
+* Cancellation
+* Terminal failure reporting
+
+Do not repeat an identical failed action without a reason to expect a different result.
+
+Detect loops where agents repeatedly modify the same files without improving verification outcomes.
+
+A recovery strategy must not silently change approved architecture or acceptance criteria.
+
+Persist recovery state across interrupted sessions.
+
+Do not assume that all external side effects can be rolled back. Use idempotency controls, checkpoints, or explicit recovery procedures as appropriate.
+
+⸻
+
+Phase 9 — Model-Agnostic Infrastructure
+
+Preserve Claude as a supported primary provider, but avoid unnecessary coupling between Harness logic and a specific model.
+
+Define a provider abstraction supporting:
+
+* Model identity and capabilities
+* Tool calling
+* Structured outputs
+* Context limits
+* Token usage
+* Cost accounting
+* Retry and timeout handling
+* Provider-specific error normalization
+
+Make provider capabilities explicit rather than pretending all models behave identically.
+
+Support evaluation across providers without changing the underlying engineering specification.
+
+Do not migrate existing provider integrations unnecessarily.
+
+⸻
+
+Phase 10 — Dashboard Integration
+
+Extend the existing dashboard with an integrated Reliability & Intelligence section.
+
+Include:
+
+Execution Explorer
+
+* Agent traces
+* Tool activity
+* Costs and budgets
+* Retries
+* Verification results
+
+Incident Intelligence
+
+* Failure history
+* Root-cause analysis
+* Related incidents
+* Affected components
+
+Improvement Center
+
+* Proposed changes
+* Evidence
+* Evaluation results
+* Approval workflow
+* Deployment and rollback status
+
+Evaluation Lab
+
+* Benchmark registry
+* Harness version comparison
+* Reliability metrics
+* Regression reports
+
+Knowledge Explorer
+
+* Connected engineering entities
+* Incident relationships
+* Decision history
+* Change impact
+
+Reuse the current frontend framework, API patterns, and persistence architecture.
+
+Avoid introducing a separate dashboard application unless there is a compelling architectural reason.
+
+⸻
+
+Phase 11 — Engineering Quality Requirements
+
+All new components must satisfy the following:
+
+* Modular architecture
+* Clear ownership and boundaries
+* Versioned interfaces
+* Durable persistence
+* Safe migrations
+* Idempotent event processing where required
+* Explicit error handling
+* Structured logging
+* Automated tests
+* Integration tests
+* Security tests for policy boundaries
+* Documentation
+* Backward compatibility where practical
+
+Use the existing technology stack unless a change is justified by measurable requirements.
+
+Avoid unnecessary dependencies and infrastructure.
+
+Do not introduce distributed services where an in-process module or existing persistence layer is sufficient.
+
+Design for extensibility without overengineering.
+
+⸻
+
+Phase 12 — Implementation and Delivery Protocol
+
+Execute this project in controlled, reviewable increments.
+
+Step A: Audit
+
+Inspect the repository and produce:
+
+* Current architecture map
+* Capability inventory
+* Gap analysis
+* Integration points
+* Risks and architectural conflicts
+
+Step B: Design
+
+Produce:
+
+* Target architecture
+* Component contracts
+* Data models
+* Persistence and migration strategy
+* Security boundaries
+* Event schemas
+* Evaluation methodology
+* Implementation dependency graph
+
+Step C: Approval
+
+Present major architectural decisions and unresolved questions.
+
+Use the existing Harness approval process.
+
+Do not begin implementation of an unapproved architecture.
+
+Step D: Implementation
+
+Implement in dependency order.
+
+Prefer vertical slices that deliver an end-to-end working capability over disconnected infrastructure scaffolding.
+
+For every increment:
+
+1. Define acceptance criteria.
+2. Implement the smallest complete production-quality slice.
+3. Add tests.
+4. Run relevant validation.
+5. Verify integration with existing AL workflows.
+6. Record decisions and evidence.
+7. Report remaining limitations.
+
+Step E: Verification
+
+Verify that:
+
+* Existing functionality still works.
+* Policy boundaries cannot be bypassed through supported execution paths.
+* Agent contracts are validated.
+* Incidents are persisted and searchable.
+* Improvement proposals are generated from evidence.
+* Proposals cannot bypass approval.
+* Evaluation results are reproducible within documented limits.
+* Regression detection works.
+* Rollback is supported.
+* The dashboard reflects real persisted execution data.
+
+Step F: Delivery
+
+Provide:
+
+* Implemented capabilities
+* Files and modules changed
+* Architecture diagrams
+* Database migrations
+* Test results
+* Security limitations
+* Evaluation results
+* Outstanding risks
+* Remaining work
+* Recommended next implementation phase
+
+Do not describe planned features as implemented.
+
+Do not claim production readiness without evidence.
+
+⸻
+
+Non-Negotiable Architectural Principles
+
+1. Harness authority exceeds agent authority. Agents cannot override runtime controls through prompts.
+2. Approved specifications are authoritative. Agents cannot silently redefine requirements.
+3. Memory is evidence, not unquestionable truth. Knowledge must retain provenance and uncertainty.
+4. Failures generate hypotheses, not automatic permanent rules. Improvements require validation.
+5. Deterministic enforcement beats natural-language instructions. Prefer code-level controls where feasible.
+6. Evaluation precedes promotion. A proposed improvement is not successful until measured.
+7. Every important operation is traceable. Observability belongs at system boundaries.
+8. Human approval remains mandatory for high-impact changes.
+9. No uncontrolled recursive self-modification. The Harness may propose changes to itself but must not bypass review, testing, and rollout controls.
+10. Integrate before expanding. Reuse and strengthen existing systems instead of duplicating them.
+11. No fake completeness. Clearly distinguish implemented, tested, experimental, and planned capabilities.
+12. Optimize for reliability, maintainability, and measurable engineering outcomes—not agent count or architectural complexity.
+
+⸻
+
+Start Now
+
+Begin with Phase 0.
+
+Inspect the actual repository thoroughly.
+
+Then deliver:
+
+1. An evidence-backed assessment of the current Harness.
+2. A gap analysis against the target architecture.
+3. A dependency-aware implementation roadmap.
+4. The architectural decisions requiring my approval.
+5. The first recommended end-to-end implementation slice.
+
+Do not ask generic questions that repository inspection can answer.
+
+Do not begin by generating large amounts of boilerplate.
+
+Do not start implementing until the necessary architectural decisions are resolved and approved.
+
+Your objective is not to make the Harness appear more sophisticated.
+
+Your objective is to make it demonstrably more reliable, more intelligent, more controllable, and capable of improving safely from real engineering experience.

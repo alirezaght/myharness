@@ -182,7 +182,21 @@ def test_checklist_lists_exactly_the_unresolved_items(controller):
         engine.answer(qid, "decided by the developer")
     assert engine.checklist().items == () and not engine.checklist().blocking
     stored = engine.ws.latest_checkpoint("interview").payload
-    assert stored == {"next_question_id": None, "unresolved": [], "blocking": False}
+    from harness.agent_contracts import fingerprint, validate
+    from harness.agent_preexecution import records
+
+    expected = {
+        "next_question_id": None,
+        "unresolved": [],
+        "blocking": False,
+        "questions": records(engine.effective_questions()),
+        "proposals": records(engine.effective_proposals()),
+    }
+    contract = validate(stored["contract"])
+    assert contract["kind"] == "requirement-analysis"
+    assert contract["context"]["task"] == engine.task_id
+    assert contract["payload"]["record_digest"] == fingerprint(expected)
+    assert stored == expected | {"contract": contract}
 
 
 def test_summary_contains_only_developer_provided_or_approved_requirements(controller):

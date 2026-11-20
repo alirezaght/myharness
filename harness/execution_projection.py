@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from harness.db import transaction, utcnow
-from harness.execution_contract import canonical, integer, validate_event
+from harness.execution_contract import canonical, integer, loads, validate_event
 from harness.execution_models import ExecutionConflict
 from harness.execution_store import bind_al_run, entities, entity, get_execution, put_entity
 
@@ -238,6 +238,9 @@ def _project(conn, execution, event):
 
 def ingest_event(conn, execution_id, event):
     """No caller transaction: record, projection and cursor are one commit."""
+    from harness.execution_epoch_lock import epoch_action_lock
+    from harness.execution_epochs import require_active_epoch
+
     current = get_execution(conn, execution_id)
     if (
         current["epoch_id"] != "legacy-0"
@@ -248,9 +251,27 @@ def ingest_event(conn, execution_id, event):
             "stale_epoch: historical callback cannot mutate successor projection"
         )
     try:
+        event = loads(canonical(event).encode())
         validate_event(event)
-        with transaction(conn):
-            execution = get_execution(conn, execution_id)
+        from harness.reliability.event_sources import prepare, publish
+
+        retained = conn.execute(
+            "SELECT record FROM execution_events WHERE execution_id=? AND "
+            "epoch_id=? AND event_id=?",
+            (execution_id, current["epoch_id"], event["event_id"]),
+        ).fetchone()
+        # The owning transaction below still revalidates epoch and exact replay identity.
+        prepared = (
+            None if retained and retained["record"] == canonical(event) else prepare(current, event)
+        )
+        with epoch_action_lock(current), transaction(conn):
+            execution = require_active_epoch(
+                conn,
+                execution_id,
+                expected_epoch_id=current["epoch_id"],
+                expected_authority_generation=current["authority_generation"],
+                mutation=True,
+            )
             binding = event["binding"]
             expected = execution["binding"] | {
                 "handoff_hash": execution["handoff_hash"],
@@ -298,7 +319,11 @@ def ingest_event(conn, execution_id, event):
                     execution["epoch_id"],
                 ),
             )
+            publish(conn, execution, event, prepared)
             _project(conn, execution, event)
+            from harness.reliability.timeline_store import semantic_link
+
+            semantic_link(conn, execution, event)
             conn.execute(
                 "UPDATE executions SET cursor=?,source_contact=?,updated_at=? WHERE id=?",
                 (event["sequence"], time.time(), utcnow(), execution_id),
@@ -308,10 +333,22 @@ def ingest_event(conn, execution_id, event):
         # Diagnostics are committed separately and never advance a rejected cursor.
         from harness.execution_logs import append_log
 
-        append_log(conn, execution_id, "protocol", str(error))
-        conn.execute(
-            "UPDATE executions SET error=? WHERE id=?", ("AL protocol: " + str(error), execution_id)
-        )
+        try:
+            with epoch_action_lock(current), transaction(conn):
+                require_active_epoch(
+                    conn,
+                    execution_id,
+                    expected_epoch_id=current["epoch_id"],
+                    expected_authority_generation=current["authority_generation"],
+                    mutation=True,
+                )
+                append_log(conn, execution_id, "protocol", str(error))
+                conn.execute(
+                    "UPDATE executions SET error=? WHERE id=?",
+                    ("AL protocol: " + str(error), execution_id),
+                )
+        except ExecutionConflict:
+            pass
         raise
 
 

@@ -25,7 +25,7 @@ def exact(stream, size):
 
 
 class CheckChannel:
-    def __init__(self, context_path, validate, *, storage=None):
+    def __init__(self, context_path, validate, *, storage=None, policy_attempt=None):
         self.server, self.client = socket.socketpair()
         self.server.settimeout(1)
         self.context_path, self.validate = context_path, validate
@@ -34,6 +34,10 @@ class CheckChannel:
         self.active_handle = None
         self.closed = threading.Event()
         self.requesting_handle = None
+        self.policy_attempt = policy_attempt
+        from harness.reliability.process_context import CURRENT
+
+        self.process_context = CURRENT.get()
         self.thread = threading.Thread(target=self.serve, daemon=True)
         self.thread.start()
 
@@ -64,7 +68,7 @@ class CheckChannel:
 
     def stop(self, handle=None):
         record = self.records.get(handle if handle is not None else self.active_handle)
-        if record is not None and not record["settled"]:
+        if record is not None and record["process"] is not None and not record["settled"]:
             process = record["process"]
             try:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -79,6 +83,8 @@ class CheckChannel:
         if record is None:
             return None
         process = record["process"]
+        if process is None:
+            return None
         code = process.poll()
         if code is not None and record["completion"] is None:
             self.stop(handle)
@@ -107,8 +113,20 @@ class CheckChannel:
                 from harness.execution_isolation import release_process_temporary
 
                 release_process_temporary(record.get("process_temporary"))
-        if record["completion"] is not None and self.storage is not None:
-            self.storage.completed(handle, record["completion"])
+        if record["completion"] is not None:
+            if not record.get("policy_observed"):
+                record["policy_observed"] = True
+                if record.get("policy"):
+                    record["policy"].finish(
+                        closed=record["completion"]["complete"],
+                        outcome="returned" if code == 0 else "failed",
+                    )
+                if record.get("observer"):
+                    record["observer"].notify(
+                        "process.exited", returncode=code, cleanup_status="observed"
+                    )
+            if self.storage is not None:
+                self.storage.completed(handle, record["completion"])
         return code
 
     def validate_templates(self, record):
@@ -191,6 +209,8 @@ class CheckChannel:
                 "completion": None,
                 "deadline": time.monotonic() + 900,
             }
+            self.records[identifier] = record
+            self.active_handle = identifier
             self.validate_templates(record)
             root = str(Path(__file__).resolve().parent.parent)
             program = (
@@ -210,7 +230,25 @@ class CheckChannel:
                 "PATH": os.environ.get("PATH", os.defpath),
                 PROCESS_TEMPORARY_VARIABLE: record["process_temporary"],
             }
+            record["policy"] = None
+            record["observer"] = None
             try:
+                if self.policy_attempt:
+                    from harness.policy.processes import ProcessHooks
+                    from harness.reliability.process_store import pending_process
+
+                    observer = pending_process(
+                        self.policy_attempt.intent.principal_id,
+                        self.policy_attempt.intent.task_id,
+                        self.policy_attempt.intent.revision,
+                        context=self.process_context,
+                    )
+                    record["observer"] = observer
+                    hooks = ProcessHooks(self.policy_attempt)
+                    record["policy"] = hooks
+                    bound = hooks.prepare(identifier, observer)
+                    if bound is not None:
+                        record["deadline"] = min(record["deadline"], bound)
                 record["process"] = subprocess.Popen(
                     [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
                     cwd=cwd,
@@ -221,11 +259,18 @@ class CheckChannel:
                     close_fds=True,
                     start_new_session=True,
                 )
+                if record["policy"]:
+                    record["policy"].spawned(record["process"])
+                if record["observer"]:
+                    record["observer"].notify("process.started")
             except BaseException:
-                release_process_temporary(record["process_temporary"])
+                if record["process"] is None:
+                    release_process_temporary(record["process_temporary"])
+                    if record["policy"]:
+                        record["policy"].finish(closed=False, outcome="failed")
+                else:
+                    self.stop(identifier)
                 raise
-            self.records[identifier] = record
-            self.active_handle = identifier
             result = {"handle": identifier, "pid": record["process"].pid}
             if managed is not None:
                 self.storage.started(identifier, record["process"].pid)
@@ -275,6 +320,8 @@ class CheckChannel:
             while not self.closed.is_set():
                 descriptors = []
                 try:
+                    if self.policy_attempt and self.process is not None and not self.records[self.active_handle]["settled"]:
+                        self.server.settimeout(max(0.001, min(1, self.deadline - time.monotonic())))
                     header, ancillary, flags, _ = self.server.recvmsg(4, socket.CMSG_SPACE(32))
                     if not header:
                         break
@@ -302,7 +349,7 @@ class CheckChannel:
                 except (ValueError, OSError, KeyError, TypeError) as error:
                     if self.requesting_handle in self.records:
                         self.stop(self.requesting_handle)
-                    result = {"error": str(error)[:2048]}
+                    result = {"error": "check request unavailable or binding changed"}
                 finally:
                     for fd in descriptors:
                         os.close(fd)
@@ -311,7 +358,12 @@ class CheckChannel:
         except (EOFError, OSError):
             pass
         finally:
-            self.stop()
+            for handle in tuple(self.records):
+                try:
+                    self.stop(handle)
+                    self.observe(handle)
+                except (OSError, ValueError, subprocess.SubprocessError):
+                    pass
             if self.storage is not None:
                 for handle in self.storage.records:
                     self.storage.retain(handle, "publication_acknowledgment_missing")
@@ -327,7 +379,7 @@ class CheckChannel:
         self.thread.join(timeout=6)
         if self.thread.is_alive():
             raise ValueError("check channel settlement unavailable")
-        if self.process is not None:
-            self.observe()
+        for handle in tuple(self.records):
+            self.observe(handle)
         if self.failure:
             raise ValueError(self.failure)

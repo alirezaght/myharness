@@ -1,0 +1,8 @@
+$ /private/tmp/al-reliability-verified-venv/bin/python -m pytest -q al/codex/skills/al/tests/test_parity.py --basetemp=/private/tmp/al-r4-parity-040 --junitxml=/private/tmp/al-r4-parity-040.xml
+# cwd: .
+# started: Fri Nov 20 11:56:32 2026
+
+.                                                                        [100%]
+1 passed in 0.10s
+
+# termination: {"cleanup": {"complete": true, "descendant_scope": "group", "descendants_settled": null, "errors": [], "exit": 0, "group_absent": true, "leader_reaped": true, "owned_group_settled": true, "secondary_signals": [], "settlement_basis": "owned-process-group-only", "settlement_evidence": {"launch_identity": {"pgid": 1420, "pid": 1420, "sid": 1420, "start": [1795172192, 76890], "zombie": false}}, "unresolved": []}, "error": null, "exit": 0, "interrupted": false, "timeout": false}
