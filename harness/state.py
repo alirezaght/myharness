@@ -148,7 +148,11 @@ class TaskWorkspace(
             "INSERT INTO events (task_id, kind, payload, created_at) VALUES (?, ?, ?, ?)",
             (self.task_id, name, _payload(payload), utcnow()),
         )
-        return event_from_row(self._one("events", "event", cursor.lastrowid))
+        event = event_from_row(self._one("events", "event", cursor.lastrowid))
+        from harness.planning_session_events import workspace_event
+
+        workspace_event(self.conn, self.task_id, event)
+        return event
 
     def events(self) -> list[Event]:
         return [event_from_row(row) for row in self._all("events", None)]

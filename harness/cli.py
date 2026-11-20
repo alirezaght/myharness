@@ -94,6 +94,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_delivery_parser(subparsers)
     add_browser_parser(subparsers)
     add_diagnostics_parser(subparsers)
+    from harness.cli_session import add_session_parser
+
+    add_session_parser(subparsers)
 
     return parser
 
@@ -111,6 +114,16 @@ def main(argv: list[str] | None = None) -> int:
         OSError,
     ) as error:
         print(f"harness {args.command}: {error}", file=sys.stderr)
+        return ERROR_EXIT_CODE
+    except __import__("sqlite3").Error as error:
+        from harness.planning_session_contract import SessionError
+
+        code = (
+            "SESSION_OPERATION_INCOMPATIBLE"
+            if "SESSION_OPERATION_INCOMPATIBLE" in str(error)
+            else "SESSION_UPGRADE_REQUIRED"
+        )
+        print(str(SessionError(code)), file=sys.stderr)
         return ERROR_EXIT_CODE
 
 

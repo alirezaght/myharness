@@ -181,6 +181,8 @@ The dashboard provides the same task-scoped workflow in one ordered view: Interv
 
 Start the standalone interview from a trusted repository with `uv run python -m harness.dashboard --project /absolute/path/to/repository` (add `--no-browser` to print the local URL only). The authoring worker uses existing Codex sign-in; profile availability does not verify authentication until an invocation succeeds. The current Claude profile is unsupported for no-tool authoring, while manual specification editing remains available.
 
+For Jira issue tasks, the Interview tab shows source acquisition progress, the cited ticket/repository material, proposed coverage and genuine decision questions. Review the exact source package after explicit candidate adoption; source acceptance does not approve implementation. An unqualified native connection remains unavailable and does not block manual answers or specification edits. See [Dashboard workspace interfaces](docs/dashboard-workspace.md) for the recovery and review flow.
+
 ### Design
 
 `harness design` captures the logical architecture of a task once it is in the `design` phase (SPEC §3, Phase 3). The design has eight sections: `components`, `responsibilities`, `interactions`, `data_flow`, `interfaces` (interfaces and contracts), `configuration`, `failure_handling` and `required_behaviour`. Claude Code (`/harness`) drafts recommendations from the investigation report and the interview summary, and relays the developer's verdicts. The CLI only stores and renders; it never writes design content itself.

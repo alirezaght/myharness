@@ -125,6 +125,18 @@ nav#tasks { border:0; border-right:1px solid var(--ws-line); border-radius:0; bo
 .authoring-conflict-recovery p { margin:0 0 8px; }
 .authoring-conversation-history { min-width:0; margin-top:18px; }
 .authoring-conversation-history > p[role="status"] { color:var(--ws-muted); font-size:12px; }
+.shared-session-panel, .shared-session-panel * { min-width:0; }
+.session-current-question { border-left:3px solid var(--authoring-accent); padding:8px 12px; margin:12px 0; background:var(--ws-input); border-radius:6px; overflow-wrap:anywhere; }
+.session-event-list { padding-left:24px; }
+.session-event { margin:8px 0; overflow-wrap:anywhere; }
+.session-event summary { cursor:pointer; overflow-wrap:anywhere; }
+.session-conversation-message { border-left:3px solid var(--ws-green); padding:8px 12px; margin:12px 0; background:var(--ws-input); border-radius:6px; }
+.session-conversation-message > p { margin:6px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.session-conversation-message > small { display:block; color:var(--ws-muted); font-size:12px; }
+.session-event-meta { color:var(--ws-muted); font-size:12px; }
+.session-event pre, .shared-session-panel > details pre { max-width:100%; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.session-material-review { border-top:1px solid var(--ws-line); padding-top:12px; margin-top:12px; }
+.session-material-item { border:1px solid var(--ws-line); border-radius:8px; padding:12px; margin:10px 0; overflow-wrap:anywhere; }
 .authoring-message p { white-space:pre-wrap; }
 .authoring-feedback, .spec-draft-status { color:var(--ws-muted); font-size:13px; }
 .authoring-error { color:var(--authoring-warn); font-size:13px; }
@@ -190,4 +202,28 @@ nav#tasks { border:0; border-right:1px solid var(--ws-line); border-radius:0; bo
     -webkit-line-clamp:5;
     overflow:hidden;
   }
+}
+.authoring-recovery { color: var(--ws-text); background: var(--ws-panel); border: 1px solid var(--ws-line); border-radius: .5rem; padding: .75rem; margin-block: .5rem; overflow-wrap: anywhere; }
+.workspace-heading .authoring-recovery { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.investigation-panel, .investigation-review-package { min-width: 0; }
+.investigation-panel > p, .investigation-evidence-row p, .investigation-review-package p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.investigation-panel select, .investigation-panel textarea, .investigation-controls textarea { box-sizing: border-box; width: 100%; max-width: 760px; border: 1px solid var(--ws-line); border-radius: 7px; background: var(--ws-input); color: var(--ws-text); padding: 10px; }
+.investigation-panel > select { display:block; margin:10px 0; }
+.investigation-panel details, .investigation-review-package details { border: 1px solid var(--ws-line); border-radius: 8px; padding: 10px 12px; margin: 12px 0; min-width: 0; }
+.investigation-panel summary, .investigation-review-package summary { cursor: pointer; overflow-wrap:anywhere; }
+.investigation-source { background: var(--ws-bg); }
+.investigation-source pre, .investigation-review-package pre { max-height: 28rem; overflow:auto; white-space: pre-wrap; overflow-wrap:anywhere; padding: 12px; border: 1px solid var(--ws-line); border-radius: 7px; background: var(--ws-panel); color: var(--ws-text); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.investigation-findings { display:grid; gap:10px; min-width:0; }
+.investigation-findings > h3, .investigation-findings > h4 { margin-bottom:0; }
+.investigation-evidence-row { min-width:0; padding:12px; border:1px solid var(--ws-line); border-radius:8px; background:var(--ws-bg); overflow-wrap:anywhere; }
+.investigation-evidence-row h4, .investigation-evidence-row h5 { margin:0 0 6px; overflow-wrap:anywhere; }
+.investigation-evidence-row blockquote { margin:8px 0; padding:8px 12px; border-left:3px solid var(--authoring-accent); background:var(--ws-panel); white-space:pre-wrap; overflow-wrap:anywhere; }
+.investigation-evidence-row.state-stale_evidence, .investigation-evidence-row.state-conflict, .investigation-evidence-row.state-operational_gap { border-color:var(--authoring-warn); }
+.investigation-controls > label { display:block; max-width:760px; margin:12px 0; color:var(--ws-muted); font-size:12px; overflow-wrap:anywhere; }
+.investigation-controls input[type="checkbox"] { margin-right:8px; }
+.investigation-package-current { color:var(--authoring-accent); overflow-wrap:anywhere; }
+.investigation-review-package article { margin:8px 0; }
+@media(max-width:650px) {
+  .investigation-panel, .investigation-review-package, .investigation-evidence-row { min-width:0; max-width:100%; }
+  .investigation-panel button, .investigation-controls button { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 }

@@ -4,6 +4,14 @@ from harness.authoring_jobs import apply_result, claim_next, interrupt_owned
 from tests.test_authoring import initialized
 
 
+@pytest.fixture(autouse=True)
+def available_fixture_host(monkeypatch):
+    monkeypatch.setattr(
+        "harness.authoring_policy.availability",
+        lambda host: {"host": host, "available": True, "status": "fixture"},
+    )
+
+
 def output():
     def node(ident, kind):
         return {

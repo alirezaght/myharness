@@ -36,6 +36,16 @@ def parse_body(body: bytes) -> Any:
 
 
 def busy_failure(error: sqlite3.OperationalError) -> tuple[int, dict[str, Any]]:
+    from harness.planning_session_contract import SessionError
+
+    if "SESSION_OPERATION_INCOMPATIBLE" in str(error):
+        return 409, SessionError("SESSION_OPERATION_INCOMPATIBLE").public()
+    if (
+        "harness_session_protocol_version" in str(error)
+        or "harness_session_write_allowed" in str(error)
+        or "SESSION_UPGRADE_REQUIRED" in str(error)
+    ):
+        return 409, SessionError("SESSION_UPGRADE_REQUIRED").public()
     if busy(error):
         return 503, {"error": f"the state database is busy ({error}); retry", "retry": True}
     return 500, {"error": str(error)}

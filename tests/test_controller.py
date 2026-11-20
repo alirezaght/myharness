@@ -165,6 +165,8 @@ def test_migrations_are_tracked_and_idempotent(conn):
         (16, "0016_knowledge_index.sql"),
         (17, "0017_workspace_proposals.sql"),
         (18, "0018_authoring.sql"),
+        (19, "0019_investigation_sources.sql"),
+        (20, "0020_planning_sessions.sql"),
     ]
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -192,6 +194,8 @@ def test_fresh_connect_reports_applied_migration(tmp_path):
             "0016_knowledge_index.sql",
             "0017_workspace_proposals.sql",
             "0018_authoring.sql",
+            "0019_investigation_sources.sql",
+            "0020_planning_sessions.sql",
         ]
         assert apply_migrations(raw) == []
     finally:

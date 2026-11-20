@@ -248,7 +248,7 @@ def test_rework1b_schema17_dashboard_upgrade_through_http(tmp_path, monkeypatch)
             thread.join(timeout=10)
     connection = db.connect(path)
     try:
-        assert connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 18
+        assert connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 20
         assert connection.execute("SELECT count(*) FROM authoring_tasks").fetchone()[0] == 0
     finally:
         connection.close()

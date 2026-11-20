@@ -2,10 +2,30 @@
 
 
 def start_existing(service, host):
+    from harness.planning_session_store import PlanningSessionStore
+
+    owner = PlanningSessionStore(service.conn, service.task_id).owner()
+    if owner and owner["mode"] == "attached":
+        return {
+            "resumed": True,
+            "job": None,
+            "state": "waiting_for_attached_agent",
+            "origin": "attached",
+            "_no_bump": True,
+        }
     import json
 
     from harness.authoring_contract import AuthoringConflict
     from harness.authoring_jobs import queue_job
+    from harness.investigation_policy import parse_issue
+    from harness.investigation_store import InvestigationStore
+
+    if parse_issue(service.controller.get_task(service.task_id).request):
+        from harness.investigation_sources import start
+
+        binding = InvestigationStore(service.controller, service.project, service.task_id).binding()
+        if not binding or not binding["active_bundle"]:
+            return start(service, host)
 
     checkpoint = service.controller.workspace(service.task_id).latest_checkpoint("investigation")
     kind = "generate" if checkpoint else "investigate"

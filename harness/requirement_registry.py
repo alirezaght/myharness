@@ -5,6 +5,47 @@ import re
 
 
 def registry(controller, task_id, body):
+    from harness.authoring_contract import digest
+    from harness.interview_coverage import current_coverage
+    from harness.investigation_store import InvestigationStore, review_basis
+
+    investigation = InvestigationStore(controller, None, task_id)
+    if investigation.binding():
+        coverage = current_coverage(controller, task_id)
+        if not coverage.accepted or review_basis(controller, task_id)["body"] != digest(body):
+            raise ValueError("current exact source coverage must be reviewed before approval")
+        bundle = investigation.read_active()
+        request = bundle["content"]["request"]
+        ticket = (
+            {
+                "present": False,
+                "reason": "Accepted repository-only evidence; no Jira ticket supplied",
+                "source": bundle["id"],
+            }
+            if request.get("kind") == "repository"
+            else {
+                "present": True,
+                "id": request["issue"],
+                "content": next(
+                    source["content"]
+                    for source in bundle["content"]["sources"]
+                    if source["kind"] == "ticket"
+                ),
+                "source": bundle["id"],
+            }
+        )
+        return {
+            "ticket": ticket,
+            "criteria": [r["key"] for r in coverage.rows],
+            "invariants": [],
+            "requirement_sources": {
+                "kind": "accepted-investigation-v2",
+                "bundle": bundle["id"],
+                "acceptance": coverage.acceptance,
+                "coverage": coverage.to_dict(),
+                "accepted_body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+            },
+        }
     ws = controller.workspace(task_id)
     accepted = ws.latest_checkpoint("context_accepted")
     if accepted and accepted.payload.get("requirements"):

@@ -85,17 +85,19 @@ def analyze(
             f"{comparison['ahead']} ahead and {comparison['behind']} behind {comparison['ref']}",
             "local Git ref comparison; remote freshness unverified (no fetch)",
         )
-    if ownership["ownership"] == "UNRESOLVED":
+    if ownership["ownership"] == "UNRESOLVED" or not ownership["inventory_complete"]:
         repository.ask(
             "scope",
-            "Ownership is unresolved; which package or implementation path "
-            "does this request target? Keyword and test counts do not establish ownership.",
+            f"For {text[:160]!r}, what outcome should users get, "
+            "and which product area is affected? "
+            "Exact package or file paths are optional; it is OK not to know the code location. "
+            "A ticket ID alone does not include its requirements.",
         )
     if not ownership["inventory_complete"]:
-        repository.ask(
-            "scope",
-            "Repository inventory reached its bound; provide the target package "
-            "before drawing ownership or coverage conclusions.",
+        repository.fact(
+            FactCategory.FILES,
+            "Repository inventory reached its bound; ownership and coverage remain uncertain.",
+            "bounded repository audit",
         )
     for edge in ownership["call_sites"][:25]:
         repository.fact(
@@ -126,7 +128,17 @@ def analyze(
         test_facts(probe_files),
         convention_facts(root, files),
     ]
-    questions = {(q.topic, q.text): q for probe in probes for q in probe.questions}
+    questions = {}
+    for probe in probes:
+        for question in probe.questions:
+            if question.topic == "scope" and probe is not repository and repository.questions:
+                repository.fact(
+                    FactCategory.COMPONENTS,
+                    question.text,
+                    "scanner discovery uncertainty; not ownership proof",
+                )
+                continue
+            questions[(question.topic, question.text)] = question
     return InvestigationReport(
         repo_root=str(root),
         revision=revision,

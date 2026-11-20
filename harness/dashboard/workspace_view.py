@@ -147,12 +147,21 @@ def source_snapshot(controller, task, store, execution):
                 "sources": edge["sources"],
             }
         )
+    from harness.investigation_store import InvestigationStore
     from harness.logical_diagram import project_graph
 
+    source_store = InvestigationStore(controller, None, task.id)
+    bundle = source_store.read_active()
+    source_evidence = {
+        "bundle": bundle["id"] if bundle else None,
+        "coverage": InterviewEngine(controller, task.id).coverage().to_dict(),
+        "sources": bundle["content"]["sources"] if bundle else [],
+    }
     logical = project_graph(controller, task, graph, requirements, execution)
     graph = logical["primary"]
     return {
         "logical": logical,
+        "investigation": source_evidence,
         "task": task.id,
         "requirements": requirements,
         "plan": plan,

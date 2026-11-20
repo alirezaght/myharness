@@ -53,6 +53,11 @@ def validate_graph(graph, valid_refs):
 def source_refs(controller, task_id):
     ws = controller.workspace(task_id)
     refs = {"request"}
+    from harness.investigation_store import InvestigationStore
+
+    bundle = InvestigationStore(controller, None, task_id).read_active()
+    if bundle:
+        refs.update(f"investigation:{task_id}:{s['id']}" for s in bundle["content"]["sources"])
     from harness.effective_records import effective_records
 
     refs.update(f"Q{q.id}" for q in effective_records(ws).questions)
@@ -219,9 +224,17 @@ def project_graph(controller, task, recorded, requirements, execution=None):
             " AND json_extract(j.result_json,'$.revision')=r.id ORDER BY r.rowid DESC LIMIT 1",
             (task.id,),
         ).fetchone()
-        if candidate_row and not (revision and revision["graph"]):
+        from harness.investigation_store import InvestigationStore
+
+        sources = InvestigationStore(controller, None, task.id)
+        semantic = sources.semantic()
+
+        def source_current(row):
+            return semantic is None or row["source"].get("source_investigation") == semantic
+
+        if candidate_row and not (revision and revision["graph"] and source_current(revision)):
             revision = store.revision(candidate_row["id"])
-        if revision and revision["graph"]:
+        if revision and revision["graph"] and source_current(revision):
             candidate = revision["graph"]["value"]
             try:
                 validate_graph(candidate, source_refs(controller, task.id))

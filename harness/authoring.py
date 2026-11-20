@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import asdict
 from pathlib import Path
 
-from harness.authoring_contract import MAX_BODY, AuthoringConflict, digest, text
+from harness.authoring_contract import MAX_BODY, AuthoringConflict, canonical, digest, text
 from harness.authoring_store import AuthoringStore, adopted_revision, authority_state, source_state
 from harness.db import transaction
 from harness.design import ArchitectureDesigner
@@ -13,6 +13,10 @@ from harness.interview import InterviewEngine
 from harness.phases import Phase, is_backward, next_phase
 from harness.spec_manager import SpecificationManager
 from harness.testplan import TestPlanner
+
+
+class NonAnswer(ValueError):
+    pass
 
 
 class TransactionInterview(InterviewEngine):
@@ -47,12 +51,18 @@ class AuthoringService:
 
     def manager(self):
         from harness.cli_spec import spec_store
+        from harness.investigation_artifacts import stored
+
+        policy = stored(self.conn, self.task_id)
 
         return SpecificationManager(
             self.controller,
             self.task_id,
             spec_store(
-                self.controller, self.task_id, self.specs or str(self.root / "docs" / "specs")
+                self.controller,
+                self.task_id,
+                self.specs
+                or (policy["specs_root"] if policy else str(self.root / "docs" / "specs")),
             ),
             self.root,
         )
@@ -83,7 +93,7 @@ class AuthoringService:
                 result.append(value)
             return list(reversed(result))
 
-        from harness.authoring_context import projection
+        from harness.authoring_context import projection, question_presentation
 
         context = projection(self)
         targets = context["revision_targets"]
@@ -98,13 +108,47 @@ class AuthoringService:
             (self.task_id,),
         ):
             question_revisions[contribution["target"].split(":")[1]] = contribution["id"]
+        from harness.planning_session_store import PlanningSessionStore
+
+        session = PlanningSessionStore(self.conn, self.task_id, self.project).snapshot(
+            repository=str(self.root)
+        )
         jobs = rows("authoring_jobs")
         for job in jobs:
             job.pop("input", None)
+            if job["kind"] == "attached_publication":
+                job["label"] = "Attached agent publication"
+                job["origin"] = "attached"
+                job["provider_invoked"] = False
+                job["process_started"] = False
             result = job.pop("result", None)
             job["candidate"] = result.get("revision") if result else None
             job["content_complete"] = bool(result and result.get("output", {}).get("graph"))
             job.pop("owner", None)
+        from harness.authoring_context import model_recovery
+
+        recovery = model_recovery(ws, [j for j in jobs if j["kind"] != "attached_publication"])
+        from harness.investigation_sources import snapshot as investigation_snapshot
+
+        investigation = investigation_snapshot(self)
+        if investigation.get("synthesis_recovery"):
+            recovery = investigation["synthesis_recovery"]
+        from harness.investigation_lineage import source_lineage
+
+        source_history = source_lineage(self.controller, self.task_id, semantic)
+        retired_source_ids = set(source_history["retired_ids"])
+        physical_questions = {q.id: q for q in ws.questions()}
+        historical_questions = {
+            q.id: q for q in semantic.historical_questions if q.id in semantic.question_successors
+        }
+        historical_questions.update(
+            {ident: physical_questions[ident] for ident in retired_source_ids}
+        )
+        historical_proposals = {
+            p.id: p
+            for p in semantic.historical_proposals
+            if p.id in semantic.proposal_successors or p.question_id in retired_source_ids
+        }
         working = store.revision(binding["working_id"]) if binding else None
         adopted = adopted_revision(self.controller, self.task_id)
         manager = self.manager()
@@ -115,6 +159,8 @@ class AuthoringService:
             "task": self.task_id,
             "phase": str(self.controller.get_task(self.task_id).phase),
             "initialized": binding is not None,
+            "session": session,
+            "standalone_model_recovery": recovery,
             "base": store.base(),
             "working": working,
             "adopted": adopted,
@@ -127,25 +173,27 @@ class AuthoringService:
             if approved
             else None,
             "execution": authority_state(self.controller, self.task_id)["execution"],
-            "questions": [asdict(q) for q in semantic.questions],
-            "recommendations": [asdict(p) for p in semantic.proposals],
+            "interview": InterviewEngine(self.controller, self.task_id).question_projection(),
+            "questions": [
+                asdict(q) | question_presentation(q, self.controller.get_task(self.task_id).request)
+                for q in semantic.questions
+                if q.id not in retired_source_ids
+            ],
+            "recommendations": [
+                asdict(p) for p in semantic.proposals if p.question_id not in retired_source_ids
+            ],
             "historical": {
-                "questions": [
-                    asdict(q)
-                    for q in semantic.historical_questions
-                    if q.id in semantic.question_successors
-                ],
-                "recommendations": [
-                    asdict(p)
-                    for p in semantic.historical_proposals
-                    if p.id in semantic.proposal_successors
-                ],
+                "questions": [asdict(q) for q in historical_questions.values()],
+                "recommendations": [asdict(p) for p in historical_proposals.values()],
             },
+            "source_lineage": source_history,
             "effective_lineage": context["lineage"],
             "contributions": contributions,
             "question_revisions": question_revisions,
             "revision_targets": targets,
             "jobs": jobs,
+            "model_recovery": None if session["mode"] == "attached" else recovery,
+            "investigation": investigation,
             "revisions": [
                 {key: value for key, value in row.items() if key not in {"body", "source"}}
                 for row in rows("authoring_revisions")
@@ -272,7 +320,15 @@ class AuthoringService:
             service = AuthoringService(self.controller, self.root, task.id, specs=self.specs)
             service._initial()
             service.store.bump()
-            job = queue_job(service, "investigate", host)
+            from harness.investigation_policy import parse_issue
+
+            if parse_issue(request):
+                from harness.investigation_sources import start
+
+                prepared = start(service, host, next_generation=False)
+                job = prepared.get("job")
+            else:
+                job = queue_job(service, "investigate", host)
             result = {
                 "task": task.id,
                 "base": service.store.base(),
@@ -290,7 +346,11 @@ class AuthoringService:
     def _mutate(self, action, expected, request_id, payload, change):
         if not self.store:
             raise ValueError("explicit task required")
-        complete = {"action": action, "expected": expected, "payload": payload}
+        from harness.planning_session_events import current_scope, mutation_scope
+
+        scope = current_scope(self.conn, self.task_id)
+        if self.conn.in_transaction and scope and scope["origin"] in {"attached_agent", "tui_user"}:
+            return self._mutate_in_transaction(action, expected, request_id, payload, change)
         from harness.authoring_transaction import committing
         from harness.decision_workflow import discard_on_failure
         from harness.registry_mutation import registry_mutation
@@ -299,20 +359,57 @@ class AuthoringService:
             registry_mutation() as mutations,
             discard_on_failure() as written,
             committing(self.conn),
+            mutation_scope(self.conn, self.task_id),
         ):
-            self._decision_records = written
-            self._registry_mutations = mutations
-            prior = self.store.receipt(request_id, complete)
-            if prior is not None:
-                return prior
-            self.store.check(expected)
-            self._initial()
-            result = change() or {}
-            if not result.pop("_no_bump", False):
-                self.store.bump()
-            result = {"task": self.task_id, "base": self.store.base(), **result}
-            self.store.record_receipt(request_id, complete, result)
-            return result
+            self._decision_records, self._registry_mutations = written, mutations
+            return self._mutate_in_transaction(action, expected, request_id, payload, change)
+
+    def _mutate_in_transaction(self, action, expected, request_id, payload, change):
+        if not self.conn.in_transaction:
+            raise RuntimeError("authoring mutation requires its caller transaction")
+        from harness.planning_session_events import current_scope
+        from harness.planning_session_store import PlanningSessionStore
+
+        complete = {"action": action, "expected": expected, "payload": payload}
+        prior = self.store.receipt(request_id, complete)
+        if prior is not None:
+            return prior
+        self.store.check(expected)
+        if action in {"investigate", "reconnect-jira"}:
+            from harness.investigation_eligibility import require_eligible
+            from harness.planning_session_events import require_standalone
+
+            require_eligible(self)
+            require_standalone(self.conn, self.task_id)
+        self._initial()
+        result = change() or {}
+        from harness.investigation_artifacts import bind
+
+        bind(self)
+        no_bump = result.pop("_no_bump", False)
+        if not no_bump:
+            self.store.bump()
+        result = {"task": self.task_id, "base": self.store.base(), **result}
+        scope = current_scope(self.conn, self.task_id)
+        if not no_bump and scope and scope["origin"] == "browser":
+            public_input = dict(payload)
+            if action in {"save-spec", "revise"}:
+                public_input.pop("body", None)
+            event_id = PlanningSessionStore(self.conn, self.task_id, self.project).append_event(
+                "authoring." + action,
+                {
+                    "request_id": request_id,
+                    "result": result,
+                    "input": public_input,
+                    "workspace_events": scope["events"],
+                },
+                origin="browser",
+                canonical_reference="authoring:" + request_id,
+            )
+            if event_id:
+                result["session_event"] = event_id
+        self.store.record_receipt(request_id, complete, result)
+        return result
 
     def _append_working(self, body, *, graph_id=None, obligations=(), actor="developer"):
         previous = self.store.revision(self.store.binding()["working_id"])
@@ -348,7 +445,7 @@ class AuthoringService:
         from harness.interview import _is_non_answer
 
         if mode == "answer" and _is_non_answer(answer):
-            raise ValueError("Use unknown for a non-answer")
+            raise NonAnswer("Use I don’t know yet to save a non-answer as unresolved")
         payload = {
             "question": question,
             "mode": mode,
@@ -568,6 +665,21 @@ class AuthoringService:
             raise ValueError("invalid host")
 
         def change():
+            from harness.planning_session_store import PlanningSessionStore
+
+            owner = PlanningSessionStore(self.conn, self.task_id).owner()
+            if owner and owner["mode"] == "attached":
+                return {"state": "waiting_for_attached_agent", "job": None, "origin": "attached"}
+            from harness.investigation_store import InvestigationStore
+
+            source_store = InvestigationStore(self.controller, self.project, self.task_id)
+            if source_store.binding() and not source_store.read_active():
+                from harness.authoring_jobs import require_available
+                from harness.authoring_policy import availability
+                from harness.investigation_sources import start
+
+                require_available(host, availability(host))
+                return start(self, host)
             # Queue against the generation that will be committed by _mutate.
             return {"job": queue_job(self, "generate", host, next_generation=True)}
 
@@ -577,7 +689,19 @@ class AuthoringService:
         selected = self.store.revision(revision)
         if selected is None:
             raise LookupError("select a revision")
+        from harness.authoring_context import projection as effective_projection
+        from harness.investigation_store import review_basis
+        from harness.planning_session_events import native_binding
+        from harness.planning_session_material import projection
+
         preview = {
+            "managed_artifacts": __import__(
+                "harness.investigation_artifacts", fromlist=["derive"]
+            ).derive(self),
+            "material": projection(self.conn, self.task_id),
+            "owner": native_binding(self.conn, self.task_id),
+            "source_review_basis": review_basis(self.controller, self.task_id),
+            "decision_lineage": effective_projection(self)["revision_targets"],
             "revision": revision,
             "body_hash": selected["body_hash"],
             "graph": selected["graph_id"],
@@ -589,9 +713,19 @@ class AuthoringService:
         return preview | {"token": digest(preview)}
 
     def reconcile(
-        self, *, expected, request_id, revision, token, confirm_graph, acknowledge, actions
+        self,
+        *,
+        expected,
+        request_id,
+        revision,
+        token,
+        confirm_graph,
+        acknowledge,
+        actions,
+        handling=None,
     ):
         payload = {
+            "handling": handling or [],
             "revision": revision,
             "token": token,
             "confirm_graph": confirm_graph,
@@ -611,7 +745,10 @@ class AuthoringService:
             if token != preview["token"]:
                 raise AuthoringConflict("reconciliation preview changed")
             self._refuse_execution()
+            from harness.planning_session_material import validate_manual
+
             selected = self.store.revision(revision)
+            validate_manual(handling or [], preview, selected)
             if not selected["body"].startswith("## "):
                 raise ValueError('Specification body must begin with "## "')
             if (selected["obligations"] or preview["source_changed"]) and not acknowledge:
@@ -643,6 +780,9 @@ class AuthoringService:
                     Phase.FINAL_REVIEW,
                     "Explicit authoring reconciliation requires fresh review",
                 )
+            from harness.investigation_artifacts import bind
+
+            bind(self)
             adopted = self.store.add_revision(
                 selected["body"],
                 actor="developer_adopted",
@@ -659,6 +799,24 @@ class AuthoringService:
                 (self.task_id, adopted),
             )
             self.store.contribution("reconciliation", "developer", payload | {"adopted": adopted})
+            if handling:
+                from harness.planning_session_material import record
+
+                record(
+                    self.conn,
+                    self.task_id,
+                    [entry["input_id"] for entry in handling],
+                    "developer_reconciliation",
+                    canonical(
+                        {
+                            "adopted": adopted,
+                            "graph": selected["graph_id"],
+                            "decision_lineage_digest": digest(preview["decision_lineage"]),
+                            "handling_digest": digest(handling),
+                        }
+                    ),
+                    preview["material"],
+                )
             return {"adopted": adopted, "projection": "pending"}
 
         result = self._mutate("reconcile", expected, request_id, payload, change)
@@ -666,7 +824,9 @@ class AuthoringService:
         return result
 
     def project_draft(self):
-        with transaction(self.conn):
+        from harness.planning_session_events import mutation_scope
+
+        with transaction(self.conn), mutation_scope(self.conn, self.task_id, "system"):
             row = self.conn.execute(
                 "SELECT * FROM authoring_projections WHERE task_id=? AND state='pending'",
                 (self.task_id,),
@@ -771,6 +931,7 @@ class AuthoringService:
                 with engine.mutation_in_transaction():
                     engine.effective().require_current("question", args["question_id"])
                     original = engine.ws.question(args["question_id"])
+                    engine._require_source_current(original.id)
                     self.store.contribution(
                         "wording_applied",
                         "developer",
@@ -819,3 +980,62 @@ class AuthoringService:
             {"job": job, "acknowledge_unknown": acknowledge_unknown},
             lambda: retry_job(self, job, acknowledge_unknown),
         )
+
+    def investigate(self, *, expected, request_id, host, site=None):
+        from harness.investigation_sources import start
+
+        return self._mutate(
+            "investigate",
+            expected,
+            request_id,
+            {"host": host, "site": site},
+            lambda: start(self, host, site),
+        )
+
+    def reconnect_jira(self, *, expected, request_id, host, site=None):
+        from harness.investigation_sources import start
+
+        return self._mutate(
+            "reconnect-jira",
+            expected,
+            request_id,
+            {"host": host, "site": site},
+            lambda: start(self, host, site, reconnect=True),
+        )
+
+    def investigation_review(self, *, expected, request_id):
+        from harness.review_package import package
+
+        return self._mutate(
+            "investigation-review",
+            expected,
+            request_id,
+            {},
+            lambda: {"review": package(self.controller, self.task_id), "_no_bump": True},
+        )
+
+    def accept_investigation(self, *, expected, request_id, approved_sha256, provenance):
+        from harness.review_package import accept_investigation
+
+        return self._mutate(
+            "accept-investigation",
+            expected,
+            request_id,
+            {"approved_sha256": approved_sha256, "provenance": provenance},
+            lambda: accept_investigation(
+                self.controller, self.task_id, approved_sha256, source=provenance
+            ),
+        )
+
+    def jira_handoff(self, *, expected, request_id, job):
+        from harness.authoring_contract import request_identity
+        from harness.authoring_jobs import job_row
+        from harness.investigation_native import HANDOFFS
+
+        request_identity(request_id)
+        self.store.check(expected)
+        row = job_row(self, job)
+        if row["kind"] != "jira_reconnect":
+            raise ValueError("explicit reconnect job required")
+        # Intentionally outside _mutate/receipt persistence: OAuth URLs are ephemeral only.
+        return {"task": self.task_id, "job": job, "handoff": HANDOFFS.get(row)}

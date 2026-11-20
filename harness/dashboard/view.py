@@ -111,7 +111,10 @@ def _find(controller: HarnessController, task_id: str | None) -> Task | None:
 def _sync(controller: HarnessController, task_id: str) -> str | None:
     """Record a new diagram version if the design changed; a failure only marks the section."""
     try:
-        DiagramService(controller, task_id).sync()
+        from harness.planning_session_events import mutation_scope
+
+        with mutation_scope(controller.conn, task_id, "system"):
+            DiagramService(controller, task_id).sync()
     except sqlite3.Error as error:
         return f"diagram version could not be recorded: {error}"
     return None
@@ -155,4 +158,12 @@ def combined_view(db_path, task_id, specs, *, root=None):
                         "error": "Selected task is outside the configured authoring project",
                         "task": task_id,
                     }
+            if root is not None and data.get("task") and not data.get("authoring", {}).get("error"):
+                from harness.planning_session import PlanningSessionService
+
+                session = PlanningSessionService(controller, root, data["task"]["id"])
+                data["task"]["session"] = {
+                    "base": session.base(),
+                    "snapshot": session.status(),
+                }
             return data

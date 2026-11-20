@@ -45,6 +45,7 @@ WRITES = {
     RESOLVE_PATH: "resolve",
     REOPEN_PATH: "reopen",
     APPROVE_PATH: "approve",
+    "/api/session/action": "session-action",
     "/api/execution/start": "start",
     "/api/execution/retry-start": "retry-start",
     "/api/execution/reconnect": "reconnect",
@@ -259,6 +260,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json(404, {"error": "Unknown task-owned record"})
             except (ValueError, OSError, sqlite3.Error):
                 self._json(400, {"error": "Invalid authoring read"})
+        elif url.path == "/api/session/events":
+            from harness.dashboard.session_actions import session_history
+
+            try:
+                query = parse_qs(url.query, keep_blank_values=True)
+                if (
+                    not set(query) <= {"task", "before", "limit"}
+                    or "task" not in query
+                    or any(len(v) != 1 for v in query.values())
+                ):
+                    raise ValueError("invalid session query")
+                data = session_history(
+                    self.server.db_path,
+                    self.server.project_root,
+                    query["task"][0],
+                    before=int(query.get("before", ["9223372036854775807"])[0]),
+                    limit=int(query.get("limit", ["50"])[0]),
+                )
+                self._json(200, data)
+            except LookupError:
+                self._json(404, {"error": "Unknown task in configured project"})
+            except (ValueError, OSError, sqlite3.Error):
+                self._json(400, {"error": "Invalid session history request"})
         elif url.path == "/api/authoring":
             from harness.dashboard.authoring_view import read_authoring
 
@@ -390,6 +414,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._text(404, "not found")
 
     def do_POST(self) -> None:
+        from harness.planning_session_events import BROWSER_TASK
+
+        token = BROWSER_TASK.set(None)
+        try:
+            self._post()
+        finally:
+            BROWSER_TASK.reset(token)
+
+    def _post(self) -> None:
         self.close_connection = True
         if self.headers.get("Host") not in self.server.allowed_hosts():
             self._text(403, "forbidden: unexpected Host header")
@@ -422,7 +455,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._json(400, {"error": "request body is incomplete"})
             return
         action, db_path = WRITES[path], self.server.db_path
-        if action == "authoring":
+        from harness.planning_session_events import BROWSER_TASK
+
+        try:
+            task = json.loads(body).get("task")
+        except (ValueError, AttributeError):
+            task = None
+        compatible = action in {
+            "authoring",
+            "session-action",
+            "workspace-proposal",
+            "approve",
+            "start",
+            None,
+            "resolve",
+            "reopen",
+        } or path.startswith("/api/execution/")
+        if isinstance(task, str):
+            if compatible:
+                BROWSER_TASK.set(task)
+            else:
+                from harness.dashboard.view import open_state
+                from harness.planning_session_contract import SessionError
+                from harness.planning_session_store import PlanningSessionStore
+
+                with open_state(db_path) as controller:
+                    owner = PlanningSessionStore(controller.conn, task).owner()
+                if owner and owner["mode"] == "attached":
+                    self._json(409, SessionError("SESSION_OPERATION_INCOMPATIBLE").public())
+                    return
+        if action == "session-action":
+            from harness.dashboard.session_actions import session_action
+
+            self._json(*session_action(db_path, self.server.project_root, body))
+        elif action == "authoring":
             from harness.dashboard.authoring_actions import authoring_action
 
             result = authoring_action(

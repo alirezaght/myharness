@@ -13,6 +13,25 @@ from harness.testplan_models import TestCategory
 
 
 def import_context(controller, task_id, value):
+    if isinstance(value, dict) and value.get("schema_version") == 2:
+        from harness.interview_coverage import validate_evidence
+        from harness.investigation_store import InvestigationStore
+
+        if set(value) != {"schema_version", "bundle", "evidence"}:
+            raise ValueError("closed investigation context required")
+        store = InvestigationStore(controller, None, task_id)
+        bundle = store.read_active()
+        if not bundle or bundle["id"] != value["bundle"]:
+            raise ValueError("investigation context must reference the active task bundle")
+        validate_evidence(value["evidence"], bundle["content"]["sources"])
+        if value["evidence"] != bundle["content"]["evidence"]:
+            raise ValueError("context cannot replace immutable investigation evidence")
+        return {
+            "schema_version": 2,
+            "bundle": bundle["id"],
+            "status": "PROPOSED",
+            "implementation_approval": False,
+        }
     required = {"schema_version", "sources", "answers", "design", "tests", "requirements"}
     if not isinstance(value, dict) or set(value) != required or value["schema_version"] != 1:
         raise ValueError(

@@ -196,7 +196,8 @@ def test_missing_tests_several_packages_and_bad_pyproject(tmp_path):
     report = analyze(root, "csv")
     questions = _questions(report)
     assert any(t.startswith("No tests found") for t in questions)
-    assert any(t.startswith("Several packages found") for t in questions)
+    assert any("outcome" in t and "optional" in t for t in questions)
+    assert any("Several packages found" in fact.text for fact in report.facts)
     assert "pyproject.toml could not be parsed; which dependencies matter?" in questions
     assert "dependencies: left-pad" in _facts(report, FactCategory.DEPENDENCIES)
     assert len(questions) == len(set(questions))
@@ -260,7 +261,8 @@ def test_oversized_and_binary_files_are_listed_but_not_scanned(tmp_path):
     assert repo_scan.read_text(root.resolve(), PurePosixPath("blob.bin")) is None
     report = analyze(root, "quokka")
     assert _facts(report, FactCategory.FILES) == []
-    assert any(t.startswith("No file matches") for t in _questions(report))
+    assert any("outcome" in t and "optional" in t for t in _questions(report))
+    assert any(t.startswith("No file matches") for t in _facts(report, FactCategory.COMPONENTS))
 
 
 def test_env_example_is_config_not_a_secret(tmp_path):

@@ -42,8 +42,66 @@ class FinalReviewer:
 
         from harness.authoring_contract import digest
         from harness.authoring_store import adopted_revision, source_state
+        from harness.interview_coverage import current_coverage
+        from harness.planning_session_material import projection
         from harness.review_report import Check, ReviewItem, ReviewState
 
+        material = projection(self.controller.conn, self.task_id, include_inputs=False)
+        report = replace(
+            report,
+            signals=report.signals
+            | {
+                "session_material": {
+                    key: material[key]
+                    for key in (
+                        "material_revision",
+                        "material_digest",
+                        "pending_material_ids",
+                        "handling_digest",
+                    )
+                }
+            },
+        )
+        if material["pending_material_ids"]:
+            report = replace(
+                report,
+                items=report.items
+                + (
+                    ReviewItem(
+                        Check.NO_BLOCKING_QUESTIONS,
+                        ReviewState.BLOCKED,
+                        (
+                            (
+                                "Pending material session inputs require a validated response or "
+                                "explicit reconciliation"
+                            ),
+                        ),
+                        Phase.INTERVIEW,
+                    ),
+                ),
+            )
+        sources = current_coverage(self.controller, self.task_id)
+        if sources.enabled:
+            findings = tuple(f"{row['state']}: {row['text']}" for row in sources.blockers)
+            if not sources.accepted and not findings:
+                findings = ("Exact source coverage acceptance is required",)
+            report = replace(
+                report,
+                signals=report.signals | {"investigation": sources.to_dict()},
+                items=report.items
+                + (
+                    (
+                        ReviewItem(
+                            Check.NO_BLOCKING_QUESTIONS,
+                            ReviewState.BLOCKED,
+                            findings,
+                            Phase.INTERVIEW,
+                        ),
+                    )
+                    if findings
+                    else ()
+                ),
+            )
         adopted = adopted_revision(self.controller, self.task_id)
         if adopted is None:
             return report

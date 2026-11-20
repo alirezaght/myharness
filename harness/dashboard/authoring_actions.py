@@ -3,7 +3,7 @@
 import re
 import sqlite3
 
-from harness.authoring import AuthoringService
+from harness.authoring import AuthoringService, NonAnswer
 from harness.authoring_actions_contract import SCHEMAS
 from harness.authoring_contract import (
     BASE_KEYS,
@@ -15,6 +15,7 @@ from harness.authoring_contract import (
     text,
 )
 from harness.dashboard.authoring_view import read_authoring
+from harness.investigation_policy import AcquisitionError
 
 
 def _scalars(data):
@@ -66,6 +67,8 @@ def authoring_action(db_path, root, body, action, *, specs=None):
         keys = {"task", "request_id", "expected"} | SCHEMAS[action]
         if action == "reconcile-preview":
             keys = {"task", "revision"}
+        if action == "reconcile" and "handling" in data:
+            keys = keys | {"handling"}
         exact(data, keys)
         text(data["task"], "task", 100)
         if action != "reconcile-preview":
@@ -89,6 +92,10 @@ def authoring_action(db_path, root, body, action, *, specs=None):
             args = {k: v for k, v in data.items() if k != "task"}
             method = {
                 "save-spec": "save_spec",
+                "reconnect-jira": "reconnect_jira",
+                "jira-handoff": "jira_handoff",
+                "investigation-review": "investigation_review",
+                "accept-investigation": "accept_investigation",
                 "revise-record": "revise_record",
                 "regenerate": "request_regeneration",
                 "reconcile-preview": "reconcile_preview",
@@ -97,9 +104,21 @@ def authoring_action(db_path, root, body, action, *, specs=None):
             }.get(action, action)
             validated = True
             result = getattr(service, method)(**args)
-        return (202 if action in {"regenerate", "retry-job"} else 200), result
+        return (
+            202
+            if action in {"regenerate", "retry-job"} and result.get("origin") != "attached"
+            else 200
+        ), result
+    except AcquisitionError as error:
+        return 409, {"error": str(error), "code": "acquisition", **error.public()}
+    except NonAnswer as error:
+        return 409, {"error": str(error), "code": "non_answer"}
     except AuthoringContextTooLarge as error:
         return 409, {"error": str(error)}
+    except __import__(
+        "harness.planning_session_contract", fromlist=["SessionError"]
+    ).SessionError as error:
+        return 409, error.public()
     except AuthoringConflict as error:
         current = None
         try:

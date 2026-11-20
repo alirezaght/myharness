@@ -57,8 +57,12 @@ def _depth_skipped(question: Question) -> bool:
     )
 
 
-def plan_sync(questions: list[Question], entries: tuple[CatalogueQuestion, ...]) -> SyncPlan:
+def plan_sync(
+    questions: list[Question], entries: tuple[CatalogueQuestion, ...], coverage=None
+) -> SyncPlan:
     """Seed missing in-depth entries, skip never-asked out-of-depth ones, reopen returning ones."""
+    if coverage and coverage.enabled:
+        return SyncPlan()
     seeded = {q.catalogue_key: q for q in questions if q.catalogue_key is not None}
     wanted = {entry.key for entry in entries}
     return SyncPlan(
@@ -112,12 +116,19 @@ def _tally_question(tally: _Tally, q: Question, linked: list[Proposal]) -> None:
 
 
 def build_checklist(
-    questions: list[Question], proposals: list[Proposal], due: SyncPlan | None
+    questions: list[Question], proposals: list[Proposal], due: SyncPlan | None, coverage=None
 ) -> InterviewChecklist:
     tally, by_question = _Tally(), {}
     for proposal in proposals:
         by_question.setdefault(proposal.question_id, []).append(proposal)
     for question in ordered(questions):
+        if (
+            coverage
+            and coverage.suppress(question)
+            and not question.answer
+            and not by_question.get(question.id)
+        ):
+            continue
         returning = due is not None and question in due.reopen
         if returning:
             tally.items.append(_item(question, ChecklistState.NOT_ASKED))
@@ -149,6 +160,19 @@ def build_checklist(
                 entry.key,
             )
         )
+    if coverage and coverage.enabled:
+        for row in coverage.blockers:
+            tally.items.append(
+                ChecklistItem(
+                    None,
+                    row["topic"],
+                    f"{row['state']}: {row['text']} — {row['rationale']}",
+                    "source_review",
+                    ChecklistState.UNANSWERED,
+                    None,
+                    row["key"],
+                )
+            )
     return InterviewChecklist(tuple(tally.items), tally.answered, tally.decided, tally.skipped)
 
 
@@ -164,7 +188,10 @@ def _requirement(proposal: Proposal, question: Question | None) -> Requirement:
 
 
 def build_summary(
-    questions: list[Question], proposals: list[Proposal], checklist: InterviewChecklist
+    questions: list[Question],
+    proposals: list[Proposal],
+    checklist: InterviewChecklist,
+    coverage=None,
 ) -> InterviewSummary:
     requirements, elsewhere, irrelevant = [], [], []
     for q in ordered(questions):
@@ -180,4 +207,17 @@ def build_summary(
     requirements += [
         _requirement(p, None) for p in proposals if p.question_id is None and p.status in DECIDED
     ]
+    if coverage and coverage.accepted:
+        requirements.extend(
+            Requirement(
+                None,
+                row["topic"],
+                row["text"],
+                row["statement"],
+                Provenance.SOURCE_EVIDENCE,
+                tuple(c["source"] for c in row["citations"]),
+            )
+            for row in coverage.rows
+            if row["state"] == "accepted_source_evidence" and row.get("disposition") != "decision"
+        )
     return InterviewSummary(tuple(requirements), tuple(elsewhere), tuple(irrelevant), checklist)

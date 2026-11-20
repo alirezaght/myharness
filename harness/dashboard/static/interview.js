@@ -226,12 +226,22 @@ function workspaceAuthoringStatus(task, state) {
   const phase = authoring.phase || task.phase;
   const jobs = authoring.jobs || [];
   const latest = jobs.at(-1);
-  const active = latest
-    ? `${latest.kind === "investigate" ? "Context preparation" : "Interview model"}: ${latest.state}${latest.error ? ` · ${latest.error}` : ""}`
+  const session = task.session?.snapshot;
+  const active = session?.mode === "attached"
+    ? session.state === "clock_unavailable"
+      ? `Shared session needs host clock access · ${session.clockUnavailable?.reason || "unavailable"}`
+      : `${session.providerLabel || "Provider"} session · ${session.state.replaceAll("_", " ")}`
+    : latest
+    ? `${latest.kind === "source_investigation" ? "Source investigation" : latest.kind === "jira_reconnect" ? "Jira reconnect" : latest.kind === "investigate" ? "Context preparation" : "Interview model"}: ${latest.state}${latest.error ? ` · ${latest.error}` : ""}`
     : "No authoring job recorded";
-  bar.append(el("span", `Project ${authoring.project?.repository || "configured project"} · ${phase}`), el("span", active));
+  bar.append(el("span", `Project ${workspaceProjectName(authoring.project?.repository)} · ${phase}`), el("span", active));
   if (state.storageError) bar.append(el("span", state.storageError));
   return bar;
+}
+
+function workspaceProjectName(repository) {
+  const path = String(repository || "").replace(/[\\/]+$/, "");
+  return path.split(/[\\/]/).filter(Boolean).at(-1) || "configured project";
 }
 
 async function workspaceAuthoringRefresh(task, state, { hosts = false } = {}) {
@@ -271,6 +281,13 @@ async function workspaceAuthoringPost(task, state, action, fields, options = {})
   const result = await response.json();
   if (!response.ok) throw Object.assign(new Error(result.error || `HTTP ${response.status}`), { status: response.status, result, payload });
   await workspaceAuthoringRefresh(task, state);
+  if (action === "answer" && state.authoring?.phase === "interview") {
+    if (state.drawerQuestionId === fields.question) state.drawerQuestionId = null;
+    result.acknowledgement = fields.mode === "unknown"
+      ? `Saved Q${fields.question} as not known yet. It remains unresolved; the next question is shown.`
+      : fields.mode === "defer" ? `Deferral for Q${fields.question} saved. Review remains required.`
+        : `Answer for Q${fields.question} saved. The next question is shown.`;
+  }
   if (workspaceData?.task?.id === task.id) await refreshDashboard();
   delete state.authoringRequests[key];
   delete state.authoringRequestActions?.[key];
@@ -291,10 +308,16 @@ function authoringButton(task, state, label, action, fields, opts = {}) {
     try {
       const result = await action(task, state, fields);
       state.authoringConflict = null;
-      authoringStatus(state, result?.job ? "Request queued. Waiting for a persisted worker result." : "Saved.");
+      authoringStatus(state, result?.acknowledgement || (result?.job
+        ? result.state && !["queued", "running"].includes(result.state)
+          ? `Existing request is ${result.state}. No new model response was queued; use the recovery controls below.`
+          : "Request queued. Waiting for a persisted worker result."
+        : "Saved."));
     } catch (error) {
-      authoringStatus(state, `${error.message}. Your edit and request details are retained.`, true);
-      if (error.status === 409 && opts.recovery) {
+      authoringStatus(state, error.followupSaved
+        ? `Your follow-up was saved as context. ${error.message}. The model request details are retained; structured questions are unchanged.`
+        : `${error.message}. Your edit and request details are retained.`, true);
+      if (error.status === 409 && opts.recovery && error.result?.code !== "non_answer") {
         state.authoringConflict = { ...opts.recovery, message: error.message, key: opts.key || opts.recovery.key };
         workspacePersist(state);
       }
@@ -429,7 +452,7 @@ function authoringMessage(state) {
       }
       workspaceRerender();
     });
-    box.append(retry);
+    box.append(el("p", `Saved ${action} request${payload.host ? ` on ${payload.host}` : payload.question ? ` for Q${payload.question}` : ""}. Retry preserves its original details.`), retry);
   }
   return box;
 }
@@ -521,14 +544,471 @@ function workspaceEmptyProject(data) {
   return root;
 }
 
+function workspaceCurrentQuestion(state) {
+  const id = state.authoring?.interview?.current_question_id;
+  return (state.authoring?.questions || []).find(question => question.id === id) || null;
+}
+
+function workspaceInterviewRecovery(task, state) {
+  if (task.session?.snapshot?.mode === "attached") return null;
+  const recovery = state.authoring?.model_recovery;
+  if (!recovery) return null;
+  const box = el("section"); box.className = "authoring-card authoring-recovery"; box.setAttribute("role", "alert");
+  box.append(el("strong", `Interview model ${recovery.host}: ${recovery.state}`), el("p", recovery.message),
+    el("p", "Your manual answers and drafts remain usable. Choose the host explicitly for a NEW response; failed history is retained."));
+  const key = "recovery-host";
+  const buffer = authoringFormBuffer(state, key, { host: recovery.host }, state.authoring.base);
+  box.append(authoringFormControl(state, key, buffer, "host", "Recovery interview model", {
+    options: [["codex", "Codex"], ["claude", "Claude"]], type: "input",
+  }));
+  box.append(authoringButton(task, state, "Request a new response on selected host", (t, s) =>
+    authoringAction(t, s, "regenerate", { host: buffer.value.host }, { key: `recovery-response:${buffer.value.host}` })));
+  return box;
+}
+
+function investigationStageLabel(investigation) {
+  if (investigation.state === "queued") return "Queued";
+  if (investigation.state === "running" && !investigation.stage) return "Running";
+  const labels = {
+    acquiring_ticket: "Reading the selected Jira issue",
+    inspecting_repository: "Inspecting bounded repository sources",
+    synthesizing: "Preparing source-backed findings",
+    ready: "Source review is ready",
+    authentication_completed: "Sign-in completed; read access is not qualified",
+    failed: "Investigation needs recovery",
+    stale: "Investigation result is stale",
+    unavailable: "Source acquisition is unavailable here",
+  };
+  return labels[investigation.stage] || labels[investigation.state] || investigation.state || "Not started";
+}
+
+function investigationSourceCard(source) {
+  const card = el("details"); card.className = "investigation-source";
+  const meta = source.metadata || {};
+  const summary = `${source.kind === "ticket" ? "Jira issue" : "Repository file"} · ${source.locator}`;
+  card.append(el("summary", summary));
+  if (source.sha256) card.append(el("p", `SHA-256 ${source.sha256}`));
+  if (meta.updated) card.append(el("p", `Jira last updated · ${meta.updated}`));
+  if (source.kind === "repository") {
+    card.append(el("p", `Read version ${meta.version || "not reported"} · ${meta.hash_status || "hash not reported"}`));
+    if (meta.truncated) card.append(el("p", `Partial file read · offset ${meta.offset} · next ${meta.next_offset}`));
+  }
+  card.append(el("pre", source.content || "No source text was recorded."));
+  return card;
+}
+
+function investigationReviewPackageView(content, packageSha256) {
+  const section = el("section"); section.className = "investigation-review-package";
+  section.append(el("h3", "Exact investigation review package"));
+  section.append(el("p", content.complete
+    ? "Review the source evidence, proposed specification, and diagram below. Findings remain proposals until you accept this exact package."
+    : "This package is incomplete; acceptance is unavailable."));
+
+  const proposed = el("details"); proposed.open = true;
+  proposed.append(el("summary", "Complete proposed specification"), authoringMarkdown(content.proposed_spec || "No proposed specification was recorded."));
+  section.append(proposed);
+
+  const graph = content.graph?.value || content.graph || {};
+  const diagram = el("details");
+  diagram.append(el("summary", `Proposed logical diagram · ${(graph.nodes || []).length} components · ${(graph.edges || []).length} relationships`));
+  const nodeLabels = new Map((graph.nodes || []).map(node => [node.id, node.label || node.id]));
+  for (const node of graph.nodes || []) {
+    const row = el("article"); row.className = "investigation-evidence-row";
+    row.append(el("h4", node.label || node.id), el("p", `${node.kind || "component"} · ${node.status || "status not reported"}`));
+    if (node.assumption) row.append(el("p", `Proposal rationale: ${node.assumption}`));
+    if (node.sources?.length) row.append(el("p", `Evidence references: ${node.sources.join(", ")}`));
+    diagram.append(row);
+  }
+  for (const edge of graph.edges || []) {
+    const row = el("article"); row.className = "investigation-evidence-row";
+    row.append(el("h4", `${nodeLabels.get(edge.from) || edge.from} → ${nodeLabels.get(edge.to) || edge.to}`), el("p", `${edge.label || "Relationship"} · ${edge.status || "status not reported"}`));
+    if (edge.assumption) row.append(el("p", `Proposal rationale: ${edge.assumption}`));
+    if (edge.sources?.length) row.append(el("p", `Evidence references: ${edge.sources.join(", ")}`));
+    diagram.append(row);
+  }
+  section.append(diagram);
+
+  const sourceDetails = el("details");
+  sourceDetails.append(el("summary", `All acquired sources · ${(content.sources || []).length}`));
+  for (const source of content.sources || []) sourceDetails.append(investigationSourceCard(source));
+  section.append(sourceDetails);
+
+  const coverage = content.evidence || {};
+  const findings = el("section"); findings.className = "investigation-findings";
+  findings.append(el("h4", "Source coverage and exact citations"));
+  for (const row of coverage.coverage || []) {
+    const card = el("article"); card.className = "investigation-evidence-row";
+    card.append(el("h5", `${row.key} · ${row.disposition.replaceAll("_", " ")}`), el("p", row.statement), el("p", `Reasoning: ${row.rationale}`));
+    for (const citation of row.citations || []) {
+      const source = (content.sources || []).find(item => item.id === citation.source);
+      const quote = el("blockquote", citation.quote);
+      card.append(el("p", `${source?.locator || citation.source} · characters ${citation.start}–${citation.end} · source SHA-256 ${citation.sha256}`), quote);
+    }
+    findings.append(card);
+  }
+  const decisions = el("section"); decisions.className = "investigation-findings";
+  decisions.append(el("h4", "Genuine decisions for you"));
+  const decisionRows = coverage.decisions || [];
+  if (!decisionRows.length) decisions.append(el("p", "The source review proposed no additional developer decisions."));
+  for (const row of decisionRows) {
+    const card = el("article"); card.className = "investigation-evidence-row";
+    card.append(el("h5", row.concern), el("p", row.text), el("p", row.reason));
+    if (row.supersedes) card.append(el("p", `Proposes a successor to question Q${row.supersedes}; prior responses remain in history.`));
+    for (const citation of row.citations || []) {
+      const source = (content.sources || []).find(item => item.id === citation.source);
+      card.append(el("p", `Evidence from ${source?.locator || citation.source}:`), el("blockquote", citation.quote));
+    }
+    decisions.append(card);
+  }
+  findings.append(decisions); section.append(findings);
+
+  const questions = el("details");
+  questions.append(el("summary", `Current questions and recommendations · ${(content.questions || []).length} questions · ${(content.proposals || []).length} recommendations`));
+  for (const question of content.questions || []) {
+    const row = el("article"); row.append(el("h5", `Q${question.id} · ${question.topic} · ${question.status}`), el("p", question.text));
+    if (question.answer) row.append(el("p", `Recorded answer: ${question.answer}`));
+    if (question.skip_source) row.append(el("p", `Recorded deferral: ${question.skip_source} · ${question.skip_reason || question.skip_ref || ""}`));
+    questions.append(row);
+  }
+  for (const proposal of content.proposals || []) {
+    const row = el("article"); row.append(el("h5", `P${proposal.id} · ${proposal.status}`), el("p", proposal.recommendation), el("p", proposal.rationale));
+    if (proposal.response) row.append(el("p", `Developer response: ${proposal.response}`));
+    questions.append(row);
+  }
+  section.append(questions);
+
+  const sourceHistory = content.source_lineage || {};
+  const sourceRelationships = Array.isArray(sourceHistory.relationships)
+    ? sourceHistory.relationships : [];
+  if (sourceRelationships.length) {
+    const historical = new Map((content.historical_questions || []).map(question => [
+      Number(question.id), question,
+    ]));
+    const current = new Map((content.questions || []).map(question => [Number(question.id), question]));
+    const sourceDetails = el("details");
+    sourceDetails.className = "investigation-source-history";
+    sourceDetails.append(el("summary", `Earlier source decisions · ${sourceRelationships.length} retained links`));
+    sourceDetails.append(el("p", "These decisions were retired when their source premise changed. Their recorded answers remain historical and do not answer the current successor."));
+    for (const relationship of sourceRelationships) {
+      const oldId = Number(relationship.question);
+      const newId = Number(relationship.current_question);
+      const oldQuestion = historical.get(oldId);
+      const currentQuestion = current.get(newId);
+      const row = el("article"); row.className = "investigation-evidence-row source-history-row";
+      row.append(el("h4", `Q${oldId} · retired source decision`));
+      if (oldQuestion?.text) row.append(el("p", oldQuestion.text));
+      if (oldQuestion?.answer) row.append(el("p", `Recorded answer: ${oldQuestion.answer}`));
+      if (oldQuestion?.skip_source) {
+        row.append(el("p", `Recorded deferral: ${oldQuestion.skip_source}${oldQuestion.skip_reason ? ` · ${oldQuestion.skip_reason}` : ""}`));
+      }
+      row.append(el("p", `Current successor Q${newId}: ${currentQuestion?.text || "not present in the current package"}`));
+      sourceDetails.append(row);
+    }
+    section.append(sourceDetails);
+  }
+
+  const basis = content.basis || {};
+  const lineage = el("details");
+  const effectiveLineage = content.effective_lineage || {};
+  const lineageApplications = Array.isArray(effectiveLineage.applications) ? effectiveLineage.applications : [];
+  const lineageCount = lineageApplications.length
+    + Object.values(effectiveLineage.question_successors || {}).length
+    + Object.values(effectiveLineage.proposal_successors || {}).length;
+  lineage.append(el("summary", `Review basis and decision lineage · ${lineageCount} recorded links`));
+  for (const [label, value] of [
+    ["Source identity", basis.semantic], ["Selected body", basis.body],
+    ["Selected diagram", basis.graph], ["Selected revision", basis.revision],
+  ]) {
+    const row = el("p"); row.append(el("strong", `${label}: `), el("code", value || "not reported"));
+    lineage.append(row);
+  }
+  for (const [label, value] of [
+    ["Package SHA-256", packageSha256], ["Source bundle", content.bundle],
+    ["Working revision", content.working_revision], ["Adopted revision", content.adopted_revision],
+  ]) {
+    const row = el("p"); row.append(el("strong", `${label}: `), el("code", value || "none"));
+    lineage.append(row);
+  }
+  const selection = content.selection || {};
+  const selectedSource = el("p");
+  selectedSource.append(el("strong", "Selected Jira issue: "), el("code", selection.issue || "not reported"));
+  if (selection.site?.url) selectedSource.append(el("span", ` · ${selection.site.url}`));
+  selectedSource.append(el("span", ` · fields ${selection.fields?.join(", ") || "not reported"}`));
+  lineage.append(selectedSource);
+  const lineageMaps = [
+    ["Question successors", effectiveLineage.question_successors, "Q"],
+    ["Recommendation successors", effectiveLineage.proposal_successors, "P"],
+    ["Question roots", effectiveLineage.question_roots, "Q"],
+    ["Recommendation roots", effectiveLineage.proposal_roots, "P"],
+  ];
+  for (const [label, mapping, prefix] of lineageMaps) {
+    for (const [record, linked] of Object.entries(mapping || {})) {
+      lineage.append(el("p", `${label}: ${prefix}${record} → ${prefix}${linked}`));
+    }
+  }
+  for (const item of lineageApplications) {
+    const originalId = item.original?.id ?? "identity not reported";
+    lineage.append(el("p", `Applied ${item.target || "record"} · contribution ${item.contribution || "not reported"} · original record ${originalId}`));
+  }
+  for (const [record, binding] of Object.entries(effectiveLineage.registry || {})) {
+    lineage.append(el("p", `P${record} registry decision ${binding.id || "not reported"} · version ${binding.version ?? "not reported"} · ${binding.status || "status not reported"} · ${binding.path || "path not reported"}`));
+  }
+  section.append(lineage);
+  for (const limitation of content.limitations || []) section.append(el("p", `Investigation limitation: ${limitation}`));
+  return section;
+}
+
+function workspaceInvestigationReviewControls(task, state, investigation) {
+  const box = el("section"); box.className = "authoring-card investigation-controls";
+  box.append(el("h3", "Review and adopt source-backed work"), el("p", "The complete review package shows the specification, diagram, acquired sources, evidence mappings, limitations, and current question lineage. Adoption and source acceptance are separate explicit steps; source acceptance does not approve implementation."));
+  if (!investigation.review_available) {
+    box.append(el("p", "A complete source bundle is not available yet. Resolve the investigation status above before reviewing source findings."));
+    return box;
+  }
+  const reviewButton = authoringButton(task, state, "Load exact investigation review", async (t, s) => {
+    const result = await authoringAction(t, s, "investigation-review", {}, { key: "investigation-review" });
+    state.investigationReview = result.review;
+    workspacePersist(state);
+    return { acknowledgement: `Loaded review package ${result.review.sha256}.` };
+  });
+  box.append(reviewButton);
+  const review = state.investigationReview;
+  if (!review) {
+    box.append(el("p", "Load the current server package before adopting or accepting source coverage."));
+    return box;
+  }
+  const content = review.content;
+  const authoring = state.authoring || {};
+  const current = Boolean(content.bundle === investigation.bundle
+    && content.basis?.semantic === authoring.base?.source
+    && content.working_revision === authoring.working?.id
+    && content.adopted_revision === (authoring.adopted?.id || null));
+  const hash = el("p", current
+    ? "This review package matches the task’s current sources, saved specification, and adopted revision."
+    : "This review package is stale; reload the exact current package before continuing.");
+  hash.className = current ? "investigation-package-current" : "authoring-error";
+  box.append(hash, investigationReviewPackageView(content, review.sha256));
+  const adopted = Boolean(content.adopted_revision && content.adopted_revision === authoring.adopted?.id);
+  if (!adopted) {
+    box.append(el("p", "Adopt the selected specification and diagram candidate through the guarded Review tab before accepting this source package."));
+    box.append(workspaceButton("Open guarded candidate adoption", () => {
+      workspaceSetTab(state, "review"); workspacePersist(state); workspaceRerender();
+    }));
+  }
+  const decisionIds = new Set((investigation.coverage?.decision_question_ids || []).map(Number));
+  const decisionQuestions = (authoring.questions || []).filter(question => decisionIds.has(question.id));
+  const unknownIds = new Set((authoring.interview?.unknown_question_ids || []).map(Number));
+  const openDecisionQuestions = decisionQuestions.filter(question =>
+    question.status === "open" || unknownIds.has(question.id));
+  const hasOpenDecision = openDecisionQuestions.length > 0;
+  const hasPendingRecommendation = (content.proposals || []).some(proposal => proposal.status === "pending");
+  const effectiveConcerns = investigation.coverage?.concerns || [];
+  const coverageCanBeReviewed = effectiveConcerns.length > 0 && effectiveConcerns.every(row =>
+    ["pending_source_review", "accepted_source_evidence"].includes(row.state));
+  const canAcceptCoverage = !hasOpenDecision && !hasPendingRecommendation && coverageCanBeReviewed
+    && (content.evidence?.coverage || []).every(row => !["operational_gap", "conflict"].includes(row.disposition));
+  if (investigation.coverage?.accepted) {
+    box.append(el("p", `Exact source coverage was accepted as ${investigation.coverage.acceptance}. Fresh design review and explicit approval are still required.`));
+  } else if (content.complete && current && adopted && canAcceptCoverage) {
+    const provenanceKey = "investigation-acceptance-provenance";
+    const provenanceBuffer = authoringBuffer(state, provenanceKey, "", state.authoring?.base);
+    const provenance = authoringFocus(el("textarea"), state, provenanceKey);
+    provenance.rows = 3; provenance.value = provenanceBuffer.value;
+    provenance.placeholder = "Optional: add a note about accepting this exact package";
+    provenance.setAttribute("aria-label", "Optional source review acceptance note");
+    provenance.addEventListener("input", () => authoringScalarChanged(state, provenanceKey, provenanceBuffer, provenance.value));
+    const confirmation = el("label", "I reviewed the complete source text, citations, proposed specification, diagram, decisions, and limitations.");
+    const checked = el("input"); checked.type = "checkbox"; confirmation.prepend(checked);
+    const accept = authoringButton(task, state, "Accept this exact source review", (t, s) => authoringAction(t, s, "accept-investigation", {
+      approved_sha256: review.sha256,
+      provenance: provenanceBuffer.value.trim()
+        || "Developer explicitly accepted this exact source review package through the confirmation control.",
+    }, { key: `accept-investigation:${review.sha256}` }));
+    accept.disabled = true;
+    const update = () => { accept.disabled = !checked.checked; };
+    checked.addEventListener("change", update);
+    provenance.addEventListener("input", update);
+    box.append(provenance, confirmation, accept);
+  } else {
+    box.append(el("p", content.complete ? "Review package is stale or still contains source conflicts/operational gaps." : "An incomplete package cannot be accepted."));
+  }
+  return box;
+}
+
+function workspaceInvestigationPanel(task, state) {
+  const attached = task.session?.snapshot?.mode === "attached";
+  const investigation = state.authoring?.investigation;
+  const section = el("section"); section.className = "authoring-card investigation-panel";
+  section.append(el("h2", "Task investigation"), el("p", "Gather cited ticket and repository evidence first. Source findings are proposals; only your explicit responses count as developer decisions."));
+  if (!investigation?.enabled) {
+    section.append(el("p", "No source investigation is attached to this task. You can request an investigation for a Jira issue, or continue with manual questions and specification editing."));
+    if (attached) {
+      section.lastChild.textContent = "The connected agent gathers authorized sources and publishes findings here. Manual answers and specification editing remain available.";
+      return section;
+    }
+    const hostKey = "investigation-host";
+    const buffer = authoringFormBuffer(state, hostKey, { host: state.authoring?.jobs?.at(-1)?.host || "codex" }, state.authoring?.base);
+    section.append(authoringFormControl(state, hostKey, buffer, "host", "Interview model for source review", { options: [["codex", "Codex"], ["claude", "Claude"]] }));
+    section.append(authoringButton(task, state, "Investigate this task", (t, s) => authoringAction(t, s, "investigate", {
+      host: buffer.value.host, site: null,
+    }, { expected: buffer.base, key: "investigate" })));
+    return section;
+  }
+
+  const stateLabel = investigationStageLabel(investigation);
+  const status = el("p", `${stateLabel}${investigation.attempt ? ` · attempt ${investigation.attempt}` : ""}`);
+  status.setAttribute("role", investigation.recovery || investigation.state === "failed" ? "alert" : "status");
+  section.append(status);
+  const selection = investigation.selection || {};
+  const site = selection.site?.id || null;
+  section.append(el("p", `Jira issue ${selection.issue || "not identified"} · repository ${selection.repository || "not reported"} · selected interview model ${(investigation.job && state.authoring?.jobs?.find(job => job.id === investigation.job)?.host) || state.authoring?.jobs?.at(-1)?.host || "not reported"}`));
+  if (investigation.completed_stages?.length) section.append(el("p", `Completed stages: ${investigation.completed_stages.map(stage => investigationStageLabel({ stage, state: "running" })).join(" · ")}`));
+  if (investigation.recovery) {
+    const recovery = el("div"); recovery.className = "authoring-recovery"; recovery.setAttribute("role", "alert");
+    recovery.append(el("strong", `Source recovery · ${investigation.recovery.reason || "needs attention"}`), el("p", investigation.recovery.message || "The source investigation did not complete."));
+    if (investigation.recovery.site_choices?.length) {
+      const siteKey = "investigation-site";
+      const siteBuffer = authoringFormBuffer(state, siteKey, { site: investigation.recovery.site_choices[0].id }, state.authoring?.base);
+      recovery.append(authoringFormControl(state, siteKey, siteBuffer, "site", "Verified Jira site", { options: investigation.recovery.site_choices.map(site => [site.id, site.url]) }));
+      if (!attached) {
+        const hostKey = "investigation-host";
+        const hostBuffer = authoringFormBuffer(state, hostKey, { host: investigation.job && state.authoring?.jobs?.find(job => job.id === investigation.job)?.host || "codex" }, state.authoring?.base);
+        recovery.append(authoringFormControl(state, hostKey, hostBuffer, "host", "Interview model for source review", { options: [["codex", "Codex"], ["claude", "Claude"]] }));
+        recovery.append(authoringButton(task, state, "Continue with this verified site", (t, s) => authoringAction(t, s, "investigate", {
+          host: hostBuffer.value.host, site: siteBuffer.value.site,
+        }, { expected: state.authoring.base, key: "investigate-site" })));
+      }
+    }
+  }
+  let hostBuffer;
+  if (!attached) {
+    const sourceHost = el("select"); sourceHost.setAttribute("aria-label", "Source investigation interview model");
+    for (const [value, label] of [["codex", "Codex"], ["claude", "Claude"]]) { const option = el("option", label); option.value = value; sourceHost.append(option); }
+    const hostKey = "investigation-host";
+    hostBuffer = authoringFormBuffer(state, hostKey, { host: state.authoring?.jobs?.find(job => job.id === investigation.job)?.host || "codex" }, state.authoring?.base);
+    sourceHost.value = hostBuffer.value.host;
+    sourceHost.addEventListener("change", () => authoringFormChanged(state, hostKey, hostBuffer, "host", sourceHost.value));
+    section.append(sourceHost);
+  }
+
+  const job = state.authoring?.jobs?.find(item => item.id === investigation.job);
+  if (attached) {
+    section.append(el("p", "Source work is coordinated through the attached agent. No standalone provider job is started from this task."));
+  } else if (job && ["queued", "running"].includes(job.state)) {
+    section.append(authoringButton(task, state, "Cancel source investigation", (t, s) => authoringAction(t, s, "cancel-job", {
+      job: job.id,
+    }, { key: `cancel-investigation:${job.id}` })));
+  } else {
+    section.append(authoringButton(task, state, investigation.bundle ? "Refresh ticket and repository sources" : "Retry source investigation", (t, s) => authoringAction(t, s, "investigate", {
+      host: hostBuffer.value.host, site,
+    }, { expected: state.authoring.base, key: `investigate:${investigation.bundle || "initial"}` })));
+  }
+  if (!attached && investigation.reconnect?.available) {
+    const disclosure = el("details");
+    disclosure.append(el("summary", "Reconnect Jira using explicit native consent"), el("p", investigation.reconnect.disclosure || "This uses the existing native sign-in and may update account authentication."), el("p", `Requested scope: ${investigation.reconnect.scope?.join(", ") || "not reported"}`));
+    const reconnect = authoringButton(task, state, "Start Jira reconnect", (t, s) => authoringAction(t, s, "reconnect-jira", {
+      host: hostBuffer.value.host, site,
+    }, { expected: state.authoring.base, key: "reconnect-jira" }));
+    disclosure.append(reconnect);
+    if (job?.kind === "jira_reconnect" && job.state === "running") {
+      disclosure.append(authoringButton(task, state, "Open Jira authorization page", async (t, s) => {
+        const popup = window.open("about:blank", "_blank");
+        try {
+          const result = await authoringAction(t, s, "jira-handoff", { job: job.id }, { expected: state.authoring.base, key: `jira-handoff:${job.id}` });
+          if (!result.handoff) throw new Error("The native authorization page is no longer available.");
+          if (popup) popup.location.replace(result.handoff.authorization_url);
+          else window.location.assign(result.handoff.authorization_url);
+          return { acknowledgement: "Opened the native authorization page. The URL is held only for this click." };
+        } catch (error) {
+          popup?.close();
+          throw error;
+        }
+      }));
+    }
+    section.append(disclosure);
+  } else if (!attached && investigation.reconnect?.reason) {
+    section.append(el("p", "Jira reconnect is unavailable until the installed native connection has separate bootstrap, consent, and same-account qualification. No automatic sign-in was attempted."));
+  }
+
+  if (investigation.recovery?.reason === "site_selection_required" && investigation.recovery.site_choices?.length) {
+    // The verified-site choice is already presented in the recovery control above.
+  } else if (!selection.site && !investigation.recovery?.site_choices?.length) {
+    section.append(el("p", "A verified Jira site has not been selected. The server will offer only qualified sites; this form does not accept a site URL."));
+  }
+  if (investigation.sources?.length) {
+    const sources = el("details"); sources.append(el("summary", `Acquired source text · ${investigation.sources.length} records`));
+    for (const source of investigation.sources) sources.append(investigationSourceCard(source));
+    section.append(sources);
+  }
+  if (investigation.attempt_observations) {
+    const observation = investigation.attempt_observations;
+    const details = el("details"); details.append(el("summary", "Repository inspection progress"));
+    details.append(el("p", `Inspected ${observation.repository?.counts?.files || 0} bounded file reads · ${observation.repository?.counts?.bytes || 0} text bytes · ${observation.repository?.counts?.entries || 0} entries.`));
+    for (const path of observation.repository?.searched_paths || []) details.append(el("code", path));
+    for (const limitation of observation.repository?.limitations || []) details.append(el("p", `Limitation: ${limitation}`));
+    section.append(details);
+  }
+  const coverage = investigation.coverage || {};
+  if (coverage.concerns?.length) {
+    const findings = el("section"); findings.className = "investigation-findings";
+    findings.append(el("h3", "What Harness found"), el("p", "Each row is a proposed mapping grounded in the acquired source. It is not a developer answer or approval."));
+    for (const concern of coverage.concerns) {
+      const row = el("article"); row.className = `investigation-evidence-row state-${concern.state}`;
+      row.append(el("h4", concern.text), el("p", `Status · ${concern.state.replaceAll("_", " ")} · proposed classification ${concern.disposition.replaceAll("_", " ")}`), el("p", concern.statement), el("p", `Reasoning: ${concern.rationale}`));
+      for (const citation of concern.citations || []) {
+        const source = (investigation.sources || []).find(item => item.id === citation.source);
+        row.append(el("p", `${source?.locator || citation.source} · characters ${citation.start}–${citation.end}`), el("blockquote", citation.quote));
+      }
+      findings.append(row);
+    }
+    for (const limitation of coverage.limitations || investigation.limitations || []) findings.append(el("p", `Coverage limitation: ${limitation}`));
+    section.append(findings);
+  }
+  const decisionIds = new Set((investigation.coverage?.decision_question_ids || []).map(Number));
+  const decisionQuestions = (state.authoring?.questions || []).filter(question => decisionIds.has(question.id));
+  const unknownIds = new Set((state.authoring?.interview?.unknown_question_ids || []).map(Number));
+  const currentId = Number(state.authoring?.interview?.current_question_id || 0);
+  const currentDecision = decisionQuestions.find(question => question.id === currentId
+    && question.status === "open" && !question.skip_source && !unknownIds.has(question.id));
+  const answeredDecisions = decisionQuestions.filter(question => question.status === "answered");
+  const unknownDecisions = decisionQuestions.filter(question => unknownIds.has(question.id));
+  const deferredDecisions = decisionQuestions.filter(question => question.status === "open" && question.skip_source);
+  const otherOpenDecisions = decisionQuestions.filter(question => question.status === "open"
+    && !unknownIds.has(question.id) && !question.skip_source && question.id !== currentDecision?.id);
+  const hasOpenDecision = Boolean(currentDecision || otherOpenDecisions.length || unknownDecisions.length || deferredDecisions.length);
+  if (decisionQuestions.length || currentDecision) {
+    const decisions = el("section"); decisions.className = "investigation-decisions";
+    decisions.append(el("h3", "Developer decision status"));
+    if (currentDecision) decisions.append(el("p", `Current decision Q${currentDecision.id}: ${currentDecision.display_text || currentDecision.text}`));
+    for (const question of otherOpenDecisions) decisions.append(el("p", `Still open Q${question.id}: ${question.display_text || question.text}`));
+    for (const question of unknownDecisions) decisions.append(el("p", `Not known yet Q${question.id}: ${question.display_text || question.text}`));
+    for (const question of deferredDecisions) decisions.append(el("p", `Deferred Q${question.id} (${question.skip_source}): ${question.display_text || question.text}`));
+    if (answeredDecisions.length) {
+      const history = el("details"); history.append(el("summary", `Answered decision history · ${answeredDecisions.length}`));
+      for (const question of answeredDecisions) history.append(el("p", `Answered Q${question.id}: ${question.display_text || question.text}`));
+      decisions.append(history);
+    }
+    if (!currentDecision && !hasOpenDecision) decisions.append(el("p", "No immediate developer decision is waiting. Review the source findings below."));
+    if (currentDecision) decisions.append(workspaceButton("Open current decision", () => {
+      state.drawerQuestionId = null; state.drawerOpen = true; workspacePersist(state); workspaceRerender();
+    }));
+    section.append(decisions);
+  }
+  section.append(workspaceInvestigationReviewControls(task, state, investigation));
+  const message = authoringMessage(state); if (message) section.append(message);
+  return section;
+}
+
 function workspaceStartOrResume(task, state) {
+  const session = task.session?.snapshot;
+  if (session?.mode === "attached" || (session?.epoch > 0 && session.mode === "manual")) return null;
   const box = el("section"); box.className = "authoring-card";
   box.append(el("h2", state.authoring?.initialized ? "Interview workspace" : "Start or resume"),
     el("p", state.authoring?.initialized ? "Conversation and drafts are saved for this task." : "This existing task has not started an Interview & Spec workspace."));
   const host = el("select"); host.setAttribute("aria-label", "Interview model");
   for (const [value, label] of [["codex", "Codex"], ["claude", "Claude"]]) { const option = el("option", label); option.value = value; host.append(option); }
   const hostKey = "start-host";
-  const hostBuffer = authoringFormBuffer(state, hostKey, { host: "codex" }, state.authoring?.base);
+  const hostBuffer = authoringFormBuffer(state, hostKey, { host: state.authoring?.jobs?.at(-1)?.host || "codex" }, state.authoring?.base);
   host.value = hostBuffer.value.host;
   host.addEventListener("change", () => authoringFormChanged(state, hostKey, hostBuffer, "host", host.value));
   const hosts = state.authoring?.hosts || [];
@@ -545,9 +1025,10 @@ function workspaceStartOrResume(task, state) {
   box.append(authoringButton(task, state, "Start / resume interview", async (t, s) => {
     const selectedHost = hostBuffer.value.host;
     const result = await authoringAction(t, s, "start", { host: selectedHost }, { expected: hostBuffer.base, key: `start:${selectedHost}` });
-    if (result.job) s.authoringMessage = { text: "Context preparation queued. The interview will continue after it is recorded." };
+    if (result.job && (!result.state || ["queued", "running"].includes(result.state))) result.acknowledgement = "Context preparation is queued or running. Model availability is checked before generating a response.";
     return result;
   }, null));
+  const recovery = workspaceInterviewRecovery(task, state); if (recovery) box.append(recovery);
   return box;
 }
 
@@ -642,6 +1123,8 @@ async function workspaceLoadOlderConversation(task, state) {
 function workspaceConversationHistoryPanel(task, state) {
   const section = el("section"); section.className = "authoring-conversation-history";
   section.append(el("h2", "Interview conversation history"));
+  const sourceHistory = workspaceSourceLineageHistory(task, state);
+  if (sourceHistory) section.append(sourceHistory);
   const contributions = workspaceAllContributions(state);
   for (const item of [...contributions].reverse()) section.append(workspaceContributionCard(task, state, item));
   const history = state.authoringHistory ||= { records: [], nextBefore: null, loaded: false, loading: false, error: "" };
@@ -652,6 +1135,61 @@ function workspaceConversationHistoryPanel(task, state) {
     section.append(workspaceButton(history.loading ? "Loading earlier conversation…" : "Load earlier conversation", () => workspaceLoadOlderConversation(task, state)));
   if (history?.error) { const error = el("p", history.error); error.className = "authoring-error"; error.setAttribute("role", "alert"); section.append(error); }
   const status = el("p", `${contributions.length} conversation records loaded for this task.`); status.setAttribute("role", "status"); section.append(status);
+  return section;
+}
+
+function workspaceSourceLineageHistory(task, state) {
+  const authoring = state.authoring || task.authoring || {};
+  const lineage = authoring.source_lineage || {};
+  const relationships = Array.isArray(lineage.relationships) ? lineage.relationships : [];
+  if (!relationships.length) return null;
+
+  const questions = new Map([
+    ...(authoring.historical?.questions || []),
+    ...(authoring.questions || []),
+  ].map(question => [Number(question.id), question]));
+  const currentQuestions = new Map((authoring.questions || []).map(question => [Number(question.id), question]));
+  const section = el("section");
+  section.className = "authoring-source-lineage-history";
+  section.append(
+    el("h3", `Source-replaced decisions · ${relationships.length} retained links`),
+    el("p", "Earlier questions and recorded answers remain in history. A changed source premise retires the old target; continue from its current successor instead of editing the retired record."),
+  );
+
+  for (const relationship of relationships) {
+    const retiredId = Number(relationship.question);
+    const successorId = Number(relationship.current_question);
+    const retired = questions.get(retiredId);
+    const successor = currentQuestions.get(successorId);
+    const card = el("article");
+    card.className = "authoring-record authoring-source-lineage-record";
+    card.dataset.retiredQuestionId = retiredId;
+    card.append(el("h4", `Q${retiredId} · retired source decision`));
+    if (retired?.text) card.append(el("p", retired.display_text || retired.text));
+    if (retired?.answer) card.append(el("p", `Recorded answer: ${retired.answer}`));
+    if (retired?.skip_source) {
+      card.append(el("p", `Recorded deferral: ${retired.skip_source}${retired.skip_reason ? ` · ${retired.skip_reason}` : ""}`));
+    }
+    if (!retired?.answer && !retired?.skip_source) {
+      card.append(el("p", `Recorded response status: ${retired?.status || "not available"}`));
+    }
+    const reason = relationship.reason === "source_premise_changed"
+      ? "The source premise changed. The earlier response is retained for history and does not answer the replacement decision."
+      : `This decision was retired by the recorded source relationship (${relationship.reason || "reason not reported"}).`;
+    card.append(el("p", reason));
+    if (successor) {
+      card.append(el("p", `Current successor Q${successorId}: ${successor.display_text || successor.text}`));
+      card.append(workspaceButton(`Open current successor Q${successorId}`, () => {
+        state.drawerQuestionId = successorId;
+        state.drawerOpen = true;
+        workspacePersist(state);
+        workspaceRerender();
+      }));
+    } else {
+      card.append(el("p", `Current successor Q${successorId} is not present in the current question projection. Refresh the task before continuing.`));
+    }
+    section.append(card);
+  }
   return section;
 }
 
@@ -817,8 +1355,18 @@ function workspaceQuestionCard(task, state, question, surface = "interview") {
   const focus = (node, key) => authoringFocus(node, state, `${surface}:${key}`);
   const card = el("article"); card.className = "authoring-question"; card.dataset.questionId = question.id;
   const heading = el("div"); heading.className = "authoring-question-heading";
-  heading.append(el("small", `Q${question.id} · ${question.kind || "question"} · ${question.status || "open"}`), el("h3", question.text));
+  heading.append(el("small", `Q${question.id} · ${question.kind || "question"} · ${question.status || "open"}`), el("h3", question.display_text || question.text));
   card.append(heading);
+  if (question.discovery_note) card.append(el("p", question.discovery_note));
+  if ((state.authoring?.interview?.unknown_question_ids || []).includes(question.id))
+    card.append(el("p", "Saved: I don’t know yet. This requirement remains unresolved and can be revisited."));
+  const group = state.authoring?.interview;
+  if (group?.scope_response_question_id && group.related_scope_question_ids?.includes(question.id)
+      && group.scope_response_question_id !== question.id)
+    card.append(el("p", `Related scanner note: context was saved on Q${group.scope_response_question_id}. Technical discovery remains unresolved; this original note is retained for review.`));
+  if (question.display_text && question.display_text !== question.text) {
+    const original = el("details"); original.append(el("summary", "Original scanner wording"), el("p", question.text)); card.append(original);
+  }
   const history = workspaceAllContributions(state).filter(item => item.payload?.original?.id === question.id || item.payload?.target === `question:${question.id}`);
   if (history.length) {
     const details = authoringDisclosure(el("details"), state, `${surface}:question:${question.id}:history`);
@@ -940,7 +1488,7 @@ function workspaceInterviewDrawer(task, state, focusReturn) {
   });
   const questions = state.authoring?.questions || [];
   const question = questions.find(item => item.id === state.drawerQuestionId)
-    || questions.find(item => !item.answer && !item.skip_source);
+    || workspaceCurrentQuestion(state);
   header.append(title, close); dialog.append(header);
   if (question) dialog.append(workspaceQuestionCard(task, state, question, "drawer"));
   else dialog.append(el("p", "No unanswered question is currently recorded."));
@@ -954,21 +1502,250 @@ function workspaceInterviewDrawer(task, state, focusReturn) {
   return dialog;
 }
 
+function workspaceSessionEventSummary(event) {
+  const payload = event.payload || {};
+  const labels = {
+    "session.started": "Shared session started",
+    "session.attached": "Agent connected",
+    "session.pause": "Shared session paused",
+    "session.request-reattach": "Reconnect requested",
+    "session.interview_prepared": "Interview context prepared",
+    "session.choose-manual": "Dashboard mode selected",
+    "session.choose-standalone": "Standalone mode selected",
+    "session.detached": "Agent disconnected",
+  };
+  if (event.kind === "session.user_response")
+    return `Your response to ${payload.target || "the current item"}: ${payload.text || ""}`;
+  if (event.kind === "session.task_message") return payload.text || "Agent message";
+  if (event.kind === "session.progress") return `${payload.stage || "Progress"}: ${payload.text || ""}`;
+  if (event.kind === "session.candidate") return `Candidate revision ${payload.revision || "recorded"}`;
+  if (event.kind === "session.source_bundle") return "Source observations and candidate were published for review.";
+  if (event.kind === "session.question_proposal") return payload.text || "A question was proposed.";
+  if (payload.workspace_event) return `${event.kind.replaceAll("_", " ")} · saved through the task workspace`;
+  return labels[event.kind] || event.kind.replace(/^session\./, "").replaceAll("_", " ").replaceAll("-", " ");
+}
+
+function workspaceSessionEventText(event) {
+  const payload = event.payload || {};
+  if (typeof payload.text === "string") return payload.text;
+  if (typeof payload.body === "string") return payload.body;
+  if (event.kind === "session.source_bundle") return "Repository and ticket findings with a specification and diagram are ready for review.";
+  if (event.kind === "session.candidate") return "A specification and diagram proposal is ready for review.";
+  return "";
+}
+
+function workspaceSessionEventAuthor(event, session) {
+  if (event.kind === "session.user_response") return "You";
+  if (event.origin === "browser" || event.origin === "tui_user") return "You";
+  if (event.origin === "attached_agent") return session.providerLabel || "Invoking agent";
+  if (event.origin === "system") return "Harness";
+  return event.origin || "Task history";
+}
+
+function workspaceSessionEventLabel(event) {
+  const state = event.deliveryState || "saved";
+  if (!event.requiresResponse) {
+    if (event.origin === "attached_agent") return "Published by the invoking agent";
+    if (event.origin === "browser" || event.origin === "tui_user") return "Saved by you";
+    return state === "applied" ? "Applied to the task" : "Recorded in task history";
+  }
+  return state === "applied" ? "Applied to the task"
+    : state === "received" ? "Received by the agent · awaiting committed response"
+    : "Saved · not yet received by the agent";
+}
+
+function workspaceSessionEvents(state, session) {
+  const known = new Map((state.sessionHistoryEvents || []).map(event => [event.id, event]));
+  for (const event of session.events || []) known.set(event.id, event);
+  state.sessionHistoryEvents = [...known.values()].sort((a, b) => a.sequence - b.sequence);
+  if (!Object.hasOwn(state, "sessionHistoryBefore")) state.sessionHistoryBefore = session.nextBefore;
+  const list = el("ol"); list.className = "session-event-list";
+  for (const event of state.sessionHistoryEvents) {
+    const row = el("li"); row.className = "session-event";
+    const visibleText = workspaceSessionEventText(event);
+    if (visibleText) {
+      row.classList.add("session-conversation-message");
+      row.append(el("strong", workspaceSessionEventAuthor(event, session)));
+      row.append(el("p", visibleText));
+      if (event.payload?.target) row.append(el("small", `Response to ${event.payload.target.split(":")[0]}`));
+      row.append(el("small", workspaceSessionEventLabel(event)));
+    }
+    const details = el("details");
+    details.dataset.workspaceDisclosure = `session-event:${event.id}`;
+    const title = visibleText
+      ? `Message details · sequence ${event.sequence}`
+      : `${workspaceSessionEventSummary(event)} · ${workspaceSessionEventLabel(event)}`;
+    details.append(el("summary", title));
+    const meta = el("p", `Sequence ${event.sequence} · ${event.origin || "system"} · epoch ${event.epoch ?? "not attached"}`);
+    meta.className = "session-event-meta";
+    details.append(meta, el("p", `Event reference ${event.id}`));
+    const payload = el("details"); payload.append(el("summary", "Recorded event details"));
+    const pre = el("pre"); pre.textContent = JSON.stringify(event.payload || {}, null, 2); payload.append(pre);
+    details.append(payload); row.append(details); list.append(row);
+  }
+  return list;
+}
+
+async function workspacePostSessionAction(task, state, action) {
+  if (state.sessionActionRequest && state.sessionActionRequest.action !== action)
+    throw new Error("Resolve the saved session action before creating a different action.");
+  if (!state.sessionActionRequest) {
+    const snapshot = task.session?.snapshot;
+    if (!snapshot || !task.session?.base) throw new Error("Session status is unavailable; reload the task before changing its mode.");
+    state.sessionActionRequest = {
+      task: task.id,
+      request_id: authoringRequestId(),
+      expected: task.session.base,
+      epoch: snapshot.epoch,
+      action,
+    };
+    workspacePersist(state);
+  }
+  try {
+    const response = await fetch("/api/session/action", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state.sessionActionRequest),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(result.error || `Session action failed (${response.status})`);
+      error.status = response.status; error.payload = result; throw error;
+    }
+    state.sessionActionRequest = null;
+    state.sessionActionMessage = { text: action === "request-reattach"
+      ? "Reconnect request saved. The invoking agent must receive it in the original session."
+      : action === "pause" ? "Shared session paused. Your saved answers and task history remain."
+        : action === "choose-standalone" ? "Standalone mode selected. No model was started by this change."
+          : "Dashboard manual mode selected. Your task history and saved content remain." };
+    workspacePersist(state);
+    await refreshDashboard();
+    return result;
+  } catch (error) {
+    state.sessionActionMessage = { text: error.status === 409
+      ? `${error.message}. Reload the latest session status before deciding whether to create a new action.`
+      : `The action outcome may be unknown. Retry the exact saved request or reload status before creating another action. ${error.message}`,
+      error: true };
+    workspacePersist(state);
+    workspaceRerender();
+    throw error;
+  }
+}
+
+function workspaceSessionHistory(task, state) {
+  const session = task.session?.snapshot;
+  if (!session) return null;
+  const section = el("section"); section.className = "authoring-conversation-history";
+  section.append(el("h3", "Conversation history"), workspaceSessionEvents(state, session));
+  if (state.sessionHistoryError) section.append(el("p", state.sessionHistoryError));
+  if (state.sessionHistoryBefore) {
+    const older = el("button", "Load earlier conversation events"); older.type = "button";
+    older.addEventListener("click", async () => {
+      older.disabled = true; state.sessionHistoryError = "Loading earlier events…";
+      try {
+        const url = `/api/session/events?task=${encodeURIComponent(task.id)}&before=${encodeURIComponent(state.sessionHistoryBefore)}&limit=50`;
+        const response = await fetch(url, { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Could not load earlier events.");
+        const known = new Map((state.sessionHistoryEvents || []).map(event => [event.id, event]));
+        for (const event of data.session?.events || []) known.set(event.id, event);
+        state.sessionHistoryEvents = [...known.values()].sort((a, b) => a.sequence - b.sequence);
+        state.sessionHistoryBefore = data.session?.nextBefore ?? null;
+        state.sessionHistoryError = "";
+        workspacePersist(state);
+      } catch (error) { state.sessionHistoryError = `Earlier events are unavailable: ${error.message}`; }
+      workspaceRerender();
+    });
+    section.append(older);
+  }
+  return section;
+}
+
+function workspaceSharedSessionPanel(task, state) {
+  const session = task.session?.snapshot;
+  if (!session || !(session.epoch > 0 || session.attachmentId)) return null;
+  const panel = el("section"); panel.className = "authoring-card shared-session-panel";
+  const attached = session.mode === "attached";
+  const sessionState = String(session.state || "unknown");
+  const stateLabel = attached ? sessionState.replaceAll("_", " ") : session.mode;
+  const liveAttached = attached && ["busy", "listening"].includes(sessionState);
+  panel.append(el("h3", attached ? "Conversation with your invoking agent" : "Task conversation"));
+  panel.append(el("p", attached
+    ? sessionState === "clock_unavailable"
+      ? `The ${session.providerLabel || "invoking"} session is attached, but Harness cannot verify its lease because the host boot identity is unavailable (${session.clockUnavailable?.reason || "unknown reason"}).`
+      : liveAttached
+        ? `${(session.providerLabel || "Provider").replace(/^./, letter => letter.toUpperCase())} agent ${sessionState === "busy" ? "is processing" : "is connected and listening"} · Browser messages are saved to this task and delivered to the same conversation.`
+        : `The ${(session.providerLabel || "invoking").replace(/^./, letter => letter.toUpperCase())} session is ${stateLabel}. Browser messages remain saved on this task; delivery resumes only after the same agent reconnects.`
+    : `This task is in ${stateLabel} mode. Existing conversation, answers and planning content remain on the task.`));
+  if (attached && session.clockUnavailable) {
+    const guidance = session.clockUnavailable.reason === "permission_denied"
+      ? "Ask the invoking provider to run the same foreground Harness command with host permission, then retry the unchanged request with the same caller identity and capability. Do not create a new session or switch modes."
+      : "Resolve the reported host clock prerequisite, then retry the unchanged foreground command. Do not create a new session or switch modes.";
+    const warning = el("p", guidance); warning.className = "authoring-error"; warning.setAttribute("role", "alert"); panel.append(warning);
+  }
+  if (attached) {
+    const current = workspaceCurrentQuestion(state);
+    if (current) {
+      const prompt = el("div"); prompt.className = "session-current-question";
+      prompt.setAttribute("role", "status");
+      prompt.append(el("strong", "Current question"), el("p", `Q${current.id} · ${current.display_text || current.text}`));
+      prompt.append(workspaceButton(`Open Q${current.id}`, () => {
+        state.drawerQuestionId = current.id; state.drawerOpen = true; workspacePersist(state); workspaceRerender();
+      }));
+      panel.append(prompt);
+    }
+  }
+  if (state.sessionActionMessage) {
+    const message = el("p", state.sessionActionMessage.text);
+    message.className = state.sessionActionMessage.error ? "authoring-error" : "authoring-feedback";
+    message.setAttribute("role", state.sessionActionMessage.error ? "alert" : "status"); panel.append(message);
+  }
+  const retry = state.sessionActionRequest;
+  const actions = el("div"); actions.className = "authoring-actions";
+  const canUseSessionActions = !session.clockUnavailable;
+  if (retry && canUseSessionActions) {
+    const retryButton = el("button", "Retry exact session action"); retryButton.type = "button";
+    retryButton.addEventListener("click", () => workspacePostSessionAction(task, state, retry.action).catch(() => {}));
+    actions.append(retryButton);
+  } else if (attached && canUseSessionActions) {
+    if (session.actions?.canRequestReattach) actions.append(workspaceButton("Save a reconnect request", () => workspacePostSessionAction(task, state, "request-reattach").catch(() => {})));
+    if (session.actions?.canPause) actions.append(workspaceButton("Pause shared session", () => workspacePostSessionAction(task, state, "pause").catch(() => {})));
+    if (session.actions?.canChooseStandalone) actions.append(workspaceButton("Choose standalone mode", () => workspacePostSessionAction(task, state, "choose-standalone").catch(() => {})));
+    if (session.actions?.canChooseStandalone) actions.append(workspaceButton("Use dashboard manually", () => workspacePostSessionAction(task, state, "choose-manual").catch(() => {})));
+  }
+  const details = el("details"); details.dataset.workspaceDisclosure = `session-details:${task.id}`;
+  details.append(el("summary", attached ? "Session controls and technical details" : "Session identity and recovery details"));
+  if (attached) details.append(el("p", `${session.pendingCount} saved item(s) awaiting receipt · ${session.receivedCount} received · ${session.appliedCount} applied in a committed response.`));
+  if (actions.childElementCount) details.append(actions);
+  details.append(el("p", `Protocol ${session.protocolVersion} · task ${task.id} · epoch ${session.epoch} · attachment ${session.attachmentId || "none"}`));
+  details.append(el("p", `Last contact ${session.lastContact || "not reported"} · status revision ${session.statusRevision} · input revision ${session.inputRevision}`));
+  const context = el("pre"); context.textContent = JSON.stringify(session.contextCommand || [], null, 2); details.append(context);
+  if (session.recovery) {
+    const recovery = el("pre"); recovery.textContent = JSON.stringify(session.recovery, null, 2); details.append(recovery);
+  }
+  panel.append(details, workspaceSessionHistory(task, state));
+  return panel;
+}
+
 function workspaceInterviewPanel(task, state, inspector) {
   const panel = el("section"); panel.append(el("h2", "Interview"), el("p", "Your conversation and answers are saved against this task. Model suggestions remain separate from your decisions."));
-  panel.append(workspaceStartOrResume(task, state));
+  const sharedSession = workspaceSharedSessionPanel(task, state);
+  if (sharedSession) panel.append(sharedSession);
+  panel.append(workspaceInvestigationPanel(task, state));
+  const session = task.session?.snapshot;
+  const sessionOwner = Boolean(session && (session.epoch > 0 || session.attachmentId));
+  if (!(sessionOwner && session.mode !== "standalone")) panel.append(workspaceStartOrResume(task, state));
   const questions = state.authoring?.questions || [];
-  const pending = questions.find(item => !item.answer && !item.skip_source);
+  const pending = workspaceCurrentQuestion(state);
   if (pending) {
     const alert = el("div"); alert.className = "authoring-question-alert"; alert.setAttribute("role", "status");
-    alert.append(el("span", `Question Q${pending.id} needs your answer: ${pending.text}`));
+    alert.append(el("span", `Question Q${pending.id} needs your answer: ${pending.display_text || pending.text}`));
     const open = el("button", "Open question drawer"); open.type = "button";
-    open.addEventListener("click", () => { state.drawerOpen = true; workspacePersist(state); workspaceRerender(); });
+    open.addEventListener("click", () => { state.drawerQuestionId = null; state.drawerOpen = true; workspacePersist(state); workspaceRerender(); });
     alert.append(open); panel.append(alert);
   }
   for (const question of questions) {
     const card = workspaceQuestionCard(task, state, question);
-    if (!question.answer && !question.skip_source) {
+    {
       const open = el("button", `Open Q${question.id} in drawer`); open.type = "button";
       open.dataset.workspaceFocus = `question-drawer:${task.id}:${question.id}`;
       open.setAttribute("aria-haspopup", "dialog");
@@ -1001,11 +1778,28 @@ function workspaceInterviewPanel(task, state, inspector) {
       panel.append(card);
     }
   }
-  const followup = el("section"); followup.className = "authoring-card"; followup.append(el("h3", "Continue the conversation"));
+  const followup = el("section"); followup.className = "authoring-card";
+  const followupSession = task.session?.snapshot;
+  const attachedProvider = followupSession?.mode === "attached" ? followupSession.providerLabel : null;
+  const attachedProviderName = attachedProvider?.replace(/^./, letter => letter.toUpperCase());
+  const deliveryUnavailable = followupSession?.mode === "attached"
+    && !["busy", "listening"].includes(followupSession.state);
+  const sessionStateLabel = String(followupSession?.state || "unknown").replaceAll("_", " ");
+  const sendLabel = attachedProvider
+    ? deliveryUnavailable ? `Send after ${attachedProviderName} session recovery` : `Send to your connected ${attachedProviderName} conversation`
+    : "Send to the interview model";
+  const responseLabel = attachedProvider
+    ? deliveryUnavailable ? `Request ${attachedProviderName} response after session recovery` : `Request a response from the connected ${attachedProviderName} agent`
+    : "Request model response";
+  followup.append(el("h3", "Continue the conversation"), el("p", attachedProvider
+    ? deliveryUnavailable
+      ? `This message can be saved on the task, but the ${attachedProviderName} agent cannot receive it while the attached session is ${sessionStateLabel}. Use Save follow-up only until the same agent reconnects.`
+      : `Messages go to this task's connected ${attachedProviderName} conversation. Use Save answer on a question to answer that structured question.`
+    : "A follow-up adds context; use Save answer on a question to answer that structured question."));
   const buffer = authoringBuffer(state, "followup", "", state.authoring?.base);
   const input = authoringFocus(el("textarea"), state, "followup"); input.rows = 3; input.value = buffer.value; input.placeholder = "Ask a follow-up or add context"; input.setAttribute("aria-label", "Follow-up message");
   input.addEventListener("input", () => authoringScalarChanged(state, "followup", buffer, input.value));
-  followup.append(input, authoringButton(task, state, "Send to the interview model", async (t, s) => {
+  const sendFollowup = authoringButton(task, state, sendLabel, async (t, s) => {
     const submitted = input.value;
     const submittedGeneration = buffer.generation;
     s.authoringRequests ||= {}; s.authoringRequestActions ||= {}; s.authoringRequestContinuations ||= {};
@@ -1016,7 +1810,7 @@ function workspaceInterviewPanel(task, state, inspector) {
     const followupRequestId = s.authoringRequests.followup.request_id;
     s.authoringRequestActions.followup = "followup";
     if (!hasSavedSend) {
-      s.authoringRequestContinuations.followup = { type: "send", host: host.value, requestId: followupRequestId };
+      s.authoringRequestContinuations.followup = { type: "send", host: attachedProvider || host.value, requestId: followupRequestId };
       s.authoringRequestForms ||= {};
       s.authoringRequestForms.followup = { key: "followup", value: submitted, generation: submittedGeneration };
     }
@@ -1029,11 +1823,15 @@ function workspaceInterviewPanel(task, state, inspector) {
     const regenerateKey = continuation?.regenerateKey || `regenerate-after-followup:${followupRequestId}`;
     if (continuation) continuation.regenerateKey = regenerateKey;
     workspacePersist(s);
-    const generated = await authoringAction(t, s, "regenerate", { host: continuation?.host || host.value }, { key: regenerateKey });
+    let generated;
+    try { generated = await authoringAction(t, s, "regenerate", { host: continuation?.host || attachedProvider || host.value }, { key: regenerateKey }); }
+    catch (error) { error.followupSaved = true; throw error; }
     delete s.authoringRequestContinuations?.followup;
     workspacePersist(s);
     return generated || sent;
-  }, undefined, { recovery: { key: "followup", bufferKey: "followup" } }));
+  }, undefined, { recovery: { key: "followup", bufferKey: "followup" } });
+  sendFollowup.disabled = deliveryUnavailable;
+  followup.append(input, sendFollowup);
   followup.append(authoringButton(task, state, "Save follow-up only", async (t, s) => {
     const submitted = input.value;
     const submittedGeneration = buffer.generation;
@@ -1042,25 +1840,38 @@ function workspaceInterviewPanel(task, state, inspector) {
     const result = await authoringAction(t, s, "followup", { body: submitted }, { expected: buffer.base, key: "followup-only" });
     if (buffer.value === submitted && buffer.generation === submittedGeneration) { buffer.value = ""; buffer.dirty = false; buffer.base = s.authoring.base; }
     else if (!buffer.dirty) buffer.base = s.authoring.base;
-    authoringPersistBuffer(s, "followup", buffer); return result;
+    authoringPersistBuffer(s, "followup", buffer);
+    result.acknowledgement = "Follow-up saved as context. Structured questions are unchanged."; return result;
   }, undefined, { recovery: { key: "followup-only", bufferKey: "followup" } }));
   const host = el("select"); host.setAttribute("aria-label", "Model for the next response");
-  authoringFocus(host, state, "followup-host:host");
   for (const [value, label] of [["codex", "Codex"], ["claude", "Claude"]]) { const option = el("option", label); option.value = value; host.append(option); }
   const hostKey = "followup-host";
-  const hostBuffer = authoringFormBuffer(state, hostKey, { host: "codex" }, state.authoring?.base);
+  const hostBuffer = attachedProvider
+    ? { value: { host: attachedProvider }, base: state.authoring?.base }
+    : authoringFormBuffer(state, hostKey, { host: state.authoring?.jobs?.at(-1)?.host || "codex" }, state.authoring?.base);
   host.value = hostBuffer.value.host;
-  host.addEventListener("change", () => authoringFormChanged(state, hostKey, hostBuffer, "host", host.value));
-  const hostStatus = (state.authoring?.hosts || []).find(row => row.host === hostBuffer.value.host);
-  followup.append(el("p", `Selected response host: ${hostBuffer.value.host}${hostStatus ? hostStatus.available ? ` · available${hostStatus.version ? ` · ${hostStatus.version}` : ""}` : ` · unavailable: ${hostStatus.error || "not verified"}` : " · availability not checked"}. Requests use this host.`));
-  followup.append(host, authoringButton(
+  if (attachedProvider) {
+    const connected = el("p", deliveryUnavailable
+      ? `Response host · ${attachedProviderName} session ${sessionStateLabel}; delivery paused`
+      : `Response host · connected ${attachedProviderName} conversation`);
+    connected.className = "authoring-feedback"; followup.append(connected);
+  } else {
+    authoringFocus(host, state, "followup-host:host");
+    host.addEventListener("change", () => authoringFormChanged(state, hostKey, hostBuffer, "host", host.value));
+    const hostStatus = (state.authoring?.hosts || []).find(row => row.host === hostBuffer.value.host);
+    followup.append(el("p", `Selected response host: ${hostBuffer.value.host}${hostStatus ? hostStatus.available ? ` · available${hostStatus.version ? ` · ${hostStatus.version}` : ""}` : ` · unavailable: ${hostStatus.error || "not verified"}` : " · availability not checked"}. Requests use this host.`));
+    followup.append(host);
+  }
+  const requestResponse = authoringButton(
     task,
     state,
-    "Request model response",
-    (t, s) => authoringAction(t, s, "regenerate", { host: host.value }, { key: "regenerate" }),
+    responseLabel,
+    (t, s) => authoringAction(t, s, "regenerate", { host: attachedProvider || host.value }, { key: "regenerate" }),
     undefined,
-    { recovery: { key: "regenerate", bufferKey: hostKey } },
-  ));
+    attachedProvider ? undefined : { recovery: { key: "regenerate", bufferKey: hostKey } },
+  );
+  requestResponse.disabled = deliveryUnavailable;
+  followup.append(requestResponse);
   panel.append(followup);
   panel.append(workspaceConversationHistoryPanel(task, state));
   panel.append(workspaceRevisionTargets(task, state));
@@ -1102,7 +1913,12 @@ function workspaceInterviewPanel(task, state, inspector) {
     }
   }
   const message = authoringMessage(state); if (message) panel.append(message);
-  inspector.append(el("h2", "Interview context"), el("p", `Task ${task.id} · ${task.phase}`), el("p", `Project ${state.authoring?.project?.repository || "configured project"}`));
+  inspector.append(el("h2", "Interview context"), el("p", `Task ${task.id} · ${task.phase}`), el("p", `Project ${workspaceProjectName(state.authoring?.project?.repository)}`));
+  if (state.authoring?.project?.repository) {
+    const projectDetails = el("details");
+    projectDetails.append(el("summary", "Repository location"), el("code", state.authoring.project.repository));
+    inspector.append(projectDetails);
+  }
   return panel;
 }
 

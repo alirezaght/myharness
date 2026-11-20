@@ -116,6 +116,9 @@ def dependency_facts(root: Path, files: list[PurePosixPath]) -> Findings:
             _package_json(out, where, data)
     packages = sorted({rel.parent.as_posix() for rel in manifests})
     if len(packages) > 1:
-        listed = ", ".join(f"`{p}/`" if p != "." else "the root" for p in packages)
-        out.ask("scope", f"Several packages found ({listed}); which one does the request target?")
+        out.ask(
+            "scope",
+            "Several packages found; which product area and outcome does this request concern? "
+            "Exact package or file paths are optional.",
+        )
     return out

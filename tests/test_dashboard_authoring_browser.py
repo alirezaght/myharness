@@ -23,6 +23,15 @@ except OSError:
 pytestmark = [pytest.mark.browser, pytest.mark.skipif(CHROME is None, reason="Chrome unavailable")]
 
 
+@pytest.fixture(autouse=True)
+def available_fixture_host(monkeypatch):
+    def profile(host):
+        return {"host": host, "available": True, "status": "fixture", "version": "fixture"}
+
+    monkeypatch.setattr("harness.authoring_policy.availability", profile)
+    monkeypatch.setattr("harness.dashboard.authoring_view.availability", profile)
+
+
 def _model_output(*, include_question):
     graph = {
         "nodes": [
@@ -251,11 +260,12 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
             evaluate(
                 call,
                 (
-                    "[...document.querySelectorAll('.authoring-"
+                    "(()=>{const open=[...document.querySelectorAll('.authoring-"
                     "question')].find(card=>card.textContent.in"
                     "cludes('What should happen when the input "
                     "is empty?')).querySelector('button[aria-ha"
-                    "spopup=dialog]').click(); true"
+                    "spopup=dialog]'); window.__questionDrawerOpenerKey="
+                    "open.dataset.workspaceFocus; open.click(); return true;})()"
                 ),
             )
             wait(call, 'document.querySelector(".authoring-drawer")?.open===true')
@@ -306,18 +316,25 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
             wait(call, 'document.querySelector(".authoring-drawer")?.open!==true')
             assert evaluate(
                 call,
-                (
-                    "document.activeElement.dataset.workspaceFo"
-                    "cus==='interview-drawer:'+new URLSearchPar"
-                    "ams(location.search).get('task')"
-                ),
+                "document.activeElement.dataset.workspaceFocus===window.__questionDrawerOpenerKey",
             )
             evaluate(call, "document.querySelector('#workspace-tab-interview').click(); true")
             revision_selector = f'[aria-label="Revised answer for question {question_id}"]'
             wait(call, f"Boolean(document.querySelector({json.dumps(revision_selector)}))")
-            for revision in (
-                "First retained answer revision.",
-                "Second successive answer revision.",
+            evaluate(
+                call,
+                "(()=>{window.__answerRevisionPosts=[];const original=window.fetch.bind(window);"
+                "window.fetch=async(...args)=>{const response=await original(...args);"
+                "if(String(args[0]).includes('/api/authoring/revise'))"
+                "window.__answerRevisionPosts.push({request:JSON.parse(args[1].body),"
+                "status:response.status,body:await response.clone().json()});"
+                "return response;};return true;})()",
+            )
+            for index, revision in enumerate(
+                (
+                    "First retained answer revision.",
+                    "Second successive answer revision.",
+                )
             ):
                 evaluate(
                     call,
@@ -335,6 +352,45 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                     .replace("REVISION_SELECTOR", json.dumps(revision_selector))
                     .replace("REVISION_TEXT", json.dumps(revision)),
                 )
+                wait(call, f"window.__answerRevisionPosts.length==={index + 1}")
+                posted = evaluate(call, f"window.__answerRevisionPosts[{index}]")
+                assert posted["status"] == 200 and posted["request"]["body"] == revision, posted
+                cleanup_condition = (
+                    "(()=>{const task=new URLSearchParams(location.search).get('task');"
+                    "const state=workspaceStates.get(task);"
+                    "const buffer=state?.authoringBuffers?.["
+                    f"{json.dumps(f'answer:{question_id}')}];"
+                    f"const receipt=window.__answerRevisionPosts[{index}];"
+                    "return Boolean(buffer&&!buffer.dirty&&receipt?.body?.base&&"
+                    "JSON.stringify(buffer.base)===JSON.stringify(receipt.body.base)&&"
+                    "JSON.stringify(state.authoring.base)===JSON.stringify(receipt.body.base)&&"
+                    f"!state.authoringRequests?.[{json.dumps(f'answer-revision:{question_id}')}]"
+                    ");})()"
+                )
+                deadline = time.monotonic() + 8
+                settled = False
+                while time.monotonic() < deadline:
+                    if evaluate(call, cleanup_condition):
+                        settled = True
+                        break
+                    time.sleep(0.05)
+                if not settled:
+                    diagnostic = evaluate(
+                        call,
+                        "(()=>{const task=new URLSearchParams(location.search).get('task');"
+                        "const state=workspaceStates.get(task);"
+                        "const buffer=state?.authoringBuffers?.["
+                        f"{json.dumps(f'answer:{question_id}')}];"
+                        "const storage=localStorage.getItem('myharness-authoring:'"
+                        "+state.projectId+':'+task+':answer:'+"
+                        f"{json.dumps(str(question_id))});"
+                        "return {post:window.__answerRevisionPosts.at(-1),"
+                        "buffer:buffer&&structuredClone(buffer),snapshotBase:state?.authoring?.base,"
+                        "question:state?.authoring?.questions?.find(row=>row.id==="
+                        f"{question_id}),field:document.querySelector({json.dumps(revision_selector)})?.value,"
+                        "storage:storage&&JSON.parse(storage),text:document.body.innerText.slice(-1500)};})()",
+                    )
+                    pytest.fail(f"revision save did not settle to submitted buffer: {diagnostic}")
                 wait(call, f"document.body.textContent.includes({json.dumps(revision)})")
             call("Page.navigate", {"url": evaluate(call, "location.href")})
             wait(call, 'document.body.textContent.includes("Second successive answer revision.")')
@@ -429,12 +485,22 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                 ),
             )
             wait(call, 'Boolean(document.querySelector(".spec-editor"))')
-            _capture_authoring_posts(call)
-            original_spec_base = evaluate(
+            evaluate(call, "refreshDashboard()")
+            wait(
                 call,
-                "workspaceStates.get(" + json.dumps(task_id) + ").authoringBuffers["
-                "'spec:working'].base",
+                (
+                    "(async()=>{const task=new URLSearchParams(location.search).get('task');"
+                    "const response=await fetch('/api/authoring?task='+encodeURIComponent(task),"
+                    "{cache:'no-store'});const current=await response.json();"
+                    "const state=workspaceStates.get(task);"
+                    "const buffer=state?.authoringBuffers?.['spec:working'];"
+                    "return Boolean(buffer&&!buffer.dirty&&current.base&&"
+                    "current.jobs.every(job=>!['queued','running'].includes(job.state))&&"
+                    "JSON.stringify(current.base)===JSON.stringify(state.authoring.base)&&"
+                    "JSON.stringify(current.base)===JSON.stringify(buffer.base));})()"
+                ),
             )
+            _capture_authoring_posts(call)
             evaluate(
                 call,
                 (
@@ -442,21 +508,22 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
               const editor=document.querySelector('[aria-label="Full working specification"]');
               editor.focus();
 """
+                    "              const task=new URLSearchParams(location.search).get('task');"
+                    "window.__specBaseAtFirstEdit=structuredClone(workspaceStates.get(task)"
+                    ".authoringBuffers['spec:working'].base);\n"
                     "              editor.value='## Complete captured-t"
                     "ask specification\\n\\nThe service rejects empty inp"
                     "ut and preserves submitted values.\\n';\n"
                     """              editor.dispatchEvent(new Event('input',{bubbles:true}));
                   window.savedEditorText=editor.value;
                   const priorSpecFetch=window.fetch;
-              window.fetch=(url,options)=>{
-                if(String(url).includes('/api/authoring/save-spec')&&!window.specSaveDelayed){
-                  window.specSaveDelayed=true;
-"""
-                    "                      return new Promise(resolve=>"
-                    "setTimeout(()=>resolve(priorSpecFetch(url,options)"
-                    "),700));\n"
-                    """                }
-                    return priorSpecFetch(url,options);
+              window.fetch=async(url,options)=>{
+                if(String(url).includes('/api/authoring/save-spec')&&!window.specSaveHeld){
+                  const response=await priorSpecFetch(url,options);
+                  window.specSaveHeld=true;
+                  return await new Promise(resolve=>window.releaseSpecSave=()=>resolve(response));
+                }
+                return priorSpecFetch(url,options);
               };
 """
                     "              [...document.querySelectorAll('butto"
@@ -466,6 +533,7 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
             })()"""
                 ),
             )
+            original_spec_base = evaluate(call, "window.__specBaseAtFirstEdit")
             assert evaluate(
                 call,
                 (
@@ -483,7 +551,24 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                 ".scrollIntoView({block:'center'}); true",
             )
             _capture(call, artifact_dir / "spec-editor-light.png")
-            wait(call, "window.specSaveDelayed===true")
+            wait(call, "window.specSaveHeld===true")
+            held_save = evaluate(
+                call,
+                "window.__authoringPosts.filter(item=>item.url.includes('/save-spec')).at(0)",
+            )
+            assert (
+                held_save["status"] == 200
+                and held_save["request"]["expected"] == original_spec_base
+            ), held_save
+            wait(
+                call,
+                (
+                    "(async()=>{const task=new URLSearchParams(location.search).get('task');"
+                    "const response=await fetch('/api/authoring?task='+encodeURIComponent(task),"
+                    "{cache:'no-store'});const data=await response.json();"
+                    "return data.working?.body===window.savedEditorText;})()"
+                ),
+            )
             evaluate(
                 call,
                 (
@@ -498,6 +583,7 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
             })()"""
                 ),
             )
+            evaluate(call, "window.releaseSpecSave(); true")
             wait(
                 call,
                 (
@@ -507,6 +593,15 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                     'y"))'
                 ),
             )
+            first_spec_request = evaluate(
+                call,
+                "window.__authoringPosts.filter(item=>item.url.includes('/save-spec'))"
+                ".at(0)?.request",
+            )
+            assert first_spec_request["expected"] == original_spec_base, {
+                "captured_at_first_edit": original_spec_base,
+                "first_request": first_spec_request,
+            }
             if evaluate(call, 'Boolean(document.querySelector(".authoring-conflict-recovery"))'):
                 evaluate(
                     call,
@@ -571,10 +666,11 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                     ".at(-1);const buffer=state.authoringBuffers['spec:working'];"
                     "return {request:row?.request,status:row?.status,body:row?.body,"
                     "bufferBase:buffer.base,serverBase:state.authoring.base,dirty:buffer.dirty,"
-                    "value:buffer.value};})()",
+                    "value:buffer.value,originalBase:" + json.dumps(original_spec_base) + ","
+                    "posts:window.__authoringPosts.filter(item=>item.url.includes('/save-spec'))};})()",
                 )
                 assert stale_spec_save["status"] == 409, stale_spec_save
-                assert stale_spec_save["request"]["expected"] == original_spec_base
+                assert stale_spec_save["request"]["expected"] == original_spec_base, stale_spec_save
                 assert "authoring source or revision changed" in stale_spec_save["body"]
                 assert stale_spec_save["bufferBase"] == original_spec_base
                 assert stale_spec_save["serverBase"] != original_spec_base
@@ -2237,12 +2333,19 @@ def test_chrome_conflict_recovery_keeps_answer_and_archives_rejected_receipt(
             )
             wait(
                 call,
-                (
-                    'document.querySelector(".authoring-drawer"'
-                    ')?.textContent.includes("Your recorded ans'
-                    "wer: Keep this answer while another client"
-                    ' adds context.")'
-                ),
+                "document.querySelector('.authoring-drawer')?.textContent.includes("
+                + json.dumps(f"Answer for Q{question_id} saved")
+                + ")",
+            )
+            wait(
+                call,
+                "(()=>{const state=workspaceStates.get("
+                + json.dumps(task_id)
+                + ");const current=state.authoring.interview.current_question_id;"
+                + "return current!=="
+                + json.dumps(int(question_id))
+                + "&&Number(document.querySelector('.authoring-drawer .authoring-question')"
+                "?.dataset.questionId)===current;})()",
             )
             snapshot = evaluate(
                 call,

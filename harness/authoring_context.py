@@ -31,6 +31,11 @@ def projection(service):
     from harness.effective_records import effective_records
 
     semantic = effective_records(service.controller.workspace(service.task_id))
+    from harness.investigation_lineage import source_lineage
+
+    source = source_lineage(service.controller, service.task_id, semantic)
+    retired = set(source["retired_ids"])
+    replacements = source["replacements"]
     superseded = {row["supersedes"] for row in records if row["supersedes"]}
     targets = []
     ws = service.controller.workspace(service.task_id)
@@ -135,11 +140,29 @@ def projection(service):
                 editable=current == ident,
                 root_target=f"{prefix}:{roots.get(ident, ident)}",
             )
+            retired_question = semantic.proposals if kind == "proposal" else None
+            qid = (
+                next((p.question_id for p in retired_question if p.id == ident), None)
+                if retired_question is not None
+                else ident
+            )
+            if qid in retired:
+                replacement = replacements[str(qid)]
+                target.update(
+                    editable=False,
+                    current_target=f"question-response:{replacement}",
+                    source_superseded_by=f"question-response:{replacement}",
+                    source_reason="source_premise_changed",
+                )
         else:
             # Legacy contribution revisions remain readable, but semantic answers/decisions
             # must follow their current structured target after application.
             original = target["original"]
             qid, pid = original.get("question"), original.get("proposal")
+            if qid is None and pid is not None:
+                qid = next(
+                    (p.question_id for p in semantic.historical_proposals if p.id == pid), None
+                )
             current = (
                 f"question-response:{semantic.current('question', qid)}"
                 if qid in semantic.question_successors
@@ -153,7 +176,18 @@ def projection(service):
                 editable=current == target["target"],
                 root_target=target["target"],
             )
-    return {"revision_targets": targets, "contributions": effective, "lineage": semantic.metadata()}
+            if qid in retired:
+                target.update(
+                    editable=False,
+                    current_target=f"question-response:{replacements[str(qid)]}",
+                    source_reason="source_premise_changed",
+                )
+    return {
+        "revision_targets": targets,
+        "contributions": effective,
+        "lineage": semantic.metadata(),
+        "source_lineage": source,
+    }
 
 
 def _target(ident, kind, original, initial, table, records):
@@ -308,3 +342,48 @@ def validate_value(service, kind, value):
         text(value["response"], "response", 16000, empty=value["status"] != "modified")
     else:
         raise ValueError("target requires the existing revise action")
+
+
+def question_presentation(question, request):
+    from harness.interview import scanner_scope
+
+    technical_scope = scanner_scope(question)
+    legacy_scope = technical_scope and not question.text.startswith("For ")
+    return {
+        "display_text": (
+            f"For {request[:160]!r}, what outcome should users get, "
+            "and which product area is affected? "
+            "Exact code paths are optional. A ticket ID alone does not include its requirements."
+            if legacy_scope
+            else question.text
+        ),
+        "discovery_note": (
+            "Technical discovery: the scanner has not proven code ownership. "
+            "You can describe the behavior you want or choose I don’t know yet; "
+            "this does not waive unresolved requirements."
+            if technical_scope
+            else None
+        ),
+    }
+
+
+def model_recovery(ws, jobs):
+    jobs = [job for job in jobs if job.get("kind") != "attached_publication"]
+    if not jobs:
+        return None
+    latest = jobs[-1]
+    if latest["kind"] in {"source_investigation", "jira_reconnect"}:
+        return None
+    if latest["state"] in {"failed", "interrupted", "stale", "cancelled"}:
+        return {
+            "host": latest["host"],
+            "state": latest["state"],
+            "message": latest.get("error") or "The interview model stopped.",
+        }
+    if latest["kind"] == "investigate" and latest["state"] == "succeeded":
+        notice = next(
+            (e for e in reversed(ws.events()) if e.kind == "authoring.model_unavailable"), None
+        )
+        if notice:
+            return dict(notice.payload, state="unavailable")
+    return None

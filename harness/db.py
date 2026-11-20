@@ -69,6 +69,9 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     """BEGIN IMMEDIATE ... COMMIT, rolling back on any exception."""
     conn.execute("BEGIN IMMEDIATE")
     try:
+        from harness.planning_session_events import guard_legacy_transaction
+
+        guard_legacy_transaction(conn)
         yield conn
     except BaseException:
         conn.execute("ROLLBACK")
@@ -128,6 +131,9 @@ def connect(path: Path) -> sqlite3.Connection:
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
+        from harness.planning_session_store import register_session_protocol
+
+        register_session_protocol(conn)
         apply_migrations(conn)
     except BaseException:
         conn.close()

@@ -27,6 +27,7 @@ from harness.state_models import (
     ProposalStatus,
     Question,
     QuestionKind,
+    QuestionSource,
     QuestionStatus,
     SkipSource,
 )
@@ -46,6 +47,27 @@ class InterviewError(ValueError):
 def _is_non_answer(text: str) -> bool:
     normal = " ".join(text.replace("’", "'").lower().split())
     return normal in NON_ANSWERS or normal.rstrip(".!") in NON_ANSWERS
+
+
+def scanner_scope(question: Question) -> bool:
+    """Only equivalent scanner material requests share one ask-next slot."""
+    return (
+        question.topic == "scope"
+        and question.source is QuestionSource.INVESTIGATION
+        and (
+            question.text.startswith(
+                (
+                    "Ownership is unresolved;",
+                    "Several packages found",
+                    "No filename matches",
+                    "No file matches",
+                    "Request has no usable keywords;",
+                    "Repository inventory reached its bound;",
+                )
+            )
+            or "A ticket ID alone does not include its requirements." in question.text
+        )
+    )
 
 
 class InterviewEngine:
@@ -70,19 +92,41 @@ class InterviewEngine:
         return effective_records(self.ws)
 
     def effective_questions(self, status=None):
-        return [q for q in self.effective().questions if status is None or q.status == status]
+        retired = set(self.coverage().retired_ids)
+        return [
+            q
+            for q in self.effective().questions
+            if q.id not in retired and (status is None or q.status == status)
+        ]
 
     def effective_proposals(self, status=None):
-        return [p for p in self.effective().proposals if status is None or p.status == status]
+        retired = set(self.coverage().retired_ids)
+        return [
+            p
+            for p in self.effective().proposals
+            if p.question_id not in retired and (status is None or p.status == status)
+        ]
+
+    def coverage(self):
+        from harness.interview_coverage import current_coverage
+
+        return current_coverage(self.controller, self.task_id)
 
     def checklist(self) -> InterviewChecklist:
         task = self.controller.get_task(self.task_id)
-        pending = plan_sync(self.effective_questions(), catalogue_for(self._topics(task)))
-        return build_checklist(self.effective_questions(), self.effective_proposals(), pending)
+        pending = plan_sync(
+            self.effective_questions(), catalogue_for(self._topics(task)), self.coverage()
+        )
+        return build_checklist(
+            self.effective_questions(), self.effective_proposals(), pending, self.coverage()
+        )
 
     def summary(self) -> InterviewSummary:
         return build_summary(
-            self.effective_questions(), self.effective_proposals(), self.checklist()
+            self.effective_questions(),
+            self.effective_proposals(),
+            self.checklist(),
+            self.coverage(),
         )
 
     def upcoming(self) -> Question | None:
@@ -90,10 +134,30 @@ class InterviewEngine:
         askable = self._askable()
         return askable[0] if askable else None
 
+    def question_projection(self):
+        """Read-only ask-next state; unknown remains open and required in the checklist."""
+        unknown = {
+            event.payload.get("id") for event in self.ws.events() if event.kind == UNRESOLVED_EVENT
+        }
+        current = self.upcoming()
+        scope = [q for q in self.effective_questions() if scanner_scope(q)]
+        response = next((q for q in scope if q.answer or q.skip_source or q.id in unknown), None)
+        return {
+            "coverage": self.coverage().to_dict(),
+            "related_scope_question_ids": [q.id for q in scope],
+            "scope_response_question_id": response.id if response else None,
+            "current_question_id": current.id if current else None,
+            "unknown_question_ids": [
+                q.id for q in self.effective_questions(QuestionStatus.OPEN) if q.id in unknown
+            ],
+        }
+
     def sync_due(self) -> bool:
         """True when `next()` would first seed, skip or reopen catalogue questions."""
         task = self.controller.get_task(self.task_id)
-        plan = plan_sync(self.effective_questions(), catalogue_for(self._topics(task)))
+        plan = plan_sync(
+            self.effective_questions(), catalogue_for(self._topics(task)), self.coverage()
+        )
         return bool(plan.seed or plan.skip or plan.reopen)
 
     def pending_proposals(self, question_id: int) -> list[Proposal]:
@@ -127,6 +191,7 @@ class InterviewEngine:
             )
         with self._mutation():
             self.effective().require_current("question", question_id)
+            self._require_source_current(question_id)
             question = self.ws.answer(question_id, text)
             self.ws.record_event("question.answered", {"id": question_id})
         return question
@@ -188,6 +253,7 @@ class InterviewEngine:
             )
             proposal = self.ws.resolve(proposal_id, status, response)
             qid = current.question_id
+            self._require_source_current(qid)
             proposal = replace(proposal, question_id=qid)
             if proposal.status in DECIDED and qid is not None:
                 question = next(
@@ -241,7 +307,14 @@ class InterviewEngine:
         decisions: list[dict[str, Any]] = current_decisions(self.ws, self.registry)
         return {d["id"] for d in decisions if d.get("status") == "approved"}
 
+    def _require_source_current(self, question_id):
+        if question_id in self.coverage().retired_ids:
+            raise InterviewError(
+                "This decision has a changed source premise; use its current successor"
+            )
+
     def _open(self, question_id: int) -> Question:
+        self._require_source_current(question_id)
         effective = self.effective()
         effective.require_current("question", question_id)
         question = next(
@@ -252,7 +325,9 @@ class InterviewEngine:
         return question
 
     def _sync(self, task: Task) -> tuple[int, int]:
-        plan = plan_sync(self.effective_questions(), catalogue_for(self._topics(task)))
+        plan = plan_sync(
+            self.effective_questions(), catalogue_for(self._topics(task)), self.coverage()
+        )
         for entry in plan.seed:
             self.ws.ask(entry.topic, entry.text, kind=entry.kind, catalogue_key=entry.key)
         for question in plan.skip:
@@ -264,15 +339,35 @@ class InterviewEngine:
 
     def _askable(self) -> list[Question]:
         deferred = {e.payload.get("id") for e in self.ws.events() if e.kind == UNRESOLVED_EVENT}
+        scope = [q for q in self.effective_questions() if scanner_scope(q)]
+        responded = any(q.answer or q.skip_source or q.id in deferred for q in scope)
+        first = next((q.id for q in ordered(scope) if q.status is QuestionStatus.OPEN), None)
+        coverage = self.coverage()
+        from harness.planning_session_events import native_binding
+
+        owner = native_binding(self.controller.conn, self.task_id)
+        attached = owner is not None and owner["mode"] == "attached"
         return [
             q
             for q in ordered(self.effective_questions(QuestionStatus.OPEN))
-            if q.id not in deferred
+            if not coverage.suppress(q)
+            and (
+                not attached
+                or (
+                    not q.catalogue_key
+                    and q.source is not QuestionSource.INVESTIGATION
+                    and not scanner_scope(q)
+                )
+            )
+            and q.id not in deferred
+            and (q not in scope or (not responded and q.id == first))
         ]
 
     def _checkpoint_payload(self) -> dict[str, Any]:
         upcoming = self._askable()
-        checklist = build_checklist(self.effective_questions(), self.effective_proposals(), None)
+        checklist = build_checklist(
+            self.effective_questions(), self.effective_proposals(), None, self.coverage()
+        )
         return {
             "next_question_id": upcoming[0].id if upcoming else None,
             "unresolved": [item.ref for item in checklist.items],

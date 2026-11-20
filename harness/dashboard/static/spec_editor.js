@@ -150,8 +150,26 @@ function workspaceSpecStatus(state, buffer, panel) {
   if (existing) existing.replaceWith(status); else panel.append(status);
 }
 
+function workspaceRenderCandidateInspection(target, current, revision) {
+  target.replaceChildren(el("h3", "Candidate " + revision.attribution.replaceAll("_", " ")),
+    el("p", "Specification " + revision.body_hash + " · graph " + (revision.graph_id || "none")),
+    el("h4", "Current adopted/effective specification"), el("pre", current),
+    el("h4", "Selected candidate specification"), el("pre", revision.body));
+  const graph = el("details"); graph.append(el("summary", "Candidate logical diagram"));
+  if (revision.graph?.value) {
+    graph.append(el("p", revision.graph.value.nodes.length + " proposed nodes · "
+      + revision.graph.value.edges.length + " proposed relationships"));
+    for (const node of revision.graph.value.nodes) graph.append(el("p",
+      node.kind + " · " + node.status + " · " + node.label + " · sources: " + node.sources.join(", ")));
+    for (const edge of revision.graph.value.edges) graph.append(el("p",
+      edge.from + " → " + edge.to + " · " + edge.label + " · " + edge.status));
+  } else graph.append(el("p", "No concrete graph attached to this revision."));
+  target.append(graph);
+}
+
 function workspaceReconciliation(task, state) {
   const authoring = state.authoring || task.authoring || {};
+  const identity = JSON.stringify([state.projectId, task.id]);
   const section = el("section"); section.className = "authoring-reconcile";
   section.append(el("h2", "Review a specification and diagram candidate"),
     el("p", "Candidates stay separate from your saved working text. Adoption applies the exact selected revision and requires a fresh review before approval."));
@@ -163,41 +181,80 @@ function workspaceReconciliation(task, state) {
     const option = el("option", `${revision.attribution.replaceAll("_", " ")} · ${revision.id.slice(0, 8)}${revision.id === authoring.adopted?.id ? " · adopted" : ""}`);
     option.value = revision.id; select.append(option);
   }
-  if (authoring.working) select.value = authoring.working.id;
+  const savedChoice = state.candidateChoice;
+  const selectedCandidate = savedChoice?.identity === identity && candidates.has(savedChoice.id)
+    ? savedChoice.id : authoring.working?.id || candidates.keys().next().value || "";
+  state.candidateChoice = { identity, id: selectedCandidate };
+  select.value = selectedCandidate;
   const inspect = el("button", "Load candidate diff"); inspect.type = "button";
   const compare = el("div"); compare.className = "candidate-diff";
   const previewBox = el("div"); previewBox.className = "reconcile-preview";
+  const current = authoring.adopted?.body ?? authoring.effective_body ?? "";
+  const inspection = state.candidateInspection;
+  state.selectedRevision = null;
+  if (inspection?.identity === identity && inspection.id === select.value
+      && candidates.has(inspection.id)) {
+    workspaceRenderCandidateInspection(compare, current, inspection.revision);
+    state.selectedRevision = inspection.id;
+  } else if (state.candidateLoadError?.identity === identity
+      && state.candidateLoadError.id === select.value) {
+    compare.replaceChildren(el("p", state.candidateLoadError.message));
+  } else {
+    compare.replaceChildren(el("p", "Load the selected candidate before previewing adoption."));
+  }
+  inspect.disabled = state.candidateLoad?.identity === identity
+    && state.candidateLoad.id === select.value;
   select.addEventListener("change", () => {
     state.selectedRevision = null;
+    state.candidateChoice = { identity, id: select.value };
+    state.candidateInspection = null;
+    state.candidateLoadError = null;
+    state.candidateLoad = null;
+    state.reconcilePreviewRequestSequence = (state.reconcilePreviewRequestSequence || 0) + 1;
+    state.reconcilePreviewRequest = null;
     state.reconcilePreview = null;
     confirmGraph.checked = false;
     acknowledged.checked = false;
     compare.replaceChildren(el("p", "Load the selected candidate before previewing adoption."));
     previewBox.replaceChildren();
+    inspect.disabled = false;
+    workspacePersist(state);
   });
-  const current = authoring.adopted?.body ?? authoring.effective_body ?? "";
   const load = async () => {
     const id = select.value; if (!id) return;
+    const request = (state.candidateLoadSequence || 0) + 1;
+    state.candidateLoadSequence = request;
+    state.candidateChoice = { identity, id };
+    state.candidateInspection = null;
+    state.candidateLoadError = null;
+    state.candidateLoad = { identity, id, request };
+    state.reconcilePreviewRequestSequence = (state.reconcilePreviewRequestSequence || 0) + 1;
+    state.reconcilePreviewRequest = null;
     state.selectedRevision = null;
+    state.reconcilePreview = null;
     inspect.disabled = true;
     try {
       const response = await fetch(`/api/authoring/revision?task=${encodeURIComponent(task.id)}&revision=${encodeURIComponent(id)}`, { cache: "no-store" });
       const revision = await response.json(); if (!response.ok) throw new Error(revision.error || "Could not load candidate");
-      if (select.value !== id) return;
-      compare.replaceChildren(el("h3", `Candidate ${revision.attribution.replaceAll("_", " ")}`),
-        el("p", `Specification ${revision.body_hash} · graph ${revision.graph_id || "none"}`),
-        el("h4", "Current adopted/effective specification"), el("pre", current),
-        el("h4", "Selected candidate specification"), el("pre", revision.body));
-      const graph = el("details"); graph.append(el("summary", "Candidate logical diagram"));
-      if (revision.graph?.value) {
-        graph.append(el("p", `${revision.graph.value.nodes.length} proposed nodes · ${revision.graph.value.edges.length} proposed relationships`));
-        for (const node of revision.graph.value.nodes) graph.append(el("p", `${node.kind} · ${node.status} · ${node.label} · sources: ${node.sources.join(", ")}`));
-        for (const edge of revision.graph.value.edges) graph.append(el("p", `${edge.from} → ${edge.to} · ${edge.label} · ${edge.status}`));
-      } else graph.append(el("p", "No concrete graph attached to this revision."));
-      compare.append(graph);
+      if (state.candidateChoice?.identity !== identity || state.candidateChoice.id !== id
+          || state.candidateLoad?.request !== request) return;
+      state.candidateInspection = { identity, id, revision };
+      state.candidateLoadError = null;
+      state.candidateLoad = null;
       state.selectedRevision = id;
-    } catch (error) { compare.replaceChildren(el("p", error.message)); }
-    finally { inspect.disabled = false; }
+      if (compare.isConnected) workspaceRenderCandidateInspection(compare, current, revision);
+      else if (workspaceData?.task?.id === task.id && state.tab === "review") workspaceRerender();
+    } catch (error) {
+      if (state.candidateChoice?.identity !== identity || state.candidateChoice.id !== id
+          || state.candidateLoad?.request !== request) return;
+      state.candidateLoadError = { identity, id, message: error.message };
+      state.candidateLoad = null;
+      if (compare.isConnected) compare.replaceChildren(el("p", error.message));
+      else if (workspaceData?.task?.id === task.id && state.tab === "review") workspaceRerender();
+    } finally {
+      if (state.candidateLoad?.request === request) state.candidateLoad = null;
+      if (inspect.isConnected && !state.candidateLoad) inspect.disabled = false;
+    }
   };
   inspect.addEventListener("click", load);
   section.append(select, inspect, compare);
@@ -209,34 +266,176 @@ function workspaceReconciliation(task, state) {
   const adopt = el("button", "Preview explicit adoption"); adopt.type = "button";
   adopt.addEventListener("click", async () => {
     const revision = state.selectedRevision;
-    if (!revision || revision !== select.value) { previewBox.textContent = "Load the selected candidate before previewing adoption."; return; }
+    if (!revision || revision !== select.value || state.candidateChoice?.identity !== identity
+        || state.candidateChoice.id !== revision || state.candidateInspection?.identity !== identity
+        || state.candidateInspection.id !== revision) {
+      previewBox.textContent = "Load the selected candidate before previewing adoption.";
+      return;
+    }
+    const request = (state.reconcilePreviewRequestSequence || 0) + 1;
+    state.reconcilePreviewRequestSequence = request;
+    state.reconcilePreviewRequest = { identity, revision, request };
+    state.reconcilePreview = null;
     try {
       const response = await fetch("/api/authoring/reconcile-preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task: task.id, revision }) });
-      const preview = await response.json(); if (!response.ok) throw new Error(preview.error || "Preview unavailable");
+      const preview = await response.json();
+      const currentRequest = state.reconcilePreviewRequest;
+      if (currentRequest?.identity !== identity || currentRequest.revision !== revision
+          || currentRequest.request !== request || !select.isConnected || select.value !== revision
+          || state.selectedRevision !== revision || state.candidateChoice?.identity !== identity
+          || state.candidateChoice.id !== revision || state.candidateInspection?.identity !== identity
+          || state.candidateInspection.id !== revision || !previewBox.isConnected) return;
+      if (!response.ok) throw new Error(preview.error || "Preview unavailable");
       state.reconcilePreview = preview;
+      state.reconcilePreviewRevision = { identity, revision, request };
       previewBox.replaceChildren(el("h3", "Adoption preview"), el("p", `Exact body hash ${preview.body_hash}`), el("p", `Current source ${preview.base.source}${preview.source_changed ? " · source has changed" : ""}`));
       for (const finding of preview.findings || []) previewBox.append(el("p", finding));
       for (const item of preview.downstream || []) previewBox.append(el("p", item));
+      const material = workspaceMaterialHandlingForm(state, preview, revision);
+      if (material.node) previewBox.append(material.node);
       const apply = el("button", "Adopt this revision and request review"); apply.type = "button";
       const executionUnsettled = Boolean(authoring.execution && !["Completed", "Failed"].includes(authoring.execution.status));
-      apply.disabled = !(confirmGraph.checked && acknowledged.checked) || executionUnsettled;
-      const update = () => { apply.disabled = !(confirmGraph.checked && acknowledged.checked) || executionUnsettled; };
+      const update = () => { apply.disabled = !(confirmGraph.checked && acknowledged.checked)
+        || executionUnsettled || !material.valid(); };
+      update();
       confirmGraph.addEventListener("change", update); acknowledged.addEventListener("change", update);
+      material.onChange(update);
       apply.addEventListener("click", async () => {
+        if (!select.isConnected || select.value !== revision || state.selectedRevision !== revision
+            || state.candidateChoice?.identity !== identity || state.candidateChoice.id !== revision
+            || state.candidateInspection?.identity !== identity
+            || state.candidateInspection.id !== revision || state.reconcilePreview !== preview
+            || state.reconcilePreviewRevision?.identity !== identity
+            || state.reconcilePreviewRevision.revision !== revision) {
+          previewBox.replaceChildren(el("p", "The selected candidate changed. Load and preview it again before adopting."));
+          return;
+        }
         apply.disabled = true;
         try {
           await authoringAction(task, state, "reconcile", { revision, token: preview.token,
-            confirm_graph: confirmGraph.checked, acknowledge: acknowledged.checked, actions: [] }, { key: `reconcile:${revision}` });
+            confirm_graph: confirmGraph.checked, acknowledge: acknowledged.checked, actions: [],
+            handling: material.entries() }, { key: `reconcile:${revision}` });
           state.authoringMessage = { text: "Revision adopted. Harness requires a fresh design review and explicit approval." };
           workspaceRerender();
-        } catch (error) { previewBox.append(el("p", `${error.message}. Your candidate remains available.`)); apply.disabled = false; }
+        } catch (error) {
+          previewBox.append(el("p", `${error.message}. Your candidate remains available.`));
+          if (error.status === 409) {
+            state.authoringConflict = {
+              key: `reconcile:${revision}`,
+              bufferKey: `session-material-handling:${revision}`,
+              message: error.message,
+            };
+            workspacePersist(state);
+            const recovery = authoringConflictRecovery(task, state);
+            if (recovery) previewBox.append(recovery);
+          }
+          apply.disabled = false;
+        }
       });
       previewBox.append(apply);
-    } catch (error) { previewBox.replaceChildren(el("p", error.message)); }
+    } catch (error) {
+      const currentRequest = state.reconcilePreviewRequest;
+      if (currentRequest?.identity === identity && currentRequest.revision === revision
+          && currentRequest.request === request && select.isConnected && select.value === revision
+          && state.selectedRevision === revision && previewBox.isConnected)
+        previewBox.replaceChildren(el("p", error.message));
+    } finally {
+      if (state.reconcilePreviewRequest?.request === request) state.reconcilePreviewRequest = null;
+    }
   });
   section.append(adopt, previewBox);
   if (authoring.execution && !["Completed", "Failed"].includes(authoring.execution.status))
     section.append(el("p", "Adoption is unavailable while this execution is active or unsettled. Your candidate remains editable."));
   const message = authoringMessage(state); if (message) section.append(message);
   return section;
+}
+
+function workspaceMaterialInputLabel(input) {
+  const payload = input.payload || {};
+  if (payload.text) return payload.text;
+  if (payload.answer) return payload.answer;
+  if (payload.body) return payload.body;
+  const nested = payload.input || payload.payload || {};
+  if (nested.text || nested.answer || nested.body) return nested.text || nested.answer || nested.body;
+  if (payload.workspace_event) return `${input.kind.replaceAll("_", " ")} was saved in the task workspace.`;
+  return `${input.kind.replaceAll("_", " ")} was recorded for this task.`;
+}
+
+function workspaceMaterialHandlingForm(state, preview, revision) {
+  const inputs = preview.material?.inputs || [];
+  if (!inputs.length) return { node: null, valid: () => true, entries: () => [], onChange: () => {} };
+  const section = el("section"); section.className = "session-material-review";
+  section.append(el("h4", `Review ${inputs.length} new conversation or planning item(s)`),
+    el("p", "Choose which items to reconcile now. Unselected items stay pending for a later review. For each selected item, choose whether it changes this candidate, explain why, and select supporting current content."));
+  const key = `session-material-handling:${revision}`;
+  const initial = {};
+  for (const item of inputs) initial[item.input_id] = { include: false, disposition: "", rationale: "", references: [] };
+  const buffer = authoringFormBuffer(state, key, initial, preview.base);
+  const refOptions = [`revision:${revision}`];
+  if (preview.graph) refOptions.push(`graph:${preview.graph}`);
+  for (const target of preview.decision_lineage || []) refOptions.push(`target:${target.target}@${target.revision}`);
+  const listeners = [];
+  const entryNodes = [];
+  for (const item of inputs) {
+    if (!buffer.value[item.input_id]) buffer.value[item.input_id] = { include: false, disposition: "", rationale: "", references: [] };
+    const value = buffer.value[item.input_id];
+    const kind = item.kind || "task input";
+    const origin = item.origin || (kind.startsWith("authoring.") ? "task workspace" : "session history");
+    const card = el("article"); card.className = "session-material-item";
+    card.append(el("h5", `${kind.replaceAll("_", " ")} · ${origin.replaceAll("_", " ")}`), el("p", workspaceMaterialInputLabel(item)));
+    const includeLabel = el("label", "Include this item in this reconciliation");
+    const include = el("input"); include.type = "checkbox"; include.checked = Boolean(value.include);
+    include.setAttribute("aria-label", `Include event ${item.input_id} in this reconciliation`);
+    includeLabel.prepend(include); card.append(includeLabel);
+    const details = el("details"); details.append(el("summary", "Recorded event details"));
+    const raw = el("pre"); raw.textContent = JSON.stringify(item.payload || {}, null, 2); details.append(raw); card.append(details);
+    const dispositionLabel = el("label", "How does this item relate to the selected candidate?");
+    const disposition = el("select"); disposition.setAttribute("aria-label", `Handling for event ${item.input_id}`);
+    for (const [optionValue, label] of [["", "Choose a handling decision"], ["incorporated", "Incorporated into this candidate"], ["no_change", "Reviewed; no change to this candidate"]]) {
+      const option = el("option", label); option.value = optionValue; disposition.append(option);
+    }
+    disposition.value = value.disposition;
+    const reasonLabel = el("label", "Reason for this decision");
+    const rationale = el("textarea"); rationale.rows = 3; rationale.value = value.rationale;
+    rationale.setAttribute("aria-label", `Reason for handling event ${item.input_id}`);
+    rationale.placeholder = "Explain the effect on this specification or why it does not change it.";
+    const referencesLabel = el("label", "Supporting current content references (select one or more)");
+    const references = el("select"); references.multiple = true;
+    references.setAttribute("aria-label", `Content references for event ${item.input_id}`);
+    for (const ref of refOptions) {
+      const option = el("option", ref.startsWith("revision:") ? "Selected specification" : ref.startsWith("graph:") ? "Selected diagram" : ref.replace(/^target:/, "Current decision "));
+      option.value = ref; option.selected = value.references.includes(ref); references.append(option);
+    }
+    const update = () => {
+      value.include = include.checked;
+      value.disposition = disposition.value;
+      value.rationale = rationale.value;
+      value.references = [...references.selectedOptions].map(option => option.value);
+      authoringFormChanged(state, key, buffer, item.input_id, value);
+      listeners.forEach(listener => listener());
+    };
+    include.addEventListener("change", update);
+    disposition.addEventListener("change", update);
+    rationale.addEventListener("input", update);
+    references.addEventListener("change", update);
+    dispositionLabel.append(disposition); reasonLabel.append(rationale); referencesLabel.append(references);
+    card.append(dispositionLabel, reasonLabel, referencesLabel); section.append(card);
+    entryNodes.push(item.input_id);
+  }
+  const valid = () => entryNodes.every(id => {
+    const entry = buffer.value[id];
+    if (!entry?.include) return true;
+    return entry && ["incorporated", "no_change"].includes(entry.disposition)
+      && typeof entry.rationale === "string" && entry.rationale.trim().length >= 20
+      && Array.isArray(entry.references) && entry.references.length > 0;
+  }) && entryNodes.some(id => buffer.value[id]?.include);
+  return {
+    node: section,
+    valid,
+    entries: () => entryNodes.filter(input_id => buffer.value[input_id]?.include).map(input_id => {
+      const { disposition, rationale, references } = structuredClone(buffer.value[input_id]);
+      return { input_id, disposition, rationale, references };
+    }),
+    onChange: callback => listeners.push(callback),
+  };
 }

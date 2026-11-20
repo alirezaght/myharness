@@ -28,6 +28,11 @@ def source_state(controller, task_id):
         "complexity": str(task.complexity),
         "complexity_source": task.complexity_source,
     }
+    from harness.investigation_artifacts import stored
+
+    managed = stored(controller.conn, task_id)
+    if managed:
+        state["managed_artifacts"] = managed["digest"]
     from harness.effective_records import effective_records
 
     effective = effective_records(ws)
@@ -79,6 +84,11 @@ def source_state(controller, task_id):
     state["historical"]["recorded_decisions"] = [
         serial(asdict(record)) for record in _recorded_decisions(ws.events())
     ]
+    from harness.investigation_store import InvestigationStore
+
+    investigation = InvestigationStore(controller, None, task_id).semantic()
+    if investigation is not None:
+        state["source_investigation"] = investigation
     return state
 
 

@@ -4,7 +4,16 @@ ACTIVE = {"Running", "Launching", "WorkerOwned"}
 
 
 def task_guidance(
-    execution, launch, *, pending=False, question=False, phase=None, has_approval=None
+    execution,
+    launch,
+    *,
+    pending=False,
+    question=False,
+    phase=None,
+    has_approval=None,
+    authoring=None,
+    investigation=None,
+    session=None,
 ):
     def shown(status, activity, next_action, target):
         return {
@@ -21,6 +30,50 @@ def task_guidance(
                 "No run is attached to this task; external-session work isn't tracked here.",
                 "Start implementation",
                 "start",
+            )
+        if session and session.get("mode") == "attached":
+            state = session["state"]
+            active = state in {"listening", "busy"}
+            return shown(
+                (session.get("providerLabel") or "Agent").title()
+                + (" connected" if active else " connection needs attention"),
+                "Listening for browser input"
+                if state == "listening"
+                else "Attached agent is working"
+                if state == "busy"
+                else "Return to the invoking provider context and explicitly reattach",
+                "Open conversation" if active else "Recover connection",
+                "interview",
+            )
+        if investigation and investigation.get("enabled"):
+            recovery = investigation.get("recovery")
+            if investigation.get("state") in {"queued", "running"}:
+                return shown(
+                    "Investigating task",
+                    investigation.get("stage", "queued").replace("_", " "),
+                    "View investigation",
+                    "interview",
+                )
+            if recovery:
+                return shown(
+                    "Investigation needs attention",
+                    recovery["message"],
+                    "Recover investigation",
+                    "interview",
+                )
+            if investigation.get("review_available") and not question:
+                return shown(
+                    "Findings need review",
+                    "Source-backed findings remain proposals until exact review.",
+                    "Review findings",
+                    "interview",
+                )
+        if authoring:
+            return shown(
+                "Interview model needs attention",
+                f"{authoring['host']}: {authoring['message']} Manual answers are still usable.",
+                "Recover interview",
+                "interview",
             )
         if pending or question:
             return shown(

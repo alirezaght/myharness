@@ -26,9 +26,36 @@ def _controller(args: argparse.Namespace, create: bool = False) -> Iterator[Harn
     if not create and not path.exists():
         raise TaskNotFound(args.task_id)
     conn = connect(path)
+    from harness.planning_session_contract import SessionError
+    from harness.planning_session_events import LEGACY_TASK
+    from harness.planning_session_store import PlanningSessionStore
+
+    task_id = getattr(args, "task_id", None)
+    selectors = [
+        getattr(args, name, None)
+        for name in (
+            "action",
+            "interview_action",
+            "design_action",
+            "spec_action",
+            "testplan_action",
+            "decision_action",
+            "context_action",
+            "review_action",
+        )
+    ]
+    readonly = getattr(args, "command", None) in {"show", "resume"} or any(
+        v in {"show", "list", "summary", "checklist", "export", "preview", "history", "coverage"}
+        for v in selectors
+    )
+    token = LEGACY_TASK.set(task_id if not readonly else None)
     try:
+        owner = PlanningSessionStore(conn, task_id).owner() if task_id else None
+        if owner and owner["mode"] == "attached" and not readonly:
+            raise SessionError("SESSION_OPERATION_INCOMPATIBLE")
         yield HarnessController(conn)
     finally:
+        LEGACY_TASK.reset(token)
         conn.close()
 
 

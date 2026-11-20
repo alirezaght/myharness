@@ -27,7 +27,14 @@ def spec_store(controller: HarnessController | None, task_id: str, specs: str | 
     if specs:
         root = Path(specs).resolve()
     elif controller is not None:
-        root = task_repo_root(controller, task_id) / DEFAULT_SPECS_DIR
+        from harness.investigation_artifacts import stored
+
+        policy = stored(controller.conn, task_id)
+        root = (
+            Path(policy["specs_root"])
+            if policy
+            else task_repo_root(controller, task_id) / DEFAULT_SPECS_DIR
+        )
     else:
         root = repo_root() / DEFAULT_SPECS_DIR
     return SpecStore(root / task_id)

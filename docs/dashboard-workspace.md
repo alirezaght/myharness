@@ -18,6 +18,27 @@ succeeds. The current Claude client profile is not qualified for no-tool authori
 so the UI reports it as unsupported; full manual specification editing remains
 available without a native host.
 
+For a task that names a Jira issue, the Interview tab starts with **Task
+investigation**. It shows the recorded acquisition stage, selected issue/site,
+bounded repository reads, source text and citations, coverage status, limitations,
+and any genuine decision questions. Source findings are proposed mappings; they
+do not count as developer answers. Unknown answers and deferrals remain visible
+and revisitable. If the local native transport or interview model is unavailable,
+the dashboard says which prerequisite failed and keeps manual answers and
+specification editing usable. It never starts sign-in automatically.
+
+After a complete source bundle exists, use **Review** to load and inspect a
+candidate specification and logical graph. **Adopt this revision and request
+review** uses the existing guarded reconciliation action and does not grant
+approval or execution authority. Return to Interview to load the exact current
+source review package, inspect the full source text, citations, candidate body,
+graph, decisions, lineage and limitations, then provide an explicit written
+reason and confirmation to accept source coverage. Acceptance still requires a
+fresh final review and separate explicit implementation approval. If an
+approved task needs new source evidence, use the existing **Return to an earlier
+phase** control with a reason before refreshing sources; active or unsettled
+execution remains guarded.
+
 The dashboard adds `task.workspace = {base, source, proposals}`. `base` is a SHA-256
 of the deterministic source snapshot: original request, interview statements and
 unresolved checklist, accepted context, exact specification sections, design entries,

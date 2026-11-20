@@ -143,7 +143,9 @@ class WorkspaceProposalService:
         request_hash = digest({"base": base, "operations": operations})
         if len(canonical(operations).encode()) > 100000:
             raise ValueError("operations exceed 100000 bytes")
-        with transaction(self.conn):
+        from harness.planning_session_events import mutation_scope
+
+        with transaction(self.conn), mutation_scope(self.conn, self.task.id, aggregate=False):
             prior = self.conn.execute(
                 "SELECT * FROM workspace_proposals WHERE task_id=? AND request_id=?",
                 (self.task.id, request_id),
@@ -176,7 +178,13 @@ class WorkspaceProposalService:
                 ),
             )
             self.controller.workspace(self.task.id).record_event(
-                "workspace.proposed", {"id": proposal_id, "base": base, "edits": len(operations)}
+                "workspace.proposed",
+                {
+                    "id": proposal_id,
+                    "request_id": request_id,
+                    "base": base,
+                    "edits": len(operations),
+                },
             )
             return self.decode(
                 self.conn.execute(

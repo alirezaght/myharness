@@ -13,6 +13,7 @@ class ChecklistState(StrEnum):
 
 
 class Provenance(StrEnum):
+    SOURCE_EVIDENCE = "accepted_source_evidence"
     DEVELOPER = "developer"
     ACCEPTED_RECOMMENDATION = "accepted_recommendation"
     MODIFIED_RECOMMENDATION = "modified_recommendation"
@@ -84,6 +85,7 @@ class Requirement:
     text: str
     statement: str
     provenance: Provenance
+    sources: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,11 @@ class InterviewSummary:
     def to_dict(self) -> dict[str, Any]:
         return {
             "requirements": [
-                {**asdict(r), "provenance": str(r.provenance)} for r in self.requirements
+                {
+                    **{k: v for k, v in asdict(r).items() if k != "sources" or v},
+                    "provenance": str(r.provenance),
+                }
+                for r in self.requirements
             ],
             "answered_elsewhere": [asdict(s) for s in self.answered_elsewhere],
             "not_relevant": [asdict(s) for s in self.not_relevant],

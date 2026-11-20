@@ -3,6 +3,11 @@
 from harness.authoring_contract import exact, text
 
 SCHEMAS = {
+    "jira-handoff": {"job"},
+    "investigate": {"host", "site"},
+    "reconnect-jira": {"host", "site"},
+    "investigation-review": set(),
+    "accept-investigation": {"approved_sha256", "provenance"},
     "start": {"host"},
     "answer": {"question", "mode", "answer", "source", "ref"},
     "revise": {"target", "target_revision", "body"},

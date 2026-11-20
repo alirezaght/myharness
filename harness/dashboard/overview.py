@@ -102,11 +102,51 @@ def presentation(controller, task, store, point, pending):
     launch = launch_descriptor(controller, task.id, store)
     latest = latest_execution(controller.conn, task.id)
     execution = execution_view(controller.conn, latest["id"]) if latest else None
+    from harness.authoring_context import model_recovery
+
+    jobs = [
+        dict(row)
+        for row in controller.conn.execute(
+            (
+                "SELECT host,state,kind,error FROM authoring_jobs WHERE task_id=? "
+                "AND kind!='attached_publication' "
+                "ORDER BY rowid DESC LIMIT 1"
+            ),
+            (task.id,),
+        )
+    ]
+    from harness.investigation_store import InvestigationStore
+
+    investigation_store = InvestigationStore(controller, None, task.id)
+    binding = investigation_store.binding()
+    investigation = None
+    if binding:
+        job = controller.conn.execute(
+            (
+                "SELECT * FROM authoring_jobs WHERE task_id=? AND kind IN "
+                "('source_investigation','jira_reconnect') ORDER BY rowid "
+                "DESC LIMIT 1"
+            ),
+            (task.id,),
+        ).fetchone()
+        progress = investigation_store.read_attempt(job["id"], job["attempt"]) if job else None
+        investigation = {
+            "enabled": True,
+            "state": job["state"] if job else "unavailable",
+            "stage": progress["stage"] if progress else "unavailable",
+            "recovery": binding["recovery"],
+            "review_available": bool(binding["active_bundle"]),
+        }
     return {
         "launch": launch,
         "guidance": task_guidance(
             execution,
             launch,
+            session=__import__("harness.planning_session_store", fromlist=["PlanningSessionStore"])
+            .PlanningSessionStore(controller.conn, task.id)
+            .snapshot(),
+            authoring=model_recovery(controller.workspace(task.id), jobs),
+            investigation=investigation,
             pending=bool(pending),
             question=point.pending_question is not None,
             phase=str(task.phase),

@@ -25,9 +25,17 @@ from harness.phases import Phase
 
 
 class AuthoringWorker:
-    def __init__(self, db_path, root, *, specs=None, provider_factory=NativeAuthor):
+    def __init__(
+        self, db_path, root, *, specs=None, provider_factory=NativeAuthor, acquisition_factory=None
+    ):
         self.db_path, self.root, self.specs = Path(db_path), Path(root), specs
         self.provider_factory = provider_factory
+        from harness.investigation_native import NativeInvestigator
+
+        self.acquisition_factory = acquisition_factory or NativeInvestigator
+        from harness.investigation_native import HANDOFFS
+
+        self.handoffs = HANDOFFS
         self.owner = str(uuid.uuid4())
         self.stop = threading.Event()
         self.thread = None
@@ -93,16 +101,42 @@ class AuthoringWorker:
                 return False
             if present != required:
                 raise sqlite3.OperationalError("Incomplete authoring schema for migration 18")
+            from harness.planning_session_store import schema_available
+
+            schema_available(conn)
             project = project_identity(self.root)
+            owner_filter = (
+                (
+                    " AND NOT EXISTS(SELECT 1 FROM planning_session_owners o WHERE "
+                    "o.task_id=authoring_jobs.task_id AND o.mode!='standalone')"
+                )
+                if "planning_session_owners" in tables
+                else ""
+            )
             jobs = conn.execute(
                 "SELECT 1 FROM authoring_jobs WHERE project=? "
-                "AND state IN ('queued','running') LIMIT 1",
+                + (
+                    "AND kind IN "
+                    "('investigate','generate','source_investigation','jira_reconnect'"
+                    ") AND state IN ('queued','running')"
+                )
+                + owner_filter
+                + " LIMIT 1",
                 (project,),
             ).fetchone()
             pending = conn.execute(
                 "SELECT 1 FROM authoring_projections p JOIN authoring_tasks a "
                 "ON a.task_id=p.task_id "
-                "WHERE a.project=? AND p.state='pending' LIMIT 1",
+                "WHERE a.project=? AND p.state='pending'"
+                + (
+                    (
+                        " AND NOT EXISTS(SELECT 1 FROM planning_session_owners o WHERE "
+                        "o.task_id=p.task_id AND o.mode='attached')"
+                    )
+                    if "planning_session_owners" in tables
+                    else ""
+                )
+                + " LIMIT 1",
                 (project,),
             ).fetchone()
             return bool(jobs or pending)
@@ -116,7 +150,11 @@ class AuthoringWorker:
             while not self.stop.is_set():
                 pending = conn.execute(
                     "SELECT p.task_id FROM authoring_projections p JOIN authoring_tasks a "
-                    "ON a.task_id=p.task_id WHERE p.state='pending' AND a.project=?",
+                    + (
+                        "ON a.task_id=p.task_id WHERE p.state='pending' AND a.project=? "
+                        "AND NOT EXISTS(SELECT 1 FROM planning_session_owners o WHERE "
+                        "o.task_id=p.task_id AND o.mode='attached')"
+                    ),
                     (project_identity(self.root),),
                 ).fetchall()
                 for projection in pending:
@@ -135,6 +173,11 @@ class AuthoringWorker:
                     service = AuthoringService(
                         controller, self.root, claim["task_id"], specs=self.specs
                     )
+                    if claim["kind"] in {"source_investigation", "jira_reconnect"}:
+                        from harness.investigation_sources import run
+
+                        run(service, claim, self)
+                        continue
                     inputs = json.loads(claim["input_json"])
                     if (
                         service.project != claim["project"]
@@ -142,6 +185,16 @@ class AuthoringWorker:
                     ):
                         with transaction(conn):
                             settle(service, claim, "stale", "Input revision changed before launch")
+                        continue
+                    from harness.planning_session_events import require_standalone
+
+                    require_standalone(
+                        conn, service.task_id, inputs.get("planning_owner"), check_captured=True
+                    )
+                    if claim["kind"] == "generate" and inputs.get("investigation"):
+                        from harness.investigation_sources import run
+
+                        run(service, claim, self)
                         continue
                     if claim["kind"] == "investigate":
                         from harness.knowledge.integration import investigate_with_context
@@ -169,13 +222,30 @@ class AuthoringWorker:
                                 )
                             settle(service, claim, "succeeded")
                             service.store.bump()
-                            queue_job(service, "generate", claim["host"])
+                            from harness.authoring_jobs import HostUnavailable
+
+                            try:
+                                queue_job(service, "generate", claim["host"])
+                            except HostUnavailable as error:
+                                controller.workspace(service.task_id).record_event(
+                                    "authoring.model_unavailable",
+                                    {"host": claim["host"], "message": str(error)},
+                                )
                         continue
 
                     def cancelled(service=service, claim=claim):
                         row = job_row(service, claim["id"])
                         return self.stop.is_set() or not matches(row, claim)
 
+                    from harness.authoring_jobs import require_available
+                    from harness.authoring_policy import availability
+
+                    require_available(claim["host"], availability(claim["host"]))
+                    from harness.planning_session_events import require_standalone
+
+                    require_standalone(
+                        conn, service.task_id, inputs.get("planning_owner"), check_captured=True
+                    )
                     provider = self.provider_factory(claim["host"])
                     output = provider.run(inputs, cancelled=cancelled)
                     apply_result(service, claim, output, getattr(provider, "diagnostics", ()))

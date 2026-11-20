@@ -346,7 +346,13 @@ def test_rework1_revision_validation_and_foreign_target_are_atomic(controller, t
     ).fetchone()
 
 
-def test_rework1_start_stale_job_exposes_retry_and_continuation_is_once(controller, tmp_path):
+def test_rework1_start_stale_job_exposes_retry_and_continuation_is_once(
+    controller, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "harness.authoring_policy.availability",
+        lambda host: {"host": host, "available": True, "status": "fixture"},
+    )
     service = initialized(controller, tmp_path)
     # The initial cancelled investigation stays explicit; start is not an automatic retry.
     state = service.start(

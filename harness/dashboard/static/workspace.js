@@ -42,6 +42,10 @@ function workspacePersist(state) {
       authoringRequestContinuations: state.authoringRequestContinuations,
       authoringHistory: state.authoringHistory,
       authoringConflict: state.authoringConflict, authoringMessage: state.authoringMessage,
+      candidateChoice: state.candidateChoice,
+      sessionActionRequest: state.sessionActionRequest,
+      sessionActionMessage: state.sessionActionMessage,
+      sessionHistoryError: state.sessionHistoryError,
       drawerQuestionId: state.drawerQuestionId, drawerFocusReturnKey: state.drawerFocusReturnKey,
       newTaskOpen: state.newTaskOpen, diagramView: state.diagramView,
     }));
@@ -445,7 +449,7 @@ function renderWorkspaceTask(task, existingKnowledge = null) {
       : authoring?.initialized ? "No working draft saved" : specText(task.spec);
   const meta = el("p", workActivity ? `Last implementation activity · ${workActivity}` : `Specification · ${authoringSpec}`);
   meta.className = "workspace-muted"; heading.append(meta);
-  const pendingQuestion = (state.authoring?.questions || []).find(item => !item.answer && !item.skip_source);
+  const pendingQuestion = workspaceCurrentQuestion(state);
   const drawerButton = el("button", pendingQuestion ? `Answer Q${pendingQuestion.id}` : "Open interview");
   drawerButton.type = "button"; drawerButton.dataset.workspaceFocus = `interview-drawer:${task.id}`;
   drawerButton.setAttribute("aria-haspopup", "dialog");
@@ -454,7 +458,14 @@ function renderWorkspaceTask(task, existingKnowledge = null) {
     state.drawerFocusReturnKey = drawerButton.dataset.workspaceFocus;
     state.drawerOpen = true; workspacePersist(state); workspaceRerender();
   });
-  const newTaskButton = el("button", "New interview"); newTaskButton.type = "button";
+  drawerButton.hidden = state.tab === "interview";
+  if (authoring?.model_recovery) {
+    const recovery = el("div"); recovery.className = "authoring-recovery"; recovery.setAttribute("role", "alert");
+    recovery.append(el("span", `Interview model ${authoring.model_recovery.host}: ${authoring.model_recovery.state}. Manual answers are still usable.`));
+    recovery.append(workspaceButton("Recover interview", () => { workspaceSetTab(state, "interview"); workspacePersist(state); workspaceRerender(); }));
+    heading.append(recovery);
+  }
+  const newTaskButton = el("button", "New task"); newTaskButton.type = "button";
   newTaskButton.className = "workspace-new-interview";
   newTaskButton.dataset.workspaceFocus = `new-interview:${task.id}`;
   newTaskButton.setAttribute("aria-haspopup", "dialog");

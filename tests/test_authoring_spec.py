@@ -10,6 +10,14 @@ from harness.spec_store import SpecStore
 from tests.complete_task import settle
 
 
+@pytest.fixture(autouse=True)
+def available_fixture_host(monkeypatch):
+    monkeypatch.setattr(
+        "harness.authoring_policy.availability",
+        lambda host: {"host": host, "available": True, "status": "fixture"},
+    )
+
+
 def test_exact_adoption_sealing_and_pending_edits_preserve_approval(controller, sample_repo):
     task = controller.create_task("fixture request", "trivial")
     settle(controller, task.id)

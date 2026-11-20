@@ -148,26 +148,31 @@ class HarnessController:
     def record_investigation(self, task_id: str, report: InvestigationReport) -> Checkpoint:
         """Store a report atomically: new open questions, one checkpoint and one event."""
         with transaction(self.conn):
-            workspace = self.workspace(task_id)
-            known = {(q.topic, q.text) for q in workspace.questions()}
-            new = [q for q in report.questions if (q.topic, q.text) not in known]
-            for question in new:
-                workspace.ask(question.topic, question.text, QuestionSource.INVESTIGATION)
-            checkpoint = workspace.checkpoint("investigation", report.to_dict())
-            counts = report.to_dict()["counts"]
-            workspace.record_event(
-                "investigation.completed",
-                {
-                    "repo": report.repo_root,
-                    "revision": report.revision,
-                    "facts": counts["facts"],
-                    "assumptions": counts["assumptions"],
-                    "questions": counts["questions"],
-                    "new_questions": len(new),
-                    "decisions": counts["decisions"],
-                },
-            )
-            self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), task_id))
+            return self.record_investigation_in_transaction(task_id, report)
+
+    def record_investigation_in_transaction(
+        self, task_id: str, report: InvestigationReport
+    ) -> Checkpoint:
+        workspace = self.workspace(task_id)
+        known = {(q.topic, q.text) for q in workspace.questions()}
+        new = [q for q in report.questions if (q.topic, q.text) not in known]
+        for question in new:
+            workspace.ask(question.topic, question.text, QuestionSource.INVESTIGATION)
+        checkpoint = workspace.checkpoint("investigation", report.to_dict())
+        counts = report.to_dict()["counts"]
+        workspace.record_event(
+            "investigation.completed",
+            {
+                "repo": report.repo_root,
+                "revision": report.revision,
+                "facts": counts["facts"],
+                "assumptions": counts["assumptions"],
+                "questions": counts["questions"],
+                "new_questions": len(new),
+                "decisions": counts["decisions"],
+            },
+        )
+        self.conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (utcnow(), task_id))
         return checkpoint
 
     def history(self, task_id: str) -> list[PhaseTransition]:
