@@ -413,6 +413,11 @@ Architect plan. Append later user scope changes with `task amend --file <json>`;
 never rewrite the original package. Reviewer scope suggestions remain findings
 until the user amends the task.
 
+`task amend` reports that it resets the specification gate and invalidates proof.
+Recheck the amendment, then run `spec-gate SPEC_READY`; the classification stays
+recorded. Repeating that same classification succeeds without changing state or
+renewing any proof, including after planning has finished.
+
 After `start`, register each user-reported seed in the active package's
 `reference/escape-seeds/` directory with `"${STATE[@]}" escape record --file <seed.json>`.
 These two dated source-request seeds cover rollout omissions and earlier
@@ -454,6 +459,34 @@ source. Admission still requires settled operations and current source; source
 movement requires a fresh packet and actual Architect revalidation before proof
 is admitted. UNRESOLVED writers, interrupted checks and uncertain cleanup remain
 operational repair work. They are never evidence of approval.
+
+### Reuse unchanged authored planning after an amendment
+
+Issue the current `planning packet`, then run:
+
+```sh
+"${STATE[@]}" planning rebind --from-packet <old-packet.stored_path> --from-report <old-report.json>
+```
+
+AL validates the old packet against this run's retained issuance and accepted
+amendment prefix. It preserves the original report and authorship, records a
+non-authorizing derivation receipt, and emits an incomplete current-bound draft.
+An unsubmitted original is labelled unsubmitted. No report or proof is admitted.
+Give the actual Architect both packets, the original report, accepted amendments,
+receipt, draft and `revalidation_template`. The Architect assesses current source,
+routing, readiness and acceptance; it supplies its actual invocation and updates
+coverage when necessary. The draft's `FILL:` fields prevent accidental submission.
+Never mechanically replace requirement references or claim old coverage includes
+new acceptance. The final revalidation binds the exact canonical JSON report hash.
+
+```sh
+"${STATE[@]}" planning report --file <current-report.json> --rebind-receipt <receipt.sha256> --revalidation-file <assessment.json>
+"${STATE[@]}" planning admit
+```
+
+Ordinary report validation and current-source admission still apply. The receipt
+records derivation and the Architect's stated reassessment; it does not invent
+host-observed invocation evidence or waive any missing verification.
 
 ### Record behavior observations (before review)
 

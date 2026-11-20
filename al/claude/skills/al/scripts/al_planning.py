@@ -158,7 +158,7 @@ def authoring_view(st):
     }
 
 
-def validate_report(st, report, current, contents, attempt, report_ref):
+def validate_report(st, report, current, contents, attempt, report_ref, *, current_implementation=True):
     J.closed(report, REPORT, "Architect planning report")
     if Template.placeholders(report):
         refuse("Architect planning report still contains FILL: template placeholders")
@@ -195,6 +195,7 @@ def validate_report(st, report, current, contents, attempt, report_ref):
         planning_occurrence=contents["binding"]["planning_occurrence"],
         observation_ref=contents["source_observation"],
         document_hash=contents["binding"]["document_hash"],
+        current_implementation=current_implementation,
     )
     if report_ref is not None:
         authored["authorship"]["report_ref"] = report_ref
@@ -262,13 +263,26 @@ def cmd_report(a, sid):
     if "report" in current:
         refuse("saved Architect planning report cannot be replaced")
     report = J.loads(Path(a.file).read_bytes())
+    if current.get('rebinds') and not (a.rebind_receipt and a.revalidation_file):
+        refuse('issued planning rebind requires --rebind-receipt and --revalidation-file')
     validate_report(st, report, current, contents, attempt, None)
+    receipt = None
+    if bool(a.rebind_receipt) != bool(a.revalidation_file):
+        refuse('supply both --rebind-receipt and --revalidation-file')
+    if a.rebind_receipt:
+        from al_planning_rebind import revalidation
+        packet(st)
+        assessment = J.loads(Path(a.revalidation_file).read_bytes())
+        receipt = revalidation(st, current, report, a.rebind_receipt, assessment)
     reference = J.snapshot(sid, report, "architect-planning-report-v1", a.file)
     materialized = validate_report(st, report, current, contents, attempt, reference)
     obligations = J.snapshot(
         sid, materialized, "behavior-obligations-v1", "admitted Architect report materialization"
     )
     current.update(report=reference, obligations=obligations)
+    if receipt:
+        current['rebind_validation'] = {'receipt': receipt, 'revalidation': J.snapshot(
+            sid, assessment, 'planning-rebind-revalidation-v1', a.revalidation_file)}
     al_store.save(sid, st)
     print(J.raw({"report": reference, "materialized_obligations": obligations,
                  "authoring": authoring_view(st)}).decode())
@@ -279,6 +293,8 @@ def validate_admitted(st):
     if not {"report", "obligations"} <= current.keys():
         refuse("admission lacks immutable Architect report and obligations")
     report = J.read(current["report"])
+    from al_planning_rebind import submitted
+    submitted(st, current, report)
     expected = validate_report(st, report, current, contents, attempt, current["report"])
     actual = J.read(current["obligations"])
     if J.raw(actual) != J.raw(expected):
@@ -330,7 +346,14 @@ def register(sub):
     p.set_defaults(fn=cmd_packet)
     p = children.add_parser("report")
     p.add_argument("--file", required=True)
+    p.add_argument("--rebind-receipt")
+    p.add_argument("--revalidation-file")
     p.set_defaults(fn=cmd_report)
+    from al_planning_rebind import cmd_rebind
+    p = children.add_parser('rebind')
+    p.add_argument('--from-packet', required=True)
+    p.add_argument('--from-report', required=True)
+    p.set_defaults(fn=cmd_rebind)
     p = children.add_parser("admit")
     p.add_argument("--file")
     p.add_argument("--recovery-file", dest="operation_recovery_file")

@@ -58,6 +58,10 @@ def cat_file(tail):
 def inspect(args,environment):
     if any(name.startswith('GIT_') or name in {'PAGER','SSH_ASKPASS'} for name in environment):raise GitError('invocation-supplied Git execution/config environment override')
     sub,tail=parse(args)
+    if sub=='branch':
+        if tail!=['--show-current']:
+            raise GitError('only the observational Git branch --show-current query is supported')
+        return sub,tail
     if sub=='config':
         from al_git_config import inspect as query
         query(tail,GitError);return sub,tail

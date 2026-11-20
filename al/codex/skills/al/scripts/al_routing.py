@@ -25,7 +25,6 @@ def cmd_classify(a, sid):
     if a.classification not in CLASSIFICATIONS:
         sys.exit(f"al_state: classification must be one of {', '.join(CLASSIFICATIONS)}")
     from al_schema import refuse
-    if st["phase"] != "PLANNING": refuse("classification can only change during planning")
     designer = a.designer == "yes"
     import al_artifacts as A
     package = A.read_json(st['task_package'])
@@ -62,6 +61,21 @@ def cmd_classify(a, sid):
     if a.classification == "SMALL" and len((a.implementers or "al-engineer").split(",")) != 1: refuse("SMALL requires one writer")
     _, optional, skipped = phase_plan(a.classification, designer)
     impl = [x.strip() for x in (a.implementers or "").split(",") if x.strip()]
+    unchanged = (
+        st.get("classification") == a.classification
+        and st.get("designer_required") == designer
+        and st.get("implementers") == impl
+        and (not a.reason or st.get("classification_reason") == a.reason)
+        and (not a.designer_reason or st.get("designer_reason") == a.designer_reason)
+        and (assessment is None or st.get("classification_assessment") == assessment)
+    )
+    if unchanged:
+        print(f"AL · Task classification unchanged: {a.classification}")
+        print(f"Path: {st['path']}")
+        if st.get("spec_status") != "SPEC_READY":
+            print("Specification gate pending; rerun spec-gate SPEC_READY after checking the amendment.")
+        return
+    if st["phase"] != "PLANNING": refuse("classification can only change during planning")
     impl_label = " + ".join(al_models.display(i) for i in impl) or "Engineer/Builder"
     st["classification"] = a.classification
     st["classification_reason"] = a.reason or (assessment["reason"] if assessment else "")

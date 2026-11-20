@@ -86,7 +86,8 @@ def consumers(value):
             J.reference(ref)
 
 
-def validate_obligations(st, artifact, *, report_ref, planning_occurrence, observation_ref, document_hash=None):
+def validate_obligations(st, artifact, *, report_ref, planning_occurrence, observation_ref, document_hash=None,
+                         current_implementation=True):
     J.closed(artifact, TOP, "behavior obligations")
     if (
         type(artifact["schema_version"]) is not int
@@ -117,7 +118,7 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
     context = J.closed(
         artifact["implementation_context"], {"status", "observation_ref"}, "implementation context"
     )
-    if any(w.get('degraded') for w in st.get('writers', {}).values()) and context['status'] != 'partially_built':
+    if current_implementation and any(w.get('degraded') for w in st.get('writers', {}).values()) and context['status'] != 'partially_built':
         refuse('degraded tracked work requires partially_built implementation_context and the current issued observation_ref')
     if context["status"] == "partially_built":
         if context["observation_ref"] != observation_ref:

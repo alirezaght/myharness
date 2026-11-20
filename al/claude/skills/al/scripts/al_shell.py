@@ -117,7 +117,7 @@ def parse(command,find_context=False):
 
 TEXT_TOOLS={'rg','grep','egrep','fgrep','git','find','sort','uniq','diff','comm','cut','head','tail','wc','cat',
             'ls','date','tr','column','join','paste','od','xxd','hexdump','env','cmp','nl','fold','expand','unexpand','strings'}
-GIT_READ={'status','diff','log','show','grep','ls-files','ls-tree','rev-parse','merge-base','cat-file','blame','describe','check-ignore','config'}
+GIT_READ={'status','diff','log','show','grep','ls-files','ls-tree','rev-parse','merge-base','cat-file','blame','describe','check-ignore','config','branch'}
 FILES={'rm','rmdir','mv','cp','install','touch','mkdir','ln','chmod','chown','chgrp','tee','dd','truncate','patch','shred'}
 PACKAGES={'pnpm','npm','yarn','bun','pip','pip3','uv','poetry','cargo','go','mvn','gradle','brew','apt','apt-get'}
 

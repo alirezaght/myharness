@@ -4,7 +4,7 @@ import re
 
 UNKNOWN=object()
 PRESENT=object()
-TOKEN=re.compile('\\s*(\\$[A-Za-z_][A-Za-z0-9_]*|&&|\\|\\||==|!=|[()]|"(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')')
+TOKEN=re.compile('\\s*(\\$[A-Za-z_][A-Za-z0-9_]*|&&|\\|\\||==|!=|[()]|null\\b|"(?:[^"\\\\]|\\\\.)*"|\'[^\']*\')')
 VALUES={'CI_PIPELINE_SOURCE':'merge_request_event','CI_COMMIT_BRANCH':None,'CI_MERGE_REQUEST_ID':PRESENT,
         'FASTLANE':None,'BRANCH_ENV_CLEANUP':None,'SONAR_SCAN':None}
 
@@ -44,9 +44,15 @@ class Parser:
         value=self.values.get(token[1:],UNKNOWN)
         if self.peek() in {'==','!='}:
             op=self.take();literal=self.take()
-            if not literal.startswith(('"',"'")):raise ValueError('literal comparison required')
-            literal=json.loads(literal) if literal.startswith('"') else literal[1:-1]
-            if value is UNKNOWN or value is PRESENT:return None
+            if literal == 'null':literal=None
+            elif literal.startswith('$'):literal=self.values.get(literal[1:],UNKNOWN)
+            elif literal.startswith(('"',"'")):
+                literal=json.loads(literal) if literal.startswith('"') else literal[1:-1]
+            else:raise ValueError('literal or variable comparison required')
+            if value is UNKNOWN or literal is UNKNOWN:return None
+            if value is PRESENT or literal is PRESENT:
+                if value is not None and literal is not None:return None
+                return op=='!='  # A profile-proven present value is never undefined.
             equal=value==literal
             return equal if op=='==' else not equal
         return None if value is UNKNOWN else value is PRESENT or bool(value)

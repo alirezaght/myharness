@@ -44,6 +44,10 @@ def test_background_metadata_fails_closed(background):
 
 
 @pytest.mark.parametrize('command,allowed', [('git status', True), ('echo "a & b"', True),
+                                            ('git branch --show-current', True),
+                                            ("sh -c 'git branch --show-current'", True),
+                                            ("sh -c 'wc -l README.md'", True),
+                                            ('git branch --show-current --delete old', False),
                                             ('git status &', False), ("sh -c 'git status &'", False),
                                             ('touch forbidden', False)])
 def test_false_metadata_still_uses_command_restrictions(command, allowed):

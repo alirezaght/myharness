@@ -159,6 +159,22 @@ when available, otherwise in the final response, following **Named report output
 The supervisor or host captures the complete content verbatim and records the
 artifact; the read-only Architect does not create a plan file.
 
+Use exact measurements during discovery; do not estimate a file's line count
+because inline Python is unavailable. `wc -l -- FILE...` is supported for newline
+counts. For counts that include a final unterminated line, use the packaged
+standard-library helper from the actual supplied package path:
+
+```sh
+python3 -I -S -B "<AL_PACKAGE>/scripts/al_readonly_lines.py" -- FILE...
+git --no-pager --no-optional-locks branch --show-current
+```
+
+The helper reports measured counts or a bounded error; it never invents a count
+for missing, aliased, oversized or changing input. Literal `sh -c` wrappers use
+the same recursive command validation. Arbitrary inline Python and heredocs
+remain unsupported; isolation flags alone do not make evaluated code read-only.
+These invocation checks do not replace the host's filesystem permissions.
+
 ## al-architect · PLANNING REPORT
 After `classify` and `gates plan`, continue the same Architect agent with the
 output of `"${STATE[@]}" planning packet`: the packet and its `report_template`.
@@ -172,6 +188,13 @@ final response. The supervisor captures the exact JSON using its own Write or ho
 final-message capture and records the artifact. The Architect returns content; it
 does not write the report file or run a generator. The supervisor runs `planning
 report --file` and `planning admit --file`; a report still containing `FILL:` is refused.
+For a `planning rebind` draft, also deliver both issued packets, the preserved
+original report, amendments, derivation receipt and `revalidation_template`.
+Require a current assessment of source, specification, routing and amendment
+impact, and the actual invocation ID. Reuse valid authored content; add or change
+obligations when acceptance changed. Return the final report and revalidation
+JSON separately for supervisor capture. The derivation receipt grants no proof.
+
 ## al-architect · MODE: RESOLVE_CONFLICT
 Add: `MODE: RESOLVE_CONFLICT`, `APPROVED PLAN: <plan>`, `INVARIANTS`,
 `ACCEPTANCE_CRITERIA`, and either `PLAN_CONFLICT REPORTED BY AL-DESIGNER:

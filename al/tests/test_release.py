@@ -97,16 +97,32 @@ def release_checkout(tmp_path, monkeypatch):
     for key in ('GITHUB_REF', 'GITHUB_SHA', 'GITHUB_ACTIONS', 'GITHUB_REF_TYPE'):
         monkeypatch.delenv(key, raising=False)
     calls = []
+    monkeypatch.setenv('HARNESS_HOME', str(tmp_path / 'harness-home'))
     monkeypatch.setattr(verifier, '_run', lambda argv, cwd: calls.append((argv, cwd)))
     def provenance_suites(**options):
         failures=[]
         for suite in ('installer','codex','claude'):
             try:verifier._run([sys.executable,'-m','pytest',suite],source)
             except subprocess.CalledProcessError as exc:failures.append(exc.returncode)
-        return {'reconciliation':{'complete':not failures,'selected_success':not failures,'executed_passed':3-len(failures),'executed_failed':len(failures),'executed_errors':0},
+        # These tests stub suite execution, so they have no settled storage
+        # publication. Supply the current plan contract and retain every item.
+        plan = tmp_path / 'provenance-plan.json'
+        plan.write_text(json.dumps({'collections': {name: {'storage_result': None}
+                                                   for name in ('installer', 'codex', 'claude')}}))
+        return {'plan_path': str(plan), 'shards': [],
+                'reconciliation':{'complete':not failures,'selected_success':not failures,'executed_passed':3-len(failures),'executed_failed':len(failures),'executed_errors':0},
                 'report_path':str(tmp_path/'provenance-report.json'),'collected_obligations':3,'equivalent_obligations':0}
     monkeypatch.setattr(verifier,'full',provenance_suites)
     return source, calls
+
+
+def test_mocked_suite_provenance_never_claims_settled_storage(release_checkout, capsys):
+    assert verifier.main(['--full']) == 0
+    summary = json.loads(capsys.readouterr().out.splitlines()[0])
+    cleanup = summary['storage_cleanup']
+    assert cleanup['complete'] is False
+    assert cleanup['results'] == [
+        {'state': 'RETAINED', 'reason': 'verification_publication_missing'} for _ in range(3)]
 
 
 def test_full_wiring_is_complete_and_propagates_failure(tmp_path, monkeypatch):

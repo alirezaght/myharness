@@ -69,6 +69,9 @@ def cmd_amend(a,sid):
     al_store.set_phase(st,'PLANNING'); st['spec_status']=None
     if recovery:amend(st,sid,data,recovery)
     al_store.save(sid,st)
+    print('AL · amendment recorded: '+data['id'])
+    print('Specification gate reset; rerun spec-gate SPEC_READY after checking the amendment.')
+    print('Classification is retained. Planning proof and verification must be revalidated for this revision.')
 
 def cmd_conflict(a,sid):
     st=al_store.load(sid)
