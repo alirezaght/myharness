@@ -11,7 +11,8 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from al.verification_plan import environment
+from al.verification_plan import (environment, allocate_verification_storage,
+    record_verification_storage, finalize_verification_storage)
 from al.verification_process import OwnedProcess, execute
 from al.verification_profile import write_json
 
@@ -27,14 +28,16 @@ def check(*, temporary_root=None, minimum_free_bytes=1024 * 1024 * 1024):
     if not clock.monotonic or not 0 < clock.resolution <= 0.01:raise ValueError('bounded monotonic clock unavailable')
     directory = Path(tempfile.mkdtemp(prefix='al-verification-preflight-', dir=root));directory.chmod(0o700)
     safe_cleanup = False
+    storage_manager, storage_binding = allocate_verification_storage(directory, "preflight:" + directory.name)
     try:
-        home = directory / 'probe';home.mkdir(mode=0o700)
+        home = Path(storage_binding['allocation']['path']) / 'probe';home.mkdir(mode=0o700)
+        probe_ownership = directory / 'probe-ownership';probe_ownership.mkdir(mode=0o700)
         env = environment(Path(__file__).resolve().parents[1], home)
         log = directory / 'output.log'
         with log.open('wb') as output:
             owner = execute([sys.executable, '-I', '-c',
                              'import os;from pathlib import Path;Path(os.environ["HOME"],"owned-marker").write_text("private")'],
-                            cwd=directory, env=env, output=output, directory=home, assignment='preflight-exit', timeout=5)
+                            cwd=directory, env=env, output=output, directory=probe_ownership, assignment='preflight-exit', timeout=5)
         if owner.process.returncode or not owner.launch_identity or (home / 'home/owned-marker').read_text() != 'private':
             raise ValueError('owned isolated command did not complete')
         sleeper = directory / 'cancel';sleeper.mkdir(mode=0o700)
@@ -52,11 +55,21 @@ def check(*, temporary_root=None, minimum_free_bytes=1024 * 1024 * 1024):
             raise ValueError('owned cancellation did not establish complete cleanup; retained=' + str(directory))
         safe_cleanup = True
     finally:
-        if safe_cleanup:shutil.rmtree(directory)
-    return {'schema_version': 1, 'status': 'PASS', 'checks': ['python', 'pytest', 'git', 'uv', 'private-temporary-files',
+        if not safe_cleanup:
+            storage_manager.retain(storage_binding['allocation']['allocation_id'], reason='preflight_unverified')
+    result = {'schema_version': 1, 'status': 'PASS', 'checks': ['python', 'pytest', 'git', 'uv', 'private-temporary-files',
             'disk-space', 'monotonic-clock', 'isolated-command', 'kernel-start-identity', 'owned-group-cancellation'],
             'max_workers': min(8, os.cpu_count() or 1), 'cleanup_complete': True,
             'limitations': ['local tooling and owned disposable processes only; no provider authentication or external services checked']}
+    # Expected cancellation is a verified preflight assertion, not a failed product check.
+    storage_result = record_verification_storage(directory, storage_manager, storage_binding, owner,
+        success=True, complete=True, artifacts=[log, journal, owned.receipt])
+    report = directory / 'preflight.json'
+    write_json(report, result)
+    cleanup_result = finalize_verification_storage(report, references=[storage_result])
+    result['storage_cleanup'] = cleanup_result
+    result['retained_report'] = str(report)
+    return result
 
 
 def main():

@@ -104,3 +104,89 @@ correctly scoped component area separately, then use `evidence retire` with a
 reason to retire the mistaken plan. `evidence supersede` applies only when the
 replacement satisfies its existing same-obligation and current-plan rules; it
 cannot assert equivalence between changed command semantics.
+
+
+### Task-scoped coverage policy (v2)
+
+New repository discovery records global inventory diagnostics separately from task requirements.
+A deferred diagnostic is retained with a sourced exclusion proof; it is neither a passing check
+nor an execution `NOT_APPLICABLE` result. Root checks and literal runtime/build document
+consumers remain required even when shared narrative documentation selects no service.
+
+Discovery, planning admission, conventional verification, directory expansion and currency use
+the same reconstructed relevance policy. Unknown scope and incomplete applicable CI remain
+obligations. Recognizing a generated GitLab job does not supply an equivalent local execution.
+
+Captured repository, rule and CI bytes, membership, absences and boundary metadata are validated
+as one attempt. Only typed source drift permits one fresh retry. Permission, syntax and bound
+failures remain explicit failures. Evidence still depends on applicable source bytes; unchanged
+dependency semantics do not make stale execution evidence valid.
+
+Retained v1 declarations retain their original interpretation. Current v2 admission requires
+actual rediscovery/replanning; a policy transition is pathless and cannot be silently refreshed.
+Scoped implementation continuity does not admit proof, review or approval.
+
+
+### Static Go module coverage
+
+Current V2 discovery composes conventional Python observations with captured Go
+modules (`conventional` adapter v1), or declared contract units (`contract` v2).
+Retained V1 declarations keep their historical Python/contract-v1 identities and
+require supported rediscovery; they do not acquire Go module semantics by relabeling.
+
+Go discovery reads bounded literal `go.mod`/`go.work` declarations and optional
+`go.sum`/`go.work.sum` inputs, using the same no-follow snapshot and one-retry
+capture protocol. Current and base local dependency edges select reverse module
+consumers. Nested modules own their source separately. Missing/opaque workspace
+members, escaped replacements, unsupported syntax and unowned Go source remain
+named obligations. Unrelated module diagnostics remain visible globally while
+document-only tasks use the normal source-backed relevance projection. Newly
+changed Go modules are real task source and require current coverage.
+
+A module needs a sourced full-module verification recipe. Complete recursive test,
+vet or build recipes retain their actual purposes; vet/build do not establish
+test coverage or test counts, and never discharge a separately required test job. `go test .` and `go test ./sub/...`
+do not establish `go test ./...` coverage of the enclosing module; a parent module's
+recursive check does not cross a nested module boundary. Vet/build remain distinct
+required checks; every declared CI obligation still requires its own evidence. Partial selectors and masking flags cannot supply module proof.
+Literal gotestsum `--` arguments and bounded Make target/prerequisite/include
+chains are parsed as data, with their inputs bound to the recipe. Discovery never
+runs Go, Make, containers, downloads or repository expansion code.
+
+Missing local tools are execution INFRA, never evidence of success. Actual native
+`go test` receipts may have unknown counts; retained exit/output evidence must stay
+truthful. Container Go recipes can be identified without host Go, but their
+metadata grants no local execution mapping: actual authorized container/remote
+verification remains required. Existing setup, platform, ownership, containment,
+planning, behavior and review guards continue to apply.
+
+Direct GitLab scripts retain literal working-directory changes across lines;
+GitHub run steps and Make recipe lines retain their separate shell boundaries.
+Option-like targets and `cd` operands are unsupported. A versioned external
+requirement is not a local source edge merely because another captured module
+has the same identity. Explicit local replacements and workspace resolution
+contexts establish local impact; shared workspace contexts cover all members,
+including imports that do not need a separate module `require` directive.
+
+
+Unsupported module directives preserve relevant reverse-consumer uncertainty;
+a changed Go module cannot silently drop consumers whose manifests could not be
+fully interpreted. Demonstrably unrelated documentation keeps the global record
+and the existing bounded deferral.
+
+The bounded Make subset rejects semantic special targets such as `.ONESHELL`
+and quoted/computed include forms. Plain `make TARGET` maps `Makefile` only when
+higher-priority `GNUmakefile`/`makefile` selections are absent or the latter is the
+same physical case alias. Selection observations and higher-priority absences
+participate in the authoritative snapshot; missing prerequisite files remain
+unverified rather than empty content observations.
+
+Local Go verification uses an explicitly qualified effective environment:
+`GOENV=off`, absent/empty `GOFLAGS` and `GOWORK`, and (for Make recipes) no ambient
+Make flags or hidden include files. Unsupported persisted/default Go configuration
+or selectors create named verification debt. Discovery reads trusted fingerprints,
+not user configuration files, and never rewrites the source environment. The
+same fixed precondition is enforced again at actual execution before Go starts;
+an unsupported context produces a fixed diagnostic and INFRA preflight outcome.
+Container recipe observations remain unqualified and independent of host Go or
+host environment settings, pending their separately authorized execution route.

@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import al_store  # noqa: E402
 import al_sources as Sources
 import al_scope as S
+import al_runner_output as RunnerOutput
 
 STATUSES = ("PASS", "FAIL", "EMPTY", "INFRA", "TORN", "RUNNING")
 TIERS = ("focused", "broad", "preflight")
@@ -218,6 +219,18 @@ def parse_counts(text):
     counts, worst = {}, {}
     for line in text.splitlines():
         suite_line = bool(NOT_TEST_COUNT_RE.search(line))
+        go = RunnerOutput.gotestsum_counts(line)
+        if go is not None:
+            # DONE is a complete summary. Omitted categories are zero in this
+            # summary; earlier failures remain separately in worst.
+            for key in ('passed', 'skipped', 'failed', 'error'):
+                counts.pop(key, None)
+            counts.update(go)
+            for key in ('failed', 'error'):
+                if go.get(key):worst[key] = max(worst.get(key, 0), go[key])
+            continue
+        if RunnerOutput.GO_PREFIX.match(RunnerOutput.ANSI.sub('', line).strip()):
+            continue  # Malformed known summaries are not invented zero counts.
         for n, word in COUNT_RE.findall(line):
             key = word.lower().rstrip("s") if word.lower().startswith("error") else word.lower()
             if key in ("failed", "error"):  # a failed suite or file is a failure, wherever reported
@@ -267,7 +280,7 @@ def _other_runner_counts(text):
     return found
 
 
-def classify(kind, exit_code, counts, timed_out, before, after):
+def classify(kind, exit_code, counts, timed_out, before, after, *, output=None):
     """(status, note) for a finished run."""
     if timed_out:
         return "INFRA", "timed out"
@@ -275,6 +288,9 @@ def classify(kind, exit_code, counts, timed_out, before, after):
         return "INFRA", INFRA_EXIT[exit_code]
     if before != after:
         return "TORN", "the scope changed while the command ran — the result describes no single tree"
+    if output is not None:
+        problem = RunnerOutput.output_problem(output)
+        if problem:return "INFRA", problem
     if exit_code != 0:
         if kind == "test" and exit_code == 5 and not counts:
             return "EMPTY", "no tests collected"
@@ -289,7 +305,12 @@ def classify(kind, exit_code, counts, timed_out, before, after):
     return "PASS", ""
 
 
-def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=None, needs=(), sources=()):
+def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=None, needs=(), sources=(), storage=None, recipe=None, recipe_assignment=None, recipe_context=None):
+    import al_evidence_storage
+    storage = al_evidence_storage.normalize_declaration(storage)
+    import al_evidence_recipe
+    recipe = al_evidence_recipe.normalize_recipe(recipe)
+    recipe_assignment = al_evidence_recipe.validate_assignment_binding(recipe_assignment)
     ev = ledger(st)
     ev["seq"] += 1
     entry = {
@@ -303,6 +324,12 @@ def new_entry(st, *, area, kind, tier, argv, cwd, scope, env_names, preflight=No
         "phase": st.get("phase"), "correction_iteration": st.get("correction_iteration", 0),
         "run": st.get("run_id"),
     }
+    if storage is not None: entry["storage"] = storage
+    if recipe is not None: entry["recipe"] = recipe
+    if recipe_context is not None:
+        al_evidence_recipe.modules()[1].validate_task_recipe(recipe_context)
+        entry["recipe_context"] = recipe_context
+    if recipe_assignment is not None: entry["recipe_assignment"] = recipe_assignment
     ev["entries"].append(entry)
     return entry
 
@@ -315,11 +342,17 @@ def find(st, entry_id):
 
 
 def same_command(e, spec):
-    return (e["area"] == spec["area"] and e["argv"] == list(spec["argv"])
+    import al_evidence_storage
+    import al_evidence_recipe
+    return (al_evidence_recipe.normalize_recipe(e.get("recipe")) == al_evidence_recipe.normalize_recipe(spec.get("recipe"))
+            and e.get("recipe_assignment") == spec.get("recipe_assignment")
+            and e.get("recipe_context") == spec.get("recipe_context")
+            and e["area"] == spec["area"] and e["argv"] == list(spec["argv"])
             and e["cwd"] == (spec.get("cwd") or ".") and e["scope"] == list(spec["scope"])
             and e.get("kind") == spec.get("kind", e.get("kind"))
             and sorted(e.get("env") or ()) == sorted(spec.get("env") or ())
             and e.get("sources", []) == spec.get("sources", [])
+            and al_evidence_storage.normalize_declaration(e.get("storage")) == al_evidence_storage.normalize_declaration(spec.get("storage"))
             and e.get("preflight") == spec.get("preflight")
             and sorted(e.get("needs") or ()) == sorted(spec.get("needs") or ()))
 
@@ -358,6 +391,37 @@ def assess(e):
         return "LOG_ALTERED", "the log no longer matches the hash recorded at the end of the run"
     if e["status"] != "PASS":
         return e["status"], e.get("note") or ""
+    if e.get("storage"):
+        import al_evidence_storage
+        try: al_evidence_storage.validate_outputs(e)
+        except (OSError, ValueError, KeyError, TypeError):
+            return "OUTPUT_MISSING", "declared managed output is unavailable or changed"
+    if e.get('recipe'):
+        # A typed coordinator has no child process or subprocess exit/output.
+        if (e.get('argv') != [] or e.get('exit') is not None
+                or e.get('pid') is not None or e.get('process') is not None):
+            return 'RECIPE_UNVERIFIED', 'recipe coordinator cannot be an ordinary process receipt'
+        import al_evidence_recipe
+        try:al_evidence_recipe.assess_recipe(e)
+        except (OSError, ValueError, KeyError, TypeError):
+            return 'RECIPE_UNVERIFIED', 'recipe source, child artifacts or complete aggregate are unavailable or changed'
+    else:
+        try:
+            raw = Path(e["log"]).read_text(errors='replace')
+        except OSError:
+            return "LOG_MISSING", "the captured output cannot be read"
+        body = RunnerOutput.captured_body(e, raw)
+        if body is not None:
+            current_counts = parse_counts(body) if e['kind']=='test' else e.get('counts', {})
+            current, note = classify(e['kind'], e.get('exit'), current_counts, False,
+                                     e.get('fp_before'), e.get('fp_after'), output=body)
+            if current != 'PASS':
+                return current, 'stored PASS is unusable under current output classification: '+note
+        else:
+            # Unknown historical header formats are not guessed. A closed launcher
+            # diagnostic still cannot support a pass; retain the original receipt.
+            problem = RunnerOutput.output_problem(raw)
+            if problem:return 'INFRA', problem
     try:
         now = scope_fingerprint(e["scope"], e.get("env"), e.get("sources", []), e.get("cwd", "."))
     except FingerprintError as exc:

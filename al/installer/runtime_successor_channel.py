@@ -165,7 +165,44 @@ PREPARATION_OWNERSHIP_DIAGNOSTICS = {
 }
 
 
-def preparation_error(identifier, sequence, stage, code):
+def valid_process_observation(value, code):
+    """Closed metadata only; never accept exception text, argv or filesystem paths."""
+    return (
+        isinstance(value, dict)
+        and set(value) == {"schema_version", "pid", "operation", "error_kind", "error_number", "identity_after"}
+        and type(value["schema_version"]) is int and value["schema_version"] == 1
+        and type(value["pid"]) is int and 0 < value["pid"] < 2**31
+        and isinstance(value["operation"], str)
+        and {"argv": "OWNERSHIP_ARGV_UNAVAILABLE", "cwd": "OWNERSHIP_CWD_UNAVAILABLE"}.get(value["operation"]) == code
+        and value["error_kind"] in ("os_error", "invalid_value")
+        and (value["error_number"] is None or type(value["error_number"]) is int and 0 <= value["error_number"] <= 4095)
+        and value["identity_after"] in ("live", "zombie", "changed", "unavailable")
+    )
+
+
+class ProcessObservationFailure(ValueError):
+    """Retain a sanitized kernel observation without changing any ownership guard."""
+
+    def __init__(self, pid, operation, error, identity_after):
+        message, code = {
+            "argv": ("successor process ownership unavailable", "OWNERSHIP_ARGV_UNAVAILABLE"),
+            "cwd": ("task process cwd unavailable", "OWNERSHIP_CWD_UNAVAILABLE"),
+        }[operation]
+        number = error.errno if isinstance(error, OSError) else None
+        if type(number) is not int or not 0 <= number <= 4095:
+            number = None
+        observation = {
+            "schema_version": 1, "pid": pid, "operation": operation,
+            "error_kind": "os_error" if isinstance(error, OSError) else "invalid_value",
+            "error_number": number, "identity_after": identity_after,
+        }
+        if not valid_process_observation(observation, code):
+            raise ValueError(ERROR)
+        self.observation = observation
+        super().__init__(message)
+
+
+def preparation_error(identifier, sequence, stage, code, *, observation=None):
     if (
         sequence not in {1, 2}
         or stage not in {"request", "preparation", "start"}
@@ -181,7 +218,7 @@ def preparation_error(identifier, sequence, stage, code):
         }
     ):
         raise ValueError(ERROR)
-    return {
+    result = {
         "version": 1,
         "sequence": sequence,
         "phase": "error",
@@ -192,6 +229,12 @@ def preparation_error(identifier, sequence, stage, code):
             "diagnostic": PREPARATION_OWNERSHIP_DIAGNOSTICS.get(code, PREPARATION_DIAGNOSTIC),
         },
     }
+
+    if observation is not None:
+        if not valid_process_observation(observation, code):
+            raise ValueError(ERROR)
+        result["payload"]["observation"] = dict(observation)
+    return result
 
 
 class PreparationTransport:

@@ -104,7 +104,7 @@ class Reader:
 
     def block(self,index,indent,depth=0,indentless=False):
         if depth>40:raise Unsupported('YAML nesting limit')
-        sequence=self.lines[index][1].startswith('- ');result=[] if sequence else {}
+        sequence=self.lines[index][1].startswith('- ');result=[] if sequence else {};explicit=set()
         while index<len(self.lines) and self.lines[index][0]==indent:
             raw=self.lines[index][1]
             if sequence and indentless and not raw.startswith('- '):break
@@ -127,13 +127,14 @@ class Reader:
                 if len(pair)!=2:raise Unsupported('unsupported mapping entry')
                 key=self.scalar(pair[0]);value,index=self.value(pair[1],index,indent,depth)
                 if not isinstance(key,str):raise Unsupported('nonliteral YAML key')
+                if key in explicit:raise Unsupported('duplicate YAML key')
+                explicit.add(key)
                 if key=='<<':
                     values=value if isinstance(value,list) else [value]
                     for row in reversed(values):
                         if not isinstance(row,dict):raise Unsupported('unsupported YAML merge')
                         for name,item in row.items():result.setdefault(name,item)
                 else:
-                    if key in result:raise Unsupported('duplicate YAML key')
                     result[key]=value
         if index<len(self.lines) and self.lines[index][0]>indent:raise Unsupported('unsupported YAML indentation')
         return result,index

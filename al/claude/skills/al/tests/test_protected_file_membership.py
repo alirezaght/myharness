@@ -1,4 +1,4 @@
-"""Exact protected files need no descendant scan; directories retain full discovery."""
+"""Exact protected files and ordinary directories remain visible; opaque roots are not traversed."""
 
 import stat
 
@@ -18,8 +18,13 @@ def count_scopes(monkeypatch):
     original = F.git_records
 
     def counted(root, args, limits):
-        if args[:3] == ["ls-files", "--others", "-z"] and "--" in args:
-            queries.append(args[args.index("--") + 1 :])
+        if "--" in args:
+            boundary = args.index("--")
+            options = args[:boundary]
+            # Ignore-rule inventory also queries cached files; count protected scopes only.
+            if (options and options[0] == "ls-files" and "--cached" not in options
+                    and {"--others", "-z"} <= set(options)):
+                queries.append(args[boundary + 1 :])
         return original(root, args, limits)
 
     monkeypatch.setattr(F, "git_records", counted)
@@ -88,9 +93,22 @@ def test_regular_file_type_changes_after_first_listing_invalidate(repo, monkeypa
         assert any(g["code"] == "symlink-boundary" for g in scan.gaps)
 
 
-def test_opaque_regular_scope_keeps_conservative_scan_and_gap(repo, monkeypatch):
+def test_opaque_regular_scope_keeps_boundary_gap_without_descendant_scan(repo, monkeypatch):
     assert stat.S_ISREG((repo / "svc/app.py").lstat().st_mode)
     queries = count_scopes(monkeypatch)
     scan = F.Snapshot(repo, None, ["svc/app.py"], ["svc"])
-    assert queries == [["svc"], ["svc/app.py"]]
+    assert queries == []
     assert scan.gaps and "svc/app.py" not in scan.files
+
+
+def test_other_opaque_root_does_not_hide_an_ordinary_protected_directory(repo, monkeypatch):
+    put(repo, ".gitignore", "visible/\n")
+    put(repo, "visible/explicit.py")
+    queries = count_scopes(monkeypatch)
+    scan = F.Snapshot(repo, None, ["visible"], ["svc"])
+    assert scan.files["visible/explicit.py"] == b"VALUE = 1\n"
+    assert "svc/app.py" not in scan.files
+    assert queries  # Observe scoped queries even when opaque-exclusion flags precede -z.
+    assert all(scope != "svc" and not scope.startswith("svc/")
+               for query in queries for scope in query)
+    assert scan.gaps

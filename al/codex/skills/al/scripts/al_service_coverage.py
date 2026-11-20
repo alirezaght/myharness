@@ -3,7 +3,7 @@ from copy import deepcopy
 from al_repository_facts import all_within,digest,semantic_requirements,within,validate_facts
 
 
-def assess(facts):
+def _assess_v1(facts):
     validate_facts(facts);deps=facts['dependencies'];uncertain=deps['uncertainties'];potential=deps['potential_services']
     selected=sorted(set(potential) if uncertain else set(deps['known_affected'])|set(deps.get('policy_selection',[])))
     enum=[*facts['enumeration']['gaps'],*facts['unsupported_boundaries']]
@@ -21,7 +21,7 @@ def assess(facts):
 
 
 def validate_assessment(value):
-    if value.get('schema_version')!=1 or value.get('outcome') not in {'identified','exhaustive','incomplete'}:raise ValueError('invalid service coverage assessment')
+    if value.get('schema_version') not in {1,2} or value.get('outcome') not in {'identified','exhaustive','incomplete'}:raise ValueError('invalid service coverage assessment')
     for key in ('known_affected','potential_services','selected_services','dependency_uncertainties','required_bindings','gaps'):
         if not isinstance(value.get(key),list):raise ValueError('invalid service coverage '+key)
     if not set(value['selected_services'])<=set(value['potential_services']):raise ValueError('selection outside coverage universe')
@@ -50,7 +50,7 @@ def validate_check_binding(expected,gate):
     return gaps
 
 
-def declaration(facts,assessment,gates):
+def _declaration_v1(facts,assessment,gates):
     semantics=semantic_requirements(facts)
     # Per-file scan inputs are bound by digest and count: the manifest stays small on large repositories.
     provenance={'scan_inputs':{'count':len(facts['scan_inputs']),'sha256':digest(facts['scan_inputs'])},'rule_sources':facts['rule_sources'],'membership':facts['enumeration']['observed_members'],'absent_paths':facts['enumeration']['absent_paths'],'ignored_outputs':facts['enumeration'].get('ignored_outputs',[])}
@@ -59,14 +59,14 @@ def declaration(facts,assessment,gates):
             'bindings':[{'obligation_id':oid,'gate_id':g['id'],'execution_signature':g['execution_signature']} for g in gates if g.get('execution_signature') for oid in g.get('obligation_ids',[])]}
 
 
-def validate_declaration(value,gates):
+def _validate_declaration_v1(value,gates):
     if not isinstance(value,dict) or value.get('schema_version')!=1 or value.get('policy_version')!=1 or value.get('adapter') not in ({'id':'python','version':1},{'id':'contract','version':1}):raise ValueError('unsupported coverage declaration')
     validate_assessment(value['assessment']);semantics=value['semantic_requirements']
     if digest(semantics)!=value['semantic_sha256']:raise ValueError('corrupt coverage semantic hash')
     for key in ('adapter','policy_version','repository'):
         if value[key]!=semantics[key]:raise ValueError('inconsistent coverage '+key)
     reconstructed={**semantics,'scan':{'stable':semantics['stable']}}
-    expected=assess(reconstructed)
+    expected=_assess_v1(reconstructed)
     normalized=deepcopy(value['assessment'])
     normalized['dependency_uncertainties']=[{k:v for k,v in u.items() if k!='location'} for u in normalized['dependency_uncertainties']]
     if normalized!=expected:raise ValueError('coverage assessment contradicts semantic facts')
@@ -91,8 +91,13 @@ def validate_declaration(value,gates):
 def current_gaps(facts,assessment,manifest,*,admission=True):
     value=manifest.get('service_coverage');out=[]
     relevant=bool(facts['units'] or assessment['gaps'] or assessment['dependency_uncertainties'])
-    if not value:return ['service coverage declaration required; rediscover repository gates'] if relevant else []
-    if value['semantic_sha256']!=digest(semantic_requirements(facts)):out.append('service coverage requirements changed; rediscover repository gates')
+    if not value:return ['service coverage v2 declaration required; rediscover repository gates'] if facts['schema_version']==2 or relevant else []
+    if value.get('schema_version')!=facts['schema_version']:return ['coverage policy changed; supported rediscovery/replanning required']
+    if facts['schema_version']==2:
+        import al_coverage_relevance as R
+        previous=value.get('projection',{})
+        if previous.get('semantic_sha256')!=R.project_task(facts)['semantic_sha256']:out.append('service coverage requirements changed; rediscover repository gates')
+    elif value['semantic_sha256']!=digest(semantic_requirements(facts)):out.append('service coverage requirements changed; rediscover repository gates')
     old=value['assessment']
     for key in ('outcome','known_affected','potential_services','selected_services','enumeration','check_discovery'):
         if old[key]!=assessment[key]:out.append('service coverage assessment changed: '+key)
@@ -128,3 +133,93 @@ def require_ready(st,*,current=False):
     from al_schema import refuse
     missing=admission_gaps(st,current=current)
     if missing:refuse('service coverage blocks admission: '+str(missing))
+
+
+def assess(facts):
+    if facts.get('schema_version')==1:return _assess_v1(facts)
+    import al_coverage_relevance as R
+    validate_facts(facts)
+    projection=R.project_task(facts)
+    ids=set(projection['relevant_gap_ids'])
+    relevant=[row['record'] for row in projection['records'] if row['record_id'] in ids]
+    bindings=[b for b in facts['checks']['bindings'] if b['id'] in projection['required_binding_ids']]
+    obligations=[o for o in facts['checks']['obligations'] if o['id'] in projection['relevant_obligation_ids']]
+    bound={oid for b in bindings for oid in b['obligation_ids']}
+    for o in obligations:
+        if o['id'] not in bound:relevant.append({'code':'missing-check','unit':o['units'][0] if o['units'] else None,
+            'path':'.','category':o['category'],'reason':'required obligation has no executable binding: '+o['id']})
+    enum=[row['record_id'] for row in projection['records'] if row['record_id'] in ids and row['kind']=='enumeration']
+    checks=[row['record_id'] for row in projection['records'] if row['record_id'] in ids and row['kind']=='check']
+    deps=facts['dependencies'];uncertain=deps['uncertainties']
+    return {'schema_version':2,'outcome':'incomplete' if relevant else 'exhaustive' if uncertain else 'identified',
+            'known_affected':deps['known_affected'],'potential_services':deps['potential_services'],
+            'selected_services':projection['selected_services'],'dependency_uncertainties':uncertain,
+            'enumeration':{'status':'incomplete' if enum else 'complete','boundary_ids':facts['enumeration']['boundaries'],'gap_ids':enum},
+            'check_discovery':{'status':'incomplete' if relevant and not enum else 'complete','obligation_ids':[o['id'] for o in obligations],'gap_ids':checks},
+            'required_bindings':bindings,'gaps':relevant,'global_inventory':projection['global_inventory'],
+            'deferred_record_ids':[d['record_id'] for d in projection['deferred']],
+            'projection_sha256':projection['semantic_sha256']}
+
+
+def declaration(facts,assessment,gates):
+    if facts.get('schema_version')==1:return _declaration_v1(facts,assessment,gates)
+    import al_coverage_relevance as R
+    value=_declaration_v1(facts,assessment,gates)
+    value.update(schema_version=2,policy_version=2,projection=R.project_task(facts),
+                 global_inventory=assessment['global_inventory'],capture=facts['capture'])
+    value['provenance']['capture_sha256']=digest(facts['capture'])
+    value['provenance']['digest']=digest({k:v for k,v in value['provenance'].items() if k!='digest'})
+    return value
+
+
+def validate_declaration(value,gates):
+    if isinstance(value,dict) and value.get('schema_version')==1:
+        return _validate_declaration_v1(value,gates)
+    import re
+    import al_coverage_relevance as R
+    if not isinstance(value,dict) or value.get('schema_version')!=2 or value.get('policy_version')!=2:
+        raise ValueError('unsupported coverage declaration')
+    semantics=value['semantic_requirements']
+    if semantics.get('schema_version')!=2 or semantics.get('policy_version')!=2:
+        raise ValueError('mixed coverage policy versions')
+    if digest(semantics)!=value['semantic_sha256']:raise ValueError('corrupt coverage semantic hash')
+    for key in ('adapter','policy_version','repository'):
+        if value[key]!=semantics[key]:raise ValueError('inconsistent coverage '+key)
+    capture=value['capture']
+    if capture.get('schema_version')!=2 or capture.get('stable') is not True or type(capture.get('attempts')) is not int or capture.get('attempts') not in {1,2}:
+        raise ValueError('invalid coverage capture')
+    if not isinstance(capture.get('discarded_attempts'),list) or len(capture['discarded_attempts'])!=capture['attempts']-1:raise ValueError('invalid capture retry lineage')
+    for key in ('source_count','match_count','absence_count'):
+        if type(capture.get(key)) is not int or capture[key]<0:raise ValueError('invalid capture bound summary')
+    for key in ('implementation_binding','observations_digest'):
+        if not re.fullmatch('[0-9a-f]{64}',capture.get(key,'')):raise ValueError('invalid capture binding')
+    facts={**semantics,'scan':{'stable':semantics['stable']}}
+    R.validate_projection(value['projection'],facts)
+    expected=assess(facts)
+    normalized=deepcopy(value['assessment'])
+    normalized['dependency_uncertainties']=[{k:v for k,v in u.items() if k!='location'} for u in normalized['dependency_uncertainties']]
+    if normalized!=expected:raise ValueError('coverage assessment contradicts semantic facts')
+    if value['global_inventory']!=expected['global_inventory']:raise ValueError('corrupt global coverage inventory')
+    validate_assessment(value['assessment'])
+    provenance=deepcopy(value['provenance']);claimed=provenance.pop('digest')
+    if digest(provenance)!=claimed or provenance.get('capture_sha256')!=digest(capture):
+        raise ValueError('corrupt coverage provenance')
+    summary=provenance.get('scan_inputs')
+    if not isinstance(summary,dict) or type(summary.get('count')) is not int or summary['count']<0 or not re.fullmatch('[0-9a-f]{64}',summary.get('sha256','')):
+        raise ValueError('invalid coverage input summary')
+    expected={oid:b for b in expected['required_bindings'] for oid in b['obligation_ids']}
+    by_id={g['id']:g for g in gates};seen=set()
+    for link in value['bindings']:
+        oid=link['obligation_id'];gid=link['gate_id']
+        if oid in seen or oid not in expected or gid not in by_id:raise ValueError('duplicate/foreign coverage binding')
+        seen.add(oid)
+        if link['execution_signature']!=expected[oid]['execution_signature'] or validate_check_binding(expected[oid],by_id[gid]):
+            raise ValueError('corrupt coverage gate binding: '+oid)
+    if seen!=set(expected):raise ValueError('coverage declaration omits obligation bindings')
+
+
+def imports_needed(facts,assessment):
+    selected=set(assessment['selected_services'])
+    observed=any(o['category']=='lint-imports' and set(o['units'])&selected for o in facts['checks']['obligations'])
+    unknown=assessment['outcome']=='incomplete' and any(g['code'] not in {'unknown-ci-inventory','unsupported-ci-provider'} for g in assessment['gaps'])
+    return observed or unknown

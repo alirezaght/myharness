@@ -28,7 +28,10 @@ TOOL_HELP = {
         "Obtain current assignment and graph_revision. Root orchestrator receives "
         "Supervisor with guarded AL control authority and writable=false; product edits "
         "require admitted scoped writers. ReadOnly, Pending and unavailable "
-        "handoff/context do not grant writer authority. Refresh before submitting output."
+        "handoff/context do not grant writer authority. registered_assignment observes only your "
+        "registered AL task and distinct Harness execution binding, not writer admission. "
+        "knowledge_contribution_contract describes advisory report formatting. "
+        "Refresh before submitting output."
     ),
     "al_command": (
         "Run guarded AL subcommands only: arguments=['show', '--panel']. Never include alctl, "
@@ -78,9 +81,25 @@ TOOL_HELP = {
     "submit_output": (
         "Submit an execution-owned named report with content and the current "
         "expected_graph_revision. Returns an immutable artifact reference; storing a report "
-        "does not complete an AL task or verify its conclusions."
+        "does not complete an AL task or verify its conclusions. knowledge_contribution gives "
+        "advisory format feedback for the exact preserved bytes. Assertion keys: subject, "
+        "predicate, object, value, text, parents. Parents must be full assertion IDs, not "
+        "source locators. Origin and verification are server-assigned; narrative classifications "
+        "belong in text. Format readiness does not prove completion, parent eligibility, "
+        "visibility or ingestion. Limits: 40 assertions, 40 parents, 8192 text characters."
     ),
 }
+
+
+TOOL_HELP["knowledge_query"] += (
+    " receipt_id identifies this operation's persisted receipt; receipt_id and bundle_hash "
+    "are transport metadata outside the hashed payload. derivation_parents are full evidence "
+    "assertion IDs, separate from traversal paths."
+)
+TOOL_HELP["knowledge_explain"] += (
+    " Returns this explanation's receipt_id, bundle_hash, and bounded derivation parents, "
+    "edges and supporting bundle evidence with explicit completeness."
+)
 
 
 def _schema(properties, required):

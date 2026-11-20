@@ -56,6 +56,50 @@ A repository opts into the `contract` adapter by committing `.al/repository.json
 
 ## Artifact consumers and relevant uncertainty
 
-Changed data artifacts inside an enumerated unit are classified as `openapi-schema` (a JSON/YAML document with a top-level `openapi`/`swagger` key) or `data-fixture`; changed generated Python modules (an `@generated`, `DO NOT EDIT` or `Code generated` header) are `generated-code`. Configuration, manifests, hidden paths and rule sources keep their existing handling. An artifact's consumers are the source files that literally reference its file name or its directory (deliberately over-approximating on shared names, directory loads and globs); their units and the transitive importers of consumer modules are selected. Generated code records the schema files named in its header as producers, so a schema change reaches the generated module's importers. A shared artifact with no consumer reference is an explicit `uncertain-artifact-consumer` requirement (exhaustive selection); an artifact owned by a service with no outside reference is that service's input. Changed files of any other kind (for example `.csv`, `.sql` or templates) are unclassified and keep the exhaustive fallback.
+Changed data artifacts, including unowned root artifacts, are classified as `openapi-schema` (a JSON/YAML document with a top-level `openapi`/`swagger` key) or `data-fixture`; changed generated Python modules (an `@generated`, `DO NOT EDIT` or `Code generated` header) are `generated-code`. Configuration, manifests, hidden paths and rule sources keep their existing handling. An artifact's consumers are the source files that literally reference its file name or its directory (deliberately over-approximating on shared names, directory loads and globs); their units and the transitive importers of consumer modules are selected. Generated code records the schema files named in its header as producers, so a schema change reaches the generated module's importers. A shared artifact with no consumer reference is an explicit `uncertain-artifact-consumer` requirement (exhaustive selection); an artifact owned by a service with no outside reference is that service's input. Changed files of any other kind (for example `.csv`, `.sql` or templates) are unclassified and keep the exhaustive fallback.
 
 Import-analysis uncertainty (`uncertain-import`) describes who may import a module. After the consumer closure it is retained in `deferred_uncertainties` (audit only, never selecting or blocking) only when it provably cannot reach an affected module: nothing importable is affected, or its literal target cannot name any affected module. An unknown target, an unclassified data change, non-Python source changes, unavailable analysis and incomplete enumeration or check discovery keep their exhaustive selection or incomplete-verification behaviour.
+
+
+## Task and global inventory in policy v2
+
+Global diagnostics remain visible in the declaration even when a captured exclusion proves them
+unrelated to the current task. The task assessment alone selects required units, gaps and
+execution bindings. Missing checks in an untouched independent unit do not automatically block
+another task; unknown relationships that could conceal a consumer remain conservative.
+
+Unconsumed narrative documentation has no generic runtime-data fallback. This is not a `docs/**`
+exclusion: actual prompt/resource consumers, source code, schemas, unknown data, service-owned
+inputs and governing policy still participate in dependency selection. A new consumer invalidates
+an old exclusion and requires replanning.
+
+Opaque gitlinks and symlinks are observed as metadata without following targets. Their diagnostics
+are task-relevant when changed, referenced, governing or inside a requested enumeration boundary.
+Expanding one directory does not certify complete root membership or grant writer permission.
+
+Conditional GitLab includes retain bounded alternative definition worlds. A job is deferred only
+when every possible present definition is source-provably disjoint or excluded. Unknown include
+universes, malformed inheritance, unsupported execution context and variant overflow remain open.
+Unbound `changes.compare_to` cannot borrow ordinary task paths; an earlier definite MR arm may
+legitimately make it unreachable. No ambient environment or guessed baseline supplies authority.
+Captured directory scopes retain possible future descendant checks in GitLab and GitHub. Only
+semantic currency removes descendant paths already covered by a positively captured directory;
+raw questions and byte-sensitive evidence remain intact. A concrete job whose execution cannot
+be mapped remains required and reported as `not verified` under the existing gate policy.
+Recognized identity does not supply a passing check or change approval authority.
+An unavailable root CI definition remains unknown inventory and prevents coverage admission.
+Its internal unavailable reference carries metadata only: it cannot authorize execution, waive
+an obligation or claim observed content. Alias targets are not read. Conventional containers
+are enumerated only after a no-follow observation proves an ordinary directory; opaque roots
+are excluded literally from untracked Git queries and retain only boundary diagnostics.
+
+Version 2 binds one coherent capture of repository facts, CI, instruction/configuration inputs,
+include/workflow membership, absences and boundary metadata. A real drift discards the whole
+attempt and permits one fresh attempt. Repeated drift refuses; permissions, syntax and limits
+are not drift retries. Independent reader dependencies must match the enclosing capture, while
+existing closed pytest runtime-resource identities retain their separate authority binding.
+
+Version 1 declarations remain structurally readable under v1 semantics. Using policy v2 for
+current admission requires actual replacement discovery and planning. No old manifest, proof,
+evidence or approval is rewritten by this transition. Global completeness, task completeness,
+recognized job identity, executable mapping and passing verification remain separate claims.

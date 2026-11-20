@@ -117,7 +117,19 @@ class TaskTooling:
             "setup_operation": "environment_operation",
             "setup_is_test_evidence": False,
             "credential_environment_inherited": False,
+            "check_recipes": self.check_descriptors(),
         }
+
+    def check_descriptors(self):
+        path = self.directory / "check-recipes.json"
+        if not path.exists():
+            return []
+        from harness.template_classification import _ordinary
+
+        records = json.loads(_ordinary(path, 262144)[0])
+        if not isinstance(records, dict) or len(records) > 64:
+            raise ValueError("invalid protected check recipe index")
+        return [{"task_unit": key, **value} for key, value in records.items()]
 
     def environment(self, cwd, temporary, *, prepared=True, source_root=None):
         catalog = self.catalog()
@@ -167,6 +179,93 @@ class TaskTooling:
                 env["PATH"] = env["PATH"] + os.pathsep + str(location)
         return env
 
+    def validate_check_descriptor(self, descriptor):
+        """Execution consumes the exact protected prepared binding, not a supplied claim."""
+        from harness.storage import load_core
+        from harness.task_environment import ordinary
+        from harness.template_classification import _ordinary
+
+        core = load_core()
+        fs = core["storage_filesystem"]
+        core["verification_contracts"].validate_task_recipe(descriptor)
+        key = descriptor["task_id"] + ":" + descriptor["unit"]
+        values = json.loads(_ordinary(self.directory / "check-recipes.json", 262144)[0])
+        if values.get(key, {}).get("descriptor") != descriptor:
+            raise ValueError("prepared check descriptor is not current protected state")
+        records = json.loads(_ordinary(self.directory / "environments.json", 262144)[0])
+        prepared = records.get(descriptor["unit"])
+        catalog = self.catalog()
+        if (
+            fs.digest(prepared) != descriptor["prepared_binding"]
+            or fs.digest(catalog) != descriptor["tooling_binding"]
+        ):
+            raise ValueError("prepared check runtime binding changed")
+        for name, expected in descriptor["setup_inputs"].items():
+            if digest(ordinary(self.repository, name)) != "sha256:" + expected:
+                raise ValueError("prepared check setup input changed")
+        return descriptor
+
+    def check_descriptor(self, state, request, prepared):
+        """Register current source-owned defaults; this grants no execution authority."""
+        from harness.storage import load_core
+        from harness.task_environment import context_revision, ordinary
+
+        core = load_core()
+        fs, contracts = core["storage_filesystem"], core["verification_contracts"]
+        task_id, unit = request["task_id"], request["cwd"]
+        task = state["integration"]["tasks"][task_id]
+        result = {"status": "Unavailable", "reason": "recipe_not_declared", "test_evidence": False}
+        recipe_path = self.repository / "al/verification-harness.json"
+        if recipe_path.exists():
+            recipe = contracts.validate_recipe(fs.read_json(recipe_path))
+            applicable = contracts.task_recipe_applicability(recipe, task["files"])
+            result["reason"] = "recipe_" + applicable
+            if applicable == "applicable" and unit == "." and prepared.get("kind") == "python":
+                catalog = self.catalog()
+                for name, expected in prepared["inputs"].items():
+                    if digest(ordinary(self.repository, name)) != expected:
+                        raise ValueError("prepared check inputs are stale")
+                if prepared.get("tools") != digest(catalog["tools"]):
+                    raise ValueError("prepared check tooling is stale")
+                descriptor = {
+                    "schema_version": 1,
+                    "task_id": task_id,
+                    "revision": context_revision(state, task_id),
+                    "repository": str(self.repository),
+                    "unit": unit,
+                    "recipe": {
+                        "schema_version": 1,
+                        "name": recipe["name"],
+                        "path": "al/verification-harness.json",
+                        "source_sha256": fs.artifact(recipe_path, maximum=65536)["sha256"],
+                        "recipe_digest": fs.digest(recipe),
+                    },
+                    "setup_inputs": {
+                        name: value.removeprefix("sha256:")
+                        for name, value in prepared["inputs"].items()
+                    },
+                    "tooling_binding": fs.digest(catalog),
+                    "prepared_binding": fs.digest(prepared),
+                    "area": "harness-default-"
+                    + fs.digest({"task": task_id, "recipe": recipe["name"]})[:20],
+                    "executor": "supervisor",
+                }
+                contracts.validate_task_recipe(descriptor)
+                result = {"status": "Ready", "descriptor": descriptor, "test_evidence": False}
+        if result.get("descriptor") is not None:
+            prior = next(
+                (
+                    row
+                    for row in self.check_descriptors()
+                    if row["task_unit"] == task_id + ":" + unit
+                ),
+                {},
+            )
+            if prior.get("descriptor") == result["descriptor"] and prior.get("artifact"):
+                result["artifact"] = prior["artifact"]
+        self._update("check-recipes.json", task_id + ":" + unit, result)
+        return result
+
     def failure(self, unit, record, result):
         self._update(
             "failures.json", unit, {"fingerprint": record.get("fingerprint"), "result": result}
@@ -186,6 +285,10 @@ class TaskTooling:
                 raise ValueError("task environment index alias refused")
             records = json.loads(path.read_bytes()) if path.exists() else {}
             records[unit] = record
+            if filename == "check-recipes.json" and (
+                len(records) > 64 or len(canonical(records).encode()) > 262144
+            ):
+                raise ValueError("protected check recipe index bound exceeded")
             fd, temporary = tempfile.mkstemp(prefix=".environments-", dir=self.directory)
             try:
                 with os.fdopen(fd, "w") as stream:

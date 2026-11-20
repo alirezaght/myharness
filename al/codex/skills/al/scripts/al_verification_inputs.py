@@ -52,7 +52,11 @@ def executable(value):
     before = path.stat()
     raw = path.read_bytes()
     after = path.stat()
-    if before != after or not stat.S_ISREG(before.st_mode) or not before.st_mode & 0o111:
+    # Reading can update atime without changing executable bytes or identity.
+    stable_fields = ("st_dev", "st_ino", "st_mode", "st_nlink", "st_uid", "st_gid",
+                     "st_size", "st_mtime_ns", "st_ctime_ns")
+    unchanged = all(getattr(before, key) == getattr(after, key) for key in stable_fields)
+    if not unchanged or not stat.S_ISREG(before.st_mode) or not before.st_mode & 0o111:
         raise ValueError("unstable or nonexecutable verification tool")
     return {
         "requested": value,

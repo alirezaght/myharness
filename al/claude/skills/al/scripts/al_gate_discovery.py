@@ -16,7 +16,15 @@ CATEGORIES=('lint-imports','loc','contracts','pre-commit','ci')
 source=V.source
 
 def discover(st,paths,ci_context=None):
-    inventory=V.inventory(st,paths,ci_context)
+    return V.inventory(st,paths,ci_context,_finalize=lambda inventory:_discover_captured(st,inventory,ci_context))
+
+
+def _discover_captured(st,inventory,ci_context):
+    source_by_path={r['path']:r for r in inventory['rules']}
+    def source(path,job=None):
+        value=source_by_path.get(path)
+        if value is None:raise ValueError('gate source absent from discovery capture: '+path)
+        return {**value,'job':job}
     paths=inventory['paths'];units=inventory['units'];rules=inventory['rules']
     previous={}
     for ref in st.get('gate_manifests',[]):
@@ -38,7 +46,7 @@ def discover(st,paths,ci_context=None):
         if binding.get('package_script'):gates[-1]['package_script']=binding['package_script']
         gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+binding['env_names']))
         gates[-1]['sources']=sorted(gates[-1]['sources']+[v for v in binding['sources'] if v not in gates[-1]['sources']],key=str)
-    required_ids={o['id'] for o in inventory['repository_facts']['checks']['obligations']}
+    required_ids=set(inventory['relevance_projection']['relevant_obligation_ids'])
     for profile in inventory['repository_facts']['checks'].get('package_scripts',[]):
         identifier='package-'+__import__('al_repository_facts').digest([profile['unit'],profile['script']])[:16]
         if identifier not in required_ids or any(g['id']==identifier for g in gates):continue
@@ -46,7 +54,7 @@ def discover(st,paths,ci_context=None):
         if primary:
             gate(identifier,'ci',[],[profile['unit']],{**primary,'job':'scripts.'+profile['script']},unit=profile['unit'],reason='package execution pending; '+'; '.join(profile['execution']['reasons']))
             gates[-1]['package_script']=profile
-    if assessment['outcome']=='incomplete':
+    if assessment['outcome']=='incomplete' and Coverage.imports_needed(inventory['repository_facts'],assessment):
         gate('imports-unresolved','lint-imports',[],sorted(set(paths+inventory['import_dependencies'])),rules[0] if rules else None,
              reason='; '.join(g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason'] for g in assessment['gaps']))
         gates[-1]['units']=units
@@ -56,15 +64,16 @@ def discover(st,paths,ci_context=None):
         not_applicable('imports-na','lint-imports','Independently enumerated no affected Python architecture service')
     # A repository opts into a LOC limit or a pre-commit hook by committing one; without one there is
     # nothing to run, so the category is not applicable rather than unverified.
-    if (al_store.REPO_ROOT/V.LOC_CHECKER).is_file():
+    if inventory['auxiliary']['loc']:
         # The checker runs as the repository defines it (its own scan roots, exclusions and allowlist);
         # passing the task's directories would scan generated or tooling code it never covers.
         gate('loc','loc',['python3',V.LOC_CHECKER],['.'],source(V.LOC_CHECKER))
     else:not_applicable('loc','loc','The repository commits no LOC checker')
-    hook=V.hook()
+    hook=inventory['auxiliary']['hook']
     if hook:gate('hook','pre-commit',['sh',hook],['.'],source(hook))
     else:not_applicable('hook','pre-commit','The repository commits no pre-commit hook')
     for job in inventory['ci']['obligations']:
+        if __import__('al_coverage_relevance').ci_record_id(job) not in inventory['relevance_projection']['relevant_ci_ids']:continue
         if any(g.get('source',{}).get('job')==job['job'] and g['source'].get('path')==job['source_path'] and g['category']=='ci' for g in gates if g.get('source')):continue
         src={'path':job['source_path'],'sha256':job['source_sha256'],'job':job['job']}
         scope=sorted(set(job['inputs']+[d['path'] for d in job['dependencies']]))
@@ -75,13 +84,13 @@ def discover(st,paths,ci_context=None):
             gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
             gates[-1]['execution_kind']=execution['execution_kind']
             if execution.get('remote_source'):gates[-1]['remote_source']=execution['remote_source']
-    if V.contracts_needed(units):gate('contracts','contracts',[],paths,rules[-1] if rules else None,reason='Resolve the exact contract generation/drift check from sourced rules')
+    if inventory['auxiliary']['contracts']:gate('contracts','contracts',[],paths,rules[-1] if rules else None,reason='Resolve the exact contract generation/drift check from sourced rules')
     else:not_applicable('contracts','contracts','No package script generates or builds contracts')
     if not inventory['ci']['obligations']:
-        other=[p for p in V.OTHER_CI if any(al_store.REPO_ROOT.glob(p))]
+        other=inventory['auxiliary']['other_ci']
         # Unsupported providers are recorded as unknown inventory in the coverage declaration.
         if other:gate('ci','ci',[],paths,rules[-1] if rules else None,reason='CI defined in '+', '.join(other)+' cannot establish complete local check inventory')
-        else:not_applicable('ci','ci','The repository defines no CI')
+        else:not_applicable('ci','ci',('No task-applicable CI obligation under projection '+inventory['relevance_projection']['semantic_sha256']) if inventory['ci'].get('deferred') else 'The repository defines no CI')
     rows=S.source_rows()
     for item in gates:
         if item['applicability']=='NOT_APPLICABLE':continue
@@ -145,7 +154,17 @@ def validate_manifest(st,m,check_sources=True):
         if g.get('source'):
             src=g['source']; p=al_store.REPO_ROOT/S.safe_path(src['path'])
             if not re.fullmatch(r'[0-9a-f]{64}',str(src.get('sha256',''))):refuse('corrupt gate source hash')
-            if check_sources and (not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=src.get('sha256')): refuse('gate source rule changed: '+src['path'])
+            unavailable=src['sha256']=='0'*64
+            if unavailable:
+                job=src.get('job')
+                if not (g['category']=='ci' and g['applicability']=='UNRESOLVED' and g.get('required') is True
+                        and g.get('argv')==[] and g.get('execution_kind')=='local'
+                        and all(key not in g for key in ('remote','remote_source','package_script','review_state','execution_signature','obligation_ids','runner_resource'))
+                        and isinstance(job,str) and re.fullmatch(r'<unresolved-(?:definition-[0-9]+|workflows?)>',job)):
+                    refuse('unavailable CI source cannot authorize execution or waive its obligation')
+                # This is unknown inventory identity, never a content hash. The
+                # current inventory is independently reconstructed below.
+            elif check_sources and (not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=src.get('sha256')): refuse('gate source rule changed: '+src['path'])
     if len(ids)!=len(set(ids)) or any(not i for i in ids): refuse('duplicate/missing gate IDs')
     if set(CATEGORIES)-{g['category'] for g in gates}: refuse('manifest omits repository gate categories')
     if 'service_coverage' in m:

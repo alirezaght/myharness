@@ -138,3 +138,32 @@ def test_current_local_override_is_not_external_identity_despite_registry_lock(c
     start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
     a=m['service_coverage']['assessment'];assert reports_uncertain_dependents(a)
     assert any(u['target']=='elasticsearch' for u in a['dependency_uncertainties'])
+
+
+def test_unit_attribution_does_not_hide_unknown_dependency_layout(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    config=repo/'services/b/pyproject.toml'
+    config.write_text(config.read_text()+'[build-system]\nbuild-backend="unknown.backend"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['services/a/src/app.py'],opaque=[])
+    assessment=Coverage.assess(facts)
+    assert assessment['outcome']=='incomplete'
+    assert any(g['code']=='unsupported-build-layout' for g in assessment['gaps'])
+
+
+def test_deferred_unmapped_ci_is_not_global_complete_inventory(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    import al_ci_inventory as CI
+    import al_coverage_relevance as Relevance
+    seed(repo)
+    put(repo,'.gitlab-ci.yml','b:fast_check:\n  image: unsupported/runtime\n  script: unsupported-check\n  rules:\n    - changes: [services/b/**/*]\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/readme.md'],opaque=[])
+    facts['ci_observations']=CI.inventory(repo,['docs/readme.md'])
+    assessment=Coverage.assess(facts)
+    assert assessment['outcome']=='identified'
+    assert assessment['global_inventory']['status']=='incomplete'
+    identifier=Relevance.ci_record_id(facts['ci_observations']['deferred'][0])
+    assert identifier in assessment['global_inventory']['diagnostic_ids']
+    assert identifier in assessment['deferred_record_ids']

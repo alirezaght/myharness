@@ -8,6 +8,7 @@ from pathlib import Path
 from .activity_process import identity, process_cwd
 from .execution_process import process_arguments
 from .runtime_successor_activity import recorded_processes, require_operations
+from .runtime_successor_channel import ProcessObservationFailure
 
 
 def require_quiescent(repository, *, transaction, state, related=()):
@@ -45,10 +46,20 @@ def require_quiescent(repository, *, transaction, state, related=()):
             continue
         try:
             argv = process_arguments(pid)
-        except (OSError, ValueError):
-            if identity(pid) is not None:
-                raise ValueError("successor process ownership unavailable") from None
-            continue
+        except (OSError, ValueError) as error:
+            try:
+                after = identity(pid)
+            except (OSError, ValueError):
+                raise ProcessObservationFailure(pid, "argv", error, "unavailable") from None
+            if after is None:
+                # Preserve the existing disappearance rule. A read failure alone
+                # never establishes absence, settlement or permission to proceed.
+                continue
+            observed_state = (
+                "changed" if after.get("start") != before.get("start")
+                else "zombie" if after["zombie"] else "live"
+            )
+            raise ProcessObservationFailure(pid, "argv", error, observed_state) from None
         managed = any(
             "_al_run_pin_context" in a
             or "_al_validator_context" in a

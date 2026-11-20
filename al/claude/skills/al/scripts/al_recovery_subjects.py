@@ -87,42 +87,63 @@ def planning(st):
     if not admission or admission["status"] != "pending":
         return []
     recovery = supply(
-        "planning-prerequisites",
-        "Supply a ready specification and classification before requesting Architect planning provenance.",
+        "planning-provenance-inspection",
+        "Inspect immutable planning provenance before retrying; guidance cannot replace invalid proof.",
     )
     try:
-        from al_planning import ready
+        from al_planning import readiness_gap
 
-        ready(st)
+        missing = readiness_gap(st)
     except SystemExit:
+        # Origin/provenance failures are not evidence of a missing specification.
         pass
     else:
-        current = st.get("planning_authorship")
-        if not current:
-            recovery = action("planning.packet", {"replace_unavailable_attempt": False})
+        if missing is not None:
+            kind, reason = missing
+            if kind == "planning-phase-context":
+                reason += (
+                    ". Current phase: " + st["phase"] + ". Planning admission is required before "
+                    "accepting bounded recovery. Inspect the existing guarded implementation "
+                    "continuation to restore an eligible retained context where applicable; "
+                    "then request the planning packet. Guidance grants no phase transition."
+                )
+            recovery = supply(kind, reason)
         else:
-            from al_planning import packet
+            return _ready_planning(st, admission)
+    return _planning_issue(st, admission, recovery)
 
-            try:
-                packet(st)
-            except SystemExit as exc:
-                if "planning source observation changed" in str(exc):
-                    recovery = action("planning.packet", {"replace_unavailable_attempt": False})
-                else:
-                    recovery = supply(
-                        "planning-provenance-inspection",
-                        "Inspect the immutable planning provenance; guidance cannot replace corrupt proof.",
-                    )
+
+def _ready_planning(st, admission):
+    current = st.get("planning_authorship")
+    if not current:
+        recovery = action("planning.packet", {"replace_unavailable_attempt": False})
+    else:
+        from al_planning import packet
+
+        try:
+            packet(st)
+        except SystemExit as exc:
+            if "planning source observation changed" in str(exc):
+                recovery = action("planning.packet", {"replace_unavailable_attempt": False})
             else:
-                if "report" in current:
-                    recovery = action("planning.admit", {"file": None})
-                else:
-                    recovery = supply(
-                        "architect-planning-report-v1",
-                        "Supply the external Architect report matching the issued immutable planning packet.",
-                        "planning.report",
-                        {},
-                    )
+                recovery = supply(
+                    "planning-provenance-inspection",
+                    "Inspect the immutable planning provenance; guidance cannot replace corrupt proof.",
+                )
+        else:
+            if "report" in current:
+                recovery = action("planning.admit", {"file": None})
+            else:
+                recovery = supply(
+                    "architect-planning-report-v1",
+                    "Supply the external Architect report matching the issued immutable planning packet.",
+                    "planning.report",
+                    {},
+                )
+    return _planning_issue(st, admission, recovery)
+
+
+def _planning_issue(st, admission, recovery):
     return [
         issue(
             "PROOF_ADMISSION_PENDING",
@@ -209,7 +230,9 @@ def remaining(st):
     return result
 
 
-def issues(st):
+def issues(st, *, prerequisite=None):
+    if prerequisite not in (None, "planning"):
+        refuse("unsupported recovery prerequisite")
     unresolved = operations(st)
     if unresolved:
         return unresolved
@@ -240,15 +263,17 @@ def issues(st):
                 },
             )
         ]
-    recovery=st.get('rework_recovery')
-    if recovery and recovery['pending']:
-        return [issue('REWORK_REASSESSMENT_REQUIRED','rework-recovery',recovery['pending'],
-                      'The exhausted batch requires a bound Architect decision.',
-                      supply('rework-recovery-input','Use rework-recovery packet, then rework-recovery decide --file PATH.'),recovery)]
     prerequisites_missing = prerequisites(st)
     if prerequisites_missing:
         return prerequisites_missing
     pending = planning(st)
     if pending:
         return pending
+    if prerequisite == "planning":
+        return []
+    recovery=st.get('rework_recovery')
+    if recovery and recovery['pending']:
+        return [issue('REWORK_REASSESSMENT_REQUIRED','rework-recovery',recovery['pending'],
+                      'The exhausted batch requires a bound Architect decision.',
+                      supply('rework-recovery-input','Use rework-recovery packet, then rework-recovery decide --file PATH.'),recovery)]
     return remaining(st) + gates(st)

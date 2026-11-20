@@ -7,7 +7,7 @@ from pathlib import PurePosixPath
 import al_repo_python as P
 from al_repository_facts import gap,safe,within
 
-ID='contract';VERSION=1
+ID='contract';VERSION=2
 CONTRACT='.al/repository.json'
 KIND='al-repository-contract-v1'
 KEYS={'schema_version','kind','units','containers','architecture_check','selection','independent_languages','service_roots'}
@@ -124,6 +124,9 @@ def observe(scan):
         facts['enumeration']['exclusions'].append({'path':path,'reason':'declared workspace container','provenance':[CONTRACT]})
     if any(fnmatch.fnmatchcase(p,glob) for rule in data.get('selection',[]) for glob in rule['changed'] for p in scan.paths):
         facts['policy_selection']=sorted(u['id'] for u in facts['units'] if service(u['path']) and 'python' in u['languages'])
+    import al_repo_go
+    al_repo_go.observe(scan,facts,declared=set(declared))
+    facts['enumeration']['exclusions']=[e for e in facts['enumeration']['exclusions'] if not (e['reason'].startswith('non-Python language ') and any(u['path']==e['path'] and 'go' in u for u in facts['units']))]
     return facts
 
 

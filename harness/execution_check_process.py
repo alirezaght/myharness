@@ -34,18 +34,46 @@ def check_profile(context_path, cwd):
             checkout = cwd
         if not checkout.is_relative_to(temporary):
             raise ValueError("check repository escapes its disposable checkout")
+    directory = temporary / ("check-" + secrets.token_hex(12))
+    managed = context.get("managed_storage")
+    if managed is not None:
+        from harness.storage import load_core
+
+        core = load_core()
+        declaration = core["storage_filesystem"].read_reference(
+            managed["declaration_reference"], root=path.parent
+        )
+        allocation = managed["allocation"]
+        if (
+            core["storage_declarations"].declaration_digest(declaration)
+            != allocation["declaration_digest"]
+        ):
+            raise ValueError("managed check declaration changed")
+        allocation_path = Path(allocation["path"])
+        directory = Path(managed["operation_directory"])
+        if (
+            directory != allocation_path / "operation"
+            or allocation_path.name != allocation["allocation_id"]
+            or core["storage_filesystem"].identity(allocation_path.lstat())
+            != allocation["identity"]
+        ):
+            raise ValueError("managed check allocation changed")
     profile = prepare_operation_isolation(
         checkout,
         writable=[],
         protected=context["protected"] + [str(original / ".git"), context["al_session"]],
         hidden=context["hidden"] + [str(original / n) for n in (".codex", ".claude", ".agents")],
-        directory=temporary / ("check-" + secrets.token_hex(12)),
+        directory=directory,
         classification=context.get("classification"),
         allow_classified_read=True,
     )
+    if managed is not None:
+        core["storage_declarations"].prepare_directories(declaration, profile.temporary)
     environment = safe_environment() | {
         "PATH": os.environ.get("PATH", os.defpath),
         "TMPDIR": profile.temporary,
+        "TMP": profile.temporary,
+        "TEMP": profile.temporary,
         "UV_CACHE_DIR": profile.temporary + "/uv-cache",
         "PYTHONDONTWRITEBYTECODE": "1",
     }
@@ -62,10 +90,42 @@ def check_profile(context_path, cwd):
     return profile, environment
 
 
+def recipe_argv(context_path, profile, environment, argv):
+    context = json.loads(Path(context_path).read_bytes())
+    managed = context.get("managed_storage", {})
+    recipe_input = managed.get("recipe_input")
+    if recipe_input is None:
+        return argv
+    import shutil
+
+    from harness.storage import load_core
+
+    compiler = load_core()["verification_harness"]
+    value, _ = compiler.read_assignment(recipe_input["assignment"], root=managed["recipe_root"])
+    if list(argv) != compiler.logical_argv(value["kind"]):
+        raise ValueError("recipe child command differs from protected specification")
+    interpreter = (
+        str(Path(environment["VIRTUAL_ENV"]) / "bin/python")
+        if environment.get("VIRTUAL_ENV")
+        else shutil.which("python", path=environment["PATH"])
+    )
+    if not interpreter:
+        raise ValueError("prepared recipe Python interpreter is unavailable")
+    return compiler.materialize_child(
+        profile.temporary,
+        recipe_input["assignment"],
+        trusted_root=managed["recipe_root"],
+        launch_token=managed["launch_token"],
+        interpreter=interpreter,
+    )
+
+
 def check_popen(context_path, argv, **kwargs):
     profile, environment = check_profile(context_path, kwargs.get("cwd"))
     kwargs.pop("env", None)
-    process = operation_popen(profile, argv, env=environment, **kwargs)
+    process = operation_popen(
+        profile, recipe_argv(context_path, profile, environment, argv), env=environment, **kwargs
+    )
     return ClassifiedCheckProcess(process, profile) if profile.classification else process
 
 
@@ -115,7 +175,9 @@ def main():
 
         resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
         profile, environment = check_profile(sys.argv[1], os.getcwd())
-        operation_exec(profile, sys.argv[2:], environment)
+        operation_exec(
+            profile, recipe_argv(sys.argv[1], profile, environment, sys.argv[2:]), environment
+        )
     except (OSError, ValueError, KeyError, TypeError) as error:
         print("Harness check containment refused: " + str(error), file=sys.stderr)
         raise SystemExit(126) from None

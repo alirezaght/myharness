@@ -16,13 +16,21 @@ def covered(paths,path):
 
 
 def expand(paths):
-    result=set(paths);directories=[p for p in paths if (al_store.REPO_ROOT/p).is_dir()]
-    if directories:
-        from al_repository_facts import Snapshot
-        scan=Snapshot(al_store.REPO_ROOT,None,paths,[])
-        if scan.gaps:refuse('anticipated-path membership incomplete: '+str(scan.gaps))
-        result.update(p.rstrip('/') for p in scan.members if any(contains(d,p.rstrip('/')) for d in directories))
-    return sorted(result)
+    from al_repository_facts import Snapshot
+    from al_repository_capture import capture_discovery
+    from al_coverage_relevance import project_expansion
+    def attempt(scan):
+        requested=[]
+        for path in paths:
+            observed=scan.observe_path(path)
+            if observed['state']=='opaque':refuse('anticipated-path membership incomplete: opaque requested path '+path)
+            if observed['state']=='directory':requested.append(path)
+        projection=project_expansion(scan.listing_observation,requested)
+        if projection['gaps']:refuse('anticipated-path membership incomplete: '+str(projection['gaps']))
+        result=set(paths)
+        result.update(p.rstrip('/') for p in scan.members if any(contains(d,p.rstrip('/')) for d in requested))
+        return {'paths':sorted(result)}
+    return capture_discovery(lambda:Snapshot(al_store.REPO_ROOT,None,paths,[]),attempt)['paths']
 
 
 def prospective_gaps(st,paths):

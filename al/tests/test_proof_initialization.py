@@ -53,10 +53,17 @@ def test_pending_proof_allows_scoped_implementation_but_never_verified_approval(
         assert state_path.read_bytes() == before
 
     writer = ("writer", "start", "--id", "scoped", "--role", "al-engineer", "--files", "app.py")
-    refuses(*writer, diagnostic="SPEC_READY and classification")
+    degraded = (*writer, "--degraded", "--reason", "Explicit pending-proof tracking.")
+    phase_guard = "writer admission requires a writing phase or explicit degraded planning tracking"
+    # Ordinary planning writers fail the cheap phase guard first. The explicit
+    # degraded route separately proves SPEC_READY and classification still apply.
+    refuses(*writer, diagnostic=phase_guard)
+    refuses(*degraded, diagnostic="SPEC_READY and classification")
     succeeds("spec-gate", "SPEC_READY")
-    refuses(*writer, diagnostic="SPEC_READY and classification")
+    refuses(*writer, diagnostic=phase_guard)
+    refuses(*degraded, diagnostic="SPEC_READY and classification")
     succeeds("classify", "SMALL", "--designer", "no", "--reason", "Bounded observable repair.")
+    refuses(*writer, diagnostic=phase_guard)
     succeeds("phase", "IMPLEMENTATION")
     succeeds(*writer)
     admitted = json.loads(state_path.read_bytes())
@@ -106,8 +113,13 @@ def test_pending_proof_allows_scoped_implementation_but_never_verified_approval(
     (launched[2] / "app.py").write_text('def observable():\n    return "scoped implementation"\n')
     succeeds("writer", "finish", "--id", "scoped", "--outcome", "success")
     succeeds("phase", "VERIFICATION")
-    for args in [("review-start",), ("phase", "FINAL_VERIFICATION"), ("approved",)]:
-        refuses(*args, diagnostic="proof admission pending")
+    refuses("review-start", diagnostic="proof admission pending")
+    refuses(
+        "phase",
+        "FINAL_VERIFICATION",
+        diagnostic="illegal phase edge VERIFICATION → FINAL_VERIFICATION",
+    )
+    refuses("approved", diagnostic="approved is not allowed from VERIFICATION")
 
     remaining = json.loads(state_path.read_bytes())
     assert remaining["status"] == "RUNNING" and remaining["phase"] == "VERIFICATION"

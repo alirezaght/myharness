@@ -17,6 +17,7 @@ STARTED = time.monotonic()
 NODES = []
 DESELECTED = []
 REPORTS = {}
+STAGE_EVENTS = {}
 ERRORS = []
 SUBPROCESSES = 0
 
@@ -100,15 +101,20 @@ def pytest_collectreport(report):
 
 
 def pytest_runtest_logreport(report):
-    REPORTS.setdefault(report.nodeid, {})[report.when] = {'outcome': report.outcome,
-        'wasxfail': bool(getattr(report, 'wasxfail', False)), 'duration': report.duration}
+    event = {'outcome': report.outcome, 'wasxfail': bool(getattr(report, 'wasxfail', False)), 'duration': report.duration}
+    STAGE_EVENTS.setdefault(report.nodeid, []).append({'when': report.when, **event})
+    stages = REPORTS.setdefault(report.nodeid, {})
+    if report.when in stages:
+        ERRORS.append('duplicate test stage: ' + report.nodeid + ':' + report.when)
+    else:
+        stages[report.when] = event
 
 
 def pytest_sessionfinish(session, exitstatus):
     config = session.config
     value = {'schema_version': 1, 'nodes': NODES, 'deselected': DESELECTED, 'errors': ERRORS,
              'exitstatus': int(exitstatus), 'finalized': True, 'elapsed_seconds': time.monotonic() - STARTED,
-             'pytest_version': pytest.__version__, 'reports': REPORTS, 'subprocesses': SUBPROCESSES,
+             'pytest_version': pytest.__version__, 'reports': REPORTS, 'stage_events': STAGE_EVENTS, 'subprocesses': SUBPROCESSES,
              'launch_token':os.environ.get('AL_VERIFICATION_LAUNCH_TOKEN'),
              'effective_config': {'root': str(config.rootpath), 'inipath': str(config.inipath) if config.inipath else None,
                                   'addopts': config.getini('addopts'), 'autoload_disabled': os.environ.get('PYTEST_DISABLE_PLUGIN_AUTOLOAD') == '1'}}

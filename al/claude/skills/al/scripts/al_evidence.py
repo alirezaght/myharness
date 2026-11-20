@@ -55,10 +55,14 @@ def parse_arguments(parser, argv, command_argv, *, command_separator):
         if check and not command_separator:
             message += '\nTo supply a check, put `--` before the check command; AL options go before `--`.\n' + _command_example(args.action)
         parser.error(message)
+    if check and getattr(args, 'recipe_descriptor_file', None) and not getattr(args, 'recipe', None):
+        parser.error('--recipe-descriptor-file requires an explicit named --recipe')
+    if check and getattr(args, 'recipe', None) and (command_argv or command_separator):
+        parser.error('a named --recipe cannot be combined with an arbitrary command separator')
     if check and not command_argv:
         if command_separator:
             parser.error(f'evidence {args.action}: check command after `--` is empty.\n' + _command_example(args.action))
-        if args.action == 'plan':
+        if args.action == 'plan' and not getattr(args, 'recipe', None):
             parser.error('evidence plan requires a check command introduced by `--`.\n' + _command_example('plan'))
     return args
 
@@ -142,13 +146,13 @@ def _stop(proc):
     return {'exit': proc.poll(), 'errors': errors, 'unresolved': unresolved}
 
 
-def _execute(sid, entry, timeout, commit=True):
+def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
     """Finalize every handled outcome before publishing its reservation receipt."""
     name = f"{entry.get('run') or 'run'}-{entry['id']}-{entry['area']}-{entry['kind']}.log"
     log = L.log_dir(sid) / name.replace('/', '_')
     entry['log'] = str(log)
     code, timed_out, interrupted, failure = None, False, None, None
-    cleanup, proc, previous = None, None, {}
+    cleanup, proc, previous, prepared = None, None, {}, None
     start = end = 0
     try:
         with log.open('w') as out:
@@ -162,27 +166,38 @@ def _execute(sid, entry, timeout, commit=True):
                 for number in (signal.SIGINT, signal.SIGTERM):
                     previous[number] = signal.signal(number, _raise_interrupt)
                 import al_harness_process
-                proc = al_harness_process.popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
-                                        stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+                if entry.get('storage') is not None:
+                    import al_evidence_storage
+                    prepared = al_evidence_storage.PreparedStorage(sid, entry)
+                    proc = prepared.launch(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative, output=out, recipe_input=entry.get('recipe_assignment'))
+                else:
+                    proc = al_harness_process.popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
+                                            stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
                 entry['pid'] = proc.pid
                 entry['process'] = {'pid': proc.pid, 'pgid': proc.pid, 'ownership': 'live-Popen-start_new_session'}
                 if commit:
                     _commit(sid, entry)
                 try:
                     code = proc.wait(timeout=timeout)
+                    if prepared is not None:
+                        cleanup = prepared.complete()
+                        if cleanup.get('secondary_signals'):raise KeyboardInterrupt()
+                    elif hasattr(proc, 'completion'):
+                        cleanup = proc.completion()
                 except subprocess.TimeoutExpired:
                     timed_out = True
-                    cleanup = _stop(proc); code = cleanup['exit']
+                    cleanup = prepared.stop() if prepared is not None else _stop(proc); code = cleanup['exit']
             except KeyboardInterrupt as exc:
                 interrupted = exc
                 if proc is not None:
-                    cleanup = _stop(proc); code = cleanup['exit']
+                    cleanup = prepared.stop() if prepared is not None else _stop(proc); code = cleanup['exit']
             except FileNotFoundError as exc:
                 code = 127; failure = str(exc)
-            except (OSError, Sources.SourceError, L.FingerprintError) as exc:
+            except (OSError, ValueError, Sources.SourceError, L.FingerprintError) as exc:
                 code = 126; failure = str(exc)
+                if proc is None and prepared is not None:proc = prepared.proc
                 if proc is not None and proc.poll() is None:
-                    cleanup = _stop(proc)
+                    cleanup = prepared.stop() if prepared is not None else _stop(proc)
             finally:
                 for number, handler in previous.items():
                     signal.signal(number, handler)
@@ -205,7 +220,7 @@ def _execute(sid, entry, timeout, commit=True):
         entry['log_sha256'] = None
         failure = 'log provenance unavailable: ' + str(exc)
     entry['fp_after'] = _fingerprint(entry)
-    status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'])
+    status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'], output=raw[start:end].decode(errors='replace') if entry.get('log_sha256') else '')
     if interrupted is not None:
         status, note = 'INFRA', 'cancelled — the run was interrupted'
         entry['interrupted'] = True
@@ -218,9 +233,29 @@ def _execute(sid, entry, timeout, commit=True):
         status = 'INFRA'
         note = (note + '; ' if note else '') + str(failure or entry['fingerprint_error'])
     entry.update(exit=code, status=status, note=note, ended_at=time.time())
+    if prepared is not None:
+        try: prepared.before_commit(validate=recipe_context['validate'] if recipe_context else None)
+        except (OSError, ValueError, KeyError, TypeError):
+            entry['storage_error'] = 'output_or_settlement_unverified'
+            if recipe_context:
+                entry['status'], entry['note'] = 'INFRA', 'structured recipe output or settlement unverified'
+            prepared.retain('publication_unverified')
     if commit:
         _commit(sid, entry)
+    if prepared is not None and not entry.get('rejected'):
+        try:
+            if recipe_context:
+                recipe_context['prepared'] = prepared
+                recipe_context['publication'] = prepared.publish(committed=commit)
+                print('AL · storage · CAPTURED · awaiting recipe reconciliation')
+            else:
+                result = prepared.finalize(committed=commit)
+                print('AL · storage · ' + result['state'] + ' · ' + result.get('reason', ''))
+        except (OSError, ValueError, KeyError, TypeError):
+            prepared.retain('publication_unverified')
+            print('AL · storage · RETAINED · publication_or_cleanup_unverified')
     if entry.get('rejected'):
+        if prepared is not None:prepared.retain('reservation_rejected')
         sys.exit(f"al_state: {entry['id']} not recorded — {entry['rejected']}; re-run it in the current run")
     if interrupted is not None:
         raise interrupted
@@ -245,8 +280,29 @@ def _sources_file(a):
     except (OSError,ValueError) as exc:sys.exit('al_state: invalid --sources-file: '+str(exc))
 
 
+
+def _storage_file(a, argv):
+    if not getattr(a, 'storage_file', None):return None
+    import al_evidence_storage
+    try:return al_evidence_storage.read_declaration(a.storage_file, argv)
+    except (OSError, ValueError, TypeError, KeyError):sys.exit('al_state: invalid managed storage declaration')
+
+
 def cmd_evidence_plan(a, sid):
     st = al_store.load(sid)
+    if getattr(a, 'recipe', None):
+        import al_evidence_recipe
+        try: spec = al_evidence_recipe.plan_spec(a, st)
+        except (OSError, ValueError, KeyError, TypeError) as exc:sys.exit('al_state: '+str(exc))
+        existing = L.ledger(st)['plan'].get(a.area)
+        if spec.get('recipe_context') is not None and existing is not None:
+            if existing != spec:sys.exit('al_state: task recipe plan conflicts; explicit replanning required; existing plan retained')
+            print('AL · evidence plan reused · ' + a.area)
+            return
+        L.ledger(st)['plan'][a.area] = spec
+        al_store.save(sid, st)
+        print('AL · evidence planned · ' + a.area + ' · recipe ' + spec['recipe']['name'])
+        return
     argv, scope = a.command_argv, L.norm_scope(a.scope)
     if not argv:
         sys.exit('al_state: evidence plan requires a check command after `--`.\n' + _command_example('plan'))
@@ -257,10 +313,16 @@ def cmd_evidence_plan(a, sid):
     if a.tier not in ("focused", "broad"):
         sys.exit("al_state: --tier must be focused or broad")
     sources=_sources_file(a)
+    if getattr(a, 'storage_file', None):
+        storage=_storage_file(a, argv)
+    else:
+        import al_evidence_storage
+        storage=al_evidence_storage.default_declaration()
     _require_scope(scope,sources,a.cwd or ".")
     L.ledger(st)["plan"][a.area] = {
         "area": a.area, "kind": a.kind, "tier": a.tier, "argv": argv, "cwd": a.cwd or ".",
         "scope": scope, "sources": sources, "env": _split(a.env), "preflight": a.preflight or None, "needs": _split(a.needs)}
+    if storage is not None:L.ledger(st)["plan"][a.area]["storage"] = storage
     al_store.save(sid, st)
     print(f"AL · evidence planned · {a.area} · {a.tier} · `{' '.join(argv)}` · scope {', '.join(scope)}")
 
@@ -293,6 +355,15 @@ def cmd_evidence_run(a, sid):
     if guidance is not None:
         guidance.check_active(st)
     planned = L.ledger(st)["plan"].get(a.area)
+    if getattr(a, 'recipe', None) or planned and planned.get('recipe'):
+        import al_evidence_recipe
+        try:
+            spec = al_evidence_recipe.plan_spec(a, st) if getattr(a, 'recipe', None) else dict(planned)
+            if a.command_argv or getattr(a, 'storage_file', None):raise ValueError('stored recipe is exclusive with ordinary argv/storage overrides')
+            entry = al_evidence_recipe.run_recipe(sid, spec, writer=getattr(a, 'writer', None), timeout=a.timeout, fresh=a.fresh)
+        except (OSError, ValueError, KeyError, TypeError) as exc:sys.exit('al_state: recipe unavailable: '+str(exc))
+        if entry['status'] != 'PASS':sys.exit(1)
+        return
     if a.command_argv:
         scope = L.norm_scope(a.scope)
         if not scope:
@@ -301,11 +372,20 @@ def cmd_evidence_run(a, sid):
         spec = {"area": a.area, "kind": a.kind, "tier": a.tier or "focused", "argv": a.command_argv,
                 "cwd": a.cwd or ".", "scope": scope, "sources": sources, "env": _split(a.env),
                 "preflight": a.preflight or None, "needs": _split(a.needs)}
+        if not getattr(a, "storage_file", None):
+            import al_evidence_storage
+            retained = dict(spec)
+            if planned and "storage" in planned:retained["storage"] = planned["storage"]
+            if planned and L.same_command(retained, planned):
+                spec = retained
+            else:
+                spec["storage"] = al_evidence_storage.default_declaration()
     elif planned:
         spec = dict(planned)
         if getattr(a,"sources_file",None):spec["sources"]=_sources_file(a)
     else:
         sys.exit(f"al_state: no planned check named {a.area}; plan it or pass `-- <argv>`")
+    if getattr(a, "storage_file", None):spec["storage"]=_storage_file(a, spec["argv"])
     _require_scope(spec["scope"],spec.get("sources",[]),spec["cwd"])
     if not (al_store.REPO_ROOT / spec["cwd"]).is_dir():
         sys.exit(f"al_state: cwd {spec['cwd']} does not exist under {al_store.REPO_ROOT}")
@@ -325,7 +405,7 @@ def cmd_evidence_run(a, sid):
     entry = _create(sid, st.get("run_id"), area=spec["area"], kind=spec["kind"], tier=spec["tier"], argv=spec["argv"],
                     cwd=spec["cwd"], scope=spec["scope"], env_names=spec["env"],
                     preflight=spec.get("preflight"), needs=spec.get("needs") or (), sources=spec.get("sources", []),
-                    own_writer=getattr(a, "writer", None))
+                    own_writer=getattr(a, "writer", None), storage=spec.get("storage"))
     text = _execute(sid, entry, a.timeout)
     tail = text.splitlines()[-a.tail:] if a.tail else []
     if tail:
@@ -410,6 +490,9 @@ def register(sub):
         p.add_argument("--area", required=True); p.add_argument("--kind", default="test", choices=L.KINDS[:-1])
         p.add_argument("--tier"); p.add_argument("--cwd"); p.add_argument("--scope")
         p.add_argument("--sources-file")
+        p.add_argument("--storage-file")
+        p.add_argument("--recipe", choices=['harness-nonbrowser-v1'])
+        p.add_argument("--recipe-descriptor-file")
         p.add_argument("--env", action="append")
         p.add_argument("--preflight")
         p.add_argument("--needs")

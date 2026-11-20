@@ -174,7 +174,8 @@ def require_admitted(st):
         refuse_guided(st, "proof admission pending; admitted Architect planning obligations are required. "
                       "If proof repair is blocked, use writer start --id ID --role ROLE --files PATHS "
                       "--degraded --reason TEXT for scoped tracked work after SPEC_READY/classification "
-                      "and gate planning. This records writers/evidence; it never admits proof or approval.")
+                      "and gate planning. This records writers/evidence; it never admits proof or approval.",
+                      prerequisite="planning")
 
     # Refresh only already planned rule changes before reconstructing coverage.
     # Unplanned sources and incomplete discovery still refuse admission.

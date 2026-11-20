@@ -37,7 +37,7 @@ def target(root,name,opaque):
     return {'path':name,'kind':'directory' if path.is_dir() else 'file'}
 
 
-def execution(job,root,opaque=(),global_context=()):
+def execution(job,root,opaque=(),global_context=(),*,capture=None):
     allowed={'stage','environment','script','before_script','rules','needs'}
     if set(job)-allowed or global_context:raise Unsupported('unsupported environment-dependent execution settings')
     if job.get('before_script') not in (None,[], ''):raise Unsupported('unsupported environment-check setup')
@@ -49,6 +49,18 @@ def execution(job,root,opaque=(),global_context=()):
         raise Unsupported('unsupported environment-check metadata')
     lines=job.get('script',[]);lines=[lines] if isinstance(lines,str) else lines
     if not isinstance(lines,list) or not lines or any(not isinstance(line,str) or not line.strip() for line in lines):raise Unsupported('missing environment verification checks')
+    from al_go_checks import command_candidate
+    if command_candidate(lines,require_all=True):
+        from al_go_checks import execution as go_execution
+        from al_ci_github import read
+        def go_read(path):
+            if any(path==o or path.startswith(o+'/') for o in opaque):raise Unsupported('opaque Go recipe input')
+            return capture.capture_bytes(path,required=True,rule=True) if capture else read(root,path)[0]
+        result=go_execution(lines,root,go_read,observe=capture.observe_path if capture else None)
+        result['verification_chain']['environment_profile']={'schema_version':1,'profile':'literal-go-environment-checks-v1',
+            'environment':environment,'setup_policy':'absent-or-empty-before-script; no external execution inputs',
+            'local_environment_policy':'toolchain prerequisite verified by actual evidence; remote lifecycle not reproduced'}
+        return result
     pin=interpreter();requirements=[];checks=[];effective=[];inputs=[]
     for index,line in enumerate(lines):
         if any(c in line for c in ('$', '`',';','&','|','>','<','\\','\n','\r')):raise Unsupported('unsupported environment-check expansion/control flow')
@@ -80,3 +92,51 @@ def execution(job,root,opaque=(),global_context=()):
     argv=effective[0] if len(effective)==1 else ['sh','-eu','-c','\n'.join(shlex.join(v) for v in effective)]
     return {'verification':checks,'verification_chain':chain,'source_dependencies':[],'input_scope':sorted(set(inputs)),
             'argv':argv,'cwd':'.','execution_kind':'local','env_names':['PATH']}
+
+
+
+def go_environment_rules(*, make_context=False):
+    rules = {"GOENV": "off", "GOFLAGS": "", "GOWORK": ""}
+    if make_context:
+        rules.update({name: "" for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "MAKEFILES")})
+    return rules
+
+
+def go_environment(*, make_context=False):
+    """Qualify only observed defaults; never open or rewrite user Go configuration."""
+    from al_environment_observation import environment as fingerprints
+
+    rules = go_environment_rules(make_context=make_context)
+    inputs = fingerprints(rules)
+    problems = []
+    for name, expected in rules.items():
+        observed = inputs[name]
+        if not expected and not observed["present"]:
+            continue
+        if (
+            not observed["present"]
+            or observed["digest"] != hashlib.sha256(expected.encode()).hexdigest()
+        ):
+            problems.append(name + " does not meet the supported effective-environment contract")
+    if problems:
+        raise Unsupported("unsupported Go environment: " + "; ".join(problems))
+    return {
+        "schema_version": 1,
+        "profile": "closed-go-environment-v1",
+        "inputs": inputs,
+        "configuration_files_read": False,
+        "source_environment_rewritten": False,
+    }
+
+
+def go_environment_guard(*, make_context=False):
+    """Check the actual launch environment; all names/values below are trusted constants."""
+    checks = []
+    for name, expected in go_environment_rules(make_context=make_context).items():
+        value = '"${' + name + '-}"'
+        checks.append("[ " + value + " = off ]" if expected else "[ -z " + value + " ]")
+    return (
+        "if ! { " + " && ".join(checks) + "; }; then\n"
+        "  printf '%s\\n' 'AL Go verification environment is unqualified' >&2\n"
+        "  exit 126\nfi"
+    )

@@ -114,14 +114,15 @@ def test_unreferenced_shared_fixture_is_an_explicit_exhaustive_requirement(cli, 
     assert set(assessment['selected_services']) <= set(assessment['potential_services'])
 
 
-def test_unreferenced_shared_markdown_keeps_the_exhaustive_fallback(cli, repo, tmp_path):
+def test_unreferenced_shared_markdown_has_no_generic_v2_fallback(cli, repo, tmp_path):
     seed(repo);put(repo, 'packages/shared/fixtures/guide.md', '# Guide\n');commit(repo, 'shared markdown')
     start(cli);put(repo, 'packages/shared/fixtures/guide.md', '# Updated guide\n')
     _, m = discover(cli, tmp_path, ['packages/shared/fixtures/guide.md'])
     assessment = m['service_coverage']['assessment']
-    assert reports_uncertain_dependents(assessment)
-    assert any(u['code'] == 'uncertain-artifact-consumer' and u['path'] == 'packages/shared/fixtures/guide.md'
-               for u in assessment['dependency_uncertainties'])
+    assert assessment['schema_version'] == 2
+    assert assessment['selected_services'] == []
+    assert not any(u['code'] == 'uncertain-artifact-consumer' and u['path'] == 'packages/shared/fixtures/guide.md'
+                   for u in assessment['dependency_uncertainties'])
 
 
 def test_changed_importable_module_keeps_exhaustive_dynamic_import_fallback(cli, repo, tmp_path):
@@ -203,3 +204,47 @@ def test_unrelated_literal_dynamic_import_does_not_block_a_module_change(cli, re
     assessment = m['service_coverage']['assessment']
     assert assessment['outcome'] == 'identified', assessment
     assert any(u['target'] == 'vendor_plugin' for u in m['service_coverage']['semantic_requirements']['dependencies']['deferred_uncertainties'])
+
+
+def test_unowned_root_document_keeps_its_literal_runtime_consumer(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/prompt.md','# Runtime prompt\n')
+    put(repo,'services/b/src/prompt.py','PROMPT = "docs/prompt.md"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
+    assert Coverage.assess(facts)['selected_services']==['services/b']
+    assert facts['dependencies']['artifact_consumers'][0]['consumers']==['services/b/src/prompt.py']
+
+
+def test_unowned_root_schema_keeps_its_literal_runtime_consumer(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/schema.json','{"type":"object"}\n')
+    put(repo,'services/b/src/schema.py','SCHEMA = "docs/schema.json"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/schema.json'],opaque=[])
+    assert Coverage.assess(facts)['selected_services']==['services/b']
+
+
+def test_unowned_runtime_source_under_docs_stays_conservative(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/runtime.py','def load(name):\n    return __import__(name)\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/runtime.py'],opaque=[])
+    assessment=Coverage.assess(facts)
+    assert assessment['dependency_uncertainties']
+    assert assessment['selected_services']==assessment['potential_services']
+
+
+def test_unattributed_runtime_consumer_does_not_become_a_docs_exclusion(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/prompt.md','# Runtime prompt\n')
+    put(repo,'tooling/consumer.py','PROMPT = "docs/prompt.md"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
+    assessment=Coverage.assess(facts)
+    assert assessment['outcome']=='incomplete'
+    assert any(g['code']=='unclassified-runtime-consumer' for g in assessment['gaps'])

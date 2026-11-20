@@ -745,7 +745,9 @@ def test_successor_initialization_replay_refuses_tampering(
         )
     before = _successor_initialization_row(controller, current)
     before = dict(before) if before else None
-    with pytest.raises((ValueError, OSError, KeyError)):
+    expected = ExecutionConflict if tamper == "request" else (ValueError, OSError, KeyError)
+    message = "^runtime activation request hash differs$" if tamper == "request" else None
+    with pytest.raises(expected, match=message):
         activate_runtime(controller, current["id"], **arguments)
     after = _successor_initialization_row(controller, current)
     assert (dict(after) if after else None) == before

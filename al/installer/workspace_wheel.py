@@ -1,19 +1,53 @@
 """Build and inspect the exact approved Harness wheel in an owned copy."""
 
-from email.parser import BytesParser
-from pathlib import Path
-import tempfile
 import stat
+import tempfile
 import tomllib
 import zipfile
+from email.parser import BytesParser
+from pathlib import Path
 
 from .registry import canonical, digest, namespace, write_json
 from .validator_origin import capture, safe
 from .workspace_source import revalidate_source
 from .workspace_tools import environment, run_tool, tool_identity
 
+LEGACY_LAYOUT = {"module-root": ""}
+PAIRED_LAYOUT = {"module-root": "", "module-name": ["harness", "al.installer"]}
+PAIRED_REQUIRED = {
+    "al/installer/" + name
+    for name in (
+        "__init__.py",
+        "storage_filesystem.py",
+        "storage_lifecycle.py",
+        "storage_inventory.py",
+        "storage_declarations.py",
+        "verification_contracts.py",
+        "verification_harness.py",
+        "verification_pytest.py",
+        "verification_harness_child.py",
+    )
+}
+
+
+def _paired(contents):
+    return (
+        tomllib.loads(contents["pyproject.toml"].decode())
+        .get("tool", {})
+        .get("uv", {})
+        .get("build-backend")
+        == PAIRED_LAYOUT
+    )
+
+
+def _installer_member(name):
+    path = Path(name)
+    return len(path.parts) == 3 and path.parts[:2] == ("al", "installer") and path.suffix == ".py"
+
 
 def project(contents):
+    if "pyproject.toml" not in contents:
+        raise ValueError("approved Harness build configuration missing")
     value = tomllib.loads(contents["pyproject.toml"].decode())
     metadata = value.get("project", {})
     backend = value.get("build-system", {})
@@ -24,15 +58,19 @@ def project(contents):
         or metadata.get("dynamic")
         or metadata.get("scripts", {}).get("harness") != "harness.cli:main"
         or backend != {"requires": ["uv_build>=0.10,<0.11"], "build-backend": "uv_build"}
-        or value.get("tool", {}).get("uv", {}).get("build-backend") != {"module-root": ""}
+        or value.get("tool", {}).get("uv", {}).get("build-backend")
+        not in (LEGACY_LAYOUT, PAIRED_LAYOUT)
     ):
         raise ValueError("unsupported approved Harness build configuration")
-    if not {"harness/__init__.py", "harness/cli.py"} <= contents.keys():
+    required = {"harness/__init__.py", "harness/cli.py"}
+    if _paired(contents):
+        required |= PAIRED_REQUIRED
+    if not required <= contents.keys():
         raise ValueError("approved Harness implementation missing")
     return metadata
 
 
-def inspect_wheel(path, version):
+def inspect_wheel(path, version, *, contents=None):
     raw, state = capture(path)
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
@@ -57,13 +95,43 @@ def inspect_wheel(path, version):
                 or ((item.external_attr >> 16) & 0o170000) == 0o120000
             ):
                 raise ValueError("unsafe Harness wheel member")
+        if contents is not None:
+            project(contents)
+        paired = (
+            _paired(contents)
+            if contents is not None
+            else any(name.startswith("al/") for name in names)
+        )
+        directories = {"al/", "al/installer/"} if paired else set()
         if any(
             not (
-                name.startswith("harness/") or name.startswith("harness-" + version + ".dist-info/")
+                name.startswith("harness/")
+                or name.startswith("harness-" + version + ".dist-info/")
+                or paired
+                and (name in directories or _installer_member(name))
             )
             for name in names
         ):
             raise ValueError("unexpected package in Harness wheel")
+        actual_files = {item.filename for item in archive.infolist() if not item.is_dir()}
+        required = {"harness/__init__.py", "harness/cli.py"} | (
+            PAIRED_REQUIRED if paired else set()
+        )
+        if not required <= actual_files:
+            raise ValueError("incomplete Harness wheel implementation")
+        if contents is not None:
+            expected = {
+                name: digest(raw)
+                for name, raw in contents.items()
+                if name.startswith("harness/") or paired and _installer_member(name)
+            }
+            packaged = {
+                name: digest(archive.read(name))
+                for name in actual_files
+                if name.startswith("harness/") or _installer_member(name)
+            }
+            if packaged != expected:
+                raise ValueError("Harness wheel differs from approved package source")
         if sum(item.file_size for item in archive.infolist()) > 128 * 1024 * 1024:
             raise ValueError("Harness wheel expanded byte limit")
         metadata = [name for name in names if name.endswith(".dist-info/METADATA")]
@@ -157,7 +225,7 @@ def build_wheel(source, state_root):
             directory=directory / "tool",
         )
         artifact = wheel_output(directory / "wheels")
-        wheel = inspect_wheel(artifact, metadata["version"])
+        wheel = inspect_wheel(artifact, metadata["version"], contents=contents)
         revalidate_source(source)
         result = {
             "schema_version": 1,

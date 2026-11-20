@@ -18,6 +18,7 @@ build-backend = "uv_build"
 
 [tool.uv.build-backend]
 module-root = ""
+module-name = ["harness", "al.installer"]
 source-include = ["harness/skills/harness/**", "harness/migrations/*.sql"]
 
 [tool.ruff]

@@ -2,23 +2,395 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "bounded repository facts",
   "type": "object",
-  "required": ["schema_version", "repository", "adapter", "policy_version", "units", "enumeration", "dependencies", "checks", "unsupported_boundaries", "rule_sources", "scan_inputs", "scan"],
+  "oneOf": [
+    {
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "policy_version": {
+          "const": 1
+        },
+        "repository": {
+          "properties": {
+            "base_oid": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "adapter": {
+          "enum": [
+            {
+              "id": "python",
+              "version": 1
+            },
+            {
+              "id": "contract",
+              "version": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "required": [
+        "question",
+        "capture"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 2
+        },
+        "policy_version": {
+          "const": 2
+        },
+        "question": {
+          "type": "object",
+          "required": [
+            "changed_paths"
+          ],
+          "properties": {
+            "changed_paths": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "capture": {
+          "$ref": "service-coverage.json#/$defs/v2/properties/capture"
+        }
+      }
+    }
+  ],
+  "required": [
+    "schema_version",
+    "repository",
+    "adapter",
+    "policy_version",
+    "units",
+    "enumeration",
+    "dependencies",
+    "checks",
+    "unsupported_boundaries",
+    "rule_sources",
+    "scan_inputs",
+    "scan"
+  ],
   "properties": {
-    "schema_version": {"const": 1},
-    "repository": {"type": "object", "required": ["root", "base_oid"], "properties": {"root": {"type": "string", "minLength": 1}, "base_oid": {"type": "string", "minLength": 1}}},
-    "adapter": {"oneOf": [{"const": {"id": "python", "version": 1}}, {"const": {"id": "contract", "version": 1}}]},
-    "policy_version": {"const": 1},
-    "units": {"type": "array", "items": {"type": "object", "required": ["id", "path", "languages", "source_roots", "module_contexts", "provenance", "roles", "external_distributions", "python_requirement"], "properties": {"id": {"type": "string"}, "path": {"type": "string"}, "languages": {"type": "array", "items": {"type": "string"}}, "source_roots": {"type": "array", "items": {"type": "string"}}, "module_contexts": {"type": "array", "items": {"type": "object"}}, "provenance": {"type": "array"}, "roles": {"type": "array"}, "external_distributions": {"type": "array"}, "python_requirement": {"type": ["string", "null"]}}}},
-    "enumeration": {"type": "object", "required": ["boundaries", "declarations", "observed_members", "absent_paths", "exclusions", "gaps"], "properties": {"boundaries": {"type": "array"}, "declarations": {"type": "array"}, "observed_members": {"type": "array"}, "absent_paths": {"type": "array"}, "exclusions": {"type": "array"}, "gaps": {"type": "array"}}},
-    "dependencies": {"type": "object", "required": ["edges", "known_affected", "potential_services", "uncertainties", "resolved_dynamic", "policy_selection", "import_targets_digest", "import_targets_count", "source_membership"], "properties": {"edges": {"type": "array"}, "known_affected": {"type": "array", "items": {"type": "string"}}, "potential_services": {"type": "array", "items": {"type": "string"}}, "uncertainties": {"type": "array"}, "resolved_dynamic": {"type": "array"}, "policy_selection": {"type": "array"}, "import_targets_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "import_targets_count": {"type": "integer", "minimum": 0}, "source_membership": {"type": "array"}}},
-    "checks": {"type": "object", "required": ["obligations", "bindings", "gaps"], "properties": {"obligations": {"type": "array", "items": {"type": "object", "required": ["id", "category", "units"]}}, "bindings": {"type": "array", "items": {"$ref": "service-coverage.json#/$defs/check"}}, "gaps": {"type": "array", "items": {"$ref": "service-coverage.json#/$defs/gap"}}}},
-    "unsupported_boundaries": {"type": "array"},
-    "rule_sources": {"type": "array", "items": {"$ref": "#/$defs/source"}},
-    "scan_inputs": {"type": "array", "items": {"$ref": "#/$defs/scanInput"}},
-    "scan": {"type": "object", "required": ["stable", "limits", "membership_digest", "provenance_digest"], "properties": {"stable": {"type": "boolean"}, "limits": {"type": "object"}, "membership_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "provenance_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+    "schema_version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "repository": {
+      "type": "object",
+      "required": [
+        "root",
+        "base_oid"
+      ],
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_oid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "adapter": {
+      "oneOf": [
+        {
+          "const": {
+            "id": "python",
+            "version": 1
+          }
+        },
+        {
+          "const": {
+            "id": "contract",
+            "version": 1
+          }
+        },
+        {
+          "const": {
+            "id": "conventional",
+            "version": 1
+          }
+        },
+        {
+          "const": {
+            "id": "contract",
+            "version": 2
+          }
+        }
+      ]
+    },
+    "policy_version": {
+      "enum": [
+        1,
+        2
+      ]
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "languages",
+          "source_roots",
+          "module_contexts",
+          "provenance",
+          "roles",
+          "external_distributions",
+          "python_requirement"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "languages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_roots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "module_contexts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "provenance": {
+            "type": "array"
+          },
+          "roles": {
+            "type": "array"
+          },
+          "external_distributions": {
+            "type": "array"
+          },
+          "python_requirement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "enumeration": {
+      "type": "object",
+      "required": [
+        "boundaries",
+        "declarations",
+        "observed_members",
+        "absent_paths",
+        "exclusions",
+        "gaps"
+      ],
+      "properties": {
+        "boundaries": {
+          "type": "array"
+        },
+        "declarations": {
+          "type": "array"
+        },
+        "observed_members": {
+          "type": "array"
+        },
+        "absent_paths": {
+          "type": "array"
+        },
+        "exclusions": {
+          "type": "array"
+        },
+        "gaps": {
+          "type": "array"
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "required": [
+        "edges",
+        "known_affected",
+        "potential_services",
+        "uncertainties",
+        "resolved_dynamic",
+        "policy_selection",
+        "import_targets_digest",
+        "import_targets_count",
+        "source_membership"
+      ],
+      "properties": {
+        "edges": {
+          "type": "array"
+        },
+        "known_affected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "potential_services": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uncertainties": {
+          "type": "array"
+        },
+        "resolved_dynamic": {
+          "type": "array"
+        },
+        "policy_selection": {
+          "type": "array"
+        },
+        "import_targets_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "import_targets_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_membership": {
+          "type": "array"
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "required": [
+        "obligations",
+        "bindings",
+        "gaps"
+      ],
+      "properties": {
+        "obligations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "category",
+              "units"
+            ]
+          }
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "service-coverage.json#/$defs/check"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "items": {
+            "$ref": "service-coverage.json#/$defs/gap"
+          }
+        }
+      }
+    },
+    "unsupported_boundaries": {
+      "type": "array"
+    },
+    "rule_sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "scan_inputs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/scanInput"
+      }
+    },
+    "scan": {
+      "type": "object",
+      "required": [
+        "stable",
+        "limits",
+        "membership_digest",
+        "provenance_digest"
+      ],
+      "properties": {
+        "stable": {
+          "type": "boolean"
+        },
+        "limits": {
+          "type": "object"
+        },
+        "membership_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "provenance_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
   },
   "$defs": {
-    "source": {"type": "object", "required": ["path", "sha256"], "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
-    "scanInput": {"allOf": [{"$ref": "#/$defs/source"}, {"type": "object", "required": ["snapshot"], "properties": {"snapshot": {"enum": ["base", "current"]}}}]}
+    "source": {
+      "type": "object",
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "scanInput": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/source"
+        },
+        {
+          "type": "object",
+          "required": [
+            "snapshot"
+          ],
+          "properties": {
+            "snapshot": {
+              "enum": [
+                "base",
+                "current"
+              ]
+            }
+          }
+        }
+      ]
+    }
   }
 }

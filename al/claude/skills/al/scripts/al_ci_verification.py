@@ -6,12 +6,18 @@ from al_repository_facts import within
 def observed(tokens,pytest_profile=None):
     args=list(tokens)
     if not args or '/' in args[0]:return []
+    if args[0] in {'go','gotestsum'}:
+        import al_go_checks
+        return al_go_checks.observed(args)
     if args[:2]==['uv','build']:
         return [{'tool':'uv-build','classes':['python'],'paths':['.']}] if len(args)==2 else []
     if args[:2]==['uv','run']:
         args=args[2:]
         while args and args[0] in {'--frozen','--locked','--no-sync'}:args=args[1:]
         if not args or '/' in args[0]:return []
+    if args[0] in {'go','gotestsum'}:
+        import al_go_checks
+        return al_go_checks.observed(args)
     if args and PurePosixPath(args[0]).name in {'python','python3'}:
         if len(args)<3 or args[1]!='-m':return []
         tool=args[2];rest=args[3:]
@@ -67,6 +73,9 @@ def covers(unit,records):
         if record['classes']==['manifest']:
             prefix='' if unit['path']=='.' else unit['path']+'/'
             if prefix+'package.json' in record['paths'] and 'javascript' in unit['languages']:return True
+        elif record['classes']==['go']:
+            import al_go_checks
+            if 'go' in unit and al_go_checks.covers(unit,record):return True
         elif set(record['classes'])&set(unit['languages']):
             for path in record['paths']:
                 if within(path,unit['path']):return True
@@ -79,11 +88,21 @@ def purpose(tokens, records):
     tool=records[0]['tool']
     if tool=='uv-build':return 'build'
     if tool=='ruff':return 'format-check' if 'format' in tokens else 'lint'
-    if tool in {'pytest','go'}:return 'test'
+    if tool=='go':return records[0].get('go_operation','verification')
+    if tool=='pytest':return 'test'
     return 'verification'
 
 
-def conventional_verification(unit, obligations, bindings, enumeration):
+def conventional_verification(unit, obligations, bindings, enumeration, *, projection=None):
+    if projection is not None and projection.get('schema_version')!=2:raise ValueError('invalid task relevance projection')
+    if projection is not None:
+        from al_coverage_relevance import ci_record_id,record_id
+        obligations=[o for o in obligations if ci_record_id(o) in projection['relevant_ci_ids']]
+        known={row['record_id']:row for row in projection['records']}
+        relevant_ids=set(projection['relevant_gap_ids'])
+        enumeration={**enumeration,'gaps':[g for g in enumeration.get('gaps',[])
+                     if record_id({'category':'enumeration',**g}) not in known or
+                     record_id({'category':'enumeration',**g}) in relevant_ids]}
     relevant=[o for o in obligations if unit['path'] in o['units'] or '.' in o['units']]
     result={'satisfied':False,'obligation_ids':[],'binding_ids':[],'proof':[],'gaps':[]}
     if enumeration.get('gaps') or not relevant:return result
@@ -99,6 +118,8 @@ def conventional_verification(unit, obligations, bindings, enumeration):
             if obligation.get('impact',{}).get('inventory_complete') is False:
                 result['gaps'].append(obligation['source_path']+':'+obligation['job'])
             continue
+        if any('go' in r.get('classes',[]) for r in execution.get('verification',[])) and chain.get('go_environment',{}).get('profile')!='closed-go-environment-v1':
+            result['gaps'].append('Go effective environment is unqualified');continue
         if execution.get('execution_kind')=='remote' and execution.get('remote_source',{}).get('provider')=='github' and any('pytest_profile' in r for r in chain.get('requirements',[])):
             result['gaps'].append('guarded pytest qualification unavailable: '+obligation['source_path']+':'+obligation['job'])
             continue
@@ -106,6 +127,10 @@ def conventional_verification(unit, obligations, bindings, enumeration):
         result['proof'].append(chain);records.extend(execution.get('verification',[]))
     for language in unit['languages']:
         candidates=[r for r in records if language in r['classes']]
+        if language=='go':
+            import al_go_checks
+            if not any(al_go_checks.covers(unit,r) for r in candidates):result['gaps'].append('uncovered Go module: '+unit['path'])
+            continue
         roots=unit['source_roots'] if language=='python' else [unit['path']]
         for root in roots:
             if not any(within(path,root) for record in candidates for path in record['paths']):

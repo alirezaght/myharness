@@ -52,6 +52,18 @@ def validate_state(st):
         for record in [*ev['entries'], *ev['plan'].values(), *st.get('gate_runs', [])]:
             if 'sources' in record:validate_sources(record['sources'])
     except SourceError as exc:refuse('invalid evidence sources: '+str(exc))
+    try:
+        for record in [*ev['entries'], *ev['plan'].values(), *st.get('gate_runs', [])]:
+            if 'storage' in record:
+                import al_evidence_storage
+                al_evidence_storage.validate_entry_storage(record)
+    except (ValueError, OSError, KeyError, TypeError) as exc:refuse('invalid evidence storage: '+str(exc))
+    try:
+        for record in [*ev['entries'], *ev['plan'].values()]:
+            if record.get('recipe') is not None or record.get('recipe_assignment') is not None:
+                import al_evidence_recipe
+                al_evidence_recipe.validate_entry_recipe(record)
+    except (ValueError, OSError, KeyError, TypeError) as exc:refuse('invalid evidence recipe: '+str(exc))
     for wid, writer in st['writers'].items():
         if not valid_id(wid) or writer.get('id') != wid or writer.get('state') not in {'ACTIVE','FINISHED','UNRESOLVED','RECONCILED'}:
             refuse('invalid writer registry')

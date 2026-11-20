@@ -163,6 +163,10 @@ class ContextRequest:
 class ContextBundle:
     bundle_hash: str
     payload: dict
+    receipt_id: str | None = None
 
     def to_dict(self) -> dict:
-        return {"bundle_hash": self.bundle_hash, **self.payload}
+        result = {"bundle_hash": self.bundle_hash, **self.payload}
+        if self.receipt_id is not None:
+            result["receipt_id"] = self.receipt_id
+        return result

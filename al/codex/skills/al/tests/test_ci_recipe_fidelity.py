@@ -8,6 +8,8 @@ import al_ledger as L
 import pytest
 from evidence_helpers import entries
 from test_al_usability import pending
+from test_service_coverage import put,start,discover
+from test_go_repository_coverage import go_repository,module,pinned,prepare_go,supported_go_environment
 
 SERVICE = 'services/user-listing-service'
 MYPYPATH = 'src:../../packages/pyshared/src:../../packages/contracts/python'
@@ -206,3 +208,353 @@ def test_mistaken_wide_fail_is_retired_without_rewriting_its_receipt(
     assert Path(retained['log']).read_bytes() == failed_log
     assert current['evidence']['retired'][-1]['replaced_by'] == [replacement['id']]
     assert 'wide-lint' not in current['evidence']['plan']
+
+
+class TestGoRecipes:
+    @pytest.fixture
+    def repo(self, tmp_path, seed_repo):
+        root = tmp_path / "go repository with spaces"
+        shutil.copytree(seed_repo, root, symlinks=True)
+        return root
+
+    @pytest.mark.parametrize("operation", ["vet", "build"])
+    @pytest.mark.parametrize("required_test", [False, True])
+    def test_sourced_verification_purposes_do_not_invent_or_erase_tests(
+        self, cli, repo, tmp_path, operation, required_test, monkeypatch
+    ):
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        definition = "verify:\n  script: go " + operation + " ./...\n"
+        if required_test:
+            definition += "tests:\n  script: go test ./...\n"
+        put(repo, ".gitlab-ci.yml", definition)
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        c = manifest["service_coverage"]
+        assert c["assessment"]["outcome"] == "identified", c["assessment"]["gaps"]
+        jobs = {r["job"]: r for r in c["semantic_requirements"]["ci_observations"]["obligations"]}
+        assert (
+            jobs["verify"]["execution"]["verification_chain"]["requirements"][0]["purpose"]
+            == operation
+        )
+        assert jobs["verify"]["execution"]["verification"][0]["go_operation"] == operation
+        gates = {g["source"]["job"]: g for g in manifest["gates"] if g["category"] == "ci"}
+        assert gates["verify"]["required"] and gates["verify"]["argv"]
+        assert any(
+            "verification-root" in b["obligation_ids"] for b in c["assessment"]["required_bindings"]
+        )
+        if required_test:
+            assert gates["tests"]["required"] and gates["tests"]["argv"]
+            assert (
+                jobs["tests"]["execution"]["verification_chain"]["requirements"][0]["purpose"]
+                == "test"
+            )
+            assert len(gates) == 2
+        else:
+            assert set(gates) == {"verify"}
+            assert all(
+                r["purpose"] != "test"
+                for r in jobs["verify"]["execution"]["verification_chain"]["requirements"]
+            )
+
+    def test_vet_does_not_clear_unverified_required_test_or_review_guard(
+        self, cli, repo, tmp_path, monkeypatch, state_file
+    ):
+        import json
+
+        from hook_regression_helpers import invoke
+        from launcher_context import admit_planning
+
+        cli = cli.raw
+        prepare_go(tmp_path, monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(
+            repo,
+            ".gitlab-ci.yml",
+            "verify:\n  script: go vet ./...\ntests:\n  script: go test -run=Only ./...\n",
+        )
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        test_gate = next(
+            g for g in manifest["gates"] if g["category"] == "ci" and g["source"]["job"] == "tests"
+        )
+        assert (
+            test_gate["required"]
+            and test_gate["applicability"] == "UNRESOLVED"
+            and not test_gate["argv"]
+        )
+        path = tmp_path / "plan.json"
+        path.write_text(json.dumps(manifest))
+        invoke(cli, "gates", "plan", "--file", str(path))
+        cli("gates", "run", "--stage", "base")
+        admit_planning(cli)
+        invoke(cli, "phase", "IMPLEMENTATION")
+        invoke(
+            cli,
+            "writer",
+            "start",
+            "--id",
+            "verify-owner",
+            "--role",
+            "al-engineer",
+            "--files",
+            "main.go",
+        )
+        assert json.loads(cli("show")[1])["implementation_readiness"]["obligations"]
+        invoke(cli, "writer", "finish", "--id", "verify-owner", "--outcome", "success")
+        invoke(cli, "phase", "VERIFICATION")
+        before = state_file().read_bytes()
+        invoke(cli, "review-start", ok=False)
+        assert state_file().read_bytes() == before
+
+    def test_go_review_oneshell_is_not_an_ordinary_target(self, cli, repo, tmp_path, monkeypatch):
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        module(repo, "a", "example.invalid/nested")
+        put(repo, "Makefile", ".ONESHELL:\ntest:\n\tcd a && go test ./...\n\tgo test ./...\n")
+        put(repo, ".gitlab-ci.yml", "test:\n  script: make test\n")
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
+
+    def test_go_review_higher_priority_makefile_cannot_be_ignored(
+        self, cli, repo, tmp_path, monkeypatch
+    ):
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(repo, "Makefile", "test:\n\tgo test ./...\n")
+        put(repo, "GNUmakefile", "test:\n\tgo test -run=Only ./...\n")
+        put(repo, ".gitlab-ci.yml", "test:\n  script: make test\n")
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
+
+    @pytest.mark.parametrize("mode", ["ambient_flags", "persisted_explicit", "persisted_default"])
+    def test_go_review_hidden_selectors_are_real_but_never_qualified(
+        self, cli, repo, tmp_path, monkeypatch, mode
+    ):
+        import os
+        import subprocess
+
+        executable = prepare_go(tmp_path, monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(
+            repo,
+            "main_test.go",
+            'package main\nimport "testing"\nfunc TestEnvironment(t *testing.T){}\n',
+        )
+        put(repo, ".gitlab-ci.yml", "test:\n  script: go test -v ./...\n")
+        if mode == "ambient_flags":
+            monkeypatch.setenv("GOFLAGS", "-run=^$")
+        else:
+            monkeypatch.delenv("GOFLAGS", raising=False)
+            if mode == "persisted_explicit":
+                config = tmp_path / "go-environment"
+                monkeypatch.setenv("GOENV", str(config))
+            else:
+                home = tmp_path / "private-home"
+                home.mkdir()
+                xdg = tmp_path / "private-config"
+                xdg.mkdir()
+                monkeypatch.setenv("HOME", str(home))
+                monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+                monkeypatch.delenv("GOENV", raising=False)
+                probe = subprocess.run(
+                    [executable, "env", "GOENV"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                config = Path(probe.stdout.strip())
+                assert config.is_relative_to(home) or config.is_relative_to(xdg)
+            config.parent.mkdir(parents=True, exist_ok=True)
+            config.write_text("GOFLAGS=-run=^$\n")
+        ran = subprocess.run(
+            [executable, "test", "-v", "-count=1", "./..."],
+            cwd=repo,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+        (tmp_path / "actual-selector.stdout").write_text(ran.stdout)
+        (tmp_path / "actual-selector.stderr").write_text(ran.stderr)
+        assert ran.returncode == 0, ran.stderr
+        assert "--- PASS: TestEnvironment " not in ran.stdout
+        original = {name: os.environ.get(name) for name in ("GOENV", "GOFLAGS")}
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert {name: os.environ.get(name) for name in original} == original
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
+
+    def test_go_review_make_environment_inputs_are_not_hidden_includes(
+        self, cli, repo, tmp_path, monkeypatch
+    ):
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(repo, "Makefile", "test:\n\tgo test ./...\n")
+        put(repo, "extra.mk", ".ONESHELL:\n")
+        put(repo, ".gitlab-ci.yml", "test:\n  script: make test\n")
+        pinned(repo)
+        start(cli)
+        monkeypatch.setenv("MAKEFILES", "extra.mk")
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
+
+    def test_go_review_default_makefile_absence_is_captured(self, cli, repo, tmp_path, monkeypatch):
+        import al_gate_inventory as Inventory
+
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(repo, "Makefile", "test:\n\tgo test ./...\n")
+        put(repo, ".gitlab-ci.yml", "test:\n  script: make test\n")
+        pinned(repo)
+        start(cli)
+        state, _ = discover(cli, tmp_path, ["main.go"])
+        inventory = Inventory.inventory(state, ["main.go"])
+        assert "GNUmakefile" in inventory["repository_facts"]["enumeration"]["absent_paths"]
+
+    def test_go_review_missing_make_prerequisite_is_named_debt(
+        self, cli, repo, tmp_path, monkeypatch
+    ):
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(repo, "Makefile", "test: missing.input\n\tgo test ./...\n")
+        put(repo, ".gitlab-ci.yml", "test:\n  script: make test\n")
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
+
+    @pytest.mark.parametrize(
+        "shape",
+        [
+            "script",
+            "script_false",
+            "script_null",
+            "script_collection",
+            "run",
+            "run_false",
+            "run_null",
+            "run_collection",
+        ],
+    )
+    def test_go_review_malformed_container_commands_stay_unverified(
+        self, cli, repo, tmp_path, monkeypatch, shape
+    ):
+        supported_go_environment(monkeypatch)
+        go_repository(repo)
+        module(repo)
+        if shape.startswith("script"):
+            value = {
+                "script": "7",
+                "script_false": "false",
+                "script_null": "null",
+                "script_collection": "[go, test]",
+            }[shape]
+            put(repo, ".gitlab-ci.yml", "test:\n  image: golang:1.22\n  script: [" + value + "]\n")
+        else:
+            put(
+                repo,
+                ".github/workflows/go.yml",
+                "on: [push]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    container: golang:1.22\n    steps:\n      - uses: actions/checkout@v4\n      - run: "
+                + {
+                    "run": "7",
+                    "run_false": "false",
+                    "run_null": "null",
+                    "run_collection": "[go, test]",
+                }[shape]
+                + "\n",
+            )
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        ci = [g for g in manifest["gates"] if g["category"] == "ci"]
+        assert ci and all(g["required"] and not g["argv"] for g in ci)
+        assert any(
+            gap["code"] == "missing-verification-check"
+            for gap in manifest["service_coverage"]["assessment"]["gaps"]
+        )
+
+    def test_go_review_make_include_quotes_are_not_shell_unquoted(
+        self, cli, repo, tmp_path, monkeypatch
+    ):
+        import subprocess
+
+        prepare_go(tmp_path, monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(repo, "checks.mk", "unit:\n\tgo test ./...\n")
+        put(repo, "Makefile", 'include "checks.mk"\ntest: unit\n')
+        actual = subprocess.run(
+            ["make", "test"], cwd=repo, check=False, capture_output=True, text=True, timeout=30
+        )
+        (tmp_path / "actual-make-include.stdout").write_text(actual.stdout)
+        (tmp_path / "actual-make-include.stderr").write_text(actual.stderr)
+        assert actual.returncode != 0 and "checks.mk" in actual.stderr
+        put(repo, ".gitlab-ci.yml", "test:\n  script: make test\n")
+        pinned(repo)
+        start(cli)
+        _, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+
+    def test_go_review_environment_change_cannot_run_previously_qualified_gate(
+        self, cli, repo, tmp_path, monkeypatch, state_file
+    ):
+        import al_gate_currency as Currency
+        from hook_regression_helpers import invoke
+
+        cli = cli.raw
+        prepare_go(tmp_path, monkeypatch)
+        go_repository(repo)
+        module(repo)
+        put(
+            repo,
+            "main_test.go",
+            'package main\nimport "testing"\nfunc TestEnvironment(t *testing.T){}\n',
+        )
+        put(repo, ".gitlab-ci.yml", "test:\n  script: go test -v ./...\n")
+        pinned(repo)
+        start(cli)
+        state, manifest = discover(cli, tmp_path, ["main.go"])
+        assert manifest["service_coverage"]["assessment"]["outcome"] == "identified"
+        path = tmp_path / "plan.json"
+        path.write_text(json.dumps(manifest))
+        invoke(cli, "gates", "plan", "--file", str(path))
+        assert Currency.check(state)["current"]
+        monkeypatch.setenv("GOFLAGS", "-run=^$")
+        assert not Currency.check(state)["current"]
+        invoke(cli, "gates", "run", "--stage", "base", ok=False)
+        executed = json.loads(cli("show")[1])["evidence"]["entries"]
+        assert executed[-1]["status"] == "INFRA" and executed[-1]["exit"] == 126
+        blocked = executed[-1]
+        assert "=== RUN   TestEnvironment" not in Path(blocked["log"]).read_text()
+        assert not Currency.check(state)["current"]
+        monkeypatch.setenv("GOFLAGS", "")
+        assert Currency.check(state)["current"]
+        invoke(cli, "gates", "run", "--stage", "base")
+        later = json.loads(cli("show")[1])["evidence"]["entries"]
+        assert later[-1]["status"] == "PASS"
+        assert "--- PASS: TestEnvironment " in Path(later[-1]["log"]).read_text()
+        assert any(row["id"] == blocked["id"] and row["status"] == "INFRA" for row in later)

@@ -108,8 +108,9 @@ def preparation_requests(root, state, task_id):
 
 
 class SetupReport:
-    def __init__(self, tooling, unit, record):
+    def __init__(self, tooling, unit, record, on_ready=None):
         self.tooling, self.unit, self.record = tooling, unit, record
+        self.on_ready = on_ready
         self.redactors = {name: StreamRedactor() for name in ("stdout", "stderr")}
         self.output, self.size = "", 0
 
@@ -135,7 +136,7 @@ class SetupReport:
             if digest(ordinary(self.tooling.repository, name)) != expected:
                 raise ValueError("dependency lock changed during setup; result is stale")
         self.tooling.ready(self.unit, self.record)
-        return {
+        result = {
             "status": "Ready",
             "kind": "dependency_setup",
             "runtime_kind": self.record.get("kind"),
@@ -148,13 +149,27 @@ class SetupReport:
                 else "pnpm"
             ),
         }
+        if self.on_ready is not None:
+            result["checks"] = self.on_ready(self.record)
+        return result
 
     def close(self):
         pass
 
 
-def prepare(operation, controller, principal, state, request):
+def prepare(operation, controller, principal, state, request, *, plan_defaults=True):
     unit = task_unit(operation, controller, state, principal, request)
+
+    def ready_checks(record):
+        callback = getattr(operation, "prepared_checks", None)
+        if callback is None:
+            return {
+                "status": "Unavailable",
+                "reason": "recipe_operator_unavailable",
+                "test_evidence": False,
+            }
+        return callback(principal, request, record, plan_defaults=plan_defaults)
+
     tooling, root = operation.tooling, Path(operation.envelope["repository"])
     prefix = "" if unit == "." else unit + "/"
     python = _python_unit(root, unit)
@@ -203,7 +218,13 @@ def prepare(operation, controller, principal, state, request):
     if index.is_file():
         cached = json.loads(index.read_bytes()).get(unit)
         if cached and cached["inputs"] == inputs and cached.get("tools") == digest(tools):
-            return {"status": "Ready", "unit": unit, "test_evidence": False, "cached": True}
+            return {
+                "status": "Ready",
+                "unit": unit,
+                "test_evidence": False,
+                "cached": True,
+                "checks": ready_checks(cached),
+            }
     active = sum(
         isinstance(r.get("report"), SetupReport) and r["status"] == "Running"
         for r in operation.processes.records.values()
@@ -215,7 +236,7 @@ def prepare(operation, controller, principal, state, request):
         for r in operation.processes.records.values()
     )
     if active >= 2 or not python and active_node:
-        operation.setup_pending[key] = (principal, request)
+        operation.setup_pending[key] = (principal, request, plan_defaults)
         return {"status": "Queued", "unit": unit, "test_evidence": False}
     tools = tooling.catalog()["tools"]
     needed = {"uv", "python"} if python else {"node", "pnpm"}
@@ -356,7 +377,7 @@ def prepare(operation, controller, principal, state, request):
             "--store-dir",
             str(home / "pnpm-store"),
         ]
-    report = SetupReport(tooling, unit, record)
+    report = SetupReport(tooling, unit, record, ready_checks)
     report.request, report.principal = request, principal
     return operation.processes.start(
         principal["thread_id"],
@@ -401,6 +422,7 @@ def auto_prepare(operation, controller, principal, state, task_id):
                     "expected_revision": context_revision(state, task_id),
                     "cwd": unit,
                 },
+                plan_defaults=False,
             )
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             result = {"status": "Unavailable", "reason": str(error), "test_evidence": False}

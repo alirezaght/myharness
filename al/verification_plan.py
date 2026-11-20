@@ -42,12 +42,13 @@ def collect_suites(root, context):
     for suite, (relative, tests) in SUITES.items():
         directory = artifact_root / ('collect-' + suite);directory.mkdir(parents=True,mode=0o700)
         report = directory / 'collection.json';log = directory / 'collection.log'
+        storage_manager, storage_binding = allocate_verification_storage(directory, 'collection:' + suite)
         cwd = root / relative
         argv = pytest_argv(cwd) + ['--collect-only', '--al-collection-report', str(report), tests]
         started = time.monotonic()
         with log.open('wb') as output:
             from al.verification_process import execute
-            owner = execute(argv, cwd=cwd, env=environment(root, directory), output=output, directory=directory, assignment='collection:'+suite, timeout=120)
+            owner = execute(argv, cwd=cwd, env=environment(root, storage_binding["allocation"]["path"]), output=output, directory=directory, assignment='collection:'+suite, timeout=120)
             process = owner.process
         if not report.is_file():raise ValueError('missing collection report: ' + suite + '; log=' + str(log))
         value = read_json(report)
@@ -55,7 +56,9 @@ def collect_suites(root, context):
         if process.returncode or value.get('exitstatus') != 0 or value.get('errors') or value.get('deselected') or not value.get('nodes') or value.get('finalized') is not True:
             raise ValueError('incomplete/unfiltered collection: ' + suite + '; log=' + str(log))
         if len({n['nodeid'] for n in value['nodes']}) != len(value['nodes']):raise ValueError('duplicate collection identity')
-        collections[suite] = {'suite': suite, 'cwd': str(cwd), 'relative': relative, 'nodes': value['nodes'],
+        storage_result = record_verification_storage(directory, storage_manager, storage_binding, owner,
+            success=True, complete=True, artifacts=[report, log, directory / 'process-journal.json'])
+        collections[suite] = {'storage_result': storage_result, 'suite': suite, 'cwd': str(cwd), 'relative': relative, 'nodes': value['nodes'],
                               'config': value['effective_config'], 'pytest_version': value['pytest_version'],
                               'collection_seconds': time.monotonic() - started,
                               'log': str(log), 'log_sha256': hashlib.sha256(log.read_bytes()).hexdigest()}
@@ -182,3 +185,118 @@ def reconcile(plan, reports):
             'xfailed': sum(v == 'xfailed' for v in observed.values()), 'xpassed': sum(v == 'xpassed' for v in observed.values()),
             'executed_outcomes': observed, 'equivalent_obligations': equivalents, 'missing': missing,
             'extra': extra, 'failed': failed, 'unaccounted': unaccounted, 'errors': errors}
+
+
+# Storage is deliberately finalized by the CLI only after its source/report recheck.
+def verification_storage_manager():
+    from al.installer.storage_lifecycle import StorageManager
+    from al.installer.storage_filesystem import read_reference, StorageError
+
+    def load(record, reference):
+        value = read_reference(reference, root=Path(record["owner"]["identity"]))
+        binding = {"owner": record["owner"], "allocation_id": record["allocation_id"],
+                   "declaration_digest": record["declaration_digest"]}
+        if (not isinstance(value, dict) or set(value) != {"schema_version", "binding", "completion", "artifacts", "producer", "capture_state"}
+                or type(value["schema_version"]) is not int or value["schema_version"] != 2
+                or value["binding"] != binding):
+            raise StorageError("foreign_verification_publication")
+        return value
+
+    base = Path(os.environ["HARNESS_HOME"]) if os.environ.get("HARNESS_HOME") else Path.home() / ".local/share/harness"
+    return StorageManager(base.absolute() / "managed-storage",
+        verify_owner=lambda record, reference: load(record, reference)["completion"],
+        verify_publication=lambda record, reference: {
+            "binding": load(record, reference)["binding"], "artifacts": load(record, reference)["artifacts"]})
+
+
+def allocate_verification_storage(directory, assignment):
+    from al.installer.storage_filesystem import publish_json
+
+    directory = Path(directory).absolute()
+    manager = verification_storage_manager()
+    allocation = manager.allocate(owner={"adapter_kind": "release", "identity": str(directory),
+        "reservation": assignment}, allocation_class="verification-fixtures",
+        declaration_digest=digest({"schema_version": 1, "assignment": assignment}))
+    binding = {"schema_version": 1, "manager": str(manager.root), "allocation": allocation,
+               "assignment": assignment}
+    publish_json(directory / "storage-binding.json", binding)
+    return manager, binding
+
+
+def record_verification_storage(directory, manager, binding, owner, *, success, complete, artifacts):
+    from al.installer.storage_filesystem import artifact, publish_json
+
+    allocation = binding["allocation"]
+    from al.installer.verification_contracts import producer_settled, settlement_observation
+    producer = settlement_observation(owner.last_cleanup)
+    settled = bool(complete) and producer_settled(producer)
+    try:
+        manager.mark_running(allocation["allocation_id"], generation=allocation["generation"],
+                             owner_receipt=owner.record())
+        if not settled:
+            manager.retain(allocation["allocation_id"], reason="descendant_settlement_unproven")
+        value = {"schema_version": 2, "binding": binding, "producer": producer,
+                 "capture_state": "protected_capture",
+
+                 "completion": {"outcome": "passed" if success else "failed", "settled": settled,
+                                "accounting_complete": bool(success), "classification_current": True},
+                 "artifacts": [artifact(path) for path in [*artifacts, owner.receipt]]}
+        return publish_json(Path(directory) / "storage-result.json", value)
+    except (OSError, ValueError, KeyError, TypeError):
+        try:
+            manager.retain(allocation["allocation_id"], reason="publication_unverified")
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return {"schema_version": 1, "storage_error": "publication_unverified",
+                "allocation_id": allocation["allocation_id"]}
+
+
+def finalize_verification_storage(report_path, suites=None, *, references=None):
+    from al.installer.storage_filesystem import artifact, read_reference, publish_json, StorageError
+
+    report_path = Path(report_path).absolute()
+    report_artifact = artifact(report_path)
+    with report_path.open("rb") as stream:
+        os.fsync(stream.fileno())
+    parent = os.open(report_path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+    if references is None:
+        plan = read_json(suites["plan_path"])
+        references = [c.get("storage_result") for c in plan["collections"].values()]
+        references += [row.get("storage_result") for row in suites.get("shards", [])]
+    results = []
+    manager = verification_storage_manager()
+    for reference in references:
+        if not reference:
+            results.append({"state": "RETAINED", "reason": "verification_publication_missing"})
+            continue
+        try:
+            if reference.get("storage_error"):
+                results.append({"state": "RETAINED", "reason": reference["storage_error"],
+                                "allocation_id": reference["allocation_id"]})
+                continue
+            result_path = Path(reference["reference"])
+            result = read_reference(reference, root=result_path.parent)
+            binding = result["binding"]
+            allocation = binding["allocation"]
+            if binding["manager"] != str(manager.root) or result_path.parent != Path(allocation["owner"]["identity"]):
+                raise StorageError("foreign_verification_publication")
+            for retained in result["artifacts"]:
+                if artifact(retained["path"]) != retained:
+                    raise StorageError("verification_publication_changed")
+            completion = result["completion"] | {"source_current": True}
+            publication = {"schema_version": 2,
+                "producer": result.get("producer"), "capture_state": "protected_capture",
+                "binding": {"owner": allocation["owner"], "allocation_id": allocation["allocation_id"],
+                            "declaration_digest": allocation["declaration_digest"]},
+                "completion": completion, "artifacts": [*result["artifacts"], report_artifact]}
+            publication_reference = publish_json(result_path.parent / "storage-publication.json", publication)
+            results.append(manager.finalize(allocation["allocation_id"],
+                publication_reference=publication_reference, completion_reference=publication_reference))
+        except (OSError, ValueError, KeyError, TypeError):
+            results.append({"state": "RETAINED", "reason": "verification_storage_unverified"})
+    return {"schema_version": 1, "results": results,
+            "complete": all(row["state"] == "REMOVED" for row in results)}

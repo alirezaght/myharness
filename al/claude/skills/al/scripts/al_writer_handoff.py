@@ -25,12 +25,17 @@ def evidence_block(st, sid, writer_id, areas):
              'Native launcher commands (run from the repository root):']
     for area in areas:
         spec = st['evidence']['plan'][area]
+        if spec.get('recipe_context'):
+            lines += ['Supervisor-only prepared check: ' + area + '; request the Supervisor to run this broad default.']
+            continue
+        if spec.get('recipe'):
+            lines += ['Named managed recipe: ' + spec['recipe']['name'] + ' (independent partition evidence; CI obligations unchanged)']
         lines += ['Area ' + area + ': tier=' + spec['tier'] + '; preflight=' +
                   str(spec.get('preflight') or 'none') + '; needs=' + json.dumps(spec.get('needs') or []),
                   shlex.join(prefix + ['evidence', 'run', '--writer', writer_id, '--area', area])]
     if 'integration' in st:
         lines += ['Harness tool route: use al_command; the controller binds the worker to its own writer.']
-        lines += ['al_command ' + json.dumps(['evidence', 'run', '--area', area]) for area in areas]
+        lines += ['al_command ' + json.dumps(['evidence', 'run', '--area', area]) for area in areas if not st['evidence']['plan'][area].get('recipe_context')]
     lines += ['Report the ledger\'s actual E<n> · area → PASS | FAIL | EMPTY | INFRA and counts, or NOT RUN with a reason.',
               'Register any additional evidence area before regenerating this handoff. Generation runs no checks.',
               'This receipt records generation, not host delivery. Regenerate after relevant plan, writer, or phase changes.', END]

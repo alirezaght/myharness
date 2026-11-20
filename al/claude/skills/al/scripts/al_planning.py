@@ -49,16 +49,17 @@ def binding(st, source_sha256, planning_occurrence=None, document=None):
     }
 
 
-def ready(st, *, authoring=False):
+def readiness_gap(st, *, authoring=False):
+    """The actual planning guards, classified without inspecting exception prose."""
     N.validate(st)
     if st["proof_admission"]["status"] != "pending":
-        refuse("planning provenance is already admitted; use a current substantive revision")
+        return "planning-current-admission", "planning provenance is already admitted; use a current substantive revision"
     if (
         st["status"] != "RUNNING"
         or st["spec_status"] != "SPEC_READY"
         or not st.get("classification")
     ):
-        refuse("planning provenance requires running SPEC_READY and classification")
+        return "planning-specification", "planning provenance requires running SPEC_READY and classification"
     scoped = bool(
         st.get("amendments")
         and st["amendments"][-1].get("scoped")
@@ -72,7 +73,7 @@ def ready(st, *, authoring=False):
     from al_transitions import WRITING
     retained = st["phase"] in WRITING | {"VERIFICATION"} and bool(st.get("implementation_readiness"))
     if st["phase"] not in {"PLANNING", "PSEUDOCODE"} and not scoped and not retained:
-        refuse("planning provenance requires current planning or acknowledged scoped revalidation")
+        return "planning-phase-context", "planning provenance requires current planning or acknowledged scoped revalidation"
     from al_writers import operation_gaps
     from al_gate_continuation import _uncertain as cleanup_uncertain
 
@@ -89,8 +90,15 @@ def ready(st, *, authoring=False):
         if cleanup_uncertain(entry)
     ]
     if missing:
-        refuse("; ".join(missing))
+        return "planning-owned-operations", "; ".join(missing)
 
+    return None
+
+
+def ready(st, *, authoring=False):
+    missing = readiness_gap(st, authoring=authoring)
+    if missing is not None:
+        refuse(missing[1])
 
 def packet(st, *, current_source=True):
     current = st.get("planning_authorship")
