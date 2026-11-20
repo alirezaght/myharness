@@ -26,6 +26,14 @@ commit. Development verification reports its dirty state without a release
 claim. The workflow verifies; it does not publish files or create a tag.
 Installers may use a local repository or a credential-free HTTPS Git URL.
 
+Historical v0.1.0–v0.1.24 payloads keep their source-audited required-resource
+contracts; newer helpers do not retroactively invalidate their caches or rollback
+targets. Current and unversioned workspace payloads still require the complete
+current layout. When required resources change, extend the trusted historical
+contracts for newly published versions. The installer tests compare every
+published tag with its genuine layout; a release's own declaration cannot lower
+the trusted minimum.
+
 The checkout's CLI can be bootstrapped into an independent local snapshot with
 `python3 al/alctl.py bootstrap`. This records development provenance and does
 not install or replace the AL runtime. See [INSTALL.md](INSTALL.md) for

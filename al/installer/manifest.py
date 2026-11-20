@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from .engine import D, R, T
 from .registry import canonical, digest, read_json, write_json
+from .release_compatibility import required_scripts
 
 LAYOUT = Path(__file__).resolve().parents[1] / 'release-layout.json'
 
@@ -31,12 +32,12 @@ def selected(path, layout):
     return None
 
 
-def required(layout):
+def required(layout, *, release=None):
     result = set()
     for platform in layout['platforms']:
         prefix = platform + '/' + layout['package'] + '/'
         result.add(prefix + 'SKILL.md')
-        result.update(prefix + 'scripts/' + name for name in layout['required_scripts'])
+        result.update(prefix + 'scripts/' + name for name in required_scripts(layout, release))
         if platform == 'claude':
             result.update(prefix + 'scripts/' + name for name in layout['required_claude_scripts'])
         suffix = '.toml' if platform == 'codex' else '.md'
@@ -62,7 +63,7 @@ def build_manifest(release, layout=None):
         if classification:
             files[path] = dict(sha256=digest(item['raw']), mode=item['mode'],
                                platform=classification[0], kind=classification[1])
-    missing = required(layout) - files.keys()
+    missing = required(layout, release=release) - files.keys()
     if missing:
         raise ValueError('missing required release resources: ' + ', '.join(sorted(missing)))
     for platform in layout['platforms']:
@@ -91,7 +92,7 @@ def validate_manifest(manifest):
     if not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', manifest.get('commit', '')):
         raise ValueError('invalid source commit identity')
     files = manifest.get('files')
-    if not isinstance(files, dict) or required(layout) - files.keys():
+    if not isinstance(files, dict) or required(layout, release=manifest) - files.keys():
         raise ValueError('release manifest is incomplete')
     folded = set()
     for name, item in files.items():

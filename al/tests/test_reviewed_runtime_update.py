@@ -94,6 +94,10 @@ def enrolled(tmp_path, monkeypatch, request):
              'refs/tags/v0.1.7:refs/tags/v0.1.7', 'refs/tags/v0.1.8:refs/tags/v0.1.8')
     old_release = resolve_release(str(source), version='0.1.7')
     old_source = copy_al_source(tmp_path / 'old-bootstrap')
+    # This intentionally tests today's installer against an actual historical
+    # distribution, whose resource declaration must match its tagged runtime.
+    old_layout = git_test(ROOT, 'show', 'v0.1.7:al/release-layout.json')
+    (old_source / 'release-layout.json').write_text(old_layout + '\n')
     for platform in ('codex', 'claude'):
         shutil.rmtree(old_source / platform)
     for name, item in old_release['tree'].items():
@@ -226,7 +230,10 @@ def test_real_old_pin_survives_and_fresh_bootstrap_selects_new_payload(enrolled)
     new_pin = w['state'] / 'al-run-pins/pins' / new['pin']['pin_identity']
     assert not (old_pin / 'payload/codex/skills/al/scripts/al_writer_progress.py').exists()
     script = new_pin / 'payload/codex/skills/al/scripts/al_writer_progress.py'
-    assert digest(script.read_bytes()) == w['new']['files']['codex/skills/al/scripts/al_writer_progress.py']['sha256']
+    # Global v0.1.8 and the current managed bootstrap are separate publications.
+    # A fresh run must select the exact bootstrapped bytes, not that older tag.
+    expected = w['new_boot']['receipt']['files']['codex/skills/al/scripts/al_writer_progress.py']
+    assert {'sha256': digest(script.read_bytes()), 'mode': script.stat().st_mode & 0o777} == expected
     assert state.read_bytes() == old_state
 
 
