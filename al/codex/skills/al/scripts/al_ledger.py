@@ -42,7 +42,12 @@ TIERS = ("focused", "broad", "preflight")
 KINDS = ("test", "typecheck", "lint", "build", "check", "preflight")
 # Exit statuses that say "the command could not run", not "the code is wrong".
 INFRA_EXIT = {126: "command not executable", 127: "command not found"}
-COUNT_RE = re.compile(r"(\d+)\s+(passed|failed|skipped|errors?|flaky|todo)\b", re.I)
+COUNT_RE = re.compile(r"(?<![\w.+-])(\d+)\s+(passed|failed|skipped|errors?|flaky|todo)\b", re.I)
+# Verbose pytest node IDs can contain digits and summary-like parameter values.
+# Their terminal status is not an aggregate runner summary.
+PYTEST_NODE_STATUS_RE = re.compile(
+    r"^\s*.+\.py::.+\s+(PASSED|FAILED|SKIPPED|ERROR|XFAIL|XPASS)"
+    r"(?:\s+\[\s*\d+%\])?\s*$", re.I)
 # File/suite-level summaries ("Test Files  2 passed", "Test Suites: 1 passed") say
 # nothing about how many tests ran; AL's own log header is not runner output.
 NOT_TEST_COUNT_RE = re.compile(r"\bTest (?:Files|Suites)\b")  # anywhere: Turbo prefixes lines
@@ -216,8 +221,20 @@ def parse_counts(text):
     errors: any reported anywhere in the output are kept, so a composite command
     whose final suite passes cannot hide an earlier failure. Returns {} when no
     summary was recognised — 'unknown', never a guess."""
-    counts, worst = {}, {}
+    counts, worst, summary_lines = {}, {}, []
+    output_was_empty = not text.strip()
     for line in text.splitlines():
+        line = RunnerOutput.ANSI.sub('', line)
+        node = PYTEST_NODE_STATUS_RE.fullmatch(line)
+        if node:
+            # A visible failed case still prevents a later passing summary from
+            # hiding the failure; never extract counts from its identifier.
+            status = node.group(1).upper()
+            if status in ('FAILED', 'ERROR'):
+                key = 'failed' if status == 'FAILED' else 'error'
+                worst[key] = max(worst.get(key, 0), 1)
+            continue
+        summary_lines.append(line)
         suite_line = bool(NOT_TEST_COUNT_RE.search(line))
         go = RunnerOutput.gotestsum_counts(line)
         if go is not None:
@@ -237,13 +254,14 @@ def parse_counts(text):
                 worst[key] = max(worst.get(key, 0), int(n))
             if not suite_line:  # but suite/file passes are not test counts
                 counts[key] = int(n)
+    text = '\n'.join(summary_lines)
     counts.update(worst)
     for key, value in _other_runner_counts(text).items():
         counts.setdefault(key, value)
         if key in ("failed", "error"):counts[key] = max(counts[key], value)
     recognised = bool(counts) or bool(NOT_TEST_COUNT_RE.search(text))
     if not counts.get("passed") and not counts.get("failed") and (
-            NOTHING_RAN_RE.search(text) or recognised or not text.strip()):
+            NOTHING_RAN_RE.search(text) or recognised or output_was_empty):
         # A recognised runner that reports no passed test, an explicit "nothing ran", or no output
         # at all: no test ran. Only an unfamiliar runner's summary stays "count unknown".
         counts["passed"] = 0
