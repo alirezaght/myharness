@@ -183,7 +183,9 @@ class CapturedContent(Mapping):
 
 
 class Snapshot(CaptureMixin):
-    def __init__(self,root,base_oid,paths,opaque,required_adapter=None):
+    def __init__(self,root,base_oid,paths,opaque,required_adapter=None,*,listing_only=False):
+        """`listing_only` observes membership and path states without capturing content:
+        enough to expand task directories before the single full capture."""
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
         self.required_adapter=required_adapter;self.root=Path(root).resolve();self.base_oid=base_oid
         self.paths=[];path_overflow=False
@@ -200,9 +202,11 @@ class Snapshot(CaptureMixin):
         self.listing_observation=self.observe_listing()
         self.install_listing(self.listing_observation)
         for path in self.paths:self.observe_path(path)
+        if listing_only:return
         progress.report('inventory-current', count=0)
+        scope=PathScope(self.paths)
         for count,p in enumerate(sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))),1):
-            affected=any(within(path,p) for path in self.paths)
+            affected=scope.covers(p)
             if not p.endswith('/') and affected:self.observe_path(p)
             if not p.endswith('/') and (self.relevant(p) or affected and p.endswith(('.md','.markdown','.mdx'))) and (self.root/p).exists():
                 try:

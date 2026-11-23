@@ -1,4 +1,7 @@
 """Independently selected task paths, source rules and concrete obligations."""
+from contextlib import contextmanager
+from contextvars import ContextVar
+import copy
 import hashlib
 import json
 import os
@@ -118,33 +121,103 @@ def _instruction_frontier(paths):
     return sorted(selected)
 
 
-def inventory(st,anticipated=(),ci_context=None,*,_finalize=None):
+_MEMO = ContextVar('al_gate_inventory_memo', default=None)
+
+
+@contextmanager
+def reuse_inventories():
+    """Within one command, an inventory of identical inputs is computed once.
+
+    Discovery and the validation of its own manifest ask the same question; the
+    memo is keyed by every input the inventory reads from run state (base, merged
+    task paths, CI context, opaque boundaries, adapter) and lives only for the
+    enclosing command, so later commands always observe the repository afresh."""
+    token = _MEMO.set({})
+    try:
+        yield
+    finally:
+        _MEMO.reset(token)
+
+
+def inventory_inputs(st,anticipated=(),ci_context=None,*,bounded=False):
+    """Everything an inventory reads from run state, merged and normalized once."""
     context=CC.profile(st,ci_context)
-    paths=set(anticipated)
+    merged=set()
     required_adapter=None
     for ref in st.get('gate_manifests',[]):
-        prior=A.read_json(ref);paths.update(prior.get('paths',[]))
+        prior=A.read_json(ref);merged.update(prior.get('paths',[]))
         if prior.get('service_coverage',{}).get('adapter',{}).get('id')=='contract':required_adapter='contract'
     from al_task_attribution import classify_changes
     attributed = classify_changes(st) if st.get('review_mode') != 'whole-mr' else None
-    paths.update(attributed['discovery_paths'] if attributed else S.changed_paths(st['identity']['merge_base']))
+    merged.update(attributed['discovery_paths'] if attributed else S.changed_paths(st['identity']['merge_base']))
     opaque={r['path'] for r in S.source_rows() if G.opaque(r)}
-    def inside(path):return any(Sources.contains(child,path) for child in opaque)
-    paths=sorted('.' if p=='.' else S.safe_path(p).as_posix() for p in paths)
-    return capture_discovery(
-        lambda:Snapshot(al_store.REPO_ROOT,st['identity']['merge_base'],paths,opaque,required_adapter),
-        lambda scan:_finalize(_inventory_attempt(st,paths,context,opaque,scan)) if _finalize else _inventory_attempt(st,paths,context,opaque,scan))
+    def normalized(values):return sorted({'.' if p=='.' else S.safe_path(p).as_posix() for p in values})
+    return {'context':context,'base':st['identity']['merge_base'],'merged':normalized(merged),'bounded':bool(bounded),
+            'paths':normalized(set(anticipated)|merged),'opaque':sorted(opaque),'required_adapter':required_adapter,
+            'normalize':normalized}
 
 
-def _inventory_attempt(st,paths,context,opaque,scan):
-    def inside(path):return any(Sources.contains(child,path) for child in opaque)
-    original_paths=list(paths)
+def inputs_key(inputs):
+    return digest({k:inputs[k] for k in ('context','base','paths','opaque','required_adapter','bounded')})
+
+
+_memo_key=inputs_key
+
+
+def last_inputs_key():
+    """Inputs of the latest inventory in the active reuse scope (what a saved result depends on)."""
+    memo=_MEMO.get()
+    return memo.get('__last__') if memo is not None else None
+
+
+def expand_task_paths(scan,paths,opaque):
+    """Requested directories and the task paths they expand to (opaque interiors excluded)."""
     requested=[p for p in paths if scan.observe_path(p)['state']=='directory']
-    expansion=Relevance.project_expansion(scan.listing_observation,requested) if requested else {'gaps':[]}
     # Directory containment by ancestor lookup: members x requested directories is quadratic.
     requested_scope=PathScope(PurePosixPath(d).as_posix() for d in requested)
-    paths=sorted(set(paths)|{p.rstrip('/') for p in scan.members if requested_scope.covers(PurePosixPath(p.rstrip('/')).as_posix())})
-    paths=[p for p in paths if not any(p!=child and Sources.contains(child,p) for child in opaque)]
+    expanded=sorted(set(paths)|{p.rstrip('/') for p in scan.members if requested_scope.covers(PurePosixPath(p.rstrip('/')).as_posix())})
+    expanded=[p for p in expanded if not any(p!=child and Sources.contains(child,p) for child in opaque)]
+    return requested,expanded
+
+
+def discovery_paths(st,anticipated=(),ci_context=None,*,bounded=False):
+    """Task paths with directories expanded exactly as a manifest records them.
+
+    Discovering over this set asks the same question as validating the resulting
+    manifest, so the validation reuses the one inventory instead of rebuilding it."""
+    inputs=inventory_inputs(st,anticipated,ci_context,bounded=bounded)
+    listing=Snapshot(al_store.REPO_ROOT,inputs['base'],inputs['paths'],set(inputs['opaque']),inputs['required_adapter'],listing_only=True)
+    return expand_task_paths(listing,inputs['paths'],set(inputs['opaque']))[1]
+
+
+def inventory(st,anticipated=(),ci_context=None,*,_finalize=None,bounded=False):
+    inputs=inventory_inputs(st,anticipated,ci_context,bounded=bounded)
+    memo=_MEMO.get()
+    key=_memo_key(inputs) if memo is not None else None
+    if memo is not None:memo['__last__']=key
+    def compute():
+        context=inputs['context'];paths=inputs['paths'];opaque=set(inputs['opaque']);required_adapter=inputs['required_adapter']
+        return capture_discovery(
+            lambda:Snapshot(al_store.REPO_ROOT,inputs['base'],paths,opaque,required_adapter),
+            lambda scan:_inventory_attempt(st,paths,context,opaque,scan,bounded=inputs['bounded']))
+    from al_analysis_cache import CURRENT
+    observation=CURRENT.get()
+    if key is not None and key in memo:
+        result=copy.deepcopy(memo[key])
+    elif key is None and observation is not None:
+        # Inside one stability-checked decision window (S.decision), the same inventory
+        # question is answered once; a moved worktree re-runs the decision without it.
+        result=observation.get_or_compute('gate-inventory',[str(al_store.REPO_ROOT),inputs_key(inputs)],compute)
+    else:
+        result=compute()
+        if key is not None:memo[key]=copy.deepcopy(result)
+    return _finalize(result) if _finalize else result
+
+
+def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
+    def inside(path):return any(Sources.contains(child,path) for child in opaque)
+    requested,paths=expand_task_paths(scan,paths,opaque)
+    expansion=Relevance.project_expansion(scan.listing_observation,requested) if requested else {'gaps':[]}
     # Known CI/rule identities are policy inputs, not anonymous runtime data.
     # Literal runtime consumers are still retained by artifact analysis.
     for pattern in PATTERNS+('.github/workflows/*.yml','.github/workflows/*.yaml'):
@@ -190,7 +263,21 @@ def _inventory_attempt(st,paths,context,opaque,scan):
     for pattern in ('.github/workflows/*.yml','.github/workflows/*.yaml'):
         scan.observe_matches(pattern,purpose='workflow-membership')
     service_inputs=set(facts['dependencies'].get('coverage_inputs',[]))
+    reached_only=set()
+    if bounded:
+        # Bounded discovery: a selected unit holding no task path is affected only through
+        # dependency/consumer edges. Its CI checks are selected from its affected consumer
+        # files (or its unit directory), not from a per-file analysis of the whole unit.
+        declared=PathScope(paths)
+        consumers=set(facts['dependencies'].get('affected_source_paths',[]))
+        reached_only={s for s in services if s!='.' and not declared.overlaps(s)}
+        if reached_only:
+            reached=PathScope(reached_only)
+            service_inputs={p for p in service_inputs if p in consumers or not reached.covers(p)}
     for service in services:
+        if service in reached_only:
+            service_inputs.update([p for p in consumers if within(service,p)] or [service])
+            continue
         members=[p['path'] for p in facts['scan_inputs'] if p['snapshot']=='current' and (service=='.' or within(service,p['path']))]
         members.extend(p['path'] for p in facts['rule_sources'] if service=='.' or within(service,p['path']))
         service_inputs.update(members or [service])
@@ -279,7 +366,7 @@ def _inventory_attempt(st,paths,context,opaque,scan):
 
 def gaps(st,m,anticipated=(),*,admission=True):
     progress.report('inventory-validate',count=len(m.get('paths',[])),force=True)
-    expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'));out=[]
+    expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded');out=[]
     declared={r['path']:r['sha256'] for r in m['rules']}
     for r in expected['rules']:
         if declared.get(r['path'])!=r['sha256']:out.append('missing/current repository source: '+r['path'])

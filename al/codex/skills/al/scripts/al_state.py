@@ -301,9 +301,9 @@ def _dispatch(a, al_recovery_guidance):
     if a.recovery_file:
         import al_proof_json as J
         al_recovery_guidance.activate(load(sid),J.loads(Path(a.recovery_file).read_bytes()),a)
-    # `evidence run` / `preflight` can take minutes: they lock each write
+    # `evidence run` / `preflight` / `gates discover` can take minutes: they lock each read/write
     # themselves; every other command is one short locked load-modify-save.
-    if a.cmd in {"preflight", "isolate"} or (a.cmd in {"evidence", "gates"} and a.action == "run"):
+    if a.cmd in {"preflight", "isolate"} or (a.cmd in {"evidence", "gates"} and a.action == "run") or (a.cmd == "gates" and a.action == "discover"):
         a.fn(a, sid)
     else:
         with locked(sid):

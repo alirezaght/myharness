@@ -38,7 +38,7 @@ def check(st):
     if not context['current']:
         return {'current':False,'reasons':['CI context belongs to a superseded task revision; declare replacement context'],
                 'superseded':ref,'paths':[],'pathless':True}
-    try:current=V.inventory(st,manifest.get('paths',[]),manifest.get('ci_context'))
+    try:current=V.inventory(st,manifest.get('paths',[]),manifest.get('ci_context'),bounded=manifest.get('discovery_mode')=='bounded')
     except (CaptureDrift,CaptureUnavailable) as exc:
         return {'current':False,'reasons':['coverage capture unavailable: '+exc.reason],
                 'superseded':ref,'paths':[],'pathless':True}

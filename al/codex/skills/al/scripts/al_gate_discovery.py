@@ -15,8 +15,15 @@ CATEGORIES=('lint-imports','loc','contracts','pre-commit','ci')
 
 source=V.source
 
-def discover(st,paths,ci_context=None):
-    return V.inventory(st,paths,ci_context,_finalize=lambda inventory:_discover_captured(st,inventory,ci_context))
+def discover(st,paths,ci_context=None,*,bounded=False):
+    # Discover over the expanded task paths the manifest will record: validating that
+    # manifest asks the identical question and reuses this inventory (see reuse_inventories).
+    expanded=V.discovery_paths(st,paths,ci_context,bounded=bounded)
+    def finalize(inventory):
+        manifest=_discover_captured(st,inventory,ci_context)
+        if bounded:manifest['discovery_mode']='bounded'
+        return manifest
+    return V.inventory(st,expanded,ci_context,_finalize=finalize,bounded=bounded)
 
 
 def _discover_captured(st,inventory,ci_context):
@@ -104,6 +111,7 @@ def _discover_captured(st,inventory,ci_context):
     return manifest
 
 def validate_manifest(st,m,check_sources=True):
+    if m.get('discovery_mode',None) not in (None,'bounded'):refuse('unsupported gate discovery mode')
     if m.get('schema_version')!=1 or m.get('base_oid')!=st['identity']['merge_base']: refuse('gate manifest schema/base mismatch')
     if not isinstance(m.get('rules'),list) or not isinstance(m.get('units'),list):refuse('manifest rule/unit arrays required')
     for unit in m['units']:

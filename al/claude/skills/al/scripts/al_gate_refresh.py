@@ -34,14 +34,23 @@ def _keep_planned(old,new):
 
 
 def _candidates(st,old):
-    fresh=D.discover(st,old['paths'],old.get('ci_context'))
+    fresh=D.discover(st,old['paths'],old.get('ci_context'),bounded=old.get('discovery_mode')=='bounded')
     merged=copy.deepcopy(fresh);kept=_keep_planned(old,merged)
     out=[(merged,kept)] if kept else []
     return out+[(fresh,[])]
 
 
 def refresh(st):
-    """Current gate currency, after refreshing the manifest when only planned paths went stale."""
+    """Current gate currency, after refreshing the manifest when only planned paths went stale.
+
+    Currency, rediscovery and both validations ask about one unchanged worktree within
+    this call, so identical inventory questions are answered once."""
+    import al_gate_inventory as V
+    with V.reuse_inventories():
+        return _refresh(st)
+
+
+def _refresh(st):
     currency=Currency.check(st)
     if not refreshable(st,currency):return currency
     old_ref=st['gate_manifests'][-1];old=A.read_json(old_ref)

@@ -104,6 +104,9 @@ first. Refusals on this path name the next supported command.
 Use [the detailed command workflow](reference/workflow.md) only for the operation
 being performed, and [gates](reference/gates.md) for task-relevant discovery and
 check planning. Preserve actual changed paths and root/shared obligations.
+`gates discover` analyses without holding the run lock, so writers and amendments
+continue on the admitted plan; add paths with `gates discover --extend current
+--paths-file <json>`, and use `--bounded` on large monorepos (see gates).
 
 ## 4. Implement with the right agents
 

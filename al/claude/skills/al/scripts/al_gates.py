@@ -224,23 +224,89 @@ def candidate_gaps(st):
             if unit not in units: return ['new touched unit requires extended base/candidate gates: '+unit]
     return gate_gaps(st,'candidate')
 
-def cmd_gates(a,sid):
-    st=al_store.load(sid)
-    if a.action in {'discover','plan'}:
-        from al_gate_recovery import planning
-        if a.action=='discover':
-            paths=json.loads(Path(a.paths_file).read_text())
-            # `pinned-base` (as the docs write it) names the run's pinned merge base.
-            if a.base and a.base!='pinned-base' and S.git_bytes('rev-parse',a.base).decode().strip()!=st['identity']['merge_base']: refuse('base differs from pinned merge base')
-            m=D.discover(st,paths)
-        else: m=json.loads(Path(a.file).read_bytes())
+def _discovery_state(st):
+    """Run state that discovery reads directly; any other change is checked through its inputs."""
+    from al_repository_facts import digest
+    return digest({k:st.get(k) for k in ('identity','gate_manifests','review_mode','inherited_lineage','task_attribution','status')})
+
+
+def _rerun_command(a):
+    import shlex
+    words=['gates','discover']
+    if a.extend:words+=['--extend',a.extend]
+    words+=['--paths-file',a.paths_file]
+    if a.base:words+=['--base',a.base]
+    if a.bounded:words.append('--bounded')
+    return shlex.join(words)
+
+
+def _discover_requested_paths(a,st):
+    paths=json.loads(Path(a.paths_file).read_text())
+    if not isinstance(paths,list) or any(not isinstance(p,str) for p in paths):refuse('--paths-file must hold a JSON list of repository paths')
+    if not a.extend:return paths,None
+    if a.extend=='current':
+        if not st.get('gate_manifests'):refuse('--extend current requires an admitted gate manifest')
+        base=A.read_json(st['gate_manifests'][-1])
+    else:
+        ref=next((r for r in st.get('gate_manifests',[]) if a.extend in {r.get('stored_path'),r.get('sha256')}),None)
+        if ref is None:
+            try:base=json.loads(Path(a.extend).read_bytes())
+            except (OSError,ValueError) as exc:refuse('--extend names no readable gate manifest: '+str(exc))
+        else:base=A.read_json(ref)
+    if not isinstance(base,dict) or not isinstance(base.get('paths'),list):refuse('--extend manifest has no path list')
+    return sorted(set(base['paths'])|set(paths)),base
+
+
+def _discover(a,sid):
+    """Analyse outside the run admission lock; lock only to read and to save.
+
+    The state discovery depended on is re-checked under the saving lock: an unchanged
+    run state, or unchanged inventory inputs, admits the result; otherwise discovery
+    refuses with the exact command to re-run. Writers and amendments proceed meanwhile."""
+    with al_store.locked(sid):
+        st=al_store.load(sid)
+        if st['status']!='RUNNING':refuse('run is not running; explicit resume required')
+    # `pinned-base` (as the docs write it) names the run's pinned merge base.
+    if a.base and a.base!='pinned-base' and S.git_bytes('rev-parse',a.base).decode().strip()!=st['identity']['merge_base']: refuse('base differs from pinned merge base')
+    paths,extended=_discover_requested_paths(a,st)
+    observed=_discovery_state(st)
+    with V.reuse_inventories():
+        m=D.discover(st,paths,bounded=a.bounded)
         D.validate_manifest(st,m)
-        planning(st,sid,m.get('paths',[]))
-        m.setdefault('id','G'+str(len(st.get('gate_manifests',[]))+1))
-        m['revision']=len(st.get('gate_manifests',[]))+1
-        st.setdefault('gate_manifests',[]).append(A.snapshot_bytes(sid,json.dumps(m,sort_keys=True).encode(),'gate-manifest',a.file if a.action=='plan' else a.paths_file))
-        if st.get('gate_recovery'):st['gate_recovery']['replacement_manifest']=st['gate_manifests'][-1]['sha256']
-        al_store.save(sid,st); print(json.dumps(m,indent=2)); return
+        validated=V.last_inputs_key()
+        with al_store.locked(sid):
+            current=al_store.load(sid)
+            if _discovery_state(current)!=observed:
+                inputs=V.inventory_inputs(current,m.get('paths',[]),m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded')
+                if current['status']!='RUNNING' or V.inputs_key(inputs)!=validated:
+                    refuse('run state changed while gates discover was analysing (base, planned paths, task changes or CI context); '
+                           'nothing was saved. Re-run: '+_rerun_command(a))
+            from al_gate_recovery import planning
+            planning(current,sid,m.get('paths',[]))
+            _save_manifest(current,sid,m,a.paths_file)
+    print(json.dumps(m,indent=2))
+
+
+def _save_manifest(st,sid,m,source):
+    m.setdefault('id','G'+str(len(st.get('gate_manifests',[]))+1))
+    m['revision']=len(st.get('gate_manifests',[]))+1
+    st.setdefault('gate_manifests',[]).append(A.snapshot_bytes(sid,json.dumps(m,sort_keys=True).encode(),'gate-manifest',source))
+    if st.get('gate_recovery'):st['gate_recovery']['replacement_manifest']=st['gate_manifests'][-1]['sha256']
+    al_store.save(sid,st)
+
+
+def cmd_gates(a,sid):
+    if a.action=='discover':
+        return _discover(a,sid)
+    st=al_store.load(sid)
+    if a.action=='plan':
+        from al_gate_recovery import planning
+        m=json.loads(Path(a.file).read_bytes())
+        with V.reuse_inventories():
+            D.validate_manifest(st,m)
+            planning(st,sid,m.get('paths',[]))
+        _save_manifest(st,sid,m,a.file)
+        print(json.dumps(m,indent=2)); return
     if a.action=='decision':
         m=manifest(st)
         if not m or a.id not in [g['id'] for g in m['gates']]: refuse('unknown gate ID')
@@ -549,7 +615,10 @@ def cmd_run(a,sid):
 
 def register(sub):
     children=sub.add_parser('gates').add_subparsers(dest='action',required=True)
-    p=children.add_parser('discover'); p.add_argument('--paths-file',required=True); p.add_argument('--base'); p.set_defaults(fn=cmd_gates)
+    p=children.add_parser('discover'); p.add_argument('--paths-file',required=True); p.add_argument('--base')
+    p.add_argument('--extend',metavar='MANIFEST',help='extend an existing manifest ("current", its stored path or sha256, or a manifest file) with the paths in --paths-file')
+    p.add_argument('--bounded',action='store_true',help='units reached only through dependency edges inherit their checks from the unit directory instead of a per-file analysis')
+    p.set_defaults(fn=cmd_gates)
     p=children.add_parser('plan'); p.add_argument('--file',required=True); p.set_defaults(fn=cmd_gates)
     p=children.add_parser('run'); p.add_argument('--stage',choices=['base','candidate'],required=True); p.add_argument('--id'); p.add_argument('--resume',action='store_true'); p.add_argument('--retry-failed',action='store_true'); p.add_argument('--timeout',type=float,default=300); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_run)
     p=children.add_parser('decision'); p.add_argument('--id',required=True); p.add_argument('--action',dest='decision',choices=['fix','stop','defer','exception'],required=True); p.add_argument('--source',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_gates)
