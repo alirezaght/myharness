@@ -52,6 +52,10 @@ h3 {
   color: #b00020;
 }
 
+#live[data-state="waiting"] {
+  color: #8a5a00;
+}
+
 main {
   display: grid;
   grid-template-columns: 16rem minmax(0, 1fr);

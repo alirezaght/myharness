@@ -22,6 +22,22 @@ class SnapshotConflict(ValueError):
     pass
 
 
+# Carry an assertion forward when every one of its evidence versions is still present. The
+# present versions are an uncorrelated subquery that SQLite builds once as an ephemeral index:
+# a per-evidence lookup correlated on (snapshot_id, version_id) scanned the whole snapshot for
+# every evidence row, making publication quadratic and holding the write lock for minutes on
+# large repositories (#2). version_id is NOT NULL, so NOT IN has no NULL pitfall here.
+CARRY_FORWARD_ASSERTIONS = (
+    "INSERT OR IGNORE INTO knowledge_snapshot_assertions SELECT ?,p.assertion_id "
+    "FROM knowledge_snapshot_assertions p WHERE p.snapshot_id=? AND EXISTS "
+    "(SELECT 1 FROM knowledge_evidence e WHERE e.assertion_id=p.assertion_id) "
+    "AND NOT EXISTS (SELECT 1 FROM knowledge_evidence e "
+    "WHERE e.assertion_id=p.assertion_id AND e.version_id NOT IN "
+    "(SELECT m.version_id FROM knowledge_snapshot_sources m WHERE m.snapshot_id=? "
+    "AND m.membership_state='present'))"
+)
+
+
 def record_refresh_attempt(conn, project_id, status, coverage):
     """Caller holds the publication or failed-attempt transaction."""
     conn.execute(
@@ -490,16 +506,7 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
             (snapshot, snapshot),
         )
         if expected_active:
-            conn.execute(
-                "INSERT OR IGNORE INTO knowledge_snapshot_assertions SELECT ?,p.assertion_id "
-                "FROM knowledge_snapshot_assertions p WHERE p.snapshot_id=? AND EXISTS "
-                "(SELECT 1 FROM knowledge_evidence e WHERE e.assertion_id=p.assertion_id) "
-                "AND NOT EXISTS (SELECT 1 FROM knowledge_evidence e "
-                "WHERE e.assertion_id=p.assertion_id "
-                "AND NOT EXISTS (SELECT 1 FROM knowledge_snapshot_sources m WHERE m.snapshot_id=? "
-                "AND m.version_id=e.version_id AND m.membership_state='present'))",
-                (snapshot, expected_active, snapshot),
-            )
+            conn.execute(CARRY_FORWARD_ASSERTIONS, (snapshot, expected_active, snapshot))
         conn.execute(
             "INSERT INTO knowledge_snapshot_cursor VALUES (?,?,?,?,?,?,?,?,?,?)",
             (

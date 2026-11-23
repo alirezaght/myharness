@@ -114,6 +114,19 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
 }
 READ_ERRORS = (sqlite3.Error, OSError, ValueError, LookupError)
+BUSY_VIEW = (
+    "the state database is busy: another harness command (for example investigate) is "
+    "writing; the dashboard retries and the data appears when it finishes"
+)
+
+
+def read_failure(error: Exception) -> tuple[int, dict[str, Any]]:
+    """A read that met another command's write lock is a retryable wait, not a failure."""
+    from harness.db import is_busy
+
+    if is_busy(error):
+        return 503, {"error": BUSY_VIEW, "busy": True, "retry": True}
+    return 500, {"error": str(error)}
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -216,7 +229,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             try:
                 data = self._view(self._requested_task(url.query))
             except READ_ERRORS as error:
-                self._json(500, {"error": str(error)})
+                self._json(*read_failure(error))
                 return
             self._json(200, data)
         elif url.path in {"/api/authoring/history", "/api/authoring/revision"}:
@@ -612,7 +625,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             data = json.dumps(self._view(task_id), sort_keys=True)
         except READ_ERRORS as error:
-            failure = json.dumps({"error": str(error)}, sort_keys=True)
+            failure = json.dumps(read_failure(error)[1], sort_keys=True)
             return f"event: failure\ndata: {failure}\n\n".encode()
         return f"data: {data}\n\n".encode()
 

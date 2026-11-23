@@ -396,12 +396,13 @@ function render(data) {
   if (replacingDrawerState?.newTaskReplacing) setTimeout(() => { replacingDrawerState.newTaskReplacing = false; }, 0);
 }
 
-function renderError(message) {
+function renderError(message, busy = false) {
   rendered = false;
   const section = el("section");
   section.id = "error";
-  const alert = el("p", `Dashboard data unavailable: ${message}`);
-  alert.setAttribute("role", "alert");
+  const alert = el("p", busy ? `Waiting for the state database: ${message}` : `Dashboard data unavailable: ${message}`);
+  alert.setAttribute("role", busy ? "status" : "alert");
+  if (busy) section.dataset.state = "waiting";
   const retry = el("button", "Retry");
   retry.type = "button";
   retry.addEventListener("click", load);
@@ -431,10 +432,11 @@ function connect() {
     setLive("live", "live");
   };
   stream.addEventListener("failure", (event) => {
-    const { error } = JSON.parse(event.data);
+    const { error, busy } = JSON.parse(event.data);
     const kept = rendered ? "; showing the last loaded data" : "";
-    if (!rendered) renderError(error);
-    setLive("stale", `data unavailable: ${error}${kept}`);
+    if (!rendered) renderError(error, Boolean(busy));
+    if (busy) setLive("waiting", `waiting: ${error}${kept}`);
+    else setLive("stale", `data unavailable: ${error}${kept}`);
   });
   stream.onerror = () => {
     if (source !== stream) return;
@@ -453,10 +455,10 @@ async function load() {
   try {
     const response = await fetch(API + query(), { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || response.statusText);
+    if (!response.ok) throw Object.assign(new Error(data.error || response.statusText), { busy: Boolean(data.busy) });
     render(data);
   } catch (error) {
-    renderError(error.message);
+    renderError(error.message, Boolean(error.busy));
   }
   connect();
 }
@@ -465,10 +467,11 @@ async function refreshDashboard() {
   try {
     const response = await fetch(API + query(), { cache: "no-store" });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || response.statusText);
+    if (!response.ok) throw Object.assign(new Error(data.error || response.statusText), { busy: Boolean(data.busy) });
     render(data);
   } catch (error) {
-    setLive("stale", `data unavailable: ${error.message}; showing the last loaded data`);
+    if (error.busy) setLive("waiting", `waiting: ${error.message}; showing the last loaded data`);
+    else setLive("stale", `data unavailable: ${error.message}; showing the last loaded data`);
   }
 }
 
