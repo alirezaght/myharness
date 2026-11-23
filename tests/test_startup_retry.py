@@ -87,7 +87,9 @@ def test_preflight_refuses_before_new_handoff_or_reservation(controller, sample_
     tid = approved.__wrapped__(controller, sample_repo, monkeypatch)
     monkeypatch.setattr(
         "harness.launch_readiness.readiness",
-        lambda *a: {"checks": [{"status": "BLOCKED", "reason": "unsupported selected version"}]},
+        lambda *a, **k: {
+            "checks": [{"status": "BLOCKED", "reason": "unsupported selected version"}]
+        },
     )
     from harness.execution import publish
 
@@ -99,14 +101,52 @@ def test_preflight_refuses_before_new_handoff_or_reservation(controller, sample_
     assert start_execution(controller, tid, launch=False)["created"]
 
 
-def test_exact_native_version_refuses_substrings(tmp_path):
+def test_unverified_host_version_override_is_recorded_as_execution_evidence(
+    controller, sample_repo, monkeypatch
+):
+
+    from harness.native_tool_policy import recorded_override
+    from tests.test_dashboard_guidance import approved
+
+    tid = approved.__wrapped__(controller, sample_repo, monkeypatch)
+    record = {
+        "status": "UNVERIFIED",
+        "version": "2.3.0",
+        "sha256": "c" * 64,
+        "supported": ">=2.1.310,<2.2.0",
+        "accepted_by": "explicit developer flag --accept-unverified-host-version",
+    }
+    seen = []
+
+    def readiness(root, host, *, accept_unverified_host_version=False):
+        seen.append(accept_unverified_host_version)
+        check = {"id": "native-host-and-al-protocol", "status": "PASS"}
+        if accept_unverified_host_version:
+            check["override"] = record
+        return {"checks": [check]}
+
+    monkeypatch.setattr("harness.launch_readiness.readiness", readiness)
+    monkeypatch.setattr(
+        "harness.execution_worker.launch_worker", lambda *a, **k: {"status": "Reserved"}
+    )
+    result = start_execution(controller, tid, accept_unverified_host_version=True)
+    assert seen == [True]
+    saved = get_execution(controller.conn, result["execution"]["id"])
+    directory = Path(saved["handoff_path"]).parent
+    assert recorded_override(directory) == record
+
+
+def test_native_version_line_refuses_substrings_and_other_lines(tmp_path):
     from harness.native_tool_policy import executable_identity
 
     executable = tmp_path / "native"
     for version, accepted in (
         ("2.1.325", True),
         ("2.1.310", True),
-        ("2.1.3250", False),
+        ("2.1.330", True),
+        ("2.1.30", False),
+        ("2.2.0", False),
+        ("12.1.325", False),
         ("prefix 2.1.325", False),
     ):
         executable.write_text("#!/bin/sh\nprintf '%s\\n' '" + version + " (Claude Code)'\n")
@@ -495,7 +535,7 @@ def test_start_replay_recovers_dispatched_run_despite_readiness_drift(
         # Treat the first reply as lost. A replay must recover identity before readiness.
         monkeypatch.setattr(
             "harness.launch_readiness.readiness",
-            lambda *a: pytest.fail("dispatched replay must not preflight"),
+            lambda *a, **k: pytest.fail("dispatched replay must not preflight"),
         )
         status, replay = post_start(server, body)
         assert status == 200 and replay["created"] is False
@@ -521,7 +561,7 @@ def test_reserved_start_readiness_failure_preserves_host_binding(
     )
     monkeypatch.setattr(
         "harness.launch_readiness.readiness",
-        lambda *a: {"checks": [{"status": "BLOCKED", "reason": "selected host changed"}]},
+        lambda *a, **k: {"checks": [{"status": "BLOCKED", "reason": "selected host changed"}]},
     )
     with serve(db_path, tid) as server:
         body = {

@@ -64,6 +64,18 @@ Readiness works before approval and checks the native executable/version,
 installed AL protocol, transitive mandatory skill inputs and dependency layout.
 It performs no provider login/request or product acceptance.
 
+Native executables are admitted by tested release line, not exact patch: Claude
+`>=2.1.310,<2.2.0`; Codex `>=0.164.0,<0.166.0` or `>=0.170.0,<0.171.0`
+(`SUPPORTED_NATIVE_RANGES` in `harness/native_tool_policy.py`). Auto-updated
+patches keep their line's restrictions, which are still verified when the profile
+is built (Codex 0.170 runs an offline `features list` probe). A version outside
+these ranges is BLOCKED with the supported ranges named. To proceed anyway, pass
+`--accept-unverified-host-version` to `harness execution readiness` or
+`harness execution start`; start records the override (exact version and binary
+digest) as `host-version-override.json` beside the execution handoff and as an
+`execution.host_version_override` workspace event. A later binary change blocks
+again.
+
 Reconciliation requires the exact current plan hash and settled execution
 attempts. It replaces only ignored hardlinks with private byte-identical copies,
 preserves file mode and source/Git state, records original device/inode/link/hash

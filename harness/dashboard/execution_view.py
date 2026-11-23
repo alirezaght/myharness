@@ -24,7 +24,15 @@ def task_execution(controller, task_id):
 
         try:
             envelope = read_handoff(latest["handoff_path"], latest["handoff_hash"])
-            view["startup"]["current_readiness"] = readiness(envelope["repository"], latest["host"])
+            from harness.native_tool_policy import recorded_override
+
+            view["startup"]["current_readiness"] = readiness(
+                envelope["repository"],
+                latest["host"],
+                accept_unverified_host_version=recorded_override(
+                    Path(latest["handoff_path"]).parent
+                ),
+            )
         except (OSError, ValueError) as error:
             view["startup"]["current_readiness"] = {
                 "ready": False,

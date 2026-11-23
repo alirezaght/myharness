@@ -12,10 +12,12 @@ from harness.authoring_contract import canonical, digest
 from harness.native_runtime import auth_selection
 from harness.native_tool_policy import (
     DISABLED,
-    SUPPORTED_NATIVE_VERSIONS,
     _observe_executable_identity,
     _toml,
     restricted_catalog,
+    supported_range,
+    version_key,
+    version_supported,
 )
 
 AUTHORING_DISABLED = (
@@ -97,27 +99,61 @@ AUTHORING_FEATURES = {
     # 0.170 normalizes this backend on; shell_tool and each model gate handlers separately.
     | {"skip_host_skill_discovery": True, "unified_exec": True},
 }
-AUTHORING_VERSIONS = {
-    "codex": frozenset(AUTHORING_FEATURES),
-    "claude": SUPPORTED_NATIVE_VERSIONS["claude"],
-}
 AUTHORING_CONFIG = {"0.170.0": {"suppress_unstable_features_warning": True}}
 AUTH_KEYS = frozenset(
     {"forced_login_method", "forced_chatgpt_workspace_id", "cli_auth_credentials_store"}
 )
 
 
+def manifest_version(version):
+    """Tested feature manifest for ``version``: same release line, at or below it.
+
+    Auto-updated patch releases keep their line's qualified manifest; the profile
+    still verifies every switch (strict config and the offline feature probe).
+    """
+    try:
+        value = version_key(version)
+    except ValueError:
+        return None
+    lines = [
+        key
+        for key in AUTHORING_FEATURES
+        if version_key(key)[:2] == value[:2] and version_key(key) <= value
+    ]
+    if not lines or not version_supported("codex", version):
+        return None
+    return max(lines, key=version_key)
+
+
 def authoring_executable_identity(executable, host):
     identity = _observe_executable_identity(executable, host)
-    if identity["version"] not in AUTHORING_VERSIONS[host]:
-        raise ValueError("unsupported authoring executable version")
+    supported = (
+        manifest_version(identity["version"])
+        if host == "codex"
+        else version_supported(host, identity["version"])
+    )
+    if not supported:
+        raise ValueError(
+            "unsupported authoring executable version: "
+            + host
+            + " "
+            + identity["version"]
+            + " (supported: "
+            + supported_range(host)
+            + ")"
+        )
     return identity
 
 
 def feature_values(version):
-    if version not in AUTHORING_FEATURES:
+    line = manifest_version(version)
+    if line is None:
         raise ValueError("unsupported authoring feature manifest")
-    return AUTHORING_FEATURES[version]
+    return AUTHORING_FEATURES[line]
+
+
+def authoring_config(version):
+    return AUTHORING_CONFIG.get(manifest_version(version), {})
 
 
 def disabled_features(version):
@@ -154,7 +190,7 @@ def verify_profile(profile, flags=AUTHORING_FLAGS):
         "approval_policy": "never",
         "sandbox_mode": "read-only",
         "model_catalog_json": profile["catalog_path"],
-        **AUTHORING_CONFIG.get(profile["executable"]["version"], {}),
+        **authoring_config(profile["executable"]["version"]),
         **{
             "features." + key: value
             for key, value in feature_values(profile["executable"]["version"]).items()
@@ -247,7 +283,7 @@ def build_profile(host, directory, *, executable=None):
         "mcp_servers": {},
         "agents.enabled": False,
         **auth_selection(),
-        **AUTHORING_CONFIG.get(identity["version"], {}),
+        **authoring_config(identity["version"]),
     }
     options = []
     for key, value in config.items():
@@ -264,20 +300,25 @@ def build_profile(host, directory, *, executable=None):
     }
     profile["identity"] = profile_identity(profile)
     verify_profile(profile)
-    if identity["version"] == "0.170.0":
-        _probe_features(profile)
+    if manifest_version(identity["version"]) == "0.170.0":
+        probe_feature_values(
+            profile["executable"]["path"],
+            profile["options"],
+            feature_values(profile["executable"]["version"]),
+        )
     return profile
 
 
-def _probe_features(profile):
+def probe_feature_values(executable, options, expected, *, label="authoring"):
     # This offline interface verifies overrides, not exec's ignore/strict flags.
+    prefix = "unsupported " + label + " profile: "
     result = subprocess.run(
-        [profile["executable"]["path"], *profile["options"], "features", "list"],
+        [executable, *options, "features", "list"],
         capture_output=True,
         timeout=10,
     )
     if result.returncode or len(result.stdout) > 65536:
-        raise ValueError("unsupported authoring profile: native feature probe failed")
+        raise ValueError(prefix + "native feature probe failed")
     observed = {}
     for line in result.stdout.decode("utf-8").splitlines():
         match = re.fullmatch(
@@ -286,12 +327,12 @@ def _probe_features(profile):
         )
         if match:
             if match[1] in observed:
-                raise ValueError("unsupported authoring profile: duplicate native feature")
+                raise ValueError(prefix + "duplicate native feature")
             observed[match[1]] = (match[2], match[3] == "true")
-    for key, value in feature_values(profile["executable"]["version"]).items():
+    for key, value in expected.items():
         row = observed.get(key)
         if row is None or row[0] == "removed" or row[1] is not value:
-            raise ValueError("unsupported authoring profile: native feature restriction missing")
+            raise ValueError(prefix + "native feature restriction missing")
 
 
 def availability(host):

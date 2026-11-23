@@ -24,7 +24,11 @@ def release_for_replacement(operation, state, agent, native):
         existing = state["integration"]["agents"][agent["id"]]
         if existing.get("registration") != digest(agent):
             raise ValueError("replacement invocation was already used")
-    identity = read_native_identity(operation.registry.native_root, agent["id"])
+    identity = read_native_identity(
+        operation.registry.native_root,
+        agent["id"],
+        accepted_versions=getattr(operation.registry, "accepted_versions", ()),
+    )
     try:
         created = datetime.fromisoformat(identity.created_at.replace("Z", "+00:00"))
         if created.tzinfo is None or created.timestamp() <= old["started_at"]:

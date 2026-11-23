@@ -13,6 +13,7 @@ from harness.authoring_policy import (
     AUTHORING_FLAGS,
     authoring_executable_identity,
     build_profile,
+    manifest_version,
     verify_profile,
 )
 from harness.logical_diagram import validate_graph
@@ -194,7 +195,10 @@ def native_error_shape(item, temporary_root):
 
 
 def ignored_role_warning(item, profile, flags):
-    if profile["host"] != "codex" or profile["executable"]["version"] not in {"0.165.0", "0.170.0"}:
+    if profile["host"] != "codex" or manifest_version(profile["executable"]["version"]) not in {
+        "0.165.0",
+        "0.170.0",
+    }:
         return False
     verify_profile(profile, flags)
     if (

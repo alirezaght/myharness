@@ -41,7 +41,7 @@ def test_generated_claude_permissions_cover_exact_declared_channels(tmp_path, mo
 
     monkeypatch.setattr(
         "harness.native_tool_policy.executable_identity",
-        lambda *a: {"path": "synthetic-unit-executable", "version": "2.1.325"},
+        lambda *a, **k: {"path": "synthetic-unit-executable", "version": "2.1.325"},
     )
     channels = {
         role: {"url": "http://127.0.0.1:1/mcp", "token": "synthetic-unit-token"}
@@ -95,7 +95,11 @@ def test_generated_codex_roles_await_assignment_before_reading_complete_handoff(
 
     monkeypatch.setattr(
         "harness.native_tool_policy.executable_identity",
-        lambda *_: {"path": "synthetic-unit-executable", "version": "0.164.0", "sha256": "fixture"},
+        lambda *_, **k: {
+            "path": "synthetic-unit-executable",
+            "version": "0.164.0",
+            "sha256": "fixture",
+        },
     )
     build_native_policy(
         {"host": "codex"},
@@ -120,16 +124,22 @@ def test_generated_codex_roles_await_assignment_before_reading_complete_handoff(
 
 
 @pytest.mark.parametrize(
-    "reported",
+    "reported,accepted",
     [
-        "2.1.326 (Claude Code)",
-        "2.1.327 (Claude Code)",
-        "2.1.3260 (Claude Code)",
-        "prefix 2.1.326",
-        "2.1.326\n2.1.327",
+        ("2.1.326 (Claude Code)", True),
+        ("2.1.330 (Claude Code)", True),
+        ("2.1.310 (Claude Code)", True),
+        ("2.1.3260 (Claude Code)", True),
+        ("2.1.309 (Claude Code)", False),
+        ("2.2.0 (Claude Code)", False),
+        ("3.0.0 (Claude Code)", False),
+        ("prefix 2.1.326", False),
+        ("2.1.326\n2.1.327", False),
     ],
 )
-def test_claude_qualification_accepts_only_exact_version(tmp_path, monkeypatch, reported):
+def test_claude_qualification_accepts_tested_release_line(
+    tmp_path, monkeypatch, reported, accepted
+):
     from types import SimpleNamespace
 
     from harness.native_tool_policy import executable_identity
@@ -139,36 +149,106 @@ def test_claude_qualification_accepts_only_exact_version(tmp_path, monkeypatch, 
     monkeypatch.setattr(
         subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=reported)
     )
-    if reported == "2.1.326 (Claude Code)":
-        assert executable_identity(executable, "claude")["version"] == "2.1.326"
+    if accepted:
+        identity = executable_identity(executable, "claude")
+        assert identity["version"] == reported.split()[0]
+        assert "qualification" not in identity
     else:
         with pytest.raises(ValueError, match="unsupported native executable version"):
             executable_identity(executable, "claude")
 
 
-@pytest.mark.parametrize("version", ["0.164.0", "0.165.0", "0.170.0", "0.171.0"])
-def test_native170_authoring_admission_does_not_expand_execution(tmp_path, version):
+def test_unsupported_version_names_range_and_override(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from harness.native_tool_policy import executable_identity
+
+    executable = tmp_path / "synthetic-claude"
+    executable.write_text("synthetic executable identity")
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout="2.2.1")
+    )
+    with pytest.raises(ValueError) as error:
+        executable_identity(executable, "claude")
+    message = str(error.value)
+    assert "claude 2.2.1" in message
+    assert ">=2.1.310,<2.2.0" in message
+    assert "--accept-unverified-host-version" in message
+
+
+def test_unverified_override_binds_exact_version_and_binary(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from harness.native_tool_policy import (
+        executable_identity,
+        record_override,
+        recorded_override,
+        verify_native_policy,
+    )
+
+    executable = tmp_path / "synthetic-codex"
+    executable.write_text("synthetic executable identity")
+    reported = {"stdout": "codex-cli 0.172.0"}
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, **reported)
+    )
+    identity = executable_identity(executable, "codex", accept_unverified=True)
+    record = identity["qualification"]
+    assert record["status"] == "UNVERIFIED" and record["version"] == "0.172.0"
+    assert record["sha256"] == identity["sha256"]
+    assert "--accept-unverified-host-version" in record["accepted_by"]
+    assert record["supported"] == ">=0.164.0,<0.166.0 or >=0.170.0,<0.171.0"
+    assert recorded_override(tmp_path) is False
+    record_override(tmp_path, record)
+    assert recorded_override(tmp_path) == record
+    assert executable_identity(executable, "codex", accept_unverified=record) == identity
+    verify_native_policy({"host": "codex", "executable": identity})
+    reported["stdout"] = "codex-cli 0.173.0"
+    with pytest.raises(ValueError, match="unsupported native executable version"):
+        executable_identity(executable, "codex", accept_unverified=record)
+    reported["stdout"] = "codex-cli 0.172.0"
+    executable.write_text("replaced binary")
+    with pytest.raises(ValueError, match="unsupported native executable version"):
+        executable_identity(executable, "codex", accept_unverified=record)
+    with pytest.raises(ValueError, match="unsupported native executable version"):
+        verify_native_policy({"host": "codex", "executable": identity})
+
+
+@pytest.mark.parametrize(
+    "version,execution",
+    [
+        ("0.164.0", True),
+        ("0.165.0", True),
+        ("0.165.4", True),
+        ("0.166.0", False),
+        ("0.170.0", True),
+        ("0.170.2", True),
+        ("0.171.0", False),
+    ],
+)
+def test_codex_tested_release_lines_admit_execution_and_authoring(tmp_path, version, execution):
     import json
     import uuid
 
-    from harness.authoring_policy import build_profile
+    from harness.authoring_policy import build_profile, manifest_version
     from harness.native_identity import read_native_identity
-    from harness.native_tool_policy import SUPPORTED_NATIVE_VERSIONS, executable_identity
+    from harness.native_tool_policy import executable_identity, version_supported
     from tests.test_authoring_native import native170_executable
 
     executable = native170_executable(tmp_path, version=version)
-    assert SUPPORTED_NATIVE_VERSIONS["codex"] == frozenset({"0.164.0", "0.165.0"})
-    if version in SUPPORTED_NATIVE_VERSIONS["codex"]:
+    assert version_supported("codex", version) is execution
+    if execution:
         assert executable_identity(executable, "codex")["version"] == version
     else:
         with pytest.raises(ValueError, match="unsupported native executable version"):
             executable_identity(executable, "codex")
-    if version == "0.170.0":
+    if manifest_version(version) == "0.170.0":
         assert (
             build_profile("codex", tmp_path, executable=executable)["executable"]["version"]
             == version
         )
-    elif version == "0.171.0":
+    elif not execution:
+        assert manifest_version(version) is None
         with pytest.raises(ValueError):
             build_profile("codex", tmp_path, executable=executable)
     root = tmp_path / "native"
@@ -190,8 +270,72 @@ def test_native170_authoring_admission_does_not_expand_execution(tmp_path, versi
         )
         + "\n"
     )
-    if version in SUPPORTED_NATIVE_VERSIONS["codex"]:
+    if execution:
         assert read_native_identity(root, thread).version == version
     else:
         with pytest.raises(ValueError, match="identity/version mismatch"):
             read_native_identity(root, thread)
+        override = read_native_identity(root, thread, accepted_versions=(version,))
+        assert override.version == version
+
+
+def _codex_features_executable(tmp_path, *, ignore=None):
+    executable = tmp_path / "codex-features"
+    executable.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys,tomllib\n"
+        "args=sys.argv[1:]\n"
+        "if '--version' in args: print('codex-cli 0.170.1'); raise SystemExit()\n"
+        "assert args[-2:]==['features','list']\n"
+        "for i,arg in enumerate(args):\n"
+        "  if arg=='-c' and args[i+1].startswith('features.'):\n"
+        "    key,raw=args[i+1][9:].split('=',1)\n"
+        "    value=tomllib.loads('v='+raw)['v']\n"
+        "    if key==" + repr(ignore) + ": value=not value\n"
+        "    print(key+' stable '+str(value).lower())\n"
+    )
+    executable.chmod(0o700)
+    return executable
+
+
+def _codex_policy(tmp_path, executable):
+    from pathlib import Path
+
+    from harness.native_tool_policy import build_native_policy
+
+    return build_native_policy(
+        {"host": "codex"},
+        {
+            "package": str(Path(__file__).resolve().parents[1] / "al/codex/skills/al"),
+            "executable": str(executable),
+        },
+        {},
+        mcp_url="http://127.0.0.1:1/mcp",
+        token="synthetic-unit-token",
+        directory=tmp_path / "policy",
+    )
+
+
+def test_codex_170_execution_disables_its_qualified_tool_inventory(tmp_path):
+    from harness.authoring_policy import feature_values
+
+    policy = _codex_policy(tmp_path, _codex_features_executable(tmp_path))
+    options = policy["options"]
+    pairs = [options[i + 1] for i in range(0, len(options), 2)]
+    assert "features.code_mode_host_grpc=false" in pairs
+    assert "features.browser_use=false" in pairs
+    assert "features.multi_agent_v2=true" in pairs and "agents.enabled=true" in pairs
+    assert "suppress_unstable_features_warning=true" in pairs
+    expected = {
+        "features." + key + "=" + ("true" if value else "false")
+        for key, value in feature_values("0.170.0").items()
+        if key not in {"multi_agent", "multi_agent_v2"}
+    }
+    assert expected <= set(pairs)
+    assert not any(pair.startswith("features.multi_agent=") for pair in pairs)
+
+
+def test_codex_170_execution_probe_refuses_ignored_restriction(tmp_path):
+    executable = _codex_features_executable(tmp_path, ignore="browser_use")
+    with pytest.raises(ValueError, match="unsupported execution profile"):
+        _codex_policy(tmp_path, executable)

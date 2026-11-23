@@ -18,6 +18,7 @@ from harness.native_tool_policy import (
     build_claude_policy,
     build_native_policy,
     executable_identity,
+    recorded_override,
     verify_native_policy,
 )
 
@@ -63,7 +64,10 @@ class NativeRuntime:
         self.host, self.native_id = execution["host"], native_id
         directory = Path(execution["handoff_path"]).parent
         trusted = authority_snapshot(directory)
-        executable = executable_identity(package["executable"], self.host)
+        override = recorded_override(directory)
+        executable = executable_identity(
+            package["executable"], self.host, accept_unverified=override
+        )
         stable_policy = digest(
             {
                 "version": 1,
@@ -108,6 +112,7 @@ class NativeRuntime:
             execution["binding"],
             stable_policy,
             epoch_fence=epoch_fence,
+            accepted_versions=(override["version"],) if override else (),
         )
         profile = directory / "native-profiles" / secrets.token_hex(16)
         profile.mkdir(mode=0o700, parents=True)
@@ -136,6 +141,7 @@ class NativeRuntime:
                     mcp_url=mcp["url"],
                     token=mcp["token"],
                     directory=profile,
+                    accept_unverified=override,
                 )
             else:
                 context = {
@@ -180,7 +186,7 @@ class NativeRuntime:
                 )
                 hook = [sys.executable, "-I", "-B", "-c", program, "--context", str(context_path)]
                 self.policy = build_claude_policy(
-                    profile_package, profile, channels, hook, native_id
+                    profile_package, profile, channels, hook, native_id, accept_unverified=override
                 )
             self.policy["files"] = {
                 str(p): digest(p.read_bytes()) for p in profile.rglob("*") if p.is_file()
