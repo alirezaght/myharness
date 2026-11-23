@@ -129,7 +129,17 @@ class SpecificationManager:
         recorded = current_recorded_decisions(self.ws)
         plan = TestPlanner(self.controller, self.task_id).document()
         summary, design = engine.summary(), designer.document()
-        body = build_body(summary, design, decisions, recorded, engine.effective_proposals(), plan)
+        from harness.requirement_lineage import lineage
+
+        body = build_body(
+            summary,
+            design,
+            decisions,
+            recorded,
+            engine.effective_proposals(),
+            plan,
+            lineage(self.ws),
+        )
         if proposed:
             from harness.spec_document import proposed_content
 

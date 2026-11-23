@@ -20,6 +20,7 @@ def package(controller, task_id):
     from harness.effective_records import effective_records
     from harness.interview import InterviewEngine
     from harness.investigation_store import InvestigationStore
+    from harness.requirement_lineage import lineage
     from harness.spec_document import build_body, proposed_content
 
     if InvestigationStore(controller, None, task_id).binding():
@@ -37,6 +38,7 @@ def package(controller, task_id):
         current_recorded_decisions(ws),
         effective.proposals,
         plan,
+        lineage(ws),
     )
     body = proposed_content(body, effective.proposals, ws.design_entries(), ws.scenarios(), plan)
     context = ws.latest_checkpoint("context_import")

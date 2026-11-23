@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from harness import requirement_lineage
 from harness.controller import HarnessController
 from harness.db import transaction, utcnow
 from harness.decision_suggest import Suggestion, suggest
@@ -39,6 +40,11 @@ def discard_on_failure() -> Iterator[list[DecisionRecord]]:
         raise
 
 
+def modified_title(title: str) -> str:
+    """The proposal's title stays as the label of what was proposed, marked as modified."""
+    return f"{title} (modified)"
+
+
 def _modified_rationale(rationale: str, original: str, what: str) -> str:
     return f"{rationale}\n\nModified by the developer from the {what}: {original}"
 
@@ -59,7 +65,10 @@ def record_approved_proposal(
     else:
         return None
     impact = proposal.impact or NOT_STATED_IMPACT
-    record = registry.record(proposal.title, content, rationale, question.topic, impact)
+    title = proposal.title
+    if proposal.status is ProposalStatus.MODIFIED:
+        title = modified_title(title)
+    record = registry.record(title, content, rationale, question.topic, impact)
     ws.record_event(
         RECORDED_EVENT,
         {
@@ -90,13 +99,19 @@ class DecisionWorkflow:
         impact: str | None = None,
         source: str = "developer",
         proposal_id: int | None = None,
+        supersedes: list[str] | None = None,
     ) -> DecisionRecord:
+        """`supersedes` names earlier requirement rows (P<id>/Q<id>) this decision replaces."""
         with discard_on_failure() as written, self._mutation():
+            targets = requirement_lineage.validate(self.ws, supersedes)
             record = self.registry.record(title, content, rationale, scope, impact)
             written.append(record)
             payload = {"id": record.id, "version": record.version, "path": str(record.path)}
             payload |= {"source": source, "proposal": proposal_id}
             self.ws.record_event(RECORDED_EVENT, payload)
+            requirement_lineage.record(
+                self.ws, targets, f"{record.id} v{record.version}", record.decision, "decision"
+            )
         return record
 
     def change(
@@ -179,6 +194,13 @@ class DecisionWorkflow:
                     "version": record.version,
                     "path": str(record.path),
                 },
+            )
+            requirement_lineage.record(
+                self.ws,
+                requirement_lineage.decision_rows(self.ws, record.id),
+                f"{record.id} v{record.version}",
+                record.decision,
+                "decision.change",
             )
         return change, record
 

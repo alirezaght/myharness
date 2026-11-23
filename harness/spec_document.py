@@ -11,6 +11,7 @@ from harness.decisions import DecisionRecord, DecisionStatus
 from harness.design_models import DesignSection, EntryOrigin
 from harness.design_report import DesignDocument
 from harness.interview_report import InterviewSummary, Requirement
+from harness.requirement_lineage import RequirementLineage
 from harness.state_models import Proposal, ProposalStatus
 from harness.testplan_report import TestPlanDocument
 
@@ -48,9 +49,30 @@ def _listed(lines: Iterable[str]) -> list[str]:
     return [flow(line) for line in lines] or [NONE]
 
 
-def _requirement(r: Requirement) -> str:
+def _requirement(r: Requirement, lineage: RequirementLineage | None = None) -> str:
     ref = f"Q{r.question_id} " if r.question_id is not None else ""
-    return f"- {ref}[{r.topic}] {r.statement} ({r.provenance})"
+    replaced = lineage.for_row(r.question_id, r.proposal_id) if lineage else None
+    if replaced is None:
+        return f"- {ref}[{r.topic}] {r.statement} ({r.provenance})"
+    return (
+        f"- {ref}[{r.topic}] [superseded by {replaced.by}] {r.statement} ({r.provenance})\n"
+        f"effective ({replaced.by}): {replaced.statement}"
+    )
+
+
+def _proposal(p: Proposal, lineage: RequirementLineage | None) -> str:
+    line = f"- P{p.id} {p.title}: {p.rationale} ({p.status})"
+    if lineage is None:
+        return line
+    if p.status is ProposalStatus.MODIFIED and p.id in lineage.labelled:
+        line = (
+            f"- P{p.id} (modified) {p.response}: {p.rationale}"
+            f" — modified from the proposal titled {p.title} ({p.status})"
+        )
+    replaced = lineage.superseded.get(f"P{p.id}")
+    if replaced is not None:
+        line = f"{line} [superseded by {replaced.by}]"
+    return line
 
 
 def _design(design: DesignDocument, sections: Sequence[DesignSection]) -> list[str]:
@@ -61,11 +83,12 @@ def _design(design: DesignDocument, sections: Sequence[DesignSection]) -> list[s
 
 
 def _rationale(
-    proposals: Iterable[Proposal], design: DesignDocument, recorded: Iterable[DecisionRecord]
+    proposals: Iterable[Proposal],
+    design: DesignDocument,
+    recorded: Iterable[DecisionRecord],
+    lineage: RequirementLineage | None = None,
 ) -> list[str]:
-    lines = [
-        f"- P{p.id} {p.title}: {p.rationale} ({p.status})" for p in proposals if p.status in DECIDED
-    ]
+    lines = [_proposal(p, lineage) for p in proposals if p.status in DECIDED]
     lines += [
         f"- {e.ref} [{e.section.heading}] {e.text}: {e.rationale} ({e.provenance})"
         for e in design.entries
@@ -136,12 +159,16 @@ def build_body(
     recorded: Iterable[DecisionRecord],
     proposals: Iterable[Proposal] = (),
     test_plan: TestPlanDocument | None = None,
+    lineage: RequirementLineage | None = None,
 ) -> str:
-    """The `## ` sections of the spec, in template order; empty sections say `- (none)`."""
+    """The `## ` sections of the spec, in template order; empty sections say `- (none)`.
+
+    `lineage` marks explicitly superseded requirement rows with their effective statement.
+    """
     requirements = [r for r in summary.requirements if r.topic != ACCEPTANCE_TOPIC]
     criteria = [r for r in summary.requirements if r.topic == ACCEPTANCE_TOPIC]
     content = {
-        "Requirements": _listed(_requirement(r) for r in requirements),
+        "Requirements": _listed(_requirement(r, lineage) for r in requirements),
         "Architecture": [
             *_design(design, ARCHITECTURE),
             "### Delegated to AL",
@@ -149,9 +176,9 @@ def build_body(
         ],
         "Components and interfaces": _design(design, COMPONENTS),
         "Configuration": _listed(design.section_lines(DesignSection.CONFIGURATION)),
-        "Acceptance criteria": _listed(_requirement(r) for r in criteria),
+        "Acceptance criteria": _listed(_requirement(r, lineage) for r in criteria),
         "Test plan": _test_plan(test_plan),
-        "Rationale": _rationale(proposals, design, list(recorded)),
+        "Rationale": _rationale(proposals, design, list(recorded), lineage),
         "Constraints": _constraints(decisions, summary),
         "Unresolved items": _unresolved(summary, design, test_plan),
     }
