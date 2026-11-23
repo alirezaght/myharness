@@ -19,7 +19,9 @@ remote freshness stays unverified.
 Use `harness classify TASK --assessment risk.json --repo REPOSITORY` to record
 current source evidence after material clarification. The closed risk input and
 examples are in [routing-risk.md](../al/codex/skills/al/reference/routing-risk.md).
-The installed host instructions also include both input formats directly.
+The installed host instructions also include both input formats directly, and
+`harness classify --assessment-schema` prints the closed risk format (JSON Schema,
+notes and an example) from the installed package.
 
 ## Reviewed context and complete proposals
 
@@ -28,6 +30,8 @@ proposed answers/design/tests with provenance. It creates pending decisions,
 preserves catalogue keys to avoid duplicate questions, and retains typed
 ticket/criterion/invariant identities. Repeating the same import is idempotent;
 conflicting answers or invalid source quotes roll back the entire import.
+`harness context import --schema` prints the closed format below (JSON Schema,
+notes and an example) from the installed package.
 
 The closed input has `schema_version: 1`, `sources`, `answers`, `design`, `tests`
 and `requirements`. Sources contain `id`, `kind` (ticket/audit/user/spec/planning),

@@ -85,8 +85,18 @@ def register(subparsers):
             p = children.add_parser(action)
             p.add_argument("task_id")
             p.set_defaults(handler=cmd_maintenance)
-            if command == "context" or action == "reconcile":
+            if action == "reconcile":
                 p.add_argument("--file", required=True)
+            if command == "context":
+                from harness.input_formats import PrintFormat
+
+                p.add_argument("--file", required=True, help="closed context JSON (see --schema)")
+                p.add_argument(
+                    "--schema",
+                    action=PrintFormat,
+                    format_name="context",
+                    help="print the closed --file JSON format (schema and example) and exit",
+                )
             if action in {"reconcile", "accept"}:
                 p.add_argument("--sha256", required=True)
             if action == "accept":

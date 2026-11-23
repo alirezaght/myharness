@@ -7,6 +7,22 @@ The caller binds evidence and checks unresolved product decisions separately.
 import hashlib
 from pathlib import Path
 
+# `harness classify --assessment-schema` prints a JSON Schema built from these
+# same constants (harness.input_formats).
+ASSESSMENT_FIELDS = (
+    "schema_version",
+    "scope",
+    "existing_pattern",
+    "behavior_clear",
+    "hard_parts",
+    "pseudocode_benefit",
+    "evidence",
+    "reason",
+)
+SCOPES = ("local", "feature", "cross_component")
+EVIDENCE_FIELDS = ("path", "sha256", "reason")
+HARD_PART_FIELDS = ("kind", "new_design", "description")
+MIN_EXPLANATION = 20
 KINDS = {
     "algorithm",
     "concurrency",
@@ -19,16 +35,7 @@ KINDS = {
 
 
 def assess(value, root):
-    required = {
-        "schema_version",
-        "scope",
-        "existing_pattern",
-        "behavior_clear",
-        "hard_parts",
-        "pseudocode_benefit",
-        "evidence",
-        "reason",
-    }
+    required = set(ASSESSMENT_FIELDS)
     if (
         not isinstance(value, dict)
         or set(value) != required
@@ -38,21 +45,21 @@ def assess(value, root):
         raise ValueError("invalid closed implementation-risk assessment")
     if (
         not isinstance(value["scope"], str)
-        or value["scope"] not in {"local", "feature", "cross_component"}
+        or value["scope"] not in SCOPES
         or type(value["existing_pattern"]) is not bool
         or type(value["behavior_clear"]) is not bool
     ):
         raise ValueError("invalid implementation scope or uncertainty")
     if not value["behavior_clear"]:
         raise ValueError("clarify material behavior choices before final implementation routing")
-    if not isinstance(value["reason"], str) or len(value["reason"].strip()) < 20:
+    if not isinstance(value["reason"], str) or len(value["reason"].strip()) < MIN_EXPLANATION:
         raise ValueError("routing requires a concrete implementation reason")
     root = Path(root).resolve()
     evidence = value["evidence"]
     if not isinstance(evidence, list) or not evidence:
         raise ValueError("routing requires inspected repository evidence")
     for row in evidence:
-        if not isinstance(row, dict) or set(row) != {"path", "sha256", "reason"}:
+        if not isinstance(row, dict) or set(row) != set(EVIDENCE_FIELDS):
             raise ValueError("invalid inspected routing evidence")
         name = row["path"]
         if (
@@ -83,18 +90,18 @@ def assess(value, root):
     for part in parts:
         if (
             not isinstance(part, dict)
-            or set(part) != {"kind", "new_design", "description"}
+            or set(part) != set(HARD_PART_FIELDS)
             or not isinstance(part["kind"], str)
             or part["kind"] not in KINDS
             or type(part["new_design"]) is not bool
             or not isinstance(part["description"], str)
-            or len(part["description"].strip()) < 20
+            or len(part["description"].strip()) < MIN_EXPLANATION
         ):
             raise ValueError("hard parts require a specific design problem, not a topic keyword")
     benefit = value["pseudocode_benefit"]
     if not isinstance(benefit, str):
         raise ValueError("pseudocode benefit must be text, empty when unnecessary")
-    if any(p["new_design"] for p in parts) and len(benefit.strip()) >= 20:
+    if any(p["new_design"] for p in parts) and len(benefit.strip()) >= MIN_EXPLANATION:
         return "COMPLEX"
     if (
         value["scope"] == "local"
