@@ -118,15 +118,32 @@ def main(argv: list[str] | None = None) -> int:
         print(f"harness {args.command}: {error}", file=sys.stderr)
         return ERROR_EXIT_CODE
     except __import__("sqlite3").Error as error:
-        from harness.planning_session_contract import SessionError
-
-        code = (
-            "SESSION_OPERATION_INCOMPATIBLE"
-            if "SESSION_OPERATION_INCOMPATIBLE" in str(error)
-            else "SESSION_UPGRADE_REQUIRED"
-        )
-        print(str(SessionError(code)), file=sys.stderr)
+        print(state_error_message(args.command, error), file=sys.stderr)
         return ERROR_EXIT_CODE
+
+
+# Only these mean the database was written by a newer session protocol than this Harness knows.
+_UPGRADE_MARKERS = (
+    "SESSION_UPGRADE_REQUIRED",
+    "harness_session_protocol_version",
+    "harness_session_write_allowed",
+    "Incomplete planning session schema",
+)
+
+
+def state_error_message(command: str, error: Exception) -> str:
+    """One line for a state-DB failure: a session code only when it really is one."""
+    from harness.db import BUSY_MESSAGE, is_busy
+    from harness.planning_session_contract import SessionError
+
+    text = str(error)
+    if "SESSION_OPERATION_INCOMPATIBLE" in text:
+        return str(SessionError("SESSION_OPERATION_INCOMPATIBLE"))
+    if any(marker in text for marker in _UPGRADE_MARKERS):
+        return str(SessionError("SESSION_UPGRADE_REQUIRED"))
+    if is_busy(error):
+        return f"harness {command}: {BUSY_MESSAGE}"
+    return f"harness {command}: state database error: {text}"
 
 
 if __name__ == "__main__":

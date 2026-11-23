@@ -2,6 +2,7 @@
 
 import argparse
 import signal
+import sqlite3
 import sys
 import webbrowser
 from pathlib import Path
@@ -87,6 +88,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         except OSError as error:
             print(f"harness dashboard: {error}", file=sys.stderr)
+            return 1
+        except sqlite3.Error as error:
+            from harness.cli import state_error_message
+
+            print(state_error_message("dashboard", error), file=sys.stderr)
             return 1
         try:
             server.serve_forever()

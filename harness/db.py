@@ -64,6 +64,21 @@ def _restrict(path: Path, created_dir: bool) -> None:
     os.chmod(path, 0o600)
 
 
+BUSY_CODES = (5, 6)  # SQLITE_BUSY, SQLITE_LOCKED (primary result codes)
+BUSY_MESSAGE = "state database is busy (another harness command is writing); retry when it finishes"
+
+
+def is_busy(error: BaseException) -> bool:
+    """True when SQLite refused because another connection holds the lock."""
+    if not isinstance(error, sqlite3.OperationalError):
+        return False
+    code = getattr(error, "sqlite_errorcode", None)
+    if code is not None:
+        return (code & 0xFF) in BUSY_CODES
+    text = str(error).lower()
+    return "database is locked" in text or "database table is locked" in text
+
+
 @contextmanager
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     """BEGIN IMMEDIATE ... COMMIT, rolling back on any exception."""
@@ -99,7 +114,12 @@ def apply_migrations(conn: sqlite3.Connection) -> list[str]:
         "(version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
     )
     applied = []
+    # Only a pending migration takes the write lock: opening an up-to-date DB must keep
+    # working while another harness command holds a long write transaction.
+    done_versions = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
     for version, name, sql in _migrations():
+        if version in done_versions:
+            continue
         conn.execute("BEGIN IMMEDIATE")
         try:
             done = conn.execute(
