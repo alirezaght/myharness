@@ -51,7 +51,8 @@ def cmd_interview(args: argparse.Namespace) -> int:
             elif not asked:
                 print("no open questions")
         elif action == "answer":
-            print(f"Q{engine.answer(args.question_id, ' '.join(args.text)).id} answered")
+            question = engine.answer(args.question_id, " ".join(args.text), args.supersedes)
+            print(f"Q{question.id} answered")
         elif action == "unknown":
             question = engine.unknown(args.question_id)
             print(f"Q{question.id} unresolved (developer does not know)")
@@ -67,7 +68,9 @@ def cmd_interview(args: argparse.Namespace) -> int:
             )
             print(f"P{proposal.id} pending for Q{args.question_id}")
         elif action == "decide":
-            proposal = engine.decide(args.proposal_id, DECISIONS[args.verdict], args.response)
+            proposal = engine.decide(
+                args.proposal_id, DECISIONS[args.verdict], args.response, args.supersedes
+            )
             print(f"P{proposal.id} {proposal.status}")
             if engine.last_record is not None:
                 record = engine.last_record
@@ -78,6 +81,15 @@ def cmd_interview(args: argparse.Namespace) -> int:
                 json.dumps(view.to_dict(), indent=2, sort_keys=True) if args.json else view.render()
             )
     return 0
+
+
+def _supersedes(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--supersedes",
+        metavar="REF",
+        action="append",
+        help="an earlier requirement row this replaces: P<id> or Q<id> (repeatable)",
+    )
 
 
 def add_interview_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -95,6 +107,7 @@ def add_interview_parser(subparsers: argparse._SubParsersAction) -> None:
     answer = action("answer", "record the developer's answer")
     answer.add_argument("question_id", type=int)
     answer.add_argument("text", nargs="+")
+    _supersedes(answer)
     action("unknown", "the developer does not know; keep the question open").add_argument(
         "question_id", type=int
     )
@@ -118,6 +131,7 @@ def add_interview_parser(subparsers: argparse._SubParsersAction) -> None:
     decide.add_argument(
         "--decisions", metavar="PATH", help="registry (default: <repo>/docs/decisions)"
     )
+    _supersedes(decide)
     for name, help_text in (
         ("checklist", "unresolved decision checklist (read-only)"),
         ("summary", "requirements with provenance (read-only)"),

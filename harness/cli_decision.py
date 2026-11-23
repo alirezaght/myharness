@@ -81,7 +81,14 @@ def _read_only(args: argparse.Namespace) -> None:
 def _run(flow: DecisionWorkflow, args: argparse.Namespace) -> None:
     action = args.decision_action
     if action == "record":
-        record = flow.record(args.title, args.decision, args.rationale, args.scope, args.impact)
+        record = flow.record(
+            args.title,
+            args.decision,
+            args.rationale,
+            args.scope,
+            args.impact,
+            supersedes=args.supersedes,
+        )
         print(f"{record.id} v{record.version} recorded -> {record.path}")
     elif action == "change":
         _, preview = flow.change(
@@ -142,6 +149,12 @@ def add_decision_parser(subparsers: argparse._SubParsersAction) -> None:
         record.add_argument(flag, required=True)
     record.add_argument("--scope")
     record.add_argument("--impact")
+    record.add_argument(
+        "--supersedes",
+        metavar="REF",
+        action="append",
+        help="an earlier requirement row this decision replaces: P<id> or Q<id> (repeatable)",
+    )
     change = action("change", "propose a new version; shows what it replaces, writes nothing")
     change.add_argument("decision_id")
     for flag in ("--decision", "--rationale", "--impact"):

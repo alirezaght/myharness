@@ -86,6 +86,7 @@ class Requirement:
     statement: str
     provenance: Provenance
     sources: tuple[str, ...] = ()
+    proposal_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -116,7 +117,11 @@ class InterviewSummary:
         return {
             "requirements": [
                 {
-                    **{k: v for k, v in asdict(r).items() if k != "sources" or v},
+                    **{
+                        k: v
+                        for k, v in asdict(r).items()
+                        if k not in ("sources", "proposal_id") or v
+                    },
                     "provenance": str(r.provenance),
                 }
                 for r in self.requirements

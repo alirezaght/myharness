@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from typing import Any
 
+from harness import requirement_lineage
 from harness.classification import interview_depth
 from harness.controller import HarnessController, Task
 from harness.db import transaction, utcnow
@@ -182,7 +183,7 @@ class InterviewEngine:
             self.ws.record_event("question.asked", payload)
         return asked
 
-    def answer(self, question_id: int, text: str) -> Question:
+    def answer(self, question_id: int, text: str, supersedes: list[str] | None = None) -> Question:
         given = (text or "").strip()
         if not given or _is_non_answer(given):
             raise InterviewError(
@@ -192,8 +193,12 @@ class InterviewEngine:
         with self._mutation():
             self.effective().require_current("question", question_id)
             self._require_source_current(question_id)
+            targets = requirement_lineage.validate(self.ws, supersedes, (f"Q{question_id}",))
             question = self.ws.answer(question_id, text)
             self.ws.record_event("question.answered", {"id": question_id})
+            requirement_lineage.record(
+                self.ws, targets, f"Q{question_id}", question.answer or text, "answer"
+            )
         return question
 
     def unknown(self, question_id: int) -> Question:
@@ -241,12 +246,24 @@ class InterviewEngine:
             self.ws.record_event("proposal.created", {"id": proposal.id, "question": question_id})
         return proposal
 
-    def decide(self, proposal_id: int, status: ProposalStatus, response: str | None) -> Proposal:
-        """Resolve a recommendation; an approved decision question is recorded (last_record)."""
+    def decide(
+        self,
+        proposal_id: int,
+        status: ProposalStatus,
+        response: str | None,
+        supersedes: list[str] | None = None,
+    ) -> Proposal:
+        """Resolve a recommendation; an approved decision question is recorded (last_record).
+
+        `supersedes` names earlier requirement rows (P<id>/Q<id>) this decision replaces.
+        """
         self.last_record = None
         with discard_on_failure() as written, self._mutation():
             effective = self.effective()
             effective.require_current("proposal", proposal_id)
+            targets = requirement_lineage.validate(self.ws, supersedes, (f"P{proposal_id}",))
+            if targets and ProposalStatus(status) not in DECIDED:
+                raise InterviewError("only an accepted or modified recommendation can supersede")
             current = next(
                 (p for p in effective.proposals if p.id == proposal_id),
                 self.ws.proposal(proposal_id),
@@ -264,9 +281,18 @@ class InterviewEngine:
                 if self.registry is not None:
                     record = record_approved_proposal(self.ws, self.registry, proposal, question)
                     written.extend([record] if record else [])
-            self.ws.record_event(
-                "proposal.decided", {"id": proposal_id, "status": proposal.status, "question": qid}
-            )
+            decided = {"id": proposal_id, "status": proposal.status, "question": qid}
+            if proposal.status is ProposalStatus.MODIFIED:
+                decided[requirement_lineage.MODIFIED_LABEL] = True
+            self.ws.record_event("proposal.decided", decided)
+            if targets:
+                by = f"P{proposal_id}" + (f" (Q{qid})" if qid is not None else "")
+                statement = (
+                    proposal.response
+                    if proposal.status is ProposalStatus.MODIFIED
+                    else proposal.recommendation
+                )
+                requirement_lineage.record(self.ws, targets, by, statement or "", "decide")
         self.last_record = written[0] if written else None
         return proposal
 

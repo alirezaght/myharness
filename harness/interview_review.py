@@ -184,6 +184,7 @@ def _requirement(proposal: Proposal, question: Question | None) -> Requirement:
         question.text if question else proposal.title,
         proposal.recommendation if accepted else (proposal.response or ""),
         Provenance.ACCEPTED_RECOMMENDATION if accepted else Provenance.MODIFIED_RECOMMENDATION,
+        proposal_id=proposal.id,
     )
 
 

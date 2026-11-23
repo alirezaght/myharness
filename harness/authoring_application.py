@@ -2,9 +2,11 @@
 
 from harness.authoring_context import resolve_target, validate_value
 from harness.authoring_contract import AuthoringConflict
+from harness.decision_workflow import modified_title
 from harness.decisions import DecisionStatus
 from harness.effective_records import effective_records
 from harness.registry import DecisionRegistry
+from harness.requirement_lineage import MODIFIED_LABEL
 
 
 def apply_record(service, target, target_revision):
@@ -76,15 +78,15 @@ def apply_record(service, target, target_revision):
                     question = engine.ws.question(qid)
                     if question.status == "open":
                         engine.ws.mark_decided(qid)
-                engine.ws.record_event(
-                    "proposal.decided",
-                    {
-                        "id": proposal.id,
-                        "status": proposal.status,
-                        "question": qid,
-                        "corrects": original["id"],
-                    },
-                )
+                decided = {
+                    "id": proposal.id,
+                    "status": proposal.status,
+                    "question": qid,
+                    "corrects": original["id"],
+                }
+                if proposal.status == "modified":
+                    decided[MODIFIED_LABEL] = True
+                engine.ws.record_event("proposal.decided", decided)
                 result["proposal"] = proposal.id
                 binding = projected.registry.get(original["id"])
                 if binding:
@@ -116,9 +118,12 @@ def _registry_transition(service, binding, original, value, proposal_id, target)
         if status is DecisionStatus.REJECTED
         else (value["response"] if value["status"] == "modified" else original["recommendation"])
     )
+    title = original["title"]
+    if value["status"] == "modified":
+        title = modified_title(title)
     record = registry.transition(
         current.id,
-        original["title"],
+        title,
         content,
         f"Explicit developer correction of {current.id} v{current.version} through {target}",
         current.scope,
