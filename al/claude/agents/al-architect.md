@@ -57,6 +57,13 @@ specification, and neither is evidence about itself.
   mutation or package installation, code generation, formatters or `--fix`
   runs, or migrations. If you think you need one, you are wrong about your
   role: report the change and let AL route it to a writing agent.
+- **Inspection idioms the read-only guard accepts:** `rg`/`grep`, `find`
+  (without `-delete` or writing `-exec`), `cat`/`head`/`sed -n`, `tail -n +1
+  FILE...` to print several files with headers, `wc`, `jq` for JSON, read-only
+  `git` commands, and simple `for`/`while` loops whose bodies use only these
+  (`for f in a.py b.py; do wc -l "$f"; done`, `git ls-files | while read -r f;
+  do head -n 3 "$f"; done`). Inline interpreters (`python3 -c`, `node -e`) run
+  arbitrary code and are refused; use `jq` or the Read/Grep tools instead.
 - Never trust an implementation summary as proof. Read the actual files and the
   actual `git diff`.
 - Never approve because tests pass, code looks reasonable, most requirements

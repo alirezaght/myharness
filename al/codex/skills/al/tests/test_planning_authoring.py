@@ -79,8 +79,11 @@ def test_source_movement_retains_issued_report_but_cannot_admit_it(cli, repo, tm
     assert saved["authoring"]["source_currency"] == "issued-observation-only"
     assert json.loads(immutable) == report
     assert report["binding"] == packet["content"]["binding"]
-    assert cli("planning", "report", "--file", str(path))[0] != 0
+    # An identical resubmit is an idempotent success that changes nothing.
     before = al_store.state_path(sid).read_bytes()
+    again = json.loads(ok(cli, "planning", "report", "--file", str(path))[1])
+    assert again["report"] == saved["report"]
+    assert al_store.state_path(sid).read_bytes() == before
     assert cli("planning", "admit")[0] != 0
     assert al_store.state_path(sid).read_bytes() == before
     ok(cli, "writer", "finish", "--id", "write-A", "--outcome", "success")

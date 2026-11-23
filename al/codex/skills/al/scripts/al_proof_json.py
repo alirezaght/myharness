@@ -44,11 +44,17 @@ def loads(content):
         refuse("invalid proof JSON: " + str(exc))
 
 
-def closed(value, fields, label):
+def at(path, key):
+    """The dotted JSON path of `key` below `path` (`path` may be empty for the document root)."""
+    return path + "." + str(key) if path else str(key)
+
+
+def closed(value, fields, label, path=""):
     if not isinstance(value, dict):
-        refuse("invalid closed " + label + ": expected an object")
+        refuse("invalid closed " + label + (" at " + path if path else "") + ": expected an object")
     if set(value) != set(fields):
-        missing, unexpected = sorted(set(fields) - set(value)), sorted(set(value) - set(fields))
+        missing = sorted(at(path, key) for key in set(fields) - set(value))
+        unexpected = sorted(at(path, key) for key in set(value) - set(fields))
         detail = []
         if missing: detail.append('missing fields: ' + ', '.join(missing))
         if unexpected: detail.append('unexpected fields: ' + ', '.join(unexpected))

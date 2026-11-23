@@ -160,6 +160,12 @@ def authoring_view(st):
 
 def validate_report(st, report, current, contents, attempt, report_ref, *, current_implementation=True):
     J.closed(report, REPORT, "Architect planning report")
+    J.closed(
+        report["specification"],
+        {"status", "reason"},
+        "planning specification verdict",
+        "specification",
+    )
     if Template.placeholders(report):
         refuse("Architect planning report still contains FILL: template placeholders")
     if (
@@ -177,9 +183,7 @@ def validate_report(st, report, current, contents, attempt, report_ref, *, curre
     if "report" not in current and attempt["model"] in st.get("unavailable_models", []):
         refuse("unsaved unavailable Architect attempt requires recorded replacement")
     J.text(report["invocation_id"], "actual Architect invocation ID")
-    decision = J.closed(
-        report["specification"], {"status", "reason"}, "planning specification verdict"
-    )
+    decision = report["specification"]
     J.text(decision["reason"], "Architect specification rationale")
     if decision["status"] != "SPEC_READY":
         refuse("blocked specification cannot admit observable obligations")
@@ -196,6 +200,7 @@ def validate_report(st, report, current, contents, attempt, report_ref, *, curre
         observation_ref=contents["source_observation"],
         document_hash=contents["binding"]["document_hash"],
         current_implementation=current_implementation,
+        path="authored_obligations",
     )
     if report_ref is not None:
         authored["authorship"]["report_ref"] = report_ref
@@ -260,9 +265,17 @@ def cmd_report(a, sid):
     # Preserve what the Architect actually authored against its issued observation.
     # Only admission may attest that this observation still matches current source.
     current, contents, attempt = packet(st, current_source=False)
-    if "report" in current:
-        refuse("saved Architect planning report cannot be replaced")
     report = J.loads(Path(a.file).read_bytes())
+    if isinstance(report, dict):
+        # Identity fields the template pre-fills are restored when omitted, refused when changed.
+        Template.restore_fixed(report, Template.template(current["packet"], contents))
+    if "report" in current:
+        # An identical (canonical JSON) resubmit is an idempotent success; any other is refused.
+        if J.raw(report) != J.raw(J.read(current["report"])):
+            refuse("saved Architect planning report cannot be replaced")
+        saved = {"report": current["report"], "materialized_obligations": current["obligations"]}
+        print(J.raw({**saved, "authoring": authoring_view(st)}).decode())
+        return
     if current.get('rebinds') and not (a.rebind_receipt and a.revalidation_file):
         refuse('issued planning rebind requires --rebind-receipt and --revalidation-file')
     validate_report(st, report, current, contents, attempt, None)

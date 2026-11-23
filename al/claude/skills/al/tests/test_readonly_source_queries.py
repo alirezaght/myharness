@@ -33,6 +33,44 @@ def test_mutations_background_and_arbitrary_inline_execution_remain_refused(comm
     assert al_shell.check(command, 'readonly')
 
 
+@pytest.mark.parametrize('command', [
+    'for f in a.py b.py; do wc -l "$f"; done',
+    'for f in src/*.py\ndo\n  head -n 5 "$f"\n  rg -n TODO "$f"\ndone',
+    'for f in a b; do echo "== $f"; cat "$f"; done | head -n 40',
+    'for f in a b; do for g in c d; do diff "$f" "$g"; done; done',
+    'for f in $(git ls-files "*.py"); do wc -l "$f"; done',
+    'git ls-files | while read -r f; do wc -l "$f"; done',
+    'while read -r f; do head -n 1 "$f"; done < files.txt',
+    'for f in a b; do cat "$f"; done 2>/dev/null',
+    "sh -c 'for f in a b; do cat \"$f\"; done'",
+])
+def test_simple_loops_over_read_only_commands_are_allowed(command):
+    assert al_shell.check(command, 'readonly') == []
+
+
+@pytest.mark.parametrize('command', [
+    'for f in a b; do rm "$f"; done',
+    'for f in a b; do cat "$f" > copy; done',
+    'for f in a b; do cat "$f"; done > out.txt',
+    'for f in $(touch x); do cat "$f"; done',
+    'for f in a b; do "$f" --version; done',
+    'for PATH in /tmp/bin; do ls; done',
+    'while read -r PATH; do ls; done < paths',
+    'while touch x; do ls; done',
+    'for f in a b; do cat "$f"; done &',
+    'for f in a b; do cat "$f"',
+    'for f in a b; cat "$f"; done',
+    'for f in a b; do cat "$f"; done extra',
+    'done',
+    'do ls',
+    'X=1 for f in a; do ls; done',
+    'if true; then ls; fi',
+    'for f in a b; do python3 -c "print(1)"; done',
+])
+def test_unsafe_or_malformed_loops_remain_refused(command):
+    assert al_shell.check(command, 'readonly')
+
+
 def helper():
     return Path(__file__).resolve().parents[1] / 'scripts/al_readonly_lines.py'
 

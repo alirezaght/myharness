@@ -73,12 +73,40 @@ def resolve(argv,find_context=False):
     except WrapperError as exc:raise ShellError(str(exc)) from exc
 
 
+LOOP_NAME=re.compile(r'[a-z_][a-z0-9_]*\Z')
+SEPARATORS={';','\n'}
+
+def loop_header(tokens,i):
+    """Consume `for NAME [in WORD...]` <separator> `do`; a lowercase NAME keeps PATH/IFS intact."""
+    if i>=len(tokens) or tokens[i][0]!='word' or not LOOP_NAME.match(tokens[i][1]):
+        raise ShellError('unsupported loop variable')
+    i+=1
+    if i<len(tokens) and tokens[i]==('word','in'):
+        i+=1
+        while i<len(tokens) and tokens[i][0] in {'word','literal'}:i+=1
+    if i>=len(tokens) or tokens[i][0]!='op' or tokens[i][1] not in SEPARATORS:
+        raise ShellError('unsupported loop header')
+    while i<len(tokens) and tokens[i][0]=='op' and tokens[i][1] in SEPARATORS:i+=1
+    if i>=len(tokens) or tokens[i]!=('word','do'):raise ShellError('loop header requires do')
+    return i
+
 def parse(command,find_context=False):
     if not isinstance(command,str) or not command.strip(): raise ShellError('missing shell command')
-    tokens,nodes=tokenize(command); argv=[]; redirects=[]; i=0
+    # Simple for/while/until loops are a sequence of ordinary commands: each body and condition
+    # command becomes its own node and is checked exactly like a top-level command.
+    tokens,nodes=tokenize(command); argv=[]; redirects=[]; i=0; loops=[]; closed=False
     def flush():
-        nonlocal argv,redirects
+        nonlocal argv,redirects,closed
         args=resolve(argv[:],find_context)
+        reads=loops and args and args[0]=='read'
+        if reads and not all(LOOP_NAME.match(x) for x in args[1:] if not x.startswith('-')):
+            raise ShellError('unsupported loop read variable')
+        if closed and not args:
+            # Redirects after `done` apply to the whole loop; keep them checkable.
+            if redirects:nodes.append({'argv':[':'],'redirects':redirects,'environment':[]})
+            argv=[]; redirects=[]; closed=False
+            return
+        if closed:raise ShellError('unexpected word after loop')
         if args:
             if args[0] in {'sh','bash','zsh','dash'}:
                 from al_shell_select import program as select_program
@@ -93,6 +121,17 @@ def parse(command,find_context=False):
         argv=[]; redirects=[]
     while i<len(tokens):
         kind,value=tokens[i]
+        loop_word=kind=='word' and value in {'for','while','until','do','done'}
+        if loop_word and not argv and not redirects and not closed:
+            if value=='for':
+                i=loop_header(tokens,i+1)+1; loops.append('body'); continue
+            if value in {'while','until'}:
+                loops.append('condition'); i+=1; continue
+            if value=='do' and loops and loops[-1]=='condition-complete':
+                loops[-1]='body'; i+=1; continue
+            if value=='done' and loops and loops[-1]=='body':
+                loops.pop(); closed=True; i+=1; continue
+            raise ShellError('unsupported shell control syntax: '+value)
         if kind in {'word','literal'}:
             from al_shell_wrappers import assignment
             if kind=='word' and (not argv or all(assignment(x) for x in argv)) and value in {'if','then','elif','else','fi','for','in','do','done','while','until','case','esac','function','select','coproc','{','}','!','[[',']]'}:raise ShellError('unsupported shell control syntax: '+value)
@@ -109,10 +148,16 @@ def parse(command,find_context=False):
             target=tokens[i][1]
             if value in {'>','>>'} and target=='&':raise ShellError('unsupported descriptor redirect')
             redirects.append((value,target))
-        elif value in {';','&&','||','|','\n'}:flush()
+        elif value in {';','&&','||','|','\n'}:
+            if loops and not argv and not closed and value not in SEPARATORS:
+                raise ShellError('unsupported loop operator')
+            if loops and loops[-1]=='condition' and argv and value in SEPARATORS:
+                loops[-1]='condition-complete'
+            flush()
         else:raise ShellError('background/unsupported operator')
         i+=1
     flush()
+    if loops:raise ShellError('unterminated loop')
     return nodes
 
 TEXT_TOOLS={'rg','grep','egrep','fgrep','git','find','sort','uniq','diff','comm','cut','head','tail','wc','cat',

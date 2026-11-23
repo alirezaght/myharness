@@ -134,5 +134,55 @@ def observation_templates(st, packet):
     return out
 
 
+# Fields the template fills from the issued packet/attempt and the Architect must not change.
+# `planning report` restores any of them the Architect omits and refuses any changed value.
+# `model` also accepts the attempt slug and `specification.status` keeps its own blocked-spec
+# refusal, so both are restored when omitted but compared by the report validator instead.
+RESTORED = {
+    'schema_version': None, 'kind': None, 'attempt_id': None, 'model': None, 'effort': None,
+    'policy_digest': None, 'packet_sha256': None, 'binding': None, 'routing': None,
+    'specification': {'status': None},
+    'authored_obligations': {'schema_version': None, 'kind': None, 'binding': None,
+                             'authorship': None, 'criteria_registry': None},
+}
+COMPARED_ELSEWHERE = {'model', 'specification.status', 'authored_obligations.criteria_registry'}
+
+
+def restore_fixed(report, template, fields=RESTORED, path=''):
+    """Fill omitted runtime-fixed fields from the template; refuse a changed one by JSON path."""
+    if not isinstance(report, dict):
+        return report
+    for key, nested in fields.items():
+        where = J.at(path, key)
+        if key not in report:
+            # A wholly omitted section with author-filled fields stays missing and is named.
+            if nested is None:
+                report[key] = copy.deepcopy(template[key])
+            continue
+        if nested is not None:
+            restore_fixed(report[key], template[key], nested, where)
+        elif isinstance(report[key], dict) and isinstance(template[key], dict):
+            _restore_missing(report[key], template[key])
+            if where not in COMPARED_ELSEWHERE and J.raw(report[key]) != J.raw(template[key]):
+                refuse_fixed(where)
+        elif where not in COMPARED_ELSEWHERE and J.raw(report[key]) != J.raw(template[key]):
+            refuse_fixed(where)
+    return report
+
+
+def _restore_missing(value, template):
+    for key, expected in template.items():
+        if key not in value:
+            value[key] = copy.deepcopy(expected)
+        elif isinstance(value[key], dict) and isinstance(expected, dict):
+            _restore_missing(value[key], expected)
+
+
+def refuse_fixed(where):
+    from al_schema import refuse
+    refuse('Architect planning report changed runtime-fixed template field ' + where +
+           '; keep the value from report_template or omit the field')
+
+
 def placeholders(report):
     return PLACEHOLDER in json.dumps(report)

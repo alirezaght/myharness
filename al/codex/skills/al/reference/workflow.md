@@ -445,6 +445,11 @@ review and approval. Planning metadata is never a developer approval question:
    describe the task's observable behavior. Its PLAN handoff returns that JSON.
 3. Save it and run `"${STATE[@]}" planning report --file <report.json>`. A report that still
    contains `FILL:` is refused. The output names `materialized_obligations`.
+   Template-filled identity fields (attempt, packet, bindings, routing,
+   `specification.status`, obligation binding/authorship) that the report omits are
+   restored from the template; a changed value is refused and named by its JSON
+   path, as are missing or unexpected fields. Resubmitting the identical saved
+   report (canonical JSON) succeeds idempotently; a different report is refused.
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
 
 Packet and report authoring may overlap a normal registered ACTIVE writer. Their

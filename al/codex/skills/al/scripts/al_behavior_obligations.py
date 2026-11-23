@@ -42,11 +42,12 @@ def binding(st, document_hash=None):
     }
 
 
-def consumers(value):
+def consumers(value, path=""):
     J.closed(
         value,
         {"applicability", "reason", "entries", "discovery_refs", "uncertainties"},
         "behavior consumer inventory",
+        path,
     )
     J.text(value["reason"], "consumer discovery reason")
     entries = value["entries"]
@@ -64,11 +65,12 @@ def consumers(value):
     if value["uncertainties"]:
         refuse("unresolved behavior consumer discovery")
     seen = set()
-    for entry in entries:
+    for index, entry in enumerate(entries):
         J.closed(
             entry,
             {"id", "role", "kind", "contract", "locations", "source_refs"},
             "behavior consumer",
+            J.at(path, "entries") + "[" + str(index) + "]",
         )
         identifier = J.text(entry["id"], "consumer ID")
         if (
@@ -87,8 +89,8 @@ def consumers(value):
 
 
 def validate_obligations(st, artifact, *, report_ref, planning_occurrence, observation_ref, document_hash=None,
-                         current_implementation=True):
-    J.closed(artifact, TOP, "behavior obligations")
+                         current_implementation=True, path=""):
+    J.closed(artifact, TOP, "behavior obligations", path)
     if (
         type(artifact["schema_version"]) is not int
         or artifact["schema_version"] != 1
@@ -102,7 +104,10 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
     if artifact["supersedes"] is not None:
         J.reference(artifact["supersedes"])
     J.closed(
-        artifact["authorship"], {"role", "planning_occurrence", "report_ref"}, "planning authorship"
+        artifact["authorship"],
+        {"role", "planning_occurrence", "report_ref"},
+        "planning authorship",
+        J.at(path, "authorship"),
     )
     expected = {
         "role": "al-architect",
@@ -116,7 +121,8 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
     if report_ref is not None:
         J.reference(report_ref)
     context = J.closed(
-        artifact["implementation_context"], {"status", "observation_ref"}, "implementation context"
+        artifact["implementation_context"], {"status", "observation_ref"}, "implementation context",
+        J.at(path, "implementation_context"),
     )
     if current_implementation and any(w.get('degraded') for w in st.get('writers', {}).values()) and context['status'] != 'partially_built':
         refuse('degraded tracked work requires partially_built implementation_context and the current issued observation_ref')
@@ -132,8 +138,9 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
         refuse("missing observable behavior obligations")
     covered, ids, scenarios = set(), set(), set()
     required = False
-    for group in groups:
-        J.closed(group, GROUP, "observable obligation")
+    for index, group in enumerate(groups):
+        where = J.at(path, "obligations") + "[" + str(index) + "]"
+        J.closed(group, GROUP, "observable obligation", where)
         identifier = J.text(group["id"], "obligation ID")
         if identifier in ids:
             refuse("duplicate observable obligation ID")
@@ -149,7 +156,8 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
         covered.update(criteria)
         J.text(group["observable_outcome"], "observable outcome")
         applicability = J.closed(
-            group["applicability"], {"status", "reason"}, "obligation applicability"
+            group["applicability"], {"status", "reason"}, "obligation applicability",
+            J.at(where, "applicability"),
         )
         J.text(applicability["reason"], "obligation applicability reason")
         if applicability["status"] not in {"required", "not_applicable"}:
@@ -160,7 +168,7 @@ def validate_obligations(st, artifact, *, report_ref, planning_occurrence, obser
         if scenarios & scenario_ids:
             refuse("scenario IDs must be unique across observable obligations")
         scenarios.update(scenario_ids)
-        consumers(group["consumer_inventory"])
+        consumers(group["consumer_inventory"], J.at(where, "consumer_inventory"))
     if covered != set(registry) or not required:
         refuse("observable obligations omit required accepted criteria/outcomes")
     return artifact

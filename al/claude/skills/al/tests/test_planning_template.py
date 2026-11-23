@@ -58,3 +58,70 @@ def test_behavior_packet_prints_an_observation_template_per_scenario(cli, repo, 
     path = tmp_path / 'observation.json';path.write_text(json.dumps(templates[0]))
     code, out, err = cli('behavior', 'observe', '--file', str(path))
     assert code != 0 and 'FILL:' in str(code) + out + err
+
+
+def _filled(packet):
+    return json.loads(json.dumps(packet['report_template']).replace('FILL: ', 'Architect: '))
+
+
+def test_omitted_runtime_fixed_template_fields_are_restored(cli, repo, tmp_path, monkeypatch):
+    packet = _packet(cli, repo, tmp_path, monkeypatch)
+    report = _filled(packet)
+    del report['specification']['status']
+    for key in ('kind', 'binding', 'packet_sha256'):
+        del report[key]
+    del report['authored_obligations']['authorship']
+    path = tmp_path / 'report.json'
+    path.write_text(json.dumps(report))
+    code, out, err = cli('planning', 'report', '--file', str(path))
+    assert code == 0, (code, out, err)
+    stored = json.loads(open(json.loads(out)['report']['stored_path']).read())
+    assert stored == _filled(packet)
+
+
+def test_changed_runtime_fixed_template_field_is_refused_by_path(cli, repo, tmp_path, monkeypatch):
+    packet = _packet(cli, repo, tmp_path, monkeypatch)
+    report = _filled(packet)
+    report['packet_sha256'] = '0' * 64
+    path = tmp_path / 'report.json'
+    path.write_text(json.dumps(report))
+    code, out, err = cli('planning', 'report', '--file', str(path))
+    assert code != 0 and 'packet_sha256' in str(code) + out + err
+
+
+def test_missing_and_unexpected_fields_name_their_full_json_path(cli, repo, tmp_path, monkeypatch):
+    packet = _packet(cli, repo, tmp_path, monkeypatch)
+    report = _filled(packet)
+    del report['specification']['reason']
+    report['specification']['extra'] = 1
+    path = tmp_path / 'report.json'
+    path.write_text(json.dumps(report))
+    code, out, err = cli('planning', 'report', '--file', str(path))
+    text = str(code) + out + err
+    assert code != 0 and 'specification.reason' in text and 'specification.extra' in text
+    report = _filled(packet)
+    del report['authored_obligations']['implementation_context']['status']
+    path.write_text(json.dumps(report))
+    code, out, err = cli('planning', 'report', '--file', str(path))
+    text = str(code) + out + err
+    assert code != 0 and 'authored_obligations.implementation_context.status' in text
+
+
+def test_identical_report_resubmit_is_idempotent_and_a_different_one_is_refused(
+        cli, repo, tmp_path, monkeypatch):
+    packet = _packet(cli, repo, tmp_path, monkeypatch)
+    report = _filled(packet)
+    path = tmp_path / 'report.json'
+    path.write_text(json.dumps(report))
+    code, first, err = cli('planning', 'report', '--file', str(path))
+    assert code == 0, (code, first, err)
+    path.write_text(json.dumps(report, indent=2))
+    code, again, err = cli('planning', 'report', '--file', str(path))
+    assert code == 0, (code, again, err)
+    first, again = json.loads(first), json.loads(again)
+    assert again['report'] == first['report']
+    assert again['materialized_obligations'] == first['materialized_obligations']
+    report['specification']['reason'] = 'Architect: a different rationale'
+    path.write_text(json.dumps(report))
+    code, out, err = cli('planning', 'report', '--file', str(path))
+    assert code != 0 and 'cannot be replaced' in str(code) + out + err

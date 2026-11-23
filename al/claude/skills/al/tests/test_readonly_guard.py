@@ -56,6 +56,17 @@ def test_false_metadata_still_uses_command_restrictions(command, allowed):
     assert result.returncode == (0 if allowed else 2)
 
 
+def test_loop_over_read_only_commands_passes_and_refusal_suggests_idioms():
+    loop = run_hook({'tool_name': 'Bash', 'tool_input':
+                     {'command': 'for f in a.py b.py; do wc -l "$f"; done'}})
+    assert loop.returncode == 0 and loop.stdout == ''
+    inline = run_hook({'tool_name': 'Bash', 'tool_input': {'command': 'python3 -c "print(1)"'}})
+    assert inline.returncode == 2 and decision(inline) == 'deny'
+    reason = json.loads(inline.stdout)['hookSpecificOutput']['permissionDecisionReason']
+    assert 'inline interpreter' in reason and 'tail -n +1' in reason
+    assert 'jq' in reason and 'for f in' in reason
+
+
 def test_readonly_role_configuration_preserves_guarded_bash_boundary():
     import re
     root = Path(__file__).resolve().parents[4]

@@ -280,7 +280,9 @@ for AL-Architect, never authority, never a finding of record.
 - Read-only agents (Architect, Designer, Scout) must not change the tree. The
   Architect's Bash calls are additionally blocked by a PreToolUse guard
   (`scripts/al_readonly_guard.py`), and the Designer and Scout have no Bash at
-  all. Still capture `git status --porcelain` before and after each of their runs
+  all. The guard accepts simple `for`/`while` loops whose bodies use only
+  read-only commands, `tail -n +1 FILE...`, `jq`, `rg`; it refuses inline
+  interpreters such as `python3 -c`. Still capture `git status --porcelain` before and after each of their runs
   — including around a whole fan-out; a difference is reported as a warning in
   the final output (the user may be editing concurrently), and for a fan-out also
   via `"${STATE[@]}" fanout --done --tree-changed`.
@@ -430,6 +432,11 @@ review and approval. Planning metadata is never a developer approval question:
    describe the task's observable behavior. Its PLAN handoff returns that JSON.
 3. Save it and run `"${STATE[@]}" planning report --file <report.json>`. A report that still
    contains `FILL:` is refused. The output names `materialized_obligations`.
+   Template-filled identity fields (attempt, packet, bindings, routing,
+   `specification.status`, obligation binding/authorship) that the report omits are
+   restored from the template; a changed value is refused and named by its JSON
+   path, as are missing or unexpected fields. Resubmitting the identical saved
+   report (canonical JSON) succeeds idempotently; a different report is refused.
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
 
 Packet and report authoring may overlap a normal registered ACTIVE writer. Their

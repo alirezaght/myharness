@@ -34,7 +34,11 @@ always uses two separate invocations: fresh receives only the runtime's fresh
 packet and saves `review-fresh`; comparison begins only afterward with a distinct
 invocation ID and the compare packet. Never carry plan or implementer context into
 fresh review. Whole-MR mode requires an explicit target. Your Bash calls pass
-through the same read-only PreToolUse guard.
+through the same read-only PreToolUse guard. It accepts `rg`/`grep`, `find`
+(without `-delete` or writing `-exec`), `cat`/`head`/`sed -n`, `tail -n +1
+FILE...`, `wc`, `jq`, read-only `git`, and simple `for`/`while` loops whose
+bodies use only these; inline interpreters (`python3 -c`) are refused, so use
+`jq` or the Read/Grep tools instead.
 
 The Architect is read-only: CI profile selection and the bound context artifact are supplied by the supervisor; do not create or alter them.
 
