@@ -129,10 +129,34 @@ def admission_gaps(st,*,current=False):
     return sorted(set(out))
 
 
+NEXT_COVERAGE_STEP=('next: repair the named gaps, then rediscover task-relevant gates with '
+                    '`gates discover --paths-file <json> --base <pinned-base>` and '
+                    '`gates plan --file <manifest>`; `recovery next` names any earlier prerequisite')
+
+
 def require_ready(st,*,current=False):
+    """Final proof, review and approval barriers: incomplete relevant coverage refuses there."""
     from al_schema import refuse
     missing=admission_gaps(st,current=current)
-    if missing:refuse('service coverage blocks admission: '+str(missing))
+    if missing:refuse('service coverage incomplete (required before final proof, review and approval): '
+                      +str(missing)+'\n'+NEXT_COVERAGE_STEP)
+
+
+def record_obligations(st,*,current=True):
+    """Plan admission and scoped writers record incomplete coverage as verification debt.
+
+    Corrupt or tampered declarations still raise (integrity is never debt); every
+    reconstructed gap becomes an implementation-readiness obligation that final
+    proof, review and approval enforce through require_ready."""
+    missing=admission_gaps(st,current=current)
+    if not missing:return []
+    value=st.get('implementation_readiness')
+    if not value:
+        from al_implementation import binding
+        value=st['implementation_readiness']={'schema_version':1,'binding':binding(st),
+                                              'task_id':None,'paths':[],'obligations':[]}
+    value['obligations']=sorted(set(value['obligations'])|set(missing))
+    return missing
 
 
 def assess(facts):

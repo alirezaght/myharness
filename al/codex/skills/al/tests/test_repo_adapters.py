@@ -151,11 +151,10 @@ def test_unmanifested_foreign_source_root_blocks_admission(cli,repo,tmp_path,sta
     packet=json.loads(invoke(cli,'planning','packet')[1]);report=tmp_path/'planning.json'
     report.write_text(json.dumps(_reports().report_for(packet)))
     materialized=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
-    before=state_file().read_bytes()
-    invoke(cli,'planning','admit','--file',materialized['materialized_obligations']['stored_path'],ok=False)
-    assert state_file().read_bytes()==before
-    invoke(cli,'phase','IMPLEMENTATION')
-    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    # Incomplete coverage is recorded as verification debt instead of refusing admission.
+    invoke(cli,'planning','admit','--file',materialized['materialized_obligations']['stored_path'])
+    obligations=json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    assert any(o.startswith('coverage incomplete') for o in obligations)
     invoke(cli,'writer','start','--id','scoped-source','--role','al-engineer','--files','backend/src/mod.py')
     invoke(cli,'writer','finish','--id','scoped-source','--outcome','success')
     invoke(cli,'phase','VERIFICATION');before=state_file().read_bytes()

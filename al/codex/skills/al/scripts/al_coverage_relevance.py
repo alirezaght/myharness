@@ -56,10 +56,29 @@ def task_question(facts, paths=None, ci_context=None):
     }
 
 
+# Check-discovery gaps observed for one unit's own manifest/policy: they concern only that
+# unit's verification, so an untouched, unselected unit's gap is not another task's obligation.
+UNIT_CHECK_GAPS = {
+    "missing-verification-check",
+    "missing-architecture-check",
+    "missing-check",
+    "package-execution-pending",
+    "package-semantic-unverified",
+    "package-script-nonliteral",
+    "package-discovery-unavailable",
+    "unsupported-architecture-chain",
+}
+
+
+def _owner(facts, path):
+    owners = [u["id"] for u in facts["units"] if within(u["path"], path)]
+    return max(owners, key=unit_depth) if owners else None
+
+
 def impact(record, facts, question):
     units = {u["id"] for u in facts["units"]}
     owner = record.get("unit")
-    missing = {"missing-verification-check", "missing-architecture-check", "missing-check"}
+    missing = UNIT_CHECK_GAPS
     unit_complete = not any(g.get("unit") == owner for g in facts["enumeration"]["gaps"])
     if owner in units and record.get("code") in missing and (unit_complete or any(u['id']==owner and 'go' in u for u in facts['units'])):
         return {
@@ -77,6 +96,27 @@ def impact(record, facts, question):
                 "source_refs":[{"path":unit['path'], "selector":"captured-go-module"}],
                 "basis":"captured-module-boundary", "complete":True}
     path = record.get("path", ".")
+    observed = facts["dependencies"].get("runtime_consumer_dependents", {})
+    if record.get("code") == "unclassified-runtime-consumer" and path in observed and all(
+        _owner(facts, d) is not None or d in observed for d in observed[path]
+    ):
+        # A consumer outside the unit layout is no service: its literal dependents' units are
+        # selected through dependency analysis, and the consumer itself is a task obligation
+        # only when the task touches it (being a consumer is not touching it).
+        touched = [
+            *question["changed_paths"],
+            *question.get("anticipated_paths", []),
+            *(r["path"] for r in question.get("governing_source_refs", [])),
+        ]
+        return {
+            "extent": "bounded",
+            "paths": [path] if any(within(path, t) or within(t, path) for t in touched) else [],
+            "patterns": [],
+            "unit_ids": [],
+            "source_refs": [{"path": path, "selector": "observed-runtime-consumer"}],
+            "basis": "literal-consumer-closure",
+            "complete": True,
+        }
     if record.get("code") in BOUNDARIES and path != ".":
         consumers = facts["dependencies"].get("boundary_consumers", {}).get(path, [])
         required = {r["path"] for r in question.get("governing_source_refs", [])}

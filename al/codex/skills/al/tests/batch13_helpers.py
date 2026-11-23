@@ -82,7 +82,7 @@ def assert_incomplete_admission(cli):
         assert json.loads(cli('gates','status')[1])['coverage_blockers']
     invoke(cli,'spec-gate','SPEC_READY')
     invoke(cli,'classify','SMALL','--designer','no','--implementers','al-engineer')
-    admit_planning(cli,expect_coverage_blocked=incomplete)
+    admit_planning(cli,expect_coverage_debt=incomplete)
     state=json.loads(cli('show')[1])
     if incomplete:
         import al_gate_currency as Currency

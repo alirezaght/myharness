@@ -31,29 +31,101 @@ def test_manifest_tampering_refuses_without_state_mutation(cli,repo,tmp_path,sta
     if mutation!='env':assert state_file().read_bytes()==before
 
 
-def test_incomplete_missing_check_blocks_proof_but_allows_scoped_writing(cli,repo,tmp_path,state_file):
+def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proof(cli,repo,tmp_path,state_file):
     seed(repo);unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py']);a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete'
     plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
-    # Issuance may append immutable planning provenance; only the refused commit must not mutate.
+    # Incomplete coverage is verification debt: the Architect plan is admitted and
+    # every reconstructed gap is recorded as an implementation-readiness obligation.
     from launcher_context import _reports
     packet=json.loads(invoke(cli,'planning','packet')[1])
-    report=tmp_path/'blocked-planning.json';report.write_text(json.dumps(_reports().report_for(packet)))
+    report=tmp_path/'planning.json';report.write_text(json.dumps(_reports().report_for(packet)))
     response=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
-    before=state_file().read_bytes()
-    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'],ok=False)
-    assert state_file().read_bytes()==before
-    invoke(cli,'phase','IMPLEMENTATION')
-    invoke(cli,'writer','start','--id','scoped','--role','al-engineer','--files','packages/shared/src/common.py')
-    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
+    st=json.loads(cli('show')[1])
+    assert st['proof_admission']['status']=='admitted' and st['phase']=='PLANNING'
+    assert any(o.startswith('coverage incomplete: missing-check: services/b') for o in st['implementation_readiness']['obligations'])
+    # The admitted plan leaves the run where an ordinary scoped writer starts directly:
+    # writer start records the documented PLANNING -> IMPLEMENTATION edge itself.
+    code,out,err=invoke(cli,'writer','start','--id','scoped','--role','al-engineer','--files','packages/shared/src/common.py')
+    assert 'IMPLEMENTATION entered by writer start' in out
+    st=json.loads(cli('show')[1])
+    assert st['phase']=='IMPLEMENTATION' and st['writers']['scoped']['state']=='ACTIVE'
+    assert any(o.startswith('coverage incomplete:') for o in st['implementation_readiness']['obligations'])
     invoke(cli,'writer','finish','--id','scoped','--outcome','success')
     invoke(cli,'phase','VERIFICATION')
     before=state_file().read_bytes()
     code,out,err=invoke(cli,'review-start',ok=False)
-    assert 'proof admission pending' in str(code)+out+err
+    # Final proof still enforces the recorded coverage debt and names the next command.
+    assert 'coverage incomplete' in str(code)+out+err
+    assert 'gates discover' in str(code)+out+err
     assert state_file().read_bytes()==before
     invoke(cli,'approved',ok=False)
+
+
+def test_designer_route_writer_refusal_names_the_next_phase_command(cli,repo,tmp_path,state_file):
+    seed(repo)
+    invoke(cli,'start','--spec','Implement the scoped change and prove service coverage before verified completion.')
+    writer=('writer','start','--id','w','--role','al-engineer','--files','services/a/src/app.py')
+    code,out,err=invoke(cli,*writer,ok=False)
+    assert '`spec-gate SPEC_READY`' in str(code)+out+err
+    invoke(cli,'spec-gate','SPEC_READY')
+    invoke(cli,'classify','COMPLEX','--designer','yes','--implementers','al-engineer','--reason','Coupled state invariant needs pseudocode.')
+    before=state_file().read_bytes()
+    code,out,err=invoke(cli,*writer,ok=False)
+    assert '`phase PSEUDOCODE`' in str(code)+out+err and state_file().read_bytes()==before
+    invoke(cli,'phase','PSEUDOCODE')
+    invoke(cli,*writer)
+    assert json.loads(cli('show')[1])['phase']=='IMPLEMENTATION'
+
+
+def _facts_with_unit_gaps(repo,paths):
+    import al_repository_facts as Facts
+    facts=Facts.collect(repo,base_oid=None,paths=paths,opaque=[])
+    for owner in ('services/a','services/b'):
+        facts['checks']['gaps'].append({'code':'package-execution-pending','path':owner+'/package.json','unit':owner,
+                                        'category':'ci','reason':'package script execution is not supported'})
+    return facts
+
+
+def test_untouched_unit_check_gaps_are_not_task_obligations(repo):
+    import al_service_coverage as Coverage
+    seed(repo)
+    # A change inside services/b leaves services/a's own check gap deferred (still a
+    # visible global diagnostic); a shared-package change widens through its consumers.
+    assessment=Coverage.assess(_facts_with_unit_gaps(repo,['services/b/src/app.py']))
+    assert assessment['selected_services']==['services/b']
+    assert {g['unit'] for g in assessment['gaps'] if g['code']=='package-execution-pending'}=={'services/b'}
+    assert assessment['global_inventory']['status']=='incomplete'
+    widened=Coverage.assess(_facts_with_unit_gaps(repo,['packages/shared/src/common.py']))
+    assert widened['selected_services']==['services/a']
+    assert {g['unit'] for g in widened['gaps'] if g['code']=='package-execution-pending'}=={'services/a'}
+
+
+def test_runtime_consumer_outside_unit_layout_does_not_widen_coverage(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/prompt.json','{"prompt": "x"}\n')
+    put(repo,'tooling/report.js','const PROMPT = "docs/prompt.json";\n')
+    put(repo,'tooling/other.js','const NOTE = "prompt.json";\n')
+    _git(repo,'add','.');_git(repo,'commit','-qm','outside-layout consumers')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.json'],opaque=[])
+    assert any(g['code']=='unclassified-runtime-consumer' and g['path']=='tooling/report.js' for g in facts['enumeration']['gaps'])
+    assessment=Coverage.assess(facts)
+    # Leaf scripts outside every unit add no service-wide uncertainty and no task gap.
+    assert not assessment['dependency_uncertainties'] and assessment['selected_services']==[]
+    assert not any(g['code']=='unclassified-runtime-consumer' for g in assessment['gaps'])
+    assert assessment['global_inventory']['status']=='incomplete'
+    # A unit that literally references the outside consumer is selected through it.
+    put(repo,'services/b/src/run.py','SCRIPT = "tooling/report.js"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.json'],opaque=[])
+    assessment=Coverage.assess(facts)
+    assert 'services/b' in assessment['selected_services'] and not assessment['dependency_uncertainties']
+    # Touching the outside consumer itself makes its gap a task obligation.
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.json','tooling/report.js'],opaque=[])
+    assert any(g['code']=='unclassified-runtime-consumer' and g['path']=='tooling/report.js' for g in Coverage.assess(facts)['gaps'])
 
 
 def test_relevant_uncertainty_selects_all_potential_services(cli,repo,tmp_path):
@@ -248,8 +320,10 @@ def test_incomplete_coverage_preserves_proof_guards_but_allows_writer_readiness(
         assert st==before and state_file().read_bytes()==disk
     assert any('coverage incomplete' in g for g in gate_gaps(st,'candidate'))
     assert any('coverage incomplete' in g for g in approval_gaps(st))
+    # Admission records incomplete coverage as verification debt instead of refusing.
     previous=deepcopy(st);previous['proof_admission']['status']='pending'
-    with pytest.raises(SystemExit,match='coverage'):prepare_save(st,previous)
+    admitted=deepcopy(st);prepare_save(admitted,previous)
+    assert any(o.startswith('coverage incomplete') for o in admitted['implementation_readiness']['obligations'])
     assert st==before and state_file().read_bytes()==disk
 
 
@@ -368,9 +442,12 @@ def test_formerly_unrelated_consumer_invalidates_currency_and_admission(cli, rep
     report = tmp_path / 'consumer-planning.json'
     report.write_text(json.dumps(_reports().report_for(packet)))
     response = json.loads(invoke(cli, 'planning', 'report', '--file', str(report))[1])
-    before = state_file(session).read_bytes()
-    invoke(cli, 'planning', 'admit', '--file', response['materialized_obligations']['stored_path'], ok=False)
-    assert state_file(session).read_bytes() == before
+    invoke(cli, 'planning', 'admit', '--file', response['materialized_obligations']['stored_path'])
+    current = json.loads(cli('show')[1])
+    assert current['proof_admission']['status'] == 'admitted'
+    assert any(o.startswith('coverage incomplete') for o in current['implementation_readiness']['obligations'])
+    with pytest.raises(SystemExit, match='coverage'):
+        Coverage.require_ready(current, current=True)
 
 
 def test_v1_document_fallback_stays_v1_and_requires_v2_replanning(cli, repo, tmp_path, monkeypatch, state_file):

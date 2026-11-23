@@ -431,6 +431,12 @@ review and approval. Planning metadata is never a developer approval question:
 3. Save it and run `"${STATE[@]}" planning report --file <report.json>`. A report that still
    contains `FILL:` is refused. The output names `materialized_obligations`.
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
+   Incomplete relevant coverage does not refuse admission: each reconstructed gap is
+   recorded in `implementation_readiness.obligations` and enforced at final proof,
+   review and approval (whose refusal names `gates discover` / `gates plan`).
+5. Start the scoped writer. From PLANNING (no Designer) or PSEUDOCODE, the first
+   ordinary `writer start` records the `phase IMPLEMENTATION` edge itself under the
+   same guards; a Designer route records `phase PSEUDOCODE` before any writer.
 
 Packet and report authoring may overlap a normal registered ACTIVE writer. Their
 `authoring` response labels the source as an issued observation and grants no

@@ -97,6 +97,10 @@ an existing Harness execution, preserving its approval and requirement lineage.
 Record SPEC_READY and the justified classification. Defined scoped implementation
 may proceed while planning proof, coverage or tooling is incomplete. Collect
 required final proof alongside the work; do not ask the developer to waive it.
+`planning admit` records incomplete relevant coverage as verification obligations
+instead of refusing. The first ordinary `writer start` records the PLANNING (or
+PSEUDOCODE) to IMPLEMENTATION edge itself; a Designer route records `phase PSEUDOCODE`
+first. Refusals on this path name the next supported command.
 Use [the detailed command workflow](reference/workflow.md) only for the operation
 being performed, and [gates](reference/gates.md) for task-relevant discovery and
 check planning. Preserve actual changed paths and root/shared obligations.

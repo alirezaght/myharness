@@ -86,6 +86,52 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
         if w['state'] != 'ACTIVE' or st['phase'] in BARRIERS or shared or al_parallel.shared_state_hits(w['commands']) or '.' in spec['scope'] or al_parallel.overlaps(w['files'],spec['scope']):
             refuse('check overlaps unresolved writer ' + w['id'])
 
+def _implicit_entry(st):
+    # A writer after SPEC_READY/classification begins implementation; the Designer stage
+    # (designer_required) is still entered explicitly before any writer.
+    if (st['status'] != 'RUNNING' or st.get('spec_status') != 'SPEC_READY'
+            or not st.get('classification')):
+        return False
+    return st['phase'] == 'PSEUDOCODE' or (
+        st['phase'] == 'PLANNING' and not st.get('designer_required'))
+
+
+def enter_implementation(st, role):
+    """Record the documented PLANNING/PSEUDOCODE -> IMPLEMENTATION edge for an ordinary writer.
+
+    The same guarded transition as `phase IMPLEMENTATION` runs, so its refusals (operations,
+    recovery, identity) still apply; nothing is saved unless the writer is admitted."""
+    if not _implicit_entry(st):
+        return False
+    from al_transitions import require_transition
+    require_transition(st, 'phase', 'IMPLEMENTATION')
+    st['failure'] = None
+    st['fanout'] = None
+    al_store.set_phase(st, 'IMPLEMENTATION', [role])
+    return True
+
+
+def next_writer_step(st):
+    """Name the next supported command for a writer refused by phase."""
+    phase = st.get('phase')
+    if st.get('status') != 'RUNNING':
+        return 'next: the run is ' + str(st.get('status')) + '; use `recovery next`'
+    if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
+        return ('next: record `spec-gate SPEC_READY` and `classify <SMALL|STANDARD|COMPLEX> ...`, '
+                'then `writer start` enters IMPLEMENTATION')
+    if phase == 'PLANNING' and st.get('designer_required'):
+        return ('next: `phase PSEUDOCODE` and dispatch AL-Designer; '
+                '`writer start` then enters IMPLEMENTATION')
+    if phase == 'PLAN_CONFLICT':
+        return 'next: resolve the plan conflict, then `phase PSEUDOCODE`'
+    if phase == 'VERIFICATION':
+        return ('next: `rework --source verification --files <paths> ...` '
+                'returns to writing before review')
+    if phase == 'REVIEW':
+        return 'next: `correction` returns to writing after review findings'
+    return 'next: `recovery next` names the supported continuation from ' + str(phase)
+
+
 def cmd_writer(a,sid):
     if a.action == 'start':
         from al_writer_progress import report, writer_progress
@@ -102,7 +148,16 @@ def _cmd_writer(a,sid):
         guard(st,implementation=True)
         degraded = getattr(a, 'degraded', False)
         phases = WRITING | {'PLANNING', 'PSEUDOCODE'} if degraded else WRITING
-        if st['status'] != 'RUNNING' or st['phase'] not in phases: refuse('writer admission requires a writing phase or explicit degraded planning tracking')
+        entered = False
+        if st['status'] != 'RUNNING' or st['phase'] not in phases:
+            if not degraded and _implicit_entry(st):
+                # Cheap argument checks precede the guarded phase edge's readiness analysis.
+                if not valid_id(a.id) or a.id in writers: refuse('duplicate/invalid writer id')
+                if a.role not in {'al-engineer','al-builder'}: refuse('invalid writer role')
+                entered = enter_implementation(st, a.role)
+            if not entered:
+                refuse('writer admission requires a writing phase or explicit degraded '
+                       'planning tracking; ' + next_writer_step(st))
         if not valid_id(a.id) or a.id in writers: refuse('duplicate/invalid writer id')
         if a.role not in {'al-engineer','al-builder'}: refuse('invalid writer role')
         files=canonical_paths(al_parallel.parse_paths(a.files))
@@ -161,6 +216,8 @@ def _cmd_writer(a,sid):
         report('writer-publication', force=True)
     al_store.save(sid,st)
     if a.action == 'start':
+        if entered:
+            print('AL · IMPLEMENTATION entered by writer start (the `phase IMPLEMENTATION` edge).')
         if getattr(a, 'degraded', False):
             print('AL · DEGRADED TRACKING · scoped writer/evidence only; proof admission, review and approval remain required.')
         from al_writer_handoff import evidence_block
