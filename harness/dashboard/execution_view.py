@@ -32,6 +32,7 @@ def task_execution(controller, task_id):
                 accept_unverified_host_version=recorded_override(
                     Path(latest["handoff_path"]).parent
                 ),
+                task_id=latest.get("task_id"),
             )
         except (OSError, ValueError) as error:
             view["startup"]["current_readiness"] = {

@@ -102,6 +102,7 @@ def start_execution(
                             host,
                             accept_unverified_host_version=accept_unverified_host_version
                             or recorded_override(directory),
+                            task_id=task_id,
                         )
                     )
                 except LaunchReadinessError as error:
@@ -117,6 +118,7 @@ def start_execution(
                         root,
                         host,
                         accept_unverified_host_version=accept_unverified_host_version,
+                        task_id=task_id,
                     )
                 )
             eid = "exec-" + secrets.token_hex(12)

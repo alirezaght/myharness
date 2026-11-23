@@ -76,6 +76,18 @@ digest) as `host-version-override.json` beside the execution handoff and as an
 `execution.host_version_override` workspace event. A later binary change blocks
 again.
 
+The dependency scan discovers every `node_modules` and `.venv` directory and
+observes up to 2,000,000 entries (bounding observation time only; set
+`HARNESS_DEPENDENCY_SCAN_LIMIT` to raise it). Tracked/ignored classification
+uses one Git call per inspection, not one per file. Every BLOCKED
+`dependency-layout` item names its exact next commands in `next` (and in
+`reason`): for ignored hardlinks, `harness dependencies inspect` for the affected
+scopes, `harness dependencies reconcile` with the hash `inspect` printed, then
+`harness execution readiness` again, which re-observes the layout and passes once
+the copies are private. When the scan budget is exhausted, it names the readiness
+and start commands with a doubled `HARNESS_DEPENDENCY_SCAN_LIMIT`; more than
+10,000 hardlinks in one plan names the scope to inspect and reconcile first.
+
 Reconciliation requires the exact current plan hash and settled execution
 attempts. It replaces only ignored hardlinks with private byte-identical copies,
 preserves file mode and source/Git state, records original device/inode/link/hash

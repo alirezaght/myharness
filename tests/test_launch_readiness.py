@@ -95,3 +95,66 @@ def test_unsupported_host_version_names_range_and_records_only_explicit_override
     assert check["status"] == "PASS"
     assert check["override"]["status"] == "UNVERIFIED"
     assert check["override"]["version"] == "2.3.0"
+
+
+def _dependency_tree(sample_repo, *, hardlink=False):
+    import os
+
+    (sample_repo / ".gitignore").write_text("node_modules/\n")
+    for package in ("a", "b"):
+        folder = sample_repo / "packages" / package / "node_modules/dep"
+        folder.mkdir(parents=True)
+        for index in range(3):
+            (folder / str(index)).write_text("fixture")
+    if hardlink:
+        folder = sample_repo / "packages/b/node_modules/dep"
+        os.link(folder / "0", folder / "alias")
+
+
+def _layout(result):
+    return next(c for c in result["checks"] if c["id"] == "dependency-layout")
+
+
+def test_dependency_scan_limit_names_the_exact_next_command(
+    ready_package, sample_repo, monkeypatch
+):
+    from harness.dependency_layout import LIMIT_ENV
+
+    _dependency_tree(sample_repo)
+    assert _layout(readiness(sample_repo, "codex", task_id="task-1"))["status"] == "PASS"
+    monkeypatch.setenv(LIMIT_ENV, "4")
+    check = _layout(readiness(sample_repo, "codex", task_id="task-1"))
+    assert check["status"] == "BLOCKED" and check["scope"] == "packages/b/node_modules"
+    repo = str(sample_repo.resolve())
+    assert check["next"][0] == (
+        LIMIT_ENV + "=8 harness execution readiness task-1 --host codex --repo " + repo
+    )
+    assert check["next"][1] == LIMIT_ENV + "=8 harness execution start task-1 --host codex"
+    assert check["next"][0] in check["reason"]
+    monkeypatch.setenv(LIMIT_ENV, "8")
+    assert _layout(readiness(sample_repo, "codex", task_id="task-1"))["status"] == "PASS"
+
+
+def test_dependency_hardlinks_name_inspect_reconcile_and_readiness(ready_package, sample_repo):
+
+    from harness.dependency_layout import inspect, reconcile
+    from harness.execution_contract import digest
+
+    _dependency_tree(sample_repo, hardlink=True)
+    check = _layout(readiness(sample_repo, "codex", task_id="task-1"))
+    repo = str(sample_repo.resolve())
+    assert check["status"] == "BLOCKED"
+    assert check["next"] == [
+        "harness dependencies inspect task-1 --repo "
+        + repo
+        + " --scopes packages/b/node_modules --output layout.json",
+        "harness dependencies reconcile task-1 --repo "
+        + repo
+        + " --file layout.json --sha256 SHA256_PRINTED_BY_INSPECT",
+        "harness execution readiness task-1 --host codex --repo " + repo,
+    ]
+    assert "TASK" in _layout(readiness(sample_repo, "codex"))["next"][0]
+    # The named inspect/reconcile pair is what readiness then observes as resolved.
+    plan = inspect(sample_repo, ["packages/b/node_modules"])
+    reconcile(plan, digest(plan))
+    assert _layout(readiness(sample_repo, "codex", task_id="task-1"))["status"] == "PASS"

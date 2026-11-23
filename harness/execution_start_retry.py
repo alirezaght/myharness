@@ -92,6 +92,7 @@ def require_startup_retry(controller, execution, envelope):
         envelope["repository"],
         execution["host"],
         accept_unverified_host_version=recorded_override(Path(execution["handoff_path"]).parent),
+        task_id=execution["task_id"],
     )
     from harness.execution_contract import loads
     from harness.execution_hosts import installed_package
