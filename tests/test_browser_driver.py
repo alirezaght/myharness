@@ -111,6 +111,7 @@ def test_chrome_direct_startup_control(tmp_path):
             [
                 chrome_executable(),
                 "--headless=new",
+                "--use-mock-keychain",
                 "--incognito",
                 "--disable-gpu",
                 "--no-first-run",

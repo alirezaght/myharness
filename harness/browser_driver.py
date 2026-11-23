@@ -73,6 +73,7 @@ class BrowserDriver:
                     [
                         chrome_executable(),
                         "--headless=new",
+                        "--use-mock-keychain",
                         "--remote-debugging-pipe",
                         "--user-data-dir=" + self.profile,
                         "--no-first-run",

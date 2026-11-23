@@ -29,6 +29,7 @@ def chrome(profile, url, width, height, *, process_env=None):
         [
             CHROME,
             "--headless=new",
+            "--use-mock-keychain",
             "--no-first-run",
             "--disable-gpu",
             "--disable-background-networking",

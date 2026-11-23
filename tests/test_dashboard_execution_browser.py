@@ -183,6 +183,7 @@ def _cdp_capture(
         [
             CHROME,
             "--headless=new",
+            "--use-mock-keychain",
             "--incognito",
             "--disable-gpu",
             "--no-first-run",

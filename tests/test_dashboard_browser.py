@@ -50,6 +50,7 @@ def _headless(profile: Path, *args: str) -> subprocess.CompletedProcess:
     command = [
         CHROME,
         "--headless=new",
+        "--use-mock-keychain",
         "--incognito",
         "--disable-gpu",
         "--no-first-run",
