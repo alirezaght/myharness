@@ -214,6 +214,30 @@ def records(base,root=None):
     return _observed('records', base, lambda: _records(base, root), root)
 
 
+# Process-local worktree content digests keyed by full stat identity. One command observes
+# the worktree several times (decision windows read it before and after); unchanged files are
+# hashed once. Recently modified files are never reused (racy-clean, as in Git's index).
+_DIGESTS = {}
+_DIGEST_RACY_NS = 2_000_000_000
+
+
+def _file_digest(p):
+    import time
+    before = p.stat()
+    key = (str(p), before.st_dev, before.st_ino, before.st_mode, before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+    cached = _DIGESTS.get(key)
+    if cached is not None:
+        return before.st_mode, cached
+    sha = hashlib.sha256(p.read_bytes()).hexdigest()
+    after = p.stat()
+    stable = (after.st_dev, after.st_ino, after.st_mode, after.st_size, after.st_mtime_ns, after.st_ctime_ns) == key[1:]
+    if stable and time.time_ns() - max(after.st_mtime_ns, after.st_ctime_ns) > _DIGEST_RACY_NS:
+        if len(_DIGESTS) > 200_000:
+            _DIGESTS.clear()
+        _DIGESTS[key] = sha
+    return before.st_mode, sha
+
+
 def _records(base,root=None):
     import al_writer_progress as progress
     progress.report('scope-index', count=0)
@@ -236,7 +260,7 @@ def _records(base,root=None):
             indexed[raw] = dict(entry)
             if entry['mode'] != '160000':
                 indexed[raw]['sha256'] = hashes[entry['oid']]
-        progress.report('scope-index', count=count)
+        progress.report('scope-index', count=count, total=len(index))
     progress.report('scope-index', count=len(index), force=True)
     opaque = {raw for raw, obs in observations.items() if G.opaque(obs)}
     raw_paths = set(indexed) | set(base_entries) | set(head)
@@ -249,7 +273,7 @@ def _records(base,root=None):
         key = parts
         if key not in symlinked:symlinked[key] = (root / Path(*parts)).is_symlink()
         return symlinked[key]
-    progress.report('scope-worktree', count=0)
+    progress.report('scope-worktree', count=0, total=len(raw_paths))
     for raw in sorted(raw_paths):
         if any(raw.rstrip(b'/') != parent and raw.startswith(parent + b'/') for parent in opaque):
             continue
@@ -264,13 +288,15 @@ def _records(base,root=None):
         if obs and obs['effective'] is not None:
             row['worktree'] = obs['effective']
         elif p.is_symlink(): row['worktree'] = {'type':'symlink','text':os.readlink(p)}
-        elif p.is_file(): row['worktree'] = {'type':'file','executable':bool(p.stat().st_mode & 0o111),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
+        elif p.is_file():
+            mode, sha = _file_digest(p)
+            row['worktree'] = {'type':'file','executable':bool(mode & 0o111),'sha256':sha}
         elif not p.exists() or (obs and p.is_dir()): row['worktree'] = {'type':'deleted'}
         else: refuse('unsupported candidate file type: ' + str(rel))
         if row['index'] and 'stages' in row['index'] and row['worktree']['type'] not in {'file', 'deleted'}:
             refuse('unmerged worktree type is unsupported')
         out.append(row)
-        progress.report('scope-worktree', count=len(out))
+        progress.report('scope-worktree', count=len(out), total=len(raw_paths))
     progress.report('scope-worktree', count=len(out), force=True)
     return out
 

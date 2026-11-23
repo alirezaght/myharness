@@ -167,19 +167,84 @@ def save(sid, st):
     report('state-saved', force=True)
 
 
+LOCK_POLL_SECONDS = 0.2
+LOCK_WAIT_REPORT_SECONDS = 15.0
+
+
+def _lock_holder(path):
+    """The holder record a lock owner published; absent/corrupt/stale records are None."""
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    pid = value.get('pid')
+    if type(pid) is int and pid > 0:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return None
+        except OSError:
+            pass
+    return value
+
+
+def _publish_holder(path):
+    from al_writer_progress import current_command
+    record = {'pid': os.getpid(), 'command': current_command(), 'acquired': time.time()}
+    try:
+        tmp = path.with_name(path.name + f'.{os.getpid()}.tmp')
+        tmp.write_text(json.dumps(record))
+        os.replace(tmp, path)
+    except OSError:
+        # The holder record is a diagnostic; failing to publish it never blocks the command.
+        pass
+
+
+def _retire_holder(path):
+    try:
+        value = json.loads(path.read_text())
+        if isinstance(value, dict) and value.get('pid') == os.getpid():
+            path.unlink()
+    except (OSError, ValueError):
+        pass
+
+
 @contextlib.contextmanager
 def locked(sid):
     """Exclusive lock for a load-modify-save that may race a long-running
-    `evidence run` in another process."""
-    from al_writer_progress import report
+    `evidence run` in another process.
+
+    A blocked command says so, naming the command that holds the lock, instead of
+    waiting silently; the holder record is published only while the lock is held."""
+    from al_writer_progress import report, lock_wait
     report('state-lock', force=True)
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    holder = RUNTIME_DIR / f".{sid}.lock.holder"
     with open(RUNTIME_DIR / f".{sid}.lock", "w") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            started = time.monotonic()
+            lock_wait(_lock_holder(holder), 0.0)
+            reported = started
+            while True:
+                time.sleep(LOCK_POLL_SECONDS)
+                try:
+                    fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    now = time.monotonic()
+                    if now - reported >= LOCK_WAIT_REPORT_SECONDS:
+                        reported = now
+                        lock_wait(_lock_holder(holder), now - started)
+        _publish_holder(holder)
         try:
             report('state-locked', force=True)
             yield
         finally:
+            _retire_holder(holder)
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 

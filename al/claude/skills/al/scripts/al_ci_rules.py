@@ -1,5 +1,6 @@
 """Conservative CI rule evaluation over selected paths, without ambient context."""
 import copy
+import functools
 import re
 from al_ci_yaml import Reference,Unsupported
 import al_ci_expression as E
@@ -54,12 +55,9 @@ def references(value,definitions,trail=(),used=None):
 def unit(path):return '/'.join(path.split('/')[:2]) if path.startswith(('apps/','services/','packages/')) else '.'
 
 
-def pattern_matches(pattern,path,directory=False):
-    if not isinstance(pattern,str) or any(c in pattern for c in '${}[]\\'):return None
-    if directory:
-        if path=='.':return None
-        prefix=re.split(r'[*?]',pattern,maxsplit=1)[0];candidate=path.rstrip('/')+'/'
-        return None if not prefix or prefix.startswith(candidate) or candidate.startswith(prefix) else False
+@functools.lru_cache(maxsize=4096)
+def _glob_regex(pattern):
+    """Compiled once per pattern: path rules are matched against every changed path."""
     regex='';i=0
     while i<len(pattern):
         if pattern.startswith('**/',i):regex+='(?:.*/)?';i+=3
@@ -67,7 +65,16 @@ def pattern_matches(pattern,path,directory=False):
         elif pattern[i]=='*':regex+='[^/]*';i+=1
         elif pattern[i]=='?':regex+='[^/]';i+=1
         else:regex+=re.escape(pattern[i]);i+=1
-    return bool(re.fullmatch(regex,path))
+    return re.compile(regex)
+
+
+def pattern_matches(pattern,path,directory=False):
+    if not isinstance(pattern,str) or any(c in pattern for c in '${}[]\\'):return None
+    if directory:
+        if path=='.':return None
+        prefix=re.split(r'[*?]',pattern,maxsplit=1)[0];candidate=path.rstrip('/')+'/'
+        return None if not prefix or prefix.startswith(candidate) or candidate.startswith(prefix) else False
+    return bool(_glob_regex(pattern).fullmatch(path))
 
 
 def changes(value,paths,directories=()):

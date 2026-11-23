@@ -19,7 +19,8 @@ SAME=('category','applicability','argv','cwd','scope','env_names','sources','uni
 def refreshable(st,currency):
     if currency['current'] or currency.get('pathless') or not currency.get('paths') or not st.get('gate_manifests'):return False
     m=A.read_json(st['gate_manifests'][-1])
-    return all(Coverage.covered(m.get('paths',[]),p) for p in currency['paths'])
+    declared=Coverage.Coverage(m.get('paths',[]))
+    return all(declared(p) for p in currency['paths'])
 
 
 def _keep_planned(old,new):

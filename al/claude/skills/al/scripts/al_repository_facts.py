@@ -47,6 +47,38 @@ def all_within(scopes,paths):
     return True
 
 
+def _prefixes(path):
+    parts=path.split('/')
+    return ('/'.join(parts[:i]) for i in range(1,len(parts)))
+
+
+class PathScope:
+    """`within` against a fixed scope list in O(path depth) instead of O(len(scopes)).
+
+    `covers(p)` equals `any(within(s,p) for s in scopes)`; `overlaps(p)` equals
+    `any(within(s,p) or within(p,s) for s in scopes)`. Large task path lists (a
+    directory expanded to every member) otherwise make each repository file
+    scan path x scope comparisons."""
+    def __init__(self,scopes):
+        scopes=list(scopes)
+        self.raw=set(scopes);self.stripped={s.rstrip('/') for s in scopes}
+        self.everything='.' in self.raw;self.nonempty=bool(scopes)
+        self.ancestors={a for s in self.raw for a in _prefixes(s)}
+
+    def covers(self,path):
+        if self.everything or path in self.raw:return True
+        return any(a in self.stripped for a in _prefixes(path))
+
+    def contained(self,path):
+        """`any(within(path,s) for s in scopes)`: some scope lies at or beneath `path`."""
+        if path=='.':return self.nonempty
+        # within(path,s): s==path or s startswith path.rstrip('/')+'/' (path is a proper ancestor).
+        return path in self.raw or path.rstrip('/') in self.ancestors
+
+    def overlaps(self,path):
+        return self.covers(path) or self.contained(path)
+
+
 def gap(code,path,reason,unit=None,category=None):
     return dict(code=code,path=path,reason=reason,unit=unit,**({'category':category} if category else {}))
 
@@ -181,7 +213,7 @@ class Snapshot(CaptureMixin):
                     if Path(p).name=='.gitignore':self.rules.add(p)
                 except CaptureDrift:raise
                 except (OSError,ValueError) as exc:self.gaps.append(gap('unreadable-input',p,str(exc)))
-            progress.report('inventory-current', count=count)
+            progress.report('inventory-current', count=count, total=len(self.members))
         progress.report('inventory-current', count=len(self.members), force=True)
         self.read_base()
 
@@ -194,10 +226,16 @@ class Snapshot(CaptureMixin):
         if any(within(o,p) for o in self.opaque):raise ValueError('opaque source boundary')
         parts=Path(p).parts
         if len(parts)>LIMITS['depth']:raise ValueError('coverage depth limit')
+        # Ancestor directories are checked once per snapshot, not once per file beneath them;
+        # the leaf is always re-checked and reads still open every component with O_NOFOLLOW.
+        checked=self.__dict__.setdefault('_safe_ancestors',set())
         for i in range(1,len(parts)+1):
-            ancestor=self.root/Path(*parts[:i])
+            key=parts[:i]
+            if i<len(parts) and key in checked:continue
+            ancestor=self.root/Path(*key)
             if ancestor.is_symlink():raise ValueError('symlink source boundary')
             if ancestor.is_dir() and (ancestor/'.git').exists():raise ValueError('nested repository/gitlink source boundary')
+            if i<len(parts):checked.add(key)
 
     def cached(self,key):
         data=self.cache.get(key)
@@ -498,9 +536,11 @@ def collect_from_snapshot(scan):
     facts['enumeration']['ignored_outputs']=[e for e in scan.membership_observation['exclusions'] if e['reason']=='repository ignore/generated output exclusion']
     facts['enumeration']['membership_sha256']=membership_digest(scan.members)
     facts['enumeration']['membership_rules']=sorted(p for p in scan.files if Path(p).name=='.gitignore')
+    progress.report('inventory-imports',force=True)
     facts['dependencies']=imports.analyze(facts,scan)
     facts['unsupported_boundaries']=[gap('opaque-boundary',p,'opaque child content cannot be enumerated') for p in sorted(scan.opaque)]
     facts['rule_sources']=[{'path':p,'sha256':scan.files.records[p]['sha256']} for p in sorted(scan.rules) if p in scan.files]
+    progress.report('inventory-provenance',force=True)
     facts['scan_inputs']=[{'path':p,'snapshot':which,'sha256':record['sha256']} for which,files in [('base',scan.base),('current',scan.files)] for p,record in sorted(files.records.items()) if p.endswith(SOURCE_SUFFIXES) and any((p.endswith('.py') and any(within(r,p) for r in u['source_roots'])) or (not p.endswith('.py') and within(u['path'],p)) for u in facts['units'])]
     facts['enumeration']['absent_paths']=sorted(scan.absent)
     facts['scan']={'stable':True,'limits':LIMITS,'membership_digest':digest(scan.members),'provenance_digest':digest(facts['scan_inputs'])}

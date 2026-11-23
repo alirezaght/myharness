@@ -4,14 +4,14 @@ import json
 import os
 import al_gitlinks as G
 import al_sources as Sources
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import al_artifacts as A
 import al_scope as S
 import al_store
 import al_affected_services
 import al_service_coverage as Coverage
 import al_ci_verification as Verification
-from al_repository_facts import digest,within,gap,Snapshot,collect_from_snapshot, unit_depth
+from al_repository_facts import digest,within,gap,Snapshot,collect_from_snapshot, unit_depth, PathScope
 from al_repository_capture import capture_discovery,CaptureDrift,CaptureUnavailable
 import al_coverage_relevance as Relevance
 import al_ci_inventory as CI
@@ -141,7 +141,9 @@ def _inventory_attempt(st,paths,context,opaque,scan):
     original_paths=list(paths)
     requested=[p for p in paths if scan.observe_path(p)['state']=='directory']
     expansion=Relevance.project_expansion(scan.listing_observation,requested) if requested else {'gaps':[]}
-    paths=sorted(set(paths)|{p.rstrip('/') for p in scan.members if any(C.contains(d,p.rstrip('/')) for d in requested)})
+    # Directory containment by ancestor lookup: members x requested directories is quadratic.
+    requested_scope=PathScope(PurePosixPath(d).as_posix() for d in requested)
+    paths=sorted(set(paths)|{p.rstrip('/') for p in scan.members if requested_scope.covers(PurePosixPath(p.rstrip('/')).as_posix())})
     paths=[p for p in paths if not any(p!=child and Sources.contains(child,p) for child in opaque)]
     # Known CI/rule identities are policy inputs, not anonymous runtime data.
     # Literal runtime consumers are still retained by artifact analysis.
@@ -149,6 +151,7 @@ def _inventory_attempt(st,paths,context,opaque,scan):
         for path in scan.observe_matches(pattern,purpose='instruction-frontier'):
             if scan.observe_path(path)['state']=='regular':scan.capture_bytes(path,required=True,rule=True)
     facts=collect_from_snapshot(scan)
+    progress.report('inventory-coverage',force=True)
     facts['enumeration']['gaps'].extend(expansion['gaps'])
     facts['question'].update(changed_paths=paths,ci_context_binding=context)
     assessment=Coverage.assess(facts)
@@ -163,16 +166,21 @@ def _inventory_attempt(st,paths,context,opaque,scan):
             facts['enumeration']['gaps'].append(gap('required-rule-boundary',path,'governing repository source is opaque'))
             return False
         scan.capture_bytes(path,required=True,rule=True);names.add(path);return True
+    progress.report('inventory-rules',force=True)
     directories=set(requested)
+    # Every ancestor directory is visited once, not once per changed file beneath it.
+    visited=set()
     for path in paths+services:
         if inside(path):continue
         current=Path(path) if scan.observe_path(path)['state']=='directory' else Path(path).parent
-        while True:
+        while current not in visited:
+            visited.add(current)
             for name in ('AGENTS.md','CLAUDE.md'):observed_rule((current/name).as_posix())
             if current==Path('.'):break
             current=current.parent
+    directory_scope=PathScope(directories)
     for member in scan.members:
-        if Path(member).name in {'AGENTS.md','CLAUDE.md'} and any(within(d,member) for d in directories):observed_rule(member)
+        if Path(member).name in {'AGENTS.md','CLAUDE.md'} and directory_scope.covers(member):observed_rule(member)
     for unit in units:
         for name in MANIFESTS:observed_rule((Path(unit)/name).as_posix())
     # Observe delegated CI/profile inputs before readers run, including absences.
@@ -186,6 +194,7 @@ def _inventory_attempt(st,paths,context,opaque,scan):
         members=[p['path'] for p in facts['scan_inputs'] if p['snapshot']=='current' and (service=='.' or within(service,p['path']))]
         members.extend(p['path'] for p in facts['rule_sources'] if service=='.' or within(service,p['path']))
         service_inputs.update(members or [service])
+    progress.report('inventory-ci',count=len(set(paths)|service_inputs),force=True)
     ci=CI.inventory(al_store.REPO_ROOT,sorted(set(paths)|service_inputs),context,opaque,capture=scan)
     for job in ci['obligations']:
         if job.get('impact',{}).get('inventory_complete') is False or job['job'].startswith('<unresolved-'):
@@ -213,6 +222,7 @@ def _inventory_attempt(st,paths,context,opaque,scan):
             b={'id':oid,'global_required':global_required,'category':'ci','units':sorted(set(job['units'])|selected),'required':True,**execution,'sources':[], 'required_scope':sorted(set(job['inputs']+[d['path'] for d in job['dependencies']])), 'source_chain':[src]+[{'path':d['path'],'sha256':d['sha256'],'selector':job['job'],'semantics':'sourced CI dependency'} for d in job['dependencies'] if d['path']!=src['path']],'obligation_ids':[oid]}
             b['execution_signature']=digest(b);facts['checks']['bindings'].append(b)
     facts['ci_observations']=ci
+    progress.report('inventory-relevance',count=len(ci['obligations']),force=True)
     projected=Relevance.project_task(facts)
     relevant_ids=set(projected['relevant_gap_ids'])
     projected_gaps=[row['record'] for row in projected['records'] if row['record_id'] in relevant_ids and row['kind']=='enumeration']
@@ -248,6 +258,7 @@ def _inventory_attempt(st,paths,context,opaque,scan):
     for binding in facts['checks']['bindings']:
         binding['required_scope']=compact(set(binding['required_scope']+dependencies),universe)
         binding['execution_signature']=digest({k:v for k,v in binding.items() if k!='execution_signature'})
+    progress.report('inventory-bindings',count=len(facts['checks']['bindings']),force=True)
     rows=S.source_rows();runnable=[]
     for binding in facts['checks']['bindings']:
         binding['sources']=sorted(binding['sources']+Sources.default_parent_entries(binding['required_scope'],binding['sources'],rows),key=str)
@@ -267,12 +278,14 @@ def _inventory_attempt(st,paths,context,opaque,scan):
 
 
 def gaps(st,m,anticipated=(),*,admission=True):
+    progress.report('inventory-validate',count=len(m.get('paths',[])),force=True)
     expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'));out=[]
     declared={r['path']:r['sha256'] for r in m['rules']}
     for r in expected['rules']:
         if declared.get(r['path'])!=r['sha256']:out.append('missing/current repository source: '+r['path'])
     if set(expected['units'])-set(m['units']):out.append('manifest omits selected or anticipated units')
-    if any(not C.covered(m.get('paths',[]),p) for p in expected['paths']):out.append('manifest omits selected or anticipated paths')
+    declared_paths=C.Coverage(m.get('paths',[]))
+    if any(not declared_paths(p) for p in expected['paths']):out.append('manifest omits selected or anticipated paths')
     gates=m['gates'];root=al_store.REPO_ROOT
     for category,needed in (('lint-imports',Coverage.imports_needed(expected['repository_facts'],expected['service_coverage'])),('loc',expected['auxiliary']['loc']),('pre-commit',bool(expected['auxiliary']['hook'])),('contracts',expected['auxiliary']['contracts']),('ci',bool(expected['relevance_projection']['relevant_ci_ids']))):
         active=[g for g in gates if g['category']==category and g['applicability']!='NOT_APPLICABLE']

@@ -2,13 +2,14 @@
 import ast
 import copy
 import hashlib
+import re
 from al_analysis_cache import AnalysisCache, parse_python
 from al_profile import measured
 from collections import defaultdict
 from pathlib import PurePosixPath
 import sys
 import al_writer_progress as progress
-from al_repository_facts import within,SOURCE_SUFFIXES,gap, unit_depth
+from al_repository_facts import within,SOURCE_SUFFIXES,gap, unit_depth, PathScope
 
 # Reviewed module/distribution identities, never inferred from installed packages.
 EXTERNAL={'elasticsearch':'elasticsearch'}
@@ -24,8 +25,9 @@ def _targets_digest(targets):
 def _analyze(facts,scan):
     units={u['id']:u for u in facts['units']};potential=sorted(u['id'] for u in facts['units'] if ('python' in u['languages'] or facts['adapter']['id'] in {'python','conventional'}) and (u['roles'] or u['id']=='.' or u['id'].startswith(('services/','apps/'))))
     records={};owners=defaultdict(set);edges=set();uncertainties=[];resolved=set();import_targets=set()
+    scope=PathScope(scan.paths)
     for path in sorted(set(scan.files)|set(scan.base)|set(scan.paths)):
-        if path.endswith('.py') or not path.endswith(SOURCE_SUFFIXES) or not any(within(p,path) or within(path,p) for p in scan.paths):continue
+        if path.endswith('.py') or not path.endswith(SOURCE_SUFFIXES) or not scope.overlaps(path):continue
         owners_for_path=[u for u in units.values() if within(u['path'],path)]
         if not owners_for_path:continue  # enumeration reports the unsupported root
         unit=max(owners_for_path,key=lambda u:unit_depth(u['path']))
@@ -68,7 +70,7 @@ def _analyze(facts,scan):
             paths=[path for which,path in records if which==snapshot]
             for path,data in files.content_items(paths):yield snapshot,path,records[(snapshot,path)],data
     for count,(snapshot,path,record,data) in enumerate(sources(),1):
-        progress.report('inventory-analysis',count=count)
+        progress.report('inventory-analysis',count=count,total=len(records))
         # A source and its AST are local to one iteration, not a repository-sized memo.
         try:tree=parse_python(data)
         except (SyntaxError,UnicodeError,ValueError,RecursionError):
@@ -201,7 +203,7 @@ def _analyze(facts,scan):
                 self.generic_visit(node)
         Visitor().visit(tree)
     progress.report('inventory-analysis',count=len(records),force=True)
-    affected={p for _,p in records if any(within(changed,p) or within(p,changed) for changed in scan.paths)}
+    affected={p for _,p in records if scope.overlaps(p)}
     artifacts,unclassified=artifact_consumers(scan,records,units)
     if unclassified:
         uncertainties.append({'code':'uncertain-artifact-classification','unit':None,'path':scan.paths[0] if len(scan.paths)==1 else '.', 'location':None,'target':None,'reason':'changed runtime source/data has no complete consumer classification'})
@@ -211,10 +213,12 @@ def _analyze(facts,scan):
             uncertainties.append({'code':'uncertain-artifact-consumer','unit':None,'path':row['path'],'location':None,'target':None,
                                   'reason':row['kind']+' has no literal consumer reference; all enumerated services require verification'})
         affected.update(c for c in row['consumers'] if c.endswith('.py'))
-    while True:
-        consumers={a for a,b in edges if b in affected}
-        if consumers<=affected:break
-        affected|=consumers
+    importers=defaultdict(set)
+    for a,b in edges:importers[b].add(a)
+    pending=list(affected)
+    while pending:
+        for consumer in importers.get(pending.pop(),()):
+            if consumer not in affected:affected.add(consumer);pending.append(consumer)
     known={record['unit'] for (_,p),record in records.items() if p in affected and record['unit'] in potential}
     for row in artifacts:
         for consumer in row['consumers']:
@@ -231,7 +235,7 @@ def _analyze(facts,scan):
                     'reason':'runtime consumer dependency analysis is unavailable for this source language'})
     for u in potential:
         roots=units[u]['source_roots']
-        if any((u!='.' and (within(u,p) or within(p,u))) or (u=='.' and (p in {'.','pyproject.toml','uv.lock'} or any(within(r,p) or within(p,r) for r in roots))) for p in scan.paths):known.add(u)
+        if (u!='.' and scope.overlaps(u)) or (u=='.' and (bool(scope.raw&{'.','pyproject.toml','uv.lock'}) or any(scope.overlaps(r) for r in roots))):known.add(u)
     # Deduplicate base/current diagnostics without source bytes or incidental order.
     uncertainties=list({(u['unit'],u['path'],u['location'],u['target'],u['reason']):u for u in uncertainties}.values())
     # Import-analysis uncertainty describes who may import a module. It is deferred (kept for
@@ -247,8 +251,9 @@ def _analyze(facts,scan):
         if u['code']!='uncertain-import' or unclassified or u['path'] in affected:return False
         if not affected:return True
         return isinstance(u['target'],str) and bool(u['target']) and not reaches(u['target'])
-    deferred=[u for u in uncertainties if deferrable(u)]
-    uncertainties=[u for u in uncertainties if u not in deferred]
+    flags=[deferrable(u) for u in uncertainties]
+    deferred=[u for u,flag in zip(uncertainties,flags) if flag]
+    uncertainties=[u for u,flag in zip(uncertainties,flags) if not flag]
     order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
             'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'task_import_targets_digest':_targets_digest({row for row in import_targets if row[1] in affected or records[(row[0],row[1])]['unit'] in (set(potential) if uncertainties else known|set(facts.get('policy_selection',[])))}),'affected_source_paths':sorted(affected|{consumer for row in artifacts for consumer in row['consumers']}),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[])}
@@ -276,14 +281,85 @@ def artifact_kind(path,data):
     return 'data-fixture'
 
 
-def _referencing(scan,path,exclude):
-    """Source files naming the artifact or its directory (directory loads and globs over-select)."""
+def _reference_tokens(path):
     pure=PurePosixPath(path);tokens=[pure.name.encode()]
     if pure.parent.name:
         directory=pure.parent.name.encode()
         tokens+=[directory+b'/',b'"'+directory,b"'"+directory]
-    return sorted({p for files in (scan.files,scan.base) for p,data in files.items()
-                   if p!=exclude and p.endswith(SOURCE_SUFFIXES) and any(token in data for token in tokens)})
+    return tokens
+
+
+def _trie_pattern(tokens):
+    """A regex matching, at one position, the longest token that starts there.
+
+    Shared prefixes are factored so the engine does O(token length) work per
+    position instead of trying every token; single-child chains stay literal so
+    nesting depth is the number of branch points, not the token length."""
+    trie={}
+    for token in tokens:
+        node=trie
+        for byte in token:node=node.setdefault(byte,{})
+        node[None]=True
+    def emit(node):
+        branches=[]
+        for byte in sorted(k for k in node if k is not None):
+            run=bytes([byte]);child=node[byte]
+            while None not in child and len(child)==1:
+                (next_byte,child),=child.items();run+=bytes([next_byte])
+            branches.append(re.escape(run)+emit(child))
+        if not branches:return b''
+        body=branches[0] if len(branches)==1 else b'(?:'+b'|'.join(branches)+b')'
+        # Greedy optional continuation: the longest token at a position wins over its prefixes.
+        return b'(?:'+body+b')?' if None in node else body
+    return re.compile(emit(trie))
+
+
+class TokenFinder:
+    """Every token occurring (as a substring) in a byte string, in one regex scan.
+
+    Equivalent to `{t for t in tokens if t in data}`: each search reports the
+    longest token at the leftmost remaining start position, and every token that
+    is a prefix of a reported match also occurs there."""
+    def __init__(self,tokens):
+        self.tokens=frozenset(t for t in tokens if t)
+        self.pattern=_trie_pattern(sorted(self.tokens)) if self.tokens else None
+
+    def present(self,data):
+        if self.pattern is None:return set()
+        found=set();position=0;search=self.pattern.search
+        while True:
+            match=search(data,position)
+            if match is None:return found
+            longest=match.group(0);start=match.start()
+            found.update(longest[:k] for k in range(1,len(longest)+1) if longest[:k] in self.tokens)
+            position=start+1
+
+
+def _referencing_many(scan,paths):
+    """Source files naming each artifact or its directory, from one pass over source content.
+
+    Per-artifact scans re-read and re-verify every repository source once per
+    changed artifact (changed files x repository files); this reads each source once."""
+    wanted={path:_reference_tokens(path) for path in paths}
+    if not wanted:return {}
+    finder=TokenFinder({t for tokens in wanted.values() for t in tokens})
+    holders=defaultdict(set)
+    count=0
+    batches=[(files,[p for p in files if p.endswith(SOURCE_SUFFIXES)]) for files in (scan.files,scan.base)]
+    total=sum(len(sources) for _,sources in batches)
+    for files,sources in batches:
+        for p,data in files.content_items(sources):
+            for token in finder.present(data):holders[token].add(p)
+            count+=1
+            progress.report('inventory-references',count=count,total=total)
+    progress.report('inventory-references',count=count,force=True)
+    return {path:sorted({p for t in tokens for p in holders.get(t,())}) for path,tokens in wanted.items()}
+
+
+def _referencing(scan,path,exclude):
+    """Source files naming the artifact or its directory (directory loads and globs over-select)."""
+    found=_referencing_many(scan,[path])[path]
+    return [p for p in found if p!=exclude]
 
 
 MANIFESTS=frozenset({'package.json','package-lock.json','tsconfig.json','composer.json','pnpm-lock.yaml','pnpm-workspace.yaml'})
@@ -295,16 +371,24 @@ def artifact_consumers(scan,records,units):
     A literal path or file-name reference identifies a consumer (over-approximating on
     shared names); generated code records the schema files that produced it."""
     rows=[];unclassified=False
-    changed=sorted({p for files in (scan.files,scan.base) for p in files if any(within(c,p) for c in scan.paths)} |
+    scope=PathScope(scan.paths)
+    changed=sorted({p for files in (scan.files,scan.base) for p in files if scope.covers(p)} |
                    {p for p in scan.paths if p.endswith(DOCUMENT_SUFFIXES)} |
-                   {p for p in scan.members if not p.endswith('/') and any(within(c,p) for c in scan.paths)})
-    for path in changed:
-        # Configuration, manifests and rule sources keep their existing unit/rule handling.
+                   {p for p in scan.members if not p.endswith('/') and scope.covers(p)})
+    # Configuration, manifests and rule sources keep their existing unit/rule handling.
+    candidates=[path for path in changed if path in scan.rules or not (PurePosixPath(path).name in MANIFESTS or any(part.startswith('.') for part in PurePosixPath(path).parts))]
+    # Every artifact's literal consumers come from one shared pass over repository sources.
+    references=_referencing_many(scan,candidates)
+    def referencing(path):return [p for p in references[path] if p!=path]
+    data_names=defaultdict(list)
+    for p in sorted(set(scan.files)|set(scan.base)):
+        if p.endswith(DATA_SUFFIXES):data_names[PurePosixPath(p).name.encode()].append(p)
+    data_finder=None
+    for path in candidates:
         policy=path in scan.rules
         if policy:
-            consumers=_referencing(scan,path,path)
+            consumers=referencing(path)
             if not consumers:continue
-        elif PurePosixPath(path).name in MANIFESTS or any(part.startswith('.') for part in PurePosixPath(path).parts):continue
         else:consumers=None
         owners=[u for u in units.values() if within(u['path'],path)]
         owner=max(owners,key=lambda u:unit_depth(u['path']))['id'] if owners else None
@@ -317,19 +401,17 @@ def artifact_consumers(scan,records,units):
             continue
         if kind=='generated-code':
             header=b'\n'.join(data.splitlines()[:8])
-            producers=sorted(p for p in set(scan.files)|set(scan.base) if p.endswith(DATA_SUFFIXES) and PurePosixPath(p).name.encode() in header)
+            if data_finder is None:data_finder=TokenFinder(data_names)
+            producers=sorted(p for name in data_finder.present(header) for p in data_names[name])
             rows.append({'path':path,'kind':kind,'owner':owner,'producers':producers,'consumers':[]})
             continue
-        if kind=='documentation':
-            rows.append({'path':path,'kind':kind,'owner':owner,'producers':[],
-                         'consumers':consumers if consumers is not None else _referencing(scan,path,path)})
-            continue
         rows.append({'path':path,'kind':kind,'owner':owner,'producers':[],
-                     'consumers':consumers if consumers is not None else _referencing(scan,path,path)})
+                     'consumers':consumers if consumers is not None else referencing(path)})
     # Changed paths of kinds the snapshot never reads (e.g. .csv, .sql, templates) are unclassified too.
+    captured=PathScope([p for files in (scan.files,scan.base) for p in files])
     for path in scan.paths:
         parts=PurePosixPath(path).parts
-        if path=='.' or any(within(path,p) for files in (scan.files,scan.base) for p in files) or any(part.startswith('.') for part in parts):continue
+        if path=='.' or captured.contained(path) or any(part.startswith('.') for part in parts):continue
         if not path.endswith(DOCUMENT_SUFFIXES) and not (path in scan.rules):unclassified=True
     return rows,unclassified
 

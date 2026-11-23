@@ -541,7 +541,7 @@ def test_dispatch_progress_precedes_real_lock_and_preload_without_changing_stdou
     observed = []
 
     def flock(fd, operation):
-        if operation == store.fcntl.LOCK_EX:
+        if operation & store.fcntl.LOCK_EX:  # blocking or non-blocking exclusive acquisition
             observed.append('acquiring run admission lock' in stream.getvalue())
         return original_flock(fd, operation)
 

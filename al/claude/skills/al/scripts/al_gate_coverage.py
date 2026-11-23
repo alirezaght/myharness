@@ -15,6 +15,20 @@ def covered(paths,path):
     return any(p==path or p=='.' or (al_store.REPO_ROOT/p).is_dir() and contains(p,path) for p in paths)
 
 
+class Coverage:
+    """`covered(paths, x)` for many x: each declared path is stat'ed once, and a target is
+    checked by its ancestors instead of against every declared path."""
+    def __init__(self,paths):
+        paths=list(paths)
+        self.exact=set(paths);self.everything='.' in self.exact
+        self.directories={PurePosixPath(p).parts for p in paths if (al_store.REPO_ROOT/p).is_dir()}
+
+    def __call__(self,path):
+        if self.everything or path in self.exact:return True
+        parts=PurePosixPath(path).parts
+        return any(parts[:i] in self.directories for i in range(len(parts)+1))
+
+
 def expand(paths):
     from al_repository_facts import Snapshot
     from al_repository_capture import capture_discovery
@@ -37,7 +51,8 @@ def prospective_gaps(st,paths):
     if not st.get('gate_manifests'):return ['repository gate manifest missing']
     import al_gate_inventory as V
     m=A.read_json(st['gate_manifests'][-1])
-    out=['writer path is not anticipated: '+p for p in paths if not covered(m.get('paths',[]),p)]
+    anticipated=Coverage(m.get('paths',[]))
+    out=['writer path is not anticipated: '+p for p in paths if not anticipated(p)]
     opaque={r['path'] for r in S.source_rows() if V.G.opaque(r)}
     semantic=m.get('service_coverage',{}).get('semantic_requirements')
     out+=['writer path is in an unplanned unit: '+p for p in paths if V.classify_unit(p,opaque,semantic) not in m['units']]
