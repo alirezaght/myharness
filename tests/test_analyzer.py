@@ -33,7 +33,7 @@ def test_report_keeps_facts_assumptions_and_questions_separate(sample_repo):
     assert report.facts and report.assumptions and report.questions
     assert all(f.evidence.strip() for f in report.facts)
     assert all(a.basis.strip() for a in report.assumptions)
-    rendered = report.render().splitlines()
+    rendered = report.render(full=True).splitlines()
     headings = [line.split(" (")[0] for line in rendered if not line.startswith(" ")][2:]
     assert headings == [
         "approved decisions",
@@ -272,6 +272,74 @@ def test_env_example_is_config_not_a_secret(tmp_path):
     assert not any("secret-bearing" in t for t in _facts(report, FactCategory.CONFIG))
     assert not any(q.topic == "config" for q in report.questions)
     assert any(t.startswith("`.env.example` matches") for t in _facts(report, FactCategory.FILES))
+
+
+def test_keywords_ignore_ticket_ids_and_bare_numbers():
+    from harness.repo_relevance import keywords
+
+    assert keywords("ABC-1234 + ABC-1239") == []
+    assert keywords("PROJ2-77 export csv rows 2048 for v2") == ["export", "csv", "rows"]
+    assert keywords("abc-1234 item 42") == ["abc", "item"]
+
+
+def test_ticket_only_detection_accepts_joiners_only():
+    from harness.repo_relevance import ticket_ids, ticket_only
+
+    assert ticket_only("ABC-1234 + ABC-1239")
+    assert ticket_only("ABC-1, XY9-22 & ABC-3 and DEF-4")
+    assert not ticket_only("ABC-1234 add csv export")
+    assert not ticket_only("add csv export")
+    assert not ticket_only("1234")
+    assert ticket_ids("ABC-1234 + ABC-1239, ABC-1234") == ["ABC-1234", "ABC-1239"]
+
+
+def test_ticket_id_numbers_are_not_matched_against_files(sample_repo):
+    write_files(sample_repo, {"fixtures/postcodes.json": '{"abc": 1234, "n": 1239}\n'})
+    report = analyze(sample_repo, "ABC-1234 + ABC-1239")
+    assert _facts(report, FactCategory.FILES) == []
+    assert not any("1234" in f.evidence or "abc" in f.evidence for f in report.facts)
+
+
+def test_audit_leads_ignore_ticket_ids(sample_repo):
+    from harness.repository_audit import audit
+
+    write_files(sample_repo, {"demo/abc_1234.py": "ABC-1234 = 1\n"})
+    assert audit(sample_repo, "ABC-1234 + ABC-1239")["existing_implementation_leads"] == []
+
+
+def test_ticket_only_request_points_to_context_import_first(sample_repo):
+    report = analyze(sample_repo, "ABC-1234 + ABC-1239")
+    first = report.questions[0]
+    assert first.topic == "scope"
+    assert "ABC-1234, ABC-1239" in first.text
+    assert "harness context import" in first.text and '"ticket"' in first.text
+    assert not any("no usable keywords" in q.text for q in report.questions)
+    rendered = report.render(task_id="t-1").splitlines()
+    assert "only ticket IDs" in rendered[2]
+    assert "harness context import t-1 --file" in rendered[2]
+    assert rendered[3].startswith("unresolved questions (")
+
+
+def test_mixed_request_keeps_keywords_without_ticket_notice(sample_repo):
+    report = analyze(sample_repo, "ABC-1234 add csv export")
+    assert _facts(report, FactCategory.FILES)[0].startswith("`demo/export.py` matches 2")
+    assert not any("only ticket IDs" in q.text for q in report.questions)
+    assert "only ticket IDs" not in report.render()
+
+
+def test_default_render_is_compact_and_full_keeps_inventory(sample_repo):
+    report = analyze(sample_repo, "add csv export")
+    compact, full = report.render(), report.render(full=True)
+    lines = compact.splitlines()
+    headings = [line.split(" (")[0] for line in lines if not line.startswith(" ")][2:]
+    assert headings[:3] == ["unresolved questions", "approved decisions", "request-relevant facts"]
+    assert "`demo/export.py` matches 2 request keywords" in compact
+    assert "runtime dependencies: requests" not in compact
+    assert "runtime dependencies: requests" in full
+    assert "--full" in lines[-1]
+    assert len(compact) < len(full)
+    # Storage and JSON keep every fact; only the default rendering is shorter.
+    assert report.to_dict()["counts"]["facts"] == len(report.facts)
 
 
 @pytest.mark.parametrize(

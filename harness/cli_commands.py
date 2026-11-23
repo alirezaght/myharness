@@ -178,5 +178,5 @@ def cmd_investigate(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     else:
-        print(report.render())
+        print(report.render(full=args.full, task_id=task.id))
     return 0

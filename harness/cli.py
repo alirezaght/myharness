@@ -75,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--decisions", metavar="PATH", help="decision records (default: <repo>/docs/decisions)"
     )
     investigate.add_argument("--json", action="store_true", help="print the report as JSON")
+    investigate.add_argument(
+        "--full",
+        action="store_true",
+        help="print every fact, including the repository inventory (default: compact report)",
+    )
     investigate.set_defaults(handler=cmd_investigate)
 
     from harness.cli_maintenance import register

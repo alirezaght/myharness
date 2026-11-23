@@ -223,9 +223,36 @@ def _start(run, request):
     return TASK_ID.search(out).group(1)
 
 
-def test_investigate_prints_sections_in_order(run, sample_repo):
+def test_investigate_default_report_is_compact(run, sample_repo):
     task = _start(run, "add csv export")
     code, out, err = run("investigate", task, "--repo", str(sample_repo))
+    assert code == 0, err
+    assert out.startswith(f"investigation of {sample_repo.resolve()}")
+    positions = [
+        out.index(f"\n{heading}")
+        for heading in (
+            "unresolved questions (",
+            "approved decisions (",
+            "request-relevant facts (",
+        )
+    ]
+    assert positions == sorted(positions)
+    assert "runtime dependencies: requests" not in out
+    assert f"harness investigate {task} --full" in out
+
+
+def test_investigate_ticket_only_request_points_to_context_import(run, sample_repo):
+    task = _start(run, "ABC-1234 + ABC-1239")
+    code, out, err = run("investigate", task, "--repo", str(sample_repo))
+    assert code == 0, err
+    notice = out.splitlines()[2]
+    assert "only ticket IDs (ABC-1234, ABC-1239)" in notice
+    assert f"harness context import {task} --file" in notice
+
+
+def test_investigate_prints_sections_in_order(run, sample_repo):
+    task = _start(run, "add csv export")
+    code, out, err = run("investigate", task, "--repo", str(sample_repo), "--full")
     assert code == 0, err
     assert out.startswith(f"investigation of {sample_repo.resolve()}")
     headings = [

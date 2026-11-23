@@ -174,7 +174,9 @@ class Reader:
         try:
             with self.operation():
                 self.walk()
-                terms = set(re.findall(r"[a-z][a-z0-9_]{3,30}", ticket.lower()))
+                from harness.repo_relevance import search_terms
+
+                terms = set(re.findall(r"[a-z][a-z0-9_]{3,30}", search_terms(ticket).lower()))
                 terms -= {
                     "description",
                     "summary",
