@@ -152,8 +152,13 @@ def test_saved_report_is_immutable_and_substantive_amendment_returns_pending(lau
     saved = save_report(launched, "codex", report)
     assert saved.returncode == 0, (saved.stdout[-2000:], saved.stderr[-2000:])
     before = state_path(launched).read_bytes()
+    # An identical resubmit is an idempotent success; a different report is still refused.
     duplicate = save_report(launched, "codex", report)
-    assert duplicate.returncode != 0
+    assert duplicate.returncode == 0, (duplicate.stdout[-2000:], duplicate.stderr[-2000:])
+    assert json.loads(duplicate.stdout)["report"] == json.loads(saved.stdout)["report"]
+    changed = copy.deepcopy(report)
+    changed["specification"]["reason"] += " (changed)"
+    assert save_report(launched, "codex", changed).returncode != 0
     assert state_path(launched).read_bytes() == before
     admitted = public_run(launched, "codex", "planning", "admit")
     assert admitted.returncode == 0, (admitted.stdout[-2000:], admitted.stderr[-2000:])
