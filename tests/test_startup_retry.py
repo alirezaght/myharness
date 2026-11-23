@@ -118,7 +118,7 @@ def test_unverified_host_version_override_is_recorded_as_execution_evidence(
     }
     seen = []
 
-    def readiness(root, host, *, accept_unverified_host_version=False):
+    def readiness(root, host, *, accept_unverified_host_version=False, **_):
         seen.append(accept_unverified_host_version)
         check = {"id": "native-host-and-al-protocol", "status": "PASS"}
         if accept_unverified_host_version:
@@ -498,9 +498,9 @@ def test_dashboard_observes_selected_readiness_once(initialized_failure, monkeyp
     observed = []
     original = launch.readiness
 
-    def observe(*args):
+    def observe(*args, **kwargs):
         observed.append(args)
-        return original(*args)
+        return original(*args, **kwargs)
 
     monkeypatch.setattr(launch, "readiness", observe)
     view = dashboard_view(Path(envelope["database"]), execution["task_id"], None)

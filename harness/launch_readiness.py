@@ -3,9 +3,10 @@
 import hashlib
 import json
 import re
+import shlex
 from pathlib import Path
 
-from harness.dependency_layout import inspect
+from harness.dependency_layout import LIMIT_ENV, DependencyLayoutLimit, inspect, scan_limit
 from harness.execution_hosts import installed_package
 
 REQUIRED = (
@@ -21,8 +22,103 @@ REQUIRED = (
 )
 
 
-def readiness(root, host, *, accept_unverified_host_version=False):
-    """``accept_unverified_host_version``: True or a recorded override record."""
+RESOLUTION = (
+    "harness dependencies inspect then reconcile the exact hash-bound ignored dependency plan"
+)
+
+
+def _command(task_id, *parts):
+    return " ".join(["harness", parts[0], shlex.quote(task_id) if task_id else "TASK", *parts[1:]])
+
+
+def dependency_commands(task_id, root, host, scopes):
+    """Exact commands that resolve blocked dependency hardlinks, in order.
+
+    Readiness re-observes every dependency scope; once inspect and reconcile have
+    replaced the scoped hardlinks with private copies, the re-run passes.
+    """
+    repo = shlex.quote(str(Path(root).resolve()))
+    return [
+        _command(
+            task_id,
+            "dependencies inspect",
+            "--repo",
+            repo,
+            "--scopes",
+            shlex.quote(",".join(scopes)),
+            "--output",
+            "layout.json",
+        ),
+        _command(
+            task_id,
+            "dependencies reconcile",
+            "--repo",
+            repo,
+            "--file",
+            "layout.json",
+            "--sha256",
+            "SHA256_PRINTED_BY_INSPECT",
+        ),
+        _command(task_id, "execution readiness", "--host", host, "--repo", repo),
+    ]
+
+
+def _dependency_check(root, host, task_id):
+    try:
+        layout = inspect(root)
+    except DependencyLayoutLimit as exc:
+        if exc.kind == "hardlinks":
+            # Too many hardlinks for one plan: reconcile the named scope first.
+            commands = dependency_commands(task_id, root, host, [exc.scope])
+        else:
+            # Observation budget: the whole layout must be observed, so raise it for
+            # readiness and start alike; a re-run names any hardlinks it then finds.
+            env = LIMIT_ENV + "=" + str(scan_limit() * 2) + " "
+            repo = shlex.quote(str(Path(root).resolve()))
+            commands = [
+                env + _command(task_id, "execution readiness", "--host", host, "--repo", repo),
+                env + _command(task_id, "execution start", "--host", host),
+            ]
+        return {
+            "id": "dependency-layout",
+            "status": "BLOCKED",
+            "reason": str(exc) + " → " + "; then ".join(commands),
+            "scope": exc.scope,
+            "next": commands,
+        }
+    if layout["ready"]:
+        return {
+            "id": "dependency-layout",
+            "status": "PASS",
+            "hardlinks": [],
+            "resolution": RESOLUTION,
+        }
+    scopes = [
+        scope
+        for scope in layout["scopes"]
+        if any(
+            row["path"] == scope or row["path"].startswith(scope + "/")
+            for row in layout["hardlinks"]
+        )
+    ]
+    commands = dependency_commands(task_id, root, host, scopes)
+    return {
+        "id": "dependency-layout",
+        "status": "BLOCKED",
+        "reason": str(len(layout["hardlinks"]))
+        + " ignored dependency hardlinks need private copies → "
+        + "; then ".join(commands),
+        "hardlinks": layout["hardlinks"],
+        "next": commands,
+        "resolution": RESOLUTION,
+    }
+
+
+def readiness(root, host, *, accept_unverified_host_version=False, task_id=None):
+    """``accept_unverified_host_version``: True or a recorded override record.
+
+    ``task_id`` only fills the exact next commands named by a BLOCKED check.
+    """
     checks = []
     try:
         package = installed_package(host, root)
@@ -77,16 +173,7 @@ def readiness(root, host, *, accept_unverified_host_version=False):
             {"id": "native-host-and-al-protocol", "status": "BLOCKED", "reason": str(exc)}
         )
     try:
-        layout = inspect(root)
-        checks.append(
-            {
-                "id": "dependency-layout",
-                "status": "PASS" if layout["ready"] else "BLOCKED",
-                "hardlinks": layout["hardlinks"],
-                "resolution": "harness dependencies inspect then reconcile the exact "
-                "hash-bound ignored dependency plan",
-            }
-        )
+        checks.append(_dependency_check(root, host, task_id))
     except (OSError, ValueError) as exc:
         checks.append({"id": "dependency-layout", "status": "BLOCKED", "reason": str(exc)})
     return {
@@ -114,8 +201,13 @@ class LaunchReadinessError(ValueError):
         self.execution_id = execution_id
 
 
-def require_launch_ready(root, host, *, accept_unverified_host_version=False):
-    result = readiness(root, host, accept_unverified_host_version=accept_unverified_host_version)
+def require_launch_ready(root, host, *, accept_unverified_host_version=False, task_id=None):
+    result = readiness(
+        root,
+        host,
+        accept_unverified_host_version=accept_unverified_host_version,
+        task_id=task_id,
+    )
     failures = [check for check in result["checks"] if check["status"] != "PASS"]
     if failures:
         raise LaunchReadinessError(

@@ -10,7 +10,12 @@ from pathlib import Path
 
 from harness.execution_contract import digest
 
-LIMIT = 200000
+# Entries visited per inspection. This bounds observation time only; a normal
+# monorepo's ignored dependency trees fit. HARNESS_DEPENDENCY_SCAN_LIMIT raises it.
+LIMIT = 2_000_000
+LIMIT_ENV = "HARNESS_DEPENDENCY_SCAN_LIMIT"
+# Ignored hardlinks per plan, so one plan stays within the 4 MiB reconcile input.
+ROW_LIMIT = 10_000
 SKIP = {".git", ".venv", "node_modules", "__pycache__", "dist", "build"}
 
 
@@ -54,66 +59,150 @@ def _ordinary(root, name):
     return path
 
 
+class DependencyLayoutLimit(ValueError):
+    """A bounded observation stopped; ``scope`` names where, for a narrower retry."""
+
+    def __init__(self, message, *, kind, scope, scopes):
+        super().__init__(message)
+        self.kind, self.scope, self.scopes = kind, scope, scopes
+
+
+def scan_limit():
+    raw = os.environ.get(LIMIT_ENV)
+    if raw is None:
+        return LIMIT
+    if not raw.isdigit() or int(raw) <= 0:
+        raise ValueError(LIMIT_ENV + " must be a positive integer")
+    return int(raw)
+
+
+def discover_scopes(root):
+    """Ignored dependency directories (node_modules, .venv) outside skipped trees."""
+    root = Path(root).resolve()
+    scopes = []
+    for directory, dirs, _ in os.walk(root, followlinks=False):
+        for name in list(dirs):
+            if name in {"node_modules", ".venv"}:
+                scopes.append((Path(directory) / name).relative_to(root).as_posix())
+        dirs[:] = [n for n in dirs if n not in SKIP and not (Path(directory) / n).is_symlink()]
+    return sorted(scopes)
+
+
+def _entries(path):
+    """Non-directory entries below ``path``; directory symlinks are never followed."""
+    pending = [path]
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(entry.path)
+                else:
+                    yield entry
+
+
+def _limit_error(message, kind, scope, scopes):
+    return DependencyLayoutLimit(message, kind=kind, scope=scope, scopes=scopes)
+
+
+def _hardlinks(scope, path, budget, scopes):
+    """Regular files with more than one link below one scope, within the budget."""
+    if path.is_file():
+        budget["left"] -= 1
+        info = path.lstat()
+        return [(path, info)] if stat.S_ISREG(info.st_mode) and info.st_nlink > 1 else []
+    found = []
+    for entry in _entries(path):
+        budget["left"] -= 1
+        if budget["left"] < 0:
+            raise _limit_error(
+                "dependency layout scan limit ("
+                + str(budget["limit"])
+                + " entries) reached in "
+                + scope
+                + "; inspect narrower explicit scopes or raise "
+                + LIMIT_ENV,
+                "scan",
+                scope,
+                scopes,
+            )
+        if entry.is_symlink():
+            continue
+        info = entry.stat(follow_symlinks=False)
+        if stat.S_ISREG(info.st_mode) and info.st_nlink > 1:
+            found.append((Path(entry.path), info))
+    return found
+
+
+def _classify(root, scopes, relatives):
+    """Tracked and ignored members of ``relatives``, with one Git call each."""
+    if not relatives:
+        return set(), set()
+    names = lambda raw: {os.fsdecode(p) for p in raw.split(b"\0") if p}  # noqa: E731
+    tracked = names(_git(root, "ls-files", "-z", "--", *scopes).stdout)
+    payload = b"".join(os.fsencode(name) + b"\0" for name in relatives)
+    ignored = names(_git(root, "check-ignore", "-z", "--stdin", input=payload).stdout)
+    return tracked, ignored
+
+
 def inspect(root, scopes=None):
     root = Path(root).resolve()
     before = _source(root)
     if scopes is None:
-        scopes = []
-        for directory, dirs, _ in os.walk(root, followlinks=False):
-            for name in list(dirs):
-                if name in {"node_modules", ".venv"}:
-                    scopes.append((Path(directory) / name).relative_to(root).as_posix())
-            dirs[:] = [n for n in dirs if n not in SKIP and not (Path(directory) / n).is_symlink()]
-    rows = []
-    visited = 0
-    for name in sorted(set(scopes)):
+        scopes = discover_scopes(root)
+    ordered = sorted(set(scopes))
+    limit = scan_limit()
+    budget = {"limit": limit, "left": limit}
+    candidates = []
+    for name in ordered:
         path = _ordinary(root, name)
         if not path.exists():
             continue
-        members = (
-            [path]
-            if path.is_file()
-            else (Path(d) / n for d, dirs, files in os.walk(path, followlinks=False) for n in files)
-        )
-        for member in members:
-            visited += 1
-            if visited > LIMIT:
-                raise ValueError("dependency layout scan limit; provide narrower explicit scopes")
-            if member.is_symlink():
-                continue
-            info = member.lstat()
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink <= 1:
-                continue
-            relative = member.relative_to(root).as_posix()
-            _ordinary(root, relative)
-            if _git(root, "ls-files", "--error-unmatch", "--", relative).returncode == 0:
-                raise ValueError(
-                    "tracked hardlink requires source-owner reconciliation: " + relative
-                )
-            if _git(root, "check-ignore", "-q", "--", relative).returncode != 0:
-                raise ValueError("only ignored dependency files may be reconciled: " + relative)
-            if info.st_size > 64 * 1024 * 1024:
-                raise ValueError("dependency file exceeds reconciliation bound: " + relative)
-            raw = member.read_bytes()
-            after = member.lstat()
-            if (info.st_ino, info.st_mtime_ns, info.st_size, info.st_nlink) != (
-                after.st_ino,
-                after.st_mtime_ns,
-                after.st_size,
-                after.st_nlink,
-            ):
-                raise ValueError("dependency layout changed during observation")
-            rows.append(
-                {
-                    "path": relative,
-                    "sha256": hashlib.sha256(raw).hexdigest(),
-                    "mode": stat.S_IMODE(info.st_mode),
-                    "device": info.st_dev,
-                    "inode": info.st_ino,
-                    "links": info.st_nlink,
-                    "size": info.st_size,
-                }
+        candidates += _hardlinks(name, path, budget, ordered)
+        if len(candidates) > ROW_LIMIT:
+            raise _limit_error(
+                "more than "
+                + str(ROW_LIMIT)
+                + " ignored dependency hardlinks (reached in "
+                + name
+                + "); inspect and reconcile narrower explicit scopes",
+                "hardlinks",
+                name,
+                ordered,
             )
+    visited = limit - budget["left"]
+    candidates.sort(key=lambda item: item[0])
+    relatives = [member.relative_to(root).as_posix() for member, _ in candidates]
+    for relative in relatives:
+        _ordinary(root, relative)
+    tracked, ignored = _classify(root, ordered, relatives)
+    rows = []
+    for (member, info), relative in zip(candidates, relatives, strict=True):
+        if relative in tracked:
+            raise ValueError("tracked hardlink requires source-owner reconciliation: " + relative)
+        if relative not in ignored:
+            raise ValueError("only ignored dependency files may be reconciled: " + relative)
+        if info.st_size > 64 * 1024 * 1024:
+            raise ValueError("dependency file exceeds reconciliation bound: " + relative)
+        raw = member.read_bytes()
+        after = member.lstat()
+        if (info.st_ino, info.st_mtime_ns, info.st_size, info.st_nlink) != (
+            after.st_ino,
+            after.st_mtime_ns,
+            after.st_size,
+            after.st_nlink,
+        ):
+            raise ValueError("dependency layout changed during observation")
+        rows.append(
+            {
+                "path": relative,
+                "sha256": hashlib.sha256(raw).hexdigest(),
+                "mode": stat.S_IMODE(info.st_mode),
+                "device": info.st_dev,
+                "inode": info.st_ino,
+                "links": info.st_nlink,
+                "size": info.st_size,
+            }
+        )
     if _source(root) != before:
         raise ValueError("repository source changed during dependency observation")
     return {

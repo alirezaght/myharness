@@ -60,6 +60,7 @@ def cmd_execution(args):
                 args.repo or task_repo_root(controller, args.task_id),
                 args.host,
                 accept_unverified_host_version=args.accept_unverified_host_version,
+                task_id=args.task_id,
             )
         elif args.action == "start":
             result = start_execution(
