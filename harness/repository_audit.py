@@ -219,7 +219,9 @@ def audit(root, request, *, files=None):
         if head and counts and re.fullmatch(r"\d+\s+\d+", counts):
             ahead, behind = map(int, counts.split())
             comparisons.append({"ref": ref, "revision": revision, "ahead": ahead, "behind": behind})
-    words = {w.lower() for w in re.findall(r"[A-Za-z_][\w-]{3,}", request)}
+    from harness.repo_relevance import search_terms
+
+    words = {w.lower() for w in re.findall(r"[A-Za-z_][\w-]{3,}", search_terms(request))}
     leads = []
     for name in files:
         if PurePosixPath(name).suffix not in SOURCE:

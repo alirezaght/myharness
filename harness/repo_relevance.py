@@ -5,6 +5,9 @@ from pathlib import Path, PurePosixPath
 
 from harness.investigation import FactCategory
 from harness.repo_scan import Findings, read_text
+from harness.ticket_refs import ticket_ids, ticket_only, without_ticket_ids
+
+__all__ = ["keywords", "relevance", "search_terms", "ticket_ids", "ticket_only"]
 
 STOPWORDS = frozenset(
     {"the", "and", "for", "with", "that", "this", "from", "into", "should", "must", "when"}
@@ -15,9 +18,17 @@ MIN_KEYWORD_LENGTH = 3
 MAX_RELEVANT = 20
 
 
+def search_terms(request: str) -> str:
+    """Request text usable for file search: ticket IDs and bare numbers removed."""
+    text = without_ticket_ids(request)
+    return re.sub(r"(?<![\w-])\d+(?![\w-])", " ", text)
+
+
 def keywords(request: str) -> list[str]:
-    words = re.findall(r"[a-z0-9]+", request.lower())
-    usable = [w for w in words if len(w) >= MIN_KEYWORD_LENGTH and w not in STOPWORDS]
+    words = re.findall(r"[a-z0-9]+", without_ticket_ids(request).lower())
+    usable = [
+        w for w in words if len(w) >= MIN_KEYWORD_LENGTH and w not in STOPWORDS and not w.isdigit()
+    ]
     return list(dict.fromkeys(usable))
 
 

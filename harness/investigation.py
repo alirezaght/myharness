@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Any
 
 from harness.decisions import DecisionRecord
+from harness.ticket_refs import ticket_ids, ticket_only
 
 
 class FactCategory(StrEnum):
@@ -53,6 +54,31 @@ def _decision_dict(record: DecisionRecord) -> dict[str, Any]:
     }
 
 
+CONTEXT_IMPORT = "harness context import {task} --file <context.json>"
+
+
+def ticket_only_question(ids: list[str]) -> str:
+    return (
+        f"The request names only ticket IDs ({', '.join(ids)}); the harness does not fetch "
+        "ticket content, so it has no requirements to investigate. Fetch each ticket's text "
+        f"and import it with `{CONTEXT_IMPORT.format(task='<task-id>')}` as sources with "
+        '`kind: "ticket"`, then investigate again.'
+    )
+
+
+# The default report keeps repository state, request matches and scoped ownership.
+# Every other fact is generic repository inventory, rendered only with `full`.
+_RELEVANT = frozenset({FactCategory.REPOSITORY, FactCategory.FILES})
+
+
+def _relevant(fact: Fact) -> bool:
+    return fact.category in _RELEVANT or fact.text.startswith("scoped ")
+
+
+def _fact_line(fact: Fact) -> str:
+    return f"[{fact.category}] {fact.text} — {fact.evidence}"
+
+
 def _section(title: str, lines: list[str]) -> list[str]:
     return [f"{title} ({len(lines)}):", *(f"  {line}" for line in lines or ["(none)"])]
 
@@ -87,18 +113,55 @@ class InvestigationReport:
             },
         }
 
-    def render(self) -> str:
+    def render(self, *, full: bool = False, task_id: str | None = None) -> str:
+        """Compact by default: questions and request-relevant facts first.
+
+        `full` renders every fact, including the generic repository inventory. The stored
+        report and `to_dict` are identical either way; only this text differs.
+        """
+        task = task_id or "<task-id>"
         revision = self.revision or "no git revision"
         decisions = [f"{d.id} v{d.version} — {d.title}" for d in self.decisions]
-        facts = [f"[{f.category}] {f.text} — {f.evidence}" for f in self.facts]
         assumptions = [f"{a.text} — basis: {a.basis}" for a in self.assumptions]
         questions = [f"[{q.topic}] {q.text}" for q in self.questions]
         lines = [
             f"investigation of {self.repo_root} (revision {revision})",
             f"request: {self.request}",
-            *_section("approved decisions", decisions),
-            *_section("verified facts", facts),
-            *_section("assumptions", assumptions),
-            *_section("unresolved questions", questions),
         ]
+        if ticket_only(self.request):
+            lines.append(
+                f"NOTE: the request is only ticket IDs ({', '.join(ticket_ids(self.request))}) "
+                "and the harness does not fetch tickets, so nothing below reflects their "
+                "requirements. Fetch the ticket text and run "
+                f'`{CONTEXT_IMPORT.format(task=task)}` with `kind: "ticket"` sources, '
+                "then investigate again."
+            )
+        if full:
+            return "\n".join(
+                [
+                    *lines,
+                    *_section("approved decisions", decisions),
+                    *_section("verified facts", [_fact_line(f) for f in self.facts]),
+                    *_section("assumptions", assumptions),
+                    *_section("unresolved questions", questions),
+                ]
+            )
+        omitted: dict[str, int] = {}
+        for fact in self.facts:
+            if not _relevant(fact):
+                omitted[str(fact.category)] = omitted.get(str(fact.category), 0) + 1
+        lines += [
+            *_section("unresolved questions", questions),
+            *_section("approved decisions", decisions),
+            *_section(
+                "request-relevant facts", [_fact_line(f) for f in self.facts if _relevant(f)]
+            ),
+            *_section("assumptions", assumptions),
+        ]
+        if omitted:
+            counts = ", ".join(f"{name} {count}" for name, count in sorted(omitted.items()))
+            lines.append(
+                f"repository inventory not shown: {sum(omitted.values())} facts ({counts})"
+            )
+        lines.append(f"every fact: `harness investigate {task} --full` (or --json)")
         return "\n".join(lines)

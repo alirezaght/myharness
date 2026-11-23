@@ -13,7 +13,7 @@ from harness.decisions import (
     decision_files,
     parse_decision,
 )
-from harness.investigation import FactCategory, InvestigationReport
+from harness.investigation import FactCategory, InvestigationReport, ticket_only_question
 from harness.repo_manifests import dependency_facts
 from harness.repo_probes import (
     component_summary,
@@ -24,7 +24,7 @@ from harness.repo_probes import (
     schema_facts,
     test_facts,
 )
-from harness.repo_relevance import relevance
+from harness.repo_relevance import relevance, ticket_ids, ticket_only
 from harness.repo_scan import Findings, git_facts, list_files
 from harness.repository_audit import audit
 
@@ -85,7 +85,10 @@ def analyze(
             f"{comparison['ahead']} ahead and {comparison['behind']} behind {comparison['ref']}",
             "local Git ref comparison; remote freshness unverified (no fetch)",
         )
-    if ownership["ownership"] == "UNRESOLVED" or not ownership["inventory_complete"]:
+    if ticket_only(text):
+        # The harness never fetches tracker content: the requirements must be imported.
+        repository.ask("scope", ticket_only_question(ticket_ids(text)))
+    elif ownership["ownership"] == "UNRESOLVED" or not ownership["inventory_complete"]:
         repository.ask(
             "scope",
             f"For {text[:160]!r}, what outcome should users get, "
