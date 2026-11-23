@@ -202,6 +202,10 @@ def assert_incomplete_refuses_admission(cli,tmp_path):
     packet=json.loads(invoke(cli,'planning','packet')[1])
     file=tmp_path/'blocked-report.json';file.write_text(json.dumps(_reports().report_for(packet)))
     response=json.loads(invoke(cli,'planning','report','--file',str(file))[1])
-    before=json.loads(cli('show')[1])
-    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'],ok=False)
-    assert json.loads(cli('show')[1])==before
+    # Incomplete coverage is recorded as verification debt; final proof still refuses.
+    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
+    state=json.loads(cli('show')[1])
+    assert state['proof_admission']['status']=='admitted'
+    assert any(o.startswith('coverage incomplete') for o in state['implementation_readiness']['obligations'])
+    import al_service_coverage as Coverage
+    assert Coverage.admission_gaps(state,current=True)

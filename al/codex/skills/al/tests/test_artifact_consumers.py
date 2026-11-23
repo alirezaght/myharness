@@ -245,6 +245,13 @@ def test_unattributed_runtime_consumer_does_not_become_a_docs_exclusion(repo):
     put(repo,'docs/prompt.md','# Runtime prompt\n')
     put(repo,'tooling/consumer.py','PROMPT = "docs/prompt.md"\n')
     facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
+    # The consumer is observed (never a silent docs exclusion) and stays a global
+    # diagnostic; an unreferenced leaf outside every unit is not this task's obligation.
+    assert any(g['code']=='unclassified-runtime-consumer' for g in facts['enumeration']['gaps'])
     assessment=Coverage.assess(facts)
-    assert assessment['outcome']=='incomplete'
-    assert any(g['code']=='unclassified-runtime-consumer' for g in assessment['gaps'])
+    assert assessment['global_inventory']['status']=='incomplete'
+    assert not any(g['code']=='unclassified-runtime-consumer' for g in assessment['gaps'])
+    # A unit that literally references the consumer is selected through it.
+    put(repo,'services/b/src/tool.py','TOOL = "tooling/consumer.py"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
+    assert 'services/b' in Coverage.assess(facts)['selected_services']

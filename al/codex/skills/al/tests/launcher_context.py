@@ -169,7 +169,7 @@ def _reports():
     return module
 
 
-def admit_planning(cli, directory=None, *, expect_coverage_blocked=False):
+def admit_planning(cli, directory=None, *, expect_coverage_debt=False):
     """Admit planning through the public packet -> report -> admit protocol.
 
     Only the external Architect model response is fixture data; the packet,
@@ -191,19 +191,12 @@ def admit_planning(cli, directory=None, *, expect_coverage_blocked=False):
         result, out, err = cli("planning", "report", "--file", str(path))
         assert result == 0, f"planning report failed: {result} {out}{err}"
         obligations = json.loads(out)["materialized_obligations"]["stored_path"]
-    import al_store
-    sid = json.loads(cli("show")[1])["session_id"]
-    source = al_store.state_path(sid)
-    observed_root = Path(json.loads(cli("show")[1])["identity"]["root"])
-    if observed_root != al_store.REPO_ROOT:
-        source = observed_root / ".codex/al-runtime" / (sid + ".json")
-    before = source.read_bytes()
     result, out, err = cli("planning", "admit", "--file", obligations)
-    if expect_coverage_blocked:
-        assert result != 0 and "coverage" in str(result) + out + err, (result, out, err)
-        assert source.read_bytes() == before
-    else:
-        assert result == 0, f"planning admission failed: {result} {out}{err}"
+    assert result == 0, f"planning admission failed: {result} {out}{err}"
+    if expect_coverage_debt:
+        # Incomplete coverage is recorded as verification debt, never an admission refusal.
+        obligations = json.loads(cli("show")[1])["implementation_readiness"]["obligations"]
+        assert any("coverage" in o for o in obligations), obligations
 
 
 def _tracked_source(root, scopes=(".",)):

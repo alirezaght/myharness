@@ -220,6 +220,20 @@ def _analyze(facts,scan):
         for consumer in importers.get(pending.pop(),()):
             if consumer not in affected:affected.add(consumer);pending.append(consumer)
     known={record['unit'] for (_,p),record in records.items() if p in affected and record['unit'] in potential}
+    def owner_of(path):
+        owners=[u for u in units.values() if within(u['path'],path)]
+        return max(owners,key=lambda u:unit_depth(u['path']))['id'] if owners else None
+    # A consumer outside the unit layout belongs to no service, so no service check can verify
+    # it: it widens coverage only through the units that literally reference it. Its literal
+    # dependents are observed once; an unowned dependent keeps the conservative fallback.
+    outside=sorted({c for row in artifacts for c in row['consumers'] if owner_of(c) is None})
+    outside_dependents=_referencing_many(scan,outside)
+    leaf=set()
+    for consumer in outside:
+        dependents=outside_dependents[consumer]
+        if all(owner_of(d) is not None or d in outside_dependents for d in dependents):
+            leaf.add(consumer)
+            known.update(o for o in map(owner_of,dependents) if o in potential)
     for row in artifacts:
         for consumer in row['consumers']:
             owners_for_path=[u for u in units.values() if within(u['path'],consumer)]
@@ -229,6 +243,7 @@ def _analyze(facts,scan):
             else:
                 facts['enumeration']['gaps'].append(gap('unclassified-runtime-consumer',consumer,
                     'literal runtime consumer is outside the supported unit layout'))
+            if consumer in leaf:continue
             if not consumer.endswith('.py') and not (consumer.endswith('.go') and owners_for_path and 'go' in units[unit]):
                 uncertainties.append({'code':'uncertain-language-impact','unit':unit if owners_for_path else None,
                     'path':consumer,'location':None,'target':None,
@@ -256,7 +271,8 @@ def _analyze(facts,scan):
     uncertainties=[u for u,flag in zip(uncertainties,flags) if not flag]
     order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
-            'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'task_import_targets_digest':_targets_digest({row for row in import_targets if row[1] in affected or records[(row[0],row[1])]['unit'] in (set(potential) if uncertainties else known|set(facts.get('policy_selection',[])))}),'affected_source_paths':sorted(affected|{consumer for row in artifacts for consumer in row['consumers']}),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[])}
+            'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'task_import_targets_digest':_targets_digest({row for row in import_targets if row[1] in affected or records[(row[0],row[1])]['unit'] in (set(potential) if uncertainties else known|set(facts.get('policy_selection',[])))}),'affected_source_paths':sorted(affected|{consumer for row in artifacts for consumer in row['consumers']}),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[]),
+            'runtime_consumer_dependents':outside_dependents}
 
 
 DATA_SUFFIXES=('.json','.yaml','.yml')
@@ -360,6 +376,27 @@ def _referencing(scan,path,exclude):
     """Source files naming the artifact or its directory (directory loads and globs over-select)."""
     found=_referencing_many(scan,[path])[path]
     return [p for p in found if p!=exclude]
+
+
+def _referencing_many(scan,paths):
+    """_referencing for many paths with one read of each source file."""
+    tokens={}
+    for path in paths:
+        pure=PurePosixPath(path);found=[pure.name.encode()]
+        if pure.parent.name:
+            directory=pure.parent.name.encode()
+            found+=[directory+b'/',b'"'+directory,b"'"+directory]
+        for token in found:tokens.setdefault(token,set()).add(path)
+    out={path:set() for path in paths}
+    if tokens:
+        for files in (scan.files,scan.base):
+            for name,data in files.items():
+                if not name.endswith(SOURCE_SUFFIXES):continue
+                for token,owners in tokens.items():
+                    if token in data:
+                        for path in owners:
+                            if path!=name:out[path].add(name)
+    return {path:sorted(found) for path,found in out.items()}
 
 
 MANIFESTS=frozenset({'package.json','package-lock.json','tsconfig.json','composer.json','pnpm-lock.yaml','pnpm-workspace.yaml'})

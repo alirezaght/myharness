@@ -181,9 +181,10 @@ def require_admitted(st):
     # Unplanned sources and incomplete discovery still refuse admission.
     from al_gate_refresh import refresh
     currency = refresh(st)
+    from al_service_coverage import NEXT_COVERAGE_STEP, require_ready
     if not currency["current"]:
-        refuse("current gate obligations require replanning: " + str(currency["reasons"]))
-    from al_service_coverage import require_ready
+        refuse("current gate obligations require replanning: " + str(currency["reasons"])
+               + "\n" + NEXT_COVERAGE_STEP)
     require_ready(st,current=True)
     if any(v['state'] != 'Resolved' for v in st.get('operational_issues', {}).values()):
         refuse('final proof has unresolved operational issues')
@@ -198,8 +199,10 @@ def prepare_save(st, previous=None):
 
     admission = st["proof_admission"]
     if admission.get("status")=="admitted" and previous and previous.get("proof_admission",{}).get("status")=="pending":
-        from al_service_coverage import require_ready
-        require_ready(st,current=True)
+        # Incomplete coverage is verification debt, not an admission refusal:
+        # final proof, review and approval still enforce it (require_admitted).
+        from al_service_coverage import record_obligations
+        record_obligations(st,current=True)
     if st.get('implementation_readiness'):
         from al_implementation import binding
         value = st['implementation_readiness']

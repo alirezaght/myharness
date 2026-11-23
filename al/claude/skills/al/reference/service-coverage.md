@@ -67,6 +67,13 @@ Global diagnostics remain visible in the declaration even when a captured exclus
 unrelated to the current task. The task assessment alone selects required units, gaps and
 execution bindings. Missing checks in an untouched independent unit do not automatically block
 another task; unknown relationships that could conceal a consumer remain conservative.
+Check-discovery gaps recorded for one unit's own manifest or policy (missing checks,
+pending or unverified package execution, nonliteral package scripts, incomplete declared
+architecture chains) are task obligations only when that unit is selected or touched.
+A literal runtime consumer outside the unit layout belongs to no service: the units whose
+sources literally reference it are selected, and its `unclassified-runtime-consumer`
+diagnostic is a task obligation only when the task touches the consumer itself. A consumer
+referenced by another unowned file keeps the conservative uncertainty fallback.
 
 Unconsumed narrative documentation has no generic runtime-data fallback. This is not a `docs/**`
 exclusion: actual prompt/resource consumers, source code, schemas, unknown data, service-owned

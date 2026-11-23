@@ -424,17 +424,15 @@ def test_missing_go_recipe_blocks_actual_planning_admission(cli, repo, tmp_path,
     p = tmp_path / "report.json"
     p.write_text(json.dumps(_reports().report_for(packet)))
     response = json.loads(invoke(cli, "planning", "report", "--file", str(p))[1])
-    before = state_file().read_bytes()
-    result = invoke(
-        cli,
-        "planning",
-        "admit",
-        "--file",
-        response["materialized_obligations"]["stored_path"],
-        ok=False,
-    )
-    assert "coverage" in "".join(map(str, result))
-    assert state_file().read_bytes() == before
+    # A missing recipe is verification debt: admission records it, final proof refuses.
+    invoke(cli, "planning", "admit", "--file", response["materialized_obligations"]["stored_path"])
+    state = json.loads(cli("show")[1])
+    assert state["proof_admission"]["status"] == "admitted"
+    obligations = state["implementation_readiness"]["obligations"]
+    assert any(o.startswith("coverage incomplete") for o in obligations)
+    import al_service_coverage as Coverage
+
+    assert Coverage.admission_gaps(state, current=True)
 
 
 @pytest.mark.parametrize("provider", ["gitlab", "github"])

@@ -55,18 +55,20 @@ def test_pending_proof_allows_scoped_implementation_but_never_verified_approval(
     writer = ("writer", "start", "--id", "scoped", "--role", "al-engineer", "--files", "app.py")
     degraded = (*writer, "--degraded", "--reason", "Explicit pending-proof tracking.")
     phase_guard = "writer admission requires a writing phase or explicit degraded planning tracking"
-    # Ordinary planning writers fail the cheap phase guard first. The explicit
-    # degraded route separately proves SPEC_READY and classification still apply.
+    # Before SPEC_READY/classification ordinary planning writers fail the phase guard,
+    # which names the next supported command. The explicit degraded route separately
+    # proves SPEC_READY and classification still apply.
     refuses(*writer, diagnostic=phase_guard)
+    refuses(*writer, diagnostic="`spec-gate SPEC_READY`")
     refuses(*degraded, diagnostic="SPEC_READY and classification")
     succeeds("spec-gate", "SPEC_READY")
     refuses(*writer, diagnostic=phase_guard)
     refuses(*degraded, diagnostic="SPEC_READY and classification")
     succeeds("classify", "SMALL", "--designer", "no", "--reason", "Bounded observable repair.")
-    refuses(*writer, diagnostic=phase_guard)
-    succeeds("phase", "IMPLEMENTATION")
+    # After classification the first ordinary writer records PLANNING -> IMPLEMENTATION.
     succeeds(*writer)
     admitted = json.loads(state_path.read_bytes())
+    assert admitted["phase"] == "IMPLEMENTATION"
     scoped = admitted["writers"]["scoped"]
     assert scoped["state"] == "ACTIVE" and scoped["files"] == ["app.py"]
     assert scoped["role"] == "al-engineer" and "degraded" not in scoped

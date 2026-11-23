@@ -213,7 +213,10 @@ def test_unavailable_root_gitlab_keeps_governing_obligation(cli,repo,tmp_path,st
     packet=json.loads(invoke(cli,'planning','packet')[1])
     report=tmp_path/'unavailable-ci-report.json';report.write_text(json.dumps(_reports().report_for(packet)))
     response=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
-    before=state_file().read_bytes()
-    result=invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'],ok=False)
-    assert 'coverage' in ''.join(map(str,result))
-    assert state_file().read_bytes()==before
+    # Unknown root CI inventory is verification debt: admission records it, final proof refuses.
+    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
+    state=json.loads(cli('show')[1])
+    assert state['proof_admission']['status']=='admitted'
+    assert any(o.startswith('coverage incomplete') for o in state['implementation_readiness']['obligations'])
+    import al_service_coverage as Coverage
+    assert Coverage.admission_gaps(state,current=True)
