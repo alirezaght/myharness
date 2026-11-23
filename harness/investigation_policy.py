@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from harness.authoring_contract import canonical, digest, exact
-from harness.authoring_policy import feature_values
+from harness.authoring_policy import feature_values, manifest_version
 
 ENDPOINT = "https://mcp.atlassian.com/v2/mcp"
 TOOLS = ("getAccessibleAtlassianResources", "getJiraIssue")
@@ -131,7 +131,7 @@ def bootstrap_guard(value):
     home = Path.home() / ".codex"
     if (
         not isinstance(proof, dict)
-        or proof.get("native_version") != "0.170.0"
+        or manifest_version(proof.get("native_version")) != "0.170.0"
         or proof.get("child_environment") != {REMOTE_CONTROL_ENV: "1"}
         or proof.get("native_home") != str(home)
         or "CODEX_HOME" in os.environ
@@ -312,7 +312,7 @@ def validate_capability(value, *, observe=False, purpose="read"):
         or (purpose == "reconnect" and not value.reconnect_qualified)
     ):
         raise AcquisitionError("unqualified_transport")
-    if value.executable.get("version") != "0.170.0":
+    if manifest_version(value.executable.get("version")) != "0.170.0":
         raise AcquisitionError("unqualified_transport")
     validate_launch_config(value.config)
     proof = value.effective_config_digests

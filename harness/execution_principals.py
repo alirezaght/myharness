@@ -17,13 +17,17 @@ _READ_ONLY = {
 
 
 class PrincipalRegistry:
-    def __init__(self, directory, native_root, binding, policy, *, epoch_fence=None):
+    def __init__(
+        self, directory, native_root, binding, policy, *, epoch_fence=None, accepted_versions=()
+    ):
         self.directory = Path(directory)
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.native_root = Path(native_root)
         self.binding, self.policy = binding, policy
         self.root = None
         self.epoch_fence = epoch_fence
+        # Exact native versions admitted by a recorded developer override, if any.
+        self.accepted_versions = tuple(accepted_versions)
         path = self.directory / "root.json"
         if path.is_file():
             value = json.loads(path.read_bytes())
@@ -56,7 +60,9 @@ class PrincipalRegistry:
             raise ValueError("IDENTITY_NOT_READY: supervised root start not observed")
         if thread_id in ancestry or len(ancestry) > 20:
             raise ValueError("native ancestry cycle/depth rejected")
-        identity = read_native_identity(self.native_root, thread_id)
+        identity = read_native_identity(
+            self.native_root, thread_id, accepted_versions=self.accepted_versions
+        )
         if thread_id == self.root:
             if identity.parent_thread_id is not None:
                 raise ValueError("supervised root has child provenance")

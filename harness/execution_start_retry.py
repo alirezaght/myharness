@@ -1,5 +1,7 @@
 """A failed native startup can retry only with independently retained no-spawn proof."""
 
+from pathlib import Path
+
 from harness.execution_models import ExecutionConflict
 
 
@@ -84,7 +86,13 @@ def require_startup_retry(controller, execution, envelope):
     identity = initialization_identity(execution, envelope)
     if identity["al_run_id"] != execution["al_run_id"]:
         raise ExecutionConflict("startup retry AL run binding changed")
-    require_launch_ready(envelope["repository"], execution["host"])
+    from harness.native_tool_policy import recorded_override
+
+    require_launch_ready(
+        envelope["repository"],
+        execution["host"],
+        accept_unverified_host_version=recorded_override(Path(execution["handoff_path"]).parent),
+    )
     from harness.execution_contract import loads
     from harness.execution_hosts import installed_package
     from harness.execution_worker import package_for_native

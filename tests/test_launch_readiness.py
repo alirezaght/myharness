@@ -28,7 +28,7 @@ def ready_package(tmp_path, monkeypatch):
     monkeypatch.setattr(
         native,
         "executable_identity",
-        lambda executable, host: {
+        lambda executable, host, **_: {
             "path": executable,
             "version": "qualified-fixture",
             "sha256": "b" * 64,
@@ -65,3 +65,33 @@ def test_missing_transitive_reference_and_traversal_are_named_before_approval(
     blocked = {c["id"] for c in result["checks"] if c["status"] == "BLOCKED"}
     assert "skill:reference/schemas/not-installed.json" in blocked
     assert "skill:reference/../../outside.md" in blocked
+
+
+def test_unsupported_host_version_names_range_and_records_only_explicit_override(
+    ready_package, sample_repo, monkeypatch, tmp_path
+):
+    import harness.launch_readiness as module
+
+    monkeypatch.undo()
+    executable = tmp_path / "claude-fixture"
+    executable.write_text("#!/bin/sh\nprintf '%s\\n' '2.3.0 (Claude Code)'\n")
+    executable.chmod(0o700)
+    monkeypatch.setattr(
+        module,
+        "installed_package",
+        lambda host, root: {
+            "package": str(ready_package),
+            "sha256": "sha256:" + "a" * 64,
+            "executable": str(executable),
+        },
+    )
+    blocked = readiness(sample_repo, "claude")
+    check = next(c for c in blocked["checks"] if c["id"] == "native-host-and-al-protocol")
+    assert check["status"] == "BLOCKED"
+    assert ">=2.1.310,<2.2.0" in check["reason"]
+    assert "--accept-unverified-host-version" in check["reason"]
+    accepted = readiness(sample_repo, "claude", accept_unverified_host_version=True)
+    check = next(c for c in accepted["checks"] if c["id"] == "native-host-and-al-protocol")
+    assert check["status"] == "PASS"
+    assert check["override"]["status"] == "UNVERIFIED"
+    assert check["override"]["version"] == "2.3.0"

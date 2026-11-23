@@ -36,10 +36,14 @@ ROLES = (
     "al-builder",
     "al-scout",
 )
-SUPPORTED_NATIVE_VERSIONS = {
-    "codex": frozenset({"0.164.0", "0.165.0"}),
-    "claude": frozenset({"2.1.310", "2.1.325", "2.1.326"}),
+# Tested native CLI release lines as [lowest tested, exclusive bound). Native CLIs
+# auto-update patch releases constantly; a patch inside a tested line keeps that
+# line's launch restrictions, which are still verified when the profile is built.
+SUPPORTED_NATIVE_RANGES = {
+    "codex": (("0.164.0", "0.166.0"), ("0.170.0", "0.171.0")),
+    "claude": (("2.1.310", "2.2.0"),),
 }
+UNVERIFIED_VERSION_FLAG = "--accept-unverified-host-version"
 DISABLED = (
     "shell_tool shell_snapshot shell_snapshot_v2 unified_exec apply_patch_freeform "
     "code_mode code_mode_only code_mode_host js_repl js_repl_tools_only apps connectors "
@@ -97,13 +101,85 @@ def _observe_executable_identity(executable, host):
     }
 
 
-def executable_identity(executable, host):
+def version_key(version):
+    if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ValueError("invalid native version: " + repr(version))
+    return tuple(int(part) for part in version.split("."))
+
+
+def supported_range(host):
+    return " or ".join(">=" + low + ",<" + high for low, high in SUPPORTED_NATIVE_RANGES[host])
+
+
+def version_supported(host, version):
+    try:
+        value = version_key(version)
+    except ValueError:
+        return False
+    return any(
+        version_key(low) <= value < version_key(high)
+        for low, high in SUPPORTED_NATIVE_RANGES.get(host, ())
+    )
+
+
+def unverified_record(host, identity):
+    return {
+        "status": "UNVERIFIED",
+        "version": identity["version"],
+        "sha256": identity["sha256"],
+        "supported": supported_range(host),
+        "accepted_by": "explicit developer flag " + UNVERIFIED_VERSION_FLAG,
+    }
+
+
+OVERRIDE_FILE = "host-version-override.json"
+
+
+def recorded_override(directory):
+    """The developer override recorded beside an execution handoff, or False."""
+    path = Path(directory) / OVERRIDE_FILE
+    if path.is_symlink() or not path.is_file():
+        return False
+    value = json.loads(path.read_text())
+    if not isinstance(value, dict) or value.get("status") != "UNVERIFIED":
+        raise ValueError("recorded native host version override is malformed")
+    return value
+
+
+def record_override(directory, record):
+    # Each explicit developer decision replaces the previous one for this execution;
+    # the record binds one exact version and binary digest.
+    path = Path(directory) / OVERRIDE_FILE
+    path.write_text(canonical(record))
+    path.chmod(0o600)
+    return record
+
+
+def executable_identity(executable, host, *, accept_unverified=False):
+    """Admit a tested version line, or an explicitly recorded developer override.
+
+    ``accept_unverified`` is ``True`` for a fresh developer override, or the recorded
+    override record, which then admits only that exact version and binary.
+    """
     identity = _observe_executable_identity(executable, host)
-    if identity["version"] not in SUPPORTED_NATIVE_VERSIONS[host]:
-        raise ValueError(
-            "unsupported native executable version: " + host + " " + identity["version"]
-        )
-    return identity
+    if version_supported(host, identity["version"]):
+        return identity
+    record = unverified_record(host, identity)
+    if accept_unverified is True or (
+        isinstance(accept_unverified, dict) and accept_unverified == record
+    ):
+        return identity | {"qualification": record}
+    raise ValueError(
+        "unsupported native executable version: "
+        + host
+        + " "
+        + identity["version"]
+        + " (supported: "
+        + supported_range(host)
+        + "); install a supported version, or start with "
+        + UNVERIFIED_VERSION_FLAG
+        + " to record an explicit developer override in the execution evidence"
+    )
 
 
 def restricted_catalog():
@@ -122,9 +198,27 @@ def restricted_catalog():
     return value
 
 
-def build_native_policy(execution, package, auth_selection, *, mcp_url, token, directory):
+def _execution_features(version):
+    """Feature switches and config for the tested codex line at or below ``version``."""
+    if version_key(version) < (0, 170, 0):
+        return dict.fromkeys(DISABLED, False), {}
+    from harness.authoring_policy import AUTHORING_CONFIG, feature_values
+
+    # 0.170 adds tool-exposing features; reuse its qualified no-tool inventory and keep
+    # only the multi-agent switches execution sets itself (v1 stays at its default).
+    features = {
+        key: value
+        for key, value in feature_values("0.170.0").items()
+        if key not in {"multi_agent", "multi_agent_v2"}
+    }
+    return features, AUTHORING_CONFIG["0.170.0"]
+
+
+def build_native_policy(
+    execution, package, auth_selection, *, mcp_url, token, directory, accept_unverified=False
+):
     host = execution["host"]
-    identity = executable_identity(package["executable"], host)
+    identity = executable_identity(package["executable"], host, accept_unverified=accept_unverified)
     directory = Path(directory).resolve()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     if set(auth_selection) - {
@@ -136,6 +230,7 @@ def build_native_policy(execution, package, auth_selection, *, mcp_url, token, d
         raise ValueError("unsupported native auth-selection constraints")
     options = []
     if host == "codex":
+        features, extra = _execution_features(identity["version"])
         catalog = directory / "models.json"
         catalog.write_text(canonical(restricted_catalog()))
         config = {
@@ -153,11 +248,12 @@ def build_native_policy(execution, package, auth_selection, *, mcp_url, token, d
                 }
             },
             **auth_selection,
+            **extra,
         }
         for key, value in config.items():
             options.extend(["-c", key + "=" + _toml(value)])
-        for feature in DISABLED:
-            options.extend(["-c", "features." + feature + "=false"])
+        for feature, value in features.items():
+            options.extend(["-c", "features." + feature + "=" + _toml(value)])
         options.extend(["-c", "agents.enabled=true", "-c", "features.multi_agent_v2=true"])
         for role in ROLES:
             value = tomllib.loads(
@@ -185,6 +281,16 @@ def build_native_policy(execution, package, auth_selection, *, mcp_url, token, d
                     "agents." + role + ".description=" + _toml(role),
                 ]
             )
+        if version_key(identity["version"]) >= (0, 170, 0):
+            from harness.authoring_policy import probe_feature_values
+
+            # Offline launch probe: every restriction must take effect in this binary.
+            probe_feature_values(
+                identity["path"],
+                options,
+                {**features, "multi_agent_v2": True},
+                label="execution",
+            )
     else:
         raise ValueError("Claude restricted role principal profile not yet verified")
     policy = {
@@ -206,7 +312,7 @@ def _toml(value):
     return json.dumps(value)
 
 
-def build_claude_policy(package, directory, channels, hook, session_id):
+def build_claude_policy(package, directory, channels, hook, session_id, *, accept_unverified=False):
     """Explicit settings and inline roles leave native auth storage in its normal location."""
     from harness.claude_agent_guard import required_hooks
 
@@ -263,7 +369,9 @@ def build_claude_policy(package, directory, channels, hook, session_id):
         path.chmod(0o600)
     return {
         "host": "claude",
-        "executable": executable_identity(package["executable"], "claude"),
+        "executable": executable_identity(
+            package["executable"], "claude", accept_unverified=accept_unverified
+        ),
         "options": [
             "--restricted",
             "--strict-mcp-config",
@@ -293,7 +401,11 @@ def build_claude_policy(package, directory, channels, hook, session_id):
 
 def verify_native_policy(policy):
     expected = policy["executable"]
-    if executable_identity(expected["path"], policy["host"]) != expected:
+    recorded = expected.get("qualification") or False
+    if (
+        executable_identity(expected["path"], policy["host"], accept_unverified=recorded)
+        != expected
+    ):
         raise ValueError("native executable changed since admission")
     for name, sha in policy.get("files", {}).items():
         path = Path(name)

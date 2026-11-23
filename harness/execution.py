@@ -36,14 +36,40 @@ def approval_binding(task_id, approval):
     }
 
 
+def _override(readiness_result):
+    for check in readiness_result["checks"]:
+        if check["id"] == "native-host-and-al-protocol" and "override" in check:
+            return check["override"]
+    return None
+
+
+def _record_override(controller, task_id, execution_id, directory, record):
+    """Store an explicit developer host-version override as execution evidence."""
+    from harness.native_tool_policy import record_override
+
+    record_override(directory, record)
+    controller.workspace(task_id).record_event(
+        "execution.host_version_override",
+        {"execution_id": execution_id, **record},
+    )
+
+
 def start_execution(
-    controller, task_id, *, host="claude", specs=None, launch=True, expected_approval_binding=None
+    controller,
+    task_id,
+    *,
+    host="claude",
+    specs=None,
+    launch=True,
+    expected_approval_binding=None,
+    accept_unverified_host_version=False,
 ):
     if host not in {"claude", "codex"}:
         raise ValueError("host must be claude or codex")
     conn = controller.conn
     root = task_repo_root(controller, task_id).resolve()
     store = spec_store(controller, task_id, specs)
+    override = None
     with transaction(conn):
         approval = require_approval(controller, task_id, store, root)
         plan = TestPlanner(controller, task_id).document()
@@ -66,16 +92,33 @@ def start_execution(
             created = False
             if launch and saved["status"] == "Reserved":
                 from harness.launch_readiness import LaunchReadinessError, require_launch_ready
+                from harness.native_tool_policy import recorded_override
 
+                directory = Path(saved["handoff_path"]).parent
                 try:
-                    require_launch_ready(root, host)
+                    override = _override(
+                        require_launch_ready(
+                            root,
+                            host,
+                            accept_unverified_host_version=accept_unverified_host_version
+                            or recorded_override(directory),
+                        )
+                    )
                 except LaunchReadinessError as error:
                     raise LaunchReadinessError(str(error), execution_id=saved["id"]) from error
+                if override:
+                    _record_override(controller, task_id, saved["id"], directory, override)
         else:
             if launch:
                 from harness.launch_readiness import require_launch_ready
 
-                require_launch_ready(root, host)
+                override = _override(
+                    require_launch_ready(
+                        root,
+                        host,
+                        accept_unverified_host_version=accept_unverified_host_version,
+                    )
+                )
             eid = "exec-" + secrets.token_hex(12)
             binding["execution_id"] = eid
             # Uses the existing per-repository private state root, regardless of DB placement.
@@ -165,6 +208,8 @@ def start_execution(
                 "execution.reserved",
                 {"execution_id": eid, "approval_id": approval.id, "host": host},
             )
+            if override:
+                _record_override(controller, task_id, eid, runtime, override)
     outcome = {"status": saved["status"]}
     if launch and saved["status"] == "Reserved":
         from harness.execution_worker import launch_worker

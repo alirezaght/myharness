@@ -56,9 +56,19 @@ def cmd_execution(args):
             from harness.cli_commands import task_repo_root
             from harness.launch_readiness import readiness
 
-            result = readiness(args.repo or task_repo_root(controller, args.task_id), args.host)
+            result = readiness(
+                args.repo or task_repo_root(controller, args.task_id),
+                args.host,
+                accept_unverified_host_version=args.accept_unverified_host_version,
+            )
         elif args.action == "start":
-            result = start_execution(controller, args.task_id, host=args.host, specs=args.specs)
+            result = start_execution(
+                controller,
+                args.task_id,
+                host=args.host,
+                specs=args.specs,
+                accept_unverified_host_version=args.accept_unverified_host_version,
+            )
         else:
             execution = get_execution(controller.conn, args.execution_id)
             if execution["task_id"] != args.task_id:
@@ -275,13 +285,15 @@ def add_execution_parser(subparsers):
         p = actions.add_parser(action)
         p.add_argument("task_id")
         p.set_defaults(handler=cmd_execution)
-        if action == "readiness":
+        if action in {"readiness", "start"}:
             p.add_argument("--host", choices=["claude", "codex"], default="claude")
-            p.add_argument("--repo")
-            continue
-        if action == "start":
-            p.add_argument("--host", choices=["claude", "codex"], default="claude")
-            p.add_argument("--specs")
+            p.add_argument(
+                "--accept-unverified-host-version",
+                action="store_true",
+                help="explicitly accept a native CLI version outside the tested range; "
+                "start records the override in the execution evidence",
+            )
+            p.add_argument("--repo" if action == "readiness" else "--specs")
             continue
         p.add_argument("execution_id")
         if action in {"planning-preview", "planning-start", "planning-inspect", "planning-finish"}:

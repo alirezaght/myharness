@@ -21,13 +21,16 @@ REQUIRED = (
 )
 
 
-def readiness(root, host):
+def readiness(root, host, *, accept_unverified_host_version=False):
+    """``accept_unverified_host_version``: True or a recorded override record."""
     checks = []
     try:
         package = installed_package(host, root)
         from harness.native_tool_policy import executable_identity
 
-        executable = executable_identity(package["executable"], host)
+        executable = executable_identity(
+            package["executable"], host, accept_unverified=accept_unverified_host_version
+        )
         checks.append(
             {
                 "id": "native-host-and-al-protocol",
@@ -37,6 +40,8 @@ def readiness(root, host):
                 "executable": executable,
             }
         )
+        if "qualification" in executable:
+            checks[-1]["override"] = executable["qualification"]
         base = Path(package["package"])
         inputs = set(REQUIRED)
         visited = set()
@@ -109,8 +114,8 @@ class LaunchReadinessError(ValueError):
         self.execution_id = execution_id
 
 
-def require_launch_ready(root, host):
-    result = readiness(root, host)
+def require_launch_ready(root, host, *, accept_unverified_host_version=False):
+    result = readiness(root, host, accept_unverified_host_version=accept_unverified_host_version)
     failures = [check for check in result["checks"] if check["status"] != "PASS"]
     if failures:
         raise LaunchReadinessError(

@@ -164,7 +164,9 @@ def test_lost_success_response_recovers_same_run_after_host_drift(
         monkeypatch.setattr(
             readiness,
             "readiness",
-            lambda *a: {"checks": [{"status": "BLOCKED", "reason": "host drift after dispatch"}]},
+            lambda *a, **k: {
+                "checks": [{"status": "BLOCKED", "reason": "host drift after dispatch"}]
+            },
         )
         return {"status": "WorkerOwned"}
 
@@ -217,7 +219,7 @@ def test_reserved_preflight_error_keeps_host_locked_across_refresh(
         monkeypatch.setattr(
             readiness,
             "readiness",
-            lambda *a: {
+            lambda *a, **k: {
                 "checks": [{"status": "BLOCKED", "reason": "host changed before dispatch"}]
             },
         )
