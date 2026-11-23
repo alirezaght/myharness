@@ -298,7 +298,9 @@ def gaps(ci,gates,*,projection=None):
             if obligation['applicability']=='UNRESOLVED' and gate['applicability']!='UNRESOLVED':continue
             if set(obligation['units'])-set(gate['units']):continue
             required=obligation['inputs']+[d['path'] for d in obligation['dependencies']]
-            if not all(covered(gate['scope'],p) for p in required):continue
+            from al_repository_facts import PathScope
+            scope=PathScope(gate['scope'])
+            if not all(scope.covers(p) for p in required):continue
             valid=True;break
         if not valid:missing.append('missing sourced CI job '+label+' ('+obligation['applicability']+')')
     return missing
