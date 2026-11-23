@@ -529,3 +529,82 @@ def test_long_evidence_launch_uses_public_managed_runtime(launched, platform, tm
         / (allocation["allocation_id"] + ".json")
     )
     assert json.loads(registry.read_bytes())["owner"] == allocation["owner"]
+
+
+def _age(manager, allocation, seconds):
+    path = manager.root / "records" / (allocation["allocation_id"] + ".json")
+    stamp = path.stat().st_mtime - seconds
+    os.utime(path, (stamp, stamp))
+
+
+def test_expire_reclaims_retained_scratch_after_retention_window(storage):
+    manager, allocation, facts, _ = storage
+    facts["outcome"] = "failed"
+    scratch = Path(allocation["path"])
+    (scratch / "nested").mkdir()
+    (scratch / "nested" / "fixture").write_bytes(b"x" * 4096)
+    assert finalize(manager, allocation)["state"] == "RETAINED"
+
+    assert manager.expire()["results"] == []
+    assert scratch.exists()
+
+    _age(manager, allocation, manager.policy["retention_seconds"] + 60)
+    result = manager.expire()
+    assert result["complete"] is True
+    assert [r["state"] for r in result["results"]] == ["REMOVED"]
+    assert result["results"][0]["reason"] == "retention_expired"
+    assert not scratch.exists()
+    assert record(manager, allocation)["state"] == "REMOVED"
+    assert manager.expire()["results"] == []
+
+
+def test_expire_keeps_consumers_and_live_owners(storage):
+    manager, allocation, _, _ = storage
+    manager.register_consumer(
+        allocation["allocation_id"], consumer_id="c" * 32, owner_reference={"x": 1}
+    )
+    _age(manager, allocation, manager.policy["retention_seconds"] + 60)
+    assert manager.expire()["results"] == []
+    assert Path(allocation["path"]).exists()
+
+    value = record(manager, allocation)
+    value["consumers"] = []
+    value["owner_reference"] = {"pid": os.getpid()}
+    with manager._locked() as directories:
+        manager._save(directories, value)
+    _age(manager, allocation, manager.policy["retention_seconds"] + 60)
+    assert manager.expire()["results"] == []
+    assert Path(allocation["path"]).exists()
+
+
+def test_expire_handles_missing_directory_and_can_be_disabled(storage, tmp_path):
+    manager, allocation, _, _ = storage
+    _age(manager, allocation, 10**7)
+    disabled = lifecycle.StorageManager(
+        manager.root, policy={"minimum_free_bytes": 0, "retention_seconds": 0}, create=False
+    )
+    assert disabled.expire()["results"] == []
+    Path(allocation["path"]).rmdir()
+    result = manager.expire()
+    assert [r["state"] for r in result["results"]] == ["REMOVED"]
+    assert record(manager, allocation)["state"] == "REMOVED"
+
+
+def test_allocate_expires_old_scratch_first(storage):
+    manager, allocation, _, _ = storage
+    _age(manager, allocation, manager.policy["retention_seconds"] + 60)
+    manager.allocate(
+        owner={"adapter_kind": "evidence", "identity": "run-E2", "reservation": "r2"},
+        allocation_class="verification-fixtures",
+        declaration_digest="b" * 64,
+    )
+    assert not Path(allocation["path"]).exists()
+    assert record(manager, allocation)["state"] == "REMOVED"
+
+
+def test_expire_removes_fifo_fixtures(storage):
+    manager, allocation, _, _ = storage
+    os.mkfifo(Path(allocation["path"]) / "fifo")
+    _age(manager, allocation, manager.policy["retention_seconds"] + 60)
+    assert [r["state"] for r in manager.expire()["results"]] == ["REMOVED"]
+    assert not Path(allocation["path"]).exists()

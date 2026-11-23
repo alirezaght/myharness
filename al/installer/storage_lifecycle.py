@@ -34,7 +34,16 @@ RECORD_VERSION = 2
 CLASSES = {"verification-fixtures", "operation-scratch", "build-cache"}
 STATES = {"ALLOCATED", "RUNNING", "RETAINED", "ELIGIBLE", "QUARANTINED", "REMOVED"}
 SUBDIRECTORIES = ("records", "allocations", "quarantine", "receipts")
-DEFAULT_POLICY = {"warning_bytes": 10 * 1024**3, "minimum_free_bytes": 5 * 1024**3}
+DEFAULT_POLICY = {
+    "warning_bytes": 10 * 1024**3,
+    "minimum_free_bytes": 5 * 1024**3,
+    # Scratch that never became eligible (failed runs, unproven descendant
+    # settlement on macOS, abandoned allocations) expires after this long
+    # without a record change. 0 disables expiry.
+    "retention_seconds": 3 * 24 * 3600,
+}
+EXPIRED = "retention_expired"
+EXPIRABLE_STATES = {"ALLOCATED", "RUNNING", "RETAINED"}
 
 
 def configured_policy(policy=None):
@@ -42,6 +51,7 @@ def configured_policy(policy=None):
     for key, name in (
         ("warning_bytes", "HARNESS_STORAGE_WARNING_BYTES"),
         ("minimum_free_bytes", "HARNESS_STORAGE_MINIMUM_FREE_BYTES"),
+        ("retention_seconds", "HARNESS_STORAGE_RETENTION_SECONDS"),
     ):
         value = os.environ.get(name)
         if value is not None:
@@ -112,6 +122,42 @@ def _valid_owner(owner):
         return len(value.encode("utf-8")) <= 4096
     except UnicodeEncodeError:
         return False
+
+
+def _owner_alive(value):
+    """True when the recorded owner process still exists (same pid and start time)."""
+    reference = value.get("owner_reference")
+    if not isinstance(reference, dict):
+        return False
+    pid = reference.get("pid")
+    if type(pid) is not int or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    start = (reference.get("identity") or {}).get("start")
+    if not start:
+        return True
+    try:
+        import subprocess
+
+        observed = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        ).stdout.strip()
+        if not observed:
+            return False
+        started = time.mktime(time.strptime(observed, "%a %b %d %H:%M:%S %Y"))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return True
+    # pid reuse: a different process now owns the pid.
+    return abs(started - float(start[0])) < 2
 
 
 def _valid_identity(value):
@@ -342,6 +388,12 @@ class StorageManager:
                 "measurement_complete": False,
                 "reason": "storage_observation_unavailable",
             }
+        try:
+            # Bounded, best-effort: reclaim expired scratch before admitting new
+            # scratch so the namespace cannot grow without limit.
+            self.last_expiry = self.expire(limits={"seconds": 2.0})
+        except (OSError, StorageError):
+            self.last_expiry = None
         with self._locked() as directories:
             if (
                 os.statvfs(self.root).f_bavail * os.statvfs(self.root).f_frsize
@@ -752,6 +804,97 @@ class StorageManager:
                 results.append(receipt)
         return {"schema_version": VERSION, "results": results, "complete": complete}
 
+    def expire(self, *, limits=None, now=None):
+        """Reclaim scratch whose record has been unchanged past the retention window.
+
+        Retention (failed outcomes, unproven descendant settlement, abandoned
+        allocations) is a diagnostic grace period, not permanent storage.
+        Allocations with registered consumers or a live recorded owner process
+        are kept. Work is bounded; a partial removal continues on the next call.
+        """
+        bound = _limits(limits)
+        retention = self.policy["retention_seconds"]
+        result = {"schema_version": VERSION, "results": [], "complete": True}
+        if not retention or self.namespace_identity is None:
+            return result
+        now = time.time() if now is None else now
+        deadline = time.monotonic() + bound["seconds"]
+        remaining = bound["entries"]
+        with self._locked() as directories:
+            names = []
+            with os.scandir(directories["records"]) as iterator:
+                for entry in iterator:
+                    if len(names) >= bound["records"]:
+                        result["complete"] = False
+                        break
+                    names.append(entry.name)
+            for name in sorted(names):
+                if not name.endswith(".json") or not _identifier(name[:-5]):
+                    continue
+                if time.monotonic() >= deadline or remaining <= 0:
+                    result["complete"] = False
+                    break
+                try:
+                    value = self._record(directories, name[:-5])
+                    age = now - os.stat(name, dir_fd=directories["records"]).st_mtime
+                except (OSError, StorageError):
+                    continue
+                resumable = value["state"] in {"ELIGIBLE", "QUARANTINED"} and (
+                    value["retention_reason"] == EXPIRED
+                )
+                if not resumable and (
+                    value["state"] not in EXPIRABLE_STATES
+                    or value["transaction"] is not None
+                    or value["consumers"]
+                    or age < retention
+                    or _owner_alive(value)
+                ):
+                    continue
+                try:
+                    if not resumable:
+                        value.update(
+                            state="ELIGIBLE",
+                            retention_reason=EXPIRED,
+                            generation=value["generation"] + 1,
+                        )
+                        try:
+                            os.stat(
+                                value["allocation_id"],
+                                dir_fd=directories["allocations"],
+                                follow_symlinks=False,
+                            )
+                        except FileNotFoundError:
+                            # Directory already gone: only the record remains.
+                            value.update(
+                                state="QUARANTINED",
+                                transaction={
+                                    "id": secrets.token_hex(16),
+                                    "phase": "REMOVE_ROOT_READY",
+                                    "identity": value["identity"],
+                                },
+                            )
+                        self._save(directories, value)
+                    seconds = deadline - time.monotonic()
+                    receipt = self._cleanup(
+                        directories,
+                        value,
+                        bound | {"entries": remaining, "seconds": max(min(seconds, 30), 0.001)},
+                    )
+                except (OSError, StorageError) as error:
+                    result["results"].append(
+                        {
+                            "allocation_id": value["allocation_id"],
+                            "state": "RETAINED",
+                            "reason": str(error) or type(error).__name__,
+                        }
+                    )
+                    continue
+                remaining -= receipt.get("processed_entries", 0)
+                if receipt["state"] == "PARTIAL":
+                    result["complete"] = False
+                result["results"].append(receipt)
+        return result
+
     def resume_cleanup(self, allocation_id, *, transaction_id, limits=None):
         with self._locked() as directories:
             value = self._record(directories, allocation_id)
@@ -762,10 +905,12 @@ class StorageManager:
             return self._cleanup(directories, value, _limits(limits))
 
     def _cleanup(self, directories, value, bound):
-        if value["schema_version"] != RECORD_VERSION:
+        expired = value["retention_reason"] == EXPIRED
+        if value["schema_version"] != RECORD_VERSION and not expired:
             raise StorageError("legacy_settlement_unproven")
         free_before = _free_bytes(directories["allocations"])
-        self._attestation(value)
+        if not expired:
+            self._attestation(value)
         if value["consumers"]:
             raise StorageError("active_consumer")
         transaction = value["transaction"]
@@ -863,7 +1008,7 @@ class StorageManager:
             "allocation_id": value["allocation_id"],
             "transaction_id": value["transaction"]["id"],
             "state": "REMOVED",
-            "reason": "settled_published",
+            "reason": EXPIRED if value["retention_reason"] == EXPIRED else "settled_published",
             "processed_entries": processed,
             "recovered_bytes": None,
             "filesystem_free_space": _space_observation(

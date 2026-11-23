@@ -195,7 +195,13 @@ def _delete_contents(fd, device, bound, progress, depth):
                 ):
                     raise StorageError("member_replaced")
                 os.rmdir(entry.name, dir_fd=fd)
-            elif stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
+            elif (
+                stat.S_ISREG(info.st_mode)
+                or stat.S_ISLNK(info.st_mode)
+                # Test fixtures leave FIFOs/sockets; unlinking only drops the name.
+                or stat.S_ISFIFO(info.st_mode)
+                or stat.S_ISSOCK(info.st_mode)
+            ):
                 if identity(os.stat(entry.name, dir_fd=fd, follow_symlinks=False)) != identity(
                     info
                 ):

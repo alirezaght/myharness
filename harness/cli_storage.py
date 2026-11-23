@@ -7,9 +7,16 @@ from harness.storage import load_core, manager_for_operator
 
 
 def add_storage_parser(subparsers):
-    parser = subparsers.add_parser("storage", help="inspect and reclaim managed disposable storage")
+    parser = subparsers.add_parser(
+        "storage",
+        help="inspect and reclaim managed disposable storage",
+        description=(
+            "expire removes scratch unchanged for HARNESS_STORAGE_RETENTION_SECONDS "
+            "(default 3 days); it also runs automatically before each new allocation."
+        ),
+    )
     actions = parser.add_subparsers(dest="storage_action", required=True)
-    for name in ("inspect", "preview", "apply"):
+    for name in ("inspect", "preview", "apply", "expire"):
         action = actions.add_parser(name)
         action.add_argument(
             "--root", help="existing managed-storage namespace (default: Harness home)"
@@ -29,7 +36,7 @@ def add_storage_parser(subparsers):
             )
         elif name == "preview":
             action.add_argument("--output", help="save an immutable cleanup plan for apply")
-        else:
+        elif name == "apply":
             action.add_argument("--plan", required=True, help="exact plan saved by storage preview")
         action.set_defaults(handler=cmd_storage)
 
@@ -56,6 +63,8 @@ def cmd_storage(args):
             )
             if not args.json:
                 print("Cleanup plan saved: " + reference["reference"])
+    elif args.storage_action == "expire":
+        result = manager.expire(limits=bound)
     else:
         plan = core["storage_filesystem"].read_json(Path(args.plan).absolute())
         result = manager.apply(plan, limits=bound)
@@ -83,9 +92,13 @@ def cmd_storage(args):
         for row in result["legacy"]:
             print("Unregistered, retained: " + row["name"])
         print("Only registered, settled and successfully published scratch is reclaimable.")
-    elif args.storage_action == "apply":
+    elif args.storage_action in {"apply", "expire"}:
         for row in result["results"]:
             print(f"{row['allocation_id']}: {row['state']} · {row.get('reason', '')}")
         if not result.get("complete", True):
-            print("Cleanup is partial; refresh preview and apply to continue bounded work.")
+            print(
+                "Cleanup is partial; run expire again to continue."
+                if args.storage_action == "expire"
+                else "Cleanup is partial; refresh preview and apply to continue bounded work."
+            )
     return 0
