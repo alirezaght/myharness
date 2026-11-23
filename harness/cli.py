@@ -57,7 +57,18 @@ def build_parser() -> argparse.ArgumentParser:
     classify.add_argument("task_id")
     classify.add_argument("level", choices=LEVELS, nargs="?")
     classify.add_argument(
-        "--assessment", metavar="JSON", help="reassess remaining work from inspected risk evidence"
+        "--assessment",
+        metavar="JSON",
+        help="reassess remaining work from inspected risk evidence "
+        "(format: harness classify --assessment-schema)",
+    )
+    from harness.input_formats import PrintFormat
+
+    classify.add_argument(
+        "--assessment-schema",
+        action=PrintFormat,
+        format_name="assessment",
+        help="print the closed --assessment JSON format (schema and example) and exit",
     )
     classify.add_argument("--repo", metavar="PATH", help="repository for assessment evidence")
     classify.set_defaults(handler=cmd_classify)

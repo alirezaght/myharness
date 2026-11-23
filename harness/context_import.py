@@ -11,6 +11,31 @@ from harness.interview_catalogue import catalogue_for
 from harness.state_models import QuestionKind
 from harness.testplan_models import TestCategory
 
+# The closed schema_version 1 format. `harness context import --schema` prints a
+# JSON Schema built from these same constants (harness.input_formats).
+CONTEXT_FIELDS = ("schema_version", "sources", "answers", "design", "tests", "requirements")
+SOURCE_FIELDS = ("id", "kind", "content", "sha256", "provenance")
+SOURCE_KINDS = ("ticket", "audit", "user", "spec", "planning")
+SOURCE_ID_PATTERN = "[A-Za-z0-9_-]+"
+MAX_SOURCE_BYTES = 1024 * 1024
+CITATION_FIELDS = ("source", "quote")
+REQUIREMENT_KEYS = ("ticket", "criteria", "invariants")
+REQUIREMENT_ROW_FIELDS = ("id", "text", *CITATION_FIELDS)
+TICKET_FIELDS = ("present", "id", "content", *CITATION_FIELDS)
+ANSWER_FIELDS = ("id", "topic", "question", "answer", "catalogue_key", *CITATION_FIELDS)
+ANSWER_TOPICS = (*INTERVIEW_TOPICS, "scope", "decisions")
+DESIGN_FIELDS = ("id", "section", "statement", "delegated", *CITATION_FIELDS)
+TEST_FIELDS = (
+    "id",
+    "category",
+    "statement",
+    "covers",
+    "mock",
+    "mock_reason",
+    *CITATION_FIELDS,
+)
+COVERS_PATTERN = "Q:.+|E:.+|Q[1-9][0-9]*|E[1-9][0-9]*"
+
 
 def import_context(controller, task_id, value):
     if isinstance(value, dict) and value.get("schema_version") == 2:
@@ -32,7 +57,7 @@ def import_context(controller, task_id, value):
             "status": "PROPOSED",
             "implementation_approval": False,
         }
-    required = {"schema_version", "sources", "answers", "design", "tests", "requirements"}
+    required = set(CONTEXT_FIELDS)
     if not isinstance(value, dict) or set(value) != required or value["schema_version"] != 1:
         raise ValueError(
             "context import requires closed sources, answers, design, tests and requirements"
@@ -51,13 +76,13 @@ def import_context(controller, task_id, value):
     for row in value["sources"]:
         if (
             not isinstance(row, dict)
-            or set(row) != {"id", "kind", "content", "sha256", "provenance"}
+            or set(row) != set(SOURCE_FIELDS)
             or not isinstance(row["id"], str)
-            or not re.fullmatch("[A-Za-z0-9_-]+", row["id"])
+            or not re.fullmatch(SOURCE_ID_PATTERN, row["id"])
             or row["id"] in sources
-            or row["kind"] not in {"ticket", "audit", "user", "spec", "planning"}
+            or row["kind"] not in SOURCE_KINDS
             or not isinstance(row["content"], str)
-            or len(row["content"].encode()) > 1024 * 1024
+            or len(row["content"].encode()) > MAX_SOURCE_BYTES
             or hashlib.sha256(row["content"].encode()).hexdigest() != row["sha256"]
             or not isinstance(row["provenance"], str)
             or not row["provenance"].strip()
@@ -93,7 +118,7 @@ def import_context(controller, task_id, value):
     requirements = value["requirements"]
     if (
         not isinstance(requirements, dict)
-        or set(requirements) - {"ticket", "criteria", "invariants"}
+        or set(requirements) - set(REQUIREMENT_KEYS)
         or not requirements.get("criteria")
     ):
         raise ValueError("context requires typed accepted criterion identities")
@@ -103,7 +128,7 @@ def import_context(controller, task_id, value):
         for row in rows:
             if (
                 not isinstance(row, dict)
-                or set(row) != {"id", "text", "source", "quote"}
+                or set(row) != set(REQUIREMENT_ROW_FIELDS)
                 or not row["text"]
                 or row["id"] in seen
             ):
@@ -125,15 +150,7 @@ def import_context(controller, task_id, value):
     entries = {"questions": [], "design": [], "tests": []}
     with transaction(controller.conn):
         for row in value["answers"]:
-            if set(row) != {
-                "id",
-                "topic",
-                "question",
-                "answer",
-                "catalogue_key",
-                "source",
-                "quote",
-            } or row["topic"] not in {*INTERVIEW_TOPICS, "scope", "decisions"}:
+            if set(row) != set(ANSWER_FIELDS) or row["topic"] not in ANSWER_TOPICS:
                 raise ValueError("invalid imported answer")
             why = provenance(row)
             known = catalogue.get(row["catalogue_key"]) if row["catalogue_key"] else None
@@ -169,10 +186,7 @@ def import_context(controller, task_id, value):
                 )
             refs["Q:" + row["id"]] = "Q" + str(question.id)
         for row in value["design"]:
-            if (
-                set(row) != {"id", "section", "statement", "delegated", "source", "quote"}
-                or type(row["delegated"]) is not bool
-            ):
+            if set(row) != set(DESIGN_FIELDS) or type(row["delegated"]) is not bool:
                 raise ValueError("invalid imported design")
             why = provenance(row)
             section = DesignSection(row["section"])
@@ -194,16 +208,7 @@ def import_context(controller, task_id, value):
             refs["E:" + row["id"]] = "E" + str(entry.id)
             entries["design"].append(entry.id)
         for row in value["tests"]:
-            if set(row) != {
-                "id",
-                "category",
-                "statement",
-                "covers",
-                "mock",
-                "mock_reason",
-                "source",
-                "quote",
-            }:
+            if set(row) != set(TEST_FIELDS):
                 raise ValueError("invalid imported scenario")
             why = provenance(row)
             covers = [refs.get(ref, ref) for ref in row["covers"]]
