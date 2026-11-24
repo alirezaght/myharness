@@ -308,7 +308,9 @@ def _drain(stream, channel, output):
             control(("closed", channel))
 
 
-def replay_source(conn, execution_id, token):
+def replay_source(conn, execution_id, token, transport=None):
+    """Ingest the AL run's outbox; with `transport` ("service" or "polling") also publish the
+    step 8 live view of the same state (#31)."""
     execution = get_execution(conn, execution_id)
     if execution["worker_token"] != token:
         raise ExecutionConflict("stale_epoch: worker ownership changed before source replay")
@@ -346,7 +348,99 @@ def replay_source(conn, execution_id, token):
     for event in outbox[execution["cursor"] : execution["cursor"] + 200]:
         ingest_event(conn, execution_id, event)
     update_owned(conn, execution_id, token, source_contact=time.time())
+    if transport is not None:
+        from harness.execution_al_live import publish
+
+        try:
+            publish(execution, state, transport)
+        except (OSError, ValueError, TypeError, KeyError):
+            pass  # the live view is presentation only; the outbox stays authoritative
     return execution["cursor"] + 200 >= len(outbox)
+
+
+def deliver_answers(controller, execution_id, package):
+    """Record developer answers queued from the dashboard with AL's own `ask --answer` (#31).
+    AL's `next` then tells the orchestrator to send each answer to the agent that asked."""
+    from harness.execution_al_live import answer_pending
+
+    execution = get_execution(controller.conn, execution_id)
+    envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
+    environment = dict(execution_environment())
+
+    def run_al(arguments):
+        require_execution_authority(controller, execution_id, operation="decision")
+        command = al_argv(
+            package["launcher"],
+            execution["host"],
+            envelope["repository"],
+            execution["al_session_id"],
+            *arguments,
+        )
+        try:
+            result = subprocess.run(
+                command, cwd=envelope["repository"], env=environment, capture_output=True, timeout=30
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            return 1, "", str(error)
+        return (
+            result.returncode,
+            result.stdout.decode(errors="replace"),
+            result.stderr.decode(errors="replace"),
+        )
+
+    return answer_pending(execution, run_al)
+
+
+class SourceEvents:
+    """Step 8's source of AL state changes: service events when available, else polling."""
+
+    RETRY_SECONDS = 30.0
+    SAFETY_SECONDS = 10.0
+
+    def __init__(self, execution, envelope, package, notify):
+        from harness.execution_al_live import environment_flag
+
+        self.enabled = environment_flag("HARNESS_AL_SERVICE_EVENTS")
+        self.source = al_source(execution, envelope)
+        self.notify = notify
+        self.subscription = None
+        self.attempted = None
+        self.locator = None
+        if self.enabled:
+            from harness.execution_al_service import Locator
+
+            self.locator = Locator(
+                package["launcher"], envelope["repository"], execution["host"], execution["al_session_id"]
+            )
+
+    @property
+    def transport(self):
+        return "service" if self.subscription is not None and self.subscription.active else "polling"
+
+    def refresh(self):
+        if not self.enabled or self.transport == "service":
+            return
+        now = time.monotonic()
+        if self.attempted is not None and now - self.attempted < self.RETRY_SECONDS:
+            return
+        self.attempted = now
+        from harness.execution_al_service import Subscription
+
+        try:
+            directory = self.locator()
+        except (OSError, ValueError, subprocess.SubprocessError):
+            directory = None
+        self.subscription = Subscription.open(directory, [self.source], self.notify)
+
+    def due(self, last_replay):
+        """Whether the polling tick must replay: always without a service; with one, only as a
+        slow safety net (events carry every change)."""
+        interval = self.SAFETY_SECONDS if self.transport == "service" else 1.0
+        return time.monotonic() - last_replay > interval
+
+    def close(self):
+        if self.subscription is not None:
+            self.subscription.close()
 
 
 def dispatch_pending(controller, execution_id, package):
@@ -820,9 +914,10 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
             isolation_stack.close()
             append_log(conn, execution_id, "worker", native_startup("NATIVE_SPAWN_FAILED"))
             return
-        closed, last_poll = 0, 0
+        closed, last_poll, last_replay = 0, 0, 0
         failure = None
         stderr_seen = False
+        events = None
         try:
             conn.execute(
                 "UPDATE execution_attempts SET status='Running',child_pid=?,updated_at=? "
@@ -846,12 +941,25 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                     proc.stdin.close()
                 except BrokenPipeError:
                     pass
+            def source_changed(_path):
+                try:
+                    output.put_nowait(("al-event", None))
+                except queue.Full:
+                    pass  # the next tick replays anyway
+
+            try:
+                events = SourceEvents(execution, envelope, package, source_changed)
+            except (OSError, ValueError, KeyError):
+                events = None
             while closed < 2 or proc.poll() is None:
                 try:
                     channel, raw = output.get(timeout=0.2)
                 except queue.Empty:
                     channel, raw = None, None
-                if channel == "closed":
+                if channel == "al-event":
+                    replay_source(conn, execution_id, token, transport="service")
+                    last_replay = time.monotonic()
+                elif channel == "closed":
                     closed += 1
                 elif channel == "error":
                     raise ExecutionConflict(native_failure(raw, "NATIVE_STREAM_INVALID"))
@@ -877,19 +985,29 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                     current = get_execution(conn, execution_id)
                     if current["status"] not in TERMINAL:
                         require_execution_authority(controller, execution_id, operation="launch")
-                    replay_source(conn, execution_id, token)
+                    if events is not None:
+                        events.refresh()
+                    transport = events.transport if events is not None else "polling"
+                    if events is None or events.due(last_replay):
+                        replay_source(conn, execution_id, token, transport=transport)
+                        last_replay = time.monotonic()
                     update_owned(conn, execution_id, token, heartbeat=time.time())
                     from harness.execution_decisions import deliver_pending
 
                     deliver_pending(controller, execution_id)
                     dispatch_pending(controller, execution_id, package)
-                    replay_source(conn, execution_id, token)
+                    if deliver_answers(controller, execution_id, package):
+                        replay_source(conn, execution_id, token, transport=transport)
+                    else:
+                        replay_source(conn, execution_id, token)
                     last_poll = time.monotonic()
         except Exception as error:
             failure = native_failure(error)
             cleanup_call("failure-signal", lambda: signal_group(__import__("signal").SIGTERM))
             cleanup_call("failure-wait", lambda: proc.wait(timeout=5))
         finally:
+            if events is not None:
+                cleanup_call("runtime-close", events.close)
             # Independent disposal retains errors without skipping later owned cleanup.
             group_disposed, _ = cleanup_call(
                 "final-signal", lambda: signal_group(__import__("signal").SIGKILL)
