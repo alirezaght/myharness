@@ -236,13 +236,18 @@ def test_a_later_command_reuses_references_for_identical_captured_sources():
     assert len(first_reads) == 3 and again_reads == []
     changed = dict(values, **{'c/z.py': b'uses x.py'})
     assert imports._referencing_many(_scan(changed, changed_reads), ['a/x.py', 'c/z.py']) == {'a/x.py': ['b/y.py', 'c/z.py'], 'c/z.py': []}
-    assert len(changed_reads) == 3
+    # Only the changed blob is read again: unchanged blobs answer from their stored runs (#25).
+    assert changed_reads == ['c/z.py']
     # A corrupt record is a miss, never a result.
-    for record in (al_store.RUNTIME_DIR / 'derived' / 'literal-references').glob('*.json'):
-        record.write_text(record.read_text().replace('b/y.py', 'b/q.py'))
+    import al_analysis_index as index
+    index.flush()
+    for record in index.index_root().rglob('*.pack'):
+        record.write_bytes(record.read_bytes().replace(b'b/y.py', b'b/q.py'))
+    index.reset()
     corrupt_reads = []
     assert imports._referencing_many(_scan(values, corrupt_reads), ['a/x.py', 'c/z.py']) == first
-    assert len(corrupt_reads) == 3
+    # The forged answer is a miss; it is recomputed from the intact per-blob runs.
+    assert corrupt_reads == []
 
 
 def test_scan_inputs_match_pairwise_unit_binding():

@@ -24,6 +24,10 @@ LIMITS={'files':50000,'bytes':64*1024*1024,'file_bytes':2*1024*1024,'depth':32}
 EXCLUDED={'.git','.codex','.claude','.venv','node_modules','__pycache__','.pytest_cache','.ruff_cache','dist','build','.next','.turbo'}
 
 
+# Code identity of the `git-blob-sha256` fact: sha256 of the bytes Git stores under an object id.
+BLOB_SHA256='sha256-of-git-blob-v1'
+
+
 def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 
@@ -546,12 +550,20 @@ class Snapshot(CaptureMixin):
                     self.gaps.append(gap('base-byte-limit',p,'base per-file content byte limit'));continue
                 self.base.records[p]={'oid':oid.decode(),'size':int(size)};self.base_modes[p]=mode.decode()
             from al_git_cache import blobs
-            for batch in self.base_batches(list(self.base)):
+            import al_analysis_index as index
+            # A Git blob's sha256 is a fact of its object id (#25): stored ones are reused,
+            # and only unknown blobs are read from the object database.
+            paths=list(self.base)
+            known=index.lookup('git-blob-sha256',BLOB_SHA256,[self.base.records[p]['oid'] for p in paths],root=self.root)
+            for position,value in known.items():
+                if isinstance(value,str) and len(value)==64:self.base.records[paths[position]]['sha256']=value
+            for batch in self.base_batches([p for p in paths if 'sha256' not in self.base.records[p]]):
                 try:
                     values=blobs(self.root,[self.base.records[p]['oid'] for p in batch],max_bytes=self.batch_bytes,file_bytes=LIMITS['file_bytes'])
                     for p in batch:
                         data=values[self.base.records[p]['oid']]
                         self.base.records[p]['sha256']=hashlib.sha256(data).hexdigest();self.retain(('base',p),data)
+                    index.record('git-blob-sha256',BLOB_SHA256,[(self.base.records[p]['oid'],self.base.records[p]['sha256']) for p in batch],root=self.root)
                 except (OSError,ValueError,subprocess.CalledProcessError) as exc:
                     for p in batch:
                         del self.base.records[p];self.base_modes.pop(p,None)
@@ -609,6 +621,8 @@ def collect_from_snapshot(scan):
     facts['question']={'changed_paths':scan.paths,'directory_paths':sorted(p for p in scan.paths if scan.observe_path(p)['state']=='directory')}
     facts['capture']=scan.capture_metadata()
     facts['dependencies']['boundary_consumers']=boundary_consumers(scan)
+    # Publish the facts this capture computed (one immutable pack, #25).
+    __import__('al_analysis_index').flush()
     validate_facts(facts);return facts
 
 

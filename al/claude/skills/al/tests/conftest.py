@@ -62,7 +62,12 @@ def isolated_runtime(tmp_path, monkeypatch, repo):
     monkeypatch.setattr(al_store, "REPO_ROOT", repo)
     monkeypatch.setenv("AL_RUNTIME_DIR", str(runtime))
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(repo))
+    # The shared per-repository fact store (#25) lives under each test's own directory.
+    monkeypatch.setenv("AL_ANALYSIS_INDEX_DIR", str(tmp_path / "analysis-index"))
+    import al_analysis_index
+    al_analysis_index._STORES.clear()
     yield runtime
+    al_analysis_index._STORES.clear()
 
 
 @pytest.fixture(scope="session")

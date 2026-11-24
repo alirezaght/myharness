@@ -3,7 +3,9 @@ import ast
 import copy
 import hashlib
 import re
-from al_analysis_cache import AnalysisCache, parse_python
+from al_analysis_cache import AnalysisCache
+from al_blob_analysis import TokenFinder, _trie_pattern  # noqa: F401  (re-exported)
+import al_blob_analysis as blob
 from al_profile import measured
 from collections import defaultdict
 from pathlib import PurePosixPath
@@ -52,8 +54,8 @@ def _analyze(facts,scan):
             module=relative[:-3].replace('/','.');package=module.endswith('.__init__') or module=='__init__'
             module=module.removesuffix('.__init__') if module!='__init__' else ''
             key=(snapshot,path);records[key]={'unit':unit['id'],'module':module,'package':package};owners[module].add(key)
-    def issue(record,path,node,target,reason):
-        uncertainties.append({'code':'uncertain-import','unit':record['unit'],'path':path,'location':getattr(node,'lineno',None),'target':target,'reason':reason})
+    def issue(record,path,line,target,reason):
+        uncertainties.append({'code':'uncertain-import','unit':record['unit'],'path':path,'location':line,'target':target,'reason':reason})
     def targets(record,name):
         own=record['unit'];visible={own}
         visible.update(d for c in units[own]['module_contexts'] for d in c['local_dependencies'])
@@ -65,143 +67,30 @@ def _analyze(facts,scan):
         # Cross-unit imports remain conservative when a local dependency declaration
         # is absent; shared roots are possible, isolated service roots are not.
         return {key for key in candidates if not records[key]['unit'].startswith('services/')}
-    def sources():
-        for snapshot,files in [('base',scan.base),('current',scan.files)]:
-            paths=[path for which,path in records if which==snapshot]
-            for path,data in files.content_items(paths):yield snapshot,path,records[(snapshot,path)],data
-    for count,(snapshot,path,record,data) in enumerate(sources(),1):
+    # Each source's import observations are a per-blob fact (al_blob_analysis); they are
+    # replayed here against the repository's module ownership, in source order.
+    def resolve(record,snapshot,path,name,line,dynamic=False):
+        if not isinstance(name,str) or not name:
+            issue(record,path,line,None,'dynamic target is not a literal module');return
+        import_targets.add((snapshot,path,name,'dynamic' if dynamic else 'static'))
+        hits=targets(record,name)
+        for key in hits:edges.add((path,key[1]))
+        distinct={records[key]['unit'] for key in hits}
+        if len(distinct)>1:issue(record,path,line,name,'ambiguous visible module ownership')
+        if dynamic and not hits:
+            root=name.split('.')[0]
+            # A source directory/namespace anywhere can shadow external imports.
+            shadow=any(module==root or module.startswith(root+'.') for module in owners)
+            if not shadow and root in STDLIB and (units[record['unit']]['python_requirement'] in TARGETS):resolved.add((path,name,'stdlib'))
+            elif not shadow and EXTERNAL.get(root) in units[record['unit']]['external_distributions']:resolved.add((path,name,EXTERNAL[root]))
+            else:issue(record,path,line,name,'literal dynamic import identity is not established')
+    for count,((snapshot,path),events) in enumerate(source_events(scan,records),1):
         progress.report('inventory-analysis',count=count,total=len(records))
-        # A source and its AST are local to one iteration, not a repository-sized memo.
-        try:tree=parse_python(data)
-        except (SyntaxError,UnicodeError,ValueError,RecursionError):
-            issue(record,path,ast.Pass(),None,'source AST unavailable');continue
-        if sum(1 for _ in ast.walk(tree))>100000:
-            issue(record,path,tree,None,'source AST complexity limit');continue
-        def resolve(name,node,dynamic=False):
-            if not isinstance(name,str) or not name:
-                issue(record,path,node,None,'dynamic target is not a literal module');return
-            import_targets.add((snapshot,path,name,'dynamic' if dynamic else 'static'))
-            hits=targets(record,name)
-            for key in hits:edges.add((path,key[1]))
-            distinct={records[key]['unit'] for key in hits}
-            if len(distinct)>1:issue(record,path,node,name,'ambiguous visible module ownership')
-            if dynamic and not hits:
-                root=name.split('.')[0]
-                # A source directory/namespace anywhere can shadow external imports.
-                shadow=any(module==root or module.startswith(root+'.') for module in owners)
-                if not shadow and root in STDLIB and (units[record['unit']]['python_requirement'] in TARGETS):resolved.add((path,name,'stdlib'))
-                elif not shadow and EXTERNAL.get(root) in units[record['unit']]['external_distributions']:resolved.add((path,name,EXTERNAL[root]))
-                else:issue(record,path,node,name,'literal dynamic import identity is not established')
-        class Visitor(ast.NodeVisitor):
-            def __init__(self):self.aliases={};self.tainted=set()
-            def scope(self,node):
-                saved=self.aliases,self.tainted;self.aliases=dict(self.aliases);self.tainted=set(self.tainted)
-                body=node.body if hasattr(node,'body') else []
-                # Binding analysis is deliberately conservative across branches/order.
-                imports={};writes=defaultdict(int);alias_dependencies={}
-                def bindings(nodes,conditional=False):
-                    for n in nodes:
-                        if isinstance(n,(ast.FunctionDef,ast.AsyncFunctionDef,ast.ClassDef,ast.Lambda)):
-                            if hasattr(n,'name'):writes[n.name]+=1
-                            continue
-                        if isinstance(n,(ast.Assign,ast.AnnAssign)):
-                            value=n.value
-                            alias=None
-                            if isinstance(value,ast.Name) and (value.id=='__import__' or self.aliases.get(value.id) in {'function','builtin'} or imports.get(value.id) in {'function','builtin'}):alias='builtin' if value.id=='__import__' else imports.get(value.id,self.aliases.get(value.id))
-                            elif isinstance(value,ast.Attribute) and value.attr=='import_module':
-                                alias='function' if isinstance(value.value,ast.Name) and imports.get(value.value.id,self.aliases.get(value.value.id))=='module' else 'unknown'
-                            for target in (n.targets if isinstance(n,ast.Assign) else [n.target]):
-                                if alias and isinstance(target,ast.Name):
-                                    imports[target.id]=alias
-                                    alias_dependencies[target.id]=value.id if isinstance(value,ast.Name) else value.value.id if isinstance(value.value,ast.Name) else None
-                                if isinstance(target,ast.Attribute) and target.attr=='path':issue(record,path,n,None,'runtime search path assignment')
-                        if isinstance(n,ast.Import):
-                            for a in n.names:
-                                name=a.asname or a.name.split('.')[0];writes[name]+=1
-                                if a.name=='importlib':imports[name]='module'
-                                if conditional:writes[name]+=2
-                        elif isinstance(n,ast.ImportFrom):
-                            for a in n.names:
-                                name=a.asname or a.name;writes[name]+=1
-                                if n.module=='importlib' and a.name=='import_module':imports[name]='function'
-                                if n.module=='builtins' and a.name=='__import__':imports[name]='builtin'
-                                if conditional:writes[name]+=2
-                        elif isinstance(n,ast.Name) and isinstance(n.ctx,(ast.Store,ast.Del)):writes[n.id]+=1
-                        elif isinstance(n,(ast.Global,ast.Nonlocal)):
-                            for name in n.names:writes[name]+=2
-                        elif isinstance(n,ast.Attribute) and isinstance(n.ctx,(ast.Store,ast.Del)) and isinstance(n.value,ast.Name):writes[n.value.id]+=2
-                        if conditional and isinstance(n,ast.Name) and isinstance(n.ctx,(ast.Store,ast.Del)):writes[n.id]+=2
-                        bindings(list(ast.iter_child_nodes(n)),conditional or isinstance(n,(ast.If,ast.Try,ast.For,ast.While,ast.With,ast.Match)))
-                bindings(body)
-                if hasattr(node,'args'):
-                    for arg in [*node.args.posonlyargs,*node.args.args,*node.args.kwonlyargs]:writes[arg.arg]+=2
-                    for arg in (node.args.vararg,node.args.kwarg):
-                        if arg:writes[arg.arg]+=2
-                self.tainted.update(name for name,count in writes.items() if count>1 or name not in imports)
-                self.tainted.difference_update(name for name,count in writes.items() if count==1 and name in imports)
-                self.aliases.update(imports)
-                while True:
-                    tainted={name for name,dependency in alias_dependencies.items() if dependency in self.tainted or imports[name]=='unknown'}
-                    if tainted<=self.tainted:break
-                    self.tainted.update(tainted)
-                for n in body:self.visit(n)
-                self.aliases,self.tainted=saved
-            visit_Module=scope
-            visit_FunctionDef=scope
-            visit_AsyncFunctionDef=scope
-            visit_ClassDef=scope
-            def visit_Lambda(self,node):issue(record,path,node,None,'lambda dynamic binding context unsupported') if any(isinstance(n,ast.Call) for n in ast.walk(node)) else None
-            def visit_Import(self,node):
-                for a in node.names:resolve(a.name,node)
-            def visit_ImportFrom(self,node):
-                base=node.module or ''
-                if node.level:
-                    package=record['module'].split('.') if record['package'] else record['module'].split('.')[:-1]
-                    if node.level>len(package):issue(record,path,node,base,'relative import escapes package');return
-                    base='.'.join(package[:len(package)-node.level+1]+([base] if base else []))
-                resolve(base,node)
-                for a in node.names:
-                    if a.name!='*':
-                        name=base+'.'+a.name if base else a.name
-                        if targets(record,name):resolve(name,node)
-            def primitive(self,node):
-                return isinstance(node,ast.Name) and (node.id=='__import__' or self.aliases.get(node.id) in {'function','builtin','module','unknown'}) or isinstance(node,ast.Attribute) and node.attr in {'import_module','__import__'}
-            def visit_Assign(self,node):
-                if isinstance(node.value,(ast.List,ast.Tuple,ast.Set,ast.Dict)) and any(self.primitive(n) for n in ast.walk(node.value)):issue(record,path,node,None,'import primitive escapes through a container')
-                self.generic_visit(node)
-            def visit_Return(self,node):
-                if self.primitive(node.value):issue(record,path,node,None,'import primitive escapes through a return value')
-                self.generic_visit(node)
-            def visit_Call(self,node):
-                if isinstance(node.func,ast.Name) and node.func.id=='getattr' and node.args and (self.primitive(node.args[0]) or len(node.args)>1 and isinstance(node.args[1],ast.Constant) and node.args[1].value in {'import_module','__import__'}):issue(record,path,node,None,'reflective import primitive binding is unsupported')
-                if any(self.primitive(n) for n in [*node.args,*(k.value for k in node.keywords)]):issue(record,path,node,None,'import primitive escapes as a call argument')
-                fn=node.func;recognized=False;suspected=False
-                if isinstance(fn,ast.Name):
-                    kind=self.aliases.get(fn.id)
-                    recognized=(fn.id=='__import__' or kind in {'function','builtin'}) and fn.id not in self.tainted
-                    suspected=fn.id=='__import__' or kind in {'function','builtin','unknown'}
-                elif isinstance(fn,ast.Attribute):
-                    recognized=isinstance(fn.value,ast.Name) and self.aliases.get(fn.value.id)=='module' and fn.value.id not in self.tainted and fn.attr=='import_module'
-                    suspected=fn.attr in {'import_module','__import__','exec_module','load_module','spec_from_file_location'}
-                    if fn.attr in {'append','insert','extend'} and isinstance(fn.value,ast.Attribute) and fn.value.attr=='path':issue(record,path,node,None,'runtime search path mutation')
-                if recognized:
-                    target=node.args[0].value if node.args and isinstance(node.args[0],ast.Constant) else None
-                    if isinstance(target,str) and target.startswith('.'):
-                        package=node.args[1].value if len(node.args)>1 and isinstance(node.args[1],ast.Constant) else next((k.value.value for k in node.keywords if k.arg=='package' and isinstance(k.value,ast.Constant)),None)
-                        if isinstance(package,str):
-                            level=len(target)-len(target.lstrip('.'));parts=package.split('.')
-                            target='.'.join(parts[:len(parts)-level+1]+[target.lstrip('.')]) if level<=len(parts) else None
-                        else:target=None
-                    if isinstance(fn,ast.Name) and (fn.id=='__import__' or self.aliases.get(fn.id)=='builtin'):
-                        level=next((k.value.value if isinstance(k.value,ast.Constant) else None for k in node.keywords if k.arg=='level'),0)
-                        if len(node.args)>4:level=node.args[4].value if isinstance(node.args[4],ast.Constant) else None
-                        if level!=0 or len(node.args)>1 or any(k.arg in {'globals','locals'} for k in node.keywords):
-                            issue(record,path,node,target,'builtin import context/relative level is unsupported');target=None
-                    resolve(target,node,True)
-                elif suspected:issue(record,path,node,None,'dynamic import binding is shadowed or unsupported')
-                if isinstance(fn,ast.Name) and fn.id in {'eval','exec'}:issue(record,path,node,None,'runtime code execution can introduce imports')
-                self.generic_visit(node)
-        Visitor().visit(tree)
+        record=records[(snapshot,path)]
+        for event in events:
+            if event[0]=='i':issue(record,path,event[1],event[2],event[3])
+            elif event[0]=='r':resolve(record,snapshot,path,event[1],event[2],event[3])
+            elif targets(record,event[1]):resolve(record,snapshot,path,event[1],event[2])
     progress.report('inventory-analysis',count=len(records),force=True)
     affected={p for _,p in records if scope.overlaps(p)}
     changed_sources=set(affected)
@@ -333,50 +222,45 @@ def _reference_tokens(path):
     return tokens
 
 
-def _trie_pattern(tokens):
-    """A regex matching, at one position, the longest token that starts there.
-
-    Shared prefixes are factored so the engine does O(token length) work per
-    position instead of trying every token; single-child chains stay literal so
-    nesting depth is the number of branch points, not the token length."""
-    trie={}
-    for token in tokens:
-        node=trie
-        for byte in token:node=node.setdefault(byte,{})
-        node[None]=True
-    def emit(node):
-        branches=[]
-        for byte in sorted(k for k in node if k is not None):
-            run=bytes([byte]);child=node[byte]
-            while None not in child and len(child)==1:
-                (next_byte,child),=child.items();run+=bytes([next_byte])
-            branches.append(re.escape(run)+emit(child))
-        if not branches:return b''
-        body=branches[0] if len(branches)==1 else b'(?:'+b'|'.join(branches)+b')'
-        # Greedy optional continuation: the longest token at a position wins over its prefixes.
-        return b'(?:'+body+b')?' if None in node else body
-    return re.compile(emit(trie))
+def _root(scan):
+    return getattr(scan,'root',None)
 
 
-class TokenFinder:
-    """Every token occurring (as a substring) in a byte string, in one regex scan.
+def _blob_facts(scan,namespace,rows,compute,*,compress=False):
+    """Per-blob facts for `rows` of (files, path, key): stored ones are reused; the
+    missing ones read each distinct blob once (verified against its captured hash)."""
+    import al_analysis_index as index
+    keys=[];first={}
+    for files,path,key in rows:
+        identity=index.encode(key)
+        if identity not in first:first[identity]=len(keys);keys.append((key,files,path))
+    def missing(positions):
+        out={}
+        for files in {id(keys[i][1]):keys[i][1] for i in positions}.values():
+            wanted=[i for i in positions if keys[i][1] is files]
+            by_path={keys[i][2]:i for i in wanted}
+            for path,data in files.content_items(list(by_path)):out[by_path[path]]=compute(keys[by_path[path]][0],data)
+        return out
+    values=index.facts(namespace,index.code_digest('al_blob_analysis'),[k for k,_,_ in keys],missing,root=_root(scan),compress=compress)
+    return {identity:values[position] for identity,position in first.items()}
 
-    Equivalent to `{t for t in tokens if t in data}`: each search reports the
-    longest token at the leftmost remaining start position, and every token that
-    is a prefix of a reported match also occurs there."""
-    def __init__(self,tokens):
-        self.tokens=frozenset(t for t in tokens if t)
-        self.pattern=_trie_pattern(sorted(self.tokens)) if self.tokens else None
 
-    def present(self,data):
-        if self.pattern is None:return set()
-        found=set();position=0;search=self.pattern.search
-        while True:
-            match=search(data,position)
-            if match is None:return found
-            longest=match.group(0);start=match.start()
-            found.update(longest[:k] for k in range(1,len(longest)+1) if longest[:k] in self.tokens)
-            position=start+1
+def source_events(scan,records):
+    """((snapshot, path), import events) for every recorded Python source, base first."""
+    import al_analysis_index as index
+    order=[key for snapshot in ('base','current') for key in records if key[0]==snapshot]
+    files={'base':scan.base,'current':scan.files}
+    rows=[(files[s],p,[files[s].records[p]['sha256'],records[(s,p)]['module'],records[(s,p)]['package']]) for s,p in order]
+    events=_blob_facts(scan,'python-import-events',rows,lambda key,data:blob.import_events(data,key[1],key[2]))
+    for (s,p),(_,_,key) in zip(order,rows):yield (s,p),events[index.encode(key)]
+
+
+def _reference_runs(scan,rows):
+    """{sha256: runs} for (files, path, sha256) rows: al_blob_analysis.reference_runs per blob."""
+    found=_blob_facts(scan,'reference-runs',[(f,p,[sha]) for f,p,sha in rows],
+                      lambda key,data:blob.reference_runs(data).decode('latin-1'),compress=True)
+    import al_analysis_index as index
+    return {sha:found[index.encode([sha])].encode('latin-1') for _,_,sha in rows}
 
 
 def _referencing_many(scan,paths,stage='inventory-references'):
@@ -385,35 +269,41 @@ def _referencing_many(scan,paths,stage='inventory-references'):
 
     Per-artifact scans re-read and re-verify every repository source once per
     changed artifact (changed files x repository files); this reads each source once.
-    Keep this the only definition: a second, per-token rescan once shadowed it (#23)."""
+    Keep this the only definition: a second, per-token rescan once shadowed it (#23).
+
+    Facts (#25): the whole answer is keyed by the tokens and every captured source hash;
+    otherwise each distinct blob is answered from its stored reference runs, so only new
+    or changed blobs are read. Both are keyed by their producing code's digest."""
+    import al_analysis_index as index
     wanted={path:_reference_tokens(path) for path in paths}
     if not wanted:return {}
     batches=[(files,[p for p in files if p.endswith(SOURCE_SUFFIXES)]) for files in (scan.files,scan.base)]
     total=sum(len(sources) for _,sources in batches)
-    # The result is a function of the tokens and the captured source hashes alone, so a
-    # later command that captured the same sources (gates plan after discover) reuses it;
-    # any changed source, token or runtime is a different key and is recomputed.
-    from al_analysis_cache import DerivedStore
-    from al_runtime_resources import implementation_digest
-    store=DerivedStore('literal-references')
-    key={'schema':1,'implementation':implementation_digest(),
-         'wanted':{path:[t.hex() for t in tokens] for path,tokens in sorted(wanted.items())},
+    key={'wanted':{path:[t.hex() for t in tokens] for path,tokens in sorted(wanted.items())},
          'sources':[[files.snapshot,p,files.records[p]['sha256']] for files,sources in batches for p in sources]}
-    cached=store.load(key)
-    if isinstance(cached,dict) and set(cached)==set(wanted) and all(isinstance(v,list) for v in cached.values()):
-        progress.report(stage,count=total,total=total,force=True)
-        return cached
-    finder=TokenFinder({t for tokens in wanted.values() for t in tokens})
-    holders=defaultdict(set)
-    count=0
-    for files,sources in batches:
-        for p,data in files.content_items(sources):
-            for token in finder.present(data):holders[token].add(p)
-            count+=1
-            progress.report(stage,count=count,total=total)
-    progress.report(stage,count=count,total=total,force=True)
-    result={path:sorted({p for t in tokens for p in holders.get(t,()) if p!=path}) for path,tokens in wanted.items()}
-    store.store(key,result)
+    def compute():
+        tokens={t for values in wanted.values() for t in values}
+        finder=TokenFinder(tokens)
+        holders=defaultdict(set)
+        count=0
+        if all(blob.token_safe(t) for t in tokens):
+            rows=[(files,p,files.records[p]['sha256']) for files,sources in batches for p in sources]
+            runs=_reference_runs(scan,rows)
+            present={}
+            for files,p,sha in rows:
+                if sha not in present:present[sha]=finder.present(runs[sha])
+                for token in present[sha]:holders[token].add(p)
+                count+=1
+                progress.report(stage,count=count,total=total)
+        else:
+            for files,sources in batches:
+                for p,data in files.content_items(sources):
+                    for token in finder.present(data):holders[token].add(p)
+                    count+=1
+                    progress.report(stage,count=count,total=total)
+        return {path:sorted({p for t in values for p in holders.get(t,()) if p!=path}) for path,values in wanted.items()}
+    result=index.fact('literal-references',index.code_digest('al_python_imports'),key,compute,root=_root(scan))
+    progress.report(stage,count=total,total=total,force=True)
     return result
 
 

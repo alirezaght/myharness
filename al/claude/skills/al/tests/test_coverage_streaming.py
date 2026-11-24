@@ -71,19 +71,22 @@ def test_retention_allowance_does_not_change_semantics_checks_or_source_hashes(r
 def test_python_analysis_does_not_retain_repository_ast_pool(repo,monkeypatch):
     base=source_pool(repo,20)
     imports.GRAPHS.clear()
-    real=imports.parse_python;trees=[];peak=0
-    def tracked(data,memo=None):
+    # Every source is parsed here: no stored per-blob facts (#25).
+    monkeypatch.setenv('AL_ANALYSIS_CACHE','0')
+    import al_blob_analysis as blob
+    real=blob.parse;trees=[];peak=0
+    def tracked(data):
         nonlocal peak
         gc.collect()
-        assert memo is None
-        tree=real(data,memo)
+        tree=real(data)
         trees.append(weakref.ref(tree))
         peak=max(peak,sum(ref() is not None for ref in trees))
         assert peak<=2
         return tree
-    monkeypatch.setattr(imports,'parse_python',tracked)
+    monkeypatch.setattr(blob,'parse',tracked)
     observed=capture(repo,base)
-    assert len(trees)>=40 and peak<=2 and observed['scan']['stable']
+    # Identical base and current blobs are parsed once (#25).
+    assert len(trees)>=20 and peak<=2 and observed['scan']['stable']
     gc.collect()
     assert not any(ref() is not None for ref in trees)
 
