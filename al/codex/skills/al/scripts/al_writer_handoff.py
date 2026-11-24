@@ -59,7 +59,11 @@ def cmd_handoff(a, sid):
     areas = sorted(set(a.area if a.area is not None else plan))
     if not areas: refuse('handoff requires registered evidence areas')
     if any(area not in plan for area in areas): refuse('handoff names an unknown evidence area')
-    prompt = body + '\n\n' + evidence_block(st, sid, a.id, areas) + '\n'
+    # Repository brief (#30): reached units, consumers, gates and gaps, so the writer does not
+    # rediscover them by hand. It never refuses; missing facts are named.
+    import al_brief
+    brief = al_brief.render(al_brief.brief(st, writer.get('files') or None))
+    prompt = body + '\n\n' + brief + '\n\n' + evidence_block(st, sid, a.id, areas) + '\n'
     raw = prompt.encode('utf-8')
     plan_digest = digest(json.dumps({area: plan[area] for area in areas}, sort_keys=True,
                                   separators=(',', ':')).encode('utf-8'))

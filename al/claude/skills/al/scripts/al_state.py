@@ -224,6 +224,8 @@ def _main():
     al_review.register(sub)
     import al_agents
     al_agents.register(sub)
+    import al_brief
+    al_brief.register(sub)
     import al_retry
     al_retry.register(sub)
     import al_failures
