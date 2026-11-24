@@ -161,7 +161,7 @@ def run_recipe(sid, spec, *, writer, timeout, fresh):
     if missing:
         raise ValueError("; ".join(missing))
     previous = ledger.latest(state, spec["area"], spec)
-    if previous and not fresh and ledger.entry_verdict(state, previous)[0] == "VALID":
+    if previous and not fresh and evidence.reusable(state, previous):
         from al_execution_tasks import admit_check
 
         admit_check(state, spec)

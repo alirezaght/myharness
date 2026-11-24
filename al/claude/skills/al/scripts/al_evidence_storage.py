@@ -1,7 +1,42 @@
 """Managed scratch is optional historical metadata, never arbitrary-path cleanup."""
 
 import os
+import shutil
+import stat
+import tempfile
 from pathlib import Path
+
+# Unix-domain socket paths are limited (104 bytes on macOS, 108 on Linux). Tools such as
+# Python multiprocessing bind sockets under TMPDIR, so a check's TMPDIR must stay short:
+# a private per-run directory directly under the system root, not inside the allocation.
+SHORT_TEMPORARY_ROOTS = ("/tmp", "/var/tmp")
+
+
+def short_temporary(roots=SHORT_TEMPORARY_ROOTS):
+    """A fresh private (0700, owned) short directory for one check's TMPDIR."""
+    for root in roots if os.name == "posix" else ():
+        try:
+            if not os.path.isdir(root):
+                continue
+            path = Path(tempfile.mkdtemp(prefix="al-", dir=root))
+        except OSError:
+            continue
+        info = path.lstat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700
+        ):
+            remove_short_temporary(path)
+            raise ValueError("short check temporary directory is not private")
+        return path
+    return None
+
+
+def remove_short_temporary(path):
+    """Remove only the directory this run created; rmtree never follows symlinks."""
+    if path is not None and Path(path).name.startswith("al-"):
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def modules():
@@ -76,6 +111,7 @@ class PreparedStorage:
         self.remote = bool(os.environ.get("HARNESS_CHECK_CONTEXT"))
         self.manager = self.owner = self.proc = self.cleanup = None
         self.allocation = self.temporary = self.body = self.reference = None
+        self.short_temporary = None
         self.recipe_input = entry.get("recipe_assignment")
         self.recipe_result = None
         self.recipe_eligible = False
@@ -147,11 +183,15 @@ class PreparedStorage:
                 rendered = self.grammar.render_argv(
                     argv, self.declaration, self.temporary, create=True
                 )
+                # TMPDIR is a short private directory (AF_UNIX path limit); declared
+                # scratch/outputs and the uv cache stay inside the managed allocation.
+                self.short_temporary = short_temporary()
+                process_temporary = str(self.short_temporary or self.temporary)
                 environment = dict(
                     os.environ,
-                    TMPDIR=str(self.temporary),
-                    TMP=str(self.temporary),
-                    TEMP=str(self.temporary),
+                    TMPDIR=process_temporary,
+                    TMP=process_temporary,
+                    TEMP=process_temporary,
                     UV_CACHE_DIR=str(self.temporary / "uv-cache"),
                 )
                 self.owner = OwnedProcess(self.directory / "process", self.entry["reservation"])
@@ -222,6 +262,8 @@ class PreparedStorage:
                     self.stop()
                 except BaseException:
                     pass
+            if self.proc is None:
+                self.release_short_temporary()
             self.retain("launch_unverified")
             raise
 
@@ -259,7 +301,15 @@ class PreparedStorage:
                     "errors": ["owned_completion_unavailable"],
                     "unresolved": True,
                 }
+            if self.cleanup.get("complete") and not self.cleanup.get("unresolved"):
+                self.release_short_temporary()
         return self.cleanup
+
+    def release_short_temporary(self):
+        """Delete the per-run TMPDIR once its process group is settled; an unsettled
+        group keeps it (it stays private and the system temp cleaner reclaims it)."""
+        remove_short_temporary(self.short_temporary)
+        self.short_temporary = None
 
     def stop(self):
         if self.remote:
