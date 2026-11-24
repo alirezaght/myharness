@@ -122,7 +122,10 @@ def _review_report_v2(state, stage, invocation, findings, prior_resolutions, ins
     issued = json.loads(Path(state["review"]["packets"][stage]["stored_path"]).read_bytes())
     value = issued.get("content", issued)
     attempt = value["attempt"]
-    criteria = [c["id"] for c in value["behavior"]["obligations"]["content"]["criteria_registry"]]
+    obligations = value["behavior"]["obligations"]
+    # A delta packet (#30) references unchanged obligations by hash; read them by reference.
+    content = obligations.get("content") or json.loads(Path(obligations["artifact"]["stored_path"]).read_bytes())
+    criteria = [c["id"] for c in content["criteria_registry"]]
     for finding in findings:
         finding["source"] = criteria[0]
     for resolution in prior_resolutions:
@@ -141,7 +144,7 @@ def _review_report_v2(state, stage, invocation, findings, prior_resolutions, ins
     }
     if stage == "fresh":
         report["counterexample_search"] = [{
-            "obligation_ids": [g["id"] for g in value["behavior"]["obligations"]["content"]["obligations"]],
+            "obligation_ids": [g["id"] for g in content["obligations"]],
             "scenario": "A candidate that skipped the exercised workflow would contradict the declared outcome.",
             "inspected_locations": ["svc/app.py:1"], "evidence": [evidence_id], "result": "none_found",
             "rationale": "The linked verification exercised the cited source in the frozen candidate."}]

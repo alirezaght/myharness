@@ -65,6 +65,15 @@ def validate(st,report,prior=()):
     fids=[f.get('id') for f in findings]
     if len(fids)!=len(set(fids)) or any(not isinstance(i,str) or not i for i in fids): refuse('missing/duplicate finding IDs')
     anchors=set(package['criteria']+package['invariants'])
+    # Optional invariant locations (#30): where each invariant is upheld, so a later delta review
+    # knows whether a correction touched an approved invariant.
+    located=report.get('invariants',[])
+    if not isinstance(located,list):refuse('report invariants must be an array')
+    seen=set()
+    for row in located:
+        if not isinstance(row,dict) or row.get('id') not in package['invariants'] or row['id'] in seen: refuse('report invariant entry requires a unique known invariant id')
+        seen.add(row['id']); locations(row.get('locations'))
+        if row.get('status') not in (None,'UPHELD','VIOLATED'): refuse('report invariant status must be UPHELD or VIOLATED')
     for f in findings:
         if f.get('source') not in anchors or f.get('severity') not in {'BLOCKING','NON_BLOCKING'} or not f.get('description'): refuse('finding requires criterion/invariant anchor and severity')
         if f.get('resolution'):

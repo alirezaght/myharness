@@ -310,6 +310,37 @@
           }
         }
       }
+    },
+    "invariants": {
+      "description": "Optional (#30): where each invariant is upheld. A later delta review uses these locations to decide whether a correction touched an approved invariant; an invariant without a recorded location forces a full re-review when anything changed.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "locations"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "UPHELD",
+              "VIOLATED"
+            ]
+          },
+          "locations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [

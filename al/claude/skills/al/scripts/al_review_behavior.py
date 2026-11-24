@@ -154,6 +154,9 @@ def packet(st, data):
             # Checks AL did not verify (#17): factual, reviewer-visible, never blocking.
             "unverified",
         }
+        # Gate notes AL did not verify are factual, never implementer context (#17).
+        if "unverified" in data:
+            allowed.add("unverified")
         if set(data) != allowed:
             refuse("fresh review context contains unsupported inputs")
     return data
@@ -183,7 +186,7 @@ def validate_report(st, report, stage, packet_value):
         "effort",
         "policy_digest",
     }
-    optional = {"blocking", "nonblocking", "core", "tests", "both", "assessments", "plan_defects"}
+    optional = {"blocking", "nonblocking", "core", "tests", "both", "assessments", "plan_defects", "invariants"}
     if stage == "fresh":
         required.add("counterexample_search")
     else:

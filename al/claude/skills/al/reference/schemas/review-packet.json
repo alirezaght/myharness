@@ -70,7 +70,9 @@
     "unverified": {
       "description": "Checks AL did not verify, as `gates status` lists them: pipeline-verified CI jobs and services, supervisor-recorded remote CI results, verbatim-recipe mappings, pre-existing and advisory failures. Notes for the reviewer; they never block.",
       "type": "array",
-      "items": {"type": "object"}
+      "items": {
+        "type": "object"
+      }
     },
     "fresh": {
       "type": "object"
@@ -138,6 +140,73 @@
         "object",
         "null"
       ]
+    },
+    "review_mode": {
+      "description": "`delta` for an incremental correction-loop re-review (#30); absent for a full review.",
+      "enum": [
+        "delta"
+      ]
+    },
+    "delta": {
+      "description": "Delta review context (#30): the diff between the base review's snapshot and the candidate, the earlier findings with their status, the affected criteria and invariants, and the kept verdicts of unaffected criteria. The candidate, task package and approved plan are then hash references, not contents.",
+      "type": "object",
+      "required": [
+        "base_review",
+        "base_candidate",
+        "base_snapshot",
+        "paths",
+        "diff",
+        "diff_truncated",
+        "prior_findings",
+        "affected",
+        "kept_verdicts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "base_review": {
+          "type": "string"
+        },
+        "base_candidate": {
+          "type": "string"
+        },
+        "base_snapshot": {
+          "type": "object"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "diff": {
+          "type": "string"
+        },
+        "diff_truncated": {
+          "type": "boolean"
+        },
+        "prior_findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "source",
+              "severity",
+              "status"
+            ]
+          }
+        },
+        "affected": {
+          "type": "object",
+          "required": [
+            "criteria",
+            "invariants"
+          ]
+        },
+        "kept_verdicts": {
+          "type": "array"
+        }
+      }
     }
   },
   "allOf": [
@@ -216,5 +285,13 @@
       }
     }
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "dependentRequired": {
+    "review_mode": [
+      "delta"
+    ],
+    "delta": [
+      "review_mode"
+    ]
+  }
 }
