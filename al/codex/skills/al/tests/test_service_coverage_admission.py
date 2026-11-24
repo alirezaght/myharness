@@ -356,7 +356,11 @@ def test_ci_global_environment_is_bound_or_explicitly_unavailable(cli,repo,tmp_p
         assert a['outcome']=='identified'
         assert any('echo setup' in g['argv'][-1] for g in m['gates'] if g.get('obligation_ids'))
     else:
-        assert a['outcome']=='incomplete' and any(g['code']=='missing-verification-check' for g in a['gaps'])
+        # A job AL cannot run locally is pipeline-verified (#17): an unverified obligation,
+        # never a certified check and never a coverage gap that blocks review.
+        assert a['outcome']=='identified' and not any(b.get('conventional_verification') for b in a['required_bindings'])
+        delegated=m['service_coverage']['semantic_requirements']['checks']['pipeline_verified']
+        assert [(d['unit'],[j['job'] for j in d['jobs']]) for d in delegated]==[('services/a',['syntax-check'])]
         assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED'
                    and g['source'].get('job')=='syntax-check' for g in m['gates'])
 
@@ -392,7 +396,16 @@ def test_control_flow_and_custom_tool_paths_cannot_certify_verification(cli,repo
     put(repo,'tools/pytest','#!/bin/sh\necho fake\nexit 0\n')
     put(repo,'.gitlab-ci.yml','verify:\n  script:\n'+''.join('    - '+line+'\n' for line in lines)+'  rules:\n    - changes: [services/a/**/*]\n')
     start(cli);_,m=discover(cli,tmp_path,['services/a/src/app.py'])
-    assert m['service_coverage']['assessment']['outcome']=='incomplete'
+    a=m['service_coverage']['assessment']
+    # Nothing certifies the service: a job AL can map stays a coverage gap; one it cannot
+    # run locally is left to the pipeline as an unverified obligation (#17).
+    assert not any(b.get('conventional_verification') for b in a['required_bindings'])
+    delegated=m['service_coverage']['semantic_requirements']['checks'].get('pipeline_verified',[])
+    if delegated:
+        assert a['outcome']=='identified' and [d['unit'] for d in delegated]==['services/a']
+        assert any(g['category']=='ci' and g['applicability']=='UNRESOLVED' and g['source'].get('job')=='verify' for g in m['gates'])
+    else:
+        assert a['outcome']=='incomplete' and any(g['code']=='missing-verification-check' for g in a['gaps'])
 
 
 def test_incomplete_coverage_preserves_proof_guards_but_allows_writer_readiness(cli,repo,tmp_path,state_file):
