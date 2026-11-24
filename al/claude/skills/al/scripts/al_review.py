@@ -60,10 +60,18 @@ def cmd_review_start(a,sid):
     st['review_iteration']+=1
     candidate=S.capture_candidate(st)
     candidate['changed_paths']=S.changed_paths(candidate['base'])
-    st['review']={'id':'R'+str(st['review_iteration']),'stage':'fresh','candidate':candidate,'task_hash':al_task.task_hash(st),'packets':{},'correction_consumed':False}
+    import al_review_delta as Delta
+    previous=st.get('review')
+    mode,reasons,detail=Delta.plan(st,previous,candidate,getattr(a,'mode',None) or 'auto')
+    st['review']={'id':'R'+str(st['review_iteration']),'stage':'fresh','candidate':candidate,'task_hash':al_task.task_hash(st),'packets':{},'correction_consumed':False,
+                  'mode':mode,'plan_basis':Delta.plan_basis(st),'snapshot':Delta.snapshot(st,sid,candidate),'started_at':time.time()}
+    if detail:st['review']['delta']=Delta.record(sid,detail)
+    elif previous and getattr(a,'mode',None)!='full':st['review']['full_reasons']=reasons
     Behavior.initialize(st,st['review'])
     st['findings']=dict(NO_FINDINGS); st['review_status']='checking'
     al_store.set_phase(st,'REVIEW'); al_store.save(sid,st); print(render_line(st))
+    if mode=='delta':print('AL · delta review against '+detail['base_review']+': '+str(len(detail['paths']))+' changed path(s), '+str(len(detail['prior_findings']))+' earlier finding(s); resume the same Architect agent with the delta packet')
+    elif previous and getattr(a,'mode',None)!='full':print('AL · full review: '+'; '.join(reasons))
     from al_service_coverage import coverage_notes
     notes=coverage_notes(st)
     if notes:print('AL · '+str(len(notes))+" coverage gap(s) outside the change's reach recorded as verification notes, not blockers (`gates status` coverage_notes)")
@@ -93,6 +101,9 @@ def cmd_packet(a,sid):
     data=Behavior.packet(st,data)
     import al_review_rules
     data['repository_review_rules']=al_review_rules.capture(st,sid)
+    if r.get('mode')=='delta':
+        import al_review_delta as Delta
+        data=Delta.slim(st,data,r)
     raw=json.dumps(data,sort_keys=True).encode(); ref=A.snapshot_bytes(sid,raw,'review-packet-'+a.stage+('-v2' if Behavior.enabled(st) else ''),'runtime')
     r['packets'][a.stage]=ref; al_store.save(sid,st)
     if a.output: Path(a.output).write_bytes(raw)
@@ -148,6 +159,9 @@ def cmd_compare(a,sid):
     if r['candidate']['fingerprint']!=S.capture_candidate(st)['fingerprint']: refuse('candidate changed')
     A.read(r['fresh'])
     Behavior.validate_review_lineage(st,r,A.read_json(r['packets']['fresh']))
+    if r.get('mode')=='delta':
+        import al_review_delta as Delta
+        Delta.compare_inputs(st,a)
     inputs=al_comparison.capture(st,sid,a)
     supplemental=[A.snapshot_artifact(sid,Path(f),'comparison-input') for f in (a.artifact or [])]
     r['comparison_inputs']=inputs; r['stage']='comparison'; st['comparison_artifacts']=supplemental
@@ -180,7 +194,7 @@ def cmd_oscillation(a,sid):
     st=al_store.load(sid); st['oscillations'].append({'detail':a.detail,'at':time.time()}); al_store.save(sid,st)
 
 def register(sub):
-    sub.add_parser('review-start').set_defaults(fn=cmd_review_start)
+    p=sub.add_parser('review-start'); p.add_argument('--mode',choices=['auto','delta','full'],default='auto',help='auto: delta after a correction when eligible, else full'); p.set_defaults(fn=cmd_review_start)
     p=sub.add_parser('review-packet'); p.add_argument('--stage',choices=['fresh','compare'],required=True); p.add_argument('--output'); p.add_argument('--replace-unavailable-attempt',action='store_true'); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_packet)
     p=sub.add_parser('review-compare-start'); p.add_argument('--plan'); p.add_argument('--pseudocode'); p.add_argument('--approval-source'); p.add_argument('--artifact',action='append'); p.set_defaults(fn=cmd_compare)
     for name in ('review-fresh','review-result'):

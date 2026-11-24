@@ -734,6 +734,39 @@ record fix, defer or dispute with a rationale; fix only concrete in-scope defect
 then verify and repeat both review invocations. Never automatically fix optional
 style notes.
 
+
+### Delta re-review after a correction
+
+After a correction, `review-start` (default `--mode auto`) runs a **delta review** when it is
+safe. Every review-start stores the exact content of the changed paths as a `review-snapshot`.
+The next review compares sha256 digests against it, so only byte-identical content keeps its
+earlier verdict. Both delta packets (`review_mode: delta`) carry a `delta` object instead of the
+whole candidate:
+
+- `paths` and `diff`: what changed between the earlier reviewed snapshot and the candidate;
+- `prior_findings`: every earlier finding with its status (`open`, `fixed`, `deferred`,
+  `disputed`, `note`);
+- `affected`: the criteria and invariants an earlier finding names or whose recorded location
+  the delta touches, with their original text and hashes;
+- `kept_verdicts`: the earlier criterion verdicts the delta does not affect (copy them into the
+  report with current evidence IDs).
+
+The candidate, task package, amendments and unchanged repository rules become hash references,
+and evidence lists only entries the earlier review did not see. The fresh stage stays isolated
+from the plan and implementer summaries: it sees only the changed trees and the earlier findings.
+The compare stage reuses the approved plan the earlier review inspected (omit `--plan` to reuse
+it; a different plan is refused, because a changed plan is a replan).
+
+A full review runs instead, and `review-start` prints why, when the specification, an amendment,
+the plan, the classification or the review base changed, when the earlier review saved no
+snapshot, or when the delta touches an invariant the earlier review approved. Record where each
+invariant is upheld in the optional report field `invariants: [{id, locations, status}]`; an
+invariant with no recorded location forces a full review whenever anything changed. Use
+`--mode full` to force a full review and `--mode delta` to ask for one explicitly (it still falls
+back to full, with the reason, when a delta is unsafe). Send a delta packet to the same Architect
+agent that wrote the earlier review (resume it); only the final independent review needs a new
+agent.
+
 ### Approval, recovery and stopping
 
 After two valid reports, required evidence and candidate gates, clear repros, and
