@@ -469,9 +469,10 @@ def cmd_run(a,sid):
         if accepted:
             results[-1]['accepted']=accepted
             print('AL · '+g['id']+' '+status+' does not block: '+('advisory in CI' if accepted=='advisory' else 'pre-existing failure, identical at base'))
-        # Base failures are pre-existing and each needs a decision, so every base gate runs and all
-        # failures are listed at once; a new candidate failure (or a torn run) stops the stage.
-        if status=='TORN' or (status!='PASS' and a.stage!='base' and not accepted):
+        # Every selected gate runs and all failures are listed at once (issue #33): a base failure
+        # needs a decision, and a blocking candidate failure still fails the stage after the
+        # remaining gates have run. Only a torn run stops at once: the scope moved under the stage.
+        if status=='TORN':
             if resume:report()
             raise SystemExit(1)
     with contextlib.ExitStack() as stack:

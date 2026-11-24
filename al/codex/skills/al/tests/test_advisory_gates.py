@@ -128,14 +128,104 @@ def test_candidate_failure_identical_to_base_is_pre_existing(tmp_path):
     assert Signature.pre_existing(base, shifted) == 'violations'
     added = _log(tmp_path, 'added', LINT.format(files=120, line=12) + '- app.domain.other -> app.api.views (l.3)\n')
     assert Signature.pre_existing(base, added) is None
+    # The same import edge seen again is the same finding (contract plus violating edge).
     twice = _log(tmp_path, 'twice', LINT.format(files=120, line=12) + '- app.domain.model -> app.api.views (l.40)\n')
-    assert Signature.pre_existing(base, twice) is None
+    assert Signature.pre_existing(base, twice) == 'violations'
     assert Signature.pre_existing(base, _log(tmp_path, 'exit', LINT.format(files=120, line=12), code=2)) is None
     assert Signature.pre_existing(base, _log(tmp_path, 'cmd', LINT.format(files=120, line=12), argv=('other',))) is None
     # Without recognisable findings the exit code and the whole normalised output must match.
     quiet = _log(tmp_path, 'quiet', 'done in 2.1s\n')
     assert Signature.pre_existing(quiet, _log(tmp_path, 'quiet2', 'done in 9.4s\n')) == 'output'
     assert Signature.pre_existing(quiet, _log(tmp_path, 'quiet3', 'something else\n')) is None
+
+
+# Real import-linter layout: contracts and witness chains come out in a non-deterministic order.
+IMPORT_LINTER = """=============
+Import Linter
+=============
+
+---------
+Contracts
+---------
+
+Analyzed {files} files, {deps} dependencies.
+{rule}
+
+Layers contract BROKEN
+Forbidden contract BROKEN
+Independence contract KEPT
+
+Contracts: 1 kept, 2 broken.
+
+
+----------------
+Broken contracts
+----------------
+{sections}"""
+LAYERS = """
+Layers contract
+---------------
+
+app.application is not allowed to import app.infrastructure:
+{chains}
+"""
+FORBIDDEN = """
+Forbidden contract
+------------------
+
+app.domain is not allowed to import requests:
+
+-   app.domain.client -> requests (l.{line})
+"""
+CHAINS = [
+    "-   app.application.orders -> app.infrastructure.db (l.{line})\n",
+    "-   app.application.billing -> app.shared.util (l.3)\n    app.shared.util -> app.infrastructure.queue (l.{line})\n",
+]
+
+
+def _import_linter(files, line, order, extra_chain=''):
+    chains = [CHAINS[i].format(line=line) for i in order]
+    layers = LAYERS.format(chains='\n'.join(chains + ([extra_chain] if extra_chain else [])))
+    sections = [layers, FORBIDDEN.format(line=line)]
+    analysed = 'Analyzed {} files, {} dependencies.'.format(files, files * 3)
+    return IMPORT_LINTER.format(files=files, deps=files * 3, rule='-' * len(analysed),
+                                sections=''.join(sections if order[0] == 0 else sections[::-1]))
+
+
+def test_import_linter_failure_reordered_with_more_files_is_pre_existing(tmp_path):
+    base = _log(tmp_path, 'base', _import_linter(120, 12, [0, 1]))
+    reordered = _log(tmp_path, 'reordered', _import_linter(123, 17, [1, 0]))
+    assert Signature.pre_existing(base, reordered) == 'violations'
+    # Another witness chain for the same violating edge is the same finding.
+    witness = _log(tmp_path, 'witness', _import_linter(123, 12, [0, 1]).replace(
+        'app.shared.util -> app.infrastructure.queue', 'app.shared.util -> app.shared.other (l.4)\n    app.shared.other -> app.infrastructure.queue'))
+    assert Signature.pre_existing(base, witness) == 'violations'
+    found, counters = Signature.findings(Signature.lines(reordered))
+    assert counters == {'broken': 2}
+    assert ('import-linter | Layers contract | app.application is not allowed to import app.infrastructure'
+            ' | app.application.billing -> app.infrastructure.queue') in found
+
+
+def test_import_linter_new_violating_edge_or_broken_contract_blocks(tmp_path):
+    base = _log(tmp_path, 'base', _import_linter(120, 12, [0, 1]))
+    edge = _log(tmp_path, 'edge', _import_linter(123, 12, [1, 0], '-   app.application.new -> app.infrastructure.db (l.2)\n'))
+    assert Signature.pre_existing(base, edge) is None
+    more = _log(tmp_path, 'more', _import_linter(120, 12, [0, 1]).replace('1 kept, 2 broken', '0 kept, 3 broken'))
+    assert Signature.pre_existing(base, more) is None
+    # The same edge in another contract is a different finding.
+    moved = _log(tmp_path, 'moved', _import_linter(120, 12, [0, 1]).replace(
+        'app.domain.client -> requests', 'app.application.orders -> app.infrastructure.db'))
+    assert Signature.pre_existing(base, moved) is None
+
+
+def test_generic_findings_ignore_order_and_size_counters_but_count_new_occurrences(tmp_path):
+    base = _log(tmp_path, 'base', 'Checked 40 files\na.py:3:1: F401 unused\nb.py:9:2: E501 too long\nFound 2 errors.\n', argv=('ruff',))
+    moved = _log(tmp_path, 'moved', 'Checked 44 files\nb.py:12:2: E501 too long\na.py:5:1: F401 unused\nFound 2 errors.\n', argv=('ruff',))
+    assert Signature.pre_existing(base, moved) == 'violations'
+    again = _log(tmp_path, 'again', 'a.py:3:1: F401 unused\na.py:8:1: F401 unused\nb.py:9:2: E501 too long\nFound 3 errors.\n', argv=('ruff',))
+    assert Signature.pre_existing(base, again) is None
+    counted = _log(tmp_path, 'counted', 'a.py:3:1: F401 unused\nb.py:9:2: E501 too long\nFound 3 errors.\n', argv=('ruff',))
+    assert Signature.pre_existing(base, counted) is None
 
 
 def test_touched_gate_with_identical_lint_failure_is_reported_not_blocking(tmp_path, monkeypatch):
@@ -243,6 +333,26 @@ def test_identical_pre_existing_candidate_failure_does_not_block(cli, repo, tmp_
     assert not status['candidate']
     note = next(row for row in status['unverified'] if row['gate'] == gate['id'] and row['stage'] == 'candidate')
     assert 'pre-existing' in note['reason'] and 'baseline exception' in note['reason']
+
+
+def test_candidate_stage_runs_every_gate_after_a_blocking_failure(cli, repo, tmp_path):
+    seed(repo);start(cli)
+    _, m = discover(cli, tmp_path, ['services/a/src/app.py', 'services/b/src/app.py'])
+    path = tmp_path / 'plan.json';path.write_text(json.dumps(m))
+    invoke(cli, 'gates', 'plan', '--file', str(path))
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    admit_planning(cli);invoke(cli, 'phase', 'IMPLEMENTATION')
+    invoke(cli, 'writer', 'start', '--id', 'owned', '--role', 'al-engineer', '--files', 'services/a/src/app.py')
+    put(repo, 'services/a/src/app.py', 'import common\nimport forbidden_dependency\n')
+    invoke(cli, 'writer', 'finish', '--id', 'owned', '--outcome', 'success')
+    invoke(cli, 'phase', 'VERIFICATION')
+    _, out, _ = invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
+    ran = [g['id'] for g in m['gates'] if g['applicability'] == 'APPLICABLE']
+    blocking = next(g['id'] for g in m['gates'] if g['category'] == 'lint-imports' and 'services/a' in g['units'] and g.get('obligation_ids'))
+    assert ran.index(blocking) < len(ran) - 1, 'the blocking gate must not be the last one'
+    assert 'gate(s) did not pass: ' + blocking in out
+    for gate in ran:
+        assert 'gate-candidate-' + gate in out, gate + ' did not run after the blocking failure'
 
 
 def test_verification_only_route_is_named_and_needs_no_writer(cli, repo, tmp_path):
