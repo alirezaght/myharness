@@ -148,6 +148,7 @@
     "al_schema.py",
     "al_scope.py",
     "al_snapshot.py",
+    "al_service_cache.py",
     "al_service_coverage.py",
     "al_shell.py",
     "al_shell_select.py",

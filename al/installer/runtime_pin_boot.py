@@ -3,16 +3,10 @@
 from .validator_boot import BOOT
 
 
-CHILD = (
-    BOOT
-    + r"""
-request=REQUEST
-transaction=request['transaction']
-base=Path(request['storage'])
-run_context=types.ModuleType('_al_run_pin_context');run_context.transaction=transaction;run_context.storage=str(base)
-run_context.readonly=bool(request.get('existing_run'))
-sys.modules['_al_run_pin_context']=run_context
-pin=transaction['pin'];root=base/'pins'/pin['pin_identity']
+# Verifies the protected pin named by `transaction['pin']` under `base` from captured bytes and
+# installs the closed loader over exactly those bytes. Shared by the one-shot run child and the
+# resident service (#27), so both trust the same verification text.
+PIN_VERIFY = r"""pin=transaction['pin'];root=base/'pins'/pin['pin_identity']
 raw,state=_read(root/'manifest.json')
 if state['mode']!=0o600 or _hash(raw)!=pin['pin_manifest_digest']:raise ValueError('protected pin manifest changed')
 manifest=json.loads(raw)
@@ -36,7 +30,20 @@ filename=str(payload/'installer/validator_loader.py')
 namespace={'__name__':'_pin_closed_loader','__file__':filename}
 exec(compile(captured['installer/validator_loader.py'],filename,'exec'),namespace)
 loader=namespace['install_closed_loader'](context,platform,installers=True)
-from installer.runtime_pin import verify_pin
+"""
+
+CHILD = (
+    BOOT
+    + r"""
+request=REQUEST
+transaction=request['transaction']
+base=Path(request['storage'])
+run_context=types.ModuleType('_al_run_pin_context');run_context.transaction=transaction;run_context.storage=str(base)
+run_context.readonly=bool(request.get('existing_run'))
+sys.modules['_al_run_pin_context']=run_context
+"""
+    + PIN_VERIFY
+    + r"""from installer.runtime_pin import verify_pin
 from installer.runtime_pin_transaction import subject,read_state,commit_run_binding,coordinated,read,validate
 from installer.interpreter_execution import validate_live
 from installer.execution_process import observe

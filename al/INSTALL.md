@@ -390,6 +390,15 @@ reported session/journal and backups before any manual recovery. Do not remove
 pending metadata or restore backups by hand unless the complete journal proves
 which exact preimage should be restored.
 
+### Resident service
+
+`alctl run` starts a resident AL service per repository and pinned runtime on first use;
+later commands of the run are served by it with byte-identical results and otherwise run in
+process. `alctl service status` and `alctl service stop` (optionally `--repository R`) show
+and stop the services of this user; `AL_SERVICE=0` disables it and `AL_SERVICE_IDLE_SECONDS`
+sets its idle timeout. The thin client lives in the launcher, so a new launcher (re-bootstrap
+or update) is needed to use it. See [performance.md](codex/skills/al/reference/performance.md#resident-service).
+
 ### Existing run pins and successor guidance
 
 Installing a release and bootstrapping a coordinator do not replace an existing
