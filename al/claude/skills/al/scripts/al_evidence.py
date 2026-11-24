@@ -599,7 +599,9 @@ def cmd_evidence_run(a, sid):
                                               and L.same_command(spec, planned)):
         spec["hermetic"] = False
     import al_action_cache as Cache
-    cache, _ = Cache.evidence_plan(st, spec, no_cache=getattr(a, "no_cache", False))
+    cache, why = Cache.evidence_plan(st, spec, no_cache=getattr(a, "no_cache", False))
+    if why and why.startswith("not cached:"):
+        print(f"AL · evidence {spec['area']} · {why}")
     hit = None if a.fresh else Cache.lookup(cache)
     entry = _create(sid, st.get("run_id"), area=spec["area"], kind=spec["kind"], tier=spec["tier"], argv=spec["argv"],
                     cwd=spec["cwd"], scope=spec["scope"], env_names=spec["env"],

@@ -105,12 +105,27 @@ def _bounded(tree):
     return tree
 
 
+def _excluded_tracked(listing):
+    """Guard until #25 step 4 fixes snapshot membership: the snapshot leaves out directories
+    such as dist/, build/ or .venv/ even when their files are tracked, so a change to such a
+    tracked input would not change the key. Those inputs are not cached at all."""
+    import al_snapshot
+    excluded = set(al_snapshot.EXCLUDED) - {'.git'}
+    for row in listing.split(b'\0'):
+        parts = os.fsdecode(row).split('/')[:-1]
+        for depth, part in enumerate(parts):
+            if part in excluded:
+                raise Uncacheable('not cached: tracked inputs under ' + '/'.join(parts[:depth + 1]))
+
+
 def input_tree(st, paths):
     """Git tree hash of the working copy under `paths` (al_snapshot.input_tree).
     Raises Uncacheable when it cannot be taken or bounded exactly."""
     import al_snapshot
     try:
-        return _bounded(al_snapshot.input_tree(st, _minimal(paths)))
+        paths = _minimal(paths)
+        _excluded_tracked(al_snapshot._run(al_store.REPO_ROOT, ['ls-files', '-z', '--', *paths]))
+        return _bounded(al_snapshot.input_tree(st, paths))
     except (al_snapshot.Unavailable, OSError, ValueError) as exc:
         raise Uncacheable('input snapshot unavailable: ' + str(exc)) from exc
 
@@ -129,8 +144,7 @@ def commit_tree(oid, paths):
             if not row:
                 continue
             meta, path = row.split(b'\t', 1)
-            if any(part in al_snapshot.EXCLUDED for part in os.fsdecode(path).split('/')[:-1]):
-                continue
+            _excluded_tracked(path)
             rows.append(meta + b'\t' + path + b'\0')
         target = al_snapshot.index_path(root).with_name(al_snapshot.INDEX + '.commit.' + str(os.getpid()))
         try:

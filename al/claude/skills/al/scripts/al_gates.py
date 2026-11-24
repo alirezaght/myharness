@@ -477,7 +477,8 @@ def cmd_run(a,sid):
             except Continuation.DestinationSettled:
                 continue
             log=L.log_dir(sid)/(entry['id']+'-gate.log')
-            cache,_=Cache.gate_plan(st,m,g,a.stage,no_cache=getattr(a,'no_cache',False))
+            cache,why=Cache.gate_plan(st,m,g,a.stage,no_cache=getattr(a,'no_cache',False))
+            if why and why.startswith('not cached:'):print('AL · gate '+g['id']+' · '+why)
             # An explicit retry (--retry-failed, or --resume naming a gate) asks for a new execution.
             retry=retry_failed or (resume and bool(a.id))
             hit=None if retry else Cache.lookup(cache)
