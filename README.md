@@ -132,7 +132,8 @@ uv run harness decision change <id> <DEC-id> --decision C --rationale W --impact
 uv run harness decision decide <id> <cid> accept|reject|modify [--response TEXT] [--decisions PATH]   # developer's verdict on a proposed change
 uv run harness decision suggest <id> --from PATH [--from PATH ...] [--json] [--decisions PATH]   # hints from other repositories' decisions (read-only)
 uv run harness knowledge inspect <id>                                      # task-scoped snapshot, coverage and latest refresh state
-uv run harness knowledge refresh <id>                                      # explicitly index eligible tracked text and selected task records
+uv run harness knowledge refresh <id> [--rounds N]                         # opt in: index eligible tracked sources and task records, incremental batches until settled
+uv run harness knowledge consumers <id> <path|dir|module|/endpoint>       # who imports, or calls over HTTP, a changed file, module or endpoint
 uv run harness knowledge query <id> <terms...> [--entity REF] [--as-of SNAPSHOT]   # bounded evidence-linked context
 uv run harness knowledge explain <id> <bundle-hash> <assertion-id>        # explain citations and their source authority
 uv run harness spec show <id> [--specs PATH]   # preview the specification from the approved state (writes nothing)
@@ -161,6 +162,29 @@ them. Clean-review knowledge is unavailable because current native metadata cann
 prove that inherited context is absent; the ordinary packet-local AL review remains
 available. See [knowledge evaluation accounting](docs/knowledge/evaluation-accounting.md)
 and [native compatibility](docs/native-compatibility.md).
+
+The knowledge graph is opt-in. `harness investigate` does not index a repository nobody
+has indexed: on a large monorepo that costs more than an investigation gains, and files,
+symbols and text are what grep and reads already give an agent. Run
+`harness knowledge refresh <id>` once to opt a repository in; from then on investigation
+keeps it current incrementally and records a coverage line
+(`knowledge graph: complete, 100% of N files, python, typescript/javascript ...`).
+`HARNESS_KNOWLEDGE=off` disables it, `HARNESS_KNOWLEDGE=on` indexes on every investigation,
+and the default `auto` does what is described above.
+
+What the graph adds over grep is consumer inventory: `harness knowledge consumers` answers
+who imports, requires or calls a changed file, directory, Python module or HTTP endpoint,
+and labels each consumer `intra-unit` or `cross-unit`. Imports are resolved lazily for the
+asked target against the repository layout: Python import roots (regular packages, `src`
+layouts, uv/poetry workspace members), relative ES imports, `require`, `tsconfig`/`jsconfig`
+`paths` and `baseUrl` (including `extends`), and workspace packages from pnpm, yarn and npm
+(`package.json` `name` with `exports`, `main` or deep paths). Runtime edges come from route
+declarations (FastAPI/Flask-style decorators, Express-style routers) matched against HTTP
+client calls (`fetch`, `axios`, `requests`, `httpx` and similar), tolerating a gateway path
+prefix. There is no file-count cap: every refresh hashes the inventory, retains and extracts
+only changed sources, visits code before manifests, documentation and data, and publishes in
+bounded batches. Lockfiles, build output (`dist`, `build`, `.next`, ...) and minified bundles
+are not indexed. A consumer list is an observation, not proof of absence.
 
 ### Local state
 

@@ -23,6 +23,8 @@ _DEFAULT_CONTEXT_REQUEST = ContextRequest()
 CANDIDATE_CAP = 2000
 _RELATIONS = {
     "imports",
+    "serves-endpoint",
+    "calls-endpoint",
     "defines",
     "references",
     "supersedes",
@@ -321,11 +323,14 @@ def _candidates(conn, scope, request, exclusions):
     ids = set()
     if tokens:
         expression = " OR ".join('"' + token.replace('"', '""') + '"' for token in tokens)
+        # Evaluate the full-text match once, then intersect: a join let SQLite re-run MATCH per
+        # eligible row, which is quadratic in common tokens on a large snapshot (#12).
         ids.update(
             r[0]
             for r in conn.execute(
-                "SELECT k.assertion_id FROM knowledge_assertion_fts f "
-                "JOIN temp.k_eligible k ON k.rowid=f.rowid WHERE knowledge_assertion_fts MATCH ? "
+                "WITH m AS MATERIALIZED (SELECT rowid AS r FROM knowledge_assertion_fts "
+                "WHERE knowledge_assertion_fts MATCH ?) SELECT k.assertion_id FROM "
+                "temp.k_eligible k WHERE k.rowid IN (SELECT r FROM m) "
                 "ORDER BY k.assertion_id LIMIT ?",
                 (expression, CANDIDATE_CAP),
             )

@@ -22,6 +22,7 @@ from harness.knowledge.sources import (
     enumerate_sources,
     inventory_names,
     read_source,
+    stat_identity,
 )
 from harness.knowledge.store import (
     SnapshotConflict,
@@ -75,7 +76,14 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
     request = pin_request(scope.repository, request)
     expected = project["active_snapshot_id"]
     try:
-        inventory = enumerate_sources(scope, request)
+        cached = frozenset(
+            row[0]
+            for row in conn.execute(
+                "SELECT version_id FROM knowledge_extraction_cache WHERE extractor_version=?",
+                (EXTRACTOR_VERSION,),
+            )
+        )
+        inventory = enumerate_sources(scope, request, cached)
     except (OSError, ValueError):
         _record_incomplete(conn, scope, [{"status": "unreadable", "kind": "inventory"}])
         raise
@@ -150,6 +158,17 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
             "WHERE version_id=? AND extractor_version=?",
             (source.version_id, EXTRACTOR_VERSION),
         ).fetchone()
+        if not cache and not source.raw_retained:
+            # The cache entry disappeared after inventory (purge): extract it next refresh.
+            gap = {
+                "locator": source.locator,
+                "status": "deferred",
+                "reason": "publish-batch-deferred",
+                "visibility": source.visibility,
+            }
+            coverage.append(gap)
+            unknown.append(gap)
+            continue
         try:
             if source.kind == "lesson":
                 from harness.knowledge.lessons import extract_import
@@ -197,8 +216,22 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
         )
     valid_sources, valid_extractions, retained_bytes = [], [], 0
     for source, extraction in zip(stable, extractions, strict=True):
+        if (
+            not source.raw_retained
+            and source.stat is not None
+            and stat_identity(scope.repository.resolve(), source.locator) == source.stat
+        ):
+            # Hash-only and untouched since it was hashed: membership stays exactly as read.
+            valid_sources.append(source)
+            valid_extractions.append(extraction)
+            continue
         try:
-            limit = min(request.max_file_bytes, MAX_REFRESH_BYTES - retained_bytes)
+            # Hash-only sources were never retained and do not consume the byte budget.
+            limit = (
+                min(request.max_file_bytes, MAX_REFRESH_BYTES - retained_bytes)
+                if source.raw_retained
+                else request.max_file_bytes
+            )
             if request.commit:
                 from harness.knowledge.commit_sources import read_blob
 
@@ -207,7 +240,7 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
                 )
             else:
                 raw = read_source(scope.repository, source.locator, limit)
-            retained_bytes += len(raw)
+            retained_bytes += len(raw) if source.raw_retained else 0
             if digest(raw) != source.content_sha256:
                 raise ValueError("source changed")
         except (OSError, UnicodeError, ValueError) as error:

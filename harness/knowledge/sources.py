@@ -1,11 +1,13 @@
 """Confined, bounded, non-executing source discovery. Unknown reads never mean deletion."""
 
 import os
+import posixpath
 import re
 import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 
+from harness.code_resolution import CODE_SUFFIXES, SCRIPT_SUFFIXES  # noqa: F401
 from harness.db import git_env
 from harness.knowledge.models import (
     EXTRACTOR_VERSION,
@@ -20,7 +22,42 @@ from harness.knowledge.models import (
     identity,
 )
 
-_SUFFIXES = {".py", ".md", ".toml", ".json", ".yaml", ".yml", ".js", ".ts", ".tsx", ".sql"}
+_SUFFIXES = CODE_SUFFIXES | {".md", ".toml", ".json", ".yaml", ".yml", ".sql"}
+# Dependency lockfiles, build output and minified bundles are generated: they carry no
+# consumer edges, crowd out real sources and would be re-indexed on every install or build.
+_LOCKFILES = {
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lock",
+    "composer.lock",
+    "pipfile.lock",
+    "poetry.lock",
+    "uv.lock",
+    "cargo.lock",
+    "gemfile.lock",
+}
+_GENERATED_DIRS = {
+    "dist",
+    "build",
+    ".next",
+    ".nuxt",
+    ".svelte-kit",
+    ".turbo",
+    ".output",
+    ".astro",
+    "coverage",
+    "__generated__",
+    "bower_components",
+}
+_MANIFESTS = {
+    "package.json",
+    "pyproject.toml",
+    "setup.cfg",
+    "pnpm-workspace.yaml",
+    "jsconfig.json",
+}
 _PRIVATE = {
     ".git",
     ".harness",
@@ -71,8 +108,48 @@ def _unprotected(locator: str) -> bool:
     )
 
 
+def generated(locator: str) -> bool:
+    path = PurePosixPath(locator)
+    name = path.name.lower()
+    return (
+        name in _LOCKFILES
+        or name.endswith((".min.js", ".min.mjs", ".bundle.js"))
+        or any(part in _GENERATED_DIRS for part in path.parts[:-1])
+    )
+
+
 def eligible(locator: str) -> bool:
-    return _unprotected(locator) and Path(locator).suffix.lower() in _SUFFIXES
+    return (
+        posixpath.splitext(posixpath.basename(locator))[1].lower() in _SUFFIXES
+        and not generated(locator)
+        and _unprotected(locator)
+    )
+
+
+def stat_identity(root: Path, locator: str):
+    """Cheap change detector for a source already read through the confined reader."""
+    try:
+        value = os.lstat(os.path.join(root, locator))
+    except OSError:
+        return None
+    return (value.st_ino, value.st_size, value.st_mtime_ns, value.st_ctime_ns)
+
+
+def priority(locator: str) -> int:
+    """Code first, then unit manifests, then documentation, then data and configuration."""
+    path = PurePosixPath(locator)
+    name, suffix = path.name.lower(), path.suffix.lower()
+    if suffix in CODE_SUFFIXES:
+        return 0
+    if name in _MANIFESTS or (name.startswith("tsconfig") and suffix == ".json"):
+        return 1
+    if suffix == ".md":
+        return 2
+    return 3
+
+
+def source_kind(locator: str) -> str:
+    return "python" if locator.endswith(".py") else "text"
 
 
 def ordinary_text_path(locator: str) -> bool:
@@ -169,55 +246,85 @@ def inventory_names(root: Path, request: RefreshRequest) -> tuple[list[str], dic
     }
 
 
-def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceInventory:
+READ_WORKERS = 8
+_READ_CHUNK = 512
+
+
+def _read_all(root, names, request, observation):
+    """Read sources in order, a bounded chunk at a time on a few threads (I/O bound)."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    def read(name):
+        before = after = None
+        try:
+            if request.commit:
+                from harness.knowledge.commit_sources import read_blob
+
+                raw = read_blob(root, observation["git_entries"][name], request.max_file_bytes)
+            else:
+                before = stat_identity(root, name)
+                raw = read_source(root, name, request.max_file_bytes)
+                after = stat_identity(root, name)
+        except (OSError, UnicodeError, ValueError) as error:
+            raw = error
+        return name, before, raw, after
+
+    if len(names) < 64:
+        yield from map(read, names)
+        return
+    with ThreadPoolExecutor(READ_WORKERS) as pool:
+        for start in range(0, len(names), _READ_CHUNK):
+            yield from pool.map(read, names[start : start + _READ_CHUNK])
+
+
+def enumerate_sources(
+    scope: KnowledgeScope, request: RefreshRequest, cached: frozenset[str] = frozenset()
+) -> SourceInventory:
+    """Hash every eligible source; retain bytes only for versions whose extraction is not cached.
+
+    There is no fixed file-count ceiling. Sources are visited code first, so whatever a bounded
+    refresh defers is the least useful material, and the retained-byte budget applies only to
+    sources that still need extraction: an unchanged large repository streams through.
+    """
     if request.included_paths and not scope.task_id:
         raise ValueError("untracked inclusions require task scope")
-    if not (1 <= request.max_files <= 10000 and 1 <= request.max_file_bytes <= MAX_SOURCE_BYTES):
+    if not (
+        (request.max_files is None or request.max_files >= 1)
+        and 1 <= request.max_file_bytes <= MAX_SOURCE_BYTES
+    ):
         raise ValueError("source limits exceed supported bounds")
     root = scope.repository.resolve()
     names, observation = inventory_names(root, request)
+    ordered = sorted(names, key=lambda name: (priority(name), name))
+    limit = len(ordered) if request.max_files is None else request.max_files
     coverage, sources, retained_bytes = [], [], 0
-    if len(names) > request.max_files:
+    if len(ordered) > limit:
         coverage.append(
             {
                 "status": "capped",
                 "kind": "inventory",
                 "reason": "file-count-capped",
-                "limit": request.max_files,
+                "limit": limit,
             }
         )
-    for name in names[request.max_files :]:
+    for name in ordered[limit:]:
         coverage.append({"locator": name, "status": "capped", "reason": "file-count-capped"})
-    for name in names[: request.max_files]:
+    for name, before, raw, after in _read_all(root, ordered[:limit], request, observation):
         remaining_bytes = MAX_REFRESH_BYTES - retained_bytes
-        read_limit = min(request.max_file_bytes, remaining_bytes)
         try:
-            if request.commit:
-                from harness.knowledge.commit_sources import read_blob
-
-                raw = read_blob(root, observation["git_entries"][name], read_limit)
-            else:
-                raw = read_source(root, name, read_limit)
+            if isinstance(raw, Exception):
+                raise raw
         except ExcludedSource:
             coverage.append({"locator": name, "status": "excluded-sensitive"})
             continue
         except SourceSizeCapped as error:
-            reason = (
-                "refresh-bytes-capped"
-                if remaining_bytes < request.max_file_bytes
-                else "source-size-capped"
-            )
             coverage.append(
                 {
                     "locator": name,
                     "status": "capped",
-                    "reason": reason,
-                    "limit": (
-                        MAX_REFRESH_BYTES
-                        if reason == "refresh-bytes-capped"
-                        else request.max_file_bytes
-                    ),
-                    "read_limit": read_limit,
+                    "reason": "source-size-capped",
+                    "limit": request.max_file_bytes,
+                    "read_limit": request.max_file_bytes,
                     "observed_bytes": error.observed_bytes,
                 }
             )
@@ -228,11 +335,10 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
                     "locator": name,
                     "status": "unreadable",
                     "reason": "source-read-failed",
-                    "limit": read_limit,
+                    "limit": request.max_file_bytes,
                 }
             )
             continue
-        retained_bytes += len(raw)
         source_id = identity(scope.project_id, name)
         sha = digest(raw)
         visibility = (
@@ -240,13 +346,30 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
             if name in observation.get("task_private_paths", [])
             else "project"
         )
-        kind = "python" if name.endswith(".py") else "text"
+        kind = source_kind(name)
         version_parts = (source_id, sha, EXTRACTOR_VERSION, kind)
         version = (
             identity(*version_parts, visibility)
             if visibility != "project"
             else identity(*version_parts)
         )
+        retain = version not in cached or name.startswith("docs/knowledge/imports/")
+        if retain and len(raw) > remaining_bytes:
+            # Deferred, not lost: once this refresh's sources are cached they stop
+            # consuming the budget and a later incremental refresh retains these.
+            coverage.append(
+                {
+                    "locator": name,
+                    "status": "capped",
+                    "reason": "refresh-bytes-capped",
+                    "limit": MAX_REFRESH_BYTES,
+                    "read_limit": remaining_bytes,
+                    "observed_bytes": len(raw),
+                }
+            )
+            continue
+        if retain:
+            retained_bytes += len(raw)
         sources.append(
             SourceVersion(
                 source_id,
@@ -254,7 +377,7 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
                 name,
                 kind,
                 sha,
-                raw,
+                raw if retain else b"",
                 (
                     dict(
                         mode="commit",
@@ -268,6 +391,9 @@ def enumerate_sources(scope: KnowledgeScope, request: RefreshRequest) -> SourceI
                     else dict(observation, visibility=visibility)
                 ),
                 visibility=visibility,
+                raw_retained=retain,
+                # Unchanged lstat across the read lets revalidation skip a second full read.
+                stat=before if before is not None and before == after else None,
             )
         )
     coverage = [

@@ -169,7 +169,7 @@ def test_aggregate_overflow_bounds_retained_sources_and_preserves_snapshot(graph
     inventory = sources.enumerate_sources(scope, RefreshRequest())
     assert MAX_REFRESH_BYTES == 67108864
     assert sum(len(s.raw) for s in inventory.sources) == MAX_REFRESH_BYTES
-    assert reads[-1] == 0
+    assert max(reads) == MAX_SOURCE_BYTES
     cap = next(c for c in inventory.coverage if c.get("reason") == "refresh-bytes-capped")
     assert cap["limit"] == MAX_REFRESH_BYTES and not inventory.complete
     monkeypatch.setattr(
@@ -193,6 +193,10 @@ def test_failed_source_revalidation_preserves_snapshot(graph, monkeypatch, failu
         return read_source(root, locator, limit) + b"changed"
 
     monkeypatch.setattr(import_module("harness.knowledge.refresh"), "read_source", unstable_read)
+    # An unchanged lstat identity otherwise lets a hash-only source skip the second read.
+    monkeypatch.setattr(
+        import_module("harness.knowledge.refresh"), "stat_identity", lambda *_: None
+    )
     result = refresh(conn, scope)
     assert result.status == "incomplete" and result.snapshot_id == first
     assert conn.execute("SELECT count(*) FROM knowledge_snapshots").fetchone()[0] == 1
@@ -224,3 +228,22 @@ def test_0016_is_additive_schema_only(tmp_path):
         assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     conn.close()
+
+
+def test_hash_only_source_changed_during_refresh_is_revalidated(graph, monkeypatch):
+    """A cached (hash-only) source edited after inventory fails lstat and is fully re-read."""
+    refresh_module = import_module("harness.knowledge.refresh")
+
+    conn, scope = graph
+    first = refresh(conn, scope).snapshot_id
+    original = refresh_module.inventory_names
+    target = next(p for p in scope.repository.iterdir() if p.suffix == ".py")
+
+    def edit_then_list(*args):
+        target.write_text(target.read_text() + "\n# edited\n")
+        return original(*args)
+
+    monkeypatch.setattr(refresh_module, "inventory_names", edit_then_list)
+    result = refresh(conn, scope)
+    assert result.status == "incomplete" and result.snapshot_id == first
+    assert any(c.get("reason") == "unstable" for c in result.coverage)

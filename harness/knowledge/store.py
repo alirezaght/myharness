@@ -103,7 +103,11 @@ def prepare_rows(prepared):
             or source.version_id != expected_version
         ):
             raise ValueError("source identity is not scoped to project/extractor/kind")
-        if digest(source.raw) != source.content_sha256:
+        if not source.raw_retained:
+            # Hash-only: membership of an already-extracted version; it brings no evidence.
+            if source.version_id not in prepared.reused or extraction.assertions:
+                raise ValueError("unretained source requires a cached extraction")
+        elif digest(source.raw) != source.content_sha256:
             raise ValueError("source content hash mismatch")
         assertions = []
         for a in extraction.assertions:

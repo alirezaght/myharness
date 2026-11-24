@@ -11,7 +11,7 @@ PROJECTION_READER_NOTICE = (
     "This project's knowledge projection requires the current reader. "
     "The pinned execution remains authorized; its older knowledge capability is unavailable."
 )
-EXTRACTOR_VERSION = "2"
+EXTRACTOR_VERSION = "3"
 MAX_SOURCE_BYTES = 1_048_576
 MAX_REFRESH_BYTES = 67_108_864
 
@@ -60,7 +60,9 @@ class KnowledgeScope:
 
 @dataclass(frozen=True)
 class RefreshRequest:
-    max_files: int = 10000
+    # None indexes every eligible file. Large inventories are processed incrementally:
+    # unchanged sources are hashed and dropped, changed ones publish in bounded batches.
+    max_files: int | None = None
     max_file_bytes: int = MAX_SOURCE_BYTES
     included_paths: tuple[str, ...] = ()
     commit: str | None = None
@@ -77,6 +79,11 @@ class SourceVersion:
     observation: dict
     material_class: str = "repository"
     visibility: str = "project"
+    # False when the bytes were hashed but not retained because the version's extraction is
+    # already cached: such a source publishes membership only and never new evidence.
+    raw_retained: bool = True
+    # In-memory only: the lstat identity observed around the read, never persisted.
+    stat: tuple | None = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

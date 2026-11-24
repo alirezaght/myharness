@@ -3,7 +3,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from harness.knowledge.integration import refresh_with_records
+from harness.knowledge.integration import refresh_until_settled
 from harness.knowledge.models import ContextRequest, RefreshRequest
 from harness.knowledge.policy import current_operator_scope
 from harness.knowledge.query import explain, query, visible_coverage
@@ -83,13 +83,33 @@ def inspect_knowledge(controller, repository, *, task_id=None):
     }
 
 
-def refresh_knowledge(controller, repository, *, task_id=None, commit=None, included_paths=()):
-    return asdict(
-        refresh_with_records(
+def refresh_knowledge(
+    controller, repository, *, task_id=None, commit=None, included_paths=(), rounds=None
+):
+    """Explicit indexing opts the repository in; it settles incremental batches by default."""
+    from harness.knowledge.consumers import coverage_summary
+
+    scope = current_operator_scope(controller.conn, repository, task_id=task_id)
+    result = asdict(
+        refresh_until_settled(
             controller,
-            current_operator_scope(controller.conn, repository, task_id=task_id),
+            scope,
             RefreshRequest(included_paths=tuple(sorted(set(included_paths))), commit=commit),
+            rounds=rounds,
         )
+    )
+    result["summary"] = coverage_summary(controller.conn, scope)
+    return result
+
+
+def consumers_knowledge(controller, repository, target, *, task_id=None, limit=200):
+    from harness.knowledge.consumers import consumers
+
+    return consumers(
+        controller.conn,
+        current_operator_scope(controller.conn, repository, task_id=task_id),
+        target,
+        limit=limit,
     )
 
 
@@ -137,6 +157,7 @@ def add_knowledge_parser(subparsers):
         "revoke",
         "purge",
         "retain",
+        "consumers",
     ):
         action = actions.add_parser(name, allow_abbrev=False)
         action.add_argument(
@@ -149,6 +170,18 @@ def add_knowledge_parser(subparsers):
         elif name == "refresh":
             action.add_argument("--commit")
             action.add_argument("--include", action="append", default=[])
+            action.add_argument(
+                "--rounds",
+                type=int,
+                default=None,
+                help="incremental publication batches to run (default: until settled)",
+            )
+        elif name == "consumers":
+            action.add_argument(
+                "target",
+                help="repository path, directory, dotted Python module or HTTP endpoint path",
+            )
+            action.add_argument("--limit", type=int, default=200)
         elif name == "explain":
             action.add_argument("bundle_hash")
             action.add_argument("assertion_id")
@@ -240,6 +273,11 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
                 task_id=args.task_id,
                 commit=args.commit,
                 included_paths=args.include,
+                rounds=args.rounds,
+            )
+        elif args.knowledge_action == "consumers":
+            result = consumers_knowledge(
+                controller, repository, args.target, task_id=args.task_id, limit=args.limit
             )
         elif args.knowledge_action == "query":
             result = query_knowledge(

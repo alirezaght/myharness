@@ -58,8 +58,8 @@ def test_private_diagnostic_visibility_current_cached_and_history(graph, monkeyp
 
 def test_structured_augmentation_preserves_applicable_coverage_after_reopen(graph, tmp_path):
     conn, scope = graph
-    (scope.repository / "unsupported.js").write_text("public limitation")
-    git(scope.repository, "add", "unsupported.js")
+    (scope.repository / "unsupported.sql").write_text("public limitation")
+    git(scope.repository, "add", "unsupported.sql")
     private = "private-malformed.py"
     (scope.repository / private).write_text("{")
     controller = HarnessController(conn)
@@ -74,12 +74,12 @@ def test_structured_augmentation_preserves_applicable_coverage_after_reopen(grap
         reader = HarnessController(reopened)
         a = inspect_knowledge(reader, scope.repository, task_id=task.id)
         b = inspect_knowledge(reader, scope.repository, task_id="B")
-        assert any(c.get("locator") == "unsupported.js" for c in b["snapshot_coverage"])
+        assert any(c.get("locator") == "unsupported.sql" for c in b["snapshot_coverage"])
         assert private in json.dumps(a["snapshot_coverage"])
         assert private not in json.dumps(b)
     (scope.repository / private).write_text("import repaired\n")
-    (scope.repository / "unsupported.js").unlink()
-    git(scope.repository, "rm", "--cached", "unsupported.js")
+    (scope.repository / "unsupported.sql").unlink()
+    git(scope.repository, "rm", "--cached", "unsupported.sql")
     refresh_knowledge(controller, scope.repository, task_id=task.id, included_paths=(private,))
     coverage = inspect_knowledge(controller, scope.repository, task_id=task.id)["snapshot_coverage"]
     assert not any(c.get("status") == "syntax-error" for c in coverage)

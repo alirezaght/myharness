@@ -408,9 +408,9 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
 
     operation, supervisor, controller, initialization, _, execution, _ = operations
     root = Path(operation.envelope["repository"])
-    (root / "unsupported.js").write_text("public limitation")
+    (root / "unsupported.sql").write_text("public limitation")
     (root / "private-malformed.py").write_text("{")
-    git(root, "add", "unsupported.js")
+    git(root, "add", "unsupported.sql")
     if commit:
         git(
             root,
@@ -461,7 +461,7 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
             )
         }
         assert old <= active
-        assert any(c.get("locator") == "unsupported.js" for c in status["snapshot_coverage"])
+        assert any(c.get("locator") == "unsupported.sql" for c in status["snapshot_coverage"])
         if not commit:
             assert "private-malformed.py" in json.dumps(status)
             assert "private-malformed.py" not in json.dumps(
@@ -469,7 +469,7 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
             )
         bundle = query(reopened, scoped, ContextRequest("COMPLETED_REPORT_COVERAGE"))
         assert bundle.payload["assertions"]
-        assert any(c.get("locator") == "unsupported.js" for c in bundle.payload["coverage"])
+        assert any(c.get("locator") == "unsupported.sql" for c in bundle.payload["coverage"])
     # Explicit commit refresh is a repository-only projection, not a report augmentation.
     if commit:
         refresh(controller.conn, scoped, RefreshRequest(commit="HEAD"))

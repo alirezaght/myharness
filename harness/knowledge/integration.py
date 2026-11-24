@@ -1,6 +1,7 @@
 """Existing investigation boundaries share knowledge; pure analyze remains read-only."""
 
 import json
+import os
 import sqlite3
 from dataclasses import replace
 
@@ -20,6 +21,32 @@ from harness.knowledge.refresh import refresh
 from harness.knowledge.store import publish_snapshot
 
 _DEFAULT_REFRESH_REQUEST = RefreshRequest()
+MODE_VARIABLE = "HARNESS_KNOWLEDGE"
+MAX_SETTLE_ROUNDS = 64
+_INCREMENTAL = {"publish-batch-deferred", "refresh-bytes-capped"}
+
+
+def knowledge_mode():
+    """`off`, `auto` (default) or `on`; unknown values fall back to `auto`.
+
+    `auto` keeps the graph lazy: a repository nobody has indexed costs nothing at investigation,
+    and one an operator indexed (`harness knowledge refresh`) is kept current incrementally.
+    """
+    value = os.environ.get(MODE_VARIABLE, "auto").strip().lower()
+    return {"0": "off", "false": "off", "1": "on", "true": "on"}.get(
+        value, value if value in {"off", "auto", "on"} else "auto"
+    )
+
+
+def indexed(conn, scope):
+    row = conn.execute(
+        "SELECT active_snapshot_id FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
+    ).fetchone()
+    return bool(row and row[0])
+
+
+def _pending(result):
+    return sum(1 for gap in result.coverage if gap.get("reason") in _INCREMENTAL)
 
 
 def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
@@ -89,6 +116,28 @@ def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
     )
 
 
+def refresh_until_settled(controller, scope, request=_DEFAULT_REFRESH_REQUEST, *, rounds=None):
+    """Repeat incremental refreshes while each one publishes and defers the remainder.
+
+    Every round hashes the inventory but retains and extracts only uncached sources, in
+    bounded publication batches, so a large repository converges without a file-count cap.
+    """
+    from harness.knowledge.policy import current_operator_scope as current
+
+    rounds = MAX_SETTLE_ROUNDS if rounds is None else rounds
+    result = refresh_with_records(controller, scope, request)
+    for _ in range(rounds - 1):
+        if request.commit or result.status not in {"published", "published-partial"}:
+            break
+        if not _pending(result):
+            break
+        scope = current(
+            controller.conn, scope.repository, task_id=scope.task_id, purpose=scope.purpose
+        )
+        result = refresh_with_records(controller, scope, request)
+    return result
+
+
 def investigate_with_context(controller, task_id, repo_root, request=None, decisions=None):
     task = controller.get_task(task_id)
     report = analyze(repo_root, task.request, decisions)
@@ -96,14 +145,29 @@ def investigate_with_context(controller, task_id, repo_root, request=None, decis
     scope = current_operator_scope(
         controller.conn, repo_root, task_id=task_id, purpose="investigation"
     )
+    mode = knowledge_mode()
+    bundle = None
     try:
-        result = refresh_with_records(controller, scope)
-        bundle = (
-            query(controller.conn, scope, request or ContextRequest(task.request[:4096]))
-            if result.snapshot_id
-            else None
-        )
-        diagnostic = {"status": result.status, "coverage": list(result.coverage)}
+        if mode == "off" or (mode == "auto" and not indexed(controller.conn, scope)):
+            # Opt-in: indexing a large repository costs more than an investigation that never
+            # asks a consumer question gains. Grep/read remain the agent's primary tools.
+            diagnostic = {
+                "status": "skipped",
+                "mode": mode,
+                "reason": "knowledge graph is opt-in; run `harness knowledge refresh <task>` "
+                f"once or set {MODE_VARIABLE}=on to index this repository",
+            }
+        else:
+            result = refresh_with_records(controller, scope)
+            bundle = (
+                query(controller.conn, scope, request or ContextRequest(task.request[:4096]))
+                if result.snapshot_id
+                else None
+            )
+            diagnostic = {"status": result.status, "mode": mode, "coverage": list(result.coverage)}
+            from harness.knowledge.consumers import coverage_summary
+
+            diagnostic["summary"] = coverage_summary(controller.conn, scope)
     except (OSError, ValueError, PermissionError):
         diagnostic, bundle = (
             {"status": "unavailable", "reason": "knowledge context unavailable"},
