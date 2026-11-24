@@ -9,7 +9,7 @@ import sys
 import pytest
 
 SCRIPTS=Path(__file__).resolve().parents[1]/'codex/skills/al/scripts'
-NAMES=('al_pytest_profile.py','al_pytest_sources.py','al_pytest_runner.py','al_ci_yaml.py')
+NAMES=('al_pytest_profile.py','al_pytest_sources.py','al_pytest_runner.py','al_ci_yaml.py','al_pytest_policy.py')
 
 
 def run(root,body,*,mode='1',args=()):
