@@ -385,6 +385,9 @@ def slim(st, data, review):
     if isinstance(data.get('behavior'), dict) and isinstance(data['behavior'].get('obligations'), dict) and 'content' not in data['behavior']['obligations']:
         data['behavior']['obligations']['artifact'] = _ref(data['behavior']['obligations']['artifact'])
     if data['stage'] == 'compare':
+        # Implementer handoff records since the base review (never in the isolated fresh stage).
+        import al_comms
+        data['delta']['handoff_records'] = al_comms.records_since(st, review_iteration=int(detail['base_review'][1:]))
         # The approved plan is byte-identical to the one the base review inspected (checked at
         # review-compare-start); keep its hash references, not its text.
         if isinstance(data.get('approved_inputs'), dict):

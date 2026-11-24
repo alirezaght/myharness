@@ -273,6 +273,28 @@ for AL-Architect, never authority, never a finding of record.
   include its output in Architect, Designer and Scout prompts so they do not
   rediscover the repository by hand. Before gates are planned it names what is
   missing instead of refusing.
+- **Agent communication.** Agents report through the runtime, not prose:
+  - `"${STATE[@]}" progress --note TEXT [--done N --total M] [--role R --agent ID]`
+    at real milestones. The latest checkpoint shows in the status line, in
+    `inspect` (summary) and, under Harness, on the agent's dashboard row, so
+    nobody polls a model for status.
+  - `"${STATE[@]}" ask --blocking|--non-blocking --question TEXT [--role R --agent ID]`
+    raises an early typed question mid-run; the agent keeps working on
+    independent parts. Answer with `ask --answer QID --text TEXT`, which prints
+    the resume call for the same warm agent; `ask --list` shows open questions.
+  - Each agent ends with a structured handoff record
+    (`reference/schemas/agent-handoff-record.json`: decisions with reasons,
+    assumptions, files touched, verified claims with evidence IDs, unverified
+    claims, open questions, risks), stored with `"${STATE[@]}" handoff-record
+    --file JSON [--writer ID]`. The next `writer handoff` and the comparison stage
+    of a delta review receive the records' original JSON by hash; the fresh
+    review stage never sees them.
+  - Record each invocation's token usage when the host reports it:
+    `"${STATE[@]}" agent usage --role ROLE --output-tokens N [--input-tokens N]`.
+    `inspect` shows the per-role totals. When the host exposes no counts, say so
+    in the final report instead of estimating.
+- Prompts reference original artifacts by hash plus the relevant excerpt or
+  delta (the spec, plan, diff, packet or record), never a paraphrase.
 - A model-availability or entitlement error is NOT an agent failure — handle it
   under **Model policy** above.
 - A model-service content/safety refusal is not an approval request or model

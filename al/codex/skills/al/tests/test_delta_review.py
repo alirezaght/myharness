@@ -47,6 +47,7 @@ def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regres
     # The fresh stage stays isolated from the plan and implementer summaries.
     assert not {"approved_inputs", "comparison_contents", "fresh", "prior_findings"} & set(fresh)
     assert compare["approved_inputs"]["contents"] == {}
+    assert "handoff_records" in compare["delta"] and "handoff_records" not in fresh["delta"]
 
     from jsonschema import Draft202012Validator
     from referencing import Registry, Resource
