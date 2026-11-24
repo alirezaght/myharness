@@ -5,6 +5,7 @@ import al_ci_context as CC
 import al_artifacts as A
 import al_gate_discovery as D
 import al_gate_inventory as V
+import al_scope as S
 
 
 def rule_source(path):
@@ -39,8 +40,10 @@ def _widened(now,planned):
     return added
 
 
+@S.decision
 def check(st):
-    from al_repository_capture import CaptureDrift,CaptureUnavailable
+    """Whether the latest gate manifest still answers the task's coverage question, from one
+    stability-checked observation of the working copy (S.decision)."""
     refs=st.get('gate_manifests',[])
     if not refs:return {'current':False,'reasons':['repository gate manifest missing'],'superseded':None,'paths':[],'pathless':True}
     ref=refs[-1];manifest=A.read_json(ref);declaration=manifest.get('service_coverage')
@@ -50,11 +53,28 @@ def check(st):
         return {'current':False,'reasons':['coverage policy changed; supported v2 rediscovery/replanning required'],
                 'superseded':ref,'paths':[],'pathless':True}
     context=CC.binding(st,manifest.get('ci_context'),allow_historical=True)
-    reasons=[];subjects=[];pathless=False
     if not context['current']:
         return {'current':False,'reasons':['CI context belongs to a superseded task revision; declare replacement context'],
                 'superseded':ref,'paths':[],'pathless':True}
-    try:current=V.inventory(st,manifest.get('paths',[]),manifest.get('ci_context'),bounded=manifest.get('discovery_mode')=='bounded')
+    # The answer for this manifest and these inventory inputs is recorded with the capture it
+    # read; while that capture re-observes unchanged, it is the answer a new inventory gives (#25).
+    try:inputs=V.inventory_inputs(st,manifest.get('paths',[]),manifest.get('ci_context'),bounded=manifest.get('discovery_mode')=='bounded')
+    except (OSError,ValueError,TypeError,KeyError,SystemExit):inputs=None
+    key=V.answer_key({'kind':'gate-currency','manifest':ref.get('sha256'),
+                      'context':context},inputs,'al_gate_currency') if inputs is not None else None
+    if key is not None:
+        recorded=V.verified_answer(key)
+        if isinstance(recorded,dict) and isinstance(recorded.get('reasons'),list):return recorded
+    result=_current(st,manifest,declaration,ref,inputs)
+    if key is not None and not any(r.startswith('coverage capture unavailable') for r in result['reasons']):
+        V.record_answer(key,inputs,result)
+    return result
+
+
+def _current(st,manifest,declaration,ref,inputs):
+    from al_repository_capture import CaptureDrift,CaptureUnavailable
+    reasons=[];subjects=[];pathless=False
+    try:current=V.inventory(st,manifest.get('paths',[]),manifest.get('ci_context'),bounded=manifest.get('discovery_mode')=='bounded',_inputs=inputs)
     except (CaptureDrift,CaptureUnavailable) as exc:
         return {'current':False,'reasons':['coverage capture unavailable: '+exc.reason],
                 'superseded':ref,'paths':[],'pathless':True,

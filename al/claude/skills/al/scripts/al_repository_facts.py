@@ -203,6 +203,26 @@ class CapturedContent(Mapping):
 _LISTINGS={}
 
 
+def _window(root):
+    """The decision window (S.decision) observing `root`, bracketed by working-copy observations."""
+    from al_analysis_cache import CURRENT
+    import al_attribution_tree as tree
+    context=CURRENT.get()
+    return context if context is not None and tree.window(str(root)) is not None else None
+
+
+def _window_listing(key):
+    """Inside one stability-checked decision window, the latest membership listing of the same
+    question is reused (the window re-runs the decision when the working copy moved)."""
+    context=_window(key[0])
+    return context.local.get(('membership-listing',key)) if context is not None else None
+
+
+def _keep_window_listing(key,listing):
+    context=_window(key[0])
+    if context is not None:context.local[('membership-listing',key)]=listing
+
+
 class Snapshot(CaptureMixin):
     def __init__(self,root,base_oid,paths,opaque,required_adapter=None,*,listing_only=False):
         """`listing_only` observes membership and path states without capturing content:
@@ -225,7 +245,9 @@ class Snapshot(CaptureMixin):
         # capture still ends with a fresh listing compared against it, so drift is refused.
         key=(str(self.root),base_oid,tuple(self.paths),tuple(self.opaque),required_adapter)
         adopted=None if listing_only else _LISTINGS.pop(key,None)
+        if adopted is None:adopted=_window_listing(key)
         self.listing_observation=adopted if adopted is not None else self.observe_listing()
+        _keep_window_listing(key,self.listing_observation)
         if listing_only:
             if len(_LISTINGS)>=4:_LISTINGS.clear()
             _LISTINGS[key]=self.listing_observation

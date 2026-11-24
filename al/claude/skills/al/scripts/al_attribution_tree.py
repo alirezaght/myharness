@@ -13,7 +13,11 @@ Retained content of every record the tree holds exactly is the tree itself, pinn
 `refs/al/snapshots/<run>/` so `git gc` keeps it; only the remaining records are copied into
 artifacts. Gitlinks (child working copies a tree cannot describe) and an unavailable snapshot
 fall back to the double read of the records."""
+import contextlib
+import contextvars
+import copy
 import hashlib
+import json
 import os
 import stat
 
@@ -50,6 +54,7 @@ class Observation:
 
     def __init__(self, root, base):
         self.root = str(root)
+        self.base = base
         index = G.index_entries(root)
         head = G.tree_entries(root, 'HEAD')
         baseline = G.tree_entries(root, base)
@@ -77,6 +82,18 @@ class Observation:
             if path not in self.exact:
                 self.direct[path] = _direct(self.root, path)
 
+    def value(self):
+        """Everything `changed` compares, as JSON data."""
+        return {'root': self.root, 'base': self.base, 'tree': self.tree, 'head': self.head.decode(),
+                'index': self.index, 'untracked': sorted(self.untracked), 'modes': self.modes,
+                'direct': {p: list(v) for p, v in self.direct.items()}}
+
+    def key(self):
+        """Digest of everything this observation saw: equal keys, equal working-copy state."""
+        if not hasattr(self, '_key'):
+            self._key = _digest(self.value())
+        return self._key
+
     def changed(self, other):
         """Paths whose observed state differs from `other` (None: a global change)."""
         if self.head != other.head:
@@ -92,6 +109,23 @@ class Observation:
         return paths
 
 
+def _digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+class Recorded:
+    """An Observation read back from its `value()` (compares like the original)."""
+
+    changed = Observation.changed
+
+    def __init__(self, value):
+        self.root, self.base, self.tree = value['root'], value['base'], value['tree']
+        self.head = value['head'].encode()
+        self.index, self.modes = value['index'], value['modes']
+        self.untracked = set(value['untracked'])
+        self.direct = {p: tuple(v) for p, v in value['direct'].items()}
+
+
 def open_observation(base):
     """The opening Observation, or None when the snapshot is unavailable (read twice instead)."""
     try:
@@ -100,14 +134,168 @@ def open_observation(base):
         return None
 
 
-def stable(opening, base, ignored):
+# Candidate records read inside a bracket whose closing observation equalled its opening one,
+# by (root, base, observation key). The records are a function of what an Observation sees
+# (content, modes, index, HEAD, untracked membership; gitlinks are never observed this way), so
+# a later bracket opening on an equal observation reuses them instead of reading 17k files, and
+# one opening on a different observation re-reads only the paths whose observed state differs
+# (`Observation.changed`). The latest confirmed records of a worktree and base are also kept
+# in the run's runtime directory, so the next command starts from them.
+_RECORDS = {}
+_BRACKET = contextvars.ContextVar('al_attribution_bracket', default=None)
+
+
+@contextlib.contextmanager
+def bracket(opening):
+    """Inside, the working copy is taken to be `opening` (its tree vouches for content and
+    `records` may answer from an equal earlier observation). The caller must call `confirm`
+    with the yielded state only after a closing observation equalled `opening`."""
+    state = {'root': opening.root, 'base': opening.base, 'key': opening.key(), 'pending': None,
+             'opening': opening, 'stored': None}
+    token = _BRACKET.set(state)
+    try:
+        with al_snapshot.reusing(opening.root, opening.tree):
+            yield state
+    finally:
+        _BRACKET.reset(token)
+
+
+def active(root, base):
+    """The enclosing bracket's state when it observes `root` against `base`, else None."""
+    state = _BRACKET.get()
+    if state is None or state['root'] != str(root) or state['base'] != base:
+        return None
+    return state
+
+
+def _enabled():
+    import al_analysis_index as index
+    return index.enabled()
+
+
+def _stored_path(root, base):
+    return al_store.RUNTIME_DIR / 'observed-records' / (_digest([str(root), base]) + '.json')
+
+
+def _code():
+    import al_analysis_index as index
+    return index.code_digest('al_scope', 'al_attribution_tree')
+
+
+def _load(root, base):
+    """(Recorded observation, its key, records) last confirmed for this worktree and base, or None."""
+    path = _stored_path(root, base)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_uid != os.getuid():
+            return None
+        value = json.loads(path.read_bytes())
+        observation = value['observation']
+        if (value.get('code') != _code() or observation['root'] != str(root) or observation['base'] != base
+                or _digest(observation) != value['key'] or not isinstance(value['records'], list)):
+            return None
+        return Recorded(observation), value['key'], value['records']
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def _readonly():
+    """A read-only inspection writes nothing, not even this cache."""
+    from al_analysis_cache import CURRENT
+    context = CURRENT.get()
+    return context is not None and context.readonly_git
+
+
+def _store(state, rows):
+    import tempfile
+    if _readonly():
+        return
+    path = _stored_path(state['root'], state['base'])
+    try:
+        al_store._ensure_runtime_dir()
+        path.parent.mkdir(mode=0o700, exist_ok=True)
+        if path.parent.is_symlink():
+            return
+        data = json.dumps({'code': _code(), 'key': state['key'], 'observation': state['opening'].value(),
+                           'records': rows}, sort_keys=True, separators=(',', ':')).encode()
+        fd, temporary = tempfile.mkstemp(dir=str(path.parent), prefix='.tmp.', suffix='.json')
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                handle.write(data)
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    except (OSError, ValueError, TypeError):
+        return
+
+
+def records(root, base, compute):
+    """Candidate records, from an equal confirmed observation when the enclosing bracket has one.
+
+    `compute(reuse)` reads the records; `reuse` is None or (records by path, changed paths):
+    a record of an unchanged path is taken over instead of read again."""
+    state = active(root, base)
+    if state is None or not _enabled():
+        return compute(None)
+    key = (state['root'], base, state['key'])
+    from al_analysis_cache import data_copy
+    if key in _RECORDS:
+        return data_copy(_RECORDS[key])
+    stored = _load(state['root'], base)
+    reuse = None
+    if stored is not None:
+        recorded, recorded_key, rows = stored
+        if recorded_key == state['key']:
+            state['pending'] = (key, data_copy(rows), False)
+            return rows
+        try:
+            changed = recorded.changed(state['opening'])
+        except (al_snapshot.Unavailable, OSError, ValueError):
+            changed = None
+        if changed is not None:
+            reuse = ({r['path']: r for r in rows}, changed)
+    value = compute(reuse)
+    state['pending'] = (key, data_copy(value), True)
+    return value
+
+
+def window(root):
+    """The enclosing bracket's state when it observes `root` (any base), else None."""
+    state = _BRACKET.get()
+    return state if state is not None and state['root'] == str(root) else None
+
+
+def physical_modes(root):
+    """Permission bits of every candidate path as the enclosing bracket observed them, or None.
+
+    Inside a bracket the working copy is its opening observation (the closing one proves it),
+    so a record's physical mode is the observed one instead of another lstat of every path."""
+    state = window(root)
+    return state['opening'].modes if state is not None else None
+
+
+def confirm(state):
+    """The bracket's closing observation equalled its opening: its records are reusable."""
+    if state is not None and state.get('pending') is not None:
+        key, value, new = state['pending']
+        if len(_RECORDS) >= 4:
+            _RECORDS.clear()
+        _RECORDS[key] = value
+        if new:
+            _store(state, value)
+
+
+def stable(opening, base, ignored, state=None):
     """True when nothing outside `ignored` moved since `opening`; None when the closing
-    observation is unavailable (the caller then compares a second read of the records)."""
+    observation is unavailable (the caller then compares a second read of the records).
+    With the `bracket` state, records read inside are confirmed when nothing moved at all."""
     try:
         closing = Observation(al_store.REPO_ROOT, base)
     except (al_snapshot.Unavailable, OSError, ValueError):
         return None
     moved = opening.changed(closing)
+    if moved == set():
+        confirm(state)
     return moved is not None and all(_owned(p, ignored) for p in moved)
 
 

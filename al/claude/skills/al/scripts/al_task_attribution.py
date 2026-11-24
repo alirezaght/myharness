@@ -19,9 +19,14 @@ def _binding(st):
 
 
 def _rows(st):
+    import al_attribution_tree as tree
     base = _decision_base(st)
     rows = S.records(base)
+    observed = tree.physical_modes(str(al_store.REPO_ROOT))
     for row in rows:
+        if observed is not None and row['path'] in observed:
+            row['physical_mode'] = observed[row['path']]
+            continue
         path = al_store.REPO_ROOT / S.safe_path(row['path'])
         try:
             metadata = path.lstat()
@@ -75,15 +80,19 @@ def observe(st, *, retain_content=False, expected=None, concurrent=()):
             refuse(UNSTABLE_OBSERVATION)
         return second
     single = expected is not None and not retain_content
-    opening = None if single else tree.open_observation(_decision_base(st))
+    # A plain observation inside a stability-checked decision window (S.decision) is read once:
+    # the window's own closing observation proves nothing moved, or re-runs the decision.
+    enclosing = None if retain_content else tree.active(str(al_store.REPO_ROOT), _decision_base(st))
+    opening = None if single or enclosing is not None else tree.open_observation(_decision_base(st))
     progress.report('attribution-first', count=0)
+    state = None
     if opening is None:
         first = rows()
     else:
-        with al_snapshot.reusing(al_store.REPO_ROOT, opening.tree):
+        with tree.bracket(opening) as state:
             first = rows()
     progress.report('attribution-first', count=len(first), force=True)
-    if opening is None and not (single and first == expected.get('files')):
+    if opening is None and enclosing is None and not (single and first == expected.get('files')):
         second = second_read(first)
     else:
         second = first
@@ -109,7 +118,7 @@ def observe(st, *, retain_content=False, expected=None, concurrent=()):
         progress.report('attribution-retain', count=len(second), force=True)
     if opening is not None:
         progress.report('attribution-final', count=0)
-        moved = tree.stable(opening, _decision_base(st), sorted(set(concurrent) | set(volatile)))
+        moved = tree.stable(opening, _decision_base(st), sorted(set(concurrent) | set(volatile)), state)
         if moved is None:
             # The closing snapshot is unavailable: compare a second read of the records.
             second_read(second)
@@ -380,6 +389,15 @@ def writer_confined_movement(st, before, after):
 
 @S.decision
 def classify_changes(st, current_capture=None):
+    if current_capture is None:
+        # Inside a window bracketed by working-copy observations the classification of one
+        # run state is computed once; the window re-runs the decision if anything moved.
+        import al_attribution_tree as tree
+        from al_analysis_cache import CURRENT
+        context = CURRENT.get()
+        if context is not None and tree.active(str(al_store.REPO_ROOT), _decision_base(st)) is not None:
+            key = hashlib.sha256(json.dumps(st, sort_keys=True, default=repr).encode()).hexdigest()
+            return context.get_or_compute('task-classification', [key], lambda: _classify(st))
     return _classify(st, current_capture)
 
 

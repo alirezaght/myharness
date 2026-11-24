@@ -3,6 +3,7 @@ import ast
 from collections import OrderedDict
 from contextvars import ContextVar
 import copy
+import marshal
 import hashlib
 import json
 import os
@@ -90,6 +91,16 @@ CACHE = AnalysisCache()
 CURRENT = ContextVar('al_observation', default=None)
 
 
+def data_copy(value):
+    """An independent copy of plain data (dict, list, tuple, str, int, float, bool, None, bytes):
+    a marshal round trip, which keeps every type and is an order of magnitude faster than
+    deepcopy for large record lists; anything else is deep-copied."""
+    try:
+        return marshal.loads(marshal.dumps(value))
+    except ValueError:
+        return copy.deepcopy(value)
+
+
 class ObservationContext:
     """Memoization is valid only inside one independently stability-checked read."""
     def __init__(self, binding, cache=None, *, readonly_git=False):
@@ -108,8 +119,8 @@ class ObservationContext:
     def get_or_compute(self, namespace, key, compute):
         identity = (namespace, content_key([self.binding, key]))
         if identity not in self.local:
-            self.local[identity] = copy.deepcopy(compute())
-        return copy.deepcopy(self.local[identity])
+            self.local[identity] = data_copy(compute())
+        return data_copy(self.local[identity])
 
 
 def parse_python(data, memo=None):

@@ -190,18 +190,25 @@ def discovery_paths(st,anticipated=(),ci_context=None,*,bounded=False):
     return expand_task_paths(listing,inputs['paths'],set(inputs['opaque']))[1]
 
 
-def inventory(st,anticipated=(),ci_context=None,*,_finalize=None,bounded=False):
-    inputs=inventory_inputs(st,anticipated,ci_context,bounded=bounded)
+def inventory(st,anticipated=(),ci_context=None,*,_finalize=None,bounded=False,_inputs=None):
+    inputs=_inputs if _inputs is not None else inventory_inputs(st,anticipated,ci_context,bounded=bounded)
     memo=_MEMO.get()
     key=_memo_key(inputs) if memo is not None else None
     if memo is not None:memo['__last__']=key
     def compute():
+        # An inventory of these inputs recorded earlier in this worktree run is the answer
+        # while its capture re-observes unchanged (#25); otherwise a new capture is analysed.
+        recorded_key=answer_key({'kind':'inventory'},inputs)
+        if recorded_key is not None:
+            recorded=verified_answer(recorded_key,inputs)
+            if isinstance(recorded,dict) and isinstance(recorded.get('paths'),list):return recorded
         context=inputs['context'];paths=inputs['paths'];opaque=set(inputs['opaque']);required_adapter=inputs['required_adapter']
         scans=[]
         def snapshot():
             scans.append(Snapshot(al_store.REPO_ROOT,inputs['base'],paths,opaque,required_adapter));return scans[-1]
         value=capture_discovery(snapshot,lambda scan:_inventory_attempt(st,paths,context,opaque,scan,bounded=inputs['bounded']))
         _OBSERVED[inputs_key(inputs)]=_observations(scans[-1])
+        if recorded_key is not None:record_answer(recorded_key,inputs,value)
         return value
     from al_analysis_cache import CURRENT
     observation=CURRENT.get()
@@ -428,18 +435,25 @@ def advisory_bindings(scan,facts,ci,inside):
 def gaps(st,m,anticipated=(),*,admission=True):
     """Inventory gaps of a manifest. A question this worktree run already answered is
     answered again by re-observing the capture it depended on (#25), not by a new inventory."""
-    key=_verification_key(st,m,anticipated,admission)
+    # One reading of the run's inventory inputs serves the key, the inventory and the record.
+    try:inputs=_manifest_inputs(st,m,anticipated)
+    except (OSError,ValueError,TypeError,KeyError,SystemExit):inputs=None
+    key=_verification_key(st,m,anticipated,admission,inputs) if inputs is not None else None
     if key is not None:
-        recorded=_verified(key)
-        if recorded is not None:return recorded
-    out=_gaps(st,m,anticipated,admission=admission)
-    if key is not None:_record_verification(key,st,m,anticipated,out)
+        recorded=verified_answer(key)
+        if isinstance(recorded,list) and all(isinstance(g,str) for g in recorded):return recorded
+    out=_gaps(st,m,anticipated,admission=admission,inputs=inputs)
+    if key is not None:record_answer(key,inputs,list(out))
     return out
 
 
-def _gaps(st,m,anticipated=(),*,admission=True):
+def _manifest_inputs(st,m,anticipated=()):
+    return inventory_inputs(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded')
+
+
+def _gaps(st,m,anticipated=(),*,admission=True,inputs=None):
     progress.report('inventory-validate',count=len(m.get('paths',[])),force=True)
-    expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded');out=[]
+    expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded',_inputs=inputs);out=[]
     declared={r['path']:r['sha256'] for r in m['rules']}
     for r in expected['rules']:
         if declared.get(r['path'])!=r['sha256']:out.append('missing/current repository source: '+r['path'])
@@ -501,14 +515,22 @@ def _environment():
     return {'environ':sorted([k,v] for k,v in os.environ.items() if k not in _VOLATILE_ENVIRONMENT),'path':rows,'executable':sys.executable}
 
 
-def _verification_key(st,m,anticipated=(),admission=True):
+def _verification_key(st,m,anticipated,admission,inputs):
+    # A manifest's id and revision are assigned when it is saved; the gaps never read them,
+    # so the validation `gates discover` recorded answers the saved manifest too.
+    return answer_key({'kind':'manifest-gaps','manifest':digest({k:v for k,v in m.items() if k not in ('id','revision')}),
+                       'anticipated':sorted(anticipated),'admission':bool(admission)},inputs)
+
+
+def answer_key(question,inputs,*modules):
+    """Key of an answer computed from one inventory of `inputs`: the producing code, the
+    question, the inventory inputs and what an inventory reads outside the capture (#25)."""
     import al_analysis_index as index
     if not index.enabled():return None
     try:
-        inputs=inventory_inputs(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded')
         head=S.git_bytes('rev-parse','--verify','--quiet','HEAD').decode().strip()
-        return digest({'code':index.code_digest('al_gate_inventory','al_gate_discovery'),'inputs':inputs_key(inputs),
-                       'manifest':digest(m),'anticipated':sorted(anticipated),'admission':bool(admission),'rows':digest(S.source_rows()),'head':head,'root':str(al_store.REPO_ROOT),
+        return digest({'code':index.code_digest('al_gate_inventory','al_gate_discovery',*modules),'inputs':inputs_key(inputs),
+                       'question':question,'rows':digest(S.source_rows()),'head':head,'root':str(al_store.REPO_ROOT),
                        'environment':_environment()})
     except (OSError,ValueError,TypeError,KeyError,SystemExit):
         return None
@@ -518,11 +540,13 @@ def _verification_path(key):
     return Path(al_store.RUNTIME_DIR)/'inventory-verifications'/(key+'.json')
 
 
-def _record_verification(key,st,m,anticipated,result):
-    """Keep, per worktree run, the observations a successful validation depended on."""
-    inputs=inventory_inputs(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded')
+def record_answer(key,inputs,answer):
+    """Keep, per worktree run, an answer and the capture observations it depended on."""
     observed=_OBSERVED.get(inputs_key(inputs))
-    if observed is None:return
+    from al_analysis_cache import CURRENT
+    context=CURRENT.get()
+    # A read-only inspection records nothing.
+    if observed is None or (context is not None and context.readonly_git):return
     import tempfile
     path=_verification_path(key)
     try:
@@ -532,7 +556,7 @@ def _record_verification(key,st,m,anticipated,result):
         if path.parent.is_symlink():return
         fd,temporary=tempfile.mkstemp(dir=str(path.parent),prefix='.tmp.',suffix='.json')
         try:
-            with os.fdopen(fd,'w') as handle:json.dump({'key':key,'observations':observed,'gaps':list(result)},handle,sort_keys=True)
+            with os.fdopen(fd,'w') as handle:json.dump({'key':key,'observations':observed,'answer':answer},handle,sort_keys=True)
             os.replace(temporary,path)
         finally:
             if os.path.exists(temporary):os.unlink(temporary)
@@ -542,15 +566,15 @@ def _record_verification(key,st,m,anticipated,result):
         return
 
 
-def _verified(key):
-    """The recorded gaps when the recorded capture is unchanged (listing, path, absence, match
+def verified_answer(key,inputs=None):
+    """The recorded answer when the recorded capture is unchanged (listing, path, absence, match
     and source observations re-observed with the capture's own racy-clean rule), else None."""
     from al_repository_capture import immutable_observation
     path=_verification_path(key)
     try:
         if path.is_symlink() or not path.is_file() or path.stat().st_uid!=os.getuid():return None
         record=json.loads(path.read_bytes())
-        if record.get('key')!=key or not isinstance(record.get('gaps'),list) or any(not isinstance(g,str) for g in record['gaps']):return None
+        if record.get('key')!=key or 'answer' not in record:return None
         obs=record['observations']
         if obs['root']!=str(al_store.REPO_ROOT):return None
         progress.report('inventory-verify',force=True)
@@ -563,6 +587,7 @@ def _verified(key):
         scan.match_observations={(pattern,purpose):tuple(values) for pattern,purpose,values in obs['matches']}
         scan.capture_started_ns=obs['capture_started_ns']
         scan.revalidate(fresh)
-        return list(record['gaps'])
+        if inputs is not None:_OBSERVED[inputs_key(inputs)]=obs
+        return record['answer']
     except (CaptureDrift,CaptureUnavailable,OSError,ValueError,TypeError,KeyError,SystemExit):
         return None

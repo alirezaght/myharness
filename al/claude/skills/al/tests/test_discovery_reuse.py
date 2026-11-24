@@ -84,8 +84,20 @@ def test_validation_of_a_different_question_is_never_served_from_the_memo(cli, r
         V.inventory(st, ['services/a/src/app.py'])
         V.inventory(st, ['services/b/src/app.py'])
         V.inventory(st, ['services/a/src/app.py'])
-    V.inventory(st, ['services/a/src/app.py'])
+    assert len(calls) == 2
+    # Outside the scope the question is answered from the run's verified record of that
+    # capture (#25), identical to a fresh inventory with the record store disabled.
+    recorded = V.inventory(st, ['services/a/src/app.py'])
+    assert len(calls) == 2
+    monkeypatch.setenv('AL_ANALYSIS_CACHE', '0')
+    fresh = V.inventory(st, ['services/a/src/app.py'])
     assert len(calls) == 3
+    assert json.dumps(recorded, sort_keys=True) == json.dumps(fresh, sort_keys=True)
+    monkeypatch.delenv('AL_ANALYSIS_CACHE')
+    # A changed captured file is a new capture, never the record.
+    put(repo, 'services/a/src/app.py', 'import common\nVALUE = 2\n')
+    V.inventory(st, ['services/a/src/app.py'])
+    assert len(calls) == 4
 
 
 def test_discovery_analyses_without_the_run_lock_and_writers_proceed(cli, repo, tmp_path, monkeypatch):
@@ -200,7 +212,14 @@ def test_phase_readiness_answers_one_inventory_question_once(cli, repo, tmp_path
     calls = _count_attempts(monkeypatch, only_discover=False)
     invoke(cli, 'phase', 'IMPLEMENTATION')
     # Gate currency and service coverage re-ask the manifest's question inside one
-    # stability-checked decision window; it is answered once, not once per check.
+    # stability-checked decision window; discovery recorded the inventory of that question,
+    # so an unchanged capture answers it without a new inventory (#25).
+    assert len(calls) == 0
+    put(repo, 'services/a/src/app.py', 'import common\nVALUE = 3\n')
+    st = json.loads(cli('show')[1])
+    import al_gate_currency
+    al_gate_currency.check(st)
+    # A changed captured file: one new inventory, once per window.
     assert len(calls) == 1
 
 

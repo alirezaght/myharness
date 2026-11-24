@@ -315,6 +315,15 @@ def _sibling_writer_drift(a,sid,st):
     return sibling_drift('gates discover',st,current=current,rerun=_rerun_command(a))
 
 
+@S.decision
+def _discover_window(st,paths,bounded):
+    """Discovery and the validation of its manifest, from one stability-checked observation
+    of the working copy (#25): the run-state inputs, membership listing and capture are read once."""
+    m=D.discover(st,paths,bounded=bounded)
+    D.validate_manifest(st,m)
+    return m,V.last_inputs_key()
+
+
 def _discover(a,sid):
     """Analyse outside the run admission lock; lock only to read and to save.
 
@@ -330,9 +339,7 @@ def _discover(a,sid):
     observed=_discovery_state(st)
     with V.reuse_inventories():
         with _sibling_writer_drift(a,sid,st):
-            m=D.discover(st,paths,bounded=a.bounded)
-            D.validate_manifest(st,m)
-        validated=V.last_inputs_key()
+            m,validated=_discover_window(st,paths,a.bounded)
         with al_store.locked(sid):
             current=al_store.load(sid)
             if _discovery_state(current)!=observed:

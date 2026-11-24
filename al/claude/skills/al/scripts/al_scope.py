@@ -195,6 +195,13 @@ def decision(fn):
         if CURRENT.get() is not None:
             return fn(st, *args, **kwargs)
         base = _decision_base(st)
+        import al_attribution_tree as tree
+        try:
+            opening = tree.open_observation(base)
+        except SystemExit:
+            opening = None
+        if opening is not None:
+            return _observed_decision(fn, opening, base, st, args, kwargs)
         try:
             before = _records(base, al_store.REPO_ROOT)
         except (OSError, ValueError, SystemExit):
@@ -218,8 +225,35 @@ def decision(fn):
     return wrapper
 
 
+def _observed_decision(fn, opening, base, st, args, kwargs):
+    """A decision window bracketed by two observations of the working copy (snapshot tree plus
+    the state a tree does not record, al_attribution_tree). Equal observations prove nothing the
+    decision read moved; otherwise it is evaluated again exactly as without memoization."""
+    import al_attribution_tree as tree
+    from al_analysis_cache import ObservationContext
+    failure = None
+    with ObservationContext({'decision': [str(al_store.REPO_ROOT), base, opening.key()]}):
+        with tree.bracket(opening) as state:
+            try:
+                result = fn(st, *args, **kwargs)
+            except (Exception, SystemExit) as exc:
+                failure = exc
+    try:
+        stable = tree.stable(opening, base, (), state)
+    except SystemExit:
+        stable = False
+    if not stable:
+        return fn(st, *args, **kwargs)
+    if failure is not None:
+        raise failure
+    return result
+
+
 def records(base,root=None):
-    return _observed('records', base, lambda: _records(base, root), root)
+    def compute():
+        import al_attribution_tree as tree
+        return tree.records(str(Path(root) if root else al_store.REPO_ROOT), base, lambda reuse: _records(base, root, reuse))
+    return _observed('records', base, compute, root)
 
 
 # Process-local worktree content digests keyed by full stat identity. One command observes
@@ -258,7 +292,9 @@ def _worktree_digest(p, vouched, settled):
     return _file_digest(p)
 
 
-def _records(base,root=None):
+def _records(base,root=None,reuse=None):
+    """Candidate records of every member. `reuse` (records by path, changed paths) takes over the
+    record of each path whose observed state did not change (al_attribution_tree.records)."""
     import al_writer_progress as progress
     progress.report('scope-index', count=0)
     root = root or al_store.REPO_ROOT
@@ -271,9 +307,14 @@ def _records(base,root=None):
                         for raw in G.paths(base_entries, head, index)}
     except G.GitlinkError as exc:
         refuse(str(exc))
-    hashes = _blob_hashes(root, (e['oid'] for entry in index.values() for e in entry.get('stages', [entry]) if e['mode'] != '160000'))
+    reused, changed = reuse if reuse is not None and not observations else ({}, set())
+    def taken(raw):
+        path = os.fsdecode(raw.rstrip(b'/'))
+        return path in reused and path not in changed
+    needed = {raw: entry for raw, entry in index.items() if not taken(raw)}
+    hashes = _blob_hashes(root, (e['oid'] for entry in needed.values() for e in entry.get('stages', [entry]) if e['mode'] != '160000'))
     indexed = {}
-    for count,(raw, entry) in enumerate(index.items(),1):
+    for count,(raw, entry) in enumerate(needed.items(),1):
         if 'stages' in entry:
             indexed[raw] = {'stages': [{**e, 'sha256': hashes[e['oid']]} for e in entry['stages']]}
         else:
@@ -297,10 +338,13 @@ def _records(base,root=None):
     import time
     settled = time.time_ns() - _DIGEST_RACY_NS
     from al_snapshot import vouched as snapshot_vouched
-    vouched = snapshot_vouched(root, lambda path: True)
+    vouched = snapshot_vouched(root, (lambda path: path not in reused or path in changed) if reused else (lambda path: True))
     progress.report('scope-worktree', count=0, total=len(raw_paths))
     for raw in sorted(raw_paths):
         if any(raw.rstrip(b'/') != parent and raw.startswith(parent + b'/') for parent in opaque):
+            continue
+        if taken(raw):
+            out.append(reused[os.fsdecode(raw.rstrip(b'/'))])
             continue
         raw = raw.rstrip(b'/')
         rel = safe_path(raw); p = root / rel

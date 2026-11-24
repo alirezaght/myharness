@@ -48,18 +48,27 @@ def prior_findings(st):
     return al_review_history.findings(st)
 
 
-def cmd_review_start(a,sid):
-    st=al_store.load(sid); require_transition(st,'review-start','REVIEW')
+@S.decision
+def _review_inputs(st):
+    """The review's read-only completeness checks and its candidate, from one stability-checked
+    observation of the working copy (each check re-reading the candidate costs a full capture)."""
     missing=S.unresolved_index_gaps(S.capture_candidate(st))+S.child_content_gaps(S.capture_candidate(st))+workflow_gaps(st)+L.gaps(st,'broad')+candidate_gaps(st)+behavior_gaps(st)
     if st.get('gate_manifests'):
         # The one full inventory between planning and approval: the candidate's obligations must
         # still match the planned manifest.
         import al_gate_inventory as V
         missing+=V.gaps(st,A.read_json(st['gate_manifests'][-1]))
-    if missing: refuse('review evidence incomplete: '+str(missing))
-    st['review_iteration']+=1
+    if missing:return missing,None
     candidate=S.capture_candidate(st)
     candidate['changed_paths']=S.changed_paths(candidate['base'])
+    return missing,candidate
+
+
+def cmd_review_start(a,sid):
+    st=al_store.load(sid); require_transition(st,'review-start','REVIEW')
+    missing,candidate=_review_inputs(st)
+    if missing: refuse('review evidence incomplete: '+str(missing))
+    st['review_iteration']+=1
     import al_review_delta as Delta
     previous=st.get('review')
     mode,reasons,detail=Delta.plan(st,previous,candidate,getattr(a,'mode',None) or 'auto')
