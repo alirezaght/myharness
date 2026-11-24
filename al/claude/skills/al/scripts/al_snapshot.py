@@ -325,6 +325,37 @@ def snapshot(root=None):
     target = index_path(root)
     if target.is_symlink():
         raise Unavailable('private snapshot index is a symlink')
+    # One snapshot of a worktree at a time (#35): a concurrent one (the resident service's
+    # background refresh, another command) holds the private index's lock, and Git refuses
+    # instead of waiting, which used to drop the command to the slow double-read capture.
+    with _exclusive(target):
+        return _snapshot(root, target)
+
+
+@contextlib.contextmanager
+def _exclusive(target, timeout=60.0):
+    import fcntl
+    import time
+    try:
+        fd = os.open(str(target.parent / 'snapshot.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as exc:
+        raise Unavailable('snapshot lock unavailable: ' + str(exc))
+    try:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise Unavailable('another snapshot of this worktree holds its lock')
+                time.sleep(0.01)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _snapshot(root, target):
     env = {'GIT_INDEX_FILE': str(target)}
     # The tracked set is exactly the real index's: the private index is reseeded whenever the
     # real index changed, and members an earlier snapshot added that are no longer members

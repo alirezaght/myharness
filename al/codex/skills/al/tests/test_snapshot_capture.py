@@ -237,3 +237,28 @@ def test_kept_private_index_equals_a_fresh_seed_on_every_change(repo):
         kept = al_snapshot.snapshot(repo)
         assert kept == _cold_tree(repo)
         assert al_snapshot.snapshot(repo) == kept
+
+
+def test_concurrent_snapshots_of_one_worktree_wait_for_each_other(repo):
+    """A snapshot taken while another holds the private index (the service's background
+    refresh) waits for it instead of failing into the slow direct capture (#35)."""
+    import fcntl
+    import threading
+    import time
+    _fixture(repo)
+    expected = al_snapshot.snapshot(repo)
+    lock = al_snapshot.index_path(repo).parent / 'snapshot.lock'
+    fd = os.open(str(lock), os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    released = []
+    def release():
+        time.sleep(0.3)
+        released.append(time.monotonic())
+        os.close(fd)
+    worker = threading.Thread(target=release)
+    worker.start()
+    try:
+        assert al_snapshot.snapshot(repo) == expected
+        assert released and time.monotonic() >= released[0]
+    finally:
+        worker.join()
