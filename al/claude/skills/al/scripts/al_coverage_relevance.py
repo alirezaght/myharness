@@ -109,11 +109,17 @@ def change_reach(facts, question):
 
     units = {owner(p) for p in paths} - {None}
     units |= set(deps.get("known_affected", [])) | set(deps.get("policy_selection", []))
+    edited = touched | {r["path"] for r in question.get("governing_source_refs", [])}
+    return {"paths": paths, "prefixes": _prefixes(paths), "units": units, "owner": owner,
+            "touched": {"paths": edited, "prefixes": _prefixes(edited)}}
+
+
+def _prefixes(paths):
     prefixes = set()
     for path in paths:
         parts = path.split("/")
         prefixes.update("/".join(parts[:index]) for index in range(1, len(parts) + 1))
-    return {"paths": paths, "prefixes": prefixes, "units": units, "owner": owner}
+    return prefixes
 
 
 def _reaches(reach, path):
@@ -145,6 +151,13 @@ def in_reach(record, facts, question, reach, kind="check"):
         if unit in {u["id"] for u in facts["units"]}:
             return unit in reach["units"] or (path != "." and _reaches(reach, path))
         return _reaches(reach, path)
+    if code == "unclassified-runtime-consumer":
+        # A script outside the unit layout blocks only when the change edits it or it literally
+        # imports or names something the change reaches; a shared file or directory name alone
+        # (how consumers are discovered) is no reference. Unknown analysis stays conservative.
+        if path != "." and _reaches(reach["touched"], path):
+            return True
+        return facts["dependencies"].get("runtime_consumer_reach", {}).get(path, True)
     if code not in SCOPED_STRUCTURE:
         return True
     if path != "." and _reaches(reach, path):

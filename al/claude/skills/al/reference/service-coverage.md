@@ -83,7 +83,11 @@ check binding) is in scope only when that unit is reached. A symlinked directory
 opaque boundary is in scope only when a reached path lies in it, a governing rule names it or
 a reached path or unit literally consumes it. An `unclassified-unit` directory, an
 `unknown-ci-inventory` CI definition and an `unsupported-ci-provider` definition are in scope
-only when the change touches them. Dependency uncertainty still selects every potential
+only when the change touches them. An `unclassified-runtime-consumer` (a script outside the
+unit layout) is in scope only when the change edits it or it literally imports a module in the
+changed sources' importer closure or names a changed path or its unit directory in full;
+sharing a file or directory name, which is how consumers are discovered, is no reference.
+Dependency uncertainty still selects every potential
 service for the checks that run (`exhaustive`), but a gap in a unit reached only through that
 uncertainty is an unverified check, not a safety gap. Out-of-scope gaps are deferred as
 `outside-change-reach`, listed in the assessment's `coverage_notes` (and `gates status`
