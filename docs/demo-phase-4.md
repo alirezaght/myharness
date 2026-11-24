@@ -79,3 +79,15 @@ including inactive/failed states. See the official [pull request](https://docs.g
 Provider permissions and required-check policies remain repository-specific.
 
 Linux operation isolation requires bubblewrap and usable unprivileged user/network namespaces. The dedicated containment workflow requires those checks; ordinary portable runs explicitly skip missing host capabilities. The older whole-process compatibility probes are macOS-specific. Failed production capability admission never falls back to unrestricted execution.
+
+Contained checks and operation processes get `TMPDIR`, `TMP` and `TEMP` set to a
+fresh private directory, `/tmp/h-<random>`. It is created with `mkdtemp`, mode
+0700, owned by the user, and removed once the process group has settled. Operation
+scratch lies deep under the execution directory, and Unix-domain socket paths are
+limited (104 bytes on macOS, 108 on Linux), so tools that bind sockets under
+`TMPDIR`, such as Python multiprocessing, need the short directory. The sandbox
+grants exactly that directory: on macOS, a `subpath` rule for file writes and for
+Unix-socket bind and connect; on Linux, one bubblewrap `--bind`. The rest of `/tmp`
+stays read-only, and other network access stays denied. The AL ledger process keeps
+operation scratch as its `TMPDIR`, because its disposable gate checkouts must
+stay inside the scratch that the check channel admits.

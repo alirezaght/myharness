@@ -103,6 +103,10 @@ class CheckChannel:
                 "settlement_basis": "owned-process-group-only",
                 "settlement_evidence": {"handle": handle, "leader_pid": process.pid},
             }
+            if record["completion"]["complete"]:
+                from harness.execution_isolation import release_process_temporary
+
+                release_process_temporary(record.get("process_temporary"))
         if record["completion"] is not None and self.storage is not None:
             self.storage.completed(handle, record["completion"])
         return code
@@ -195,17 +199,32 @@ class CheckChannel:
             )
             from harness.command_safety import safe_environment
 
-            env = safe_environment() | {"PATH": os.environ.get("PATH", os.defpath)}
-            record["process"] = subprocess.Popen(
-                [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
-                cwd=cwd,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=descriptors[0],
-                stderr=descriptors[1],
-                close_fds=True,
-                start_new_session=True,
+            from harness.execution_check_process import PROCESS_TEMPORARY_VARIABLE
+            from harness.execution_isolation import (
+                create_process_temporary,
+                release_process_temporary,
             )
+
+            # Short private TMPDIR for the check (AF_UNIX socket paths); released at settlement.
+            record["process_temporary"] = create_process_temporary()
+            env = safe_environment() | {
+                "PATH": os.environ.get("PATH", os.defpath),
+                PROCESS_TEMPORARY_VARIABLE: record["process_temporary"],
+            }
+            try:
+                record["process"] = subprocess.Popen(
+                    [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
+                    cwd=cwd,
+                    env=env,
+                    stdin=subprocess.DEVNULL,
+                    stdout=descriptors[0],
+                    stderr=descriptors[1],
+                    close_fds=True,
+                    start_new_session=True,
+                )
+            except BaseException:
+                release_process_temporary(record["process_temporary"])
+                raise
             self.records[identifier] = record
             self.active_handle = identifier
             result = {"handle": identifier, "pid": record["process"].pid}

@@ -479,6 +479,9 @@ class OperationController:
             runtime_binding=(runtime_binding if al else None),
             classification=classification,
             allow_classified_read=al,
+            # The AL ledger process keeps operation scratch as TMPDIR: its disposable gate
+            # checkouts must stay under the protected scratch the check channel admits.
+            process_temporary=not al,
         )
 
     def dispatch(self, principal, name, arguments):

@@ -7,10 +7,20 @@ import sys
 from pathlib import Path
 
 from harness.command_safety import safe_environment
-from harness.execution_isolation import operation_exec, operation_popen, prepare_operation_isolation
+from harness.execution_isolation import (
+    operation_exec,
+    operation_popen,
+    prepare_operation_isolation,
+    process_temporary_environment,
+    release_process_temporary,
+)
+
+# The check channel creates the short TMPDIR, passes it here and removes it once the
+# check's process group has settled.
+PROCESS_TEMPORARY_VARIABLE = "HARNESS_CHECK_PROCESS_TMP"
 
 
-def check_profile(context_path, cwd):
+def check_profile(context_path, cwd, process_temporary=True):
     path = Path(context_path)
     if path.is_symlink() or path.stat().st_nlink != 1 or path.stat().st_size > 65536:
         raise OSError("invalid protected check context")
@@ -66,6 +76,7 @@ def check_profile(context_path, cwd):
         directory=directory,
         classification=context.get("classification"),
         allow_classified_read=True,
+        process_temporary=process_temporary,
     )
     if managed is not None:
         core["storage_declarations"].prepare_directories(declaration, profile.temporary)
@@ -87,6 +98,8 @@ def check_profile(context_path, cwd):
         environment.update(
             tooling.environment(original / relative, profile.temporary, source_root=checkout)
         )
+    # Short private TMPDIR (AF_UNIX socket paths); scratch and uv cache stay in operation storage.
+    process_temporary_environment(profile, environment)
     return profile, environment
 
 
@@ -123,49 +136,52 @@ def recipe_argv(context_path, profile, environment, argv):
 def check_popen(context_path, argv, **kwargs):
     profile, environment = check_profile(context_path, kwargs.get("cwd"))
     kwargs.pop("env", None)
-    process = operation_popen(
-        profile, recipe_argv(context_path, profile, environment, argv), env=environment, **kwargs
-    )
-    return ClassifiedCheckProcess(process, profile) if profile.classification else process
+    try:
+        process = operation_popen(
+            profile, recipe_argv(context_path, profile, environment, argv), env=environment, **kwargs
+        )
+    except BaseException:
+        release_process_temporary(profile.process_temporary)
+        raise
+    return CheckProcess(process, profile)
 
 
-class ClassifiedCheckProcess:
-    """Do not return successful completion or captured bytes after classification drift."""
+class CheckProcess:
+    """Release the short TMPDIR once the check's process group has exited."""
 
     def __init__(self, process, profile):
         self.process, self.profile = process, profile
-        self.validated_completion = False
 
     def __getattr__(self, name):
         return getattr(self.process, name)
 
-    def _validate(self):
-        from harness.template_classification import validate_reference
+    def _settled(self, code):
+        if code is not None:
+            if self.profile.classification:
+                from harness.template_classification import validate_reference
 
-        if not self.validated_completion:
-            validate_reference(self.profile.classification, root=self.profile.repository)
-            self.validated_completion = True
+                validate_reference(self.profile.classification, root=self.profile.repository)
+            try:
+                os.killpg(self.process.pid, 0)
+            except ProcessLookupError:
+                release_process_temporary(self.profile.process_temporary)
+            except OSError:
+                pass
+        return code
 
     @property
     def returncode(self):
-        if self.process.returncode is not None:
-            self._validate()
-        return self.process.returncode
+        return self._settled(self.process.returncode)
 
     def poll(self):
-        code = self.process.poll()
-        if code is not None:
-            self._validate()
-        return code
+        return self._settled(self.process.poll())
 
     def wait(self, *args, **kwargs):
-        code = self.process.wait(*args, **kwargs)
-        self._validate()
-        return code
+        return self._settled(self.process.wait(*args, **kwargs))
 
     def communicate(self, *args, **kwargs):
         captured = self.process.communicate(*args, **kwargs)
-        self._validate()
+        self._settled(self.process.returncode)
         return captured
 
 
@@ -174,7 +190,9 @@ def main():
         import resource
 
         resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024, 16 * 1024 * 1024))
-        profile, environment = check_profile(sys.argv[1], os.getcwd())
+        profile, environment = check_profile(
+            sys.argv[1], os.getcwd(), os.environ.get(PROCESS_TEMPORARY_VARIABLE) or True
+        )
         operation_exec(
             profile, recipe_argv(sys.argv[1], profile, environment, sys.argv[2:]), environment
         )

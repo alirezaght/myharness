@@ -217,3 +217,99 @@ def test_linux_operation_cwd_preserves_grants_and_exec(tmp_path, monkeypatch):
     command = seen.pop()
     assert command[command.index("--chdir") + 1] == str(unit)
     assert "--unshare-net" in command
+
+
+
+def test_process_temporary_is_the_only_writable_tmp_directory(tmp_path):
+    """Issue #18: the short TMPDIR is granted exactly; the rest of /tmp stays denied."""
+    import secrets
+
+    from harness.execution_isolation import (
+        process_temporary_environment,
+        release_process_temporary,
+    )
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    profile = prepare_operation_isolation(
+        repository,
+        writable=[],
+        protected=[],
+        hidden=[],
+        directory=tmp_path / "operation",
+        process_temporary=True,
+    )
+    short = Path(profile.process_temporary)
+    assert short.parent == Path("/tmp") and short.name.startswith("h-")
+    assert short.stat().st_mode & 0o777 == 0o700 and short.stat().st_uid == os.getuid()
+    sibling = Path(tempfile.mkdtemp(prefix="h-", dir="/tmp"))
+    code = """import os,socket,sys;from pathlib import Path
+from multiprocessing.managers import SyncManager
+m=SyncManager();m.start();m.shutdown()
+Path(os.environ['TMPDIR'],'own').write_text('ok')
+for target in sys.argv[1:]:
+    try:Path(target).write_text('escape')
+    except OSError:pass
+    else:raise SystemExit('wrote '+target)
+    s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    try:s.bind(target+'.sock')
+    except OSError:pass
+    else:raise SystemExit('bound a socket at '+target)
+    finally:s.close()
+"""
+    targets = [f"/tmp/h-escape-{secrets.token_hex(6)}", str(sibling / "escape")]
+    try:
+        env = process_temporary_environment(
+            profile, safe_environment() | {"TMPDIR": profile.temporary}
+        )
+        assert env["TMPDIR"] == env["TMP"] == env["TEMP"] == str(short)
+        process = operation_popen(
+            profile,
+            [sys.executable, "-I", "-c", code, *targets],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+        )
+        stdout, stderr = process.communicate(timeout=30)
+        assert process.returncode == 0, (stdout, stderr)
+        assert (short / "own").read_text() == "ok"
+        assert not any(Path(t).exists() for t in targets)
+    finally:
+        for target in targets:
+            Path(target).unlink(missing_ok=True)
+            Path(target + ".sock").unlink(missing_ok=True)
+        sibling.rmdir()
+    release_process_temporary(profile.process_temporary)
+    assert not short.exists()
+    plain = prepare_operation_isolation(
+        repository, writable=[], protected=[], hidden=[], directory=tmp_path / "plain"
+    )
+    assert plain.process_temporary == ""
+
+
+def test_linux_grants_bind_only_the_process_temporary(tmp_path):
+    from dataclasses import replace
+
+    from harness.execution_isolation import operation_argv, release_process_temporary
+
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    profile = replace(
+        prepare_operation_isolation(
+            repository,
+            writable=[],
+            protected=[],
+            hidden=[],
+            directory=tmp_path / "operation",
+            process_temporary=True,
+        ),
+        system="Linux",
+    )
+    try:
+        command = operation_argv(profile, [sys.executable, "-c", "pass"])
+        binds = [command[i + 1] for i, part in enumerate(command) if part == "--bind"]
+        assert profile.process_temporary in binds and "/tmp" not in binds
+        assert command[command.index("--ro-bind") + 1] == "/"
+    finally:
+        release_process_temporary(profile.process_temporary)

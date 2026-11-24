@@ -10,7 +10,11 @@ import threading
 import time
 
 from harness.command_safety import safe_environment
-from harness.execution_isolation import operation_popen
+from harness.execution_isolation import (
+    operation_popen,
+    process_temporary_environment,
+    release_process_temporary,
+)
 from harness.execution_logs import MAX_TEXT, StreamRedactor
 
 
@@ -51,18 +55,24 @@ class ProcessManager:
                 "UV_CACHE_DIR": profile.temporary + "/uv-cache",
                 "PYTHONDONTWRITEBYTECODE": "1",
             }
-            proc = operation_popen(
-                profile,
-                argv,
-                cwd=cwd,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True,
-                close_fds=True,
-                pass_fds=pass_fds,
-            )
+            # Short private TMPDIR when the profile has one (AF_UNIX socket paths).
+            environment = process_temporary_environment(profile, dict(environment))
+            try:
+                proc = operation_popen(
+                    profile,
+                    argv,
+                    cwd=cwd,
+                    env=environment,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    start_new_session=True,
+                    close_fds=True,
+                    pass_fds=pass_fds,
+                )
+            except BaseException:
+                release_process_temporary(getattr(profile, "process_temporary", ""))
+                raise
             handle = "process-" + secrets.token_hex(24)
             record = {
                 "owner": owner,
@@ -81,6 +91,7 @@ class ProcessManager:
                 "report": report,
                 "result": None,
                 "exit_observed": False,
+                "process_temporary": getattr(profile, "process_temporary", ""),
             }
             self.records[handle] = record
             thread = threading.Thread(target=self._drain, args=(record, timeout), daemon=True)
@@ -137,6 +148,7 @@ class ProcessManager:
             try:
                 self._kill(proc)
                 proc.wait(timeout=5)
+                release_process_temporary(record.get("process_temporary"))
             except (OSError, subprocess.SubprocessError) as error:
                 record["error"] = "operation cleanup failed: " + str(error)
             finally:

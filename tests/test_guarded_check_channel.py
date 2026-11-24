@@ -92,3 +92,83 @@ def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path
         assert ledger.read_text() == "recorded" and not (repo / "UNOWNED").exists()
     finally:
         channel.close()
+
+
+
+def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_path):
+    """Issue #18: a check under a Harness execution can bind AF_UNIX sockets in TMPDIR
+    (multiprocessing manager), may write only its own /tmp directory, and that
+    directory is removed once the check has settled."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handoff = tmp_path / "handoff"
+    operations = handoff / "operations"
+    operations.mkdir(parents=True)
+    session = repo / ".codex/al-runtime/sessions/test"
+    session.mkdir(parents=True)
+    profile = prepare_operation_isolation(
+        repo,
+        writable=[],
+        protected=[handoff],
+        hidden=[],
+        directory=operations / "parent",
+        session_directory=session,
+    )
+    context = operations / "context.json"
+    context.write_text(
+        json.dumps(
+            {
+                "handoff": str(handoff / "handoff.json"),
+                "repository": str(repo),
+                "temporary": profile.temporary,
+                "al_session": str(session),
+                "protected": [str(handoff)],
+                "hidden": [],
+            }
+        )
+    )
+    scripts = Path(__file__).resolve().parents[1] / "al/codex/skills/al/scripts"
+    check = (
+        "import os,stat,secrets;from pathlib import Path\n"
+        "from multiprocessing.managers import SyncManager\n"
+        "t=os.environ['TMPDIR'];assert os.environ['TMP']==t==os.environ['TEMP']\n"
+        "info=os.stat(t);assert stat.S_IMODE(info.st_mode)==0o700 and info.st_uid==os.getuid()\n"
+        "m=SyncManager();m.start();m.shutdown()\n"
+        "Path(t,'own').write_text('ok')\n"
+        "try: Path('/tmp/h-escape-'+secrets.token_hex(6)).write_text('escape')\n"
+        "except OSError: pass\n"
+        "else: raise SystemExit('wrote outside its temporary directory')\n"
+        "print('TMP='+t)\n"
+    )
+    program = (
+        "import sys,subprocess;sys.path.insert(0," + repr(str(scripts)) + ");"
+        "from al_harness_process import popen;"
+        "p=popen([sys.executable,'-I','-c'," + repr(check) + "],stdout=subprocess.PIPE,"
+        "stderr=subprocess.PIPE);out,err=p.communicate(timeout=30);"
+        "assert p.returncode==0,(out,err);sys.stdout.write(out.decode())"
+    )
+    channel = CheckChannel(context, lambda: None)
+    try:
+        env = safe_environment() | {
+            "PATH": os.environ.get("PATH", os.defpath),
+            "HARNESS_CHECK_CONTEXT": str(context),
+            "HARNESS_CHECK_FD": str(channel.descriptor),
+        }
+        process = operation_popen(
+            profile,
+            [sys.executable, "-I", "-c", program],
+            cwd=repo,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            pass_fds=(channel.descriptor,),
+        )
+        channel.spawned()
+        stdout, stderr = process.communicate(timeout=60)
+        assert process.returncode == 0, (stdout, stderr)
+    finally:
+        channel.close()
+    used = Path(stdout.decode().split("TMP=")[1].split()[0])
+    assert used.parent == Path("/tmp") and used.name.startswith("h-")
+    assert not used.exists()

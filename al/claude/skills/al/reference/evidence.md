@@ -79,8 +79,10 @@ settled. It stays short because Unix-domain socket paths are limited (104 bytes
 on macOS, 108 on Linux) and tools such as Python multiprocessing (`black`,
 `pytest-xdist`) bind sockets under `TMPDIR`. Declared scratch, outputs and the
 uv cache stay inside the managed allocation. A check that sets its own
-`env TMPDIR=...` keeps it. Checks dispatched through a Harness execution use the
-Harness operation's temporary directory instead.
+`env TMPDIR=...` keeps it. A check dispatched through a Harness execution gets
+the same kind of directory from Harness, named `/tmp/h-<random>`. Its sandbox may
+write, and bind or connect Unix sockets, only inside that directory, never
+elsewhere in `/tmp`.
 
 ### Source-backed example: user-listing service
 

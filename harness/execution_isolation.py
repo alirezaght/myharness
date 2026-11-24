@@ -225,6 +225,66 @@ class OperationIsolation:
     classification: dict | None = None
     scratch_identity: tuple[int, int] = ()
     provisioning_network: bool = False
+    # Short private TMPDIR for the contained process (AF_UNIX path limit); "" when none.
+    process_temporary: str = ""
+
+
+# Unix-domain socket paths are limited to 104 bytes (macOS) / 108 (Linux). Python
+# multiprocessing, black, xdist and similar bind sockets under TMPDIR, and operation
+# scratch lives deep under the execution directory. Contained processes therefore get a
+# fresh private directory directly under /tmp as TMPDIR; the sandbox may write to exactly
+# that directory and nothing else in /tmp.
+PROCESS_TEMPORARY_ROOT = Path("/tmp")
+PROCESS_TEMPORARY_PREFIX = "h-"
+
+
+def _private_process_temporary(path):
+    path = Path(path)
+    if (
+        not path.is_absolute()
+        or path.parent != PROCESS_TEMPORARY_ROOT
+        or not path.name.startswith(PROCESS_TEMPORARY_PREFIX)
+        or ".." in path.parts
+    ):
+        raise ValueError("process temporary directory must be a private /tmp/h-* directory")
+    info = path.lstat()
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.getuid()
+        or stat.S_IMODE(info.st_mode) != 0o700
+    ):
+        raise ValueError("process temporary directory is not private")
+    return str(path)
+
+
+def create_process_temporary():
+    """A fresh 0700 user-owned /tmp/h-<random> directory (mkdtemp: O_EXCL, unpredictable)."""
+    path = Path(tempfile.mkdtemp(prefix=PROCESS_TEMPORARY_PREFIX, dir=PROCESS_TEMPORARY_ROOT))
+    try:
+        return _private_process_temporary(path)
+    except (OSError, ValueError):
+        shutil.rmtree(path, ignore_errors=True)
+        raise
+
+
+def release_process_temporary(path):
+    """Remove a process temporary directory; rmtree never follows symlinks out of it."""
+    if not path:
+        return
+    path = Path(path)
+    if path.parent == PROCESS_TEMPORARY_ROOT and path.name.startswith(PROCESS_TEMPORARY_PREFIX):
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def process_temporary_environment(profile, environment):
+    """Point TMPDIR/TMP/TEMP at the profile's short directory, when it has one."""
+    if profile.process_temporary:
+        environment.update(
+            TMPDIR=profile.process_temporary,
+            TMP=profile.process_temporary,
+            TEMP=profile.process_temporary,
+        )
+    return environment
 
 
 def prepare_operation_isolation(
@@ -239,8 +299,12 @@ def prepare_operation_isolation(
     coordination_lock=None,
     classification=None,
     allow_classified_read=False,
+    process_temporary=False,
 ):
-    """Scope an operation tree, leaving native authentication infrastructure outside."""
+    """Scope an operation tree, leaving native authentication infrastructure outside.
+
+    `process_temporary` True creates a short private TMPDIR for the contained process;
+    a path adopts one its trusted launcher created (and will release); False adds none."""
     repository = Path(repository).resolve(strict=True)
     from harness.template_classification import validate_reference
 
@@ -336,6 +400,12 @@ def prepare_operation_isolation(
         ):
             raise ValueError("legacy flat runtime requires migration before operation enrollment")
         session = str(session_path)
+    if process_temporary is True:
+        process_temporary = create_process_temporary()
+    elif process_temporary:
+        process_temporary = _private_process_temporary(process_temporary)
+    else:
+        process_temporary = ""
     profile = OperationIsolation(
         str(directory / "operation.sb"),
         str(repository),
@@ -348,7 +418,18 @@ def prepare_operation_isolation(
         platform.system(),
         classification,
         (scratch_info.st_dev, scratch_info.st_ino),
+        process_temporary=process_temporary,
     )
+    try:
+        _write_operation_policy(profile, paths, protected, hidden, temporary, session)
+    except BaseException:
+        release_process_temporary(process_temporary)
+        raise
+    return profile
+
+
+def _write_operation_policy(profile, paths, protected, hidden, temporary, session):
+    coordination_lock = profile.coordination_lock
     if profile.system == "Darwin":
         if not shutil.which("sandbox-exec"):
             raise ValueError("operation containment unavailable: sandbox-exec")
@@ -377,6 +458,18 @@ def prepare_operation_isolation(
         )
         if session:
             rules.append(f"(allow file-write* (subpath {_literal(session)}))")
+        if profile.process_temporary:
+            # Exactly this directory; the rest of /tmp stays unwritable. Seatbelt checks
+            # Unix-socket bind/connect as network operations, so local IPC sockets
+            # (multiprocessing managers) are admitted only inside this private directory.
+            private = _literal(profile.process_temporary)
+            rules.extend(
+                [
+                    f"(allow file-write* (subpath {private}))",
+                    f"(allow network-bind (local unix-socket (subpath {private})))",
+                    f"(allow network-outbound (remote unix-socket (subpath {private})))",
+                ]
+            )
         if coordination_lock:
             rules.append(f"(allow file-write* (literal {_literal(coordination_lock)}))")
         for path in [*hidden, profile.policy]:
@@ -388,7 +481,6 @@ def prepare_operation_isolation(
             raise ValueError("operation containment unavailable: bubblewrap")
     else:
         raise ValueError("operation containment unavailable: unsupported operating system")
-    return profile
 
 
 def provisioning_profile(profile):
@@ -461,6 +553,10 @@ def operation_argv(profile, argv, *, cwd=None):
     if profile.session_directory:
         command.extend(["--bind", profile.session_directory, profile.session_directory])
     command.extend(["--bind", profile.temporary, profile.temporary])
+    if profile.process_temporary:
+        # Exactly this directory; the rest of /tmp stays read-only under --ro-bind /.
+        _private_process_temporary(profile.process_temporary)
+        command.extend(["--bind", profile.process_temporary, profile.process_temporary])
     for path in profile.protected:
         if Path(path).is_relative_to(profile.temporary):
             if not Path(path).exists():
