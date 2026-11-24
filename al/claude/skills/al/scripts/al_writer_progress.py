@@ -71,7 +71,7 @@ _OPERATIONS = {
     'review-packet': 'review packet', 'review-compare-start': 'review comparison',
     'review-result': 'review result', 'review-compare-result': 'review comparison result',
     'correction': 'correction', 'notes-triage': 'review notes', 'oscillation': 'correction review',
-    'conflict-resolved': 'conflict resolution', 'retarget': 'retarget',
+    'conflict-resolved': 'conflict resolution', 'retarget': 'retarget', 'agent': 'agent record',
     'verify': 'verify', 'next': 'next step',
 }
 _READ_ACTIONS = {
@@ -79,7 +79,7 @@ _READ_ACTIONS = {
     ('writer', 'handoff'), ('gates', 'status'), ('evidence', 'status'),
     ('evidence', 'require'), ('evidence', 'validate'),
     ('publication', 'packet'), ('publication', 'status'),
-    ('acceptance', 'packet'), ('acceptance', 'status'),
+    ('acceptance', 'packet'), ('acceptance', 'status'), ('agent', 'resume'), ('agent', 'list'),
 }
 
 

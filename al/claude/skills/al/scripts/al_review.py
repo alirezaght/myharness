@@ -70,7 +70,11 @@ def cmd_review_start(a,sid):
     Behavior.initialize(st,st['review'])
     st['findings']=dict(NO_FINDINGS); st['review_status']='checking'
     al_store.set_phase(st,'REVIEW'); al_store.save(sid,st); print(render_line(st))
-    if mode=='delta':print('AL · delta review against '+detail['base_review']+': '+str(len(detail['paths']))+' changed path(s), '+str(len(detail['prior_findings']))+' earlier finding(s); resume the same Architect agent with the delta packet')
+    if mode=='delta':
+        print('AL · delta review against '+detail['base_review']+': '+str(len(detail['paths']))+' changed path(s), '+str(len(detail['prior_findings']))+' earlier finding(s); resume the same Architect agent with the delta packet')
+        import al_agents
+        line=al_agents.instruction(st,'al-architect')
+        if line:print(line)
     elif previous and getattr(a,'mode',None)!='full':print('AL · full review: '+'; '.join(reasons))
     from al_service_coverage import coverage_notes
     notes=coverage_notes(st)

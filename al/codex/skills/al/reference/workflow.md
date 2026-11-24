@@ -270,11 +270,18 @@ for AL-Architect, never authority, never a finding of record.
   edited, or a status that does not match). Treat that check as NOT RUN — never
   as a pass — and never accept a count, a log path or a nearby focused run in
   place of the run that was claimed.
-- Continue an agent rather than re-briefing a new one: rework, corrections and
-  finalization go to the existing AL-Engineer / AL-Builder instance via
-  `followup_task` while it is alive (it keeps the code it read). Send only what
-  changed since its last turn — the new findings, the new diff, the new ledger
-  rows — plus the ORIGINAL specification. Spawn fresh only if it is gone.
+- **Warm agents by default.** Rework, corrections, finalization, follow-ups and
+  delta re-reviews go to the existing agent instance via `followup_task` while it is alive
+  (it keeps the code it read). Record each dispatched instance: pass
+  `--agent-id ID` to `writer handoff` (or run `"${STATE[@]}" agent record --role
+  ROLE --id ID`); the handoff and a delta `review-start` then print the exact
+  resume call, and `"${STATE[@]}" agent resume --role ROLE` prints it on demand.
+  Send only what changed since its last turn — the new findings, the new diff,
+  the new ledger rows — plus the ORIGINAL specification by hash and the relevant
+  excerpt. A fresh agent is the explicit exception: use one only when
+  independence is required (the final independent Architect review, or a role
+  whose earlier instance is gone) and record it with `agent record --fresh-reason
+  "<why>"`.
 - A model-availability or entitlement error is NOT an agent failure — handle it
   under **Model policy** above.
 - A model-service content/safety refusal is not an approval request or model
