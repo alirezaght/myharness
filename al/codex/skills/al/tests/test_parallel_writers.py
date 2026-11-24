@@ -126,3 +126,95 @@ def test_gates_discover_drift_without_active_writer_is_reported_unchanged(cli, r
     _drifting_discovery(monkeypatch)
     result, out, err = cli('gates', 'discover', '--paths-file', str(paths))
     assert result != 0 and 'coverage capture drift' in f'{result}{out}{err}'
+
+
+def _writer_check(cli, writer):
+    from evidence_helpers import PY
+    return cli('evidence', 'run', '--area', 'lint', '--kind', 'check', '--scope', 'svc,web',
+               *(('--writer', writer) if writer else ()), '--', PY, '-m', 'compileall', '-q', 'svc')
+
+
+def _lint_verdict(state_file):
+    import al_ledger as L
+    st = state(state_file)
+    entry = [e for e in st['evidence']['entries'] if e['area'] == 'lint'][-1]
+    return entry, L.entry_verdict(st, entry)
+
+
+def test_writer_check_overlapping_sibling_is_provisional_then_revalidated(cli, repo, tmp_path, state_file):
+    _start_two(cli, tmp_path)
+    run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
+    (repo/'svc/app.py').write_text('x = 2\n')
+    (repo/'web/app.js').write_text('let a = 2\n')
+    result, out, err = _writer_check(cli, 'left')
+    assert result == 0, f'{result}{out}{err}'
+    entry, (verdict, why) = _lint_verdict(state_file)
+    assert entry['provisional']['writers'] == ['right']
+    assert verdict == 'PROVISIONAL' and why == 'needs revalidation after writer right finishes'
+    result, out, err = cli('evidence', 'status')
+    assert 'PROVISIONAL' in out and 'needs revalidation after writer right finishes' in out
+    # The sibling finishes without changing anything the check read: the result now counts.
+    result, out, err = cli('writer', 'finish', '--id', 'right', '--outcome', 'success')
+    assert result == 0 and 'provisional on right: now VALID' in out, f'{result}{out}{err}'
+    assert _lint_verdict(state_file)[1][0] == 'VALID'
+
+
+def test_provisional_check_is_stale_when_sibling_changed_its_inputs(cli, repo, tmp_path, state_file):
+    _start_two(cli, tmp_path)
+    run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
+    result, out, err = _writer_check(cli, 'left')
+    assert result == 0, f'{result}{out}{err}'
+    (repo/'web/app.js').write_text('let a = 3\n')
+    result, out, err = cli('writer', 'finish', '--id', 'right', '--outcome', 'success')
+    assert result == 0 and 'provisional on right: now STALE' in out and 'rerun' in out, f'{result}{out}{err}'
+    assert _lint_verdict(state_file)[1][0] == 'STALE'
+
+
+def test_provisional_check_stays_unaccepted_while_sibling_unresolved(cli, repo, tmp_path, state_file):
+    _start_two(cli, tmp_path)
+    run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
+    result, out, err = _writer_check(cli, 'left')
+    assert result == 0, f'{result}{out}{err}'
+    run(cli, 'writer', 'finish', '--id', 'right', '--outcome', 'failed')
+    assert _lint_verdict(state_file)[1][0] == 'PROVISIONAL'
+
+
+def test_check_without_writer_overlapping_sibling_is_still_refused(cli, repo, tmp_path, state_file):
+    _start_two(cli, tmp_path)
+    before = state_file().read_bytes()
+    result, out, err = _writer_check(cli, None)
+    text = f'{result}{out}{err}'
+    assert result != 0 and 'check overlaps unresolved writer left' in text and '--writer' in text
+    assert state_file().read_bytes() == before
+
+
+def test_writer_start_gate_refresh_drift_names_active_sibling(cli, repo, tmp_path, state_file, monkeypatch):
+    from al_repository_capture import CaptureDrift
+    import al_gate_coverage
+    _start_two(cli, tmp_path)
+
+    def drift(st, paths):
+        raise CaptureDrift('repeated-drift', ['svc/app.py'])
+    monkeypatch.setattr(al_gate_coverage, 'writer_ready', drift)
+    before = state_file().read_bytes()
+    result, out, err = cli('writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
+    text = f'{result}{out}{err}'
+    assert result != 0 and 'writer start: writer left still active; run after writer finish' in text
+    assert 'svc/app.py' in text and 'capture drift' not in text
+    assert state_file().read_bytes() == before
+
+
+def test_writer_start_currency_drift_names_active_sibling_not_coverage_debt(cli, repo, tmp_path, state_file, monkeypatch):
+    import al_gate_currency
+    _start_two(cli, tmp_path)
+
+    def drifted(st):
+        return {'current': False, 'reasons': ['coverage capture unavailable: repeated-drift'],
+                'superseded': None, 'paths': [], 'pathless': True, 'drift_paths': ['svc/app.py']}
+    monkeypatch.setattr(al_gate_currency, 'check', drifted)
+    before = state_file().read_bytes()
+    result, out, err = cli('writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
+    text = f'{result}{out}{err}'
+    assert result != 0 and 'writer start: writer left still active; run after writer finish' in text
+    assert 'svc/app.py' in text
+    assert state_file().read_bytes() == before

@@ -562,6 +562,11 @@ def entry_verdict(st, e, _seen=()):
         missing = unmet(st, e, _seen or (e["area"],))
         if missing:
             return "PREREQ_INVALID", "; ".join(missing)
+    if verdict == "VALID":
+        from al_writers import provisional_gap
+        pending = provisional_gap(st, e)
+        if pending:
+            return "PROVISIONAL", pending
     return verdict, why
 
 

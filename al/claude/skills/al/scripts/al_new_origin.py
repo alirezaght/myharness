@@ -183,6 +183,10 @@ def require_admitted(st):
     currency = refresh(st)
     from al_service_coverage import coverage_guidance, require_ready
     if not currency["current"]:
+        if "drift_paths" in currency:
+            # Moving inputs while a writer edits are not a reason to replan.
+            from al_writers import refuse_sibling_drift, _active
+            refuse_sibling_drift(None, currency["drift_paths"], _active(st))
         import al_artifacts as A
         manifest = A.read_json(st["gate_manifests"][-1]) if st.get("gate_manifests") else None
         refuse("current gate obligations require replanning: " + str(currency["reasons"])

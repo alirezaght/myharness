@@ -616,7 +616,12 @@ Start the writer lifetime before invoking the writing agent and finish it only
 after that agent returns: an edit made outside an open writer lifetime cannot be
 attributed and blocks the task. A writer's own checks run with
 `evidence run ... --writer <id>`; without it, a check overlapping an active
-writer's files is refused. Parallel writers own disjoint paths, so `writer start`
+writer's files is refused. A writer's own check whose scope also covers a sibling
+ACTIVE writer's paths runs and is recorded as provisional ("needs revalidation after
+writer B finishes"): after B finishes it is VALID only if none of the inputs it read
+changed, otherwise STALE and rerun (see evidence). A capture drift while a sibling edits,
+in `gates discover` or the gate refresh of `writer start`, is refused as
+`writer <id> still active; run after writer finish`. Parallel writers own disjoint paths, so `writer start`
 and `writer finish` capture and attribute only paths outside the other ACTIVE writers'
 ownership: a sibling still editing its own files never fails them. Any other path
 must stay stable while the capture is taken, and edits outside every writer's

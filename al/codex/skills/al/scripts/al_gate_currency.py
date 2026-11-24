@@ -41,7 +41,8 @@ def check(st):
     try:current=V.inventory(st,manifest.get('paths',[]),manifest.get('ci_context'),bounded=manifest.get('discovery_mode')=='bounded')
     except (CaptureDrift,CaptureUnavailable) as exc:
         return {'current':False,'reasons':['coverage capture unavailable: '+exc.reason],
-                'superseded':ref,'paths':[],'pathless':True}
+                'superseded':ref,'paths':[],'pathless':True,
+                **({'drift_paths':list(exc.paths)} if isinstance(exc,CaptureDrift) else {})}
     assessment=current['service_coverage'];projection=current['relevance_projection']
     # The assessment holds only gaps in the change's scope (gaps outside its reach are
     # verification notes); each is named so the refusal says what is uncovered.

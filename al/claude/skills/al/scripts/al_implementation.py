@@ -82,7 +82,12 @@ def _assessment(st, owned):
     from al_gate_currency import check
     from al_service_coverage import admission_gaps
     report('gate-currency', force=True)
-    reasons = check(st)['reasons']
+    currency = check(st)
+    if 'drift_paths' in currency:
+        # Inputs moving under an ACTIVE writer are transient, not coverage debt to record.
+        from al_writers import refuse_sibling_drift, _active
+        refuse_sibling_drift(None, currency['drift_paths'], _active(st))
+    reasons = currency['reasons']
     report('service-coverage', force=True)
     obligations = reasons + admission_gaps(st, current=True)
     if st.get('proof_admission', {}).get('status') == 'pending':
