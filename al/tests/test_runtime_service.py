@@ -160,8 +160,17 @@ def test_watcher_keeps_the_in_memory_snapshot_current(setup):
 
 def test_runs_pinned_to_different_runtimes_are_isolated(setup):
     # A new AL release: the launcher changes and a new run gets a new pin.
-    with (setup.source / "codex/skills/al/reference/performance.md").open("a") as handle:
+    changed = setup.source / "codex/skills/al/reference/performance.md"
+    with changed.open("a") as handle:
         handle.write("\n<!-- release 2 -->\n")
+    # The first read after a write moves the access time (relatime), and the installer's
+    # source capture refuses metadata that moves between its own observations. Settle the
+    # access time past the new modification time before bootstrapping, as an edit made
+    # some time before a release would be.
+    info = changed.stat()
+    os.utime(changed, ns=(info.st_mtime_ns + 10**9, info.st_mtime_ns))
+    changed.read_bytes()
+    assert changed.stat().st_atime_ns == info.st_mtime_ns + 10**9
     setup.bootstrap()
     worktree = setup.base / "second"
     git(setup.repo, "worktree", "add", "-q", str(worktree), "-b", "second")
@@ -171,10 +180,17 @@ def test_runs_pinned_to_different_runtimes_are_isolated(setup):
     assert first_pin != second_pin
     for session, repo in (("s1", setup.repo), ("s2", worktree)):
         setup.run(session, "show", "--json", repo=repo)
-    setup.wait(lambda: {row["pin_identity"] for row in setup.control("status")} >= {
-        first_pin["pin_identity"], second_pin["pin_identity"]})
-    # Each release has its own launcher identity, so index every live service by pin.
-    rows = {row["pin_identity"]: row for row in setup.control("status")}
+    # Services are per launcher too: the first release's service for run 1 may still be
+    # alive beside the current launcher's. Use only the current launcher's services, the
+    # one that serves run 2 (whose pin only the current release produced).
+    def current():
+        status = setup.control("status")
+        launchers = {row["launcher_identity"] for row in status if row["pin_identity"] == second_pin["pin_identity"]}
+        rows = {row["pin_identity"]: row for row in status if row["launcher_identity"] in launchers}
+        return rows if {first_pin["pin_identity"], second_pin["pin_identity"]} <= set(rows) else None
+
+    rows = setup.wait(current)
+    assert len({row["launcher_identity"] for row in rows.values()}) == 1
     assert rows[first_pin["pin_identity"]]["pid"] != rows[second_pin["pin_identity"]]["pid"]
     for session, repo, pin in (("s1", setup.repo, first_pin), ("s2", worktree, second_pin)):
         before = setup.served(pin["pin_identity"])
