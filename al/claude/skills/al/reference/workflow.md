@@ -593,7 +593,11 @@ Start the writer lifetime before invoking the writing agent and finish it only
 after that agent returns: an edit made outside an open writer lifetime cannot be
 attributed and blocks the task. A writer's own checks run with
 `evidence run ... --writer <id>`; without it, a check overlapping an active
-writer's files is refused. `gates run --stage base` runs every base gate and
+writer's files is refused. Parallel writers own disjoint paths, so `writer start`
+and `writer finish` capture and attribute only paths outside the other ACTIVE writers'
+ownership: a sibling still editing its own files never fails them. Any other path
+must stay stable while the capture is taken, and edits outside every writer's
+ownership remain external changes. `gates run --stage base` runs every base gate and
 lists all failures at once, so each pre-existing failure gets its
 `gates decision` in one pass. An advisory gate (its CI step never fails the
 pipeline) needs no decision. At candidate, a failure identical to its base failure

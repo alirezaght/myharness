@@ -11,6 +11,8 @@ import al_task
 import al_writer_progress as progress
 from al_schema import refuse
 
+UNSTABLE_OBSERVATION = 'unstable task attribution observation'
+
 
 def _binding(st):
     return {k: st[k] for k in ('session_id', 'run_id', 'identity')}
@@ -30,25 +32,47 @@ def _rows(st):
     return rows
 
 
-def observe(st, *, retain_content=False, expected=None):
+def concurrent_paths(st, writer_id):
+    """Ownership of the other ACTIVE writers: paths a sibling may be editing right now.
+
+    Parallel writers are admitted only with disjoint ownership, so a sibling's paths are never
+    this writer's. A writer's contribution capture leaves them out (the sibling's own capture
+    attributes them); every other path stays in the capture and must be stable."""
+    return sorted({p for w in st.get('writers', {}).values()
+                   if w.get('state') == 'ACTIVE' and w.get('id') != writer_id for p in w['files']})
+
+
+def observe(st, *, retain_content=False, expected=None, concurrent=()):
     """Double observation includes non-executable mode changes and new membership.
 
     A re-observation compared against an `expected` capture that was itself stable needs one
     read: equality with a stable observation is the stability proof, and any difference is
-    refused by the caller's comparison."""
+    refused by the caller's comparison. Paths under `concurrent` (a sibling writer's ownership)
+    are excluded from the capture, so a sibling still editing cannot destabilize it. A plain
+    (unretained) observation keeps ACTIVE writers' paths as read but does not require them to
+    be stable: they are mid-edit by design, and only a retained capture binds content."""
+    concurrent = sorted(set(concurrent))
+    volatile = () if retain_content else concurrent_paths(st, None)
+    def rows():
+        found = _rows(st)
+        return [r for r in found if not _owned(r['path'], concurrent)] if concurrent else found
+    def stable(rows):
+        return [r for r in rows if not _owned(r['path'], volatile)] if volatile else rows
     progress.report('attribution-first', count=0)
-    first = _rows(st)
+    first = rows()
     progress.report('attribution-first', count=len(first), force=True)
     if expected is None or retain_content or first != expected.get('files'):
         progress.report('attribution-second', count=0)
-        second = _rows(st)
+        second = rows()
         progress.report('attribution-second', count=len(second), force=True)
-        if first != second:
-            refuse('unstable task attribution observation')
+        if stable(first) != stable(second):
+            refuse(UNSTABLE_OBSERVATION)
     else:
         second = first
     capture = {'schema_version': 1, 'kind': 'task-content-capture-v1',
                'binding': _binding(st), 'files': second}
+    if concurrent:
+        capture['concurrent_writer_paths'] = concurrent
     if retain_content:
         progress.report('attribution-retain', count=0)
         capture['contents'] = {}
@@ -62,7 +86,7 @@ def observe(st, *, retain_content=False, expected=None):
             progress.report('attribution-retain', count=count)
         progress.report('attribution-retain', count=len(second), force=True)
         progress.report('attribution-final', count=0)
-        if _rows(st) != second:refuse('source moved during attribution retention')
+        if rows() != second:refuse('source moved during attribution retention')
         progress.report('attribution-final', count=len(second), force=True)
     return capture
 
@@ -112,6 +136,10 @@ def _capture(st, ref):
         refuse('invalid task attribution capture')
     if len({r['path'] for r in rows}) != len(rows):
         refuse('duplicate task attribution member')
+    concurrent = value.get('concurrent_writer_paths', [])
+    if (not isinstance(concurrent, list) or any(not isinstance(p, str) for p in concurrent)
+            or any(_owned(r['path'], concurrent) for r in rows)):
+        refuse('invalid task attribution concurrent writer paths')
     _validate_conflict_records(rows)
     contents = value.get('contents')
     retained = {r['path']: r['worktree'] for r in rows if r['worktree']['type'] in {'file', 'symlink'}}
@@ -135,6 +163,15 @@ def _changes(before, after):
     return sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
 
 
+def _contribution_changes(before, after):
+    """Changed records of one contribution, without paths a sibling writer owned meanwhile.
+
+    Either capture may leave out an ACTIVE sibling's ownership; those paths are the sibling's
+    to attribute, so their presence in only one capture is not a change of this writer."""
+    concurrent = sorted(set(before.get('concurrent_writer_paths', [])) | set(after.get('concurrent_writer_paths', [])))
+    return [p for p in _changes(_map(before), _map(after)) if not _owned(p, concurrent)]
+
+
 def _owned(path, files):
     return any(path == p or path.startswith(p.rstrip('/') + '/') for p in files)
 
@@ -153,13 +190,22 @@ def capture_attribution(st):
     return st['task_attribution']['snapshot']
 
 
+def _concurrent(st, writer):
+    concurrent = concurrent_paths(st, writer['id'])
+    from al_parallel import overlaps
+    if concurrent and overlaps(writer['files'], concurrent):
+        refuse('writer ' + writer['id'] + ' ownership overlaps an active sibling writer')
+    return concurrent
+
+
 def begin_contribution(st, writer):
     if 'task_attribution' not in st:
         return None
     _snapshot(st)
+    capture = observe(st, retain_content=True, concurrent=_concurrent(st, writer))
     data = {'schema_version': 1, 'kind': 'task-contribution-admission-v1', 'binding': _binding(st),
             'writer_id': writer['id'], 'task_hash': al_task.task_hash(st), 'ownership_paths': writer['files'],
-            'capture_ref': _save(st, observe(st, retain_content=True), 'task-content-capture-v1')}
+            'capture_ref': _save(st, capture, 'task-content-capture-v1')}
     return _save(st, data, data['kind'])
 
 
@@ -172,12 +218,12 @@ def finish_contribution(st, writer, before_ref):
     if admission['writer_id'] != writer['id'] or admission['ownership_paths'] != writer['files']:
         refuse('task contribution admission differs')
     before = _capture(st, admission['capture_ref'])
-    after = observe(st, retain_content=True)
+    after = observe(st, retain_content=True, concurrent=_concurrent(st, writer))
     data = {'schema_version': 1, 'kind': 'task-contribution-v1', 'binding': _binding(st),
             'task_hash': admission['task_hash'], 'ended_task_hash': al_task.task_hash(st), 'writer_id': writer['id'],
             'ownership_paths': writer['files'], 'outcome': writer['outcome'],
             'admission_ref': before_ref, 'before_capture_ref': admission['capture_ref'], 'after_capture_ref': _save(st, after, after['kind']),
-            'changed_records': _changes(_map(before), _map(after))}
+            'changed_records': _contribution_changes(before, after)}
     ref = _save(st, data, data['kind'])
     st['task_attribution']['contributions'].append(ref)
     return ref
@@ -220,8 +266,9 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False):
         admission = _read(st, c['admission_ref'], 'task-contribution-admission-v1')
         if any(admission[k] != c[k] for k in ('writer_id', 'ownership_paths', 'task_hash')) or admission['capture_ref'] != c['before_capture_ref'] or c['ended_task_hash'] not in revisions:
             refuse('task contribution admission provenance differs')
-        before, after = _map(_capture(st, c['before_capture_ref'])), _map(_capture(st, c['after_capture_ref']))
-        changes = _changes(before, after)
+        before, after = _capture(st, c['before_capture_ref']), _capture(st, c['after_capture_ref'])
+        changes = _contribution_changes(before, after)
+        before, after = _map(before), _map(after)
         if changes != c['changed_records']:
             refuse('invalid task contribution records')
         for path in comparison(before, after):
