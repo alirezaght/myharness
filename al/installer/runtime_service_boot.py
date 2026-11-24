@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 
 from .runtime_pin_boot import CHILD, PIN_VERIFY
 from .runtime_service_client import PROTOCOL, namespace
@@ -24,6 +25,7 @@ from .validator_boot import BOOT
 
 REQUIRED = ('installer/runtime_service.py', 'installer/runtime_service_client.py', 'installer/runtime_service_watch.py')
 DEFAULT_IDLE_SECONDS = 1800
+RESTART_SECONDS = 30
 
 SERVICE = (
     BOOT
@@ -117,6 +119,17 @@ def ensure(storage, repository, platform, session, transaction, manifest, argv, 
             fcntl.flock(lock, fcntl.LOCK_UN)
         finally:
             os.close(lock)
+        try:
+            # A service that could not start (or crashed) within the last half minute is not
+            # restarted by every command; the in-process path is used meanwhile.
+            log_path = directory / 'log'
+            if time.time() - log_path.stat().st_mtime < RESTART_SECONDS:
+                with open(log_path, 'rb') as handle:
+                    handle.seek(max(0, log_path.stat().st_size - 512))
+                    if b'stopped after serving' not in handle.read():
+                        return None
+        except FileNotFoundError:
+            pass
         request = {
             'protocol': PROTOCOL, 'storage': str(storage), 'pin': transaction['pin'], 'platform': platform,
             'common_dir': common, 'launcher_identity': identity, 'service_directory': str(directory),
