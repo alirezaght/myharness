@@ -12,7 +12,8 @@ capture checks are unchanged and decide what the tree may vouch for.
 All state here is per worktree and mutable; the shared fact store holds only facts.
 Concurrent snapshots in one worktree never wait: a busy private index is a fallback to
 direct reads. Snapshot trees used by a run are pinned under `refs/al/snapshots/<run>/`
-so `git gc` keeps them; `unpin` drops a run's refs and `sweep` drops orphaned ones.
+so `git gc` keeps them; a run's refs are dropped when it is approved (`release`), and every
+new run sweeps the refs of runs that pinned nothing for `ORPHAN_SECONDS` (`sweep`).
 
 Under a sandbox that admits only AL's private paths (the Harness operation sandbox, #31),
 `AL_SNAPSHOT_OBJECTS=private` keeps the objects a snapshot writes in the private directory
@@ -367,10 +368,53 @@ def unpin(run, root=None):
             _run(_root(root), ['update-ref', '-d', ref])
 
 
-def sweep(active_runs, root=None):
-    """Drop snapshot refs of runs that are no longer active."""
-    keep = {_safe_name(r) for r in active_runs}
-    for ref in pinned(root):
-        run = ref[len(REF_PREFIX):].split('/', 1)[0]
-        if run not in keep:
-            _run(_root(root), ['update-ref', '-d', ref])
+def release(run, root=None):
+    """Run end: drop the run's snapshot refs. Best effort; `sweep` collects what is left."""
+    try:
+        unpin(run, root)
+    except (Unavailable, OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+
+# A run's state lives in its own (per-session, possibly protected) runtime directory that no
+# other run can enumerate, so an orphan is recognised by age: no pin written for 30 days.
+ORPHAN_SECONDS = 30 * 24 * 3600
+
+
+def _ages(root, refs, now):
+    """Lower bounds of each ref's age: its loose ref file's mtime, else the packed-refs file's
+    (a packed ref was written before the file that holds it)."""
+    common = Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).decode().strip())
+    try:
+        packed = now - (common / 'packed-refs').stat().st_mtime
+    except OSError:
+        packed = 0
+    out = {}
+    for ref in refs:
+        try:
+            out[ref] = now - (common / ref).lstat().st_mtime
+        except OSError:
+            out[ref] = packed
+    return out
+
+
+def sweep(keep=(), root=None, *, now=None):
+    """Drop the snapshot refs of every run except `keep` whose newest pin is older than
+    `ORPHAN_SECONDS`; returns the runs swept. Best effort: an unavailable repository sweeps nothing."""
+    import time
+    root = _root(root)
+    keep = {_safe_name(r) for r in keep}
+    try:
+        refs = pinned(root)
+        ages = _ages(root, refs, time.time() if now is None else now)
+        runs = {}
+        for ref in refs:
+            runs.setdefault(ref[len(REF_PREFIX):].split('/', 1)[0], []).append(ref)
+        swept = sorted(run for run, rows in runs.items()
+                       if run not in keep and min(ages[r] for r in rows) > ORPHAN_SECONDS)
+        for run in swept:
+            for ref in runs[run]:
+                _run(root, ['update-ref', '-d', ref])
+        return swept
+    except (Unavailable, OSError, ValueError, subprocess.SubprocessError):
+        return []

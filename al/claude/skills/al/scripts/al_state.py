@@ -157,6 +157,9 @@ def cmd_approved(a, sid):
     st["status"] = "APPROVED"
     st["pending_phases"] = []
     save(sid, st)
+    # The run is over: its pinned snapshot trees (retained attribution content) are released.
+    import al_snapshot
+    al_snapshot.release(st["run_id"])
     print(render_line(st))
 
 

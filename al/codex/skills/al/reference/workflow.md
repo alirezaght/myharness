@@ -734,7 +734,10 @@ ownership remain external changes. Each capture reads the candidate records once
 between two snapshot trees of the working copy plus the state a tree does not hold
 (index, HEAD, physical modes, untracked files outside AL's membership); movement found
 by `git diff-tree` between them outside a sibling's ownership refuses the capture.
-Retained preimages are the snapshot tree, pinned under `refs/al/snapshots/<run>/`. `gates run --stage base` runs every base gate and
+Retained preimages are the snapshot tree, pinned under `refs/al/snapshots/<run>/`.
+Approval releases a run's refs; every new run sweeps the refs of runs that pinned nothing
+for 30 days (a run is not enumerable from another run's runtime directory, so orphans are
+recognised by age; a stopped run resumed after that may find its preimages pruned and is refused). `gates run --stage base` runs every base gate and
 lists all failures at once, so each pre-existing failure gets its
 `gates decision` in one pass. An advisory gate (its CI step never fails the
 pipeline) needs no decision. At candidate, a failure identical to its base failure
