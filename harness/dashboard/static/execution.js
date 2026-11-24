@@ -1033,13 +1033,96 @@ function renderDecisionsExecution(execution) {
   return section;
 }
 
+const QUESTION_DRAFTS = new Map();
+
+function renderAlLive(execution) {
+  // Live AL facts from the supervisor (#31): agent progress, cache hits, open questions.
+  const section = el("section");
+  section.className = "execution-al-live";
+  const live = execution.al_live;
+  section.append(el("h4", "AL run (live)"));
+  if (!live) {
+    section.append(el("p", "No live AL view yet."));
+    return section;
+  }
+  const facts = el("dl");
+  facts.append(
+    executionField("Phase", live.phase),
+    executionField("Checks", `${live.checks?.done ?? 0}/${live.checks?.total ?? 0}`),
+    executionField("Updates", live.transport === "service" ? "AL service events" : "polling"),
+  );
+  if (live.progress) {
+    const p = live.progress;
+    facts.append(executionField("Latest progress", `${p.role || p.agent || ""} ${p.note}${p.total ? ` (${p.done}/${p.total})` : ""}`.trim()));
+  }
+  section.append(facts);
+  if ((live.agents || []).length) {
+    const list = el("ul");
+    for (const agent of live.agents) {
+      list.append(el("li", `${agent.id}: ${agent.note}${agent.total ? ` (${agent.done}/${agent.total})` : ""}`));
+    }
+    section.append(el("h5", "Agent progress"), list);
+  }
+  const checks = execution.checks || [];
+  if (checks.length) {
+    const list = el("ul");
+    for (const check of checks) list.append(el("li", `${check.id} ${check.area}: ${check.status} · ${check.provenance?.text || ""}`));
+    section.append(el("h5", "Check results"), list);
+  }
+  const questions = live.questions || [];
+  const answered = new Map((execution.question_answers || []).map((row) => [row.question, row]));
+  section.append(el("h5", `Agent questions (${questions.filter(q => q.state === "open").length} open)`));
+  if (!questions.length) section.append(el("p", "No open agent questions."));
+  for (const question of questions) section.append(renderAgentQuestion(execution, question, answered.get(question.id)));
+  return section;
+}
+
+function renderAgentQuestion(execution, question, delivery) {
+  const box = el("div");
+  box.className = `execution-question execution-question-${question.kind}`;
+  box.append(el("p", `${question.id} [${question.kind}] ${question.role || question.agent || ""}: ${question.question}`));
+  if (question.context) box.append(el("p", question.context));
+  if (question.state === "answered") {
+    box.append(el("p", `Answered: ${question.answer} — waiting to be sent to the same agent.`));
+    return box;
+  }
+  if (delivery && delivery.state === "Queued") {
+    box.append(el("p", "Answer queued; the supervisor is delivering it."));
+    return box;
+  }
+  if (delivery && delivery.state === "Refused") box.append(alertText(`Answer refused: ${delivery.result}`));
+  const key = JSON.stringify([executionIdentity(execution), question.id]);
+  const draft = QUESTION_DRAFTS.get(key) || { text: "", busy: false };
+  const input = document.createElement("textarea");
+  input.id = `execution-question-${question.id}`;
+  input.value = draft.text;
+  input.addEventListener("input", () => QUESTION_DRAFTS.set(key, { ...draft, text: input.value }));
+  const send = document.createElement("button");
+  send.type = "button";
+  send.textContent = question.kind === "blocking" ? "Answer (unblocks the agent)" : "Answer";
+  send.disabled = draft.busy;
+  send.addEventListener("click", async () => {
+    if (!input.value.trim()) return;
+    QUESTION_DRAFTS.set(key, { text: input.value, busy: true });
+    const { res } = await postExecution("question-answer", {
+      task: execution.task_id || executionTaskId,
+      execution: execution.id,
+      question: question.id,
+      text: input.value,
+    });
+    QUESTION_DRAFTS.set(key, { text: res && res.ok ? "" : input.value, busy: false });
+  });
+  box.append(input, send);
+  return box;
+}
+
 function renderExecution(taskId, execution) {
   executionTaskId = taskId;
   executionSnapshot = execution;
   const section = el("section");
   section.id = "execution";
   section.dataset.viewIdentity = viewIdentity(taskId, execution);
-  section.append(renderRunControls(execution), renderAgentDiagram(execution));
+  section.append(renderRunControls(execution), renderAgentDiagram(execution), renderAlLive(execution));
   const details = document.createElement("details");
   details.className = "execution-detail-panel";
   details.dataset.viewDisclosure = "execution-full-details";

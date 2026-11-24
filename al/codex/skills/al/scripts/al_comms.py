@@ -5,7 +5,8 @@
   (`agent.updated` activity/progress), so nobody has to poll a model for it.
 * `ask --blocking|--non-blocking --question TEXT` records a question an agent raises mid-run; the
   agent keeps working on independent parts. `ask --answer QID --text TEXT` answers it and prints how
-  to send the answer to the same warm agent.
+  to send the answer to the same warm agent; `ask --forwarded QID` records that it was sent. Until then
+  `next` names the answer to forward (an answer may come from the Harness dashboard, #31).
 * `handoff-record --file JSON` validates and stores an agent's structured handoff record
   (`agent-handoff-record-v1`): decisions with reasons, assumptions, files touched, verified claims
   with evidence IDs, unverified claims, open questions and risks. The next writer handoff and the
@@ -83,9 +84,35 @@ def open_questions(st):
     return [q for q in st.get('agent_questions', []) if q.get('state') == 'open']
 
 
+def unforwarded(st):
+    """Answered questions whose answer has not yet been sent to the agent that asked."""
+    return [q for q in st.get('agent_questions', []) if q.get('state') == 'answered' and not q.get('forwarded')]
+
+
+def forward_line(st, q):
+    """How the supervisor sends an answer to the same warm agent that asked."""
+    import al_agents
+    head = 'AL · forward the answer to ' + q['id'] + ' (' + q['answer'] + ')'
+    if q.get('agent'):
+        call = al_agents.resume_call(q['agent'])
+    else:
+        row = al_agents.latest(st, q['role']) if q.get('role') else None
+        call = al_agents.resume_call(row['id'], row.get('platform')) if row else None
+    return (head + ' to its waiting agent: ' + call if call else head + ' in the next handoff of ' + (q.get('role') or 'its role')) \
+        + '; then `ask --forwarded ' + q['id'] + '`'
+
+
 def cmd_ask(a, sid):
     st = al_store.load(sid)
     questions = st.setdefault('agent_questions', [])
+    if a.forwarded:
+        q = next((x for x in questions if x['id'] == a.forwarded), None)
+        if not q or q['state'] != 'answered':
+            refuse('question ' + a.forwarded + ' has no answer to forward')
+        q['forwarded'] = time.time()
+        al_store.save(sid, st)
+        print('AL · answer to ' + q['id'] + ' forwarded')
+        return
     if a.answer:
         q = next((x for x in questions if x['id'] == a.answer), None)
         if not q:
@@ -227,6 +254,9 @@ def status_suffix(st):
     if qs:
         blocking = sum(q['kind'] == 'blocking' for q in qs)
         parts.append(str(len(qs)) + ' open question(s)' + (' (' + str(blocking) + ' blocking)' if blocking else ''))
+    pending = unforwarded(st)
+    if pending:
+        parts.append(str(len(pending)) + ' answer(s) to forward')
     return ' │ '.join(parts)
 
 
@@ -253,6 +283,7 @@ def register(sub):
     p.add_argument('--agent')
     p.add_argument('--answer', metavar='QID')
     p.add_argument('--text')
+    p.add_argument('--forwarded', metavar='QID')
     p.add_argument('--list', action='store_true')
     p.add_argument('--all', action='store_true')
     p.set_defaults(fn=cmd_ask)

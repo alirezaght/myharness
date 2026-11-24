@@ -404,6 +404,10 @@ def cmd_next(a, sid):
     with al_store.locked(sid):
         st = al_store.load(sid)
         offered = descriptors(st)
+    import al_comms
+    for q in al_comms.unforwarded(st):
+        # An answered question goes back to the same warm agent first (#30, #31).
+        print("AL · next · " + al_comms.forward_line(st, q))
     if not offered:
         print("AL · next · no recovery blocker · next: " + _next_without_blocker(st))
         return
