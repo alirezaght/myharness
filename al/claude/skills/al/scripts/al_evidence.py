@@ -602,7 +602,10 @@ def cmd_evidence_run(a, sid):
     cache, why = Cache.evidence_plan(st, spec, no_cache=getattr(a, "no_cache", False))
     if why and why.startswith("not cached:"):
         print(f"AL · evidence {spec['area']} · {why}")
-    hit = None if a.fresh else Cache.lookup(cache)
+    # Running an area again after its latest attempt in this run did not pass is a retry (a
+    # timeout or flake on a busy host): it executes and its result replaces the cached one.
+    retry = bool(prev) and prev["status"] not in {"PASS", "RUNNING"}
+    hit = None if a.fresh or retry else Cache.lookup(cache)
     entry = _create(sid, st.get("run_id"), area=spec["area"], kind=spec["kind"], tier=spec["tier"], argv=spec["argv"],
                     cwd=spec["cwd"], scope=spec["scope"], env_names=spec["env"],
                     preflight=spec.get("preflight"), needs=spec.get("needs") or (), sources=spec.get("sources", []),
@@ -616,7 +619,7 @@ def cmd_evidence_run(a, sid):
         return
     text = _execute(sid, entry, a.timeout)
     if cache is not None:
-        Cache.save(cache, entry, entry["log"], Cache.origin(st, sid, entry), replace=a.fresh)
+        Cache.save(cache, entry, entry["log"], Cache.origin(st, sid, entry), replace=a.fresh or retry)
     tail = text.splitlines()[-a.tail:] if a.tail else []
     if tail:
         print("\n".join(tail))
