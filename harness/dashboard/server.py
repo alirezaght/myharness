@@ -55,6 +55,7 @@ WRITES = {
     "/api/execution/reconcile": "reconcile",
     "/api/execution/decision": "decision",
     "/api/execution/decision-retry": "decision-retry",
+    "/api/execution/question-answer": "question-answer",
     "/api/knowledge/refresh": "knowledge-refresh",
     "/api/knowledge/query": "knowledge-query",
     "/api/knowledge/explain": "knowledge-explain",

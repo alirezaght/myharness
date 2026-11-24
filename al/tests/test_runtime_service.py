@@ -158,6 +158,58 @@ def test_watcher_keeps_the_in_memory_snapshot_current(setup):
     assert _service_tree(setup) == second == _direct_snapshot(setup)
 
 
+def _request(directory, value, *, fds=()):
+    import socket
+
+    from al.installer.runtime_service_client import namespace
+
+    wire = namespace()
+    sock, token = wire["_al_service_connect"](str(directory))
+    sock.settimeout(10)
+    wire["_al_service_send"](sock, {"protocol": 1, "token": token, **value}, fds)
+    return wire, sock
+
+
+def test_snapshot_op_answers_the_proven_current_tree(setup):
+    directory = setup.control("status")[0]["directory"]
+    tree = setup.wait(lambda: _service_tree(setup))
+    wire, sock = _request(directory, {"op": "snapshot", "repository": str(setup.repo)})
+    with sock:
+        assert wire["_al_service_receive"](sock) == {"event": "snapshot", "tree": tree}
+    # A repository outside the service's common directory is never answered.
+    other = setup.base / "unrelated"
+    other.mkdir(exist_ok=True)
+    git(other, "init", "-q")
+    wire, sock = _request(directory, {"op": "snapshot", "repository": str(other)})
+    with sock:
+        assert wire["_al_service_receive"](sock) == {"event": "snapshot", "tree": None}
+
+
+def test_subscription_pushes_changes_of_named_files(setup, tmp_path):
+    directory = setup.control("status")[0]["directory"]
+    target = tmp_path / "state.json"
+    target.write_text("{}")
+    wire, sock = _request(directory, {"op": "subscribe", "paths": [str(target)]})
+    with sock:
+        assert wire["_al_service_receive"](sock) == {"event": "subscribed", "paths": [str(target)]}
+        replacement = tmp_path / ".state.tmp"
+        replacement.write_text('{"x":1}')
+        os.replace(replacement, target)  # AL saves atomically
+        assert wire["_al_service_receive"](sock) == {"event": "changed", "path": str(target), "present": True}
+    wire, sock = _request(directory, {"op": "subscribe", "paths": ["relative.json"]})
+    with sock:
+        assert wire["_al_service_receive"](sock)["event"] == "fallback"
+
+
+def test_harness_contained_command_never_runs_in_the_service(setup):
+    """A command carrying Harness containment keeps its own sandbox (#31)."""
+    before = setup.served()
+    env = dict(setup.env, HARNESS_CHECK_CONTEXT="/nonexistent/check-context.json")
+    expected = setup.run("s1", "show", "--json", service=False, env=env)
+    assert setup.run("s1", "show", "--json", env=env) == expected
+    assert setup.served() == before
+
+
 def test_runs_pinned_to_different_runtimes_are_isolated(setup):
     # A new AL release: the launcher changes and a new run gets a new pin.
     changed = setup.source / "codex/skills/al/reference/performance.md"

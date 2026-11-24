@@ -128,6 +128,7 @@ class OperationController:
         self.artifacts = ArtifactStore(self.directory / "drafts")
         self.processes = ProcessManager()
         self.check_channels = []
+        self.al_service = None
         self.setup_pending = {}
         self.setup_outcomes = {}
         self.generated = {}
@@ -492,7 +493,26 @@ class OperationController:
             # The AL ledger process keeps operation scratch as TMPDIR: its disposable gate
             # checkouts must stay under the protected scratch the check channel admits.
             process_temporary=not al,
+            al_grants=self.al_cache_grants() if al else None,
         )
+
+    def al_cache_grants(self):
+        """AL's exact cache paths and this run's service socket (#31); None when unavailable,
+        and AL then runs its checks without the action cache."""
+        from harness.execution_al_service import Locator
+        from harness.execution_isolation import al_grants
+
+        if self.al_service is None:
+            self.al_service = Locator(
+                self.package["launcher"],
+                self.envelope["repository"],
+                self.envelope["host"],
+                self.envelope["al_session_id"],
+            )
+        try:
+            return al_grants(self.envelope["repository"], service_directory=self.al_service())
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
 
     def dispatch(self, principal, name, arguments):
         from harness.execution_epochs import require_active_epoch
@@ -1046,6 +1066,10 @@ class OperationController:
         )
         environment["HARNESS_CHECK_CONTEXT"] = str(context_path)
         environment["TMPDIR"] = profile.temporary
+        if profile.al_writable:
+            environment["AL_SNAPSHOT_OBJECTS"] = "private"
+        if profile.al_sockets:
+            environment["AL_SERVICE_SNAPSHOT"] = str(Path(profile.al_sockets[0]).parent)
 
         def validate_check():
             with closing(connect(self.database)) as conn:

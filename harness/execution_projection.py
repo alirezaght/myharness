@@ -611,6 +611,14 @@ def execution_view(conn, execution_id):
 
     feed = event_page(conn, execution_id, max(0, saved["cursor"] - 50), 50)["events"]
     activity = activity_view(conn, saved, agents, reports, feed)
+    from harness import execution_al_live
+    from harness.execution_provenance import annotate, summary
+
+    # Each check result with its provenance (ran now / reused from run X, #31), and the
+    # supervisor's live view of the AL run: agent progress and open questions.
+    checks = presentation(annotate(entities(conn, execution_id, "test"), saved.get("al_run_id")))
+    al_live = execution_al_live.read(saved)
+    question_answers = execution_al_live.answers(saved)
     return {
         k: saved[k]
         for k in (
@@ -654,6 +662,10 @@ def execution_view(conn, execution_id):
         "binding": saved["binding"],
         "reports": reports,
         "agents": agents,
+        "checks": checks,
+        "check_provenance": summary(checks),
+        "al_live": al_live,
+        "question_answers": question_answers,
         "tasks": tasks,
         "blockers": blockers,
         "operational_issues": presentation(entities(conn, execution_id, "issue")),

@@ -44,7 +44,14 @@ def test_progress_and_questions_show_in_status_line_and_inspect(cli, tmp_path, r
     assert 'eng-1' in out
     invoke(cli, 'ask', '--answer', 'Q1', '--text', 'again', ok=False)
     _, line, _ = invoke(cli, 'show', '--line')
-    assert '1 open question(s)' in line and 'blocking' not in line
+    assert '1 open question(s)' in line and 'blocking' not in line and '1 answer(s) to forward' in line
+    # An answer (typed here, or from the Harness dashboard, #31) goes back to the agent that asked.
+    _, out, _ = invoke(cli, 'next')
+    assert 'forward the answer to Q1 (Yes, cap at 5.) to its waiting agent' in out and 'eng-1' in out
+    invoke(cli, 'ask', '--forwarded', 'Q2', ok=False)
+    invoke(cli, 'ask', '--forwarded', 'Q1')
+    _, out, _ = invoke(cli, 'next')
+    assert 'forward the answer' not in out
     invoke(cli, 'progress', '--note', 'bad', '--done', '6', '--total', '5', ok=False)
     invoke(cli, 'ask', '--question', 'neither kind', ok=False)
 

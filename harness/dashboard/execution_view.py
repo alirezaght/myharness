@@ -82,6 +82,8 @@ def execution_action(db_path, body, action):
                 }
             elif action == "decision-retry":
                 fields |= {"delivery"}
+            elif action == "question-answer":
+                fields |= {"question", "text"}
             elif action == "reconcile":
                 fields |= {"outcome", "evidence"}
             if action == "reconcile" and isinstance(data, dict) and "native_id" in data:
@@ -99,6 +101,8 @@ def execution_action(db_path, body, action):
                 raise ValueError("invalid execution epoch identity")
         except (ValueError, TypeError, KeyError) as error:
             return 400, {"error": str(error)}
+        from harness.execution_projection import presentation
+
         if not Path(db_path).is_file():
             raise LookupError("execution database not found")
         with open_state(db_path) as controller:
@@ -112,10 +116,22 @@ def execution_action(db_path, body, action):
             )
             if get_execution(controller.conn, data["execution"])["task_id"] != data["task"]:
                 raise LookupError("execution not found for task")
-            require_ready(
-                get_execution(controller.conn, data["execution"]),
-                "resume" if action in {"recover", "retry-checks"} else action,
-            )
+            if action != "question-answer":
+                require_ready(
+                    get_execution(controller.conn, data["execution"]),
+                    "resume" if action in {"recover", "retry-checks"} else action,
+                )
+            if action == "question-answer":
+                # Queued for the supervisor, which records it with AL's `ask --answer`;
+                # AL's `next` then routes it to the same warm agent that asked (#31).
+                from harness.execution_al_live import queue_answer
+
+                execution = get_execution(controller.conn, data["execution"])
+                if execution["status"] not in {"Running", "Launching", "WorkerOwned"}:
+                    raise ValueError("questions are answered while the run is supervised")
+                return 200, presentation(
+                    queue_answer(execution, data["question"], data["text"])
+                )
             if action == "retry-start":
                 from harness.execution_worker import launch_worker
 
@@ -169,8 +185,6 @@ def execution_action(db_path, body, action):
                     for d in execution_view(controller.conn, data["execution"])["decisions"]
                     if d["id"] == result["id"]
                 )
-        from harness.execution_projection import presentation
-
         return 200, presentation(result)
     except LookupError as error:
         return 404, {"error": str(error)}

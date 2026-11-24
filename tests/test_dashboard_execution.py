@@ -193,3 +193,45 @@ for (const status of ['ready', 'continuing', 'unverified', 'technically_unavaila
 """
     )
     subprocess.run([node, "-e", script], check=True, capture_output=True, timeout=10)
+
+
+def test_dashboard_answer_reaches_the_waiting_agent_through_the_supervisor(
+    controller, sample_repo, monkeypatch, db_path, tmp_path
+):
+    """#31: the developer answers a blocking question in the dashboard; the supervisor
+    records it with AL's `ask --answer`, whose output routes it to the same warm agent."""
+    import sys
+
+    from harness import execution_al_live as Live
+    from harness import execution_worker as Worker
+    from harness.dashboard.execution_view import execution_action
+
+    tid, eid = approved_execution(controller, sample_repo, monkeypatch)
+    execution = get_execution(controller.conn, eid)
+    Live.publish(execution, {"run_id": "r", "agent_questions": [
+        {"id": "Q1", "kind": "blocking", "state": "open", "question": "Port?", "agent": "eng-1"}]}, "service")
+    body = json.dumps({"task": tid, "execution": eid, "question": "Q1", "text": "8080"}).encode()
+    status, data = execution_action(db_path, body, "question-answer")
+    assert status == 409 and "supervised" in data["error"]  # Reserved: no supervisor to deliver it
+    controller.conn.execute("UPDATE executions SET status='Running' WHERE id=?", (eid,))
+    controller.conn.commit()
+    status, data = execution_action(db_path, body, "question-answer")
+    assert status == 200 and data["state"] == "Queued"
+    status, data = execution_action(
+        db_path, json.dumps({"task": tid, "execution": eid, "question": "Q9", "text": "x"}).encode(),
+        "question-answer")
+    assert status == 409 and "not open" in data["error"]
+    # The supervisor delivers it through the protected launcher (a recording stand-in here).
+    launcher = tmp_path / "alctl"
+    record = tmp_path / "calls.json"
+    launcher.write_text(
+        "#!" + sys.executable + "\nimport json,sys\n"
+        f"open({str(record)!r},'a').write(json.dumps(sys.argv[1:])+'\\n')\n"
+        "print('AL · answered Q1');print('AL · send the answer to the asking agent: Send'+'Message(to=\"eng-1\")')\n")
+    launcher.chmod(0o755)
+    monkeypatch.setattr(Worker, "require_execution_authority", lambda *a, **k: None)
+    delivered = Worker.deliver_answers(controller, eid, {"launcher": str(launcher)})
+    argv = json.loads(record.read_text())
+    assert argv[argv.index("--") + 1:] == ["ask", "--answer", "Q1", "--text", "8080"]
+    assert delivered[0]["state"] == "Delivered" and "eng-1" in delivered[0]["result"]
+    assert Worker.deliver_answers(controller, eid, {"launcher": str(launcher)}) == []

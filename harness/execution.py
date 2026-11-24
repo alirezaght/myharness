@@ -182,6 +182,10 @@ def start_execution(
                 "sealed_hash": digest(sealed),
                 "plan": plan.to_dict(),
                 "plan_text": plan.render(),
+                # Step 5's approved scenarios as cacheable AL check recipes (#31).
+                "check_recipes": __import__(
+                    "harness.testplan_checks", fromlist=["check_recipes"]
+                ).check_recipes(plan.to_dict()),
                 "task_package": package,
             }
             if len(canonical(envelope).encode()) > MAX_HANDOFF:

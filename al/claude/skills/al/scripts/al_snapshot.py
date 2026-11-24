@@ -1,8 +1,8 @@
 """The working copy as one Git tree, through a private per-worktree index (#25).
 
 `snapshot()` runs `git add` (tracked files and AL's untracked members) and `git write-tree` against an index kept in the
-worktree's own Git directory (`git rev-parse --git-path al-snapshot.index`), never the
-user's index. It is incremental through Git's stat cache, racy-clean handling and
+worktree's own Git directory (`git rev-parse --git-path al-snapshot`, file `index`), never
+the user's index. It is incremental through Git's stat cache, racy-clean handling and
 `core.fsmonitor` where configured. The private index is seeded from the real index,
 with assume-unchanged and skip-worktree flags cleared so those files are checked
 against the disk like any other. The resulting tree's blob ids are content hashes of
@@ -12,7 +12,12 @@ capture checks are unchanged and decide what the tree may vouch for.
 All state here is per worktree and mutable; the shared fact store holds only facts.
 Concurrent snapshots in one worktree never wait: a busy private index is a fallback to
 direct reads. Snapshot trees used by a run are pinned under `refs/al/snapshots/<run>/`
-so `git gc` keeps them; `unpin` drops a run's refs and `sweep` drops orphaned ones."""
+so `git gc` keeps them; `unpin` drops a run's refs and `sweep` drops orphaned ones.
+
+Under a sandbox that admits only AL's private paths (the Harness operation sandbox, #31),
+`AL_SNAPSHOT_OBJECTS=private` keeps the objects a snapshot writes in the private directory
+(`al-snapshot/objects`, the repository's object store read as an alternate): tree ids are
+content hashes, so they are the same ids a snapshot with the shared object store computes."""
 import os
 import re
 import subprocess
@@ -20,7 +25,8 @@ from pathlib import Path
 
 import al_store
 
-INDEX = 'al-snapshot.index'
+PRIVATE = 'al-snapshot'
+INDEX = 'index'
 REF_PREFIX = 'refs/al/snapshots/'
 EXCLUDED = ('.git', '.codex', '.claude', '.venv', 'node_modules', '__pycache__', '.pytest_cache', '.ruff_cache',
             'dist', 'build', '.next', '.turbo')
@@ -34,9 +40,34 @@ class Unavailable(Exception):
     """The snapshot cannot be taken now (busy private index, no repository): read directly."""
 
 
+_OBJECTS = {}
+
+
+def _objects(root):
+    """GIT_OBJECT_DIRECTORY/alternates for a private object store, or {} (see module doc)."""
+    if os.environ.get('AL_SNAPSHOT_OBJECTS') != 'private':
+        return {}
+    key = str(root)
+    if key not in _OBJECTS:
+        def path(name):
+            result = subprocess.run(_GIT + ['rev-parse', '--path-format=absolute', '--git-path', name], cwd=key,
+                                    capture_output=True, timeout=30,
+                                    env={k: v for k, v in os.environ.items()
+                                         if k not in ('GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES')})
+            if result.returncode:
+                raise Unavailable('git rev-parse failed')
+            return Path(result.stdout.decode().strip())
+        private = path(PRIVATE) / 'objects'
+        if private.is_symlink() or private.parent.is_symlink():
+            raise Unavailable('private snapshot object store is a symlink')
+        private.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _OBJECTS[key] = {'GIT_OBJECT_DIRECTORY': str(private), 'GIT_ALTERNATE_OBJECT_DIRECTORIES': str(path('objects'))}
+    return _OBJECTS[key]
+
+
 def _run(root, args, *, env=None, data=None, timeout=120):
     result = subprocess.run(_GIT + args, cwd=str(root), input=data, capture_output=True, timeout=timeout,
-                            env={**os.environ, **(env or {})})
+                            env={**os.environ, **_objects(root), **(env or {})})
     if result.returncode:
         raise Unavailable(result.stderr.decode(errors='replace').strip() or 'git ' + args[0] + ' failed')
     return result.stdout
@@ -47,9 +78,16 @@ def _root(root):
 
 
 def index_path(root=None):
+    """The private index, in AL's own directory of the worktree's Git directory (created 0700)."""
     root = _root(root)
-    value = _run(root, ['rev-parse', '--path-format=absolute', '--git-path', INDEX]).decode().strip()
-    return Path(value)
+    directory = Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-path', PRIVATE]).decode().strip())
+    if directory.is_symlink():
+        raise Unavailable('private snapshot directory is a symlink')
+    try:
+        directory.mkdir(mode=0o700, exist_ok=True)
+    except OSError as exc:
+        raise Unavailable('private snapshot directory unavailable: ' + str(exc)) from exc
+    return directory / INDEX
 
 
 def _seed(root, target):
@@ -83,10 +121,64 @@ def untracked(root=None):
     return [row for row in raw.split(b'\0') if row]
 
 
+def _service_tree(root):
+    """The resident AL service's proven-current tree of `root` (`AL_SERVICE_SNAPSHOT` names the
+    service directory a supervisor admitted, #31), or None. Any doubt is None."""
+    import json
+    import socket
+    import stat
+    import struct
+    directory = os.environ.get('AL_SERVICE_SNAPSHOT')
+    if not directory or not os.path.isabs(directory):
+        return None
+    here = None
+    try:
+        for path, kind, mode in ((directory, stat.S_ISDIR, 0o700), (os.path.join(directory, 'token'), stat.S_ISREG, 0o600)):
+            state = os.lstat(path)
+            if not kind(state.st_mode) or state.st_uid != os.getuid() or stat.S_IMODE(state.st_mode) != mode:
+                return None
+        with open(os.path.join(directory, 'token'), 'rb') as handle:
+            token = handle.read(256).decode().strip()
+        here = os.open('.', os.O_RDONLY)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(5)
+            os.chdir(directory)  # a relative name keeps long paths under the socket limit
+            sock.connect('s')
+            os.fchdir(here)
+            data = json.dumps({'protocol': 1, 'op': 'snapshot', 'token': token, 'repository': str(root)},
+                              sort_keys=True, separators=(',', ':')).encode()
+            sock.sendall(struct.pack('>I', len(data)) + data)
+            raw = b''
+            while len(raw) < 4 or len(raw) < 4 + struct.unpack('>I', raw[:4])[0]:
+                chunk = sock.recv(4096)
+                if not chunk or len(raw) > 65536:
+                    return None
+                raw += chunk
+        answer = json.loads(raw[4:4 + struct.unpack('>I', raw[:4])[0]])
+    except (OSError, ValueError, UnicodeError):
+        return None
+    finally:
+        if here is not None:
+            try:
+                os.fchdir(here)
+            finally:
+                os.close(here)
+    tree = answer.get('tree') if isinstance(answer, dict) and answer.get('event') == 'snapshot' else None
+    if not isinstance(tree, str) or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', tree):
+        return None
+    try:
+        return tree if _run(root, ['cat-file', '-t', tree]).decode().strip() == 'tree' else None
+    except (Unavailable, OSError, subprocess.SubprocessError):
+        return None
+
+
 def snapshot(root=None):
     """The tree id of the working copy with AL's membership: every tracked file, wherever it
     lives (generated-looking directories included), plus untracked files by AL's rule."""
     root = _root(root)
+    served = _service_tree(root)
+    if served is not None:
+        return served
     target = index_path(root)
     if target.is_symlink():
         raise Unavailable('private snapshot index is a symlink')

@@ -227,6 +227,105 @@ class OperationIsolation:
     provisioning_network: bool = False
     # Short private TMPDIR for the contained process (AF_UNIX path limit); "" when none.
     process_temporary: str = ""
+    # AL's incremental-build paths (#31): exactly these directories are writable and exactly
+    # these Unix sockets connectable, in addition to the operation's own grants.
+    al_writable: tuple[str, ...] = ()
+    al_sockets: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class AlGrants:
+    """What an AL process inside the operation sandbox may reach for its caches (#31).
+
+    `writable`: the worktree's private snapshot directory (`<git dir>/al-snapshot`: private
+    index and private snapshot objects), the repository's snapshot refs
+    (`<common dir>/refs/al/snapshots`), the action cache (`<common dir>/al-action-cache`) and
+    the repository's analysis fact store. `sockets`: the resident AL service's socket for this
+    run (macOS only; the Linux seccomp filter keeps refusing Unix stream sockets, so AL falls
+    back to its own snapshot there). `environment`: what tells AL to use them."""
+
+    writable: tuple[str, ...] = ()
+    sockets: tuple[str, ...] = ()
+    environment: tuple[tuple[str, str], ...] = ()
+
+
+AL_SNAPSHOT_DIRECTORY = "al-snapshot"
+AL_SNAPSHOT_REFS = ("refs", "al", "snapshots")
+AL_ACTION_CACHE = "al-action-cache"
+
+
+def _git_locations(repository):
+    environment = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    result = subprocess.run(
+        [
+            "git",
+            "--no-optional-locks",
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-dir",
+            "--git-common-dir",
+        ],
+        cwd=str(repository),
+        capture_output=True,
+        timeout=30,
+        env=environment,
+    )
+    if result.returncode:
+        raise ValueError("AL cache grants need a Git repository")
+    git_dir, common = (Path(line) for line in result.stdout.decode().splitlines()[:2])
+    return git_dir.resolve(strict=True), common.resolve(strict=True)
+
+
+def _private_directory(path, *, base, mode=0o700):
+    """Create `path` below `base` (both real, no symlink on the way) and return it."""
+    current = base
+    for part in path.relative_to(base).parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError("AL cache grant path is a symlink: " + str(current))
+        if not current.exists():
+            current.mkdir(mode=mode)
+        if not current.is_dir() or current.stat().st_uid != os.getuid():
+            raise ValueError("AL cache grant path is not an owned directory: " + str(current))
+    return str(current)
+
+
+def analysis_store(common):
+    """AL's analysis fact store of a repository (al_analysis_index.index_root default)."""
+    import hashlib
+
+    root = Path.home() / ".local" / "state" / "al-distribution" / "analysis-index"
+    return root, root / hashlib.sha256(str(common).encode()).hexdigest()[:32]
+
+
+def al_grants(repository, *, service_directory=None, system=None):
+    """The exact AL cache grants of one repository (see AlGrants)."""
+    git_dir, common = _git_locations(Path(repository).resolve(strict=True))
+    writable = [
+        _private_directory(git_dir / AL_SNAPSHOT_DIRECTORY, base=git_dir),
+        _private_directory(common.joinpath(*AL_SNAPSHOT_REFS), base=common, mode=0o755),
+        _private_directory(common / AL_ACTION_CACHE, base=common),
+    ]
+    root, store = analysis_store(common)
+    try:
+        root.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        writable.append(_private_directory(store, base=root.parent.resolve(strict=True)))
+    except (OSError, ValueError):
+        pass  # no fact store: AL computes its facts without one
+    environment = [("AL_SNAPSHOT_OBJECTS", "private")]
+    sockets = []
+    if service_directory is not None and (system or platform.system()) == "Darwin":
+        directory = Path(service_directory).resolve(strict=True)
+        endpoint = directory / "s"
+        info = endpoint.lstat()
+        if (
+            stat.S_ISSOCK(info.st_mode)
+            and info.st_uid == os.getuid()
+            and stat.S_IMODE(directory.stat().st_mode) == 0o700
+        ):
+            sockets.append(str(endpoint))
+            environment.append(("AL_SERVICE_SNAPSHOT", str(directory)))
+    return AlGrants(tuple(writable), tuple(sockets), tuple(environment))
 
 
 # Unix-domain socket paths are limited to 104 bytes (macOS) / 108 (Linux). Python
@@ -300,8 +399,11 @@ def prepare_operation_isolation(
     classification=None,
     allow_classified_read=False,
     process_temporary=False,
+    al_grants=None,
 ):
     """Scope an operation tree, leaving native authentication infrastructure outside.
+
+    `al_grants` (AlGrants) admits AL's cache paths and service socket, and nothing else.
 
     `process_temporary` True creates a short private TMPDIR for the contained process;
     a path adopts one its trusted launcher created (and will release); False adds none."""
@@ -419,6 +521,8 @@ def prepare_operation_isolation(
         classification,
         (scratch_info.st_dev, scratch_info.st_ino),
         process_temporary=process_temporary,
+        al_writable=tuple(al_grants.writable) if al_grants else (),
+        al_sockets=tuple(al_grants.sockets) if al_grants else (),
     )
     try:
         _write_operation_policy(profile, paths, protected, hidden, temporary, session)
@@ -472,6 +576,10 @@ def _write_operation_policy(profile, paths, protected, hidden, temporary, sessio
             )
         if coordination_lock:
             rules.append(f"(allow file-write* (literal {_literal(coordination_lock)}))")
+        for path in profile.al_writable:
+            rules.append(f"(allow file-write* (subpath {_literal(path)}))")
+        for path in profile.al_sockets:
+            rules.append(f"(allow network-outbound (remote unix-socket (literal {_literal(path)})))")
         for path in [*hidden, profile.policy]:
             rules.append(f"(deny file-read* (subpath {_literal(path)}))")
         Path(profile.policy).write_text("\n".join(rules) + "\n")
@@ -552,6 +660,11 @@ def operation_argv(profile, argv, *, cwd=None):
         command.extend(["--bind", profile.coordination_lock, profile.coordination_lock])
     if profile.session_directory:
         command.extend(["--bind", profile.session_directory, profile.session_directory])
+    for path in profile.al_writable:
+        # After the read-only .git binding, so exactly these subtrees become writable.
+        if not Path(path).is_dir():
+            raise ValueError("Linux AL cache grant must exist before containment")
+        command.extend(["--bind", path, path])
     command.extend(["--bind", profile.temporary, profile.temporary])
     if profile.process_temporary:
         # Exactly this directory; the rest of /tmp stays read-only under --ro-bind /.

@@ -20,6 +20,29 @@ def test_missing_delivery_and_test_counts_are_unavailable(controller, sample_rep
     assert get_execution(controller.conn, eid) == before
 
 
+def test_reports_show_each_check_result_provenance(controller, sample_repo, monkeypatch):
+    """#31: ran now, or reused from run X on the same input tree."""
+    from harness.execution_projection import execution_view
+    from harness.execution_store import put_entity
+
+    _, eid = approved_execution(controller, sample_repo, monkeypatch)
+    ran = {"id": "E1", "area": "unit", "status": "PASS", "scope": ["src"], "validity": "VALID"}
+    reused = dict(ran, id="E2", area="lint", provenance={
+        "mode": "reused", "origin": {"run": "run-0", "entry": "E9", "session": "s"},
+        "tree": "ab" * 20, "key": "k"})
+    put_entity(controller.conn, eid, "test", "E1", ran)
+    put_entity(controller.conn, eid, "test", "E2", reused)
+    report = completion_report(controller.conn, eid)
+    texts = {r["id"]: r["provenance"]["text"] for r in report["al_tests"]["records"]}
+    assert texts["E1"].startswith("ran now")
+    assert texts["E2"] == "reused from run run-0 (E9) on the same input tree " + "ab" * 6
+    assert report["al_tests"]["provenance"] == {"ran": 1, "reused": 1, "running": 0}
+    view = execution_view(controller.conn, eid)
+    assert {c["id"]: c["provenance"]["mode"] for c in view["checks"]} == {"E1": "ran", "E2": "reused"}
+    assert view["check_provenance"]["reused"] == 1
+    assert view["al_live"] is None and view["question_answers"] == []
+
+
 def test_report_preserves_browser_and_provider_sources(delivery, monkeypatch):
     controller, eid, api, plan = prepared(delivery, monkeypatch)
     saved = approve_browser(
