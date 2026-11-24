@@ -14,6 +14,7 @@ TOOLS = (
     "read_file",
     "knowledge_query",
     "knowledge_explain",
+    "knowledge_consumers",
     "apply_patch",
     "run_command",
     "poll_process",

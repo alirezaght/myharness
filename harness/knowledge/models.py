@@ -11,7 +11,7 @@ PROJECTION_READER_NOTICE = (
     "This project's knowledge projection requires the current reader. "
     "The pinned execution remains authorized; its older knowledge capability is unavailable."
 )
-EXTRACTOR_VERSION = "3"
+EXTRACTOR_VERSION = "4"  # 4: compact described-by text (#31)
 MAX_SOURCE_BYTES = 1_048_576
 MAX_REFRESH_BYTES = 67_108_864
 

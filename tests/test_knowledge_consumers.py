@@ -163,6 +163,33 @@ def test_tsconfig_extends_paths_resolve_for_importers_in_scope(mono):
     assert ("apps/web/src/pages/shared.tsx", "imports", "cross-unit") in found
 
 
+def test_consumers_follow_re_exports_transitively(mono):
+    """#31: an index.ts barrel re-exporting a component makes its importers consumers too."""
+    conn, scope = mono
+    found, result = _found(conn, scope, "packages/ui/src/Button.tsx")
+    assert ("apps/web/src/pages/home.tsx", "imports-via-reexport", "cross-unit") in found
+    row = next(c for c in result["consumers"] if c["relation"] == "imports-via-reexport")
+    assert row["through"] == ["packages/ui/src/index.ts"] and row["via"] == "@acme/ui"
+    # Two levels of barrels; a plain import (not a re-export) is not followed further.
+    files = {
+        "packages/ui/src/all.ts": "export * from './index';\n",
+        "packages/ui/src/screen.ts": "import { Button } from './all';\nexport const s = 1;\n",
+        "packages/ui/src/app.ts": "import { s } from './screen';\n",
+    }
+    for name, text in files.items():
+        (scope.repository / name).write_text(text)
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh_until_settled(HarnessController(conn), scope)
+    scope = current_operator_scope(conn, scope.repository)
+    _, result = _found(conn, scope, "packages/ui/src/Button.tsx")
+    rows = {c["locator"]: c for c in result["consumers"] if c["relation"] == "imports-via-reexport"}
+    assert rows["packages/ui/src/screen.ts"]["through"] == [
+        "packages/ui/src/index.ts",
+        "packages/ui/src/all.ts",
+    ]
+    assert "packages/ui/src/app.ts" not in {c["locator"] for c in result["consumers"]}
+
+
 def test_runtime_http_consumers_cross_languages_and_units(mono):
     conn, scope = mono
     found, result = _found(conn, scope, "services/orders/src/application/api.py")

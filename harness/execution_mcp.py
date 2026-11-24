@@ -18,6 +18,14 @@ TOOL_HELP = {
         "Explain an assertion using its bundle_hash and assertion_id. Rechecks current "
         "authority and source evidence; stale or revoked access can refuse explanation."
     ),
+    "knowledge_consumers": (
+        "Who consumes a target: a repository path, directory, dotted Python module or "
+        "endpoint (endpoint:/path). Returns static importers, including transitive consumers "
+        "through re-exporting modules such as index.ts barrels (relation "
+        "imports-via-reexport with the through chain), and runtime HTTP callers, each with "
+        "its evidence span; unresolvable layout is reported as a gap. No result is not proof "
+        "of no consumer."
+    ),
     "read_file": (
         "Read an authorized confined source or issued resource using path and optional offset "
         "and limit. Ordinary source pages include stable full-source SHA256/version up to the "
@@ -123,6 +131,13 @@ SCHEMAS = {
     ),
     "knowledge_explain": _schema(
         {"bundle_hash": STRING, "assertion_id": STRING}, ["bundle_hash", "assertion_id"]
+    ),
+    "knowledge_consumers": _schema(
+        {
+            "target": {"type": "string", "maxLength": 1024},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+        },
+        ["target"],
     ),
     "read_file": _schema({"path": STRING, "offset": INTEGER, "limit": INTEGER}, ["path"]),
     "apply_patch": _schema(

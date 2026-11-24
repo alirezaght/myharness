@@ -85,6 +85,20 @@ def test_read_only_registration_is_own_observation_not_writer_admission(operatio
     )
 
 
+def test_knowledge_consumers_tool_answers_who_imports_a_module(operations):
+    """#31: knowledge_consumers sits next to knowledge_query for native agents."""
+    operation, supervisor, controller, _, _, _, _ = operations
+    root = Path(operation.envelope["repository"])
+    (root / "client.py").write_text("from service import serve\n")
+    subprocess.run(["git", "-C", str(root), "add", "client.py"], check=True)
+    seeded(operations)
+    reader = supervisor | {"thread_id": "consumer-reader", "role": "al-scout"}
+    result = operation.dispatch(reader, "knowledge_consumers", {"target": "service.py"})
+    assert [c["locator"] for c in result["consumers"]] == ["client.py"]
+    with pytest.raises(ValueError):
+        operation.dispatch(reader, "knowledge_consumers", {"target": "service.py", "x": 1})
+
+
 def test_dispatcher_receipts_identify_each_exact_query_and_explanation(operations):
     operation, supervisor, controller, _, _, _, _ = operations
     seeded(operations)
