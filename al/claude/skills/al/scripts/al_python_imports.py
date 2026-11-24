@@ -39,9 +39,22 @@ def _analyze(facts,scan):
             facts['enumeration']['gaps'].append(gap('unsupported-shared-language',path,'the repository contract cannot prove impact for this non-Python source class',unit['id']))
         else:
             uncertainties.append({'code':'uncertain-language-impact','unit':unit['id'],'path':path,'location':None,'target':None,'reason':'non-Python dependency analysis is unsupported; all enumerated services require verification'})
+    # The owning unit of a source: the deepest unit holding it under one of its source roots,
+    # the first such unit in unit order on a tie. Found by ancestor lookup over the source roots
+    # (O(path depth) per source) instead of testing every unit and root against every source.
+    order={u['id']:index for index,u in enumerate(units.values())}
+    depth={u['id']:unit_depth(u['path']) for u in units.values()}
+    by_root=defaultdict(list)
+    for u in units.values():
+        for r in u['source_roots']:by_root[r].append(u)
     def owner(path):
-        candidates=[u for u in units.values() if any(within(r,path) for r in u['source_roots']) and within(u['path'],path)]
-        return max(candidates,key=lambda u:unit_depth(u['path'])) if candidates else None
+        parts=path.split('/')
+        found={}
+        for prefix in ['.',*('/'.join(parts[:i]) for i in range(1,len(parts)+1))]:
+            for u in by_root.get(prefix,()):
+                if within(u['path'],path):found[u['id']]=u
+        if not found:return None
+        return max(sorted(found.values(),key=lambda u:order[u['id']]),key=lambda u:depth[u['id']])
     for snapshot,files in [('base',scan.base),('current',scan.files)]:
         for path in files:
             if not path.endswith('.py'):continue
@@ -298,12 +311,34 @@ def source_events(scan,records):
     for (s,p),(_,_,key) in zip(order,rows):yield (s,p),events[index.encode(key)]
 
 
+# Reference runs this process already read from or wrote to a fact store, by store directory
+# and blob sha256 (content addressed): the artifact and boundary consumer passes of one
+# inventory read the same blobs (#35). A disabled store keeps nothing.
+_RUNS={}
+_RUNS_BYTES=[0]
+RUNS_LIMIT=256*1024*1024
+
+
 def _reference_runs(scan,rows):
     """{sha256: runs} for (files, path, sha256) rows: al_blob_analysis.reference_runs per blob."""
-    found=_blob_facts(scan,'reference-runs',[(f,p,[sha]) for f,p,sha in rows],
-                      lambda key,data:('reference_runs',(data,)),lambda runs:runs.decode('latin-1'),compress=True)
     import al_analysis_index as index
-    return {sha:found[index.encode([sha])].encode('latin-1') for _,_,sha in rows}
+    target=index.store(_root(scan))
+    known=_RUNS.setdefault(target.directory,{}) if target is not None else {}
+    wanted=[(f,p,sha) for f,p,sha in rows if sha not in known]
+    out={}
+    if wanted:
+        found=_blob_facts(scan,'reference-runs',[(f,p,[sha]) for f,p,sha in wanted],
+                          lambda key,data:('reference_runs',(data,)),lambda runs:runs.decode('latin-1'),compress=True)
+        for _,_,sha in wanted:
+            out[sha]=found[index.encode([sha])].encode('latin-1')
+        if target is not None:
+            for sha,runs in out.items():
+                if _RUNS_BYTES[0]+len(runs)>RUNS_LIMIT:
+                    _RUNS.clear();_RUNS_BYTES[0]=0;known=_RUNS.setdefault(target.directory,{})
+                known[sha]=runs;_RUNS_BYTES[0]+=len(runs)
+    for _,_,sha in rows:
+        if sha not in out:out[sha]=known[sha]
+    return out
 
 
 def _referencing_many(scan,paths,stage='inventory-references'):

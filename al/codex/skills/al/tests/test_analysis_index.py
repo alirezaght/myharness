@@ -65,6 +65,7 @@ def _forget_process_state():
     index.reset()
     import al_python_imports as imports
     imports.GRAPHS.clear()
+    imports._RUNS.clear()
 
 
 def test_warm_facts_are_byte_identical_to_a_cold_disabled_run_across_changes(repo, monkeypatch):
@@ -340,3 +341,32 @@ def test_reference_runs_answer_every_safe_token_like_the_bytes():
             token = bytes(rng.choice(alphabet) for _ in range(rng.randint(1, 4)))
             if blob.token_safe(token):
                 assert (token in data) == (token in runs), (data, token)
+
+
+def test_source_owners_are_the_deepest_unit_holding_them_under_a_source_root(repo):
+    """Ancestor lookup of owning units (#35) equals testing every unit and source root."""
+    _fixture(repo)
+    unit(repo, 'packages/shared/nested', 'VALUE = 2\n')
+    put(repo, 'scripts/tool.py', 'import common\n')
+    from al_repository_facts import within, unit_depth
+    base = S.git_bytes('rev-parse', 'HEAD', root=repo).decode().strip()
+    facts = F.collect(repo, base_oid=base, paths=['packages/shared/src/common.py'], opaque=set())
+    units = facts['units']
+    membership = {(row[0], row[1]): row[2] for row in facts['dependencies']['source_membership']}
+    assert membership
+    for (snapshot, path), owner in membership.items():
+        candidates = [u for u in units if any(within(r, path) for r in u['source_roots']) and within(u['path'], path)]
+        assert owner == max(candidates, key=lambda u: unit_depth(u['path']))['id'], path
+
+
+def test_reference_runs_loaded_once_per_process_equal_the_store(repo, monkeypatch):
+    _fixture(repo)
+    first = _collect(repo, paths=('services/a/data/rows.json',))
+    import al_python_imports as imports
+    assert imports._RUNS
+    # A new question about the same blobs (other literal-reference tokens) reads no runs again.
+    calls = _counting(monkeypatch)
+    second = _collect(repo, paths=('services/b/src/reader.py',))
+    assert calls['runs'] == 0
+    assert first == _cold(repo, monkeypatch, paths=('services/a/data/rows.json',))
+    assert second == _cold(repo, monkeypatch, paths=('services/b/src/reader.py',))
