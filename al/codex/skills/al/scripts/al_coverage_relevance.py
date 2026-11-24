@@ -75,6 +75,97 @@ def _owner(facts, path):
     return max(owners, key=unit_depth) if owners else None
 
 
+# Gaps that concern the observation itself or a governing rule of the task, never one
+# unit's checks: they stay in scope whatever the change reaches.
+ALWAYS_IN_SCOPE = {"torn-capture", "torn-scan", "required-rule-boundary"}
+
+
+def change_reach(facts, question):
+    """Paths and units a change actually reaches.
+
+    The changed, anticipated and selected-directory paths, their literal dependency closure
+    (affected source paths), the units owning any of them, and the literally affected and
+    policy-selected units. Dependency uncertainty widens which checks run (an exhaustive
+    selection), not which coverage gaps block: a gap in a unit reached only through an
+    unknown relationship is an unverified check, recorded as a verification note."""
+    touched = {
+        *question["changed_paths"],
+        *question.get("anticipated_paths", []),
+        *question.get("directory_paths", []),
+    }
+    deps = facts["dependencies"]
+    # The literal closure, not the question's coverage inputs: those also hold every source
+    # of a service selected only through dependency uncertainty.
+    paths = touched | set(deps.get("affected_source_paths", []))
+    by_path = {u["path"].rstrip("/") or ".": u["id"] for u in facts["units"]}
+
+    def owner(path):
+        parts = path.split("/")
+        for index in range(len(parts), 0, -1):
+            found = by_path.get("/".join(parts[:index]))
+            if found is not None:
+                return found
+        return by_path.get(".")
+
+    units = {owner(p) for p in paths} - {None}
+    units |= set(deps.get("known_affected", [])) | set(deps.get("policy_selection", []))
+    prefixes = set()
+    for path in paths:
+        parts = path.split("/")
+        prefixes.update("/".join(parts[:index]) for index in range(1, len(parts) + 1))
+    return {"paths": paths, "prefixes": prefixes, "units": units, "owner": owner}
+
+
+def _reaches(reach, path):
+    """Whether a path is, contains, or lies inside a reached path."""
+    if path in {".", ""} or "." in reach["paths"]:
+        return True
+    if path in reach["prefixes"]:
+        return True
+    parts = path.split("/")
+    return any("/".join(parts[:index]) in reach["paths"] for index in range(1, len(parts)))
+
+
+# Structure gaps that cannot conceal a consumer of the change: links and gitlinks (whose
+# literal consumers are observed), directories without any supported language or manifest,
+# and CI job universes (unverified checks). Layout, manifest and contract gaps that leave a
+# unit's imports unknown keep their conservative relevance: they could hide a consumer.
+SCOPED_STRUCTURE = BOUNDARIES | {"unclassified-unit", "unknown-ci-inventory", "unsupported-ci-provider"}
+
+
+def in_reach(record, facts, question, reach, kind="check"):
+    """Whether a relevant coverage gap lies in the change's scope (blocks) or outside it (a note)."""
+    code = record.get("code")
+    path = record.get("path") or "."
+    if code in ALWAYS_IN_SCOPE:
+        return True
+    if kind == "check" or code in UNIT_CHECK_GAPS:
+        # A unit's own check-discovery gap is an unverified check of that unit only.
+        unit = record.get("unit")
+        if unit in {u["id"] for u in facts["units"]}:
+            return unit in reach["units"] or (path != "." and _reaches(reach, path))
+        return _reaches(reach, path)
+    if code not in SCOPED_STRUCTURE:
+        return True
+    if path != "." and _reaches(reach, path):
+        return True
+    if code == "unsupported-ci-provider":
+        # Its path is the provider's definition pattern.
+        from fnmatch import fnmatchcase
+
+        return any(fnmatchcase(p, path) for p in reach["paths"])
+    if code in BOUNDARIES:
+        # A link or gitlink is reached only through a selected path, a governing rule,
+        # or a literal consumer inside the reached scope.
+        governing = {r["path"] for r in question.get("governing_source_refs", [])}
+        consumers = facts["dependencies"].get("boundary_consumers", {}).get(path, [])
+        return path in governing or any(
+            c in reach["paths"] or reach["owner"](c) in reach["units"] for c in consumers
+        )
+    # A repository-wide gap of unknown extent stays conservative.
+    return path == "."
+
+
 def impact(record, facts, question):
     units = {u["id"] for u in facts["units"]}
     owner = record.get("unit")
@@ -203,6 +294,7 @@ def project_task(facts, ci=None, question=None):
     deferred = []
     observations = []
     evidence = {u["id"] for u in facts["units"]} | {g.get("path", ".") for _, g in records}
+    reach = change_reach(facts, question)
     for category, record in records:
         identifier = record_id({"category": category, **record})
         observed = impact(record, facts, question)
@@ -210,7 +302,18 @@ def project_task(facts, ci=None, question=None):
         observations.append(
             {"record_id": identifier, "kind": category, "record": record, "impact": observed}
         )
-        if intersects(observed, question):
+        if intersects(observed, question) and not in_reach(record, facts, question, reach, category):
+            # Outside the paths and units the change reaches: a verification note that
+            # remains a visible global diagnostic, never a task obligation.
+            deferred.append(
+                {
+                    "record_id": identifier,
+                    "reason": "outside-change-reach",
+                    "proof_refs": [{"path": record.get("path") or ".", "selector": "change-reach"}],
+                    "comparison_basis": "changed-path-literal-dependency-closure",
+                }
+            )
+        elif intersects(observed, question):
             relevant.append(identifier)
         else:
             deferred.append(

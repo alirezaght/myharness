@@ -162,26 +162,44 @@ def _planning_issue(st, admission, recovery):
     ]
 
 
+RECONCILE_STEPS = (
+    "1. `inspect --expect-run <run-id> --expect-repo <repo> --sections attribution` prints the current "
+    "reconciliation_binding; 2. write a task-attribution-reconciliation-request-v1 file "
+    "{schema_version: 1, kind, binding: <reconciliation_binding>, paths: <the overlapping paths, sorted>, "
+    "source, reason} after inspecting each path's content; 3. `task reconcile-attribution --file <request.json>`. "
+    "Reconciliation keeps the content as an external contribution that review and gates still verify."
+)
+
+
 def remaining(st):
-    from al_task_attribution import classify_changes
+    from al_task_attribution import explain_ambiguity
 
     result = []
     if "task_attribution" in st:
-        classification = classify_changes(st)
+        explained = explain_ambiguity(st)
+        classification = explained["classification"]
         if classification["ambiguous"]:
+            overlaps = explained["overlaps"]
+            named = "; ".join(
+                row["path"]
+                + (" (writers: " + ", ".join(row["writers"]) + ")" if row["writers"] else "")
+                + (": " + " | ".join(row["causes"]) if row["causes"] else "")
+                for row in overlaps
+            )
             result.append(
                 issue(
                     "ATTRIBUTION_AMBIGUOUS",
                     "attribution",
                     "candidate",
-                    "Concurrent content attribution requires explicit reconciliation.",
+                    "Content attribution overlaps at " + named + ". Explicit reconciliation is required.",
                     supply(
                         "task-attribution-reconciliation-request-v1",
-                        "Supply a current content-bound overlap decision; never narrow unknown ownership.",
+                        "Supply a current content-bound overlap decision; never narrow unknown ownership. "
+                        + RECONCILE_STEPS,
                         "task.reconcile-attribution",
-                        {},
+                        {"paths": classification["ambiguous"]},
                     ),
-                    classification,
+                    dict(classification, overlaps=overlaps),
                 )
             )
     for blocker in st.get("integration", {}).get("blockers", {}).values():

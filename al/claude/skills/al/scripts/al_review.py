@@ -64,6 +64,9 @@ def cmd_review_start(a,sid):
     Behavior.initialize(st,st['review'])
     st['findings']=dict(NO_FINDINGS); st['review_status']='checking'
     al_store.set_phase(st,'REVIEW'); al_store.save(sid,st); print(render_line(st))
+    from al_service_coverage import coverage_notes
+    notes=coverage_notes(st)
+    if notes:print('AL · '+str(len(notes))+" coverage gap(s) outside the change's reach recorded as verification notes, not blockers (`gates status` coverage_notes)")
 
 def cmd_packet(a,sid):
     st=al_store.load(sid); r=st.get('review')

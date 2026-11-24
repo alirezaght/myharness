@@ -200,7 +200,8 @@ def test_recovery_marker_survives_real_phase_advancement(cli, tmp_path, repo, mo
 def test_actual_incomplete_manifest_permits_scoped_authoring(cli, tmp_path, repo):
     from test_service_coverage import seed, start, discover, plan, put, unit
     seed(repo)
-    unit(repo, 'services/b', check=False)
+    # services/a literally imports the changed module, so its missing check is in scope.
+    unit(repo, 'services/a', 'import common\n', check=False)
     put(repo, 'packages/shared/src/common.py', '__import__(unknown_name)\n')
     start(cli)
     _, manifest = discover(cli, tmp_path, ['packages/shared/src/common.py'])

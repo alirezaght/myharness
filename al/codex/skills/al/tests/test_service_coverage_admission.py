@@ -32,9 +32,14 @@ def test_manifest_tampering_refuses_without_state_mutation(cli,repo,tmp_path,sta
 
 
 def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proof(cli,repo,tmp_path,state_file):
-    seed(repo);unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
+    # services/a literally imports the changed module (in scope); services/b is selected only
+    # through dependency uncertainty, so its missing check is a verification note (#15).
+    seed(repo);unit(repo,'services/a','import common\n',check=False);unit(repo,'services/b',check=False)
+    put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n');start(cli)
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py']);a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete' and a['enumeration']['status']=='complete'
+    assert {g['unit'] for g in a['gaps']}=={'services/a'}
+    assert 'services/b' in {g['unit'] for g in a['coverage_notes']}
     plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
     # Incomplete coverage is verification debt: the Architect plan is admitted and
     # every reconstructed gap is recorded as an implementation-readiness obligation.
@@ -45,7 +50,9 @@ def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proo
     invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
     st=json.loads(cli('show')[1])
     assert st['proof_admission']['status']=='admitted' and st['phase']=='PLANNING'
-    assert any(o.startswith('coverage incomplete: missing-check: services/b') for o in st['implementation_readiness']['obligations'])
+    obligations=st['implementation_readiness']['obligations']
+    assert any(o.startswith('coverage incomplete: missing-check: services/a') for o in obligations)
+    assert not any('services/b' in o for o in obligations)
     # The admitted plan leaves the run where an ordinary scoped writer starts directly:
     # writer start records the documented PLANNING -> IMPLEMENTATION edge itself.
     code,out,err=invoke(cli,'writer','start','--id','scoped','--role','al-engineer','--files','packages/shared/src/common.py')
@@ -57,11 +64,18 @@ def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proo
     invoke(cli,'phase','VERIFICATION')
     before=state_file().read_bytes()
     code,out,err=invoke(cli,'review-start',ok=False)
-    # Final proof still enforces the recorded coverage debt and names the next command.
-    assert 'coverage incomplete' in str(code)+out+err
-    assert 'gates discover' in str(code)+out+err
+    # Final proof still enforces the in-scope coverage debt: it names the uncovered unit, its
+    # repair and the exact rediscovery commands (#14 item 4).
+    message=str(code)+out+err
+    assert 'coverage incomplete' in message and 'services/a' in message
+    assert 'missing-check at unit services/a' in message
+    assert 'gates discover --extend current --paths-file' in message and 'gates plan --file' in message
+    assert 'services/b' not in message
     assert state_file().read_bytes()==before
     invoke(cli,'approved',ok=False)
+    status=json.loads(cli('gates','status')[1])
+    assert any('services/b' in note for note in status['coverage_notes'])
+    assert not any('services/b' in blocker for blocker in status['coverage_blockers'])
 
 
 def test_designer_route_writer_refusal_names_the_next_phase_command(cli,repo,tmp_path,state_file):
@@ -101,6 +115,55 @@ def test_untouched_unit_check_gaps_are_not_task_obligations(repo):
     widened=Coverage.assess(_facts_with_unit_gaps(repo,['packages/shared/src/common.py']))
     assert widened['selected_services']==['services/a']
     assert {g['unit'] for g in widened['gaps'] if g['code']=='package-execution-pending'}=={'services/a'}
+
+
+def _structure_gaps(repo,paths):
+    """Repository-wide structure a large monorepo carries regardless of the change (#15)."""
+    facts=_facts_with_unit_gaps(repo,paths)
+    facts['enumeration']['gaps']+=[
+        {'code':'symlink-boundary','path':'tools/skills/linked','reason':'symlinked directory','unit':None},
+        {'code':'unclassified-unit','path':'tools/pkg','reason':'unit directory has no supported language/manifest','unit':'tools/pkg'},
+        {'code':'unknown-ci-inventory','path':'.gitlab-ci.yml','reason':'CI definition-world limit','unit':None}]
+    facts['unsupported_boundaries'].append({'code':'opaque-boundary','path':'vendor/child','reason':'opaque child content cannot be enumerated','unit':None})
+    return facts
+
+
+def test_structure_gaps_outside_the_change_reach_are_notes_not_obligations(repo):
+    import al_service_coverage as Coverage
+    seed(repo);put(repo,'packages/shared/src/common.py','__import__(unknown_name)\n')
+    facts=_structure_gaps(repo,['packages/shared/src/common.py'])
+    # Dependency uncertainty selects every potential service for checks to run ...
+    assert facts['dependencies']['uncertainties']
+    assessment=Coverage.assess(facts)
+    assert set(assessment['selected_services'])>={'services/a','services/b'}
+    # ... but only the literally reached unit's gap blocks; the rest are verification notes.
+    blocking={(g['code'],g.get('unit') or g['path']) for g in assessment['gaps']}
+    notes={(g['code'],g.get('unit') or g['path']) for g in assessment['coverage_notes']}
+    assert ('package-execution-pending','services/a') in blocking
+    assert {('package-execution-pending','services/b'),('symlink-boundary','tools/skills/linked'),
+            ('unclassified-unit','tools/pkg'),('unknown-ci-inventory','.gitlab-ci.yml'),
+            ('opaque-boundary','vendor/child')}<=notes
+    assert not blocking&notes
+    assert assessment['global_inventory']['status']=='incomplete'
+    rendered=Coverage.notes({'assessment':assessment})
+    assert rendered and all(n.startswith('coverage note (outside the change') for n in rendered)
+
+
+def test_structure_gaps_the_change_reaches_still_block(repo):
+    import al_service_coverage as Coverage
+    seed(repo)
+    # A changed path inside an unclassified directory, a CI file the change edits, and a link a
+    # reached unit literally consumes are in scope.
+    facts=_structure_gaps(repo,['services/a/src/app.py','tools/pkg/run.sh','.gitlab-ci.yml'])
+    facts['dependencies'].setdefault('boundary_consumers',{})['vendor/child']=['services/a/src/app.py']
+    blocking={(g['code'],g.get('unit') or g['path']) for g in Coverage.assess(facts)['gaps']}
+    assert {('unclassified-unit','tools/pkg'),('unknown-ci-inventory','.gitlab-ci.yml'),
+            ('opaque-boundary','vendor/child'),('package-execution-pending','services/a')}<=blocking
+    assert ('symlink-boundary','tools/skills/linked') not in blocking
+    assert ('package-execution-pending','services/b') not in blocking
+    guidance=Coverage.coverage_guidance([g for g in Coverage.assess(facts)['gaps'] if g['code']=='opaque-boundary'],{'discovery_mode':'bounded'})
+    assert 'opaque-boundary at path vendor/child' in guidance and 'run AL rooted in its target' in guidance
+    assert 'gates discover --extend current --paths-file <file containing []> --bounded' in guidance
 
 
 def test_runtime_consumer_outside_unit_layout_does_not_widen_coverage(repo):
@@ -343,9 +406,14 @@ def test_known_extra_unverified_job_does_not_hide_unknown_job_inventory(cli,repo
     invoke(cli,'approved',ok=False)
 
 
-def test_unsupported_ci_provider_blocks_even_without_selected_services(cli,repo,tmp_path):
+def test_unsupported_ci_provider_is_a_note_unless_the_change_edits_it(cli,repo,tmp_path):
+    # An unenumerable CI job universe is an unverified check: a verification note for a
+    # change elsewhere (#15), a blocking gap for a change to the CI definition itself.
     seed(repo);put(repo,'Jenkinsfile','pipeline {}\n');start(cli)
-    _,m=discover(cli,tmp_path,['docs/readme.md'])
+    _,m=discover(cli,tmp_path,['docs/readme.md']);a=m['service_coverage']['assessment']
+    assert not any(g['code']=='unsupported-ci-provider' for g in a['gaps'])
+    assert any(g['code']=='unsupported-ci-provider' for g in a['coverage_notes'])
+    _,m=discover(cli,tmp_path,['docs/readme.md','Jenkinsfile'])
     assert any(g['code']=='unsupported-ci-provider' for g in m['service_coverage']['assessment']['gaps'])
 
 

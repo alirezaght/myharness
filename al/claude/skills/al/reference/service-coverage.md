@@ -75,6 +75,25 @@ sources literally reference it are selected, and its `unclassified-runtime-consu
 diagnostic is a task obligation only when the task touches the consumer itself. A consumer
 referenced by another unowned file keeps the conservative uncertainty fallback.
 
+Unverified checks and unreachable structure are then scoped to the change's reach: its
+changed, anticipated and selected-directory paths, the literal dependency closure (the
+dependency analysis's affected source paths), the units owning any of them, and the literally
+affected and policy-selected units. A unit's own check-discovery gap (including a missing
+check binding) is in scope only when that unit is reached. A symlinked directory, gitlink or
+opaque boundary is in scope only when a reached path lies in it, a governing rule names it or
+a reached path or unit literally consumes it. An `unclassified-unit` directory, an
+`unknown-ci-inventory` CI definition and an `unsupported-ci-provider` definition are in scope
+only when the change touches them. Dependency uncertainty still selects every potential
+service for the checks that run (`exhaustive`), but a gap in a unit reached only through that
+uncertainty is an unverified check, not a safety gap. Out-of-scope gaps are deferred as
+`outside-change-reach`, listed in the assessment's `coverage_notes` (and `gates status`
+`coverage_notes`) and never block admission, final proof, review or approval. Layout,
+manifest and contract gaps that leave a unit's imports unknown could hide a consumer and keep
+their conservative relevance; torn captures, opaque governing rules and repository-wide gaps
+of unknown extent always stay in scope. A refusal names each in-scope gap with its repair and
+the rediscovery commands (`gates discover --extend current --paths-file <file containing []>`
+and `gates plan --file <manifest>`).
+
 Unconsumed narrative documentation has no generic runtime-data fallback. This is not a `docs/**`
 exclusion: actual prompt/resource consumers, source code, schemas, unknown data, service-owned
 inputs and governing policy still participate in dependency selection. A new consumer invalidates

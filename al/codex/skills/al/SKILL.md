@@ -100,6 +100,14 @@ required final proof alongside the work; do not ask the developer to waive it.
 instead of refusing. The first ordinary `writer start` records the PLANNING (or
 PSEUDOCODE) to IMPLEMENTATION edge itself; a Designer route records `phase PSEUDOCODE`
 first. Refusals on this path name the next supported command.
+Final proof, review and approval enforce unverified-check, link, unclassified-directory
+and CI-inventory gaps only where the change reaches (its paths, their units, the literal
+dependency closure and the links they consume); such gaps elsewhere, including units
+selected only through dependency uncertainty, are verification notes (`gates status`
+`coverage_notes`). A coverage refusal names each in-scope gap, its
+repair and the `gates discover --extend current` / `gates plan` commands. An
+`ATTRIBUTION_AMBIGUOUS` from `recovery next` names the paths, writers and causes and the
+`task reconcile-attribution` steps; staging or committing between writers is no overlap.
 Use [the detailed command workflow](reference/workflow.md) only for the operation
 being performed, and [gates](reference/gates.md) for task-relevant discovery and
 check planning. Preserve actual changed paths and root/shared obligations.

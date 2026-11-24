@@ -43,8 +43,11 @@ def check(st):
         return {'current':False,'reasons':['coverage capture unavailable: '+exc.reason],
                 'superseded':ref,'paths':[],'pathless':True}
     assessment=current['service_coverage'];projection=current['relevance_projection']
-    if assessment['gaps']:
-        reasons.append('task-relevant coverage incomplete; rediscover repository gates');pathless=True
+    # The assessment holds only gaps in the change's scope (gaps outside its reach are
+    # verification notes); each is named so the refusal says what is uncovered.
+    import al_service_coverage as Coverage
+    for gap in assessment['gaps']:
+        reasons.append('task-relevant coverage incomplete: '+Coverage.describe_gap(gap));pathless=True
     if projection['semantic_sha256']!=declaration['projection']['semantic_sha256']:
         reasons.append('task coverage requirements changed; rediscover repository gates');pathless=True
     if current['capture']['implementation_binding']!=declaration['capture']['implementation_binding']:
@@ -64,4 +67,4 @@ def check(st):
     for unit in set(current['units'])-set(manifest['units']):
         reasons.append('new touched unit requires replanning: '+unit);pathless=True
     return {'current':not reasons,'reasons':sorted(set(reasons)),'superseded':ref,
-            'paths':sorted(set(subjects)),'pathless':pathless}
+            'paths':sorted(set(subjects)),'pathless':pathless,'coverage_gaps':assessment['gaps']}

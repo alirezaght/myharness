@@ -275,3 +275,48 @@ def test_real_default_runtime_does_not_capture_its_own_publication(cli_process, 
     capture=A.read_json(snapshot['baseline_capture_ref'])
     assert all('/al-runtime/' not in r['path'] for r in capture['files'])
     assert (runtime/'.gitignore').read_text()=='*\n'
+
+
+def _commit(repo, message):
+    for args in (('add', '-A'), ('-c', 'user.name=test', '-c', 'user.email=test@example.invalid', 'commit', '-qm', message)):
+        subprocess.run(['git', *args], cwd=repo, check=True, capture_output=True)
+
+
+def test_committing_between_sequential_writers_is_not_an_overlap(cli, repo, state_file):
+    """Staging or committing a writer's result changes index/HEAD identity, never content."""
+    run(cli, 'start', '--spec', 'Sequential registered writers with commits in between stay attributed.')
+    st = state(state_file)
+    contribution(st, ['svc'], lambda: (repo/'svc/app.py').write_text('x = 2\n'), 'first')
+    _commit(repo, 'first writer')
+    contribution(st, ['svc'], lambda: (repo/'svc/app.py').write_text('x = 3\n'), 'second')
+    subprocess.run(['git', 'add', 'svc/app.py'], cwd=repo, check=True, capture_output=True)
+    result = T.classify_changes(st)
+    assert result['task_owned'] == ['svc/app.py']
+    assert not result['ambiguous'] and not result['externally_changed']
+    _commit(repo, 'second writer')
+    result = T.classify_changes(st)
+    assert result['task_owned'] == ['svc/app.py'] and not result['ambiguous']
+
+
+def test_ambiguity_names_paths_writers_causes_and_reconcile_command(cli, repo, state_file):
+    run(cli, 'start', '--spec', 'Explain every attribution overlap with its writers and causes.')
+    st = state(state_file)
+    contribution(st, ['svc'], lambda: (repo/'svc/app.py').write_text('x = 2\n'), 'first')
+    (repo/'svc/app.py').write_text('x = 3\n')
+    explained = T.explain_ambiguity(st)
+    assert explained['classification']['ambiguous'] == ['svc/app.py']
+    [row] = explained['overlaps']
+    assert row['path'] == 'svc/app.py' and row['writers'] == ['first']
+    assert row['causes'] and row['causes'][0].startswith('changed-after-writer')
+    import al_recovery_subjects as R
+    [issue] = [i for i in R.remaining(st) if i['code'] == 'ATTRIBUTION_AMBIGUOUS']
+    assert 'svc/app.py (writers: first)' in issue['reason'] and 'changed-after-writer' in issue['reason']
+    required = issue['recovery']['required_input']
+    assert required['operation'] == 'task.reconcile-attribution'
+    assert required['arguments'] == {'paths': ['svc/app.py']}
+    assert 'task reconcile-attribution --file' in required['description']
+    assert '--sections attribution' in required['description']
+    contribution(st, ['svc'], lambda: (repo/'svc/app.py').write_text('x = 4\n'), 'second')
+    [row] = T.explain_ambiguity(st)['overlaps']
+    assert row['writers'] == ['first', 'second']
+    assert any(c.startswith('changed-before-writer') and 'writer first' in c for c in row['causes'])

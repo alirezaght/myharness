@@ -453,7 +453,9 @@ review and approval. Planning metadata is never a developer approval question:
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
    Incomplete relevant coverage does not refuse admission: each reconstructed gap is
    recorded in `implementation_readiness.obligations` and enforced at final proof,
-   review and approval (whose refusal names `gates discover` / `gates plan`).
+   review and approval (whose refusal names each gap, its repair and the
+   `gates discover --extend current` / `gates plan` commands). Only gaps the change
+   reaches are obligations; the rest are verification notes ([service coverage](service-coverage.md)).
 5. Start the scoped writer. From PLANNING (no Designer) or PSEUDOCODE, the first
    ordinary `writer start` records the `phase IMPLEMENTATION` edge itself under the
    same guards; a Designer route records `phase PSEUDOCODE` before any writer.
@@ -871,6 +873,17 @@ names unresolved owned work or setup before the current planning requirement.
 A pending RR reassessment cannot replace planning admission: its accepting
 operation requires that same proof. Follow the actual planning packet, external
 Architect report and `planning admit` stages before recomputing RR guidance.
+
+`ATTRIBUTION_AMBIGUOUS` names each overlapping path, the registered writers that
+touched it and the cause: content changed before a writer started or after its last
+writer finished (an unregistered edit, formatter or generator), a writer that did not
+finish successfully, a task amendment during a writer, or a dirty/uninspectable gitlink
+child (not reconcilable). Attribution compares content and mode only: staging or
+committing a writer's result is never an overlap. After inspecting the content, take the
+`reconciliation_binding` from `inspect --sections attribution`, write a
+`task-attribution-reconciliation-request-v1` file with the exact overlapping paths, a
+source and a reason, and run `task reconcile-attribution --file <request.json>`; the
+content stays an external contribution that review and gates still verify.
 
 A phase-context diagnostic identifies the current phase instead of asking again
 for an already-ready specification. Inspect the existing guarded implementation

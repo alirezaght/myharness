@@ -164,7 +164,12 @@ def ready(st):
     currency=refresh(st)
     if not currency['current']:
         from al_recovery_guidance import refuse_guided
-        refuse_guided(st,'current gate obligations require replanning: '+str(currency['reasons']))
+        message='current gate obligations require replanning: '+str(currency['reasons'])
+        if currency.get('coverage_gaps'):
+            import al_artifacts as A
+            from al_service_coverage import coverage_guidance
+            message+='\n'+coverage_guidance(currency['coverage_gaps'],A.read_json(st['gate_manifests'][-1]))
+        refuse_guided(st,message)
     from al_service_coverage import require_ready
     require_ready(st,current=True)
     if st.get('gate_recovery'):
