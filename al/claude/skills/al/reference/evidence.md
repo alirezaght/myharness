@@ -19,6 +19,19 @@ command string is inferred or split.
 
 This records why a current rerun replaces obsolete evidence; it does not resurrect old receipts, clear review findings or retire gates. Evidence status and inspection expose the relation. Area/repro readiness still uses the current command and latest-attempt ledger rules. `evidence retire` remains a distinct mistaken-plan operation.
 
+`evidence status` marks a FAIL, INFRA or TORN entry `superseded by later PASS E<n> (same command and scope)` when a newer run of the identical command and scope is the area's current VALID PASS, for example a timeout on a busy host that passed on an immediate re-run. The mark is display only; the latest-attempt rule already makes that PASS the area's evidence, and `evidence supersede` still records an audited reason.
+
+### Sharded areas
+
+A suite that CI runs in shards, or that cannot run as one local process, is planned as shards:
+
+```sh
+"${STATE[@]}" evidence plan --area e2e --shards 4 --scope apps/web -- npx playwright test --shard={shard}/{shards}
+"${STATE[@]}" evidence run --area e2e.shard-1-of-4
+```
+
+`--shards N` plans N ordinary checks `AREA.shard-I-of-N`, replacing `{shard}` with I and `{shards}` with N in the command; the command must contain `{shard}`. Each shard is run, reused, superseded and invalidated like any planned check. The area is evidenced by the set of its current shard PASSes: `evidence require --areas e2e` and `--needs e2e` expand to every shard, `evidence status` prints `sharded area e2e · K/N shards VALID`, `evidence run --area e2e` names the shard commands, and `evidence retire --area e2e` retires all shards. Planning the area again (sharded or not) replaces its previous shard set; earlier runs stay in the ledger.
+
 Package-backed hooks use source-selected locked setup in disposable checkout storage. Setup records command, input hashes, executable identity, timing, outcome and cleanup before the hook. Missing tools, failed install and unsafe changed inputs are setup INFRA; code has not passed. Hooks then execute against prepared dependencies. Local environment paths and caches stay inside owned temporary storage; no global installs, generated locks or working-tree dependency links are used. General checkout symlink guards remain strict; only the owned venv link to the independently bound running interpreter is materialized as a copy.
 
 Diagnostic status commands can exit zero while displaying FAIL or BLOCKED. Execution/refusal commands return nonzero when they do not succeed. Actual provider pending/manual/canceled results are recorded as unsuccessful verification, never code PASS or an invented provider test failure.

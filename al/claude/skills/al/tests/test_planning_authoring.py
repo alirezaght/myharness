@@ -73,7 +73,8 @@ def test_source_movement_retains_issued_report_but_cannot_admit_it(cli, repo, tm
     sid = pending(cli, repo, tmp_path, monkeypatch)
     packet = json.loads(ok(cli, "planning", "packet")[1])
     start_writer(cli, tmp_path)
-    (repo / "svc/app.py").write_text("changed_after_planning = 42\n")
+    # Movement outside the registered writer's own files is not attributable to it.
+    (repo / "external-change.txt").write_text("changed_after_planning = 42\n")
     report, path, saved = retain(cli, tmp_path, packet)
     immutable = Path(saved["report"]["stored_path"]).read_bytes()
     assert saved["authoring"]["source_currency"] == "issued-observation-only"

@@ -100,7 +100,11 @@ def ready(st, *, authoring=False):
     if missing is not None:
         refuse(missing[1])
 
-def packet(st, *, current_source=True):
+def packet(st, *, current_source=True, moved=None):
+    """The issued packet, checked against current source unless historical.
+
+    Source that moved only through finished registered writers' own files (attributed work that
+    overlapped authoring) stays admissible; those paths are appended to `moved` when given."""
     current = st.get("planning_authorship")
     if not isinstance(current, dict) or not {"packet", "attempt"} <= current.keys():
         refuse("no issued Architect planning packet")
@@ -124,10 +128,15 @@ def packet(st, *, current_source=True):
     observed = J.read(value["source_observation"])
     historical = st["proof_admission"]["status"] == "admitted" or not current_source
     if not historical:
-        from al_task_attribution import observe
+        from al_task_attribution import observe, writer_confined_movement
 
-        if observed != observe(st, expected=observed):
-            refuse("planning source observation changed; issue a new bound packet")
+        now = observe(st, expected=observed)
+        confined = [] if observed == now else writer_confined_movement(st, observed, now)
+        if confined is None:
+            refuse("planning source observation changed outside the finished registered writers' own "
+                   "files; issue a new bound packet (`planning packet`, then `planning rebind`)")
+        if moved is not None:
+            moved.extend(confined)
     occurrence = value["binding"]["planning_occurrence"] if historical else N.occurrence(st)
     expected = binding(st, J.digest(observed), occurrence,
                        value["binding"]["document_hash"] if historical else None)
@@ -159,6 +168,9 @@ def authoring_view(st):
 
 
 def validate_report(st, report, current, contents, attempt, report_ref, *, current_implementation=True):
+    if isinstance(report, dict) and Template.placeholders(report.get("invocation_id")):
+        refuse("Architect planning report invocation_id is still a FILL: placeholder; pass the Architect "
+               "invocation id the host reported with `planning report --file FILE --invocation-id ID`")
     J.closed(report, REPORT, "Architect planning report")
     J.closed(
         report["specification"],
@@ -308,6 +320,24 @@ def supplement_discovery(st, report, refs, resolved):
     return {"discovery_refs": supplied, "resolved_uncertainties": remaining}
 
 
+def stamp_invocation(report, value):
+    """Set the report's invocation_id to the supervisor-observed Architect invocation.
+
+    A native subagent cannot see its own agent id, so the supervisor, which dispatched it and
+    received the id, stamps it at `planning report --invocation-id`. Returns the audit record
+    (stamped and authored values), or None when no stamp is supplied."""
+    if value is None:
+        return None
+    value = value.strip()
+    if not value or Template.placeholders(value):
+        refuse("--invocation-id needs the Architect invocation id the host reported")
+    if not isinstance(report, dict):
+        return None
+    authored = report.get("invocation_id")
+    report["invocation_id"] = value
+    return {"invocation_id": value, "authored_invocation_id": authored}
+
+
 def cmd_report(a, sid):
     st = al_store.load(sid)
     ready(st, authoring=True)
@@ -319,6 +349,7 @@ def cmd_report(a, sid):
         # Identity fields the template pre-fills are restored when omitted, refused when changed.
         Template.restore_fixed(report, Template.template(current["packet"], contents))
     authored = copy.deepcopy(report)
+    stamp = stamp_invocation(report, getattr(a, "invocation_id", None))
     supplement = supplement_discovery(st, report, a.discovery_ref or [], a.resolve_uncertainty or [])
     if "report" in current:
         # An identical (canonical JSON) resubmit is an idempotent success; any other is refused.
@@ -337,6 +368,14 @@ def cmd_report(a, sid):
         from al_planning_rebind import revalidation
         packet(st)
         assessment = J.loads(Path(a.revalidation_file).read_bytes())
+        if stamp and isinstance(assessment, dict):
+            # The stamped invocation and report hash replace placeholders or the authored values.
+            if (assessment.get("invocation_id") in (None, stamp["authored_invocation_id"])
+                    or Template.placeholders(assessment.get("invocation_id"))):
+                assessment["invocation_id"] = report["invocation_id"]
+            if (assessment.get("report_sha256") in (None, J.digest(authored))
+                    or Template.placeholders(assessment.get("report_sha256"))):
+                assessment["report_sha256"] = J.digest(report)
         receipt = revalidation(st, current, report, a.rebind_receipt, assessment)
     reference = J.snapshot(sid, report, "architect-planning-report-v1", a.file)
     materialized = validate_report(st, report, current, contents, attempt, reference)
@@ -344,10 +383,14 @@ def cmd_report(a, sid):
         sid, materialized, "behavior-obligations-v1", "admitted Architect report materialization"
     )
     current.update(report=reference, obligations=obligations)
-    if supplement:
+    authored_ref = None
+    if supplement or stamp:
         # The Architect's own bytes stay retained next to what the supervisor added.
-        current["supervisor_discovery"] = {
-            **supplement, "authored_report": J.snapshot(sid, authored, "architect-planning-report-authored-v1", a.file)}
+        authored_ref = J.snapshot(sid, authored, "architect-planning-report-authored-v1", a.file)
+    if supplement:
+        current["supervisor_discovery"] = {**supplement, "authored_report": authored_ref}
+    if stamp:
+        current["supervisor_invocation"] = {**stamp, "authored_report": authored_ref}
     if receipt:
         current['rebind_validation'] = {'receipt': receipt, 'revalidation': J.snapshot(
             sid, assessment, 'planning-rebind-revalidation-v1', a.revalidation_file)}
@@ -389,7 +432,12 @@ def cmd_admit(a, sid):
     from al_verification_authority import publish
 
     authority = publish(st, sid, current["obligations"])
-    packet(st)
+    moved = []
+    packet(st, moved=moved)
+    if moved:
+        # Audit: the report was authored against the issued observation while registered writers
+        # worked; these paths moved only through their attributed, successful contributions.
+        current["admitted_writer_movement"] = sorted(set(moved))
     st["proof_admission"].update(
         status="admitted",
         authority=authority,
@@ -403,7 +451,8 @@ def cmd_admit(a, sid):
                                       observation=J.read(current['packet'])['source_observation'])
     N.validate(st)
     al_store.save(sid, st)
-    print(J.raw({"status": "admitted", "authority": authority}).decode())
+    print(J.raw({"status": "admitted", "authority": authority,
+                 **({"writer_movement": current["admitted_writer_movement"]} if moved else {})}).decode())
 
 
 def register(sub):
@@ -422,6 +471,9 @@ def register(sub):
                         "--discovery-ref resolves (for example 'discovery_refs empty: read-only role')")
     p.add_argument("--rebind-receipt")
     p.add_argument("--revalidation-file")
+    p.add_argument("--invocation-id", metavar="ID",
+                   help="the Architect invocation id the host reported to the supervisor (for example the "
+                        "subagent/agent id); stamped into invocation_id, the authored value is retained")
     p.set_defaults(fn=cmd_report)
     from al_planning_rebind import cmd_rebind
     p = children.add_parser('rebind')

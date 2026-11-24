@@ -547,7 +547,8 @@ def test_changed_unmapped_ci_semantics_is_pathless_even_on_a_planned_path(cli,re
     assert not Refresh.refreshable(state,result)
 
 
-def test_docs_scope_real_checks_and_bound_behavior_unlock_review(cli,repo,tmp_path,state_file):
+@pytest.mark.parametrize('compact',[False,True])
+def test_docs_scope_real_checks_and_bound_behavior_unlock_review(cli,repo,tmp_path,state_file,compact):
     import sys
     from launcher_context import observe_behavior
     from al_behavior_observations import behavior_gaps
@@ -573,9 +574,17 @@ def test_docs_scope_real_checks_and_bound_behavior_unlock_review(cli,repo,tmp_pa
     assert 'missing current behavior scenario' in str(code)+out+err
     assert state_file().read_bytes()==before
     directory=tmp_path/'behavior';directory.mkdir()
-    observe_behavior(cli,path='docs/policy.json',directory=directory)
+    published=observe_behavior(cli,path='docs/policy.json',directory=directory,compact=compact)
     state=json.loads(cli('show')[1])
     assert not behavior_gaps(state)
+    if compact:
+        # One file, every scenario; AL derived the source hashes and per-item evidence itself.
+        import hashlib
+        assert len(published['artifacts'])==len(state['behavior_observations'])>=1
+        stored=json.loads(open(state['behavior_observations'][0]['stored_path']).read())
+        digest_=hashlib.sha256((repo/'docs/policy.json').read_bytes()).hexdigest()
+        assert {row['source_sha256'] for row in stored['assertion_locations']}=={digest_}
+        assert all(row['evidence_ids']==stored['evidence_ids'] for row in stored['observed_outcomes'])
     assert state['proof_admission']['status']=='admitted'
     assert Currency.check(state)['current']
     invoke(cli,'review-start')

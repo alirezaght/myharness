@@ -405,6 +405,17 @@ proposal/specification, provenance for acceptance, constraints, explicit ticket
 presence or absence, stable criterion IDs, and invariant IDs. A bare assent such
 as “yes” must point to the accepted proposal; it is not a specification. Start with
 `"${STATE[@]}" start --package-file <json> --review-mode task|whole-mr --target <rev>`.
+The package follows `reference/schemas/task-package.json`. A present ticket carries
+its text in `ticket.content`; `start` refuses `{"present": true}` without it:
+
+```json
+{"original_request": "<verbatim request>", "accepted_spec": "<accepted proposal text>",
+ "acceptance": {"text": "<what the user accepted>", "source": "<where: chat turn, ticket>"},
+ "constraints": [], "ticket": {"present": true, "content": "<ticket text>"},
+ "criteria": ["AC-01"], "invariants": []}
+```
+
+Without a ticket use `"ticket": {"present": false, "reason": "<why>"}`.
 Whole-MR mode needs a target branch or revision (normally the remote branch such
 as `origin/main`); never let an implicit `HEAD` target narrow the review to the latest
 edit. When `--target` is omitted, whole-MR uses the upstream of the branch the current
@@ -462,8 +473,11 @@ review and approval. Planning metadata is never a developer approval question:
 2. Hand the template and the packet to AL-Architect. It replaces every `FILL:` text
    and edits the example states, transitions, outcomes and scenarios so they
    describe the task's observable behavior. Its PLAN handoff returns that JSON.
-3. Save it and run `"${STATE[@]}" planning report --file <report.json>`. A report that still
-   contains `FILL:` is refused. The output names `materialized_obligations`.
+3. Save it and run `"${STATE[@]}" planning report --file <report.json> --invocation-id <id>`.
+   `--invocation-id` stamps the Architect invocation id the host reported to the
+   supervisor (a native subagent cannot see its own id); the Architect's authored
+   value is retained in `supervisor_invocation`. A report that still contains
+   `FILL:` is refused. The output names `materialized_obligations`.
    Template-filled identity fields (attempt, packet, bindings, routing,
    `specification.status`, obligation binding/authorship) that the report omits are
    restored from the template; a changed value is refused and named by its JSON
@@ -502,9 +516,14 @@ moving source can still fail the existing stable-observation publication check.
 
 `planning report` preserves the Architect's exact issued packet, attempt and
 report even when source has since moved. It does not rebind that report to newer
-source. Admission still requires settled operations and current source; source
-movement requires a fresh packet and actual Architect revalidation before proof
-is admitted. UNRESOLVED writers, interrupted checks and uncertain cleanup remain
+source. Admission still requires settled operations. Source that moved after the
+packet only inside the files of writers that finished with `--outcome success`, and
+that task attribution assigns to those writers, is admitted as is: that is the
+overlap described above, and `planning admit` lists those paths as
+`writer_movement` (retained as `admitted_writer_movement`). Any other movement (a
+manual or unregistered edit, a still-active or failed writer, an edit outside a
+writer's files) requires a fresh packet and actual Architect revalidation before
+proof is admitted. UNRESOLVED writers, interrupted checks and uncertain cleanup remain
 operational repair work. They are never evidence of approval.
 
 ### Reuse unchanged authored planning after an amendment
@@ -514,6 +533,10 @@ Issue the current `planning packet`, then run:
 ```sh
 "${STATE[@]}" planning rebind --from-packet <old-packet.stored_path> --from-report <old-report.json>
 ```
+
+`--from-packet` also accepts the whole JSON `planning packet` printed (saved to a
+file) or a retained packet's sha256; a packet this run did not retain is refused
+with the retained hashes listed.
 
 AL validates the old packet against this run's retained issuance and accepted
 amendment prefix. It preserves the original report and authorship, records a
@@ -545,10 +568,14 @@ scenario in the admitted plan needs one observation: `review-start` refuses with
    `observation_templates` entry per scenario still missing, with every binding
    filled.
 2. Replace each `FILL:` with the ledger ids of the passing runs that exercised
-   the item, what the run showed, and for `assertion_locations` the test file,
-   line and that file's SHA-256.
-3. `"${STATE[@]}" behavior observe --file <observation.json>` per scenario. An
-   observation still containing `FILL:` is refused.
+   the scenario, what the run showed, and for `assertion_locations` the test file
+   and line. `behavior observe` computes `source_sha256` from the path when it is
+   omitted (a supplied hash is still checked), and an item without its own
+   `evidence_ids` uses the observation's `evidence_ids`.
+3. `"${STATE[@]}" behavior observe --file <observations.json>`. The file holds one
+   observation, a JSON array of them, or `{"observations": [...]}`; all are
+   validated before any is recorded. An observation still containing `FILL:` is
+   refused.
 
 A planned check that was a mistake (a command or scope CI does not use) is
 withdrawn with `"${STATE[@]}" evidence retire --area <area> --reason <text>

@@ -93,7 +93,7 @@ def template(packet_ref, value, *, partially_built=False):
     attempt = value['attempt']
     return {
         'schema_version': 1, 'kind': 'architect-planning-report-v1',
-        'attempt_id': attempt['attempt_id'], 'invocation_id': _fill('your actual Architect invocation id'),
+        'attempt_id': attempt['attempt_id'], 'invocation_id': _fill('your Architect invocation id if you can see it; otherwise leave this, the supervisor stamps it'),
         'model': attempt['model'], 'effort': attempt['effort'], 'policy_digest': attempt['policy_digest'],
         'packet_sha256': packet_ref['sha256'], 'binding': copy.deepcopy(binding),
         'specification': {'status': 'SPEC_READY', 'reason': _fill('why the specification is ready')},
@@ -105,9 +105,10 @@ def observation_templates(st, packet):
     """One ready-to-fill behavior-observation-v1 per scenario still missing an observation."""
     artifact = packet['obligations']
     seen = {(o['content']['obligation_id'], o['content']['scenario_id']) for o in packet.get('observations', [])}
-    def rows(scenario, key, identifier, text=False, executed=True):
+    # An item's evidence_ids defaults to the observation's evidence_ids in `behavior observe`;
+    # add it to an item only when that item was exercised by a narrower set of runs.
+    def rows(scenario, key, identifier, text=False):
         return [{identifier: name, **({'observation': _fill('what the run showed for ' + name)} if text else {}),
-                 **({'evidence_ids': [_fill('ledger id of the passing run that exercised this')]} if executed else {}),
                  'artifact_refs': []} for name in scenario[key]]
     out = []
     for group in artifact['content']['obligations']:
@@ -124,7 +125,7 @@ def observation_templates(st, packet):
                             'verification_authority_hash': packet['verification_authority']['hash'],
                             'document_hash': packet['document_hash'], 'candidate_fingerprint': packet['candidate_fingerprint'],
                             'input_bindings': [packet['verification_authority']['artifact'], artifact['artifact']]},
-                'starting_state': rows(scenario, 'initial_state_ids', 'state_id', text=True, executed=False),
+                'starting_state': rows(scenario, 'initial_state_ids', 'state_id', text=True),
                 'real_components': rows(scenario, 'real_component_ids', 'component_id'),
                 'simulated_dependencies': [{'component_id': name, 'mechanism': _fill('how it was simulated'),
                                             'limitations': _fill('what the simulation does not prove')}
@@ -132,8 +133,9 @@ def observation_templates(st, packet):
                 'exercised_transitions': rows(scenario, 'transition_ids', 'transition_id'),
                 'observed_outcomes': rows(scenario, 'outcome_ids', 'outcome_id', text=True),
                 'operational_failures': rows(scenario, 'failure_case_ids', 'failure_case_id', text=True),
-                'assertion_locations': [{'scenario_item_id': name, 'path': _fill('test file asserting this item'), 'line': 1,
-                                         'source_sha256': _fill('sha256 of that file')} for name in required],
+                # source_sha256 is computed by `behavior observe` from the path when omitted.
+                'assertion_locations': [{'scenario_item_id': name, 'path': _fill('test file asserting this item'), 'line': 1}
+                                        for name in required],
                 'artifact_refs': [], 'limitations': [],
             })
     return out

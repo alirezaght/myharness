@@ -8,6 +8,33 @@ import al_store
 from al_schema import refuse
 
 
+def supplied_packet(st, value):
+    """The retained packet content that `--from-packet` names.
+
+    Accepts the packet content itself (its retained `stored_path`), the whole JSON that `planning
+    packet` printed (`{"packet": {...}, "content": {...}, ...}`), or the sha256 of a packet
+    retained in this run (bare, or as the file's only text). Identity is always checked against
+    this run's retained issuance by `historical`."""
+    retained = [item['packet'] for item in [*st.get('planning_history', []), st.get('planning_authorship', {})]
+                if item.get('packet')]
+    text = value.strip() if isinstance(value, str) else None
+    if text is None and isinstance(value, (bytes, bytearray)):
+        text = bytes(value).decode('utf-8', 'replace').strip()
+    if text is not None and len(text) == 64 and all(c in '0123456789abcdef' for c in text.lower()):
+        match = next((ref for ref in retained if ref['sha256'] == text.lower()), None)
+        if match is None:
+            refuse('rebind --from-packet ' + text + ' names no packet retained in this run; retained: '
+                   + ', '.join(ref['sha256'] for ref in retained))
+        return J.read(match)
+    data = J.loads(value) if text is not None else value
+    if isinstance(data, dict) and {'packet', 'content'} <= data.keys() and isinstance(data['packet'], dict):
+        # The printed `planning packet` response: its content must be the packet it names.
+        if data['packet'] not in retained or J.raw(data['content']) != J.raw(J.read(data['packet'])):
+            refuse('rebind --from-packet output names a packet this run did not retain or whose content differs')
+        return data['content']
+    return data
+
+
 def historical(st, supplied):
     """Construct an isolated validation view from this run's retained issuance."""
     import al_planning as P
@@ -16,7 +43,9 @@ def historical(st, supplied):
     previous = next((item for item in retained if item.get('packet')
                      and J.raw(J.read(item['packet'])) == J.raw(supplied)), None)
     if previous is None:
-        refuse('rebind requires a packet retained in this same run')
+        refuse('rebind requires a packet retained in this same run; pass the packet `stored_path`, the '
+               'JSON `planning packet` printed, or a retained packet sha256: '
+               + ', '.join(item['packet']['sha256'] for item in retained if item.get('packet')))
     count = len(supplied['accepted_amendments'])
     prefix = [item['artifact'] for item in st['amendments'][:count]]
     if supplied['task_package'] != st['task_package'] or prefix != supplied['accepted_amendments']:
@@ -64,7 +93,8 @@ def cmd_rebind(a, sid):
     current, contents, _ = P.packet(st)
     if 'report' in current:
         refuse('current Architect planning report is already immutable')
-    old_packet = J.loads(Path(a.from_packet).read_bytes())
+    source = Path(a.from_packet)
+    old_packet = supplied_packet(st, source.read_bytes() if source.is_file() else a.from_packet)
     view, old, old_contents, old_attempt = historical(st, old_packet)
     if old['packet'] == current['packet']:
         refuse('rebind requires a different retained packet; use its ordinary report template')
