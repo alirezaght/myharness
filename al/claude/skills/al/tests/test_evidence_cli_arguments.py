@@ -152,3 +152,34 @@ def test_help_includes_delimiter_and_example(started, action):
     code, out, err = cli('evidence', action, '--help')
     assert code == 0 and not err
     assert '-- PROGRAM [ARG ...]' in out and 'Example:' in out
+
+
+def test_repeated_env_assignments_are_all_applied_and_shown(started):
+    cli, state_file = started
+    check = ('import os, sys; sys.exit(0 if (os.environ.get("AL_ONE"), os.environ.get("AL_TWO")) '
+             '== ("1", "a,b=c") else 3)')
+    code, out, err = cli('evidence', 'plan', '--area', 'unit', '--scope', 'svc', '--tier', 'focused', '--kind', 'check',
+                         '--env', 'AL_ONE=1', '--env', 'AL_TWO=a,b=c', '--env', 'DEPENDENCY',
+                         '--', sys.executable, '-c', check)
+    assert code == 0, (code, out, err)
+    plan = cli.state()['evidence']['plan']['unit']
+    assert plan['argv'] == ['env', 'AL_ONE=1', 'AL_TWO=a,b=c', sys.executable, '-c', check]
+    assert plan['env'] == ['DEPENDENCY']
+    assert 'env sets AL_ONE=1 AL_TWO=a,b=c; depends on DEPENDENCY' in out
+    code, out, err = cli('evidence', 'run', '--area', 'unit')
+    assert code == 0 and 'PASS' in out, (code, out, err)
+    # A run-time --env that differs from the plan is refused instead of silently ignored.
+    before = state_file().read_bytes()
+    code, out, err = cli('evidence', 'run', '--area', 'unit', '--env', 'AL_ONE=2')
+    assert code != 0 and '--env differs from the planned area' in str(code) + err
+    assert state_file().read_bytes() == before
+
+
+def test_env_rejects_invalid_names_and_conflicting_assignments(started):
+    cli, state_file = started
+    before = state_file().read_bytes()
+    for options in (['--env', '1BAD=x'], ['--env', 'A=1', '--env', 'A=2']):
+        code, out, err = cli('evidence', 'plan', '--area', 'unit', '--scope', 'svc', *options,
+                             '--', sys.executable, '-V')
+        assert code != 0 and not out
+    assert state_file().read_bytes() == before

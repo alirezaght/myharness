@@ -40,9 +40,14 @@ in its own named area. A component PASS does not establish that the complete CI
 job passed.
 
 `--env NAME` records and fingerprints the observed environment dependency; it
-does not assign `NAME` in the check process. For an approved, tracked,
-non-secret literal, put the assignment in the registered argv with the existing
-`env NAME=value PROGRAM ...` form. Never copy ambient secrets into argv,
+does not assign `NAME` in the check process. `--env NAME=VALUE` assigns an
+approved, non-secret literal: AL registers it as an `env NAME=VALUE ... PROGRAM`
+argv prefix. `--env` is repeatable and every occurrence is applied; one
+assignment per occurrence, so the value may contain commas. `evidence plan` prints
+the resulting command and its environment (`env sets ...; depends on ...`).
+`evidence run --area` with an `--env` that differs from the plan is refused, not
+ignored. Assignments cannot be combined with `--storage-file`; write the
+`env NAME=value PROGRAM ...` form in the command instead. Never copy ambient secrets into argv,
 artifacts, or logs. Relative paths in argv resolve from the registered check
 cwd.
 

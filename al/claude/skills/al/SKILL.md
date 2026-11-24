@@ -88,7 +88,12 @@ STATE=("$HOME/.local/bin/alctl" run --repository "<repo-root>" --platform claude
 "${STATE[@]}" start --package-file <package.json> --review-mode task --target <revision>
 ```
 
-Whole-MR review explicitly names its target, normally `main`. Do not invoke
+Whole-MR review names its target, normally the remote branch such as `origin/main`.
+Without `--target`, whole-MR defaults to the upstream of the branch the checkout
+was created from when Git records it. `start` warns loudly, and does not refuse,
+when the target is a local branch behind its upstream; fix it before review with
+`retarget --target <upstream>`, which keeps the spec gate, classification and
+evidence and drops only gate plans, review scope and admitted planning. Do not invoke
 `al_state.py` directly, set `AL_RUNTIME_DIR`, edit a pin/state file, reset counters
 or transplant an old run into a new runtime. `clear` removes a pointer, not history.
 A new installation does not upgrade an existing pin. Use supported recovery for

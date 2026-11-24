@@ -425,3 +425,205 @@ def tree_fingerprint():
     base = git_bytes('rev-parse','HEAD').decode().strip()
     rows = records(base)
     return hashlib.sha256(json.dumps(rows,sort_keys=True).encode()).hexdigest(), len(parent_status())
+
+
+# --- Whole-MR target selection -------------------------------------------------------------
+
+def _probe(*args):
+    """A read-only Git answer, or None when Git cannot give one (never a refusal)."""
+    try:
+        r = subprocess.run(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
+                            *args], cwd=al_store.REPO_ROOT, capture_output=True)
+    except OSError:
+        return None
+    return r.stdout.decode(errors='replace').strip() if r.returncode == 0 else None
+
+
+def _short(ref):
+    for prefix in ('refs/heads/', 'refs/remotes/'):
+        if ref.startswith(prefix):
+            return ref[len(prefix):]
+    return ref
+
+
+def _full_name(name):
+    """The full ref a revision name denotes (refs/heads/..., refs/remotes/...), or None."""
+    if not name or name.startswith('-'):
+        return None
+    value = _probe('rev-parse', '--symbolic-full-name', name)
+    return value.splitlines()[-1] if value else None
+
+
+def _upstream(branch_ref):
+    value = _probe('for-each-ref', '--format=%(upstream)', branch_ref)
+    value = value.splitlines()[0] if value else None
+    return value if value and value.startswith(('refs/heads/', 'refs/remotes/')) else None
+
+
+def target_lag(target):
+    """How far a target naming a local branch is behind that branch's upstream, else None."""
+    if not target or target.startswith('-'):
+        return None
+    full = _full_name(target)
+    if not full or not full.startswith('refs/heads/'):
+        return None
+    upstream = _upstream(full)
+    if not upstream:
+        return None
+    counts = _probe('rev-list', '--left-right', '--count', full + '...' + upstream)
+    try:
+        ahead, behind = (int(value) for value in (counts or '').split())
+    except ValueError:
+        return None
+    if not behind:
+        return None
+    return {'target': target, 'branch': _short(full), 'upstream': _short(upstream), 'behind': behind, 'ahead': ahead}
+
+
+def target_warning(target, *, command='start'):
+    """A loud, non-blocking warning for a stale local target branch (behind only never refuses)."""
+    lag = target_lag(target)
+    if lag is None:
+        return None
+    retarget = '' if command == 'retarget' else (
+        ' If the run already started, retarget it before review-start: retarget --target ' + lag['upstream'] + '.')
+    return ('AL · WARNING · --target ' + target + ' is the local branch ' + lag['branch'] + ', '
+            + str(lag['behind']) + ' commit(s) behind its upstream ' + lag['upstream']
+            + (' (and ' + str(lag['ahead']) + ' ahead)' if lag['ahead'] else '')
+            + '. The merge base, review scope and gate scope will include commits that are already on '
+            + lag['upstream'] + '. Use --target ' + lag['upstream'] + ' unless the local branch is intended.'
+            + retarget)
+
+
+def _creation(branch_ref):
+    """(source, commit) from the oldest reflog entry when it records how the branch was created."""
+    log = _probe('reflog', 'show', '--format=%H %gs', branch_ref)
+    if not log:
+        return None
+    commit, _, subject = log.splitlines()[-1].partition(' ')
+    match = re.fullmatch(r'branch: Created from (.+)', subject.strip())
+    return (match.group(1).strip(), commit) if match else None
+
+
+def default_target():
+    """(target, explanation) for an omitted whole-MR target, or (None, why it is undeterminable).
+
+    The target is the upstream of the branch the current branch was created from (a fresh worktree
+    branch records that source in its reflog). A branch created from a bare commit uses the remote
+    default branch only when exactly one remote default branch contains that commit."""
+    branch = _probe('symbolic-ref', '-q', 'HEAD')
+    if not branch:
+        return None, 'HEAD is detached'
+    created = _creation(branch)
+    if created is None:
+        return None, 'the reflog of ' + _short(branch) + ' does not record which branch it was created from'
+    source, commit = created
+    if source != 'HEAD' and not re.fullmatch(r'[0-9a-f]{7,64}(\^\{commit\})?', source):
+        full = _full_name(source)
+        if full and full.startswith('refs/remotes/'):
+            return _short(full), 'the remote branch ' + _short(branch) + ' was created from'
+        if full and full.startswith('refs/heads/') and full != branch:
+            upstream = _upstream(full)
+            if upstream:
+                return _short(upstream), ('the upstream of ' + _short(full) + ', the branch '
+                                          + _short(branch) + ' was created from')
+            return _short(full), 'the branch ' + _short(branch) + ' was created from (it has no upstream)'
+    heads = _probe('for-each-ref', '--format=%(refname) %(symref)', 'refs/remotes') or ''
+    defaults = sorted({symref for line in heads.splitlines() for name, _, symref in [line.partition(' ')]
+                       if name.endswith('/HEAD') and symref.startswith('refs/remotes/')})
+    containing = [ref for ref in defaults if _probe('merge-base', '--is-ancestor', commit, ref) is not None]
+    if len(containing) == 1:
+        return _short(containing[0]), ('the remote default branch ' + _short(containing[0])
+                                       + ', which contains the commit ' + _short(branch) + ' was created from')
+    return None, _short(branch) + ' was created from ' + source + ' and no single remote default branch contains it'
+
+
+# --- Retargeting an existing run -------------------------------------------------------------
+
+def retarget_blockers(st):
+    """Why the run's target cannot safely change now; an empty list when it can."""
+    out = []
+    if st.get('review') is not None or st.get('review_iteration'):
+        out.append('review has started and its packets are bound to the current merge base')
+    if st.get('writers') or st.get('task_attribution', {}).get('contributions'):
+        out.append('implementation writers were registered and their contributions are attributed against the current baseline')
+    if 'inherited_lineage' in st:
+        out.append('a successor run inherits its target and merge base from its predecessor')
+    if 'integration' in st:
+        out.append('a Harness execution binds its projections and receipts to the current repository identity')
+    if st.get('gate_recovery'):
+        out.append('a gate recovery is active')
+    if st.get('checkpoints'):
+        out.append('recorded recovery checkpoints are bound to the current repository identity')
+    from al_writers import operation_gaps
+    return out + operation_gaps(st)
+
+
+def cmd_retarget(a, sid):
+    """Change the target before review: recompute the merge base and drop only what depends on it."""
+    import copy
+    import sys
+    import time
+    st = al_store.load(sid)
+    target = (a.target or '').strip()
+    if not target:
+        refuse('retarget requires --target REF')
+    blockers = retarget_blockers(st)
+    if blockers:
+        refuse('retarget refused: ' + '; '.join(blockers) + '. Start a new run with --target ' + target + ' instead.')
+    old = st['identity']
+    new = identity(target)
+    for key in ('root', 'cwd', 'common_dir', 'git_dir'):
+        if new[key] != old[key]:
+            refuse("retarget must run from the run's own checkout and working directory (" + key + ' differs)')
+    warning = target_warning(target, command='retarget')
+    if warning:
+        print(warning)
+    if all(new[key] == old[key] for key in ('target', 'target_oid', 'merge_base')):
+        print('AL · retarget · unchanged · ' + target + ' · merge base ' + new['merge_base'][:12])
+        return
+    record = {'at': time.time(), 'from': {k: old[k] for k in ('target', 'target_oid', 'merge_base')},
+              'to': {k: new[k] for k in ('target', 'target_oid', 'merge_base')}, 'invalidated': {}}
+    # Gate plans, their runs and decisions are bound to the merge base; keep them only as history.
+    for key in ('gate_manifests', 'gate_runs', 'gate_decisions', 'gate_refreshes'):
+        if key in st:
+            record['invalidated'][key] = st.pop(key)
+    st['identity'] = new
+    if 'rework_recovery' in st:
+        # Its origin may change only together with this recorded retarget (see its prepare_save).
+        st['rework_recovery']['origin']['identity'] = copy.deepcopy(new)
+    if 'task_attribution' in st:
+        # No writer has contributed yet, so the baseline capture can be taken again.
+        from al_task_attribution import capture_attribution
+        record['invalidated']['task_attribution'] = st.pop('task_attribution')
+        capture_attribution(st)
+    admission = st.get('proof_admission')
+    replanned = bool(admission and admission.get('status') == 'admitted')
+    if replanned:
+        # Admitted obligations bind the repository identity, so planning admission is reopened;
+        # the specification gate, classification and recorded evidence are kept.
+        from al_new_origin import FIELDS, occurrence
+        if st['phase'] != 'PLANNING':
+            al_store.set_phase(st, 'PLANNING', ['al-architect'])
+        st['proof_admission'] = {key: admission[key] for key in FIELDS}
+        st['proof_admission'].update(status='pending', planning_occurrence=occurrence(st),
+                                     invalidation_generation=admission['invalidation_generation'] + 1)
+        record['invalidated']['proof_admission'] = copy.deepcopy(admission)
+    if st.get('implementation_readiness') is not None:
+        st['implementation_readiness']['obligations'] = sorted(set(
+            st['implementation_readiness']['obligations'] + ['target changed; rediscover gates and reissue planning']))
+    st.setdefault('retargets', []).append(record)
+    al_store.save(sid, st)
+    print('AL · retarget · ' + old['target'] + ' -> ' + new['target'] + ' · merge base '
+          + old['merge_base'][:12] + ' -> ' + new['merge_base'][:12])
+    print('  kept: specification gate, classification, recorded evidence')
+    print('  invalidated: gate plans, gate runs and decisions, review scope, task baseline (recaptured)'
+          + (', planning admission' if replanned else ''))
+    print('  next: gates discover and gates plan; then planning packet, report and admit'
+          + (' (admission was reopened)' if replanned else ' if planning is not yet admitted'))
+
+
+def register(sub):
+    p = sub.add_parser('retarget', help='change the target of a run before review starts')
+    p.add_argument('--target', required=True)
+    p.set_defaults(fn=cmd_retarget)

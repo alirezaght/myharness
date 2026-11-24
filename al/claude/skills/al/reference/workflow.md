@@ -392,8 +392,27 @@ proposal/specification, provenance for acceptance, constraints, explicit ticket
 presence or absence, stable criterion IDs, and invariant IDs. A bare assent such
 as “yes” must point to the accepted proposal; it is not a specification. Start with
 `"${STATE[@]}" start --package-file <json> --review-mode task|whole-mr --target <rev>`.
-Whole-MR mode must name its target branch or revision explicitly (normally
-`main`); never let an implicit `HEAD` target narrow the review to the latest edit.
+Whole-MR mode needs a target branch or revision (normally the remote branch such
+as `origin/main`); never let an implicit `HEAD` target narrow the review to the latest
+edit. When `--target` is omitted, whole-MR uses the upstream of the branch the current
+branch was created from (recorded in its reflog, as for a fresh worktree), or the single
+remote default branch containing the commit it was created from; `start` prints the
+chosen target and refuses only when neither is determinable. When `--target` names a
+local branch that is behind its upstream, `start` prints a WARNING with the commit
+count and suggests the upstream; it does not refuse.
+
+Before `review-start`, `"${STATE[@]}" retarget --target <ref>` changes the target of an
+existing run and recomputes the merge base. It keeps the spec gate, classification and
+recorded evidence. It drops gate manifests, gate runs and decisions (rerun `gates discover`
+and `gates plan`), recaptures the task baseline, and reopens an admitted planning proof,
+because the planning binding includes the repository identity (rerun `planning packet`,
+`report` and `admit`). It refuses after review has started, after implementation writers
+were registered (their contributions are attributed against the old baseline), in a
+successor run whose anchors are inherited, in a Harness execution (its projections and
+receipts bind the identity), after a recovery checkpoint was recorded, during an active
+gate recovery, and while a check or writer is unresolved. Start a new run in those
+cases.
+
 Substantive legacy `--spec`/`--spec-file` input is accepted only with an explicit
 source and explicit ticket absence. Run `spec-gate` and `classify` from the
 Architect plan. Append later user scope changes with `task amend --file <json>`;
@@ -437,6 +456,15 @@ review and approval. Planning metadata is never a developer approval question:
    restored from the template; a changed value is refused and named by its JSON
    path, as are missing or unexpected fields. Resubmitting the identical saved
    report (canonical JSON) succeeds idempotently; a different report is refused.
+   Non-empty `consumer_inventory.uncertainties` refuse the report. A read-only
+   Architect that cannot run `artifact record` leaves `discovery_refs` empty and
+   says so in `reason`. The supervisor records the discovery it ran with
+   `artifact record --kind consumer-discovery` and passes each printed id with
+   `planning report --file <report.json> --discovery-ref <id>` (repeatable). The
+   references are added to every consumer inventory; the authored JSON is not
+   edited. Use `--resolve-uncertainty "<exact text>"` together with `--discovery-ref`
+   to remove an authored uncertainty that the recorded discovery resolves. The
+   Architect's own report is retained as `supervisor_discovery.authored_report`.
 4. `"${STATE[@]}" planning admit --file <materialized_obligations.stored_path>`.
    Incomplete relevant coverage does not refuse admission: each reconstructed gap is
    recorded in `implementation_readiness.obligations` and enforced at final proof,

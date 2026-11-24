@@ -142,3 +142,38 @@ def test_packet_publication_still_refuses_source_movement(cli, repo, tmp_path, m
     assert len(calls) == 2
     assert al_store.state_path(sid).read_bytes() == before
     assert al_store.load(sid)["writers"]["write-A"]["state"] == "ACTIVE"
+
+
+def test_supervisor_discovery_refs_resolve_a_read_only_uncertainty_without_editing_the_report(
+        cli, repo, tmp_path, monkeypatch):
+    sid = pending(cli, repo, tmp_path, monkeypatch)
+    packet = json.loads(ok(cli, "planning", "packet")[1])
+    report = _reports().report_for(packet)
+    gap = "discovery_refs are empty because a read-only role cannot run artifact record"
+    report["authored_obligations"]["obligations"][0]["consumer_inventory"]["uncertainties"] = [gap]
+    path = tmp_path / "authored-planning-report.json"
+    path.write_text(json.dumps(report))
+    authored = path.read_bytes()
+    refused = cli("planning", "report", "--file", str(path))
+    assert refused[0] != 0 and "unresolved behavior consumer discovery" in "".join(map(str, refused))
+    discovery = tmp_path / "consumer-discovery.md"
+    discovery.write_text("rg found no consumers of the changed export\n")
+    recorded = json.loads(ok(cli, "artifact", "record", "--file", str(discovery), "--kind", "consumer-discovery")[1])
+    without = cli("planning", "report", "--file", str(path), "--resolve-uncertainty", gap)
+    assert without[0] != 0 and "--discovery-ref" in "".join(map(str, without))
+    wrong = cli("planning", "report", "--file", str(path), "--discovery-ref", recorded["id"],
+                "--resolve-uncertainty", "a different uncertainty")
+    assert wrong[0] != 0 and "unmatched" in "".join(map(str, wrong))
+    saved = json.loads(ok(cli, "planning", "report", "--file", str(path), "--discovery-ref", recorded["id"][:12],
+                          "--resolve-uncertainty", gap)[1])
+    assert path.read_bytes() == authored
+    inventory = json.loads(Path(saved["report"]["stored_path"]).read_bytes())[
+        "authored_obligations"]["obligations"][0]["consumer_inventory"]
+    assert inventory["uncertainties"] == [] and inventory["discovery_refs"] == [recorded]
+    retained = al_store.load(sid)["planning_authorship"]["supervisor_discovery"]
+    assert retained["resolved_uncertainties"] == [gap] and retained["discovery_refs"] == [recorded]
+    assert json.loads(Path(retained["authored_report"]["stored_path"]).read_bytes()) == json.loads(authored)
+    # The identical supplemented submission stays idempotent, and the result admits.
+    ok(cli, "planning", "report", "--file", str(path), "--discovery-ref", recorded["id"], "--resolve-uncertainty", gap)
+    ok(cli, "planning", "admit")
+    assert al_store.load(sid)["proof_admission"]["status"] == "admitted"

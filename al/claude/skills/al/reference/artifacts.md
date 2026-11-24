@@ -43,8 +43,17 @@ file bytes against the hash. A behavior consumer is exactly:
 
 `role` is `producer` or `consumer`; `kind` is `code`, `link`, `message`, `export`,
 or `other`. Put discovery artifacts in the inventory's `discovery_refs` and
-supporting source artifacts in each entry's `source_refs`. Record uncertainties
-honestly; unresolved discovery still prevents admission.
+supporting source artifacts in each entry's `source_refs`.
+
+`uncertainties` lists only consumer discovery that is still unresolved, and any
+entry refuses `planning report` (`unresolved behavior consumer discovery`). Do not
+put risks there: a merge-time risk, a parallel branch touching the same contract
+or a residual concern goes in the inventory's `reason` (or the plan's risks).
+A read-only role that cannot record artifacts leaves `discovery_refs` empty and
+says so in `reason`; the supervisor then records the discovery and supplies it with
+`planning report --file <report.json> --discovery-ref <artifact id>`. When the role
+did list such an uncertainty, the supervisor adds
+`--resolve-uncertainty "<exact uncertainty text>"` to remove it with that reference.
 
 ## Named output files
 

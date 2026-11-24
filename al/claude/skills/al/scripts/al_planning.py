@@ -259,6 +259,55 @@ def cmd_packet(a, sid):
                  "report_template": Template.template(reference, value, partially_built=partially_built)}).decode())
 
 
+def _recorded(st, value):
+    """A consumer-discovery artifact this run recorded, by its id (or a unique id prefix)."""
+    value = (value or "").strip().lower()
+    matches = {ref["id"]: ref for ref in st.get("recorded_artifacts", [])
+               if len(value) >= 8 and ref.get("id", "").startswith(value)}
+    if len(matches) != 1:
+        refuse("--discovery-ref " + value + " names " + ("no" if not matches else "more than one")
+               + " artifact recorded in this run; record it with `artifact record --file PATH --kind consumer-discovery` "
+               "and pass the printed id")
+    ref = next(iter(matches.values()))
+    J.reference(ref)
+    return ref
+
+
+def supplement_discovery(st, report, refs, resolved):
+    """Add supervisor-recorded discovery to every consumer inventory before the report is sealed.
+
+    A read-only Architect cannot record artifacts, so the supervisor records the discovery it ran
+    and supplies the references here instead of editing the authored JSON. An uncertainty is
+    removed only when named exactly with --resolve-uncertainty, and only when discovery references
+    are supplied with it; the supplement is retained with the planning provenance."""
+    if not refs and not resolved:
+        return None
+    if resolved and not refs:
+        refuse("--resolve-uncertainty needs the --discovery-ref that resolves it")
+    supplied = [_recorded(st, value) for value in refs]
+    groups = (report.get("authored_obligations") or {}).get("obligations") if isinstance(report, dict) else None
+    inventories = [group["consumer_inventory"] for group in groups or []
+                   if isinstance(group, dict) and isinstance(group.get("consumer_inventory"), dict)]
+    if not inventories:
+        refuse("supplied discovery references need an authored consumer_inventory")
+    remaining = list(dict.fromkeys(text.strip() for text in resolved))
+    authored = [text for inventory in inventories for text in inventory.get("uncertainties") or []
+                if isinstance(text, str)]
+    unmatched = [text for text in remaining if text not in {value.strip() for value in authored}]
+    if unmatched:
+        refuse("--resolve-uncertainty must repeat an authored uncertainty exactly; unmatched: " + repr(unmatched)
+               + "; authored: " + repr(authored))
+    for inventory in inventories:
+        current = inventory.setdefault("discovery_refs", [])
+        if isinstance(current, list):
+            known = {ref.get("id") for ref in current if isinstance(ref, dict)}
+            current.extend(ref for ref in supplied if ref["id"] not in known)
+        if isinstance(inventory.get("uncertainties"), list):
+            inventory["uncertainties"] = [text for text in inventory["uncertainties"]
+                                          if not (isinstance(text, str) and text.strip() in remaining)]
+    return {"discovery_refs": supplied, "resolved_uncertainties": remaining}
+
+
 def cmd_report(a, sid):
     st = al_store.load(sid)
     ready(st, authoring=True)
@@ -269,6 +318,8 @@ def cmd_report(a, sid):
     if isinstance(report, dict):
         # Identity fields the template pre-fills are restored when omitted, refused when changed.
         Template.restore_fixed(report, Template.template(current["packet"], contents))
+    authored = copy.deepcopy(report)
+    supplement = supplement_discovery(st, report, a.discovery_ref or [], a.resolve_uncertainty or [])
     if "report" in current:
         # An identical (canonical JSON) resubmit is an idempotent success; any other is refused.
         if J.raw(report) != J.raw(J.read(current["report"])):
@@ -293,6 +344,10 @@ def cmd_report(a, sid):
         sid, materialized, "behavior-obligations-v1", "admitted Architect report materialization"
     )
     current.update(report=reference, obligations=obligations)
+    if supplement:
+        # The Architect's own bytes stay retained next to what the supervisor added.
+        current["supervisor_discovery"] = {
+            **supplement, "authored_report": J.snapshot(sid, authored, "architect-planning-report-authored-v1", a.file)}
     if receipt:
         current['rebind_validation'] = {'receipt': receipt, 'revalidation': J.snapshot(
             sid, assessment, 'planning-rebind-revalidation-v1', a.revalidation_file)}
@@ -359,6 +414,12 @@ def register(sub):
     p.set_defaults(fn=cmd_packet)
     p = children.add_parser("report")
     p.add_argument("--file", required=True)
+    p.add_argument("--discovery-ref", action="append", metavar="ARTIFACT_ID",
+                   help="repeatable; a consumer-discovery artifact the supervisor recorded with artifact record, "
+                        "added to every consumer_inventory.discovery_refs without editing the authored JSON")
+    p.add_argument("--resolve-uncertainty", action="append", metavar="TEXT",
+                   help="repeatable; removes the exactly matching authored consumer uncertainty that the supplied "
+                        "--discovery-ref resolves (for example 'discovery_refs empty: read-only role')")
     p.add_argument("--rebind-receipt")
     p.add_argument("--revalidation-file")
     p.set_defaults(fn=cmd_report)

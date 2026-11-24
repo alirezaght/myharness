@@ -190,3 +190,59 @@ def test_distribution_removes_previously_managed_resources_after_a_split(tmp_pat
     assert (target/'test_evidence_execution.py').is_file()
     assert (target/'test_evidence_integrity.py').is_file()
     assert (target/'local-notes.txt').read_text()=='preserve local resource'
+
+
+def _git(cli,*argv):
+    return subprocess.run(['git',*argv],cwd=cli.repo,check=True,capture_output=True,text=True).stdout.strip()
+
+
+def _commit(cli,name,text):
+    (cli.repo/name).write_text(text);_git(cli,'add',name);_git(cli,'commit','-qm',name)
+    return _git(cli,'rev-parse','HEAD')
+
+
+def test_stale_local_target_warns_and_retarget_recomputes_merge_base_before_review(cli):
+    base=_git(cli,'rev-parse','HEAD')
+    _git(cli,'branch','stale')
+    upstream=_commit(cli,'upstream.txt','already merged upstream')
+    _git(cli,'branch','trunk');_git(cli,'branch','--set-upstream-to=trunk','stale')
+    _commit(cli,'feature.txt','feature work in this merge request')
+    started=cli('start','--review-mode','whole-mr','--target','stale','--spec','Review the merge request against its real target branch.')
+    assert 'WARNING' in started.stdout and '1 commit(s) behind its upstream trunk' in started.stdout
+    assert 'retarget --target trunk' in started.stdout
+    assert cli.state()['identity']['merge_base']==base
+    cli('spec-gate','SPEC_READY');cli('classify','SMALL','--designer','no','--implementers','al-engineer')
+    def plan_gates():
+        f=cli.runtime/'manifest.json'
+        f.write_text(json.dumps(_manifest_for_cli(cli,cli.state(),('code.txt',))));cli('gates','plan','--file',str(f))
+    plan_gates();admit_planning(cli.plain)
+    assert cli.state()['proof_admission']['status']=='admitted'
+    moved=cli('retarget','--target','trunk')
+    assert 'stale -> trunk' in moved.stdout and 'gates discover' in moved.stdout
+    st=cli.state()
+    assert st['identity']['target']=='trunk' and st['identity']['merge_base']==upstream
+    assert st['spec_status']=='SPEC_READY' and st['classification']=='SMALL'
+    assert 'gate_manifests' not in st and st['proof_admission']['status']=='pending'
+    assert st['retargets'][-1]['from']['merge_base']==base
+    # Gates and planning are redone against the new merge base; nothing else is.
+    plan_gates();admit_planning(cli.plain)
+    cli('phase','IMPLEMENTATION');cli('writer','start','--id','engineer','--role','al-engineer','--files','code.txt')
+    (cli.repo/'code.txt').write_text('implemented\n')
+    cli('writer','finish','--id','engineer','--outcome','success');cli('phase','VERIFICATION')
+    cli('evidence','plan','--area','unit','--tier','broad','--kind','check','--scope','code.txt','--',sys.executable,'-c','print("verified")')
+    cli('evidence','run','--area','unit')
+    cli('review-start');cli('review-packet','--stage','fresh')
+    packet=json.loads(Path(cli.state()['review']['packets']['fresh']['stored_path']).read_text())
+    assert 'feature work in this merge request' in packet['candidate']['diff']
+    assert 'already merged upstream' not in packet['candidate']['diff']
+    refused=cli('retarget','--target','stale',ok=False)
+    assert 'review has started' in refused.stderr
+
+
+def test_whole_mr_target_defaults_to_upstream_of_the_branch_the_checkout_was_created_from(cli):
+    _git(cli,'branch','trunk');_git(cli,'branch','base')
+    _git(cli,'branch','--set-upstream-to=trunk','base')
+    _git(cli,'checkout','-q','-b','feature','base')
+    started=cli('start','--review-mode','whole-mr','--spec','Review the merge request against the default target.')
+    assert 'whole-mr target defaulted to trunk' in started.stdout
+    assert cli.state()['identity']['target']=='trunk'

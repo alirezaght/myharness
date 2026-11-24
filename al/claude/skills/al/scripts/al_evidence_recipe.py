@@ -81,6 +81,9 @@ def plan_spec(args, state):
     }
     sources = al_evidence._sources_file(args)
     al_evidence._require_scope(scope, sources, ".")
+    names, assignments = al_evidence.env_options(args.env)
+    if assignments:
+        raise ValueError("recipe checks take --env NAME dependencies only, not NAME=VALUE assignments")
     spec = {
         "area": args.area,
         "kind": "test",
@@ -89,7 +92,7 @@ def plan_spec(args, state):
         "cwd": ".",
         "scope": scope,
         "sources": sources,
-        "env": al_evidence._split(args.env),
+        "env": names,
         "preflight": args.preflight or None,
         "needs": al_evidence._split(args.needs),
         "recipe": identity,

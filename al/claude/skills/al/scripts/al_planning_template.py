@@ -60,11 +60,16 @@ def template(packet_ref, value, *, partially_built=False):
                                                      'boundary': _fill('exactly what is simulated')}],
                                                    _fill('simulated boundaries')),
         # When changed exports have consumers: applicability 'applicable' and entries shaped
-        # {id, role, kind, contract, locations, source_refs}.
+        # {id, role, kind, contract, locations, source_refs}. Any uncertainties entry blocks
+        # admission: list only unresolved consumer discovery there, and put risks (merge-time,
+        # parallel-branch, residual) in reason. A read-only role leaves discovery_refs empty and
+        # says so in reason; the supervisor supplies them with planning report --discovery-ref.
         'consumer_inventory': {'applicability': 'not_applicable', 'reason': _fill('consumers of changed exports, or why none; '
             'entries have id, role (producer|consumer), kind (code|link|message|export|other), contract, '
             'locations (string array), source_refs (typed artifact references). Create discovery_refs/source_refs '
-            'with artifact record --file PATH --kind consumer-discovery; see reference/artifacts.md'),
+            'with artifact record --file PATH --kind consumer-discovery, or leave discovery_refs empty and say '
+            'here that you could not record them (the supervisor adds them). Put risks here, not in uncertainties: '
+            'any uncertainties entry blocks admission; see reference/artifacts.md'),
                                'entries': [], 'discovery_refs': [], 'uncertainties': []},
         # Every journey_end, preserve and persistence item appears in some scenario's outcome_ids.
         'scenarios': [{'id': 'happy-path', 'initial_state_ids': ['before'], 'transition_ids': ['change'],

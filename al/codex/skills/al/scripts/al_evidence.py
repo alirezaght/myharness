@@ -17,6 +17,7 @@ are given and never edit code, tests or git.
 """
 import os
 import json
+import re
 import al_sources as Sources
 import signal
 import subprocess
@@ -40,6 +41,64 @@ def _split(raw):
             if name and name not in names:
                 names.append(name)
     return names
+
+
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def env_options(raw):
+    """Every --env occurrence: (dependency names, ordered NAME=VALUE assignments).
+
+    `--env NAME[,NAME...]` declares environment dependencies that are fingerprinted, not set.
+    `--env NAME=VALUE` assigns a non-secret literal: one assignment per occurrence (the value may
+    contain commas), applied to the check through an `env NAME=VALUE ...` argv prefix so the
+    planned command shows it. Every occurrence is applied; none is silently dropped."""
+    names, assignments = [], {}
+    for value in raw if isinstance(raw, (list, tuple)) else [raw]:
+        if not value:
+            continue
+        if "=" in value:
+            name, _, literal = value.partition("=")
+            name = name.strip()
+            if not _ENV_NAME.fullmatch(name):
+                sys.exit(f"al_state: --env {value!r}: {name!r} is not an environment variable name")
+            if name in assignments and assignments[name] != literal:
+                sys.exit(f"al_state: --env assigns {name} twice with different values")
+            assignments[name] = literal
+            continue
+        for name in _split(value):
+            if not _ENV_NAME.fullmatch(name):
+                sys.exit(f"al_state: --env {name!r} is not an environment variable name")
+            if name not in names:
+                names.append(name)
+    return [n for n in names if n not in assignments], assignments
+
+
+def with_env(argv, assignments, storage_file=None):
+    """The argv with its environment assignments made visible and applied."""
+    if not assignments:
+        return list(argv)
+    if storage_file:
+        sys.exit("al_state: --env NAME=VALUE cannot be combined with --storage-file (its operand indices count "
+                 "argv); put the assignments in the command as `env NAME=VALUE PROGRAM ...` instead")
+    return ["env", *(f"{name}={value}" for name, value in assignments.items()), *argv]
+
+
+def env_text(spec):
+    """The environment a planned check runs with, for its one-line summary."""
+    prefix = []
+    argv = spec.get("argv") or []
+    if argv[:1] == ["env"]:
+        for token in argv[1:]:
+            if "=" not in token or token.startswith("-"):
+                break
+            prefix.append(token)
+    parts = []
+    if prefix:
+        parts.append("sets " + " ".join(prefix))
+    if spec.get("env"):
+        parts.append("depends on " + ",".join(spec["env"]))
+    return "env " + "; ".join(parts) if parts else "env inherited (no --env)"
 
 
 def _command_example(action):
@@ -306,6 +365,8 @@ def cmd_evidence_plan(a, sid):
     argv, scope = a.command_argv, L.norm_scope(a.scope)
     if not argv:
         sys.exit('al_state: evidence plan requires a check command after `--`.\n' + _command_example('plan'))
+    env_names, assignments = env_options(a.env)
+    argv = with_env(argv, assignments, getattr(a, "storage_file", None))
     if not scope:
         sys.exit('al_state: evidence plan requires --scope PATH[,PATH...].\n' + _command_example('plan'))
     if not a.area:
@@ -321,10 +382,11 @@ def cmd_evidence_plan(a, sid):
     _require_scope(scope,sources,a.cwd or ".")
     L.ledger(st)["plan"][a.area] = {
         "area": a.area, "kind": a.kind, "tier": a.tier, "argv": argv, "cwd": a.cwd or ".",
-        "scope": scope, "sources": sources, "env": _split(a.env), "preflight": a.preflight or None, "needs": _split(a.needs)}
+        "scope": scope, "sources": sources, "env": env_names, "preflight": a.preflight or None, "needs": _split(a.needs)}
     if storage is not None:L.ledger(st)["plan"][a.area]["storage"] = storage
     al_store.save(sid, st)
-    print(f"AL · evidence planned · {a.area} · {a.tier} · `{' '.join(argv)}` · scope {', '.join(scope)}")
+    print(f"AL · evidence planned · {a.area} · {a.tier} · `{' '.join(argv)}` · scope {', '.join(scope)}"
+          f" · {env_text(L.ledger(st)['plan'][a.area])}")
 
 
 def cmd_evidence_retire(a, sid):
@@ -369,8 +431,10 @@ def cmd_evidence_run(a, sid):
         if not scope:
             sys.exit("al_state: an ad-hoc evidence run needs --scope (what this command depends on)")
         sources=_sources_file(a)
-        spec = {"area": a.area, "kind": a.kind, "tier": a.tier or "focused", "argv": a.command_argv,
-                "cwd": a.cwd or ".", "scope": scope, "sources": sources, "env": _split(a.env),
+        env_names, assignments = env_options(a.env)
+        argv = with_env(a.command_argv, assignments, getattr(a, "storage_file", None))
+        spec = {"area": a.area, "kind": a.kind, "tier": a.tier or "focused", "argv": argv,
+                "cwd": a.cwd or ".", "scope": scope, "sources": sources, "env": env_names,
                 "preflight": a.preflight or None, "needs": _split(a.needs)}
         if not getattr(a, "storage_file", None):
             import al_evidence_storage
@@ -382,6 +446,13 @@ def cmd_evidence_run(a, sid):
                 spec["storage"] = al_evidence_storage.default_declaration()
     elif planned:
         spec = dict(planned)
+        if a.env:
+            # Never drop a supplied environment silently: it must match what the area was planned with.
+            env_names, assignments = env_options(a.env)
+            if (sorted(env_names) != sorted(planned.get("env") or ())
+                    or with_env(planned["argv"][len(with_env([], assignments)):], assignments) != planned["argv"]):
+                sys.exit(f"al_state: --env differs from the planned area {a.area} ({env_text(planned)}); "
+                         "plan the area again with the intended --env")
         if getattr(a,"sources_file",None):spec["sources"]=_sources_file(a)
     else:
         sys.exit(f"al_state: no planned check named {a.area}; plan it or pass `-- <argv>`")
@@ -493,7 +564,8 @@ def register(sub):
         p.add_argument("--storage-file")
         p.add_argument("--recipe", choices=['harness-nonbrowser-v1'])
         p.add_argument("--recipe-descriptor-file")
-        p.add_argument("--env", action="append")
+        p.add_argument("--env", action="append", metavar="NAME[=VALUE]",
+                       help="repeatable; NAME declares a fingerprinted dependency, NAME=VALUE sets a non-secret literal")
         p.add_argument("--preflight")
         p.add_argument("--needs")
     ev = sub.add_parser("evidence").add_subparsers(dest="action", required=True)

@@ -17,9 +17,18 @@ from al_store import git, save, set_phase, state_path, write_current
 def cmd_start(a, sid):
     from al_new_origin import require_dispatch
     require_dispatch()
-    if a.review_mode == "whole-mr" and not (a.target and a.target.strip()):
-        al_schema.refuse("whole-mr requires an explicit --target (for example main)")
-    target = a.target or "HEAD"
+    target, notes = (a.target or "").strip() or None, []
+    if a.review_mode == "whole-mr" and not target:
+        # A fresh worktree records the branch it was created from; its upstream is the MR target.
+        target, why = al_scope.default_target()
+        if target is None:
+            al_schema.refuse("whole-mr requires an explicit --target (for example origin/main); "
+                             "no default target could be determined: " + why)
+        notes.append(f"AL · whole-mr target defaulted to {target}: {why}; pass --target to choose another")
+    target = target or "HEAD"
+    warning = al_scope.target_warning(target) if target != "HEAD" else None
+    if warning:
+        notes.append(warning)
     if state_path(sid).exists():
         al_schema.refuse("run identity already exists; history cannot be overwritten")
     from al_native_sessions import starting
@@ -85,3 +94,7 @@ def cmd_start(a, sid):
         print(f"AL session {sid}")
         print(f"AL state started for session {sid}: {state_path(sid)}")
         print(f"pre-existing working-tree changes: {len(st['preexisting_changes'])}")
+        for note in notes:
+            print(note)
+            if "WARNING" in note:
+                print(note, file=sys.stderr)

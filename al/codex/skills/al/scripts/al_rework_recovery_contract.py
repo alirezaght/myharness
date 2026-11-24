@@ -12,6 +12,21 @@ def origin(st):
     return {'session_id':st['session_id'],'run_id':st['run_id'],'identity':st['identity'],
             'original_task_hash':st['proof_admission']['original_task_hash'],'runtime_pin':st['runtime_origin']['pin']}
 
+TARGET_FIELDS=('target','target_oid','merge_base')
+
+
+def retargeted(previous, st, old, new):
+    """The origin follows only a recorded retarget: identical apart from the identity target fields."""
+    records=st.get('retargets',[])
+    if len(records)!=len(previous.get('retargets',[]))+1 or not isinstance(old,dict) or not isinstance(new,dict):return False
+    def strip(value):
+        return {**value,'identity':{k:v for k,v in value.get('identity',{}).items() if k not in TARGET_FIELDS}}
+    record=records[-1]
+    return (strip(old)==strip(new) and new['identity']==st['identity']
+            and record.get('from')=={k:old['identity'].get(k) for k in TARGET_FIELDS}
+            and record.get('to')=={k:new['identity'].get(k) for k in TARGET_FIELDS})
+
+
 def grant(kind, authorization, index):
     import time
     return {'id':'G'+str(index),'kind':kind,'limit':2,'authorization':authorization,'at':time.time()}
@@ -272,7 +287,7 @@ def prepare_save(st, previous):
         if 'rework_recovery' not in st:refuse('recovery capability cannot be removed')
         old=previous['rework_recovery'];new=st['rework_recovery']
         for name in ('origin','schema_version','kind'):
-            if new[name]!=old[name]:refuse('recovery origin is immutable')
+            if new[name]!=old[name] and not (name=='origin' and retargeted(previous,st,old[name],new[name])):refuse('recovery origin is immutable')
         for name in ('grants','decisions','continuations'):
             if new[name][:len(old[name])]!=old[name]:refuse('recovery history is append-only')
         for i,o in enumerate(old['occurrences']):

@@ -217,6 +217,7 @@ def _main():
     s.set_defaults(fn=cmd_retry)
     import al_inspection
     al_inspection.register(sub)
+    al_scope.register(sub)
     al_review.register(sub)
     import al_retry
     al_retry.register(sub)
