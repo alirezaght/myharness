@@ -1,5 +1,6 @@
 """Discovery cost grows with the repository and the task, not with their product (#8)."""
 import fcntl
+import hashlib
 import io
 import json
 import os
@@ -138,8 +139,137 @@ def test_long_silent_phase_prints_heartbeat(monkeypatch):
         time.sleep(0.4)
     lines = stream.getvalue().splitlines()
     assert '7/9 items processed' in lines[0]
-    assert any('analyzing repository relationships and checks · still working · 7 items processed so far' in line
+    # The heartbeat shows progress out of the phase total, so slow is told apart from stuck (#23).
+    assert any('analyzing repository relationships and checks · still working · 7/9 items processed so far' in line
                for line in lines[1:]), lines
+
+
+def test_heartbeat_follows_counts_reported_between_beats(monkeypatch):
+    stream = io.StringIO()
+    monkeypatch.setattr(progress.sys, 'stderr', stream)
+    monkeypatch.setattr(progress, '_HEARTBEAT', 0.05)
+    with progress.command_progress('gates', 'discover'):
+        progress.report('inventory-provenance', count=0, total=40, force=True)
+        # Rate-limited reports print nothing themselves but move the heartbeat's count.
+        progress.report('inventory-provenance', count=12, total=40)
+        time.sleep(0.3)
+        progress.report('inventory-membership', count=5, force=True)
+        time.sleep(0.3)
+    lines = stream.getvalue().splitlines()
+    assert any('binding scanned inputs to units · still working · 12/40 items processed so far' in line for line in lines), lines
+    assert any('enumerating repository membership · still working · 5 items processed so far' in line for line in lines), lines
+
+
+def _bind_boundaries(repo, links):
+    """Content reads of one collection whose repository tracks `links` symlink boundaries."""
+    _build(repo, 40)
+    for i in range(links):
+        os.symlink('../m0.py', repo / f'svc/pkg{i % 7}/link{i}.py')
+    (repo / 'svc/pkg0/consumer.py').write_text('PATH = "pkg1/link1.py"\n')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'symlink boundaries')
+    reads = [0]
+    original_items = F.CapturedContent.content_items
+
+    def items(self, paths):
+        for row in original_items(self, paths):
+            reads[0] += 1
+            yield row
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(F.CapturedContent, 'content_items', items)
+        patch.setenv('AL_ANALYSIS_CACHE', '0')
+        base = S.git_bytes('rev-parse', 'HEAD').decode().strip()
+        facts = F.collect(repo, base_oid=base, paths=['svc/pkg0/m0.py'], opaque=set())
+    return reads[0], facts
+
+
+def test_boundary_consumers_share_one_source_pass(repo, tmp_path, monkeypatch, seed_repo):
+    import shutil
+    few, few_facts = _bind_boundaries(repo, 2)
+    many_repo = tmp_path / 'many'
+    shutil.copytree(seed_repo, many_repo, symlinks=True)
+    monkeypatch.chdir(many_repo)
+    monkeypatch.setattr(al_store, 'REPO_ROOT', many_repo)
+    many, many_facts = _bind_boundaries(many_repo, 24)
+    consumers = many_facts['dependencies']['boundary_consumers']
+    assert len(consumers) >= 24
+    assert consumers['svc/pkg1/link1.py'] == ['svc/pkg0/consumer.py']
+    assert few_facts['dependencies']['boundary_consumers']['svc/pkg1/link1.py'] == ['svc/pkg0/consumer.py']
+    # 12x boundaries: a source pass per boundary made this ~12x; one shared pass keeps it flat.
+    assert many <= few + 60, (few, many)
+
+
+class _Files(dict):
+    def __init__(self, snapshot, values, reads):
+        super().__init__(values)
+        self.snapshot, self.reads = snapshot, reads
+        self.records = {p: {'sha256': hashlib.sha256(v).hexdigest()} for p, v in values.items()}
+
+    def content_items(self, paths):
+        for p in paths:
+            self.reads.append(p)
+            yield p, self[p]
+
+
+def _scan(values, reads):
+    return type('Scan', (), {'files': _Files('current', values, reads), 'base': _Files('base', {}, reads)})
+
+
+def test_referencing_has_one_definition_and_excludes_the_artifact_itself(monkeypatch):
+    import inspect
+    monkeypatch.setenv('AL_ANALYSIS_CACHE', '0')
+    source = inspect.getsource(imports)
+    assert source.count('def _referencing_many(') == 1
+    reads = []
+    scan = _scan({'a/x.py': b'x.py and a/', 'b/y.py': b'import x.py'}, reads)
+    assert imports._referencing_many(scan, ['a/x.py']) == {'a/x.py': ['b/y.py']}
+
+
+def test_a_later_command_reuses_references_for_identical_captured_sources():
+    """`gates plan` after `gates discover` reuses the literal-reference pass; a changed source rebinds (#23)."""
+    values = {'a/x.py': b'x.py and a/', 'b/y.py': b'import x.py', 'c/z.py': b'nothing'}
+    first_reads, again_reads, changed_reads = [], [], []
+    first = imports._referencing_many(_scan(values, first_reads), ['a/x.py', 'c/z.py'])
+    again = imports._referencing_many(_scan(values, again_reads), ['a/x.py', 'c/z.py'])
+    assert first == again == {'a/x.py': ['b/y.py'], 'c/z.py': []}
+    assert len(first_reads) == 3 and again_reads == []
+    changed = dict(values, **{'c/z.py': b'uses x.py'})
+    assert imports._referencing_many(_scan(changed, changed_reads), ['a/x.py', 'c/z.py']) == {'a/x.py': ['b/y.py', 'c/z.py'], 'c/z.py': []}
+    assert len(changed_reads) == 3
+    # A corrupt record is a miss, never a result.
+    for record in (al_store.RUNTIME_DIR / 'derived' / 'literal-references').glob('*.json'):
+        record.write_text(record.read_text().replace('b/y.py', 'b/q.py'))
+    corrupt_reads = []
+    assert imports._referencing_many(_scan(values, corrupt_reads), ['a/x.py', 'c/z.py']) == first
+    assert len(corrupt_reads) == 3
+
+
+def test_scan_inputs_match_pairwise_unit_binding():
+    rng = random.Random(23)
+    segments = ['a', 'b', 'src', 'lib']
+
+    def path(suffix=''):
+        return '/'.join(rng.choice(segments) for _ in range(rng.randint(1, 4))) + suffix
+
+    class Files:
+        def __init__(self, records):
+            self.records = records
+
+    for _ in range(300):
+        units = [{'path': p, 'source_roots': [p + '/src'] if rng.random() < 0.7 else [p]}
+                 for p in {path() for _ in range(rng.randint(0, 4))}]
+        if rng.random() < 0.05:
+            units.append({'path': '.', 'source_roots': ['.']})
+        files = {path(rng.choice(['.py', '.ts', '.md', '.go'])): {'sha256': 'x'} for _ in range(20)}
+        scan = type('Scan', (), {'base': Files(dict(list(files.items())[:7])), 'files': Files(files)})
+        expected = [{'path': p, 'snapshot': which, 'sha256': record['sha256']}
+                    for which, group in [('base', scan.base), ('current', scan.files)]
+                    for p, record in sorted(group.records.items())
+                    if p.endswith(F.SOURCE_SUFFIXES) and any(
+                        (p.endswith('.py') and any(within(r, p) for r in u['source_roots']))
+                        or (not p.endswith('.py') and within(u['path'], p)) for u in units)]
+        assert F.scan_inputs(scan, units) == expected
 
 
 def test_waiting_command_names_the_lock_holder(monkeypatch):

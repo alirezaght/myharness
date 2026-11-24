@@ -379,52 +379,48 @@ class TokenFinder:
             position=start+1
 
 
-def _referencing_many(scan,paths):
-    """Source files naming each artifact or its directory, from one pass over source content.
+def _referencing_many(scan,paths,stage='inventory-references'):
+    """Source files (other than the artifact itself) naming each artifact or its directory,
+    from one pass over source content.
 
     Per-artifact scans re-read and re-verify every repository source once per
-    changed artifact (changed files x repository files); this reads each source once."""
+    changed artifact (changed files x repository files); this reads each source once.
+    Keep this the only definition: a second, per-token rescan once shadowed it (#23)."""
     wanted={path:_reference_tokens(path) for path in paths}
     if not wanted:return {}
+    batches=[(files,[p for p in files if p.endswith(SOURCE_SUFFIXES)]) for files in (scan.files,scan.base)]
+    total=sum(len(sources) for _,sources in batches)
+    # The result is a function of the tokens and the captured source hashes alone, so a
+    # later command that captured the same sources (gates plan after discover) reuses it;
+    # any changed source, token or runtime is a different key and is recomputed.
+    from al_analysis_cache import DerivedStore
+    from al_runtime_resources import implementation_digest
+    store=DerivedStore('literal-references')
+    key={'schema':1,'implementation':implementation_digest(),
+         'wanted':{path:[t.hex() for t in tokens] for path,tokens in sorted(wanted.items())},
+         'sources':[[files.snapshot,p,files.records[p]['sha256']] for files,sources in batches for p in sources]}
+    cached=store.load(key)
+    if isinstance(cached,dict) and set(cached)==set(wanted) and all(isinstance(v,list) for v in cached.values()):
+        progress.report(stage,count=total,total=total,force=True)
+        return cached
     finder=TokenFinder({t for tokens in wanted.values() for t in tokens})
     holders=defaultdict(set)
     count=0
-    batches=[(files,[p for p in files if p.endswith(SOURCE_SUFFIXES)]) for files in (scan.files,scan.base)]
-    total=sum(len(sources) for _,sources in batches)
     for files,sources in batches:
         for p,data in files.content_items(sources):
             for token in finder.present(data):holders[token].add(p)
             count+=1
-            progress.report('inventory-references',count=count,total=total)
-    progress.report('inventory-references',count=count,force=True)
-    return {path:sorted({p for t in tokens for p in holders.get(t,())}) for path,tokens in wanted.items()}
+            progress.report(stage,count=count,total=total)
+    progress.report(stage,count=count,total=total,force=True)
+    result={path:sorted({p for t in tokens for p in holders.get(t,()) if p!=path}) for path,tokens in wanted.items()}
+    store.store(key,result)
+    return result
 
 
 def _referencing(scan,path,exclude):
     """Source files naming the artifact or its directory (directory loads and globs over-select)."""
     found=_referencing_many(scan,[path])[path]
     return [p for p in found if p!=exclude]
-
-
-def _referencing_many(scan,paths):
-    """_referencing for many paths with one read of each source file."""
-    tokens={}
-    for path in paths:
-        pure=PurePosixPath(path);found=[pure.name.encode()]
-        if pure.parent.name:
-            directory=pure.parent.name.encode()
-            found+=[directory+b'/',b'"'+directory,b"'"+directory]
-        for token in found:tokens.setdefault(token,set()).add(path)
-    out={path:set() for path in paths}
-    if tokens:
-        for files in (scan.files,scan.base):
-            for name,data in files.items():
-                if not name.endswith(SOURCE_SUFFIXES):continue
-                for token,owners in tokens.items():
-                    if token in data:
-                        for path in owners:
-                            if path!=name:out[path].add(name)
-    return {path:sorted(found) for path,found in out.items()}
 
 
 MANIFESTS=frozenset({'package.json','package-lock.json','tsconfig.json','composer.json','pnpm-lock.yaml','pnpm-workspace.yaml'})
