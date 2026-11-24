@@ -40,11 +40,10 @@ executable and its content hash, plus the toolchain lockfiles such as `uv.lock` 
 git tree of the check's scope plus its package (the rule above), or of the whole
 repository when the package is the root. The tree comes from the working-copy
 snapshot (`al_snapshot.input_tree`, a private per-worktree index), so untracked
-files count and AL's generated and cache directories do not; inputs holding a
-nested repository or a symlink out of the repository are never cached, and neither
-are inputs with tracked files under a directory the snapshot leaves out (`dist/`,
-`build/`, `.venv/`, `node_modules/` and similar): the run prints
-`not cached: tracked inputs under <dir>` and executes (base gates likewise). Any change
+files count, every tracked file counts wherever it lives (`dist/`, `build/`,
+`node_modules/` included), and untracked files in AL's generated and cache
+directories do not; inputs holding a nested repository or a symlink out of the
+repository are never cached. Any change
 to any of these is a miss.
 
 A hit records an ordinary new entry with the original log, status and counts,
