@@ -79,6 +79,11 @@ def prepare_commit(previous, proposed):
             continue  # a tool-availability preflight tests no repository path
         p = {k: e[k] for k in ('id', 'area', 'status', 'scope')}
         p['counts'] = e.get('counts')
+        if e.get('action_cache'):
+            # Provenance for Harness reports (#31): absent means the check ran in this run.
+            cached = e['action_cache']
+            p['provenance'] = {'mode': 'reused', 'origin': copy.deepcopy(cached.get('origin')),
+                               'tree': cached.get('tree'), 'key': cached.get('key')}
         if e['status'] == 'RUNNING':
             kind = 'test.started'
         else:

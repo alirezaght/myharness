@@ -1,5 +1,6 @@
 """Read-only concise completion facts; AL and provider evidence stay distinct."""
 
+from harness.execution_provenance import annotate, summary
 from harness.execution_store import entities, get_execution
 
 
@@ -20,7 +21,11 @@ def assemble_report(conn, execution_id, delivery):
         },
         "completed_tasks": [t for t in tasks if t.get("status") == "Completed"],
         "tasks": tasks,
-        "al_tests": {"status": "recorded" if tests else "unavailable", "records": tests},
+        "al_tests": {
+            "status": "recorded" if tests else "unavailable",
+            "records": annotate(tests, execution.get("al_run_id")),
+            "provenance": summary(tests),
+        },
         "merge_request": delivery.get("mr") or {"status": "unavailable"},
         "ci": {
             "pipeline": delivery.get("pipeline"),
