@@ -21,15 +21,50 @@ def test_run_records_argv_cwd_exit_log_counts_and_fingerprint(cli, state_file):
     assert e["fp_before"] == e["fp_after"] and e["fp_after"]
 
 
-def test_unrelated_web_change_reuses_the_service_run(cli, repo, state_file):
+def test_unchanged_inputs_reuse_the_run(cli, repo, state_file):
     cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
     plan_both(cli)
     cli("evidence", "run", "--area", "svc")
-    (repo / "web/app.js").write_text("let a = 2\n")
     code, out, _ = cli("evidence", "run", "--area", "svc")
     assert code == 0
     assert "E1 reused" in out
     assert len(entries(state_file)) == 1
+
+
+def test_change_outside_scope_in_the_checks_package_reruns_it(cli, repo, state_file):
+    """Issue #21: a check rooted at the repository reads more than its declared scope
+    (a UI spec runs against a build of src/), so any change there re-runs it."""
+    cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
+    plan_both(cli)
+    assert cli("evidence", "run", "--area", "svc")[0] == 0
+    (repo / "web/app.js").write_text("let a = 2\n")
+    code, out, _ = cli("evidence", "run", "--area", "svc")
+    assert code == 0
+    assert "E1 not reused" in out and "E1 reused" not in out
+    assert [e["id"] for e in entries(state_file)] == ["E1", "E2"]
+    # Validity is unchanged: the out-of-scope edit never staled E1, only its reuse.
+    assert cli("evidence", "run", "--area", "svc")[1].count("E2 reused") == 1
+
+
+def test_change_in_another_package_keeps_reuse(cli, repo, state_file):
+    (repo / "web/package.json").write_text("{}\n")
+    cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
+    cli("evidence", "plan", "--area", "web", "--cwd", "web", "--scope", "web/app.js",
+        "--", *ok_cmd("Tests  4 passed (4)"))
+    assert cli("evidence", "run", "--area", "web")[0] == 0
+    (repo / "svc/app.py").write_text("x = 2\n")
+    assert "E1 reused" in cli("evidence", "run", "--area", "web")[1]
+    (repo / "web/build.js").write_text("// generated\n")
+    out = cli("evidence", "run", "--area", "web")[1]
+    assert "E1 not reused" in out and "E2" in out
+
+
+def test_entry_without_recorded_inputs_is_rerun_not_refused(cli, repo, state_file):
+    import al_ledger as L
+    entry = {"cwd": ".", "scope": ["svc"]}
+    assert not L.inputs_current(entry)
+    entry["inputs_before"] = "stale"
+    assert not L.inputs_current(entry)
 
 
 def test_fixture_change_inside_the_scope_invalidates_the_run(cli, repo):

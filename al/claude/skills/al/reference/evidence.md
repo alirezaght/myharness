@@ -15,6 +15,20 @@ trailing `--` is an error for either action. Command flags after the separator
 belong to the check, and each shell argument is preserved literally; no shell
 command string is inferred or split.
 
+A rerun of an area reuses its last PASS only while the check's inputs are
+unchanged, and its scope fingerprint is not enough to show that. A check
+also reads files it does not declare: a browser spec runs against a build of
+`src/`, and a linter reads its config. So each run records an inputs
+fingerprint covering every repository file (tracked, or untracked and not
+ignored) in the check's package, plus its scope. The package is the nearest
+directory at or above the check's cwd that holds a project manifest
+(`pyproject.toml`, `package.json`, `go.mod`, `Cargo.toml` and similar), or the
+repository root. If any of those files changed, `evidence run` prints
+`E<n> not reused` and runs the check again.
+A change in another package keeps reuse. Validity is unchanged: a change outside
+the scope still does not make the earlier PASS STALE, it only stops it being
+reused. Declare cross-package dependencies in `--scope`, or pass `--fresh`.
+
 `evidence supersede --id EOLD --replaced-by ENEW --reason TEXT` appends an immutable audit artifact. Both entries and their logs remain unchanged, including the original FAIL. The replacement must be a newer original execution, a current VALID PASS of the same declared obligation and current plan. A later failed/running attempt wins. Changed command semantics require separate supported replanning; free text cannot assert equivalence. Corrupt logs, unresolved processes, foreign runs and conflicting replay refuse without changing state. Exact replay is idempotent while its binding is current.
 
 This records why a current rerun replaces obsolete evidence; it does not resurrect old receipts, clear review findings or retire gates. Evidence status and inspection expose the relation. Area/repro readiness still uses the current command and latest-attempt ledger rules. `evidence retire` remains a distinct mistaken-plan operation.

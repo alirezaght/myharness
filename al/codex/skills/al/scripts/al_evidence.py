@@ -167,6 +167,7 @@ def _create(sid, expected_run, *, gate_context=None, own_writer=None, **fields):
         if destination is not None: entry['gate_reservation'] = destination
         entry["reservation"] = secrets.token_hex(16)
         entry["fp_before"] = _fingerprint(entry)
+        entry["inputs_before"] = L.inputs_fingerprint(entry)
         al_store.save(sid, st)
     return entry
 
@@ -279,6 +280,7 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
         entry['log_sha256'] = None
         failure = 'log provenance unavailable: ' + str(exc)
     entry['fp_after'] = _fingerprint(entry)
+    entry['inputs_after'] = L.inputs_fingerprint(entry)
     status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'], output=raw[start:end].decode(errors='replace') if entry.get('log_sha256') else '')
     if interrupted is not None:
         status, note = 'INFRA', 'cancelled — the run was interrupted'
@@ -319,6 +321,18 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
     if interrupted is not None:
         raise interrupted
     return text
+
+
+def reusable(st, prev):
+    """A VALID PASS is reused only while its inputs are unchanged (issue #21)."""
+    if L.entry_verdict(st, prev)[0] != "VALID":
+        return False
+    if L.inputs_current(prev):
+        return True
+    package = L.inputs_root(prev.get("cwd", "."))
+    print(f"AL · evidence {prev['id']} not reused · {prev['area']} · files in its package "
+          f"({package}) or scope changed since that run, or its inputs were not recorded · running again")
+    return False
 
 
 def _require_scope(scope, sources=(), cwd="."):
@@ -467,7 +481,7 @@ def cmd_evidence_run(a, sid):
             print(f"  {m}", file=sys.stderr)
         sys.exit(15)
     prev = L.latest(st, spec["area"], spec)
-    if prev and not a.fresh and L.entry_verdict(st, prev)[0] == "VALID":
+    if prev and not a.fresh and reusable(st, prev):
         from al_execution_tasks import admit_check as execution_check
         execution_check(st, spec)
         print(f"AL · evidence {prev['id']} reused · {spec['area']} · PASS · {L.counts_text(prev)} · "

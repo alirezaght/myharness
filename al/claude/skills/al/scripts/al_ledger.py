@@ -19,6 +19,13 @@ service test run); a change inside it makes the entry STALE. Environment
 variables named with `--env` are folded in as hashes — their values are never
 stored or printed.
 
+Reuse (`evidence run` skipping a re-run) is stricter than validity: a check also
+reads files it does not declare (a browser test runs against a build of `src/`).
+Each run records an inputs fingerprint over every repository file in the check's
+package — the nearest directory at or above its cwd holding a project manifest,
+else the repository root — plus its scope. A PASS is reused only while that
+fingerprint is unchanged; otherwise the check runs again (issue #21).
+
 Pure helpers over the state dict plus the fingerprint/log I/O; the CLI lives in
 al_evidence.py.
 """
@@ -357,6 +364,44 @@ def find(st, entry_id):
         if e["id"] == entry_id:
             return e
     return None
+
+
+# A directory holding one of these is a project of its own (as al_gate_inventory.MANIFESTS).
+INPUT_MANIFESTS = ('package.json', 'pyproject.toml', 'setup.py', 'go.mod', 'Cargo.toml', 'pom.xml',
+                   'build.gradle', 'build.gradle.kts', 'Gemfile', 'composer.json', 'mix.exs',
+                   'Package.swift', 'CMakeLists.txt', 'pubspec.yaml', 'deno.json')
+
+
+def inputs_root(cwd='.'):
+    """The check's package: the nearest directory at or above cwd holding a project
+    manifest, else the repository root ('.')."""
+    MANIFESTS = INPUT_MANIFESTS
+    root = al_store.REPO_ROOT
+    relative = Path(cwd or '.')
+    for candidate in (relative, *relative.parents):
+        if candidate.as_posix() != '.' and any((root / candidate / name).is_file() for name in MANIFESTS):
+            return candidate.as_posix()
+    return '.'
+
+
+def inputs_fingerprint(entry):
+    """Digest of every repository file (tracked or untracked, not ignored) under the
+    check's package or its scope, or None when the worktree cannot be observed."""
+    try:
+        package = inputs_root(entry.get('cwd', '.'))
+        within = [package, *(entry.get('scope') or ())]
+        rows = [[row['path'], row.get('worktree')] for row in S.records('HEAD')
+                if any(Sources.contains(prefix, row['path']) for prefix in within)]
+    except (OSError, ValueError, KeyError, TypeError, SystemExit):
+        return None
+    return hashlib.sha256(json.dumps([package, rows], sort_keys=True).encode()).hexdigest()[:16]
+
+
+def inputs_current(entry):
+    """True when no file in the check's package or scope changed since its run.
+    An entry without a recorded inputs fingerprint is never reused."""
+    recorded = {entry.get('inputs_before'), entry.get('inputs_after')} - {None}
+    return bool(recorded) and inputs_fingerprint(entry) in recorded
 
 
 def same_command(e, spec):
