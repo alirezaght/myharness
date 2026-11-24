@@ -72,6 +72,7 @@ _OPERATIONS = {
     'review-result': 'review result', 'review-compare-result': 'review comparison result',
     'correction': 'correction', 'notes-triage': 'review notes', 'oscillation': 'correction review',
     'conflict-resolved': 'conflict resolution', 'retarget': 'retarget', 'agent': 'agent record', 'brief': 'repository brief',
+    'progress': 'progress checkpoint', 'ask': 'agent question', 'handoff-record': 'handoff record',
     'verify': 'verify', 'next': 'next step',
 }
 _READ_ACTIONS = {

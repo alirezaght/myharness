@@ -205,6 +205,10 @@
         },
         "kept_verdicts": {
           "type": "array"
+        },
+        "handoff_records": {
+          "description": "Compare stage only: implementer handoff records (agent-handoff-record-v1) stored since the base review, by hash with their original JSON.",
+          "type": "array"
         }
       }
     }

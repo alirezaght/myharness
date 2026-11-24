@@ -51,6 +51,8 @@ def inspect_session(sid, *, expected_run, expected_repo, sections):
             output['summary'] = {k: state.get(k) for k in ('status', 'phase', 'classification', 'spec_status', 'model', 'effort', 'updated_at')}
             output['summary']['rework_recovery'] = state.get('rework_recovery')
             output['summary']['rework'] = state.get('rework')
+            from al_comms import summary as communication
+            output['summary'].update(communication(state))
         if 'evidence' in sections:
             import al_ledger as L
             output['evidence'] = []

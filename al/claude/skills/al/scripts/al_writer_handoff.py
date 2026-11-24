@@ -63,7 +63,9 @@ def cmd_handoff(a, sid):
     # rediscover them by hand. It never refuses; missing facts are named.
     import al_brief
     brief = al_brief.render(al_brief.brief(st, writer.get('files') or None))
-    prompt = body + '\n\n' + brief + '\n\n' + evidence_block(st, sid, a.id, areas) + '\n'
+    import al_comms
+    records = al_comms.render_records(al_comms.records_since(st, exclude_writer=a.id))
+    prompt = body + '\n\n' + brief + ('\n\n' + records if records else '') + '\n\n' + evidence_block(st, sid, a.id, areas) + '\n'
     raw = prompt.encode('utf-8')
     plan_digest = digest(json.dumps({area: plan[area] for area in areas}, sort_keys=True,
                                   separators=(',', ':')).encode('utf-8'))

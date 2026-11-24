@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agent-handoff-record-v1",
+  "description": "An agent's structured handoff (#30), stored with `handoff-record --file` and passed by hash to the next writer and to the comparison stage of a delta review. Verified claims cite ledger evidence IDs; anything without evidence is unverified.",
+  "type": "object",
+  "required": ["schema_version", "kind", "role", "decisions", "assumptions", "files_touched", "verified", "unverified", "open_questions", "risks"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"const": "agent-handoff-record-v1"},
+    "role": {"enum": ["al-architect", "al-designer", "al-engineer", "al-builder", "al-scout"]},
+    "agent_id": {"type": "string", "minLength": 1, "maxLength": 200},
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["decision", "reason"],
+        "additionalProperties": false,
+        "properties": {"decision": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1}}
+      }
+    },
+    "assumptions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "files_touched": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "verified": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "evidence_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "claim": {"type": "string", "minLength": 1},
+          "evidence_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^E[0-9]+$"}}
+        }
+      }
+    },
+    "unverified": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "reason"],
+        "additionalProperties": false,
+        "properties": {"claim": {"type": "string", "minLength": 1}, "reason": {"type": "string", "minLength": 1}}
+      }
+    },
+    "open_questions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "risks": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

@@ -232,6 +232,8 @@ def _main():
     al_agents.register(sub)
     import al_brief
     al_brief.register(sub)
+    import al_comms
+    al_comms.register(sub)
     import al_retry
     al_retry.register(sub)
     import al_failures

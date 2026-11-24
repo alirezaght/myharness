@@ -82,6 +82,17 @@ def cmd_agent(a, sid):
             print('AL · no ' + a.role + ' agent recorded yet: dispatch one, then `agent record --role ' + a.role + ' --id <agent-id>`')
             return
         print(line)
+    elif a.action == 'usage':
+        if a.role not in ROLES:
+            refuse('unknown AL role ' + str(a.role))
+        if a.output_tokens < 0 or (a.input_tokens or 0) < 0:
+            refuse('token counts must be nonnegative')
+        row = st.setdefault('output_tokens', {}).setdefault(a.role, {'output': 0, 'input': 0, 'invocations': 0})
+        row['output'] += a.output_tokens
+        row['input'] += a.input_tokens or 0
+        row['invocations'] += 1
+        al_store.save(sid, st)
+        print('AL · ' + a.role + ' output tokens ' + str(row['output']) + ' over ' + str(row['invocations']) + ' invocation(s)')
     else:
         rows = st.get('agent_instances', [])
         if not rows:
@@ -110,5 +121,10 @@ def register(sub):
     r = s.add_parser('resume')
     r.add_argument('--role', required=True)
     r.add_argument('--writer')
+    r = s.add_parser('usage', help="add one invocation's token usage as the host reported it (per role; inspect shows it)")
+    r.add_argument('--role', required=True)
+    r.add_argument('--output-tokens', type=int, required=True)
+    r.add_argument('--input-tokens', type=int)
+    r.add_argument('--id')
     s.add_parser('list')
     p.set_defaults(fn=cmd_agent)

@@ -158,6 +158,11 @@ def render_line(st):
         result += ' │ verification ' + ('pending' if value['pending'] or value['issues'] else 'not approved')
         if value['developer_decisions']:
             result += f" │ {value['developer_decisions']} scoped developer decision(s)"
+    if st.get('status') == 'RUNNING' and (st.get('progress_notes') or st.get('agent_questions')):
+        from al_comms import status_suffix
+        suffix = status_suffix(st)
+        if suffix:
+            result += ' │ ' + suffix
     return result
 
 

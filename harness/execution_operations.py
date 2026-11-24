@@ -25,9 +25,13 @@ from harness.execution_logs import redact_value
 from harness.execution_processes import ProcessManager, bounded_capture
 from harness.execution_store import get_execution
 
-READ_COMMANDS = {"show", "status", "review-status", "next", "help", "routing-audit"}
+READ_COMMANDS = {"show", "status", "review-status", "next", "help", "routing-audit", "brief"}
 COMMANDS = READ_COMMANDS | {
     "verify",
+    "agent",
+    "progress",
+    "ask",
+    "handoff-record",
     "artifact",
     "preflight",
     "classify",
