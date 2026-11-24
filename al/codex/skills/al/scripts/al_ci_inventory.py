@@ -187,6 +187,9 @@ class Inventory:
                 mapped['verification_chain'].update(provider='gitlab',workflow=path,job=name,
                     applicability={'profile':self.context,'status':status},source_chain=dependencies)
             extra={**({'advisory':advisory} if advisory else {}),**({'advisory_steps':advisory_steps} if advisory_steps else {})}
+            if not mapped:
+                recipe=local_recipe(name,variants)
+                if recipe:extra['local_recipe']=recipe
             result.append({**extra,'source_path':path,'source_sha256':self.files[path]['sha256'],'job':name,
                            'units':sorted({R.unit(p) for p in inputs} or self.unit_scope()),
                            'applicability':status,'dependencies':dependencies+(mapped.pop('source_dependencies',[]) if mapped else []),
@@ -213,6 +216,67 @@ def side_effect(tokens):
     """A command line whose effect reaches outside the checkout."""
     name=Path(tokens[0]).name
     return name in REMOTE_TOOLS or any(Path(t).stem.lower() in REMOTE_WORDS or t.lower() in REMOTE_WORDS for t in tokens)
+
+
+def _selected_definitions(variants):
+    """Captured definitions that may run for the task, or None when one could not be read."""
+    out=[]
+    for variant in variants or ():
+        if not variant.get('present') or variant.get('selected') is False:continue
+        if not isinstance(variant.get('job'),dict):return None
+        out.append(variant)
+    return out
+
+
+def release_job(name,variants):
+    """True only when every captured definition that may run is a definite release/deploy job."""
+    selected=_selected_definitions(variants)
+    if not selected:return False
+    for variant in selected:
+        try:
+            if R.release(name,R.structure(variant['job'])) is not True:return False
+        except Unsupported:return False
+    return True
+
+
+def local_recipe(name,variants):
+    """The job's own `before_script` + `script` lines, verbatim, as one local command.
+
+    Offered for a sourced GitLab job AL could not map (unknown pipeline context, image,
+    variables, services, shell syntax): a planner may map the job's gate to exactly this
+    command (`ci_recipe`) so the obligation becomes executable. Every definition that may run
+    must agree on the lines; release jobs and lines that reach outside the checkout are never
+    offered (#17)."""
+    selected=_selected_definitions(variants)
+    if not selected or release_job(name,variants):return None
+    recipes=[]
+    for variant in selected:
+        job=variant['job'];scope=variant.get('globals') or {}
+        default=scope.get('default') if isinstance(scope.get('default'),dict) else {}
+        before=job['before_script'] if 'before_script' in job else default.get('before_script',scope.get('before_script',[]))
+        lines=[]
+        for value in (before,job.get('script')):
+            value=[value] if isinstance(value,str) else value
+            if not isinstance(value,list) or any(not isinstance(line,str) for line in value):return None
+            lines.extend(value)
+        if not job.get('script') or not lines:return None
+        for line in lines:
+            try:tokens=shlex.split(line)
+            except ValueError:return None
+            if tokens and side_effect(tokens):return None
+        recipes.append(lines)
+    if any(lines!=recipes[0] for lines in recipes):return None
+    return {'argv':['sh','-e','-c','\n'.join(recipes[0])],'cwd':'.','execution_kind':'local','env_names':['PATH'],
+            'semantics':'verbatim sourced job script (before_script + script); runner image, variables and services are not reproduced'}
+
+
+def pipeline_verified(obligation):
+    """A concretely enumerated, task-relevant job AL cannot run locally: the pipeline verifies it.
+
+    Unknown inventories, advisory jobs and definite release jobs never qualify."""
+    if str(obligation.get('job','')).startswith('<unresolved-') or obligation.get('impact',{}).get('inventory_complete') is False:return False
+    if obligation.get('execution') or obligation.get('advisory'):return False
+    return not release_job(obligation['job'],obligation.get('definition_variants'))
 
 
 def inventory(root,paths,context=None,opaque=(),*,capture=None):
@@ -287,6 +351,15 @@ def inventory(root,paths,context=None,opaque=(),*,capture=None):
     return value
 
 
+def recipe_mapped(obligation,gate):
+    """A required local gate that runs exactly the job's independently reconstructed verbatim script."""
+    recipe=obligation.get('local_recipe')
+    if not recipe or obligation.get('execution') or gate.get('applicability')!='APPLICABLE' or gate.get('required') is not True:return False
+    if any(key in gate for key in ('remote','remote_source','advisory','package_script','obligation_ids')):return False
+    return (gate.get('ci_recipe')==recipe and gate.get('argv')==recipe['argv'] and gate.get('cwd')==recipe['cwd']
+            and gate.get('execution_kind')==recipe['execution_kind'] and set(recipe['env_names'])<=set(gate.get('env_names',[])))
+
+
 def covered(scope,path):return any(p=='.' or p==path or path.startswith(p.rstrip('/')+'/') for p in scope)
 
 
@@ -304,8 +377,10 @@ def gaps(ci,gates,*,projection=None):
             informational=obligation.get('advisory') and gate.get('required') is False and gate.get('advisory')==obligation['advisory']
             if gate['applicability']=='NOT_APPLICABLE' or not (gate.get('required') is True or informational):continue
             execution=obligation.get('execution')
-            if gate['applicability']=='APPLICABLE' and (not execution or gate.get('argv')!=execution['argv'] or gate.get('cwd')!='.' or gate.get('execution_kind')!=execution['execution_kind'] or gate.get('remote_source')!=execution.get('remote_source') or not set(execution['env_names'])<=set(gate.get('env_names',[]))):continue
-            if obligation['applicability']=='UNRESOLVED' and gate['applicability']!='UNRESOLVED':continue
+            # A job AL could not map may be planned as its own verbatim script (#17).
+            if gate['applicability']=='APPLICABLE' and not execution and recipe_mapped(obligation,gate):pass
+            elif gate['applicability']=='APPLICABLE' and (not execution or gate.get('argv')!=execution['argv'] or gate.get('cwd')!='.' or gate.get('execution_kind')!=execution['execution_kind'] or gate.get('remote_source')!=execution.get('remote_source') or not set(execution['env_names'])<=set(gate.get('env_names',[]))):continue
+            if obligation['applicability']=='UNRESOLVED' and gate['applicability']!='UNRESOLVED' and not recipe_mapped(obligation,gate):continue
             if set(obligation['units'])-set(gate['units']):continue
             required=obligation['inputs']+[d['path'] for d in obligation['dependencies']]
             from al_repository_facts import PathScope

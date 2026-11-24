@@ -78,6 +78,10 @@ def cmd_packet(a,sid):
     data={'attempt':binding,'schema_version':1,'review_id':r['id'],'stage':a.stage,'candidate_hash':r['candidate']['fingerprint'],'task_hash':r['task_hash'],
           'task_package':A.read_json(st['task_package']),'amendments':st['amendments'],'candidate':r['candidate'],
           'evidence':st['evidence'],'gates':st.get('gate_manifests',[]),'escapes':st.get('escapes',[])}
+    # Checks AL did not verify (pipeline-verified CI jobs and services, recorded remote CI
+    # results, pre-existing and advisory failures): the reviewer weighs them, they never block.
+    from al_gates import unverified
+    data['unverified']=unverified(st)
     if a.stage=='compare':
         data.update(fresh=A.read_json(r['fresh']),prior_findings=prior_findings(st),comparison_artifacts=st.get('comparison_artifacts',[]),approved_inputs=al_comparison.packet(st))
         data['comparison_contents'] = [{'artifact':ref,'content':A.read(ref).decode(errors='replace')} for ref in data['comparison_artifacts']]

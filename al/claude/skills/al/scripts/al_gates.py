@@ -186,6 +186,11 @@ def unverified(st):
           'verified_by':'not verified'}
          for g in m['gates'] if g['applicability']=='UNRESOLVED' and g['id'] not in {'imports-unresolved','ci'}
          and not str((g.get('source') or {}).get('job','')).startswith('<unresolved-')]
+    # Pipeline-verified CI jobs and services: recorded remote results, verbatim-recipe mappings (#17).
+    import al_ci_evidence as CIEvidence
+    notes=CIEvidence.rows(st,m,S.capture_candidate(st)['fingerprint'])
+    noted={row['gate'] for row in notes if row['gate']}
+    out=[row for row in out if row['gate'] not in noted]+notes
     sha=st['gate_manifests'][-1]['sha256']
     for stage in ('base','candidate'):
         fp=S.capture_candidate(st)['fingerprint'] if stage=='candidate' else m['base_oid']
@@ -368,6 +373,9 @@ def cmd_gates(a,sid):
         al_store.save(sid,st); return
     if a.action=='status':
         print(json.dumps(status(st),indent=2)); return
+    if a.action=='ci-evidence':
+        import al_ci_evidence as CIEvidence
+        print(json.dumps(CIEvidence.record(st,sid,manifest(st),a),indent=2,sort_keys=True)); return
     refuse('gate run must use unlocked dispatcher')
 
 def _accepted(sid,m,g,stage,pinned):
@@ -683,3 +691,4 @@ def register(sub):
     p=children.add_parser('run'); p.add_argument('--stage',choices=['base','candidate'],required=True); p.add_argument('--id'); p.add_argument('--resume',action='store_true'); p.add_argument('--retry-failed',action='store_true'); p.add_argument('--timeout',type=float,default=300); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_run)
     p=children.add_parser('decision'); p.add_argument('--id',required=True); p.add_argument('--action',dest='decision',choices=['fix','stop','defer','exception'],required=True); p.add_argument('--source',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_gates)
     children.add_parser('status').set_defaults(fn=cmd_gates)
+    __import__('al_ci_evidence').register(children,cmd_gates)

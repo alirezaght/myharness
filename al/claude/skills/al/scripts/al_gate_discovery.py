@@ -86,8 +86,14 @@ def _discover_captured(st,inventory,ci_context):
         src={'path':job['source_path'],'sha256':job['source_sha256'],'job':job['job']}
         scope=sorted(set(job['inputs']+[d['path'] for d in job['dependencies']]))
         execution=job.get('execution') if job['applicability']=='APPLICABLE' else None
-        gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',execution['argv'] if execution else [],scope,src,reason=job['reason']+'; map the sourced job to explicit local/remote verification')
+        resolution='' if execution else ('; the pipeline verifies it (unverified locally): record its result with `gates ci-evidence`'
+                                         +(', or plan this gate as its verbatim script (`ci_recipe`)' if job.get('local_recipe') else ''))
+        gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',execution['argv'] if execution else [],scope,src,reason=job['reason']+resolution)
         gates[-1]['units']=job['units']
+        if job.get('local_recipe') and not execution:
+            # Offered, not applied: the gate stays UNRESOLVED until a planner maps it (#17).
+            gates[-1]['ci_recipe']=job['local_recipe']
+            gates[-1]['env_names']=sorted(set(gates[-1]['env_names'])|set(job['local_recipe']['env_names']))
         if job.get('advisory'):gates[-1].update(required=False,advisory=job['advisory'])
         if execution:
             gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
@@ -146,6 +152,14 @@ def validate_manifest(st,m,check_sources=True):
         if 'advisory' in g and (not isinstance(g['advisory'],str) or not g['advisory'] or g.get('required') is not False
                                 or g['applicability']=='NOT_APPLICABLE' or not (g.get('obligation_ids') or g['category']=='ci')):
             refuse('advisory gate needs a sourced advisory CI step and required=false')
+        if 'ci_recipe' in g:
+            recipe=g['ci_recipe']
+            if (g.get('category')!='ci' or not isinstance(recipe,dict) or set(recipe)!={'argv','cwd','execution_kind','env_names','semantics'}
+                    or not isinstance(recipe['argv'],list) or not recipe['argv'] or any(not isinstance(v,str) for v in recipe['argv'])
+                    or recipe['execution_kind']!='local' or recipe['cwd']!='.'):
+                refuse('invalid CI recipe: it must be the verbatim sourced job script offered by discovery')
+            if g.get('applicability')=='APPLICABLE' and (g.get('argv')!=recipe['argv'] or g.get('execution_kind')!='local' or g.get('cwd')!='.'):
+                refuse('a gate mapped to its CI recipe must run exactly the recipe argv locally')
         if g['applicability']=='NOT_APPLICABLE':
             if not g.get('reason') or g.get('required') or (m.get('rules') and not g.get('source')): refuse('N/A needs reason and required=false')
         elif g['applicability']=='APPLICABLE':
