@@ -81,6 +81,7 @@
         "al/tests/test_verification_lifecycle.py",
         "al/tests/test_verification_preflight.py",
         "al/tests/test_verification_process.py",
+        "al/tests/test_verify_changed.py",
         "al/tests/test_workspace_activity.py",
         "al/tests/test_workspace_activity_capture.py",
         "al/tests/test_workspace_boundaries.py",
@@ -115,6 +116,7 @@
         "tests/test_git_observation.py",
         "tests/test_implementation_continuity.py",
         "tests/test_implementation_outputs.py",
+        "tests/test_launcher_templates.py",
         "tests/test_output_contracts.py",
         "tests/test_planning_template.py",
         "tests/test_repository_membership.py",
@@ -170,7 +172,7 @@
         "tests/test_workspace_source.py"
       ]
     },
-    "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23). Claude test_model_slots.py uses only the per-test repository copy and runtime (2026-10-23)."
+    "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23). Claude test_model_slots.py uses only the per-test repository copy and runtime (2026-10-23). Issue #16 review (2026-11-24): installer test_verify_changed.py builds synthetic trees under tmp_path and runs the release runner with managed storage under the worker HARNESS_HOME and a tmp_path tempdir; codex test_launcher_templates.py prepares pins only under tmp_path with a tmp_path template directory. Neither uses ports, fixed host paths or shared registries. The installer conftest copy_al_source now clones a private per-process template made by the same reviewed materialization; every caller still receives its own fresh tree under its tmp_path, the template is never handed out and is removed at exit. Launcher pins under the runner are copied per session from a run-private template directory and re-verified; only installer fixture fingerprints whose test fingerprints are current are refreshed."
   },
   "isolated_files": {
     "claude:tests/test_analysis_cache.py": {
@@ -2067,6 +2069,20 @@
       "test": "638b7a71c471644c1ca6d7d4a81c6aa5e94fcbfc6a25ad29a0cb552c0ebfbef5",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_verify_changed.py": {
+      "test": "f113effb733ad44c0b77e75d4f510f44b473ae4233c78437d9afa0e245fd35f0",
+      "fixtures": {
+        "sha256": "f2311428bd2464d13fcf33f76a821bf16475b38d4e40d5e8a9e50fe4891ac09d",
+        "mode": 420
+      }
+    },
+    "codex:tests/test_launcher_templates.py": {
+      "test": "316172713a7c462e580d886e19be4fd0aef69482f92c8a89959c60b0175f96da",
+      "fixtures": {
+        "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
         "mode": 420
       }
     }
@@ -5334,8 +5350,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1299,
-    "digest": "63b64e5701b4e29106455bdb65e12ad47ae86a0a8f241e01905906fc9087ef98"
+    "members": 1724,
+    "digest": "4860813baef71fde02e1382d89ede08261e77b080f5bad8e4dea4045a3874728"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",

@@ -56,6 +56,7 @@ def run(plan, *, workers, artifact_root, cache_mode, durations=None, profile=Fal
     started = time.monotonic()
     workers = max(1, min(int(workers), 8, os.cpu_count() or 1))
     artifact_root = Path(artifact_root);artifact_root.mkdir(parents=True, exist_ok=True)
+    templates = artifact_root / 'pin-templates';templates.mkdir(mode=0o700, exist_ok=True)
     assignments = partition(plan, workers=workers, durations=durations or {})
     write_json(artifact_root / 'plan.json', plan)
     pending, active, receipts = list(assignments), [], []
@@ -79,7 +80,10 @@ def run(plan, *, workers, artifact_root, cache_mode, durations=None, profile=Fal
         child = {'assignment': assignment, 'report': report, 'log': log, 'output': output, 'started': time.monotonic(), 'argv': argv, 'owner':owner, 'storage_manager':storage_manager, 'storage_binding':storage_binding}
         active.append(child)
         try:
-            child['process'] = owner.spawn(argv, cwd=suite['cwd'], env=environment(plan['source_binding']['root'], storage_binding['allocation']['path'], profile=profile, cache_mode=cache_mode), output=output)
+            env = environment(plan['source_binding']['root'], storage_binding['allocation']['path'], profile=profile, cache_mode=cache_mode)
+            # Immutable runtime-pin templates shared by this run's shards; each shard copies and re-verifies its own.
+            env['AL_TEST_PIN_TEMPLATES'] = str(templates)
+            child['process'] = owner.spawn(argv, cwd=suite['cwd'], env=env, output=output)
         except BaseException:
             output.close();raise
         journal['children'].append({'shard_id': assignment['shard_id'], 'assignment_digest': assignment['assignment_digest'], **owner.record()})

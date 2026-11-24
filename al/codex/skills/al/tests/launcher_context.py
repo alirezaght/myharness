@@ -6,8 +6,10 @@ al_state, then commits RESERVED -> ACTIVE once state is published. Fixtures that
 drive `al_state.main()` in-process perform the same steps with the real pin and
 transaction primitives; they never bypass admission or fake its status.
 """
+import fcntl
 import importlib.util
 import json
+import os
 import shutil
 import tempfile
 import sys
@@ -26,8 +28,58 @@ NAME = "_al_run_pin_context"
 _PINS = {}
 
 
+# Set by the verification runner to one private directory per run. Unset, every session prepares its own pin.
+TEMPLATES = "AL_TEST_PIN_TEMPLATES"
+
+
+def _template_key(distribution, platform):
+    from installer.runtime_pin_capture import stable_distribution
+    from installer.validator_origin import canonical, digest, interpreter_identity
+    identity, files, _, resources = stable_distribution(distribution, platform)
+    return digest(canonical({"platform": platform, "files": files, "resources": resources,
+                             "layout_sha256": identity["layout_sha256"], "interpreter": interpreter_identity()}))
+
+
+def _copy_template(templates, key, pins):
+    """Copy an earlier session's verified pin for identical source bytes; None if absent or not verifiable."""
+    source, created = templates / key, None
+    try:
+        binding = json.loads((source / "binding.json").read_text())
+        target = pins / binding["pin_identity"]
+        if not target.exists():
+            created = target
+            shutil.copytree(source / "pin", target)
+        verify_pin(pins, binding)
+        return binding
+    except (OSError, ValueError, KeyError, TypeError):
+        if created is not None:
+            shutil.rmtree(created, ignore_errors=True)
+        return None
+
+
+def _publish_template(templates, key, pins, binding):
+    stage = None
+    try:
+        stage = Path(tempfile.mkdtemp(prefix=".template-", dir=templates))
+        shutil.copytree(pins / binding["pin_identity"], stage / "pin")
+        (stage / "binding.json").write_text(json.dumps(binding))
+        stage.rename(templates / key)
+    except OSError:
+        pass  # another session published first, or the cache is unavailable; this session keeps its own pin
+    finally:
+        if stage is not None and stage.exists():
+            shutil.rmtree(stage, ignore_errors=True)
+
+
 def pinned_storage(root, platform, *, storage=None, distribution=None):
-    """Prepare one immutable pin of this checkout per storage/platform (session scoped)."""
+    """Prepare one immutable pin of this checkout per storage/platform (session scoped).
+
+    Under the verification runner each test file is its own pytest session. Preparing a pin
+    materializes the whole runtime with full metadata capture (seconds), so the first session
+    publishes its verified pin to the run's template directory and later sessions with
+    byte-identical source copy it into their own private storage and verify it again.
+    Pins are immutable; every session still owns its storage, transactions and copy.
+    """
     root = Path(root)
     if (root, platform) not in _PINS:
         storage = _directory(Path(storage or root / "al-run-pins"))
@@ -35,7 +87,22 @@ def pinned_storage(root, platform, *, storage=None, distribution=None):
         if not distribution.exists():
             shutil.copytree(AL_ROOT, distribution, ignore=shutil.ignore_patterns(
                 "__pycache__", ".pytest_cache", "*.pyc"))
-        pin = prepare_pin(distribution, platform, _directory(storage / "pins"))
+        pins = _directory(storage / "pins")
+        templates = Path(os.environ[TEMPLATES]) if os.environ.get(TEMPLATES) else None
+        if templates is not None and templates.is_absolute() and templates.is_dir():
+            key = _template_key(distribution, platform)
+            # Concurrent sessions wait for the first one instead of all materializing the same bytes.
+            with open(templates / (key + ".lock"), "a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                try:
+                    pin = _copy_template(templates, key, pins)
+                    if pin is None:
+                        pin = prepare_pin(distribution, platform, pins)
+                        _publish_template(templates, key, pins, pin)
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+        else:
+            pin = prepare_pin(distribution, platform, pins)
         _PINS[(root, platform)] = (storage, pin)
     return _PINS[(root, platform)]
 

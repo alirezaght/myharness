@@ -39,6 +39,80 @@ The checkout's CLI can be bootstrapped into an independent local snapshot with
 not install or replace the AL runtime. See [INSTALL.md](INSTALL.md) for
 installation, updates, review/adoption, diagnostics, and recovery.
 
+## Verifying a change
+
+Use one command to verify an AL change. Do not run plain `pytest` serially per host:
+
+```sh
+uv run python al/verify_changed.py                # fast tier for changes since merge-base with main, plus uncommitted and untracked files
+uv run python al/verify_changed.py --base v0.1.30 # changes since another ref
+uv run python al/verify_changed.py --path al/codex/skills/al/scripts/al_gates.py   # explicit files
+uv run python al/verify_changed.py --list         # show the selection without running it
+uv run python al/verify_changed.py --tier all     # also the affected slow tests
+uv run python al/verify_changed.py --all --tier all   # every collected test, as a development run
+```
+
+### Test tiers
+
+The **fast tier** is the default. Run it after every change. It contains the
+affected test files that are not in the slow tier, plus the byte-parity,
+consistency and docs guards of both hosts. A typical script change takes about
+one minute. The worst case, every fast file of all three suites, took about
+three minutes.
+
+The **slow tier** contains the test files listed in `al/verification-tiers.json`
+and the acceptance tier. These are end-to-end journeys, tests that build real
+Git repositories or runtime pins, validator and launcher child processes, and
+installer and release flows. They run only in `release_verify.py --full` (and
+its acceptance step) or in a nightly run, never by default. Do not wait on them
+after a change. A file is slow when its mean measured test time exceeds 1 s. To
+re-measure, run a complete development run and record its report:
+
+```sh
+uv run python al/verify_changed.py --all --tier all --report /tmp/al-all/report.json
+uv run python al/verify_changed.py --record-tiers /tmp/al-all/report.json
+```
+
+New test files count as fast until they are recorded. Keep new end-to-end tests
+in files that are already slow, or record the tiers again.
+
+It maps changed files to the test files that can observe them in `al/tests`
+and both host suites. The mapping uses Python imports (including relative and
+in-function imports), file names and module names quoted in source, and the
+`scripts/al_<name>.py` to `tests/test_<name>.py` convention. `--depth N`
+(default 1) also selects tests of modules that import a changed module, up to N
+hops. A host change also runs the parity, consistency, resource and docs guards
+of both hosts. Some changes fall back to complete suites: suite infrastructure
+(a `conftest.py`, `al/verification_pytest.py`, `pyproject.toml`, `uv.lock`), a
+deleted module, or an `al/` file that no test references. Changes outside `al/`
+select no AL tests.
+
+The selected files run through the release runner, `al/verification_runner.py`.
+Each group of at most `--split` tests (default 8) from one file gets its own
+pytest process with private HOME, TMP, runtime and harness state. At most
+`--workers` (default 8) processes run at once. A group rebuilds its session and
+module fixtures, so a long file no longer bounds the run; `--split 0` keeps
+whole files. Test files whose isolation review is out of date also run in
+parallel. Pass `--strict-isolation` to use the release grouping and
+serialization of `release_verify.py --full`. Selected acceptance-tier files
+(the long end-to-end proofs) run too. The command prints the failing tests with their pytest failure output and log paths,
+the pass/fail counts and one final `PASS` or `FAIL` line. As in release
+verification, a skipped test counts as not passed; it is listed separately. It also writes a JSON
+report outside the checkout. The elapsed time is printed but never judged.
+`--host codex|claude` limits a quick iteration to one host. Before you finish,
+run both hosts.
+
+This is a development check, not a release result. `release_verify.py --full`
+remains the gate for a tag.
+
+The Claude and Codex suites both run, even where the shared scripts are
+byte-identical. Every host test runs through its host's own `conftest.py` and
+host-specific `al_state.py`, `al_store.py`, `al_start.py` and `al_models.py`
+(the autouse runtime fixture patches `al_store`, and the `cli` fixture drives
+`al_state`). A passing Codex run therefore does not prove the Claude behavior.
+Some long shared-flow suites already exist in only one host, for example
+`test_gate_reuse.py` and `test_runtime_batch13_*.py` in Codex.
+
 Phase 3 adds the shared `al-execution-v1` semantic event contract and guarded
 task/blocker commands to both packages. A harness execution requires the
 installed package to expose this protocol and its role resources; an older
