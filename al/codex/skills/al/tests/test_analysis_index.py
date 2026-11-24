@@ -302,6 +302,33 @@ def test_concurrent_discovery_in_two_worktrees_is_byte_identical(repo, tmp_path,
     assert len({p.parent for p in _packs()}) == 1
 
 
+def test_parallel_recomputation_equals_serial_and_is_bounded(repo, monkeypatch):
+    import al_python_imports as imports
+    _fixture(repo)
+    monkeypatch.setenv('AL_ANALYSIS_JOBS', '1')
+    serial = _cold(repo, monkeypatch)
+    pools = []
+    import multiprocessing
+    original = multiprocessing.get_context
+
+    def counted(method):
+        context = original(method)
+        real_pool = context.Pool
+
+        def pool(processes, *args, **kwargs):
+            pools.append(processes)
+            return real_pool(processes, *args, **kwargs)
+
+        context.Pool = pool
+        return context
+
+    monkeypatch.setattr(multiprocessing, 'get_context', counted)
+    monkeypatch.setattr(imports, 'PARALLEL_MINIMUM', 1)
+    monkeypatch.setenv('AL_ANALYSIS_JOBS', '2')
+    assert _cold(repo, monkeypatch) == serial
+    assert pools and set(pools) == {2}
+
+
 def test_reference_runs_answer_every_safe_token_like_the_bytes():
     import random
     rng = random.Random(25)

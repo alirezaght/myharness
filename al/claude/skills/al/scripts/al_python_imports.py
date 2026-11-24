@@ -226,20 +226,63 @@ def _root(scan):
     return getattr(scan,'root',None)
 
 
-def _blob_facts(scan,namespace,rows,compute,*,compress=False):
-    """Per-blob facts for `rows` of (files, path, key): stored ones are reused; the
-    missing ones read each distinct blob once (verified against its captured hash)."""
+# Per-blob recomputation runs in at most this many worker processes per command (#25);
+# AL_ANALYSIS_JOBS bounds it (1 disables parallelism). Small batches stay in process.
+PARALLEL_MINIMUM=256
+BATCH=2048
+
+
+def _jobs():
+    import os
+    try:value=int(os.environ.get('AL_ANALYSIS_JOBS',''))
+    except ValueError:value=0
+    return value if value>0 else max(1,min(4,(os.cpu_count() or 1)))
+
+
+def _call(name,args):
+    return getattr(blob,name)(*args)
+
+
+def _run_many(calls):
+    """[al_blob_analysis.<name>(*args)] in order: forked workers (which share this process's
+    exact code) for large batches, in process otherwise or when workers are unavailable."""
+    jobs=_jobs()
+    if jobs>1 and len(calls)>=PARALLEL_MINIMUM:
+        import multiprocessing
+        import warnings
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore',DeprecationWarning)
+                context=multiprocessing.get_context('fork')
+                with context.Pool(jobs) as pool:
+                    return pool.starmap(_call,calls,chunksize=max(16,len(calls)//(jobs*8)))
+        except (OSError,ValueError,RuntimeError,ImportError):
+            pass
+    return [_call(name,args) for name,args in calls]
+
+
+def _blob_facts(scan,namespace,rows,call,finish=lambda value:value,*,compress=False):
+    """Per-blob facts for `rows` of (files, path, key): stored ones are reused; the missing
+    ones read each distinct blob once (verified against its captured hash, in this process)
+    and are computed by `al_blob_analysis` functions, in parallel when many are missing.
+    `call(key, data)` names the function and its arguments; `finish` converts its result."""
     import al_analysis_index as index
     keys=[];first={}
     for files,path,key in rows:
         identity=index.encode(key)
         if identity not in first:first[identity]=len(keys);keys.append((key,files,path))
     def missing(positions):
-        out={}
+        out={};pending=[]
+        def flush():
+            for position,value in zip([p for p,_ in pending],_run_many([c for _,c in pending])):out[position]=finish(value)
+            pending.clear()
         for files in {id(keys[i][1]):keys[i][1] for i in positions}.values():
             wanted=[i for i in positions if keys[i][1] is files]
             by_path={keys[i][2]:i for i in wanted}
-            for path,data in files.content_items(list(by_path)):out[by_path[path]]=compute(keys[by_path[path]][0],data)
+            for path,data in files.content_items(list(by_path)):
+                pending.append((by_path[path],call(keys[by_path[path]][0],data)))
+                if len(pending)>=BATCH:flush()
+        flush()
         return out
     values=index.facts(namespace,index.code_digest('al_blob_analysis'),[k for k,_,_ in keys],missing,root=_root(scan),compress=compress)
     return {identity:values[position] for identity,position in first.items()}
@@ -251,14 +294,14 @@ def source_events(scan,records):
     order=[key for snapshot in ('base','current') for key in records if key[0]==snapshot]
     files={'base':scan.base,'current':scan.files}
     rows=[(files[s],p,[files[s].records[p]['sha256'],records[(s,p)]['module'],records[(s,p)]['package']]) for s,p in order]
-    events=_blob_facts(scan,'python-import-events',rows,lambda key,data:blob.import_events(data,key[1],key[2]))
+    events=_blob_facts(scan,'python-import-events',rows,lambda key,data:('import_events',(data,key[1],key[2])))
     for (s,p),(_,_,key) in zip(order,rows):yield (s,p),events[index.encode(key)]
 
 
 def _reference_runs(scan,rows):
     """{sha256: runs} for (files, path, sha256) rows: al_blob_analysis.reference_runs per blob."""
     found=_blob_facts(scan,'reference-runs',[(f,p,[sha]) for f,p,sha in rows],
-                      lambda key,data:blob.reference_runs(data).decode('latin-1'),compress=True)
+                      lambda key,data:('reference_runs',(data,)),lambda runs:runs.decode('latin-1'),compress=True)
     import al_analysis_index as index
     return {sha:found[index.encode([sha])].encode('latin-1') for _,_,sha in rows}
 
