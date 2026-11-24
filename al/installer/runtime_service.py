@@ -44,6 +44,10 @@ TAIL_MARKER = 'import al_runtime_resources'
 COOKIE_TIMEOUT = 2.0
 SETTLE = 0.3
 MAX_WORKTREES = 16
+# Changed paths a worktree keeps for change-set answers (#35); older ones are forgotten (lost).
+MAX_EVENTS = 20000
+# A change-set answer longer than this is no answer: the command lists the repository itself.
+MAX_CHANGES = 4096
 MAX_SUBSCRIBERS = 16
 MAX_SUBSCRIBED_PATHS = 8
 SUBSCRIBED_TICK = 0.1
@@ -80,28 +84,54 @@ def _stdlib_imports(codes):
 
 
 def _asker(channel, root):
-    """In a command child: the service's proven-current snapshot tree of `root`, or None."""
+    """In a command child: (current, changes) over the child's channel to the service.
+
+    `current(path)` is the service's proven-current snapshot tree of `root`, or None.
+    `changes(path, since)` is the service's change set of `root` (#35): `{'token': T, 'paths':
+    [...]}` with every path an event named since the token `since` (T alone for an empty
+    `since`), proven complete by a cookie, or None when that is unknown."""
     import threading
     lock = threading.Lock()
+    pending = [b'']
 
-    def current(path):
-        if os.path.realpath(path) != root:
-            return None
+    def ask(request):
+        """One request, one answer line (answers arrive in request order)."""
         with lock:
             try:
-                channel.sendall(b'?')
-                data = b''
-                while not data.endswith(b'\n'):
-                    chunk = channel.recv(128)
+                channel.sendall(request)
+                data = pending[0]
+                while b'\n' not in data:
+                    chunk = channel.recv(65536)
                     if not chunk:
                         return None
                     data += chunk
             except OSError:
                 return None
-        tree = data.decode(errors='replace').strip()
+            line, pending[0] = data.split(b'\n', 1)
+        return line.decode(errors='replace')
+
+    def current(path):
+        if os.path.realpath(path) != root:
+            return None
+        tree = (ask(b'?') or '').strip()
         return tree if len(tree) in (40, 64) else None
 
-    return current
+    def changes(path, since):
+        if os.path.realpath(path) != root or not isinstance(since, str) or '\n' in since or len(since) > 128:
+            return None
+        answer = ask(b'c' + since.encode() + b'\n')
+        if not answer or answer == '-':
+            return None
+        try:
+            value = json.loads(answer)
+        except ValueError:
+            return None
+        if (not isinstance(value, dict) or not isinstance(value.get('token'), str)
+                or not isinstance(value.get('paths'), list) or not all(isinstance(p, str) for p in value['paths'])):
+            return None
+        return value
+
+    return current, changes
 
 
 def tail_program(child_text):
@@ -130,6 +160,13 @@ class Worktree:
         self.cookies = {}
         self.counter = 0
         self.helper = None
+        # Change set (#35): every relevant event is numbered; `lost` is the latest number at or
+        # before which events may be missing (before the watcher was ready, a lost-events
+        # notice, or forgotten old events). A token is `<epoch>:<number>`.
+        self.epoch = os.urandom(8).hex()
+        self.sequence = 0
+        self.lost = 0
+        self.events = []
 
     def start(self, watch_source):
         import al_service_cache
@@ -171,6 +208,8 @@ class Worktree:
             if kind == b'R':
                 self.ready, self.backend = True, path
                 self.generation += 1
+                self.sequence += 1
+                self.lost = self.sequence
             elif kind == b'X':
                 log('watcher unavailable for ' + self.root + ': ' + path)
                 self.backend = 'none'
@@ -178,12 +217,45 @@ class Worktree:
                 return
             elif kind == b'O':
                 self.changed()
+                self.sequence += 1
+                self.lost = self.sequence
             elif kind == b'E':
                 name = os.path.basename(path)
                 if name.startswith(al_service_cache.COOKIE) and os.path.dirname(path) == self.git_dir:
                     self.cookies.pop(name, None)
                 elif al_service_cache.relevant(path, self.root, self.git_dirs):
                     self.changed()
+                    self.note(path)
+
+    def note(self, path):
+        """Number one relevant event for change-set answers; forget the oldest beyond the bound."""
+        self.sequence += 1
+        self.events.append((self.sequence, path))
+        if len(self.events) > MAX_EVENTS:
+            keep = MAX_EVENTS // 2
+            self.lost = max(self.lost, self.events[-keep - 1][0])
+            self.events = self.events[-keep:]
+
+    def changes(self, since):
+        """Every relevant path an event named after the token `since`, proven complete now
+        (a cookie came back through the watcher), with the current token; None when unknown
+        (another epoch, a lost-events notice or forgotten events since, no watcher)."""
+        if not self.sync():
+            return None
+        now = self.epoch + ':' + str(self.sequence)
+        if not since:
+            return {'token': now, 'paths': []}
+        epoch, _, number = since.partition(':')
+        try:
+            number = int(number)
+        except ValueError:
+            return None
+        if epoch != self.epoch or number < self.lost or number > self.sequence:
+            return None
+        paths = sorted({p for n, p in self.events if n > number})
+        if len(paths) > MAX_CHANGES:
+            return None
+        return {'token': now, 'paths': paths}
 
     def changed(self):
         self.generation += 1
@@ -246,6 +318,7 @@ class Service:
         self.selector = selectors.DefaultSelector()
         self.children = {}
         self.channels = {}
+        self.pending = {}
         self.worktrees = {}
         self.locations = {}
         self.packs = {}
@@ -580,6 +653,7 @@ class Service:
             channel = self.channels.pop(pid, None)
             if channel is not None:
                 self.forget(channel)
+                self.pending.pop(channel, None)
                 channel.close()
             conn = self.children.pop(pid, None)
             if conn is None:
@@ -639,7 +713,8 @@ class Service:
         if worktree is None:
             return state, None
         parent, child = socket.socketpair()
-        state.update(root=root, worktree=worktree, channel=child, current=_asker(child, root))
+        current, changes = _asker(child, root)
+        state.update(root=root, worktree=worktree, channel=child, current=current, changes=changes)
         return state, parent
 
     # ------------------------------------------------------------------ subscriptions
@@ -723,20 +798,40 @@ class Service:
         return {'event': 'snapshot', 'tree': worktree.current() if worktree.process is not None else None}
 
     def snapshot_request(self, channel, worktree):
-        """A command child asks for the current snapshot tree of its worktree."""
+        """A command child asks for the current snapshot tree of its worktree (`?`) or for its
+        change set since a token (`c<token>\\n`, #35). Requests are answered in order, one line each."""
         try:
-            data = channel.recv(64)
+            data = channel.recv(4096)
         except OSError:
             data = b''
         if not data:
             self.forget(channel)
+            self.pending.pop(channel, None)
             return
-        for _ in data:
-            tree = worktree.current() if worktree.process is not None else None
+        buffer = self.pending.pop(channel, b'') + data
+        while buffer:
+            if buffer[:1] == b'?':
+                buffer = buffer[1:]
+                tree = worktree.current() if worktree.process is not None else None
+                answer = (tree or '-').encode()
+            elif buffer[:1] == b'c':
+                if b'\n' not in buffer:
+                    if len(buffer) > 256:
+                        self.forget(channel)
+                        return
+                    break
+                line, buffer = buffer.split(b'\n', 1)
+                value = worktree.changes(line[1:].decode(errors='replace')) if worktree.process is not None else None
+                answer = json.dumps(value, sort_keys=True, separators=(',', ':')).encode() if value is not None else b'-'
+            else:
+                self.forget(channel)
+                return
             try:
-                channel.sendall((tree or '-').encode() + b'\n')
+                channel.sendall(answer + b'\n')
             except OSError:
                 return
+        if buffer:
+            self.pending[channel] = buffer
 
     def refresh_packs(self, root=None):
         try:

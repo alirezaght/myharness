@@ -223,6 +223,94 @@ class CapturedContent(Mapping):
 # Listing observations of listing-only snapshots, adoptable once by a full capture (see Snapshot).
 _LISTINGS={}
 
+# The resident service's change-set token taken just before each membership listing this
+# process observed or served (#35), by listing object: (listing, token).
+_TOKENS={}
+_GIT_INPUTS={}
+PROTECTED_OVERRIDE='protected membership overrides generated exclusion'
+
+
+def _git_inputs(root):
+    """Identities of the Git files a membership listing reads besides the working copy: the real
+    index (`ls-files --cached`), the configuration and the repository exclude file."""
+    key=str(root)
+    if key not in _GIT_INPUTS:
+        try:
+            result=subprocess.run(['git','--no-optional-locks','rev-parse','--path-format=absolute','--git-path','index',
+                                   '--git-path','config','--git-path','config.worktree','--git-path','info/exclude'],
+                                  cwd=key,capture_output=True,timeout=10)
+        except (OSError,subprocess.SubprocessError):return None
+        rows=result.stdout.decode(errors='replace').split('\n')[:4]
+        if result.returncode or len(rows)!=4 or not all(rows):return None
+        _GIT_INPUTS[key]=rows
+    out=[]
+    for path in _GIT_INPUTS[key]:
+        try:value=os.lstat(path)
+        except FileNotFoundError:out.append(None);continue
+        except OSError:return None
+        out.append([value.st_ino,value.st_size,value.st_mtime_ns,value.st_ctime_ns,value.st_mode])
+    return out
+
+
+def listing_token(root):
+    """The service's change-set token and the Git inputs' identities, taken before a listing; None
+    without the service."""
+    import al_snapshot
+    answer=al_snapshot.service_changes(root,'')
+    if answer is None:return None
+    git=_git_inputs(root)
+    return None if git is None else {'service':answer['token'],'git':git}
+
+
+def remember_listing(observation,token):
+    if not isinstance(token,dict):return
+    if len(_TOKENS)>=16:_TOKENS.clear()
+    _TOKENS[id(observation)]=(observation,token)
+
+
+def token_of(observation):
+    row=_TOKENS.get(id(observation))
+    return row[1] if row is not None and row[0] is observation else None
+
+
+def served_listing(root,opaque,observation,token):
+    """Whether membership `observation`, listed after `token`, is still the listing a new
+    observation of the same question would give (#35), from the resident service's change set.
+
+    A listing reads the working copy's membership (tracked, untracked and ignored paths, symlink
+    and repository boundaries), the declarations it parses and the Git index, configuration and
+    exclude file, never member content. It is unchanged when the Git inputs keep their identity
+    and every path the watcher saw change since the token is a listed member file that is still a
+    safe regular file and neither a declaration nor an ignore file (an edit of its content).
+    Anything else (no service, an unknown token, lost events, any other path) is no answer and
+    the caller lists the repository itself. On success the token moves to the service's current
+    one, which keeps later change sets short."""
+    import al_snapshot
+    if not isinstance(token,dict) or not isinstance(token.get('service'),str):return False
+    answer=al_snapshot.service_changes(root,token['service'])
+    if answer is None or _git_inputs(root)!=token.get('git'):return False
+    if answer['paths']:
+        base=os.path.realpath(str(root))+'/'
+        members=set(observation['members'])
+        declarations={row['path'] for row in observation['declarations']}
+        probe=_Probe(root,opaque)
+        for absolute in answer['paths']:
+            if not absolute.startswith(base):return False
+            path=absolute[len(base):]
+            if not path or path not in members or path in declarations or path_name(path)=='.gitignore':return False
+            try:
+                Snapshot.safe_file(probe,path)
+                if not stat.S_ISREG(os.lstat(os.path.join(str(root),path)).st_mode):return False
+            except (OSError,ValueError):return False
+    remember_listing(observation,{'service':answer['token'],'git':token['git']})
+    return True
+
+
+class _Probe:
+    """The root and opaque boundaries `Snapshot.safe_file` checks a path against."""
+    def __init__(self,root,opaque):
+        self.root=Path(root);self.opaque=sorted(opaque)
+
 
 def _window(root):
     """The decision window (S.decision) observing `root`, bracketed by working-copy observations."""
@@ -272,7 +360,7 @@ class Snapshot(CaptureMixin):
         # question just observed in this process (discovery expands paths with one, #25). The
         # capture still ends with a fresh listing compared against it, so drift is refused.
         key=(str(self.root),base_oid,tuple(self.paths),tuple(self.opaque),required_adapter)
-        adopted=None if listing_only else (listing if listing is not None else _LISTINGS.pop(key,None))
+        adopted=listing if listing is not None else None if listing_only else _LISTINGS.pop(key,None)
         # A full capture always ends with its own fresh listing (revalidate), and a retry after
         # drift must observe afresh: only listing-only snapshots answer from the window's listing.
         if adopted is None and listing_only:adopted=_window_listing(key)
@@ -320,6 +408,9 @@ class Snapshot(CaptureMixin):
         self.read_base()
 
     def revalidate(self,listing=None):
+        # The end-of-capture listing is the capture's own when the service proves it unchanged (#35).
+        if listing is None and served_listing(self.root,self.opaque,self.listing_observation,token_of(self.listing_observation)):
+            listing=self.listing_observation
         super().revalidate(listing)
         # The capture's own end-of-capture listing is the window's latest of this question.
         _keep_window_listing(self.listing_key,self.last_listing)
@@ -430,6 +521,15 @@ class Snapshot(CaptureMixin):
         finally:os.close(fd)
 
     def observe_listing(self):
+        """The membership listing, remembered with the service's change-set token taken before it
+        (#35) unless it reads paths the watcher does not report (generated or cache directories)."""
+        token=listing_token(self.root)
+        observation=self._observe_listing()
+        if token is not None and not self._unwatched and not any(e['reason']==PROTECTED_OVERRIDE for e in observation['exclusions']):
+            remember_listing(observation,token)
+        return observation
+
+    def _observe_listing(self):
         self.begin_observation_epoch()
         progress.report('inventory-membership', count=0)
         result=set();exclusions=[];diagnostics=[];declarations=[];base_rows=[];priority_inputs=set()
@@ -609,6 +709,7 @@ class Snapshot(CaptureMixin):
         exclusions.append({'path':'.','reason':'repository .gitignore and generated/cache directory exclusions','provenance':sorted(p for p in result if Path(p).name=='.gitignore')+sorted(EXCLUDED)})
         unique={digest(g):g for g in diagnostics}
         boundaries=[{'path':g['path'],'kind':g['code'],'observation':self.path_observation(g['path'])} for g in unique.values() if g['code'] in {'symlink-boundary','unsafe-boundary','gitlink-boundary'}]
+        self._unwatched=any(part in EXCLUDED for scope in protected for part in path_parts(scope))
         observation={'members':sorted(result),'exclusions':sorted(exclusions,key=lambda e:(e['path'],e['reason'])),'diagnostics':[unique[k] for k in sorted(unique)],'boundaries':boundaries,'declarations':declarations,'base_rows':[row.hex() for row in base_rows],'priority_inputs':sorted(priority_inputs),'complete':not diagnostics}
         progress.report('inventory-membership', count=len(result), force=True)
         return immutable_observation(observation)

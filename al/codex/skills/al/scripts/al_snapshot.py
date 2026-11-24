@@ -287,6 +287,23 @@ def _service_tree(root):
     return _checked_tree(root, answer)
 
 
+# The resident service's change-set asker, installed by al_service_cache in a command child.
+_SERVICE_CHANGES = None
+
+
+def service_changes(root, since):
+    """The resident service's change set of `root` since the token `since` (#35):
+    `{'token': now, 'paths': [absolute paths changed since]}`; an empty `since` asks for a
+    token only. None without the service or whenever it cannot prove the set complete."""
+    ask = _SERVICE_CHANGES
+    if ask is None:
+        return None
+    try:
+        return ask(str(_root(root)), since)
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def _checked_tree(root, answer):
     """The tree id an answer names, when it is a well-formed snapshot answer naming a tree."""
     tree = answer.get('tree') if isinstance(answer, dict) and answer.get('event') == 'snapshot' else None

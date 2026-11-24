@@ -146,3 +146,118 @@ def test_watcher_source_has_no_runtime_imports():
     code = compile(source, "watch", "exec")
     assert _stdlib_imports([code]) <= {"ctypes", "ctypes.util", "json", "os", "select", "struct", "sys",
                                        "threading"}
+
+
+class _Watched:
+    """A Worktree whose watcher is a fake: records are fed directly, cookies always come back."""
+
+    def __init__(self, root):
+        from al.installer import runtime_service as R
+        self.R = R
+        self.worktree = R.Worktree(None, root, root + "/.git", root + "/.git")
+        self.worktree.process = object()
+        self.worktree.sync = lambda: True
+
+    def feed(self, *records):
+        import tempfile
+        data = b"".join(kind + os.fsencode(path) + b"\0" for kind, path in records)
+        with tempfile.TemporaryFile() as stream:
+            stream.write(data)
+            stream.seek(0)
+            self.worktree.process = type("P", (), {"stdout": stream})()
+            try:
+                while stream.tell() < len(data):
+                    self.worktree.readable()
+            finally:
+                self.worktree.process = object()
+
+
+@pytest.fixture
+def watched(monkeypatch):
+    # The service imports al_service_cache from the pinned scripts; here from this checkout.
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "claude/skills/al/scripts"))
+    return _Watched("/w")
+
+
+def test_change_sets_name_every_relevant_path_since_a_token(watched):
+    worktree = watched.worktree
+    watched.feed((b"R", "fsevents"))
+    start = worktree.changes("")
+    assert start["paths"] == [] and start["token"].startswith(worktree.epoch + ":")
+    watched.feed((b"E", "/w/a.py"), (b"E", "/w/node_modules/x.js"), (b"E", "/w/.git/objects/ab"),
+                 (b"E", "/w/b.py"), (b"E", "/w/a.py"), (b"E", "/w/.git/config"))
+    since = worktree.changes(start["token"])
+    # Only what can change the snapshot (or a listing) is kept: no generated directories or Git objects.
+    assert since["paths"] == ["/w/.git/config", "/w/a.py", "/w/b.py"]
+    assert worktree.changes(since["token"]) == {"token": since["token"], "paths": []}
+
+
+def test_change_sets_refuse_unknown_or_incomplete_history(watched):
+    worktree = watched.worktree
+    assert worktree.changes("") is not None
+    watched.feed((b"R", "fsevents"))
+    token = worktree.changes("")["token"]
+    epoch, number = token.split(":")
+    assert worktree.changes("other:" + number) is None
+    assert worktree.changes(epoch + ":999") is None
+    assert worktree.changes(epoch + ":x") is None
+    watched.feed((b"O", "/w"))
+    assert worktree.changes(token) is None, "events may have been lost since the token"
+    token = worktree.changes("")["token"]
+    watched.feed(*[(b"E", "/w/f%d.py" % n) for n in range(watched.R.MAX_EVENTS + 1)])
+    assert worktree.changes(token) is None, "forgotten events"
+    worktree.sync = lambda: False
+    assert worktree.changes("") is None, "no cookie proof"
+
+
+def test_snapshot_channel_answers_trees_and_change_sets_in_order(watched):
+    import json
+    R = watched.R
+    worktree = watched.worktree
+    watched.feed((b"R", "fsevents"))
+    worktree.current = lambda: "a" * 40
+    service = R.Service.__new__(R.Service)
+    service.pending = {}
+    service.selector = type("S", (), {"unregister": lambda self, f: None})()
+    parent, child = socket.socketpair()
+    try:
+        token = worktree.changes("")["token"]
+        watched.feed((b"E", "/w/a.py"))
+        # Two requests arriving together, the second one split across reads.
+        child.sendall(b"?c" + token.encode())
+        service.snapshot_request(parent, worktree)
+        assert service.pending == {parent: b"c" + token.encode()}
+        child.sendall(b"\n")
+        service.snapshot_request(parent, worktree)
+        lines = b""
+        while lines.count(b"\n") < 2:
+            lines += child.recv(4096)
+        tree, answer = lines.decode().splitlines()
+        assert tree == "a" * 40 and json.loads(answer)["paths"] == ["/w/a.py"]
+        # An unknown token is no answer.
+        child.sendall(b"cother:1\n")
+        service.snapshot_request(parent, worktree)
+        assert child.recv(4096) == b"-\n"
+        # A malformed request ends the conversation.
+        child.sendall(b"x")
+        service.snapshot_request(parent, worktree)
+        assert parent not in service.pending
+    finally:
+        parent.close()
+        child.close()
+
+
+def test_child_asker_parses_answers_and_refuses_other_roots():
+    from al.installer import runtime_service as R
+    parent, child = socket.socketpair()
+    try:
+        current, changes = R._asker(child, "/w")
+        assert changes("/elsewhere", "") is None and current("/elsewhere") is None
+        parent.sendall(b'{"paths":["/w/a.py"],"token":"e:2"}\n-\n')
+        assert changes("/w", "e:1") == {"paths": ["/w/a.py"], "token": "e:2"}
+        assert changes("/w", "e:1") is None
+        assert parent.recv(64) == b"ce:1\nce:1\n"
+        assert changes("/w", "bad\ntoken") is None
+    finally:
+        parent.close()
+        child.close()

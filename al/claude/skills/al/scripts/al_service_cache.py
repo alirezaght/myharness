@@ -1,8 +1,8 @@
 """What the resident AL service (#27) keeps in memory between commands.
 
 The service forks a fresh child per command and every AL module is imported fresh in it,
-so a command sees exactly the state a one-shot run would. Only two kinds of content-
-addressed data cross from the service into that child, both through hooks installed when
+so a command sees exactly the state a one-shot run would. Only these kinds of
+data cross from the service into that child, all through hooks installed when
 the module is first imported:
 
 * working-copy snapshots: when the command takes a snapshot of its worktree, it asks the
@@ -12,11 +12,16 @@ the module is first imported:
   back through the watcher orders every earlier event first). Any doubt (an event, a
   dropped-event notice, a dead watcher, a different Git environment) means no answer, and
   the command runs `snapshot()` itself;
+* the worktree's change set (#35): the paths the watcher saw change since a token the
+  command took earlier, with the same cookie proof and the same doubts (an unknown token, a
+  dropped-event notice, forgotten events, a dead watcher answer nothing). A command uses it
+  only to show that a membership listing it took cannot have changed (see
+  `al_repository_facts.served_listing`); it never stands for a file's content;
 * fact-store pack headers: `al_analysis_index` packs are immutable, content-addressed
   files, so a parsed header is reused only for the same file (path, inode, size, owner).
   Entry bytes are still read and checked against their digests.
 
-Neither is a result of a check and neither records anything; evidence is only recorded
+None is a result of a check and none records anything; evidence is only recorded
 by a command an agent runs."""
 import os
 import stat
@@ -68,6 +73,8 @@ def install(module, state):
 
         snapshot.__doc__ = original.__doc__
         module.snapshot = snapshot
+        if state.get('changes') is not None:
+            module._SERVICE_CHANGES = state['changes']
     elif module.__name__ == 'al_analysis_index':
         headers = dict(state.get('packs') or {})
         if not headers:

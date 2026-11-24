@@ -15,6 +15,7 @@ import al_affected_services
 import al_service_coverage as Coverage
 import al_ci_verification as Verification
 from al_repository_facts import digest,within,gap,Snapshot,collect_from_snapshot, unit_depth, PathScope
+import al_repository_facts as F
 from al_repository_capture import capture_discovery,CaptureDrift,CaptureUnavailable
 import al_coverage_relevance as Relevance
 import al_ci_inventory as CI
@@ -505,6 +506,7 @@ def _observations(scan):
     return {'root':str(scan.root),'base_oid':scan.base_oid,'paths':list(scan.paths),'opaque':sorted(scan.opaque),
             'required_adapter':scan.required_adapter,'capture_started_ns':scan.capture_started_ns,
             'listing':json.loads(json.dumps(scan.listing_observation)),
+            'listing_token':F.token_of(scan.listing_observation),
             'path_observations':json.loads(json.dumps(scan.path_observations)),
             'files':{p:{'sha256':r['sha256'],'identity':list(r['identity']),'size':r['size']} for p,r in scan.files.records.items()},
             'absent':sorted(scan.absent),'rules':sorted(scan.rules),
@@ -589,9 +591,12 @@ def verified_answer(key,inputs=None,reuse=None):
         obs=record['observations']
         if obs['root']!=str(al_store.REPO_ROOT):return None
         progress.report('inventory-verify',force=True)
-        scan=Snapshot(al_store.REPO_ROOT,obs['base_oid'],obs['paths'],set(obs['opaque']),obs['required_adapter'],listing_only=True)
+        recorded=immutable_observation(obs['listing'])
+        # The recorded listing is the fresh one when the service proves it unchanged (#35).
+        served=recorded if F.served_listing(al_store.REPO_ROOT,set(obs['opaque']),recorded,obs.get('listing_token')) else None
+        scan=Snapshot(al_store.REPO_ROOT,obs['base_oid'],obs['paths'],set(obs['opaque']),obs['required_adapter'],listing_only=True,listing=served)
         fresh=scan.listing_observation
-        scan.listing_observation=immutable_observation(obs['listing'])
+        scan.listing_observation=recorded
         scan.path_observations=obs['path_observations']
         scan.files.records={p:{**r,'identity':tuple(r['identity'])} for p,r in obs['files'].items()}
         scan.absent=set(obs['absent'])
