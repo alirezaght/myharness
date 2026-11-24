@@ -19,7 +19,7 @@ def _binding(st):
 
 
 def _rows(st):
-    base = st['identity']['merge_base'] if st.get('review_mode') == 'whole-mr' else st['baseline_head']
+    base = _decision_base(st)
     rows = S.records(base)
     for row in rows:
         path = al_store.REPO_ROOT / S.safe_path(row['path'])
@@ -43,14 +43,23 @@ def concurrent_paths(st, writer_id):
 
 
 def observe(st, *, retain_content=False, expected=None, concurrent=()):
-    """Double observation includes non-executable mode changes and new membership.
+    """Stable observation of the candidate records, including non-executable mode changes and
+    new membership.
 
+    The records are read once between two observations of the working copy (its snapshot tree
+    and the state a tree does not record, al_attribution_tree); the capture is stable when they
+    agree. Without a snapshot (gitlinks, unavailable) the records are read twice and compared.
     A re-observation compared against an `expected` capture that was itself stable needs one
     read: equality with a stable observation is the stability proof, and any difference is
     refused by the caller's comparison. Paths under `concurrent` (a sibling writer's ownership)
     are excluded from the capture, so a sibling still editing cannot destabilize it. A plain
     (unretained) observation keeps ACTIVE writers' paths as read but does not require them to
-    be stable: they are mid-edit by design, and only a retained capture binds content."""
+    be stable: they are mid-edit by design, and only a retained capture binds content.
+
+    Retained content is the pinned snapshot tree for every record it holds exactly, and an
+    immutable artifact for the rest."""
+    import al_attribution_tree as tree
+    import al_snapshot
     concurrent = sorted(set(concurrent))
     volatile = () if retain_content else concurrent_paths(st, None)
     def rows():
@@ -58,15 +67,24 @@ def observe(st, *, retain_content=False, expected=None, concurrent=()):
         return [r for r in found if not _owned(r['path'], concurrent)] if concurrent else found
     def stable(rows):
         return [r for r in rows if not _owned(r['path'], volatile)] if volatile else rows
-    progress.report('attribution-first', count=0)
-    first = rows()
-    progress.report('attribution-first', count=len(first), force=True)
-    if expected is None or retain_content or first != expected.get('files'):
+    def second_read(first):
         progress.report('attribution-second', count=0)
         second = rows()
         progress.report('attribution-second', count=len(second), force=True)
         if stable(first) != stable(second):
             refuse(UNSTABLE_OBSERVATION)
+        return second
+    single = expected is not None and not retain_content
+    opening = None if single else tree.open_observation(_decision_base(st))
+    progress.report('attribution-first', count=0)
+    if opening is None:
+        first = rows()
+    else:
+        with al_snapshot.reusing(al_store.REPO_ROOT, opening.tree):
+            first = rows()
+    progress.report('attribution-first', count=len(first), force=True)
+    if opening is None and not (single and first == expected.get('files')):
+        second = second_read(first)
     else:
         second = first
     capture = {'schema_version': 1, 'kind': 'task-content-capture-v1',
@@ -75,20 +93,38 @@ def observe(st, *, retain_content=False, expected=None, concurrent=()):
         capture['concurrent_writer_paths'] = concurrent
     if retain_content:
         progress.report('attribution-retain', count=0)
+        backed = tree.tree_backed(opening, second) if opening is not None else set()
+        if backed:
+            tree.pin(st, opening.tree)
+            capture['snapshot_tree'] = opening.tree
         capture['contents'] = {}
         for count,row in enumerate(second,1):
             work = row['worktree']; path = al_store.REPO_ROOT / S.safe_path(row['path'])
-            if work['type'] not in {'file', 'symlink'}:continue
+            if work['type'] not in {'file', 'symlink'} or row['path'] in backed:continue
             raw = os.fsencode(os.readlink(path)) if work['type'] == 'symlink' else path.read_bytes()
-            expected = hashlib.sha256(os.fsencode(work['text'])).hexdigest() if work['type'] == 'symlink' else work['sha256']
-            if hashlib.sha256(raw).hexdigest() != expected:refuse('source moved during attribution retention')
+            digest = hashlib.sha256(os.fsencode(work['text'])).hexdigest() if work['type'] == 'symlink' else work['sha256']
+            if hashlib.sha256(raw).hexdigest() != digest:refuse('source moved during attribution retention')
             capture['contents'][row['path']] = A.snapshot_bytes(st['session_id'], raw, 'task-source-content-v1', row['path'])
             progress.report('attribution-retain', count=count)
         progress.report('attribution-retain', count=len(second), force=True)
+    if opening is not None:
+        progress.report('attribution-final', count=0)
+        moved = tree.stable(opening, _decision_base(st), sorted(set(concurrent) | set(volatile)))
+        if moved is None:
+            # The closing snapshot is unavailable: compare a second read of the records.
+            second_read(second)
+        elif not moved:
+            refuse(UNSTABLE_OBSERVATION)
+        progress.report('attribution-final', count=len(second), force=True)
+    elif retain_content:
         progress.report('attribution-final', count=0)
         if rows() != second:refuse('source moved during attribution retention')
         progress.report('attribution-final', count=len(second), force=True)
     return capture
+
+
+def _decision_base(st):
+    return st['identity']['merge_base'] if st.get('review_mode') == 'whole-mr' else st['baseline_head']
 
 
 def _save(st, data, kind):
@@ -143,7 +179,15 @@ def _capture(st, ref):
     _validate_conflict_records(rows)
     contents = value.get('contents')
     retained = {r['path']: r['worktree'] for r in rows if r['worktree']['type'] in {'file', 'symlink'}}
-    if not isinstance(contents, dict) or set(contents) != set(retained):refuse('incomplete retained attribution content')
+    if not isinstance(contents, dict) or not set(contents) <= set(retained):refuse('incomplete retained attribution content')
+    if set(contents) != set(retained):
+        # The rest is held by the capture's pinned snapshot tree (verified when it was taken).
+        tree = value.get('snapshot_tree')
+        if not isinstance(tree, str) or not re.fullmatch('[0-9a-f]{40}|[0-9a-f]{64}', tree):
+            refuse('incomplete retained attribution content')
+        import al_attribution_tree
+        al_attribution_tree.require(tree)
+        retained = {p: w for p, w in retained.items() if p in contents}
     progress.report('attribution-history', count=0)
     for count,(path, work) in enumerate(retained.items(),1):
         try:raw = A.read(contents[path])

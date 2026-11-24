@@ -195,9 +195,12 @@ def test_attribution_preserves_three_observations_and_retention(repo, monkeypatc
     rows = [{"path": "svc/app.py", "worktree": {"type": "file", "sha256": hashlib.sha256(raw).hexdigest()}}]
     calls = []
     retained = []
+    # Without a snapshot tree (gitlinks, unavailable) the records are read three times.
+    import al_attribution_tree
+    monkeypatch.setattr(al_attribution_tree, "open_observation", lambda base: None)
     monkeypatch.setattr(attribution, "_rows", lambda st: calls.append(1) or copy.deepcopy(rows))
     monkeypatch.setattr(attribution.A, "snapshot_bytes", lambda *args: retained.append(args[1]) or {"sha256": hashlib.sha256(args[1]).hexdigest()})
-    state = {"session_id": "public-fixture", "run_id": "run", "identity": {}}
+    state = {"session_id": "public-fixture", "run_id": "run", "identity": {}, "baseline_head": "HEAD"}
     with progress.writer_progress():
         result = attribution.observe(state, retain_content=True)
     captured = capsys.readouterr()
@@ -215,8 +218,10 @@ def test_attribution_still_refuses_movement(monkeypatch, capsys):
     import al_writer_progress as progress
 
     calls = []
+    import al_attribution_tree
+    monkeypatch.setattr(al_attribution_tree, "open_observation", lambda base: None)
     monkeypatch.setattr(attribution, "_rows", lambda st: calls.append(1) or [{"path": str(len(calls))}])
     with pytest.raises(SystemExit, match="unstable task attribution observation"):
         with progress.writer_progress():
-            attribution.observe({"session_id": "public", "run_id": "run", "identity": {}})
+            attribution.observe({"session_id": "public", "run_id": "run", "identity": {}, "baseline_head": "HEAD"})
     assert len(calls) == 2 and capsys.readouterr().out == ""
