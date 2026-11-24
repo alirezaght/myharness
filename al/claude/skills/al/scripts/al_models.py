@@ -19,6 +19,10 @@ above. AL-Scout reuses Sonnet — a model already required by AL-Builder — so 
 fan-out introduces no new model entitlement surface. It has no fallback: if
 Sonnet is unavailable the fan-out is skipped (and AL-Builder blocks the run
 anyway, under the normal model policy).
+
+Per-role defaults (#30): Builder and Scout run the fast model at reduced effort (their work is
+mechanical or a narrow read-only question); the Architect keeps the strongest model. Models and
+fallbacks are unchanged, so no new entitlement surface is introduced.
 """
 
 import time
@@ -43,7 +47,7 @@ POLICY = {
     },
     "al-builder": {
         "display": "AL-Builder",
-        "primary": {"subagent": "al-builder", "model": "sonnet", "effort": "high"},
+        "primary": {"subagent": "al-builder", "model": "sonnet", "effort": "medium"},
         "fallback": None,
     },
 }
@@ -51,7 +55,7 @@ POLICY = {
 AUX_POLICY = {
     "al-scout": {
         "display": "AL-Scout",
-        "primary": {"subagent": "al-scout", "model": "sonnet", "effort": "medium"},
+        "primary": {"subagent": "al-scout", "model": "sonnet", "effort": "low"},
         "fallback": None,
     },
 }

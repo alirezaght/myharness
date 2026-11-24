@@ -143,7 +143,7 @@ note, never AL proof).
 ## 4. Implement with the right agents
 
 Use the fixed role/model/effort slots from `show --models`:
-Architect Fable/MEDIUM, Designer Fable/LOW, Engineer Opus/MEDIUM, Builder Sonnet/HIGH.
+Architect Fable/MEDIUM, Designer Fable/LOW, Engineer Opus/MEDIUM, Builder Sonnet/MEDIUM, Scout Sonnet/LOW.
 Dispatch with the Agent tool's `subagent_type` for the selected role. Its agent
 definition pins model and effort together; use the selected fallback definition
 when the recorded model policy requires it. The detailed Claude workflow gives
