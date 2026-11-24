@@ -212,11 +212,13 @@ def _tracked_source(root, scopes=(".",)):
     return next((n for n in names if (root / n).is_file() and covered(n)), None)
 
 
-def observe_behavior(cli, path=None, line=1, directory=None):
+def observe_behavior(cli, path=None, line=1, directory=None, compact=False):
     """Publish one observation per admitted scenario through the public behavior protocol.
 
     Each observation links the scenario to the latest passing evidence and a real,
-    hashed source location; the runtime validates bindings and coverage itself."""
+    hashed source location; the runtime validates bindings and coverage itself.
+    `compact` omits what `behavior observe` derives (source hashes, per-item evidence)
+    and submits every scenario in one file."""
     import hashlib
     result, out, err = cli("behavior", "packet")
     assert result == 0, f"behavior packet failed: {result} {out}{err}"
@@ -236,12 +238,13 @@ def observe_behavior(cli, path=None, line=1, directory=None):
     source = hashlib.sha256((root / path).read_bytes()).hexdigest()
     artifact = packet["obligations"]
     directory = Path(directory or tempfile.mkdtemp(prefix="al-behavior-"))
+    batch = []
     for group in artifact["content"]["obligations"]:
         for scenario in group["scenarios"]:
             def rows(key, identifier, text=False, executed=True):
                 return [{identifier: name,
                          **({"observation": "The linked real execution exercised this item."} if text else {}),
-                         **({"evidence_ids": [evidence]} if executed else {}),
+                         **({"evidence_ids": [evidence]} if executed and not compact else {}),
                          "artifact_refs": []} for name in scenario[key]]
             required = sorted(set().union(*(set(scenario[k]) for k in (
                 "initial_state_ids", "transition_ids", "outcome_ids", "failure_case_ids", "real_component_ids"))))
@@ -266,13 +269,22 @@ def observe_behavior(cli, path=None, line=1, directory=None):
                 "observed_outcomes": rows("outcome_ids", "outcome_id", text=True),
                 "operational_failures": rows("failure_case_ids", "failure_case_id", text=True),
                 "assertion_locations": [{"scenario_item_id": name, "path": path, "line": line,
-                                         "source_sha256": source} for name in required],
+                                         **({} if compact else {"source_sha256": source})} for name in required],
                 "artifact_refs": [], "limitations": [],
             }
+            if compact:
+                batch.append(value)
+                continue
             file = directory / (group["id"] + "-" + scenario["id"] + ".json")
             file.write_text(json.dumps(value))
             result, out, err = cli("behavior", "observe", "--file", str(file))
             assert result == 0, f"behavior observation {scenario['id']} failed: {result} {out}{err}"
+    if compact:
+        file = directory / "observations.json"
+        file.write_text(json.dumps({"observations": batch}))
+        result, out, err = cli("behavior", "observe", "--file", str(file))
+        assert result == 0, f"compact behavior observations failed: {result} {out}{err}"
+        return json.loads(out)
 
 
 def bind_pinned_resources(storage, pin, platform):

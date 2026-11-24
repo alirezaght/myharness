@@ -19,7 +19,8 @@ def package(sid,a):
         if not isinstance(data['acceptance'],dict) or not data['acceptance'].get('source') or not data['acceptance'].get('text'): refuse('acceptance requires text and source')
         if not isinstance(data['constraints'],list) or any(not isinstance(x,str) for x in data['constraints']): refuse('constraints must be supplied text entries')
         if not isinstance(data['ticket'],dict) or type(data['ticket'].get('present')) is not bool: refuse('ticket must explicitly record presence/absence')
-        if data['ticket']['present'] and not data['ticket'].get('content'): refuse('present ticket needs supplied content')
+        if data['ticket']['present'] and not data['ticket'].get('content'): refuse('present ticket needs supplied content: set ticket.content to the ticket text '
+                                                                                                     '(see reference/schemas/task-package.json)')
         source=a.package_file
     else:
         text=Path(a.spec_file).read_text() if a.spec_file else a.spec

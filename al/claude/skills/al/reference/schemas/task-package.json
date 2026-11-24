@@ -41,7 +41,29 @@
       "properties": {
         "present": {
           "type": "boolean"
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The supplied ticket text; required when present is true."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why there is no ticket; optional when present is false."
         }
+      },
+      "if": {
+        "properties": {
+          "present": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "present",
+          "content"
+        ]
       }
     },
     "criteria": {

@@ -311,6 +311,29 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False, causes=None):
     return replay.external
 
 
+def writer_confined_movement(st, before, after):
+    """Paths that moved between two captures when every move is a registered writer's own work.
+
+    Returns the sorted moved paths when each one lies inside the files of a writer that FINISHED
+    with outcome success and current attribution classifies none of them as externally changed
+    or ambiguous (a manual edit, an unregistered or still-active writer, a failed writer, or an
+    edit across a task revision all land there). Returns None for any other movement."""
+    if before.get('binding') != after.get('binding'):
+        return None
+    moved = _changes(_map(before), _map(after))
+    if not moved:
+        return []
+    finished = [w['files'] for w in st.get('writers', {}).values()
+                if w.get('state') == 'FINISHED' and w.get('outcome') == 'success']
+    if any(not any(_owned(path, files) for files in finished) for path in moved):
+        return None
+    result = classify_changes(st, after)
+    if not result.get('attributed'):
+        return None
+    unexplained = set(result.get('externally_changed', [])) | set(result.get('ambiguous', []))
+    return None if unexplained & set(moved) else moved
+
+
 @S.decision
 def classify_changes(st, current_capture=None):
     return _classify(st, current_capture)

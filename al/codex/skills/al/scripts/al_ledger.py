@@ -518,7 +518,10 @@ def unmet(st, spec, _seen=()):
         pre = latest(st, spec["preflight"], kind="preflight")
         if not pre or pre['area'] in _seen or entry_verdict(st, pre, (*_seen, pre['area']))[0] != "VALID":
             missing.append(f"preflight `{spec['preflight']}` has not passed in this run")
-    for area in spec.get("needs") or ():
+    sets = ledger(st).get("shard_sets", {})
+    # A sharded area is needed as the set of all of its shards.
+    needs = [name for area in spec.get("needs") or () for name in sets.get(area, {}).get("areas", [area])]
+    for area in needs:
         if area in _seen:
             missing.append(f"`{area}` is part of a `needs` cycle")
             continue

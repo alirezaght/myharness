@@ -181,13 +181,16 @@ output of `"${STATE[@]}" planning packet`: the packet and its `report_template`.
 State: `Return the report_template as JSON with every FILL: text replaced and the
 example states, transitions, outcomes, failures and scenarios rewritten to describe
 this task's observable behavior. Keep every identity, binding and routing field
-exactly as given. Set invocation_id to your actual invocation.`
+exactly as given. Set invocation_id to your invocation id if you can see it;
+otherwise leave it, the supervisor stamps it.`
 Required output: the completed `architect-planning-report-v1` JSON and nothing else.
 Deliver it through authenticated `submit_output` when available, otherwise as the
 final response. The supervisor captures the exact JSON using its own Write or host
 final-message capture and records the artifact. The Architect returns content; it
 does not write the report file or run a generator. The supervisor runs `planning
-report --file` and `planning admit --file`; a report still containing `FILL:` is refused.
+report --file <report.json> --invocation-id <id>` (the id the host reported when it
+dispatched or answered the Architect) and `planning admit --file`; a report still
+containing `FILL:` is refused.
 For a `planning rebind` draft, also deliver both issued packets, the preserved
 original report, amendments, derivation receipt and `revalidation_template`.
 Require a current assessment of source, specification, routing and amendment

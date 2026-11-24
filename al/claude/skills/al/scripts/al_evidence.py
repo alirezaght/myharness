@@ -361,8 +361,59 @@ def _storage_file(a, argv):
     except (OSError, ValueError, TypeError, KeyError):sys.exit('al_state: invalid managed storage declaration')
 
 
+SHARD_TOKEN = "{shard}"
+
+
+def shard_area(area, index, count):
+    return f"{area}.shard-{index}-of-{count}"
+
+
+def expand_shards(st, names):
+    """Area names with each sharded area replaced by its shard areas, in order."""
+    sets = L.ledger(st).get("shard_sets", {})
+    out = []
+    for name in names:
+        for area in sets.get(name, {}).get("areas", [name]):
+            if area not in out:
+                out.append(area)
+    return out
+
+
+def _drop_shard_set(st, area):
+    """Re-planning an area replaces its previous shard set; runs stay in the ledger."""
+    ev = L.ledger(st)
+    previous = ev.get("shard_sets", {}).pop(area, None)
+    for name in (previous or {}).get("areas", []):
+        ev["plan"].pop(name, None)
+    if "shard_sets" in ev and not ev["shard_sets"]:
+        del ev["shard_sets"]
+
+
+def _plan_shards(st, a, spec):
+    """One planned check per shard; the area is evidenced by all of its current shard PASSes."""
+    count = a.shards
+    if count < 2:
+        sys.exit("al_state: --shards needs a count of at least 2")
+    if not any(SHARD_TOKEN in token for token in spec["argv"]):
+        sys.exit("al_state: --shards needs the check command to contain {shard} (and optionally {shards}), "
+                 "for example `-- npx playwright test --shard={shard}/{shards}`")
+    ev = L.ledger(st)
+    _drop_shard_set(st, a.area)
+    ev["plan"].pop(a.area, None)
+    areas = []
+    for index in range(1, count + 1):
+        name = shard_area(a.area, index, count)
+        argv = [token.replace(SHARD_TOKEN, str(index)).replace("{shards}", str(count)) for token in spec["argv"]]
+        ev["plan"][name] = {**spec, "area": name, "argv": argv}
+        areas.append(name)
+    ev.setdefault("shard_sets", {})[a.area] = {"count": count, "areas": areas}
+    return areas
+
+
 def cmd_evidence_plan(a, sid):
     st = al_store.load(sid)
+    if getattr(a, 'shards', None) and getattr(a, 'recipe', None):
+        sys.exit('al_state: --shards applies to an ordinary check command, not a named --recipe')
     if getattr(a, 'recipe', None):
         import al_evidence_recipe
         try: spec = al_evidence_recipe.plan_spec(a, st)
@@ -394,10 +445,20 @@ def cmd_evidence_plan(a, sid):
         import al_evidence_storage
         storage=al_evidence_storage.default_declaration()
     _require_scope(scope,sources,a.cwd or ".")
-    L.ledger(st)["plan"][a.area] = {
-        "area": a.area, "kind": a.kind, "tier": a.tier, "argv": argv, "cwd": a.cwd or ".",
-        "scope": scope, "sources": sources, "env": env_names, "preflight": a.preflight or None, "needs": _split(a.needs)}
-    if storage is not None:L.ledger(st)["plan"][a.area]["storage"] = storage
+    spec = {"area": a.area, "kind": a.kind, "tier": a.tier, "argv": argv, "cwd": a.cwd or ".",
+            "scope": scope, "sources": sources, "env": env_names, "preflight": a.preflight or None,
+            "needs": _split(a.needs)}
+    if storage is not None:spec["storage"] = storage
+    if getattr(a, "shards", None):
+        areas = _plan_shards(st, a, spec)
+        al_store.save(sid, st)
+        print(f"AL · evidence planned · {a.area} · {len(areas)} shards ({', '.join(areas)}) · {a.tier} · "
+              f"`{' '.join(argv)}` · scope {', '.join(scope)} · {env_text(spec)}\n"
+              f"AL · run each shard with `evidence run --area <shard>`; the area counts as evidenced "
+              f"when every shard is a current VALID PASS")
+        return
+    _drop_shard_set(st, a.area)
+    L.ledger(st)["plan"][a.area] = spec
     al_store.save(sid, st)
     print(f"AL · evidence planned · {a.area} · {a.tier} · `{' '.join(argv)}` · scope {', '.join(scope)}"
           f" · {env_text(L.ledger(st)['plan'][a.area])}")
@@ -411,6 +472,22 @@ def cmd_evidence_retire(a, sid):
     # The dispatcher already holds the run lock for this short load-modify-save.
     st = al_store.load(sid)
     ev = L.ledger(st)
+    shards = ev.get("shard_sets", {}).get(a.area)
+    if shards:
+        if not a.reason or not a.reason.strip():sys.exit("al_state: retiring a planned check needs --reason")
+        replaced = _split(a.replaced_by)
+        for eid in replaced:
+            entry = L.find(st, eid)
+            if not entry or entry["status"] != "PASS" or L.entry_verdict(st, entry)[0] != "VALID":
+                sys.exit("al_state: replacement " + eid + " is not a current passing run")
+        for name in shards["areas"]:
+            if name in ev["plan"]:
+                ev.setdefault("retired", []).append({"area": name, "reason": a.reason.strip(), "replaced_by": replaced,
+                                                     "plan": ev["plan"].pop(name), "at": time.time()})
+        _drop_shard_set(st, a.area)
+        al_store.save(sid, st)
+        print(f"AL · evidence area {a.area} retired with its {len(shards['areas'])} shards · {a.reason.strip()}")
+        return
     if a.area not in ev["plan"]:sys.exit("al_state: no planned evidence area " + a.area)
     if a.area.startswith("gate-"):sys.exit("al_state: gate checks are governed by gates decisions, not retired")
     if not a.reason or not a.reason.strip():sys.exit("al_state: retiring a planned check needs --reason")
@@ -431,6 +508,10 @@ def cmd_evidence_run(a, sid):
     if guidance is not None:
         guidance.check_active(st)
     planned = L.ledger(st)["plan"].get(a.area)
+    sharded = L.ledger(st).get("shard_sets", {}).get(a.area)
+    if sharded and not planned and not a.command_argv:
+        sys.exit(f"al_state: {a.area} is planned as {sharded['count']} shards; run each one: "
+                 + "; ".join(f"evidence run --area {name}" for name in sharded["areas"]))
     if getattr(a, 'recipe', None) or planned and planned.get('recipe'):
         import al_evidence_recipe
         try:
@@ -502,13 +583,34 @@ def cmd_evidence_run(a, sid):
         sys.exit(1)
 
 
+def _later_pass_note(st, e):
+    """Mark a FAIL/INFRA whose identical command and scope later passed and is current.
+
+    Display only: the latest-attempt rule already makes the later PASS the area's evidence; this
+    keeps an earlier failure (for example a timeout on a busy host) from reading as open."""
+    if e["status"] not in {"FAIL", "INFRA", "TORN"}:
+        return ""
+    spec = L.ledger(st)["plan"].get(e["area"]) or e
+    later = L.latest(st, e["area"], spec)
+    if (later is None or later is e or int(later["id"][1:]) <= int(e["id"][1:]) or later["status"] != "PASS"
+            or not L.same_command(e, later) or L.entry_verdict(st, later)[0] != "VALID"):
+        return ""
+    return f" · superseded by later PASS {later['id']} (same command and scope)"
+
+
 def cmd_evidence_status(a, sid):
     st = al_store.load(sid)
     entries = L.ledger(st)["entries"]
     if not entries:
         print("AL · evidence ledger empty")
     for e in entries:
-        print(L.row(e, *L.entry_verdict(st, e)))
+        print(L.row(e, *L.entry_verdict(st, e)) + _later_pass_note(st, e))
+    for area, shards in L.ledger(st).get("shard_sets", {}).items():
+        plan = L.ledger(st)["plan"]
+        done = [name for name in shards["areas"] if L.planned_verdict(st, name, plan.get(name))[1] == "VALID"]
+        print(f"AL · sharded area {area} · {len(done)}/{shards['count']} shards VALID"
+              + ("" if len(done) == shards["count"] else " · pending " + ", ".join(
+                  name for name in shards["areas"] if name not in done)))
     for ref in L.ledger(st).get("supersessions", []):
         import al_artifacts as A
         value = A.read_json(ref)
@@ -522,7 +624,7 @@ def cmd_evidence_require(a, sid):
     """Exit 13 unless every planned check of the tier is a VALID PASS today."""
     st = al_store.load(sid)
     plan = L.ledger(st)["plan"]
-    areas = _split(a.areas) or [k for k, v in plan.items() if a.tier in (None, v["tier"])]
+    areas = expand_shards(st, _split(a.areas)) or [k for k, v in plan.items() if a.tier in (None, v["tier"])]
     repros = [] if a.areas or a.tier == "focused" else L.repro_gaps(st)
     if not areas and not repros:
         sys.exit("al_state: required evidence plan is empty")
@@ -587,6 +689,9 @@ def register(sub):
                       description='Register a check without executing it. Put all AL options before `--`.',
                       epilog=_command_example('plan'))
     common(p); p.set_defaults(fn=cmd_evidence_plan, tier="broad")
+    p.add_argument("--shards", type=int, metavar="N",
+                   help="plan the area as N shard checks AREA.shard-I-of-N; {shard} and {shards} in the "
+                        "command are replaced by I and N; the area is evidenced by all current shard PASSes")
     p = ev.add_parser("run", usage='%(prog)s --area AREA [options] [-- PROGRAM [ARG ...]]',
                       description='Run the planned area, or supply an ad-hoc check after `--`. Put all AL options before it.',
                       epilog=_command_example('run'))

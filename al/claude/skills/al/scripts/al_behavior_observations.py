@@ -226,31 +226,97 @@ def behavior_packet(st):
     }
 
 
+ITEM_FIELDS = (
+    ("real_components", True), ("exercised_transitions", True),
+    ("observed_outcomes", True), ("operational_failures", True), ("starting_state", False),
+)
+
+
+def complete(observation):
+    """Fill what AL can derive itself, before validation and snapshot.
+
+    * `assertion_locations[].source_sha256`, when omitted or a FILL: placeholder, is the current
+      SHA-256 of that repository file (an explicitly supplied hash is still checked).
+    * A scenario item's omitted `evidence_ids` defaults to the observation's `evidence_ids`, and
+      an omitted `artifact_refs` to []. Coverage of each item's assertions is still validated."""
+    import hashlib
+    import al_planning_template as Template
+
+    if not isinstance(observation, dict):
+        return observation
+    for row in observation.get("assertion_locations") or []:
+        if not isinstance(row, dict) or not isinstance(row.get("path"), str):
+            continue
+        if "source_sha256" in row and not Template.placeholders(row["source_sha256"]):
+            continue
+        relative = Path(row["path"])
+        if relative.is_absolute() or ".." in relative.parts:
+            continue  # validation names the non-canonical path
+        target = al_store.REPO_ROOT / relative
+        if target.is_file() and not target.is_symlink():
+            row["source_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+    for field, executed in ITEM_FIELDS:
+        for row in observation.get(field) or []:
+            if not isinstance(row, dict):
+                continue
+            row.setdefault("artifact_refs", [])
+            if executed and "evidence_ids" not in row and isinstance(observation.get("evidence_ids"), list):
+                row["evidence_ids"] = list(observation["evidence_ids"])
+    return observation
+
+
+def observations_in(raw):
+    """One observation, a JSON array of them, or {"observations": [...]}."""
+    value = J.loads(raw)
+    if isinstance(value, dict) and set(value) == {"observations"}:
+        value = value["observations"]
+    if not isinstance(value, list):
+        return [value], False
+    if not value:
+        refuse("behavior observation file holds no observations")
+    return value, True
+
+
 def cmd_observe(a, sid):
     st = al_store.load(sid)
     if st["status"] != "RUNNING":
         refuse("behavior observations require a running run")
     candidate = S.capture_candidate(st)
-    observation = J.loads(Path(a.file).read_bytes())
+    values, many = observations_in(Path(a.file).read_bytes())
+    observations = [complete(value) for value in values]
     import al_planning_template as Template
-    if Template.placeholders(observation):
-        refuse("behavior observation still contains FILL: template placeholders")
-    validate(st, observation)
-    reference = J.snapshot(sid, observation, "behavior-observation-v1", a.file)
+    for index, observation in enumerate(observations):
+        where = " (observation " + str(index) + ")" if many else ""
+        if Template.placeholders(observation):
+            refuse("behavior observation still contains FILL: template placeholders" + where)
+    keys = [(o.get("obligation_id"), o.get("scenario_id")) if isinstance(o, dict) else None for o in observations]
+    if len(keys) != len(set(keys)):
+        refuse("behavior observation file repeats a scenario")
+    # Every observation is validated before any is recorded: one file is all-or-nothing.
+    for observation in observations:
+        validate(st, observation)
+    references = [J.snapshot(sid, observation, "behavior-observation-v1", a.file) for observation in observations]
     if S.capture_candidate(st) != candidate:
         refuse("candidate moved during behavior observation publication")
-    validate(st, observation)
+    for observation in observations:
+        validate(st, observation)
     history = st.setdefault("behavior_observations", [])
-    if any(ref["sha256"] == reference["sha256"] for ref in history):
+    known = {ref["sha256"] for ref in history}
+    if any(reference["sha256"] in known for reference in references):
         refuse("duplicate immutable behavior observation")
-    history.append(reference)
+    history.extend(references)
     al_store.save(sid, st)
-    result = {"artifact": reference, "gaps": behavior_gaps(st)}
-    unverified = Items.unverified_results(
-        st,
-        observation["evidence_ids"],
-        {row["path"] for row in observation["assertion_locations"]},
-    )
+    result = {**({"artifacts": references} if many else {"artifact": references[0]}),
+              "gaps": behavior_gaps(st)}
+    unverified = []
+    for observation in observations:
+        for row in Items.unverified_results(
+            st,
+            observation["evidence_ids"],
+            {row["path"] for row in observation["assertion_locations"]},
+        ):
+            if row not in unverified:
+                unverified.append(row)
     if unverified:
         result["unverified"] = unverified
     print(J.raw(result).decode())
@@ -272,5 +338,6 @@ def register(sub):
     p = children.add_parser("packet")
     p.set_defaults(fn=cmd_packet)
     p = children.add_parser("observe")
-    p.add_argument("--file", required=True)
+    p.add_argument("--file", required=True,
+                   help="one behavior-observation-v1, a JSON array of them, or {\"observations\": [...]}")
     p.set_defaults(fn=cmd_observe)
