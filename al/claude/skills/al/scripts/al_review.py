@@ -64,9 +64,24 @@ def _review_inputs(st):
     return missing,candidate
 
 
+@S.decision
+def _admitted_inputs(st):
+    """The review-start transition checks and the review inputs, from one stability-checked
+    observation of the working copy (#35): admission (gate currency, coverage readiness,
+    workflow gaps) and the review's completeness checks each opened their own window, and
+    every window re-verified the recorded inventory against a new listing.
+
+    The transition runs on a copy of the run state, so a window that has to be evaluated
+    again (the working copy moved) starts from the state as loaded."""
+    import copy
+    work=copy.deepcopy(st)
+    require_transition(work,'review-start','REVIEW')
+    missing,candidate=_review_inputs(work)
+    return work,missing,candidate
+
+
 def cmd_review_start(a,sid):
-    st=al_store.load(sid); require_transition(st,'review-start','REVIEW')
-    missing,candidate=_review_inputs(st)
+    st,missing,candidate=_admitted_inputs(al_store.load(sid))
     if missing: refuse('review evidence incomplete: '+str(missing))
     st['review_iteration']+=1
     import al_review_delta as Delta
