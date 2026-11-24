@@ -12,7 +12,8 @@ capture checks are unchanged and decide what the tree may vouch for.
 All state here is per worktree and mutable; the shared fact store holds only facts.
 Concurrent snapshots in one worktree never wait: a busy private index is a fallback to
 direct reads. Snapshot trees used by a run are pinned under `refs/al/snapshots/<run>/`
-so `git gc` keeps them; `unpin` drops a run's refs and `sweep` drops orphaned ones.
+so `git gc` keeps them; a run's refs are dropped when it is approved (`release`), and every
+new run sweeps the refs of runs that pinned nothing for `ORPHAN_SECONDS` (`sweep`).
 
 Under a sandbox that admits only AL's private paths (the Harness operation sandbox, #31),
 `AL_SNAPSHOT_OBJECTS=private` keeps the objects a snapshot writes in the private directory
@@ -107,11 +108,63 @@ def index_path(root=None):
     return directory / INDEX
 
 
+def _real_index(root):
+    return Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).decode().strip())
+
+
+def _identity(path):
+    """(inode, size, mtime, ctime, sha256) of a file, or None when it is absent."""
+    import hashlib
+    try:
+        before = os.stat(path)
+        with open(path, 'rb') as handle:
+            data = handle.read()
+        after = os.stat(path)
+    except FileNotFoundError:
+        return None
+    state = [before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns]
+    if state != [after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns]:
+        return ['moving']
+    return state + [hashlib.sha256(data).hexdigest()]
+
+
+def _seeded(root, target):
+    """Whether the private index was seeded from the real index as it is now.
+
+    The private index then holds the real index's tracked set (flags cleared), refreshed by
+    earlier snapshots: Git's own stat cache of this index makes the next `git add -u` look only
+    at files that changed since. Any change of the real index reseeds it."""
+    import json
+    record = target.with_name(INDEX + '.seed')
+    try:
+        if record.is_symlink() or not target.is_file() or target.is_symlink():
+            return None
+        value = json.loads(record.read_bytes())
+    except (OSError, ValueError):
+        return None
+    current = _identity(_real_index(root))
+    return current if current is not None and current != ['moving'] and value == current else None
+
+
+def _record_seed(root, target, identity):
+    import json
+    record = target.with_name(INDEX + '.seed')
+    temporary = str(record) + '.' + str(os.getpid())
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, 'w') as handle:
+            json.dump(identity, handle)
+        os.replace(temporary, record)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
 def _seed(root, target):
     """Start from the real index: its entries are the tracked set, its stat cache makes the
     snapshot incremental. The copy keeps the index's own timestamp: Git's racy-clean check
     compares entries with it, and a newer copy would let racily-clean entries pass unchecked."""
-    real = Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).decode().strip())
+    real = _real_index(root)
     temporary = str(target) + '.seed.' + str(os.getpid())
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
     try:
@@ -255,22 +308,41 @@ def snapshot(root=None):
     target = index_path(root)
     if target.is_symlink():
         raise Unavailable('private snapshot index is a symlink')
-    # Reseeded every time: the tracked set is exactly the real index's, and nothing an
-    # earlier snapshot added can linger.
-    _seed(root, target)
     env = {'GIT_INDEX_FILE': str(target)}
-    flagged = [row[2:] for row in _run(root, ['ls-files', '-v', '-z'], env=env).split(b'\0')
-               if row[:1].islower() or row[:1] == b'S']
-    if flagged:
-        # Git trusts flagged entries without looking at the disk; AL checks them like any file.
-        for flag in ('--no-assume-unchanged', '--no-skip-worktree'):
-            _run(root, ['update-index', flag, '-z', '--stdin'], env=env, data=b'\0'.join(flagged) + b'\0')
+    # The tracked set is exactly the real index's: the private index is reseeded whenever the
+    # real index changed, and members an earlier snapshot added that are no longer members
+    # are removed below, so nothing an earlier snapshot added can linger.
+    seeded = _seeded(root, target)
+    if seeded is None:
+        identity = _identity(_real_index(root))
+        _seed(root, target)
+        flagged = [row[2:] for row in _run(root, ['ls-files', '-v', '-z'], env=env).split(b'\0')
+                   if row[:1].islower() or row[:1] == b'S']
+        if flagged:
+            # Git trusts flagged entries without looking at the disk; AL checks them like any file.
+            for flag in ('--no-assume-unchanged', '--no-skip-worktree'):
+                _run(root, ['update-index', flag, '-z', '--stdin'], env=env, data=b'\0'.join(flagged) + b'\0')
     _run(root, ['add', '-u', '--ignore-errors'], env=env, timeout=600)
     extra = untracked(root)
+    if seeded is not None:
+        # Untracked members an earlier snapshot added that are no longer members (now ignored).
+        tracked = set(_run(root, ['ls-files', '-z']).split(b'\0'))
+        members = {p.rstrip(b'/') for p in extra}
+        stale = sorted(p for p in set(_run(root, ['ls-files', '-z'], env=env).split(b'\0'))
+                       if p and p not in tracked and p not in members)
+        if stale:
+            _run(root, ['rm', '--cached', '-f', '-q', '--ignore-unmatch', '--pathspec-from-file=-', '--pathspec-file-nul'],
+                 env={**env, 'GIT_LITERAL_PATHSPECS': '1'}, data=b'\0'.join(stale) + b'\0')
     if extra:
         _run(root, ['add', '-f', '--ignore-errors', '--pathspec-from-file=-', '--pathspec-file-nul'], env=env,
              data=b'\0'.join(extra) + b'\0', timeout=600)
-    return _run(root, ['write-tree'], env=env).decode().strip()
+    tree = _run(root, ['write-tree'], env=env).decode().strip()
+    if seeded is None and identity is not None and identity != ['moving']:
+        try:
+            _record_seed(root, target, identity)
+        except OSError:
+            pass
+    return tree
 
 
 def entries(root, tree, paths=None):
@@ -423,10 +495,53 @@ def unpin(run, root=None):
             _run(_root(root), ['update-ref', '-d', ref])
 
 
-def sweep(active_runs, root=None):
-    """Drop snapshot refs of runs that are no longer active."""
-    keep = {_safe_name(r) for r in active_runs}
-    for ref in pinned(root):
-        run = ref[len(REF_PREFIX):].split('/', 1)[0]
-        if run not in keep:
-            _run(_root(root), ['update-ref', '-d', ref])
+def release(run, root=None):
+    """Run end: drop the run's snapshot refs. Best effort; `sweep` collects what is left."""
+    try:
+        unpin(run, root)
+    except (Unavailable, OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+
+# A run's state lives in its own (per-session, possibly protected) runtime directory that no
+# other run can enumerate, so an orphan is recognised by age: no pin written for 30 days.
+ORPHAN_SECONDS = 30 * 24 * 3600
+
+
+def _ages(root, refs, now):
+    """Lower bounds of each ref's age: its loose ref file's mtime, else the packed-refs file's
+    (a packed ref was written before the file that holds it)."""
+    common = Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']).decode().strip())
+    try:
+        packed = now - (common / 'packed-refs').stat().st_mtime
+    except OSError:
+        packed = 0
+    out = {}
+    for ref in refs:
+        try:
+            out[ref] = now - (common / ref).lstat().st_mtime
+        except OSError:
+            out[ref] = packed
+    return out
+
+
+def sweep(keep=(), root=None, *, now=None):
+    """Drop the snapshot refs of every run except `keep` whose newest pin is older than
+    `ORPHAN_SECONDS`; returns the runs swept. Best effort: an unavailable repository sweeps nothing."""
+    import time
+    root = _root(root)
+    keep = {_safe_name(r) for r in keep}
+    try:
+        refs = pinned(root)
+        ages = _ages(root, refs, time.time() if now is None else now)
+        runs = {}
+        for ref in refs:
+            runs.setdefault(ref[len(REF_PREFIX):].split('/', 1)[0], []).append(ref)
+        swept = sorted(run for run, rows in runs.items()
+                       if run not in keep and min(ages[r] for r in rows) > ORPHAN_SECONDS)
+        for run in swept:
+            for ref in runs[run]:
+                _run(root, ['update-ref', '-d', ref])
+        return swept
+    except (Unavailable, OSError, ValueError, subprocess.SubprocessError):
+        return []

@@ -206,13 +206,24 @@ class CaptureMixin:
 
     @staticmethod
     def matched(pattern, members):
-        from al_ci_rules import pattern_matches
+        """Members `pattern` fully matches (al_ci_rules.pattern_matches is True).
 
-        return tuple(
-            sorted(
-                p.rstrip("/") for p in members if pattern_matches(pattern, p.rstrip("/")) is True
-            )
-        )
+        The glob is compiled once and only members under its literal head are tried: every
+        literal character of a glob matches itself, so a full match starts with that head."""
+        import re
+
+        from al_ci_rules import _glob_regex
+
+        if not isinstance(pattern, str) or any(c in pattern for c in "${}[]\\"):
+            return ()
+        head = re.split(r"[*?]", pattern, maxsplit=1)[0]
+        regex = _glob_regex(pattern)
+        found = []
+        for member in members:
+            path = member.rstrip("/")
+            if path.startswith(head) and regex.fullmatch(path):
+                found.append(path)
+        return tuple(sorted(found))
 
     def observe_matches(self, pattern, *, purpose):
         if not isinstance(pattern, str) or pattern.startswith("/") or ".." in Path(pattern).parts:
@@ -306,6 +317,7 @@ class CaptureMixin:
             for (pattern, _), old in self.match_observations.items():
                 if self.matched(pattern, fresh["members"]) != old:
                     raise CaptureDrift("match-membership", old)
+        self.last_listing = fresh
 
     def capture_metadata(self, attempts=1, discarded=()):
         from al_repository_facts import digest

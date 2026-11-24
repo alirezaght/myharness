@@ -48,6 +48,27 @@ def _safe_text(path):
     return bool(path) and not p.is_absolute() and '..' not in p.parts and p.as_posix()==path
 
 
+def _plain(path):
+    """`path` without a trailing slash when it is a normalized relative POSIX path (no empty,
+    `.` or leading-slash segments), whose Path parts are its slash-separated segments; else None."""
+    stripped=path.rstrip('/') if len(path)>1 else path
+    if (not stripped or stripped[0]=='/' or '//' in stripped or stripped=='.' or stripped.startswith('./')
+            or '/./' in stripped or stripped.endswith('/.')):return None
+    return stripped
+
+
+def path_parts(path):
+    """Path(path).parts, without pathlib for the normalized paths Git lists (35k per listing)."""
+    plain=_plain(path)
+    return tuple(plain.split('/')) if plain is not None else Path(path).parts
+
+
+def path_name(path):
+    """Path(path).name, without pathlib for the normalized paths Git lists."""
+    plain=_plain(path)
+    return plain.rsplit('/',1)[-1] if plain is not None else Path(path).name
+
+
 def unit_depth(path):return len(Path(path).parts)
 
 
@@ -108,7 +129,7 @@ def file_identity(value):
 
 
 def priority(path):
-    parts=Path(path).parts;name=Path(path).name
+    parts=path_parts(path);name=path_name(path)
     supported=len(parts)==1 or len(parts)==3 and parts[0] in {'apps','services','packages'} or path=='.al/repository.json'
     return (0 if name=='.gitignore' or name in MANIFESTS and supported else 1 if name in MANIFESTS else 2,path)
 
@@ -203,6 +224,26 @@ class CapturedContent(Mapping):
 _LISTINGS={}
 
 
+def _window(root):
+    """The decision window (S.decision) observing `root`, bracketed by working-copy observations."""
+    from al_analysis_cache import CURRENT
+    import al_attribution_tree as tree
+    context=CURRENT.get()
+    return context if context is not None and tree.window(str(root)) is not None else None
+
+
+def _window_listing(key):
+    """Inside one stability-checked decision window, the latest membership listing of the same
+    question is reused (the window re-runs the decision when the working copy moved)."""
+    context=_window(key[0])
+    return context.local.get(('membership-listing',key)) if context is not None else None
+
+
+def _keep_window_listing(key,listing):
+    context=_window(key[0])
+    if context is not None:context.local[('membership-listing',key)]=listing
+
+
 class Snapshot(CaptureMixin):
     def __init__(self,root,base_oid,paths,opaque,required_adapter=None,*,listing_only=False):
         """`listing_only` observes membership and path states without capturing content:
@@ -225,7 +266,12 @@ class Snapshot(CaptureMixin):
         # capture still ends with a fresh listing compared against it, so drift is refused.
         key=(str(self.root),base_oid,tuple(self.paths),tuple(self.opaque),required_adapter)
         adopted=None if listing_only else _LISTINGS.pop(key,None)
+        # A full capture always ends with its own fresh listing (revalidate), and a retry after
+        # drift must observe afresh: only listing-only snapshots answer from the window's listing.
+        if adopted is None and listing_only:adopted=_window_listing(key)
         self.listing_observation=adopted if adopted is not None else self.observe_listing()
+        self.listing_key=key
+        if listing_only:_keep_window_listing(key,self.listing_observation)
         if listing_only:
             if len(_LISTINGS)>=4:_LISTINGS.clear()
             _LISTINGS[key]=self.listing_observation
@@ -259,6 +305,11 @@ class Snapshot(CaptureMixin):
         progress.report('inventory-current', count=len(self.members), force=True)
         self.read_base()
 
+    def revalidate(self,listing=None):
+        super().revalidate(listing)
+        # The capture's own end-of-capture listing is the window's latest of this question.
+        _keep_window_listing(self.listing_key,self.last_listing)
+
     def vouched_hashes(self,scope):
         """{path: (sha256, size)} for working-copy files the Git snapshot tree vouches for (#25).
 
@@ -284,7 +335,7 @@ class Snapshot(CaptureMixin):
 
     @staticmethod
     def relevant(p):
-        return p.endswith(SOURCE_SUFFIXES) or p.endswith(('.toml','.json','.yaml','.yml','.sh','.lock')) or Path(p).name in {'Makefile','go.mod','go.sum','go.work','go.work.sum','setup.cfg','.gitignore'}
+        return p.endswith(SOURCE_SUFFIXES) or p.endswith(('.toml','.json','.yaml','.yml','.sh','.lock')) or path_name(p) in {'Makefile','go.mod','go.sum','go.work','go.work.sum','setup.cfg','.gitignore'}
 
     def safe_file(self,p):
         safe(p)
@@ -384,7 +435,7 @@ class Snapshot(CaptureMixin):
                 # The same errors Path.exists() reports as absent.
                 if exc.errno in _ABSENT_ERRNOS:return
                 raise
-            parts=Path(p).parts
+            parts=path_parts(p)
             if any(part in EXCLUDED for part in parts):
                 if not protected:return
                 exclusions.append({'path':p,'reason':'protected membership overrides generated exclusion','provenance':['tracked/base/explicit/declaration']})
@@ -413,7 +464,7 @@ class Snapshot(CaptureMixin):
             tracked=[row.decode() for row in git_records(self.root,['ls-files','--cached','-z'],LIMITS)]
             for p in tracked:
                 safe(p)
-                if Path(p).name in MANIFESTS:add_root(Path(p).parent.as_posix())
+                if path_name(p) in MANIFESTS:add_root(Path(p).parent.as_posix())
         except (OSError,ValueError) as exc:diagnostics.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
         if self.base_oid:
             try:
@@ -421,7 +472,7 @@ class Snapshot(CaptureMixin):
                 for row in base_rows:
                     meta,path=row.split(b'\t',1);mode,kind,oid,size=meta.split();p=path.decode();safe(p)
                     if mode==b'160000':diagnostics.append(gap('gitlink-boundary',p,'base gitlink is opaque'))
-                    elif kind==b'blob' and Path(p).name in MANIFESTS:add_root(Path(p).parent.as_posix())
+                    elif kind==b'blob' and path_name(p) in MANIFESTS:add_root(Path(p).parent.as_posix())
             except (OSError,ValueError) as exc:diagnostics.append(gap('base-unavailable','.',str(exc)))
         for kind in ('apps','services','packages'):
             try:

@@ -91,6 +91,10 @@ def cmd_start(a, sid):
         st["rework"].update(batch=0)
         save(sid, st)
         write_current(sid, publication)
+        # Snapshot trees of approved runs were released at approval; orphans of abandoned runs
+        # are swept here, by age (al_snapshot.sweep).
+        import al_snapshot
+        al_snapshot.sweep(keep=[st['run_id']])
         print(f"AL session {sid}")
         print(f"AL state started for session {sid}: {state_path(sid)}")
         print(f"pre-existing working-tree changes: {len(st['preexisting_changes'])}")

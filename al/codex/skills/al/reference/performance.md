@@ -26,6 +26,19 @@ Test resource helpers resolve the selected package directly for both versioned (
 
 Measured on a loaded development machine: a warm `show --json` round trip takes about 0.1 s through the service against about 0.5-0.7 s in process, on a small repository and on a 17,000-file synthetic monorepo alike. A clean snapshot of the 17,000-file repository costs about 110 ms with `git add -A`; the service answers it in about 1 ms.
 
+## Warm command overhead (#25)
+
+Each command observes the working copy through its snapshot tree, and repeated questions inside one command are answered from one stability-checked observation:
+
+- **Decision windows.** A read-only decision (`S.decision`: readiness, gate currency, review completeness, discovery and its validation) is bracketed by two observations of the working copy: the snapshot tree plus the state a tree does not record (index, HEAD, physical modes, untracked members, content Git may convert or AL's membership excludes). Inside, the candidate records, the task-attribution classification and the membership listing of one question are read once; equal observations prove nothing moved, otherwise the decision is evaluated again without any reuse. A plain attribution capture inside a window is read once (the window's closing observation is its stability proof).
+- **Candidate records.** The records are a function of what an observation sees, so a bracket opening on an observation equal to an earlier confirmed one reuses its records, and one opening on a different observation re-reads only the paths whose observed state differs. The latest confirmed records of a worktree are kept in the run's runtime directory (`observed-records/`, keyed by worktree and base, bound to the code digest and to the digest of the observation they were read under), so the next command starts from them. A changed HEAD, gitlinks, a forged or unreadable record, or `AL_ANALYSIS_CACHE=0` read every record afresh.
+- **Recorded answers.** Inventories and gate-currency answers are recorded with the capture observations they read (see the gates reference) and replayed while that capture re-observes unchanged.
+- **Chained observations.** A bracket opening right after another one closed with nothing moved starts from that closing observation instead of taking a new one; if its own closing observation then differs, it is taken again from a fresh observation (a decision window is evaluated again, a capture read again), so it never refuses what a fresh bracket admits, and movement during the capture itself still refuses.
+- **Private index.** The snapshot's private index is reseeded only when the real index changed; otherwise it keeps Git's stat cache of its own last snapshot, so `git add -u` looks only at files changed since, even when the real index's stat data is stale.
+- **Snapshot refs.** Approval releases the run's `refs/al/snapshots/<run>/` refs; each new run sweeps refs no pin touched for 30 days.
+
+A changed task file still costs one new inventory of the planned question (the membership listing, the capture and the analysis of the changed blobs; facts of unchanged blobs come from the fact store).
+
 ## Further opportunities
 
 - Avoid rewriting candidate files in a scratch checkout when their captured bytes and modes already match the pinned tree entry; retain the existing post-overlay representation check.
