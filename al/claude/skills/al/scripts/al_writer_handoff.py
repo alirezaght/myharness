@@ -65,5 +65,10 @@ def cmd_handoff(a, sid):
                                   separators=(',', ':')).encode('utf-8'))
     artifact = snapshot_bytes(sid, raw, 'writer-handoff', a.body_file)
     writer.setdefault('handoffs', []).append({'artifact': artifact, 'areas': areas, 'plan_digest': plan_digest})
+    import al_agents
+    if getattr(a, 'agent_id', None):
+        al_agents.record(st, writer['role'], a.agent_id, writer=a.id, purpose='handoff', fresh_reason=getattr(a, 'fresh_reason', None))
     al_store.save(sid, st)
     sys.stdout.write(prompt)
+    # Warm by default (#30): a follow-up for this role goes to the recorded agent instance.
+    al_agents.note(st, writer['role'])

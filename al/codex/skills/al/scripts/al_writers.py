@@ -322,6 +322,7 @@ def register(sub):
     from al_writer_handoff import cmd_handoff
     p=children.add_parser('handoff'); p.add_argument('--id',required=True)
     p.add_argument('--body-file',required=True); p.add_argument('--area',action='append')
+    p.add_argument('--agent-id',help='record the dispatched agent instance (warm-agent resume, #30)'); p.add_argument('--fresh-reason')
     p.set_defaults(fn=cmd_handoff)
     for action in ('start','finish','reconcile'):
         p=children.add_parser(action); p.add_argument('--id',required=True); p.set_defaults(fn=cmd_writer)

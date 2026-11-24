@@ -2,6 +2,7 @@
   "schema_version": 1,
   "shared_files": [
     "al_acceptance.py",
+    "al_agents.py",
     "al_affected_services.py",
     "al_analysis_cache.py",
     "al_architecture_check.py",
