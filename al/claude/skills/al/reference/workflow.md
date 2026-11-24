@@ -711,7 +711,7 @@ writer's files is refused. A writer's own check whose scope also covers a siblin
 ACTIVE writer's paths runs and is recorded as provisional ("needs revalidation after
 writer B finishes"): after B finishes it is VALID only if none of the inputs it read
 changed, otherwise STALE and rerun (see evidence). A capture drift while a sibling edits,
-in `gates discover` or the gate refresh of `writer start`, is refused as
+in `gates discover` or a gate refresh, is refused as
 `writer <id> still active; run after writer finish`. Parallel writers own disjoint paths, so `writer start`
 and `writer finish` capture and attribute only paths outside the other ACTIVE writers'
 ownership: a sibling still editing its own files never fails them. Any other path
@@ -729,10 +729,18 @@ Every writer start rechecks gate currency (sourced rule hashes and touched units
 and that its files lie inside the planned paths and units. A file entry covers only
 that file; a directory covers descendants by path components; `.` covers the
 repository. Content edits inside already covered paths never require replanning: when
-a planned file is a rule source (a manifest, CI file, hook or instruction file) or a
-planned path becomes a new unit, AL refreshes the manifest itself at the next writer or
-phase step (`gate_refreshes`), keeping base runs, decisions and exceptions of unchanged
-gates. Only a path, unit or rule outside the planned paths needs a replacement plan.
+a planned file is a rule source (a manifest, CI file, hook or instruction file), a rule
+file the manifest already sources changes (for example a unit's nested `AGENTS.md`
+reached from a planned file, which is then added to the planned paths), or a planned
+path becomes a new unit, AL refreshes the manifest itself (`gate_refreshes`) at every
+`writer finish` (also through `writer finish --evidence auto`), at every phase step and
+at the start of `gates run`, before anything is materialised, keeping base runs,
+decisions and exceptions of unchanged gates. The refresh waits while a writer is still
+active or a check is running. When it cannot run, `gates run` stops before any gate with
+one message naming the changed rule sources and the exact recovery:
+`gates discover --extend current --paths-file <file> [--bounded]` (AL writes the paths
+file), then `gates plan` when the discovered manifest needs resolving.
+Only a path, unit or new rule outside the planned paths needs a replacement plan.
 Never abandon AL over a stale-gate refusal; follow its recovery guidance. The full repository inventory runs at discovery, at `gates plan` and
 once at review start, where the candidate's obligations must still match the plan.
 

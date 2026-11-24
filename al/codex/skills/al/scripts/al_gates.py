@@ -432,6 +432,14 @@ def cmd_run(a,sid):
     with al_store.locked(sid):
         st=al_store.load(sid); m=manifest(st)
         if not m: refuse('gate manifest missing')
+        # A changed sourced rule would make every gate INFRA at launch ('source rule changed
+        # before launch'): refresh it here, or stop once with the recovery commands (issue #32).
+        from al_gate_refresh import settle, recovery_message
+        settled=settle(st)
+        if settled['refreshed']:
+            al_store.save(sid,st);m=manifest(st)
+        elif settled['stale']:
+            refuse(recovery_message(st,sid,settled['stale'],settled['blocked']))
         resume = getattr(a,'resume',False)
         retry_failed = getattr(a,'retry_failed',False)
         if retry_failed and not resume and not a.id:

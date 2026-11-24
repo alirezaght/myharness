@@ -102,6 +102,9 @@ def _transition_preflight(st, command, destination, implementation_edge):
 def require_transition(st, command, destination, *, record_continuation=True):
     from al_rework_recovery_contract import guard
     from al_new_origin import require_admitted, require_implementation_ready
+    # Every phase step refreshes gates whose sourced rule files changed (issue #32), whatever the edge.
+    from al_gate_refresh import settle
+    settle(st)
     implementation_edge = destination in WRITING or command == 'phase' and destination in {'VERIFICATION', 'PSEUDOCODE', 'PLAN_CONFLICT'}
     # Recovery may legitimately restore defined implementation; preserve it before preflight.
     guard(st,implementation=implementation_edge)

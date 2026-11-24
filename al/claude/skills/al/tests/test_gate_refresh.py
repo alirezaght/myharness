@@ -21,21 +21,14 @@ def test_planned_rule_file_edit_refreshes_and_keeps_base_runs(cli,tmp_path,repo)
     before=state(cli);old=before['gate_manifests'][-1]['sha256']
     base={r['gate']:r['evidence'] for r in before.get('gate_runs',[]) if r['stage']=='base' and r['manifest']==old}
     (repo/'pyproject.toml').write_text((repo/'pyproject.toml').read_text()+'# planned edit\n')
+    # Writer finish refreshes the planned rule edit once no writer is editing (issue #32).
     invoke(cli,'writer','finish','--id','first','--outcome','success')
     invoke(cli,'writer','start','--id','second','--role','al-engineer','--files','svc/app.py')
-    public=state(cli)
-    assert public['gate_manifests'][-1]['sha256']==old
-    assert public['writers']['second']['state']=='ACTIVE'
-    assert 'source rule changed: pyproject.toml' in public['implementation_readiness']['obligations']
-    # Helper-level projection proves refresh/carry behavior; public scoped writer
-    # admission records debt and does not publish a refresh as a side effect.
-    import copy
-    import al_gate_refresh as Refresh
-    s=copy.deepcopy(public)
-    assert Refresh.refresh(s)['current']
+    s=state(cli)
+    assert s['writers']['second']['state']=='ACTIVE'
+    assert 'source rule changed: pyproject.toml' not in s['implementation_readiness']['obligations']
     new=s['gate_manifests'][-1]['sha256']
     assert new!=old and 'gate_recovery' not in s
-    assert state(cli)==public
     refresh=s['gate_refreshes'][-1]
     assert refresh['superseded']==old and refresh['manifest']==new
     assert any('pyproject.toml' in reason for reason in refresh['reasons'])
