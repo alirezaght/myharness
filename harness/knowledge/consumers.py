@@ -1,31 +1,19 @@
-"""Who consumes a module, file or endpoint: lazy resolution over the published import edges.
+"""Who consumes a module, file or endpoint, and the import/endpoint edges of code: a view over
+AL's code facts (#34).
 
-Extraction records import specifiers exactly as written. Resolving them needs the repository
-layout, so ``harness.code_resolution.Layout`` does it here, only for the target someone asks
-about, against the snapshot's own locators. Results are evidence-linked observations: an
-unresolvable specifier is reported, never guessed into a block.
+AL holds the only import analyser (`harness.knowledge.al_facts` queries it through `alctl run`).
+This module keeps the knowledge graph's own rules on top: the repository must be opted in
+(indexed, #12: an unindexed repository costs nothing), the answer is limited to the sources the
+scope may see in its active snapshot, and a commit snapshot is answered at its commit. Without
+AL the graph still serves its text and symbol index, and these views say
+`al-facts-unavailable` rather than guessing edges.
 """
 
-import json
-import posixpath
-import re
-from collections import defaultdict
-from pathlib import PurePosixPath
-
-from harness.code_resolution import (
-    CODE_SUFFIXES,
-    SCRIPT_EXTENSIONS,
-    Layout,
-    segments_match,
-    strip_ext,
-)
-from harness.knowledge.models import MAX_SOURCE_BYTES, identity
+from harness.knowledge import al_facts
 from harness.knowledge.policy import validate_scope
-from harness.knowledge.sources import read_source
 
 DEFAULT_LIMIT = 200
-# Re-exporting modules (index.ts barrels, `export * from`) are followed this many levels.
-REEXPORT_DEPTH = 5
+_RESOLVE = object()
 
 
 def _snapshot(conn, scope, snapshot_id):
@@ -39,229 +27,104 @@ def _snapshot(conn, scope, snapshot_id):
     return snapshot
 
 
-_EDGE_ROWS = (
-    "SELECT a.assertion_id,a.predicate,o.scoped_key AS object,a.value_json,s.locator,"
-    "e.start_byte,e.end_byte FROM knowledge_assertions a "
-    "JOIN temp.k_eligible k USING(assertion_id) "
-    "JOIN knowledge_entities o ON o.entity_id=a.object_id "
-    "JOIN knowledge_evidence e ON e.assertion_id=a.assertion_id "
-    "JOIN temp.k_versions kv ON kv.version_id=e.version_id "
-    "JOIN knowledge_source_versions v ON v.version_id=e.version_id "
-    "JOIN knowledge_sources s ON s.source_id=v.source_id "
-)
-
-
-def _edges(conn, project, predicate, objects):
-    rows = []
-    objects = sorted(set(objects))
-    for index in range(0, len(objects), 500):
-        chunk = [identity(project, key) for key in objects[index : index + 500]]
-        rows.extend(
-            conn.execute(
-                _EDGE_ROWS
-                + "WHERE a.project_id=? AND a.predicate=? AND a.object_id IN ("
-                + ",".join("?" * len(chunk))
-                + ")",
-                (project, predicate, *chunk),
-            ).fetchall()
-        )
-    return rows
-
-
-def resolve_target(layout, target):
-    """Map a locator, dotted module, directory or endpoint to locators and endpoints."""
-    target = target.strip()
-    if target.startswith("endpoint:") or (target.startswith("/") and target not in layout.locators):
-        from harness.code_resolution import endpoint_path
-
-        path = endpoint_path(target.removeprefix("endpoint:"))
-        return [], [path] if path else []
-    target = target.removeprefix("file:").removeprefix("module:").strip("/")
-    if target in layout.locators:
-        return [target], []
-    if target in layout.directories:
-        prefix = target + "/"
-        return sorted(
-            n
-            for n in layout.locators
-            if n.startswith(prefix) and PurePosixPath(n).suffix in CODE_SUFFIXES
-        ), []
-    stems = [n for n in layout.locators if n.endswith(".py") or n.endswith(SCRIPT_EXTENSIONS)]
-    matches = sorted(n for n in stems if strip_ext(n) == target)
-    if matches:
-        return matches, []
-    if re.fullmatch(r"[A-Za-z_][\w.]*", target):
-        return sorted(
-            n
-            for n in stems
-            if n.endswith(".py") and any(name == target for _, name in layout.python_names(n))
-        ), []
-    return [], []
-
-
-def consumers(conn, scope, target, *, snapshot_id=None, limit=DEFAULT_LIMIT):
-    """Static importers and runtime (HTTP endpoint) callers of `target` in the snapshot."""
-    snapshot = _snapshot(conn, scope, snapshot_id)
-    if not snapshot:
-        return {"target": target, "status": "not-indexed", "consumers": [], "gaps": []}
-    project = scope.project_id
-    locators = [
+def _visible(conn):
+    """Locators of the scope's eligible sources in the partitioned snapshot."""
+    return {
         r[0]
         for r in conn.execute(
             "SELECT s.locator FROM temp.k_versions k JOIN knowledge_source_versions v "
             "USING(version_id) JOIN knowledge_sources s USING(source_id)"
         )
-    ]
-    layout = Layout(
-        locators,
-        lambda locator: read_source(scope.repository, locator, MAX_SOURCE_BYTES).decode(),
-    )
-    files, endpoints = resolve_target(layout, target)
-    found, gaps = {}, []
-    sources = {}
-
-    def reexports(row):
-        """Whether the importing statement re-exports (`export ... from`): its consumers then
-        consume the target too (transitively, #31)."""
-        locator = row["locator"]
-        if locator not in sources:
-            try:
-                sources[locator] = read_source(scope.repository, locator, MAX_SOURCE_BYTES)
-            except (OSError, ValueError):
-                sources[locator] = b""
-        span = sources[locator][row["start_byte"] : row["end_byte"]]
-        return span.lstrip().startswith(b"export")
-
-    def add(row, relation, via, owner, through=()):
-        importer = row["locator"]
-        if importer in files:
-            return
-        key = (importer, relation, via)
-        if key in found:
-            return
-        found[key] = {
-            "locator": importer,
-            "unit": layout.unit(importer) or ".",
-            "relation": relation,
-            "via": via,
-            "scope": (
-                "runtime"
-                if not owner
-                else "intra-unit"
-                if layout.unit(importer) == layout.unit(owner)
-                else "cross-unit"
-            ),
-            "target": owner,
-            "assertion_id": row["assertion_id"],
-            "start_byte": row["start_byte"],
-            "end_byte": row["end_byte"],
-        }
-        if through:
-            found[key]["through"] = list(through)
-
-    for locator in files:
-        if locator.endswith(".py"):
-            names = layout.python_names(locator)
-            wanted = defaultdict(list)
-            for root, name in names:
-                wanted[f"module:{name}"].append((root, name, None))
-                if "." in name:
-                    parent, leaf = name.rsplit(".", 1)
-                    wanted[f"module:{parent}"].append((root, name, leaf))
-            for row in _edges(conn, project, "imports", wanted):
-                value = json.loads(row["value_json"]) if row["value_json"] else None
-                imported = set((value or {}).get("names", [])) if isinstance(value, dict) else set()
-                for root, name, leaf in wanted[row["object"]]:
-                    if leaf is not None and leaf not in imported:
-                        continue
-                    owner = layout.python_owner(row["locator"], name)
-                    if owner is not None and owner != root:
-                        continue  # the importer's own layout resolves this name elsewhere
-                    add(row, "imports", name, locator)
-                    break
-        elif locator.endswith(SCRIPT_EXTENSIONS):
-            pending, visited = [(locator, ())], {locator}
-            while pending:
-                current, through = pending.pop(0)
-                relation = "imports-via-reexport" if through else "imports"
-                for row, via in _script_importers(conn, project, layout, current):
-                    add(row, relation, via, locator, through)
-                    importer = row["locator"]
-                    if (
-                        importer not in visited
-                        and importer not in files
-                        and len(through) < REEXPORT_DEPTH
-                        and importer.endswith(SCRIPT_EXTENSIONS)
-                        and reexports(row)
-                    ):
-                        visited.add(importer)
-                        pending.append((importer, (*through, importer)))
-        subject = (
-            "module:"
-            + ".".join(PurePosixPath(locator).with_suffix("").parts).removesuffix(".__init__")
-            if locator.endswith(".py")
-            else f"file:{locator}"
-        )
-        served = conn.execute(
-            _EDGE_ROWS
-            + "WHERE a.project_id=? AND a.subject_id=? AND a.predicate='serves-endpoint' "
-            "AND s.locator=?",
-            (project, identity(project, subject), locator),
-        ).fetchall()
-        endpoints.extend((row["object"].removeprefix("endpoint:"), locator) for row in served)
-    if endpoints:
-        calls = conn.execute(
-            _EDGE_ROWS + "WHERE a.project_id=? AND a.predicate='calls-endpoint'", (project,)
-        ).fetchall()
-        for item in endpoints:
-            path, owner = item if isinstance(item, tuple) else (item, "")
-            for row in calls:
-                called = row["object"].removeprefix("endpoint:")
-                if called == path or segments_match(called, path):
-                    add(row, "calls-endpoint", path, owner)
-    if layout.unreadable:
-        gaps.append(
-            {
-                "status": "unresolved",
-                "reason": "layout-config-unreadable",
-                "locators": sorted(layout.unreadable)[:20],
-            }
-        )
-    status = _coverage_status(conn, snapshot)
-    results = sorted(found.values(), key=lambda c: (c["scope"] != "cross-unit", c["locator"]))
-    return {
-        "target": target,
-        "snapshot_id": snapshot,
-        "status": status,
-        "resolved": {
-            "files": files[:50],
-            "endpoints": sorted({e if isinstance(e, str) else e[0] for e in endpoints}),
-        },
-        "consumers": results[:limit],
-        "truncated": len(results) > limit,
-        "gaps": gaps,
     }
 
 
-def _script_importers(conn, project, layout, locator):
-    """(edge row, specifier as written) of every static import of a script `locator`."""
-    stem = strip_ext(locator)
-    relative = {f"path:{stem}", f"path:{locator}"}
-    relative.update(f"path:{stem}{extension}" for extension in SCRIPT_EXTENSIONS)
-    if posixpath.basename(stem) == "index":
-        relative.add(f"path:{posixpath.dirname(stem)}")
-    rows = [
-        (row, row["object"].removeprefix("path:"))
-        for row in _edges(conn, project, "imports", relative)
-    ]
-    scopes = defaultdict(set)
-    for spec, spec_scope in layout.script_specifiers(locator):
-        scopes[f"import:{spec}"].add(spec_scope)
-    for row in _edges(conn, project, "imports", scopes):
-        allowed = scopes[row["object"]]
-        if "" in allowed or any(row["locator"].startswith(s + "/") for s in allowed):
-            rows.append((row, row["object"].removeprefix("import:")))
-    return rows
+def _commit(conn, snapshot):
+    row = conn.execute(
+        "SELECT head,mode FROM knowledge_snapshot_cursor WHERE snapshot_id=?", (snapshot,)
+    ).fetchone()
+    return row[0] if row and row[1] == "commit" and row[0] else None
+
+
+def _facts(scope, facts):
+    return al_facts.resolve(scope.repository) if facts is _RESOLVE else facts
+
+
+def _unavailable(base, reason):
+    return {
+        **base,
+        "status": "unavailable",
+        "gaps": [{"status": "unresolved", "reason": "al-facts-unavailable", "detail": reason}],
+    }
+
+
+def _query(facts, snapshot, conn, *arguments):
+    commit = _commit(conn, snapshot)
+    return facts.query(*arguments, *(["--commit", commit] if commit else []))
+
+
+def consumers(conn, scope, target, *, snapshot_id=None, limit=DEFAULT_LIMIT, facts=_RESOLVE):
+    """Static importers and runtime (HTTP endpoint) callers of `target` in the snapshot."""
+    snapshot = _snapshot(conn, scope, snapshot_id)
+    if not snapshot:
+        return {"target": target, "status": "not-indexed", "consumers": [], "gaps": []}
+    base = {
+        "target": target,
+        "snapshot_id": snapshot,
+        "resolved": {"files": [], "endpoints": []},
+        "consumers": [],
+        "truncated": False,
+    }
+    facts = _facts(scope, facts)
+    if facts is None:
+        return _unavailable(base, "no AL run to query")
+    visible = _visible(conn)
+    try:
+        answer = _query(facts, snapshot, conn, "consumers", target, "--limit", "1000")
+    except al_facts.FactsUnavailable as error:
+        return _unavailable(base, str(error))
+    rows = [c for c in answer["consumers"] if c["locator"] in visible]
+    hidden = len(answer["consumers"]) - len(rows)
+    status = answer["status"]
+    if status == "complete" and _coverage_status(conn, snapshot) != "complete":
+        status = "partial"
+    return {
+        **base,
+        "status": status,
+        "source": "al-facts",
+        "tree": answer.get("tree"),
+        "resolved": {
+            "files": [f for f in answer["resolved"]["files"] if f in visible],
+            "endpoints": answer["resolved"]["endpoints"],
+        },
+        "consumers": rows[:limit],
+        "truncated": len(rows) > limit or bool(answer.get("truncated")),
+        "gaps": [g for g in answer["gaps"] if "locator" not in g or g["locator"] in visible]
+        + ([{"status": "withheld", "reason": "outside-scope", "count": hidden}] if hidden else []),
+    }
+
+
+def edges(conn, scope, paths=(), *, snapshot_id=None, facts=_RESOLVE):
+    """AL's import/endpoint edges of the visible code files under `paths` (all when empty)."""
+    snapshot = _snapshot(conn, scope, snapshot_id)
+    if not snapshot:
+        return {"status": "not-indexed", "edges": [], "gaps": []}
+    base = {"snapshot_id": snapshot, "edges": []}
+    facts = _facts(scope, facts)
+    if facts is None:
+        return _unavailable(base, "no AL run to query")
+    visible = _visible(conn)
+    try:
+        answer = _query(facts, snapshot, conn, "edges", *paths)
+    except al_facts.FactsUnavailable as error:
+        return _unavailable(base, str(error))
+    return {
+        **base,
+        "status": answer["status"],
+        "source": "al-facts",
+        "tree": answer.get("tree"),
+        "edges": [e for e in answer["edges"] if e["locator"] in visible],
+        "gaps": [g for g in answer["gaps"] if g.get("locator") in visible],
+    }
 
 
 def _coverage_status(conn, snapshot):
@@ -274,6 +137,8 @@ def _coverage_status(conn, snapshot):
 
 def coverage_summary(conn, scope):
     """One-line trust signal: how much of the eligible inventory the active snapshot covers."""
+    from harness.knowledge.sources import CODE_SUFFIXES
+
     project = conn.execute(
         "SELECT active_snapshot_id FROM knowledge_projects WHERE project_id=?", (scope.project_id,)
     ).fetchone()
@@ -291,7 +156,7 @@ def coverage_summary(conn, scope):
         {
             "python" if n.endswith(".py") else "typescript/javascript"
             for n in present
-            if n.endswith(".py") or n.endswith(SCRIPT_EXTENSIONS)
+            if any(n.endswith(suffix) for suffix in CODE_SUFFIXES)
         }
     )
     percent = round(100 * len(present) / len(known)) if known else 100
@@ -305,5 +170,5 @@ def coverage_summary(conn, scope):
         "languages": languages,
         "line": f"knowledge graph: {status}, {percent}% of {len(known)} files, "
         + (", ".join(languages) or "no code")
-        + " import/endpoint edges",
+        + " text/symbols; import/endpoint edges from AL code facts",
     }

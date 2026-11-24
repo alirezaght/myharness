@@ -4,11 +4,10 @@ import ast
 import re
 from pathlib import Path, PurePosixPath
 
-from harness.code_resolution import SCRIPT_SUFFIXES
 from harness.decisions import DecisionParseError, parse_decision_text
 from harness.knowledge.adapters import extract_record
-from harness.knowledge.code_edges import python_endpoints, script_assertions
 from harness.knowledge.models import Assertion, Extraction, SourceVersion
+from harness.knowledge.sources import SCRIPT_SUFFIXES
 
 DESCRIBED_SPAN = 8192
 DESCRIBED_TEXT = 2048
@@ -34,7 +33,39 @@ def described_text(text: str) -> str:
     return " ".join(words)
 
 
-def extract_source(source: SourceVersion) -> Extraction:
+def _subject(source):
+    module = ".".join(PurePosixPath(source.locator).with_suffix("").parts)
+    if module.endswith(".__init__"):
+        module = module[:-9]
+    return f"module:{module}" if source.kind == "python" else f"file:{source.locator}"
+
+
+def with_code_edges(extraction: Extraction, source: SourceVersion, code_edges) -> Extraction:
+    """`extraction` plus AL's code facts for exactly these bytes (#34: `facts edges` rows),
+    stored verbatim as the graph's import and endpoint assertions; the graph parses none."""
+    if not code_edges:
+        return extraction
+    subject = _subject(source)
+    edges = tuple(
+        Assertion(
+            subject,
+            edge["relation"],
+            edge["target"],
+            edge["value"],
+            edge["text"],
+            edge["start"],
+            edge["end"],
+            origin="static-analysis",
+        )
+        for edge in code_edges
+    )
+    return Extraction(extraction.assertions + edges, extraction.coverage)
+
+
+def extract_source(source: SourceVersion, code_edges=None) -> Extraction:
+    """Text, symbols and records of one source, plus AL's `code_edges` when given."""
+    if code_edges:
+        return with_code_edges(extract_source(source), source, code_edges)
     if source.kind in {"requirements", "design", "checkpoint", "task-event", "execution-event"}:
         return extract_record(source)
     raw, locator = source.raw, source.locator
@@ -75,75 +106,31 @@ def extract_source(source: SourceVersion) -> Extraction:
                 definitions(child, name)
 
         definitions(tree)
+        # Symbols only: import and endpoint edges are AL's code facts (#34, `code_edges`), so
+        # the knowledge graph and AL have one analyser.
         for node in ast.walk(tree):
-            if isinstance(
-                node,
-                (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
-            ):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 start, end = offsets[node.lineno - 1], offsets[node.end_lineno]
-                fragment = raw[start:end].decode()
-                imported = None
-                if isinstance(node, ast.Import):
-                    targets = [alias.name for alias in node.names]
-                elif isinstance(node, ast.ImportFrom):
-                    base = (
-                        module.split(".")
-                        if locator.endswith("/__init__.py")
-                        else module.split(".")[:-1]
+                assertions.append(
+                    Assertion(
+                        subject,
+                        "defines",
+                        f"symbol:{module}:{qualified[id(node)]}",
+                        None,
+                        raw[start:end].decode()[:1024],
+                        start,
+                        end,
+                        origin="static-analysis",
                     )
-                    if node.level:
-                        base = (
-                            base[: len(base) - node.level + 1]
-                            if node.level <= len(base) + 1
-                            else []
-                        )
-                        target = ".".join([*base, *([node.module] if node.module else [])])
-                    else:
-                        target = node.module or ""
-                    targets = [target] if target else []
-                    if node.module:
-                        # `from pkg import mod` may name a submodule: consumers resolve it.
-                        imported = {"names": sorted({alias.name for alias in node.names})}
-                    if not node.module:
-                        targets = [
-                            ".".join(filter(None, [target, alias.name])) for alias in node.names
-                        ]
-                else:
-                    assertions.append(
-                        Assertion(
-                            subject,
-                            "defines",
-                            f"symbol:{module}:{qualified[id(node)]}",
-                            None,
-                            fragment[:1024],
-                            start,
-                            end,
-                            origin="static-analysis",
-                        )
-                    )
-                    continue
-                for target in targets:
-                    assertions.append(
-                        Assertion(
-                            subject,
-                            "imports",
-                            f"module:{target}",
-                            imported,
-                            fragment,
-                            start,
-                            end,
-                            origin="static-analysis",
-                        )
-                    )
+                )
             if (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
                 and node.func.id in ("__import__", "eval", "exec")
             ):
                 coverage.append({"locator": locator, "status": "dynamic-reference-unresolved"})
-        assertions.extend(python_endpoints(tree, subject, raw))
     elif PurePosixPath(locator).suffix.lower() in SCRIPT_SUFFIXES:
-        assertions.extend(script_assertions(subject, locator, text))
+        pass  # text index here; import and endpoint edges are AL's code facts (#34)
     elif PurePosixPath(locator).name.startswith("DEC-") and locator.endswith(".md"):
         try:
             record = parse_decision_text(text, Path(locator))

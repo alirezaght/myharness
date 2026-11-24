@@ -11,7 +11,6 @@ import pytest
 
 from harness.db import connect
 from harness.knowledge.models import (
-    EXTRACTOR_VERSION,
     ContextRequest,
     PreparedSnapshot,
     RefreshRequest,
@@ -100,9 +99,13 @@ def test_identical_bytes_different_locators_and_extractor_version(graph, monkeyp
         refresh_module, "extract_source", lambda s: (calls.append(s.locator), original(s))[1]
     )
     for module in ("sources", "store", "refresh"):
-        monkeypatch.setattr(
-            importlib.import_module(f"harness.knowledge.{module}"), "EXTRACTOR_VERSION", "next"
-        )
+        target = importlib.import_module(f"harness.knowledge.{module}")
+        monkeypatch.setattr(target, "EXTRACTOR_VERSION", "next")
+        # The code-facts extractor (#34) derives from EXTRACTOR_VERSION.
+        derived = (("CODE_FACTS_EXTRACTOR", "next+al"), ("EXTRACTORS", ("next", "next+al")))
+        for name, value in derived:
+            if hasattr(target, name):
+                monkeypatch.setattr(target, name, value)
     refresh(conn, scope)
     assert len(calls) == 4
 
@@ -316,12 +319,12 @@ def test_nonrepository_sources_carried_and_deleted_file_reappears(graph):
 def test_kind_participates_in_source_version_identity(graph):
     conn, scope = graph
     first = refresh(conn, scope)
-    inventory = enumerate_sources(scope, RefreshRequest())
+    inventory = enumerate_sources(scope, RefreshRequest(), code_facts=True)  # as refresh did
     source = inventory.sources[0]
     changed = replace(
         source,
         kind="text",
-        version_id=identity(source.source_id, source.content_sha256, EXTRACTOR_VERSION, "text"),
+        version_id=identity(source.source_id, source.content_sha256, source.extractor, "text"),
     )
     inventory = replace(inventory, sources=(changed, *inventory.sources[1:]))
     extractions = tuple(refresh_module.extract_source(s) for s in inventory.sources)

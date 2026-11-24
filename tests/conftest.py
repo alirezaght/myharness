@@ -24,6 +24,19 @@ def isolated_home(tmp_path, monkeypatch):
     return home
 
 
+@pytest.fixture(autouse=True)
+def al_code_facts(tmp_path, monkeypatch):
+    """The knowledge graph's import edges are AL's code facts (#34): answer them from this
+    checkout's AL analyser instead of an installed launcher. A test of the degraded graph
+    replaces `harness.knowledge.al_facts.resolve` itself."""
+    from tests.al_facts_support import source_facts
+
+    monkeypatch.setattr(
+        "harness.knowledge.al_facts.resolve",
+        lambda repository, **_: source_facts(repository, tmp_path / "al-analysis-index"),
+    )
+
+
 @pytest.fixture
 def db_path(tmp_path):
     return tmp_path / "state" / "state.db"

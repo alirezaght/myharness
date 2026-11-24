@@ -285,6 +285,8 @@ def _main():
     al_preflight.register(sub)
     import al_intent
     al_intent.register(sub)
+    import al_code_facts
+    al_code_facts.register(sub)
     al_intent.bind(ap)
     argv = sys.argv[1:]
     command_argv = []
@@ -300,6 +302,9 @@ def _main():
     if a.recovery_file and (a.cmd == "inspect" or a.cmd == "integration" and a.action == "capabilities"):
         al_schema.refuse("recovery descriptor is only valid for its exact guarded operation")
     if a.cmd == "integration" and a.action == "capabilities":
+        a.fn(a, None)
+        return
+    if a.cmd == "facts":  # read-only code facts (#34): no run state is read or written
         a.fn(a, None)
         return
     if a.cmd == 'inspect':

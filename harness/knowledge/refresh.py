@@ -5,15 +5,18 @@ import sqlite3
 from dataclasses import replace
 
 from harness.db import transaction
-from harness.knowledge.extract import extract_source
+from harness.knowledge.extract import extract_source, with_code_edges
 from harness.knowledge.models import (
+    CODE_FACTS_EXTRACTOR,
     EXTRACTOR_VERSION,
+    EXTRACTORS,
     MAX_REFRESH_BYTES,
     Extraction,
     PreparedSnapshot,
     RefreshRequest,
     RefreshResult,
     digest,
+    version_identity,
 )
 from harness.knowledge.policy import validate_scope
 from harness.knowledge.sources import (
@@ -34,6 +37,56 @@ from harness.knowledge.store import (
 
 _DEFAULT_REFRESH_REQUEST = RefreshRequest()
 MAX_PUBLISH_SOURCES = 2000
+# Up to this many changed code files are named to AL; more ask for every file's edges.
+MAX_NAMED_CODE_FILES = 200
+
+
+def _blob_id(raw, length):
+    import hashlib
+
+    algorithm = hashlib.sha256 if length == 64 else hashlib.sha1
+    return algorithm(b"blob %d\0" % len(raw) + raw).hexdigest()
+
+
+def _code_facts(facts, sources, cached, commit, coverage):
+    """{locator: (blob id, edges)} from AL's code facts (#34) for the code sources this refresh
+    extracts with them."""
+    from harness.knowledge.al_facts import FactsUnavailable
+
+    wanted = [
+        s.locator
+        for s in sources
+        if s.extractor == CODE_FACTS_EXTRACTOR and s.raw_retained and s.version_id not in cached
+    ]
+    if not wanted or facts is None:
+        return {}
+    named = sorted(wanted) if len(wanted) <= MAX_NAMED_CODE_FILES else []
+    try:
+        answer = facts.query("edges", *named, *(["--commit", commit] if commit else []))
+    except FactsUnavailable as error:
+        coverage.append(
+            {"status": "unresolved", "reason": "al-facts-unavailable", "detail": str(error)}
+        )
+        return {}
+    found = {locator: (oid, []) for locator, oid in answer.get("files", {}).items()}
+    for edge in answer["edges"]:
+        if edge["locator"] in found:
+            found[edge["locator"]][1].append(edge)
+    return found
+
+
+def _with_code_facts(source, found):
+    """The source as extracted: its AL code-facts version when AL's edges describe exactly its
+    bytes, else (AL unavailable, or the file changed in between) its text-and-symbols version."""
+    if source.extractor != CODE_FACTS_EXTRACTOR or not source.raw_retained:
+        return source, None
+    oid, edges = found.get(source.locator, (None, None))
+    if oid is not None and _blob_id(source.raw, len(oid)) == oid:
+        return source, edges
+    version = version_identity(
+        source.source_id, source.content_sha256, EXTRACTOR_VERSION, source.kind, source.visibility
+    )
+    return replace(source, version_id=version, extractor=EXTRACTOR_VERSION), None
 
 
 def _record_incomplete(conn, scope, coverage):
@@ -79,15 +132,27 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
         cached = frozenset(
             row[0]
             for row in conn.execute(
-                "SELECT version_id FROM knowledge_extraction_cache WHERE extractor_version=?",
-                (EXTRACTOR_VERSION,),
+                "SELECT version_id FROM knowledge_extraction_cache "
+                "WHERE extractor_version IN (?,?)",
+                EXTRACTORS,
             )
         )
-        inventory = enumerate_sources(scope, request, cached)
+        from harness.knowledge import al_facts
+
+        facts = al_facts.resolve(scope.repository)
+        inventory = enumerate_sources(scope, request, cached, facts is not None)
     except (OSError, ValueError):
         _record_incomplete(conn, scope, [{"status": "unreadable", "kind": "inventory"}])
         raise
     coverage = list(inventory.coverage)
+    found = _code_facts(facts, inventory.sources, cached, request.commit, coverage)
+    code_edges, adjusted = {}, []
+    for source in inventory.sources:
+        source, edges = _with_code_facts(source, found)
+        if edges is not None:
+            code_edges[source.version_id] = edges
+        adjusted.append(source)
+    inventory = replace(inventory, sources=tuple(adjusted))
     unknown = [dict(c, reason=c.get("reason", c["status"])) for c in coverage if c.get("locator")]
     stable, extractions, reused = [], [], set()
     previous = {
@@ -156,7 +221,7 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
         cache = conn.execute(
             "SELECT coverage_json FROM knowledge_extraction_cache "
             "WHERE version_id=? AND extractor_version=?",
-            (source.version_id, EXTRACTOR_VERSION),
+            (source.version_id, source.extractor),
         ).fetchone()
         if not cache and not source.raw_retained:
             # The cache entry disappeared after inventory (purge): extract it next refresh.
@@ -178,7 +243,11 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
                 )
             else:
                 extraction = (
-                    Extraction((), tuple(json.loads(cache[0]))) if cache else extract_source(source)
+                    Extraction((), tuple(json.loads(cache[0])))
+                    if cache
+                    else with_code_edges(
+                        extract_source(source), source, code_edges.get(source.version_id)
+                    )
                 )
         except (OSError, ValueError, SyntaxError):
             gap = {

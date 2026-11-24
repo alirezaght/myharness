@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from harness.db import transaction, utcnow
 from harness.knowledge.models import (
     EXTRACTOR_VERSION,
+    EXTRACTORS,
     MAX_REFRESH_BYTES,
     MAX_SOURCE_BYTES,
     PROJECTION_READER_NOTICE,
@@ -15,6 +16,7 @@ from harness.knowledge.models import (
     digest,
     identity,
     projection_identity,
+    version_identity,
 )
 
 
@@ -88,11 +90,14 @@ def prepare_rows(prepared):
         raise ValueError("prepared source bytes exceed supported publication limits")
     rows = []
     for source, extraction in zip(inventory.sources, prepared.extractions, strict=True):
-        parts = (source.source_id, source.content_sha256, EXTRACTOR_VERSION, source.kind)
-        expected_version = (
-            identity(*parts, source.visibility)
-            if source.visibility != "project"
-            else identity(*parts)
+        if source.extractor not in EXTRACTORS:
+            raise ValueError("unknown extractor version")
+        expected_version = version_identity(
+            source.source_id,
+            source.content_sha256,
+            source.extractor,
+            source.kind,
+            source.visibility,
         )
         if source.visibility != "project" and (
             not prepared.scope.task_id or source.visibility != "task:" + prepared.scope.task_id
@@ -174,7 +179,7 @@ def prepare_rows(prepared):
                     source.source_id,
                     source.content_sha256,
                     "deterministic",
-                    EXTRACTOR_VERSION,
+                    source.extractor,
                     canonical(dict(source.observation, visibility=source.visibility)),
                     "complete",
                 ),
@@ -468,7 +473,7 @@ def publish_snapshot(conn, prepared: PreparedSnapshot, *, expected_active: str |
                 )
             conn.execute(
                 "INSERT OR IGNORE INTO knowledge_extraction_cache VALUES (?,?,?,?,?)",
-                (version[0], EXTRACTOR_VERSION, extraction_coverage, len(assertions), now),
+                (version[0], version[4], extraction_coverage, len(assertions), now),
             )
         for assertion_id, parent_id in derivations:
             if not conn.execute(
