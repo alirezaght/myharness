@@ -88,6 +88,7 @@ Each phase ships something you can run on a real task, and no phase breaks the o
 ```bash
 uv sync                    # install Python 3.13 and dependencies
 uv run pytest              # run tests
+uv run python al/verify_changed.py   # verify an AL change: affected AL tests, both hosts, in parallel (see al/README.md)
 uv run ruff check .        # lint
 uv run ruff format .       # format
 uv run python scripts/demo.py   # replay the Phase 1 demo on throwaway state (see docs/demo.md)

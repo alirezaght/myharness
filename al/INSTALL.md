@@ -430,6 +430,10 @@ python3 al/release_verify.py --full
 python3 al/release_verify.py --full --version 1.2.0
 ```
 
+For routine development verification, use `uv run python al/verify_changed.py`
+instead. It runs only the tests that your change affects, in parallel, and
+makes no release claim. See [README.md](README.md#verifying-a-change).
+
 `--check-layout` audits this checkout's workspace layout and makes no release
 claim. `--check-release` requires an explicit stable version and an existing
 local Git source; it resolves committed tag bytes, validates the manifest and
