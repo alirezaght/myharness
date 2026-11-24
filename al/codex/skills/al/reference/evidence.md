@@ -29,6 +29,39 @@ A change in another package keeps reuse. Validity is unchanged: a change outside
 the scope still does not make the earlier PASS STALE, it only stops it being
 reused. Declare cross-package dependencies in `--scope`, or pass `--fresh`.
 
+## Action cache (reuse across runs, tasks and worktrees)
+
+When no PASS of this run can be reused, `evidence run` looks the check up in the
+repository's action cache before executing it. The key hashes the argv, the cwd
+relative to the repository, the kind, scope and sources, the declared `--env`
+values (as digests) plus the environment policy, the tool identity (the resolved
+executable and its content hash, plus the toolchain lockfiles such as `uv.lock` or
+`pnpm-lock.yaml` from the repository root down to the cwd), and the input tree: the
+git tree of the check's scope plus its package (the rule above), or of the whole
+repository when the package is the root. The tree comes from the working-copy
+snapshot (`al_snapshot.input_tree`, a private per-worktree index), so untracked
+files count and AL's generated and cache directories do not; inputs holding a
+nested repository or a symlink out of the repository are never cached. Any change
+to any of these is a miss.
+
+A hit records an ordinary new entry with the original log, status and counts,
+fingerprinted against today's tree, and prints
+`reused from run <run> (<entry>) (action cache, inputs unchanged)`. `evidence
+status` and the review packet (`reused_results`) show the run where it originally
+executed. A cached FAIL or EMPTY is reused too; INFRA, TORN, timed-out, interrupted
+or cleanup-uncertain results are never stored, and neither is a run whose inputs
+moved while it ran.
+
+The store lives in the git common directory (`.git/al-action-cache`), so every
+worktree of the repository shares it. Records are immutable and content-addressed,
+written lock-free with an atomic rename and bounded by LRU (`AL_ACTION_CACHE_MAX`,
+default 4096 records). `--fresh` executes and replaces the record.
+
+A check that reads undeclared state (network, time, randomness) opts out with
+`--non-hermetic` on `evidence plan` or `evidence run`; `--no-cache` skips the cache
+for one run, and `AL_ACTION_CACHE=0` disables it entirely. Recipe checks and checks
+with managed outputs are never cached.
+
 ## Writer checks during parallel writers
 
 `evidence run ... --writer <id>` runs a writer's own check between its edits. When the

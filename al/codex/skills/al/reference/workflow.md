@@ -331,6 +331,11 @@ missing binary, timeout), or `TORN` (the scope moved during the run).
 - **Reuse is automatic and exact.** A VALID PASS for the same argv/cwd/scope is
   reused instead of re-run; a web-only change does not re-run the service suite.
   A change inside the scope makes it STALE, and STALE is never evidence.
+- **Across runs, tasks and worktrees: the action cache.** A check or gate whose
+  argv, env, tool, lockfiles and input tree are unchanged since it ran anywhere in
+  this repository is reused from `.git/al-action-cache` and shown as
+  `reused from run <run>`; see reference/evidence.md. Opt out with `--no-cache`,
+  `--non-hermetic` or `AL_ACTION_CACHE=0`.
 - **Focused during work, broad once.** Corrections and rework run focused checks
   (`--tier focused`). The plan's broad suites run once against the stable
   candidate and again only for a concrete invalidation (STALE) or failure.

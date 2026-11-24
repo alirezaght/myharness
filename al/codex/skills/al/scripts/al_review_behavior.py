@@ -97,6 +97,7 @@ def factual_evidence(st):
         "execution_projection_digest",
         "setup",
         "execution_stage",
+        "action_cache",  # a reused result names the run where it originally executed (issue #26)
     }
     return [
         dict(
@@ -134,6 +135,8 @@ def packet(st, data):
             for entry in st["amendments"]
         ]
         data.pop("escapes", None)
+        # Reused results stay visible to the fresh reviewer through each entry's action_cache origin.
+        data.pop("reused_results", None)
         allowed = {
             "attempt",
             "schema_version",

@@ -10,6 +10,7 @@ from pathlib import Path
 import al_artifacts as A
 import al_checkouts
 import al_gate_reuse as R
+import al_action_cache as Cache
 import al_gate_continuation as Continuation
 from al_gate_process import Owner,stop,gate_environment
 from al_package_output import InspectionError,inspect_call,write_metadata
@@ -397,6 +398,36 @@ def _accepted(sid,m,g,stage,pinned):
     return state if state=='accepted-existing-failure' else None
 
 
+def _replay(sid,st,entry,g,stage,ref,fp,env_fingerprint,log,invocation,cache,hit):
+    """Record an action-cache hit as this gate's run: the original log and result, bound to
+    the current manifest, fingerprint and environment like an execution (issue #26)."""
+    try:
+        sha=Cache.restore_log(hit,log)
+        status,code,note=hit['status'],hit['exit'],hit['note'] or ''
+        entry.update({k:v for k,v in (hit.get('extra') or {}).items() if k in Cache.GATE_EXTRA_FIELDS})
+        entry['counts']=hit.get('counts') or {}
+    except (OSError,KeyError) as exc:
+        log.write_text('cached result unavailable: '+str(exc)+'\n');sha=L.file_sha(log)
+        status,code,note='INFRA',126,'cached result unavailable'
+    entry['action_cache']=Cache.provenance(cache,hit)
+    note=(note+'; ' if note else '')+Cache.reused_text(entry)
+    entry['invocation']=invocation
+    entry['fp_after']=E._fingerprint(entry)
+    if entry['fp_after']!=entry['fp_before'] and status=='PASS':status,note='TORN','the scope changed while the cached result was recorded'
+    if env_fingerprint!=L.scope_fingerprint([],g['env_names']):status,note='TORN','environment changed before finalization'
+    entry.update(status=status,exit=code,ended_at=time.time(),log=str(log),log_sha256=sha,note=note,gate_stage=stage,gate_manifest=ref)
+    with al_store.locked(sid):
+        current=al_store.load(sid)
+        previous=next((e for e in current['evidence']['entries'] if e['id']==entry['id']),None)
+        if current['run_id']!=entry['run'] or not previous or previous.get('reservation')!=entry.get('reservation'):refuse('gate reservation changed before finalization')
+        if entry['status']=='PASS' and current['gate_manifests'][-1]['sha256']!=ref:entry.update(status='INFRA',exit=126,note='gate manifest changed before finalization')
+        current['evidence']['entries']=[entry if e['id']==entry['id'] else e for e in current['evidence']['entries']]
+        runs=current.setdefault('gate_runs',[])
+        runs[:]=[r for r in runs if r['evidence']!=entry['id']]
+        runs.append({'gate':g['id'],'stage':stage,'manifest':ref,'fingerprint':fp,'evidence':entry['id'],'execution_kind':g['execution_kind'],'env_fingerprint':env_fingerprint,'sources':g.get('sources',[])})
+        al_store.save(sid,current)
+
+
 def cmd_run(a,sid):
     with al_store.locked(sid):
         st=al_store.load(sid); m=manifest(st)
@@ -419,6 +450,22 @@ def cmd_run(a,sid):
         value=Continuation.stage_report(current,a.stage,results,selected_ids)
         print(json.dumps(value,sort_keys=True))
         return value['stage_ready']
+    def conclude(g,entry,pinned):
+        status=entry['status']
+        reused=Cache.reused_text(entry)
+        print(L.row(entry,status)+(' · '+reused if reused else ''))
+        results.append({'gate':g['id'],'evidence':entry['id'],'status':status})
+        if reused:results[-1]['reused_from']=entry['action_cache']['origin']
+        # An advisory gate's result and a pre-existing candidate failure are reported, not blocking.
+        accepted=_accepted(sid,m,g,a.stage,pinned) if status not in {'PASS','TORN'} else None
+        if accepted:
+            results[-1]['accepted']=accepted
+            print('AL · '+g['id']+' '+status+' does not block: '+('advisory in CI' if accepted=='advisory' else 'pre-existing failure, identical at base'))
+        # Base failures are pre-existing and each needs a decision, so every base gate runs and all
+        # failures are listed at once; a new candidate failure (or a torn run) stops the stage.
+        if status=='TORN' or (status!='PASS' and a.stage!='base' and not accepted):
+            if resume:report()
+            raise SystemExit(1)
     with contextlib.ExitStack() as stack:
         for g in selected:
             if g['applicability']=='NOT_APPLICABLE': continue
@@ -430,6 +477,16 @@ def cmd_run(a,sid):
             except Continuation.DestinationSettled:
                 continue
             log=L.log_dir(sid)/(entry['id']+'-gate.log')
+            cache,_=Cache.gate_plan(st,m,g,a.stage,no_cache=getattr(a,'no_cache',False))
+            # An explicit retry (--retry-failed, or --resume naming a gate) asks for a new execution.
+            retry=retry_failed or (resume and bool(a.id))
+            hit=None if retry else Cache.lookup(cache)
+            if hit:
+                if a.stage=='candidate' and pinned is None:pinned=S.capture_candidate(st)['fingerprint']
+                fp=pinned if a.stage=='candidate' else m['base_oid']
+                _replay(sid,st,entry,g,a.stage,ref,fp,env_fingerprint,log,invocation,cache,hit)
+                conclude(g,entry,pinned)
+                continue
             status='INFRA'; code=127; fp=None
             note='isolated '+a.stage+' gate';dirty=None
             preparation=projection=receipt=None
@@ -666,21 +723,11 @@ def cmd_run(a,sid):
                     al_store.save(sid,current)
                 with al_store.locked(sid):
                     owner.finish(persist)
-            status=entry['status']
+            if cache is not None and dirty!='REBUILD':
+                Cache.save(cache,entry,log,Cache.origin(st,sid,entry),Cache.GATE_EXTRA_FIELDS,replace=retry)
             if dirty=='REBUILD':
                 stack.close();checkout=None
-            print(L.row(entry,status))
-            results.append({'gate':g['id'],'evidence':entry['id'],'status':status})
-            # An advisory gate's result and a pre-existing candidate failure are reported, not blocking.
-            accepted=_accepted(sid,m,g,a.stage,pinned) if status not in {'PASS','TORN'} else None
-            if accepted:
-                results[-1]['accepted']=accepted
-                print('AL · '+g['id']+' '+status+' does not block: '+('advisory in CI' if accepted=='advisory' else 'pre-existing failure, identical at base'))
-            # Base failures are pre-existing and each needs a decision, so every base gate runs and all
-            # failures are listed at once; a new candidate failure (or a torn run) stops the stage.
-            if status=='TORN' or (status!='PASS' and a.stage!='base' and not accepted):
-                if resume:report()
-                raise SystemExit(1)
+            conclude(g,entry,pinned)
     failed=[r for r in results if r['status']!='PASS' and not r.get('accepted')]
     if failed:
         print('AL · '+str(len(failed))+' gate(s) did not pass: '+', '.join(r['gate']+' '+r['status']+' ('+r['evidence']+')' for r in failed))
@@ -698,7 +745,7 @@ def register(sub):
     p=children.add_parser('plan'); p.add_argument('--file',required=True)
     p.add_argument('--output',metavar='FILE',help='write the accepted manifest JSON atomically to FILE and print a one-line summary instead')
     p.set_defaults(fn=cmd_gates)
-    p=children.add_parser('run'); p.add_argument('--stage',choices=['base','candidate'],required=True); p.add_argument('--id'); p.add_argument('--resume',action='store_true'); p.add_argument('--retry-failed',action='store_true'); p.add_argument('--timeout',type=float,default=300); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_run)
+    p=children.add_parser('run'); p.add_argument('--stage',choices=['base','candidate'],required=True); p.add_argument('--id'); p.add_argument('--resume',action='store_true'); p.add_argument('--retry-failed',action='store_true'); p.add_argument('--no-cache',action='store_true',help='neither reuse nor record action-cache results for these gates'); p.add_argument('--timeout',type=float,default=300); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_run)
     p=children.add_parser('decision'); p.add_argument('--id',required=True); p.add_argument('--action',dest='decision',choices=['fix','stop','defer','exception'],required=True); p.add_argument('--source',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_gates)
     children.add_parser('status').set_defaults(fn=cmd_gates)
     __import__('al_ci_evidence').register(children,cmd_gates)

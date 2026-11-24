@@ -139,6 +139,7 @@ def validate_manifest(st,m,check_sources=True):
         names=g.setdefault('env_names',[])
         if not isinstance(names,list) or any(not isinstance(n,str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*',n) for n in names) or len(names)!=len(set(names)):refuse('invalid gate env_names')
         if 'env' in g:refuse('gate environment dependencies use env_names')
+        if 'hermetic' in g and not isinstance(g['hermetic'],bool):refuse('gate hermetic must be true or false')
         if 'review_state' in g:
             try:g['review_state']=ReviewState.validate_declaration(g['review_state'])
             except ValueError as exc:refuse('invalid gate review_state: '+str(exc))
