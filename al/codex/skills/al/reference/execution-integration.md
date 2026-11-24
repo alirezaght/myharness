@@ -113,3 +113,20 @@ no trusted host event establishes termination. An empty wait result or completed
 wait tool call does not prove that a child agent finished. Unsupported creation
 provenance is a technical capability problem; never manufacture a native event or
 ask a developer product decision to bypass it.
+
+## Code facts for the Harness knowledge graph
+
+AL holds the one import analyser that AL and the Harness knowledge graph share (#34).
+`facts edges [PATH ...]` prints the import and HTTP endpoint edges of the code files under
+the paths (all code files when none); `facts consumers TARGET` prints who imports, requires
+or calls a repository path, directory, dotted Python module or endpoint (`/orders/{id}`),
+labelled `intra-unit`, `cross-unit` or `runtime`, including importers through re-exporting
+barrels. Both take `--commit REV` to answer at a commit instead of the working copy. Per-file
+edges are pure facts of one blob (`al_blob_analysis.code_edges`) kept in the shared fact
+store; the repository layout (Python import roots, `src` layouts, uv/poetry workspace
+members, pnpm/yarn/npm workspace packages, `tsconfig`/`jsconfig` `paths`, `baseUrl` and
+`extends`) is resolved by `al_code_facts`. Generated and vendored directories are outside
+the view. The commands are read-only: they need no AL run state, record nothing and print
+one canonical JSON document. Harness runs them as `alctl run --repository R --platform P
+--session S -- facts ...`, which the run's resident service serves warm, and never imports
+AL scripts; without an answer the knowledge graph keeps only its text and symbol index.

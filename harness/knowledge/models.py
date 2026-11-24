@@ -11,7 +11,12 @@ PROJECTION_READER_NOTICE = (
     "This project's knowledge projection requires the current reader. "
     "The pinned execution remains authorized; its older knowledge capability is unavailable."
 )
-EXTRACTOR_VERSION = "4"  # 4: compact described-by text (#31)
+EXTRACTOR_VERSION = "5"  # 5: import/endpoint edges are AL code facts (#34)
+# A code source whose import/endpoint edges came from AL's code facts (#34) is a distinct,
+# richer extraction of the same bytes. Per-file edges depend only on path and bytes, so once
+# published it stays valid while the bytes do: a later refresh without AL keeps it.
+CODE_FACTS_EXTRACTOR = EXTRACTOR_VERSION + "+al-code-facts-1"
+EXTRACTORS = (EXTRACTOR_VERSION, CODE_FACTS_EXTRACTOR)
 MAX_SOURCE_BYTES = 1_048_576
 MAX_REFRESH_BYTES = 67_108_864
 
@@ -26,6 +31,11 @@ def digest(value: bytes) -> str:
 
 def identity(*parts: str) -> str:
     return digest(canonical(parts).encode())
+
+
+def version_identity(source_id, sha, extractor, kind, visibility="project"):
+    parts = (source_id, sha, extractor, kind)
+    return identity(*parts, visibility) if visibility != "project" else identity(*parts)
 
 
 def projection_identity(repository: Path) -> str:
@@ -84,6 +94,9 @@ class SourceVersion:
     raw_retained: bool = True
     # In-memory only: the lstat identity observed around the read, never persisted.
     stat: tuple | None = field(default=None, compare=False)
+    # The extractor this version names (EXTRACTOR_VERSION, or CODE_FACTS_EXTRACTOR for code
+    # whose edges are AL's); it is part of the version identity.
+    extractor: str = EXTRACTOR_VERSION
 
 
 @dataclass(frozen=True)

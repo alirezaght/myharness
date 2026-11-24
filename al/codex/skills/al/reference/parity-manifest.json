@@ -32,6 +32,7 @@
     "al_ci_rules.py",
     "al_ci_verification.py",
     "al_ci_yaml.py",
+    "al_code_facts.py",
     "al_comms.py",
     "al_comparison.py",
     "al_conflicts.py",

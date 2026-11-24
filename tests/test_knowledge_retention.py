@@ -25,7 +25,7 @@ def test_purge_preserves_metadata_prevents_same_version_and_racing_publish(graph
     conn.execute(
         "INSERT INTO knowledge_bundle_pins VALUES (?,?)", (bundle.bundle_hash, "task:active")
     )
-    inventory = enumerate_sources(scope, RefreshRequest())
+    inventory = enumerate_sources(scope, RefreshRequest(), code_facts=True)  # as refresh did
     prepared = PreparedSnapshot(
         scope, inventory, tuple(extract_source(s) for s in inventory.sources), 0
     )

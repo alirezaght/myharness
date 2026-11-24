@@ -258,3 +258,216 @@ def import_events(data, module, package):
             self.generic_visit(node)
     Visitor().visit(tree)
     return events
+
+
+# ---------------------------------------------------------------- code edges (#11, #34)
+#
+# Import and HTTP endpoint edges of one source file: the single analyser behind AL's code
+# facts and the Harness knowledge graph (which queries them through `facts`). An edge is
+# [relation, target, value, start byte, end byte, text]: relation is imports, serves-endpoint
+# or calls-endpoint; target is path:<repository path>, import:<specifier as written>,
+# module:<dotted module> or endpoint:<normalized route>. Script specifiers are recorded as
+# written (relative ones normalized against the importing file); resolving them needs the
+# repository layout, which the code facts module does.
+
+CODE_SUFFIXES = frozenset({'.py', '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.vue', '.svelte',
+                           '.astro'})
+SCRIPT_SUFFIXES = CODE_SUFFIXES - {'.py'}
+SCRIPT_EXTENSIONS = (*sorted(SCRIPT_SUFFIXES), '.d.ts')
+
+# ESM static imports/re-exports, side-effect imports, dynamic import(), CommonJS require() and
+# TypeScript `import x = require()`. Comments are blanked first so commented-out code is inert.
+_SCRIPT_IMPORT = re.compile(
+    r"""(?:\bimport\s+(?:type\s+)?(?:[\w$*{}\s,]+?\s+from\s+)?"""
+    r"""|\bexport\s+(?:type\s+)?(?:\*(?:\s+as\s+[\w$]+)?|\{[^}]*\})\s+from\s+"""
+    r"""|\bimport\s*\(\s*|\brequire\s*\(\s*)(["'`])([^"'`\n]+)\1""")
+_COMMENT = re.compile(r"/\*.*?\*/|(?<![:\\\w\"'])//[^\n]*", re.S)
+_HTTP_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'head', 'options')
+_SERVER_RECEIVER = re.compile(r'^(?:app|api|router|server|routes?|fastify|hono|\w*router|\w*app)$', re.I)
+# fetch("/x"), axios.get("/x"), client.post(`/x/${id}`), $fetch("/x"), useFetch("/x")
+_SCRIPT_CALL = re.compile(
+    r"""(?:\b([\w$]+)\s*\.\s*(get|post|put|patch|delete|head|options|request)"""
+    r"""|\b(fetch|\$fetch|useFetch|ofetch|ky|axios|request))\s*(?:<[^>()]*>)?\s*\(\s*"""
+    r"""(["'`])([^"'`\n]*)\4(\s*,\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[\w$]+\s*=>))?""")
+_PY_ROUTE_ATTRS = {*_HTTP_METHODS, 'route', 'api_route', 'websocket', 'api_view'}
+_PY_CALL_ATTRS = {*_HTTP_METHODS, 'request', 'stream', 'fetch', 'urlopen'}
+
+
+def endpoint_path(value):
+    """Normalize a literal URL or route to a comparable path, or None when it is not one."""
+    value = value.strip()
+    match = re.match(r'^(?:[a-z][a-z0-9+.-]*:)?//[^/]*(/.*)?$', value, re.I)
+    if match:
+        value = match.group(1) or '/'
+    elif value.startswith('{}') or value.startswith('${'):
+        # A base URL from configuration followed by a path: keep the path.
+        value = re.sub(r'^(?:\$\{[^}]*\}|\{\})', '', value)
+    if not value.startswith('/'):
+        return None
+    value = re.split(r'[?#]', value, maxsplit=1)[0]
+    value = re.sub(r'\$\{[^}]*\}|\{[^}/]*\}|<[^>/]*>|(?<=/):[A-Za-z_]\w*', '{}', value)
+    value = re.sub(r'/+', '/', value).rstrip('/') or '/'
+    if not re.search(r'[A-Za-z0-9]', value) or len(value) > 512:
+        return None
+    return value
+
+
+def segments_match(left, right):
+    """Same route, allowing a gateway/base prefix on either side (two or more segments)."""
+    a, b = left.strip('/').split('/'), right.strip('/').split('/')
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    if len(shorter) < 2 and len(a) != len(b):
+        return False
+    tail = longer[len(longer) - len(shorter):]
+    return all(x == y or '{}' in (x, y) for x, y in zip(shorter, tail))
+
+
+def _byte_offsets(text):
+    if text.isascii():
+        return lambda index: index
+    return lambda index: len(text[:index].encode())
+
+
+def script_edges(locator, text):
+    """Imports and endpoint use of a JavaScript/TypeScript (or component) source."""
+    import posixpath
+    blank = _COMMENT.sub(lambda m: re.sub(r'[^\n]', ' ', m[0]), text)
+    offset = _byte_offsets(text)
+    edges, seen = [], set()
+    directory = posixpath.dirname(locator)
+    for match in _SCRIPT_IMPORT.finditer(blank):
+        specifier = match.group(2)
+        if '${' in specifier:
+            continue
+        if specifier.startswith('.'):
+            target = posixpath.normpath(posixpath.join(directory, specifier))
+            obj = 'import:' + specifier if target.startswith('..') else 'path:' + target
+        else:
+            obj = 'import:' + specifier
+        key = (obj, match.start())
+        if key in seen:
+            continue
+        seen.add(key)
+        edges.append(['imports', obj, {'specifier': specifier}, offset(match.start()), offset(match.end()),
+                      text[match.start():match.end()]])
+    for match in _SCRIPT_CALL.finditer(blank):
+        receiver, method, function = match.group(1), match.group(2), match.group(3)
+        path = endpoint_path(match.group(5))
+        if not path:
+            continue
+        serves = bool(method and method != 'request' and (_SERVER_RECEIVER.match(receiver or '') or match.group(6)))
+        edges.append(['serves-endpoint' if serves else 'calls-endpoint', 'endpoint:' + path,
+                      {'method': (method or function or '').lower()}, offset(match.start()), offset(match.end()),
+                      text[match.start():match.end()]])
+    return edges
+
+
+def _string_value(node):
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return ''.join(v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else '{}'
+                       for v in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _string_value(node.left), _string_value(node.right)
+        if left is not None or right is not None:
+            return (left if left is not None else '{}') + (right if right is not None else '{}')
+    return None
+
+
+def _line_offsets(raw):
+    offsets = [0]
+    for line in raw.splitlines(keepends=True):
+        offsets.append(offsets[-1] + len(line))
+    return offsets
+
+
+def python_endpoint_edges(raw, tree=None):
+    """Routes a Python module serves (decorators) and endpoints it calls (HTTP clients)."""
+    if tree is None:
+        tree = ast.parse(raw)
+    offsets = _line_offsets(raw)
+    edges, decorators = [], set()
+
+    def add(relation, node, path, method):
+        # ast column offsets are UTF-8 byte offsets within the line.
+        start = offsets[node.lineno - 1] + node.col_offset
+        end = offsets[node.end_lineno - 1] + node.end_col_offset
+        start, end = min(start, len(raw)), min(max(end, start), len(raw))
+        edges.append([relation, 'endpoint:' + path, {'method': method}, start, end,
+                      raw[start:end].decode('utf-8', 'ignore')[:1024]])
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for decorator in node.decorator_list:
+                if (isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute)
+                        and decorator.func.attr in _PY_ROUTE_ATTRS and decorator.args):
+                    decorators.add(id(decorator))
+                    path = endpoint_path(_string_value(decorator.args[0]) or '')
+                    if path:
+                        add('serves-endpoint', decorator, path, decorator.func.attr)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or id(node) in decorators or not node.args:
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else None
+        if name not in _PY_CALL_ATTRS:
+            continue
+        argument = node.args[1] if name == 'request' and len(node.args) > 1 else node.args[0]
+        path = endpoint_path(_string_value(argument) or '')
+        if path:
+            add('calls-endpoint', node, path, name)
+    return edges
+
+
+def python_import_edges(locator, raw, tree):
+    """`imports` edges of a Python module: module:<dotted name> as written (relative imports
+    resolved against the file's own path), with the imported names of a from-import (a name
+    may be a submodule, which consumers resolve)."""
+    stem = locator[:-3] if locator.endswith('.py') else locator
+    module = stem.replace('/', '.')
+    if module.endswith('.__init__'):
+        module = module[:-9]
+    offsets = _line_offsets(raw)
+    edges = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        start, end = offsets[node.lineno - 1], offsets[min(node.end_lineno, len(offsets) - 1)]
+        fragment = raw[start:end].decode('utf-8', 'ignore')
+        names = None
+        if isinstance(node, ast.Import):
+            targets = [alias.name for alias in node.names]
+        else:
+            base = module.split('.') if locator.endswith('/__init__.py') else module.split('.')[:-1]
+            if node.level:
+                base = base[:len(base) - node.level + 1] if node.level <= len(base) + 1 else []
+                target = '.'.join([*base, *([node.module] if node.module else [])])
+            else:
+                target = node.module or ''
+            targets = [target] if target else []
+            if node.module:
+                names = {'names': sorted({alias.name for alias in node.names})}
+            else:
+                targets = ['.'.join(filter(None, [target, alias.name])) for alias in node.names]
+        edges.extend(['imports', 'module:' + target, names, start, end, fragment] for target in targets)
+    return edges
+
+
+def code_edges(locator, data):
+    """{'status', 'edges'} of one source: status is ok, syntax-error, undecodable or unsupported."""
+    name = locator.rsplit('/', 1)[-1]
+    suffix = '.' + name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    if suffix not in CODE_SUFFIXES:
+        return {'status': 'unsupported', 'edges': []}
+    try:
+        text = data.decode('utf-8')
+    except UnicodeError:
+        return {'status': 'undecodable', 'edges': []}
+    if suffix != '.py':
+        return {'status': 'ok', 'edges': script_edges(locator, text)}
+    try:
+        tree = parse(data)
+    except (SyntaxError, ValueError, RecursionError):
+        return {'status': 'syntax-error', 'edges': []}
+    return {'status': 'ok', 'edges': python_import_edges(locator, data, tree) + python_endpoint_edges(data, tree)}

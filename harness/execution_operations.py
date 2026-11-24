@@ -514,6 +514,18 @@ class OperationController:
         except (OSError, ValueError, subprocess.SubprocessError):
             return None
 
+    def al_facts(self):
+        """This run's AL code facts (#34): consumers come from AL's analyser through the
+        protected launcher, served warm by the run's AL service when it is up."""
+        from harness.knowledge.al_facts import ALFacts
+
+        return ALFacts(
+            self.envelope["repository"],
+            self.envelope["host"],
+            self.envelope["al_session_id"],
+            launcher=self.package["launcher"],
+        )
+
     def dispatch(self, principal, name, arguments):
         from harness.execution_epochs import require_active_epoch
 
@@ -632,6 +644,7 @@ class OperationController:
                         scope,
                         a["target"],
                         limit=max(1, min(1000, int(a.get("limit", 200)))),
+                        facts=self.al_facts(),
                     )
                     if name == "knowledge_consumers"
                     else explain(controller.conn, scope, a["bundle_hash"], a["assertion_id"])

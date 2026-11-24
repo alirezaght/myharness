@@ -102,7 +102,10 @@ def refresh_knowledge(
     return result
 
 
-def consumers_knowledge(controller, repository, target, *, task_id=None, limit=200):
+def consumers_knowledge(
+    controller, repository, target, *, task_id=None, limit=200, al_session=None, al_platform=None
+):
+    from harness.knowledge.al_facts import resolve
     from harness.knowledge.consumers import consumers
 
     return consumers(
@@ -110,6 +113,21 @@ def consumers_knowledge(controller, repository, target, *, task_id=None, limit=2
         current_operator_scope(controller.conn, repository, task_id=task_id),
         target,
         limit=limit,
+        facts=resolve(repository, platform=al_platform, session=al_session),
+    )
+
+
+def edges_knowledge(
+    controller, repository, paths=(), *, task_id=None, al_session=None, al_platform=None
+):
+    from harness.knowledge.al_facts import resolve
+    from harness.knowledge.consumers import edges
+
+    return edges(
+        controller.conn,
+        current_operator_scope(controller.conn, repository, task_id=task_id),
+        tuple(paths),
+        facts=resolve(repository, platform=al_platform, session=al_session),
     )
 
 
@@ -158,6 +176,7 @@ def add_knowledge_parser(subparsers):
         "purge",
         "retain",
         "consumers",
+        "edges",
     ):
         action = actions.add_parser(name, allow_abbrev=False)
         action.add_argument(
@@ -182,7 +201,14 @@ def add_knowledge_parser(subparsers):
                 help="repository path, directory, dotted Python module or HTTP endpoint path",
             )
             action.add_argument("--limit", type=int, default=200)
-        elif name == "explain":
+        elif name == "edges":
+            action.add_argument("paths", nargs="*", help="files or directories (all code if none)")
+        if name in {"consumers", "edges"}:
+            # Import edges are AL's code facts (#34): name the AL run to ask, or run inside a
+            # Claude conversation with an active AL run; otherwise the answer is unavailable.
+            action.add_argument("--al-session", help="AL run id whose launcher answers")
+            action.add_argument("--al-platform", choices=("claude", "codex"), default=None)
+        if name == "explain":
             action.add_argument("bundle_hash")
             action.add_argument("assertion_id")
         elif name == "export":
@@ -277,7 +303,22 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
             )
         elif args.knowledge_action == "consumers":
             result = consumers_knowledge(
-                controller, repository, args.target, task_id=args.task_id, limit=args.limit
+                controller,
+                repository,
+                args.target,
+                task_id=args.task_id,
+                limit=args.limit,
+                al_session=args.al_session,
+                al_platform=args.al_platform,
+            )
+        elif args.knowledge_action == "edges":
+            result = edges_knowledge(
+                controller,
+                repository,
+                args.paths,
+                task_id=args.task_id,
+                al_session=args.al_session,
+                al_platform=args.al_platform,
             )
         elif args.knowledge_action == "query":
             result = query_knowledge(

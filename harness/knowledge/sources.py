@@ -7,9 +7,9 @@ import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 
-from harness.code_resolution import CODE_SUFFIXES, SCRIPT_SUFFIXES  # noqa: F401
 from harness.db import git_env
 from harness.knowledge.models import (
+    CODE_FACTS_EXTRACTOR,
     EXTRACTOR_VERSION,
     MAX_REFRESH_BYTES,
     MAX_SOURCE_BYTES,
@@ -20,8 +20,28 @@ from harness.knowledge.models import (
     canonical,
     digest,
     identity,
+    version_identity,
 )
 
+# Sources indexed as code (text and symbols); their import/endpoint edges come from AL's code
+# facts (#34). The same suffixes as AL's analyser (`al_blob_analysis.CODE_SUFFIXES`).
+CODE_SUFFIXES = frozenset(
+    {
+        ".py",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".mts",
+        ".cts",
+        ".vue",
+        ".svelte",
+        ".astro",
+    }
+)
+SCRIPT_SUFFIXES = CODE_SUFFIXES - {".py"}
 _SUFFIXES = CODE_SUFFIXES | {".md", ".toml", ".json", ".yaml", ".yml", ".sql"}
 # Dependency lockfiles, build output and minified bundles are generated: they carry no
 # consumer edges, crowd out real sources and would be re-indexed on every install or build.
@@ -278,13 +298,20 @@ def _read_all(root, names, request, observation):
 
 
 def enumerate_sources(
-    scope: KnowledgeScope, request: RefreshRequest, cached: frozenset[str] = frozenset()
+    scope: KnowledgeScope,
+    request: RefreshRequest,
+    cached: frozenset[str] = frozenset(),
+    code_facts: bool = False,
 ) -> SourceInventory:
     """Hash every eligible source; retain bytes only for versions whose extraction is not cached.
 
     There is no fixed file-count ceiling. Sources are visited code first, so whatever a bounded
     refresh defers is the least useful material, and the retained-byte budget applies only to
     sources that still need extraction: an unchanged large repository streams through.
+
+    A code file names its AL code-facts version (#34) when that is cached, or when `code_facts`
+    says AL can be asked (the refresh falls back to the text version for a file AL does not
+    answer); otherwise its text-and-symbols version.
     """
     if request.included_paths and not scope.task_id:
         raise ValueError("untracked inclusions require task scope")
@@ -347,12 +374,12 @@ def enumerate_sources(
             else "project"
         )
         kind = source_kind(name)
-        version_parts = (source_id, sha, EXTRACTOR_VERSION, kind)
-        version = (
-            identity(*version_parts, visibility)
-            if visibility != "project"
-            else identity(*version_parts)
-        )
+        extractor = EXTRACTOR_VERSION
+        version = version_identity(source_id, sha, extractor, kind, visibility)
+        if PurePosixPath(name).suffix.lower() in CODE_SUFFIXES:
+            edged = version_identity(source_id, sha, CODE_FACTS_EXTRACTOR, kind, visibility)
+            if edged in cached or code_facts:
+                extractor, version = CODE_FACTS_EXTRACTOR, edged
         retain = version not in cached or name.startswith("docs/knowledge/imports/")
         if retain and len(raw) > remaining_bytes:
             # Deferred, not lost: once this refresh's sources are cached they stop
@@ -394,6 +421,7 @@ def enumerate_sources(
                 raw_retained=retain,
                 # Unchanged lstat across the read lets revalidation skip a second full read.
                 stat=before if before is not None and before == after else None,
+                extractor=extractor,
             )
         )
     coverage = [

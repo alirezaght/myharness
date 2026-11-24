@@ -133,7 +133,8 @@ uv run harness decision decide <id> <cid> accept|reject|modify [--response TEXT]
 uv run harness decision suggest <id> --from PATH [--from PATH ...] [--json] [--decisions PATH]   # hints from other repositories' decisions (read-only)
 uv run harness knowledge inspect <id>                                      # task-scoped snapshot, coverage and latest refresh state
 uv run harness knowledge refresh <id> [--rounds N]                         # opt in: index eligible tracked sources and task records, incremental batches until settled
-uv run harness knowledge consumers <id> <path|dir|module|/endpoint>       # who imports, or calls over HTTP, a changed file, module or endpoint
+uv run harness knowledge consumers <id> <path|dir|module|/endpoint> [--al-session RUN [--al-platform P]]   # who imports, or calls over HTTP, a changed file, module or endpoint (AL code facts)
+uv run harness knowledge edges <id> [PATH...] [--al-session RUN [--al-platform P]]   # AL's import/endpoint edges of the visible code files
 uv run harness knowledge query <id> <terms...> [--entity REF] [--as-of SNAPSHOT]   # bounded evidence-linked context
 uv run harness knowledge explain <id> <bundle-hash> <assertion-id>        # explain citations and their source authority
 uv run harness spec show <id> [--specs PATH]   # preview the specification from the approved state (writes nothing)
@@ -174,8 +175,16 @@ and the default `auto` does what is described above.
 
 What the graph adds over grep is consumer inventory: `harness knowledge consumers` answers
 who imports, requires or calls a changed file, directory, Python module or HTTP endpoint,
-and labels each consumer `intra-unit` or `cross-unit`. Imports are resolved lazily for the
-asked target against the repository layout: Python import roots (regular packages, `src`
+and labels each consumer `intra-unit` or `cross-unit`. AL and the knowledge graph share one
+import analyser (#34): edges and consumers are AL's code facts, which Harness asks for through
+the protected launcher (`alctl run ... -- facts consumers <target>` / `facts edges`) and never
+by importing AL code. Inside an execution the tool asks the execution's own AL run, which its
+resident AL service answers from memory; from the CLI pass `--al-session` or run inside a
+Claude conversation with an active AL run. The graph limits the answer to the sources the
+task may see in its snapshot and answers a commit snapshot at its commit. Without AL the
+graph keeps its text and symbol index, and `consumers`/`edges` report `unavailable` with an
+`al-facts-unavailable` gap instead of guessing; an unindexed repository never asks AL.
+Imports are resolved lazily for the asked target against the repository layout: Python import roots (regular packages, `src`
 layouts, uv/poetry workspace members), relative ES imports, `require`, `tsconfig`/`jsconfig`
 `paths` and `baseUrl` (including `extends`), and workspace packages from pnpm, yarn and npm
 (`package.json` `name` with `exports`, `main` or deep paths). Runtime edges come from route

@@ -1,4 +1,4 @@
-"""Consumer inventory (#11/#12): import and runtime edges resolved against the repository layout."""
+"""Consumer inventory (#11/#12/#34): AL's import and runtime edges, seen through the graph."""
 
 import json
 import subprocess
@@ -13,6 +13,7 @@ from harness.knowledge.integration import refresh_until_settled
 from harness.knowledge.models import RefreshRequest, SourceVersion
 from harness.knowledge.policy import current_operator_scope
 from harness.knowledge.sources import eligible, enumerate_sources, priority
+from tests.al_facts_support import al_facts
 
 FILES = {
     # Python: two services both own a top-level `application` package (src layout).
@@ -101,12 +102,16 @@ def mono(tmp_path, monkeypatch):
     scope = current_operator_scope(conn, root)
     result = refresh_until_settled(controller, scope)
     assert result.status == "published"
+    _FACTS["index"] = tmp_path / "al-index"
     yield conn, current_operator_scope(conn, root)
     conn.close()
 
 
+_FACTS = {}
+
+
 def _found(conn, scope, target):
-    result = consumers(conn, scope, target)
+    result = consumers(conn, scope, target, facts=al_facts(scope.repository, _FACTS["index"]))
     return {(c["locator"], c["relation"], c["scope"]) for c in result["consumers"]}, result
 
 
@@ -275,7 +280,9 @@ def test_incremental_batches_settle_without_a_cap(tmp_path, monkeypatch):
     settled = refresh_until_settled(controller, current_operator_scope(conn, root))
     assert settled.status == "published"
     assert coverage_summary(conn, scope)["indexed_files"] == 30
-    found = consumers(conn, current_operator_scope(conn, root), "m7")
+    found = consumers(
+        conn, current_operator_scope(conn, root), "m7", facts=al_facts(root, tmp_path / "idx")
+    )
     assert [c["locator"] for c in found["consumers"]] == ["m6.py"]
     conn.close()
 
@@ -283,36 +290,109 @@ def test_incremental_batches_settle_without_a_cap(tmp_path, monkeypatch):
 def _extract(locator, text, kind="text"):
     raw = text.encode()
     source = SourceVersion("s", "v", locator, kind, "", raw, {})
-    return [
-        (a.predicate, a.object, raw[a.start_byte : a.end_byte].decode())
-        for a in extract_source(source).assertions
-        if a.predicate != "described-by"
-    ]
+    return [(a.predicate, a.object) for a in extract_source(source).assertions]
 
 
-def test_script_extraction_records_specifiers_and_endpoints():
+def test_knowledge_extraction_keeps_text_and_symbols_without_import_edges():
+    """#34: one analyser. Import and endpoint edges are AL's code facts, not knowledge rows."""
+    edges = _extract("web/src/a.ts", "import a from 'pkg';\nfetch('/api/items');\n")
+    assert [predicate for predicate, _ in edges] == ["described-by"]
     edges = _extract(
-        "web/src/a.ts",
-        "import a from 'pkg';\n/* import b from 'gone'; */\nexport * from './b';\n"
-        "const c = require(\"../c\");\nconst é = 1; await import('./d');\n"
-        "app.get('/health', (req, res) => res.end());\naxios.post('/api/items', body);\n",
-    )
-    assert ("imports", "import:pkg", "import a from 'pkg'") in edges
-    assert ("imports", "path:web/src/b", "export * from './b'") in edges
-    assert ("imports", "path:web/c", 'require("../c"') in edges
-    assert ("imports", "path:web/src/d", "import('./d'") in edges
-    assert not any("gone" in str(edge) for edge in edges)
-    assert ("serves-endpoint", "endpoint:/health", "app.get('/health', (req, res) =>") in edges
-    assert ("calls-endpoint", "endpoint:/api/items", "axios.post('/api/items'") in edges
-
-
-def test_python_extraction_records_imported_names_and_endpoints():
-    edges = _extract(
-        "svc/src/pkg/api.py",
-        "from pkg.domain import models\n@router.post('/items/<item_id>')\ndef create():\n"
-        "    return requests.get('https://other/api/v1/users/' + user)\n",
+        "svc/pkg/api.py",
+        "from pkg.domain import models\n@router.post('/items')\ndef create():\n    pass\n",
         "python",
     )
-    assert ("imports", "module:pkg.domain", "from pkg.domain import models\n") in edges
-    assert ("serves-endpoint", "endpoint:/items/{}", "router.post('/items/<item_id>')") in edges
-    assert any(edge[:2] == ("calls-endpoint", "endpoint:/api/v1/users/{}") for edge in edges)
+    assert ("defines", "symbol:svc.pkg.api:create") in edges
+    assert not any(p in {"imports", "serves-endpoint", "calls-endpoint"} for p, _ in edges)
+
+
+def test_without_al_the_view_degrades_instead_of_guessing(mono, monkeypatch):
+    from tests.al_facts_support import real_resolve
+
+    conn, scope = mono
+    for name in ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr("harness.knowledge.al_facts.resolve", real_resolve)
+    assert real_resolve(scope.repository) is None
+    explicit = real_resolve(scope.repository, platform="codex", session="r1", launcher="alctl")
+    # The plain `run` form the resident AL service serves (no --existing-run).
+    assert explicit.argv("edges") == [
+        "alctl",
+        "run",
+        "--repository",
+        str(scope.repository),
+        "--platform",
+        "codex",
+        "--session",
+        "r1",
+        "--",
+        "facts",
+        "edges",
+    ]
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "conversation")
+    assert real_resolve(scope.repository).session is None
+    monkeypatch.delenv("CLAUDE_SESSION_ID")
+    result = consumers(conn, scope, "packages/ui/src/Button.tsx")
+    assert result["status"] == "unavailable" and result["consumers"] == []
+    assert result["gaps"][0]["reason"] == "al-facts-unavailable"
+
+    def failing(argv, **kwargs):
+        return subprocess.CompletedProcess(argv, 1, b"", b"no protected run binding")
+
+    from harness.knowledge.al_facts import ALFacts
+
+    broken = ALFacts(scope.repository, "claude", "gone", launcher="alctl", runner=failing)
+    result = consumers(conn, scope, "packages/ui/src/Button.tsx", facts=broken)
+    assert result["status"] == "unavailable"
+    assert "no protected run binding" in result["gaps"][0]["detail"]
+
+
+def test_unindexed_repository_costs_no_al_query(tmp_path):
+    """#12: the graph stays opt-in; an unindexed repository never asks AL."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    conn = connect(tmp_path / "state.db")
+    calls = []
+    facts = al_facts(root, tmp_path / "idx", calls)
+    with pytest.raises(PermissionError):
+        consumers(conn, current_operator_scope(conn, root), "x.py", facts=facts)
+    assert calls == []
+    conn.close()
+
+
+def test_refresh_stores_al_edges_once_available_and_keeps_them_without_al(tmp_path, monkeypatch):
+    """#34: without AL a refresh indexes text and symbols only; once AL answers, code files get
+    AL's edges; a later refresh without AL keeps them (per-file edges depend only on bytes)."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("import b\n")
+    (root / "b.py").write_text("X = 1\n")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    conn = connect(tmp_path / "state.db")
+    controller = HarnessController(conn)
+
+    def imports():
+        return conn.execute(
+            "SELECT count(*) FROM knowledge_assertions a JOIN knowledge_projects p "
+            "ON p.project_id=a.project_id WHERE a.predicate='imports'"
+        ).fetchone()[0]
+
+    monkeypatch.setattr("harness.knowledge.al_facts.resolve", lambda repository, **_: None)
+    assert refresh_until_settled(controller, current_operator_scope(conn, root)).status == (
+        "published"
+    )
+    assert imports() == 0
+    monkeypatch.setattr(
+        "harness.knowledge.al_facts.resolve",
+        lambda repository, **_: al_facts(repository, tmp_path / "idx"),
+    )
+    assert refresh_until_settled(controller, current_operator_scope(conn, root)).status == (
+        "published"
+    )
+    assert imports() == 1
+    monkeypatch.setattr("harness.knowledge.al_facts.resolve", lambda repository, **_: None)
+    result = refresh_until_settled(controller, current_operator_scope(conn, root))
+    assert result.status == "unchanged"
+    conn.close()
