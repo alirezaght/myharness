@@ -51,6 +51,7 @@ def _discover_captured(st,inventory,ci_context):
                          obligation_ids=binding['obligation_ids'],execution_signature=binding['execution_signature'])
         if binding.get('remote_source'):gates[-1]['remote_source']=binding['remote_source']
         if binding.get('package_script'):gates[-1]['package_script']=binding['package_script']
+        if binding.get('advisory'):gates[-1].update(required=False,advisory=binding['advisory'],reason='informational: '+binding['advisory'])
         gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+binding['env_names']))
         gates[-1]['sources']=sorted(gates[-1]['sources']+[v for v in binding['sources'] if v not in gates[-1]['sources']],key=str)
     required_ids=set(inventory['relevance_projection']['relevant_obligation_ids'])
@@ -87,6 +88,7 @@ def _discover_captured(st,inventory,ci_context):
         execution=job.get('execution') if job['applicability']=='APPLICABLE' else None
         gate('ci-'+hashlib.sha256((job['source_path']+'\0'+job['job']).encode()).hexdigest()[:12],'ci',execution['argv'] if execution else [],scope,src,reason=job['reason']+'; map the sourced job to explicit local/remote verification')
         gates[-1]['units']=job['units']
+        if job.get('advisory'):gates[-1].update(required=False,advisory=job['advisory'])
         if execution:
             gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
             gates[-1]['execution_kind']=execution['execution_kind']
@@ -141,6 +143,9 @@ def validate_manifest(st,m,check_sources=True):
             if path!='.' and path not in safe_scopes: S.safe_path(path);safe_scopes.add(path)
         if g.get('cwd')!='.': S.safe_path(g.get('cwd',''))
         if g.get('category') not in CATEGORIES or g.get('applicability') not in {'APPLICABLE','NOT_APPLICABLE','UNRESOLVED'}: refuse('invalid gate category/applicability')
+        if 'advisory' in g and (not isinstance(g['advisory'],str) or not g['advisory'] or g.get('required') is not False
+                                or g['applicability']=='NOT_APPLICABLE' or not (g.get('obligation_ids') or g['category']=='ci')):
+            refuse('advisory gate needs a sourced advisory CI step and required=false')
         if g['applicability']=='NOT_APPLICABLE':
             if not g.get('reason') or g.get('required') or (m.get('rules') and not g.get('source')): refuse('N/A needs reason and required=false')
         elif g['applicability']=='APPLICABLE':

@@ -155,7 +155,7 @@ def _pre_task_base_check(st, spec, gate_context):
     from al_gates import manifest
     current = manifest(st)
     gate = next((g for g in current['gates'] if g['id'] == gate_context['gate']), None)
-    if not gate or not gate['required'] or gate['applicability'] != 'APPLICABLE':
+    if not gate or not (gate['required'] or gate.get('advisory')) or gate['applicability'] != 'APPLICABLE':
         return False
     expected = {'area': 'gate-base-' + gate['id'], 'kind': 'check', 'tier': 'focused',
                 'argv': gate['argv'], 'cwd': gate['cwd'], 'scope': gate['scope'],

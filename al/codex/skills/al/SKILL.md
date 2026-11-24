@@ -99,7 +99,10 @@ required final proof alongside the work; do not ask the developer to waive it.
 `planning admit` records incomplete relevant coverage as verification obligations
 instead of refusing. The first ordinary `writer start` records the PLANNING (or
 PSEUDOCODE) to IMPLEMENTATION edge itself; a Designer route records `phase PSEUDOCODE`
-first. Refusals on this path name the next supported command.
+first. Refusals on this path name the next supported command. A verification-only
+run whose implementation already exists in the worktree walks the same edges without
+a writer: `phase IMPLEMENTATION` (after `phase PSEUDOCODE` on a Designer route),
+`phase FINALIZATION` when COMPLEX, then `phase VERIFICATION` and `review-start`.
 Use [the detailed command workflow](reference/workflow.md) only for the operation
 being performed, and [gates](reference/gates.md) for task-relevant discovery and
 check planning. Preserve actual changed paths and root/shared obligations.
@@ -107,7 +110,10 @@ check planning. Preserve actual changed paths and root/shared obligations.
 continue on the admitted plan; add paths with `gates discover --extend current
 --paths-file <json>`, and use `--bounded` on large monorepos (see gates). Pass
 `--output <file>` to `gates discover` or `gates plan` to write the manifest JSON to a
-file and keep stdout to a one-line summary.
+file and keep stdout to a one-line summary. A CI step whose failure never fails the
+pipeline (`allow_failure`, `continue-on-error`, `cmd || true`, a shell function that
+swallows the failure) becomes an informational gate, and a candidate failure
+identical to its base failure is reported as pre-existing: only new failures block.
 
 ## 4. Implement with the right agents
 

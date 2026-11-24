@@ -45,6 +45,17 @@ def workflow_gaps(st):
     return structural_gaps(st)+base_gaps(st)+completion_gaps(st)+['unreconciled task attribution overlap: '+p for p in ambiguous]
 
 
+def verification_only_route(st, src):
+    """The phase sequence for a run whose implementation already exists in the worktree."""
+    if src not in {'PLANNING', 'PSEUDOCODE'}:
+        return ''
+    route = ['PLANNING'] + (['PSEUDOCODE'] if st.get('designer_required') else []) + ['IMPLEMENTATION']
+    route += (['FINALIZATION'] if st.get('classification') == 'COMPLEX' else []) + ['VERIFICATION']
+    steps = ' → '.join(route[route.index(src):])
+    return ('. A verification-only run (implementation already in the worktree) walks ' + steps
+            + ': record each edge with `phase <NEXT>`; no writer is needed for changes that already exist; then `review-start`')
+
+
 def _transition_preflight(st, command, destination, implementation_edge):
     """Reject impossible edges before collecting repository-wide verification debt."""
     src = st['phase']
@@ -62,7 +73,8 @@ def _transition_preflight(st, command, destination, implementation_edge):
                  'CORRECTION': {'FINALIZATION','VERIFICATION'},
                  'REVIEW': {'FINAL_VERIFICATION'}}
         if destination not in edges.get(src, set()):
-            refuse(f'illegal phase edge {src} → {destination}')
+            allowed = ', '.join(sorted(edges.get(src, set()))) or 'none (use the specialized command)'
+            refuse(f'illegal phase edge {src} → {destination}; allowed from {src}: {allowed}' + verification_only_route(st, src))
         if src == 'PLANNING':
             if st.get('spec_status') != 'SPEC_READY' or not st.get('classification'):
                 refuse('planning requires SPEC_READY and classification')

@@ -8,6 +8,7 @@ from pathlib import Path
 from al_ci_yaml import load, Unsupported
 import al_ci_rules as Rules
 import al_ci_verification as Verification
+import al_ci_advisory as Advisory
 import al_pytest_profile as Pytest
 
 ENV=['HOME','PATH','PYTHONHOME','PYTHONPATH','UV_CACHE_DIR','UV_CONFIG_FILE','UV_NO_CONFIG',
@@ -162,8 +163,8 @@ def github_inventory(root,paths,context=None,opaque=(),*,directories=(),capture=
     obligations=[];dependencies={};deferred=[]
     for path in files:
         src={'path':path,'sha256':'0'*64,'job':None}
-        def append(name,status,reason,exe=None,inventory_complete=True):
-            obligations.append({'source_path':path,'source_sha256':src['sha256'],'job':name,'units':sorted({Rules.unit(p) for p in paths}),
+        def append(name,status,reason,exe=None,inventory_complete=True,advisory=None,advisory_steps=None):
+            obligations.append({**({'advisory':advisory} if advisory else {}),**({'advisory_steps':advisory_steps} if advisory_steps else {}),'source_path':path,'source_sha256':src['sha256'],'job':name,'units':sorted({Rules.unit(p) for p in paths}),
                                 'applicability':status,'dependencies':list(dependencies.values())+(exe.pop('source_dependencies') if exe else []),'reason':reason,'inputs':sorted(paths),'execution':exe,'impact':{'inventory_complete':inventory_complete,'classification':'unknown' if not inventory_complete else 'relevant'}})
         try:
             if any(path==o or path.startswith(o.rstrip('/')+'/') for o in opaque):raise Unsupported('unavailable workflow child')
@@ -176,11 +177,13 @@ def github_inventory(root,paths,context=None,opaque=(),*,directories=(),capture=
             jobs=data.get('jobs')
             if not isinstance(jobs,dict) or not jobs:raise Unsupported('literal nonempty jobs required')
             for name,job in jobs.items():
+                # continue-on-error never fails the workflow: a job is informational, a step is left out.
+                advisory=Advisory.github_job(job);effective,removed=Advisory.github_steps(job)
                 try:
-                    exe=execution(root,path,name,job,src,selected,capture=capture)
+                    exe=execution(root,path,name,effective,src,selected,capture=capture)
                     exe['verification_chain']['workflow_membership']=files
-                    append(name,'APPLICABLE','complete literal GitHub quality job',exe)
-                except (Unsupported,ValueError,TypeError) as exc:append(name,'UNRESOLVED',str(exc))
+                    append(name,'APPLICABLE','complete literal GitHub quality job',exe,advisory=advisory,advisory_steps=removed)
+                except (Unsupported,ValueError,TypeError) as exc:append(name,'UNRESOLVED',str(exc),advisory=advisory,advisory_steps=removed)
         except (Unsupported,ValueError,UnicodeError,TypeError) as exc:append('<unresolved-workflow>','UNRESOLVED',str(exc),inventory_complete=False)
     after=sorted(p.relative_to(root).as_posix() for p in directory.glob('*') if p.suffix in {'.yml','.yaml'})
     if after!=files:raise Unsupported('GitHub workflow membership changed')

@@ -136,7 +136,8 @@ def execute(root, cwd, owner, log, timeout, records, argv=None, *, package_root=
         from al_gate_reuse import _tree
         before_git = _tree(root/'.git',True)
         before = _tracked(root)
-        env = dict(os.environ)
+        from al_gate_process import gate_environment
+        env, _ = gate_environment()
         cache = root.parent/'dependency-cache'
         cache.mkdir(exist_ok=True)
         env.update(UV_PYTHON=str(Path(sys.executable).resolve()),UV_PYTHON_DOWNLOADS='never',UV_PROJECT_ENVIRONMENT=str(root/recipe['cwd']/'.venv'),UV_CACHE_DIR=str(cache/'uv'),

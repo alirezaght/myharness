@@ -4,6 +4,7 @@ import hashlib
 import shlex
 import re
 import al_ci_verification as Verification
+import al_ci_advisory as Advisory
 from al_ci_github import github_inventory
 from pathlib import Path
 import al_ci_rules as R
@@ -135,7 +136,7 @@ class Inventory:
         result=[];dependencies=[self.files[p] for p in sorted(self.files)]
         for name in sorted(self.origins):
             if name.startswith('.'):continue
-            variants=[];inputs=set();reasons=[];executions=[];unknown=bool(self.issues)
+            variants=[];inputs=set();reasons=[];executions=[];advisories=[];unknown=bool(self.issues)
             for world in self.worlds:
                 if name not in world['definitions']:
                     variants.append({'present':False});continue
@@ -160,6 +161,7 @@ class Inventory:
                         for key,value in defaults.items():local.setdefault(key,value)
                     for key,value in world['globals'].items():
                         if key!='default':local.setdefault(key,value)
+                    advisories.append(Advisory.gitlab_job(local))
                     executions.append(execution(local,self.root,self.opaque,world['environment_context'],capture=self.capture))
                 except Unsupported as exc:
                     unknown=True;reasons.append(str(exc));inputs.update(self.paths)
@@ -175,11 +177,17 @@ class Inventory:
             status='APPLICABLE' if present and not unknown else 'UNRESOLVED'
             signatures={digest(e) for e in executions}
             mapped=copy.deepcopy(executions[0]) if status=='APPLICABLE' and executions and len(signatures)==1 else None
+            # A job that never fails its pipeline (allow_failure, or every script line swallowing its
+            # failure) is informational; lines that swallow their failure are not part of the check.
+            advisory=advisories[0] if advisories and all(advisories) else None
+            advisory_steps=None
             if mapped:
+                advisory=advisory or mapped.pop('advisory',None);advisory_steps=mapped.pop('advisory_steps',None)
                 inputs.update(mapped.get('input_scope',[]))
                 mapped['verification_chain'].update(provider='gitlab',workflow=path,job=name,
                     applicability={'profile':self.context,'status':status},source_chain=dependencies)
-            result.append({'source_path':path,'source_sha256':self.files[path]['sha256'],'job':name,
+            extra={**({'advisory':advisory} if advisory else {}),**({'advisory_steps':advisory_steps} if advisory_steps else {})}
+            result.append({**extra,'source_path':path,'source_sha256':self.files[path]['sha256'],'job':name,
                            'units':sorted({R.unit(p) for p in inputs} or self.unit_scope()),
                            'applicability':status,'dependencies':dependencies+(mapped.pop('source_dependencies',[]) if mapped else []),
                            'reason':'; '.join(sorted(set(reasons))) or 'conditional definition applicability unresolved',
@@ -292,7 +300,9 @@ def gaps(ci,gates,*,projection=None):
         matches=[g for g in gates if g['category']=='ci' and g.get('source') and g['source'].get('path')==obligation['source_path'] and g['source'].get('sha256')==obligation['source_sha256'] and g['source'].get('job')==obligation['job']]
         valid=False
         for gate in matches:
-            if gate['applicability']=='NOT_APPLICABLE' or gate.get('required') is not True:continue
+            # An advisory job is satisfied by its informational gate; any other job needs a required one.
+            informational=obligation.get('advisory') and gate.get('required') is False and gate.get('advisory')==obligation['advisory']
+            if gate['applicability']=='NOT_APPLICABLE' or not (gate.get('required') is True or informational):continue
             execution=obligation.get('execution')
             if gate['applicability']=='APPLICABLE' and (not execution or gate.get('argv')!=execution['argv'] or gate.get('cwd')!='.' or gate.get('execution_kind')!=execution['execution_kind'] or gate.get('remote_source')!=execution.get('remote_source') or not set(execution['env_names'])<=set(gate.get('env_names',[]))):continue
             if obligation['applicability']=='UNRESOLVED' and gate['applicability']!='UNRESOLVED':continue
@@ -329,6 +339,14 @@ def execution(job,root,opaque=(),environment_context=(),*,capture=None):
             from al_ci_github import read
             return read(root,path)[0]
         return go_execution(lines,root,go_read,observe=capture.observe_path if capture else None)
+    # A line whose failure is swallowed (`cmd || true`) never fails the job: it is recorded as
+    # advisory and left out of the check. When every line is advisory the job is advisory and
+    # its commands run as an informational check.
+    lines,swallowed=Advisory.partition_lines(lines)
+    all_swallowed=not lines and bool(swallowed)
+    if all_swallowed:lines=[item['command'] for item in swallowed]
+    if not lines:return None
+    text='\n'.join(lines)
     # The reviewed local mapping permits literal commands, not expansion/eval or
     # shell control flow whose CI execution context is unavailable locally.
     if any(token in text for token in ('$','`',';','&&','||','|','>','<','\\')):return None
@@ -355,4 +373,5 @@ def execution(job,root,opaque=(),environment_context=(),*,capture=None):
     checks=[check for line in lines for check in Verification.observed(shlex.split(line))]
     requirements=[{'selector':'script['+str(i)+']','purpose':Verification.purpose(tokens,Verification.observed(tokens)),'argv':tokens,'cwd':'.','env_names':['PATH'],'targets':Verification.observed(tokens),'dependencies':sorted(dependencies)} for i,tokens in enumerate(parsed)]
     chain={'schema_version':1,'provider':'gitlab','workflow':None,'job':None,'applicability':None,'setup':[],'requirements':requirements,'source_chain':[],'complete':True}
-    return {'verification':checks,'verification_chain':chain,'source_dependencies':[dependencies[p] for p in sorted(dependencies)],'argv':['sh','-eu','-c',text],'cwd':'.','execution_kind':'local','env_names':['PATH']}
+    advisory={'advisory':'every script line swallows its failure (`|| <benign>`)'} if all_swallowed else {'advisory_steps':[item['line'] for item in swallowed]} if swallowed else {}
+    return {**advisory,'verification':checks,'verification_chain':chain,'source_dependencies':[dependencies[p] for p in sorted(dependencies)],'argv':['sh','-eu','-c',text],'cwd':'.','execution_kind':'local','env_names':['PATH']}

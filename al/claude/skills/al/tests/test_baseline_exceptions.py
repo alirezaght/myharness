@@ -67,7 +67,9 @@ def test_exception_admits_implementation_keeps_fail_and_shows_separately(cli, re
     invoke(cli, 'writer', 'start', '--id', 'engineer', '--role', 'al-engineer', '--files', 'svc/app.py')
     (repo / 'svc/app.py').write_text('feature = True\n')
     invoke(cli, 'writer', 'finish', '--id', 'engineer', '--outcome', 'success')
-    invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
+    # The excepted base failure covers the identical candidate failure: the stage does not fail (#13).
+    _, out, _ = invoke(cli, 'gates', 'run', '--stage', 'candidate')
+    assert 'loc FAIL does not block' in out
     current = status(cli)
     assert not any('candidate gate loc' in g for g in current['candidate'])
     assert any(u['gate'] == 'loc' and 'pre-existing' in u['reason'] for u in current['unverified'])

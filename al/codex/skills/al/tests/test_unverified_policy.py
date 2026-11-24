@@ -118,9 +118,11 @@ def test_pre_existing_failures_are_distinct_from_unavailable_setup(tmp_path, mon
     run = {'fingerprint': 'f', 'manifest': 'm'}
     untouched, touched = {'id': 'g', 'units': ['services/other']}, {'id': 'g', 'units': ['services/touched']}
     assert 'pre-existing' in G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], run, 'f')
-    assert G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E2'], run, 'f') is None
+    # A touched gate failing exactly as base (same exit code and output) is pre-existing too (#13).
+    assert 'pre-existing' in G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E2'], run, 'f')
     assert G.accepted_failure(st('E5'), {}, untouched, 'candidate', runs['E2'], run, 'f') is None
-    assert G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
+    assert 'pre-existing' in G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f')
+    assert G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
     # Log text and old FAIL entries cannot waive required verification.
     assert G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
     assert G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f') is None

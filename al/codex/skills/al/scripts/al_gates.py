@@ -1,6 +1,5 @@
 """Base/candidate gate manifests and nonwaivable isolated executions."""
 import hashlib
-import re
 import shutil
 import contextlib
 import uuid
@@ -12,7 +11,7 @@ import al_artifacts as A
 import al_checkouts
 import al_gate_reuse as R
 import al_gate_continuation as Continuation
-from al_gate_process import Owner,stop
+from al_gate_process import Owner,stop,gate_environment
 from al_package_output import InspectionError,inspect_call,write_metadata
 import al_evidence as E
 import al_gate_discovery as D
@@ -22,6 +21,7 @@ import al_ledger as L
 import al_scope as S
 import al_review_state as ReviewState
 import al_baseline_exceptions as Exceptions
+import al_gate_signature as Signature
 import al_store
 import al_sources as Sources
 from al_schema import refuse
@@ -79,7 +79,10 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     A tool missing from AL's disposable checkout is AL's environment gap, whatever the repository's
     toolchain: it is reported as unverified and never blocks. A candidate failure in a gate whose
     services the change does not touch, and which also failed at base, is pre-existing. A check that
-    ran and failed in a touched service always blocks and goes back to rework."""
+    ran and failed in a touched service blocks only when it reports something new: a candidate
+    failure identical to the base failure (same command, same violation set or, without parseable
+    violations, the same exit code and normalised output; see al_gate_signature) is pre-existing,
+    like a baseline exception, and a recorded exception covers that identical candidate failure."""
     if not e or not r or r.get('fingerprint')!=fp or not environment_current:return None
     base=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']=='base' and x['manifest']==r['manifest']]
     prior=L.find(st,base[-1]['evidence']) if base else None
@@ -88,23 +91,21 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     if (st.get('gate_decisions',{}).get(g['id']) or {}).get('action')=='fix':return None
     if not set(g['units'])&touched_units(st,m):
         return 'pre-existing failure: it also fails at base and the change does not touch '+', '.join(g['units'])
-    # A repository-wide gate is always touched; it still reports instead of blocking when every
-    # failure line the candidate prints was already printed at base.
-    added=failure_lines(e)-failure_lines(prior)
-    if failure_lines(prior) and failure_lines(e) and not added:
-        return 'pre-existing failure: every failure the candidate reports also fails at base (see '+prior['id']+')'
-    return None
+    match=Signature.pre_existing(prior,e)
+    if not match:return None
+    exception=Exceptions.current(st,m,g) if m else None
+    covered=' and baseline exception '+exception['binding']['evidence']+' covers it' if exception else ''
+    if match=='violations':
+        return 'pre-existing failure: every failure the candidate reports also fails at base (see '+prior['id']+')'+covered
+    return 'pre-existing failure: the candidate fails exactly as the base does (same exit code and output, see '+prior['id']+')'+covered
 
 
-FAILURE_LINE_RE=re.compile(r"error|fail|✗|✖|panic|exception|traceback|warning|violation|exceeds|^E\s",re.I)
-VOLATILE_RE=re.compile(r"(?:/[^\s:'\"]*)?/checkout/|\b\d+(?:\.\d+)?\s*(?:ms|s|sec|seconds)\b|\x1b\[[0-9;]*m|\b[0-9a-f]{12,}\b|\d{4}-\d\d-\d\dT[\d:.]+Z?")
+def is_advisory(g):
+    """An informational gate: its sourced CI step never fails the pipeline (al_ci_advisory)."""
+    return g.get('required') is False and g.get('applicability')=='APPLICABLE' and bool(g.get('advisory'))
 
 
-def failure_lines(e):
-    """The run's failure lines with checkout paths, durations, colours and hashes removed."""
-    try:text=Path(e['log']).read_text(errors='replace')[-262144:] if e and e.get('log') else ''
-    except OSError:return set()
-    return {' '.join(VOLATILE_RE.sub('',line).split()) for line in text.splitlines() if FAILURE_LINE_RE.search(line)}-{''}
+ACCEPTED={'valid','not-required','unverified','accepted-base-decision','accepted-existing-failure','advisory'}
 
 
 def gate_result(st,m,g,stage,fp):
@@ -140,13 +141,16 @@ def gate_result(st,m,g,stage,fp):
                and e['argv']==g['argv'] and e['cwd']==g['cwd'] and e['scope']==g['scope']
                and r.get('execution_kind')==g['execution_kind'] and e['area']=='gate-candidate-'+g['id']
                and L.entry_verdict(st,e)[0]=='VALID')
-    if e is None:return 'missing'
+    # A check the sourced CI runs only as an advisory step is informational: its result is a note.
+    advisory=is_advisory(g)
+    if e is None:return 'advisory' if advisory else 'missing'
     cleanup=e.get('cleanup') or {}
     if e['status']=='RUNNING' or cleanup.get('unresolved') or cleanup.get('errors') or (e.get('interrupted') and not e.get('reconciliation')):return 'unresolved'
     if valid and e.get('setup'):
         import al_check_setup
         valid=not al_check_setup.current_gaps(e['setup'])
     if valid:return 'valid'
+    if advisory:return 'advisory'
     reason=accepted_failure(st,m,g,stage,e,r,fp,environment_current)
     if reason:return 'accepted-existing-failure'
     decision=st.get('gate_decisions',{}).get(g['id'])
@@ -170,7 +174,7 @@ def gate_gaps(st,stage):
     out=admission_gaps(st)
     fp=S.capture_candidate(st)['fingerprint'] if stage=='candidate' else m['base_oid']
     for g in m['gates']:
-        if gate_result(st,m,g,stage,fp) not in {'valid','not-required','unverified','accepted-base-decision','accepted-existing-failure'}:
+        if gate_result(st,m,g,stage,fp) not in ACCEPTED:
             out.append(stage+' gate '+g['id']+' requires passing evidence')
     return out
 
@@ -189,6 +193,12 @@ def unverified(st):
             if g['applicability']!='APPLICABLE':continue
             runs=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']==stage and x['manifest']==sha]
             e=L.find(st,runs[-1]['evidence']) if runs else None
+            if is_advisory(g):
+                if gate_result(st,m,g,stage,fp)=='advisory':
+                    out.append({'gate':g['id'],'category':g['category'],'stage':stage,'evidence':e['id'] if e else None,
+                                'reason':'advisory, does not block: '+g['advisory']+(' (run '+e['status']+')' if e else ' (not run)'),
+                                'verified_by':'not verified','advisory':True})
+                continue
             reason=accepted_failure(st,m,g,stage,e,runs[-1] if runs else None,fp)
             if reason:out.append({'gate':g['id'],'category':g['category'],'stage':stage,'evidence':e['id'],'reason':reason,'verified_by':'not verified'})
     return out
@@ -360,6 +370,15 @@ def cmd_gates(a,sid):
         print(json.dumps(status(st),indent=2)); return
     refuse('gate run must use unlocked dispatcher')
 
+def _accepted(sid,m,g,stage,pinned):
+    """'advisory' or 'accepted-existing-failure' when a finished non-passing gate does not block."""
+    if is_advisory(g):return 'advisory'
+    if stage!='candidate' or pinned is None:return None
+    try:state=gate_result(al_store.load(sid),m,g,stage,pinned)
+    except (Exception,SystemExit):return None
+    return state if state=='accepted-existing-failure' else None
+
+
 def cmd_run(a,sid):
     with al_store.locked(sid):
         st=al_store.load(sid); m=manifest(st)
@@ -503,10 +522,11 @@ def cmd_run(a,sid):
                             with log.open('ab') as out:
                                 out.write(('argv: '+json.dumps(g['argv'])+'\ncwd: '+str(cwd)+'\nexecution_sha256: '+R.key_digest(key)+'\ninvocation: '+invocation+'\n').encode())
                                 if argv!=g['argv']:out.write(('executed at base: '+json.dumps(argv)+'\n').encode())
+                                # Undeclared ambient installation switches (UV_NO_SYNC, PIP_NO_INDEX, ...) never reach the checkout.
+                                hook_env,scrubbed=gate_environment(g['env_names'])
+                                if scrubbed:out.write(('environment scrubbed: '+' '.join(scrubbed)+'\n').encode())
                                 out.flush()
-                                hook_env=None
                                 if g['category']=='pre-commit':
-                                    hook_env=dict(__import__('os').environ)
                                     hook_env.pop('NODE_PATH',None)
                                     bins=[]
                                     for setup in entry.get('setup',[]):
@@ -515,7 +535,6 @@ def cmd_run(a,sid):
                                         if setup['manager']=='uv':hook_env['VIRTUAL_ENV']=str(directory/'.venv')
                                     hook_env['PATH']=__import__('os').pathsep.join(bins+[hook_env.get('PATH','')])
                                 if pytest_requirements:
-                                    hook_env=dict(__import__('os').environ) if hook_env is None else hook_env
                                     entry['pytest_guard_context']=PytestPolicy.launch_context(current,ref,g,a.stage,m['base_oid'],checkout['capture']['fingerprint'],invocation)
                                     hook_env[PytestPolicy.CONTEXT_ENV]=json.dumps(entry['pytest_guard_context'],sort_keys=True)
                                 proc=owner.spawn(argv,cwd=cwd,env=hook_env,stdout=out,stderr=subprocess.STDOUT)
@@ -634,12 +653,17 @@ def cmd_run(a,sid):
                 stack.close();checkout=None
             print(L.row(entry,status))
             results.append({'gate':g['id'],'evidence':entry['id'],'status':status})
+            # An advisory gate's result and a pre-existing candidate failure are reported, not blocking.
+            accepted=_accepted(sid,m,g,a.stage,pinned) if status not in {'PASS','TORN'} else None
+            if accepted:
+                results[-1]['accepted']=accepted
+                print('AL · '+g['id']+' '+status+' does not block: '+('advisory in CI' if accepted=='advisory' else 'pre-existing failure, identical at base'))
             # Base failures are pre-existing and each needs a decision, so every base gate runs and all
-            # failures are listed at once; a candidate failure (or a torn run) stops the stage.
-            if status=='TORN' or (status!='PASS' and a.stage!='base'):
+            # failures are listed at once; a new candidate failure (or a torn run) stops the stage.
+            if status=='TORN' or (status!='PASS' and a.stage!='base' and not accepted):
                 if resume:report()
                 raise SystemExit(1)
-    failed=[r for r in results if r['status']!='PASS']
+    failed=[r for r in results if r['status']!='PASS' and not r.get('accepted')]
     if failed:
         print('AL · '+str(len(failed))+' gate(s) did not pass: '+', '.join(r['gate']+' '+r['status']+' ('+r['evidence']+')' for r in failed))
         if resume:report()
