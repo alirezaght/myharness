@@ -128,6 +128,13 @@ file and keep stdout to a one-line summary. A CI step whose failure never fails 
 pipeline (`allow_failure`, `continue-on-error`, `cmd || true`, a shell function that
 swallows the failure) becomes an informational gate, and a candidate failure
 identical to its base failure is reported as pre-existing: only new failures block.
+A CI job AL cannot run locally (unknown pipeline context, runner image, variables,
+services, deploy tools) stays an UNRESOLVED gate the pipeline verifies: it is listed
+under `unverified` in `gates status` and the review packet and never blocks review.
+Resolve it by planning the gate as its offered verbatim `ci_recipe`, or record the
+pipeline's own result with `gates ci-evidence --id <gate> --status <status> --url
+<pipeline-or-job-url> [--pipeline-id N --job-id N --commit SHA]` (a reviewer-visible
+note, never AL proof).
 
 ## 4. Implement with the right agents
 

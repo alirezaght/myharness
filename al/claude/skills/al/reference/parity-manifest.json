@@ -19,6 +19,7 @@
     "al_ci_advisory.py",
     "al_ci_context.py",
     "al_ci_environment.py",
+    "al_ci_evidence.py",
     "al_ci_expression.py",
     "al_ci_github.py",
     "al_ci_inventory.py",

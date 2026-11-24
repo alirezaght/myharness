@@ -67,6 +67,11 @@
     "escapes": {
       "type": "array"
     },
+    "unverified": {
+      "description": "Checks AL did not verify, as `gates status` lists them: pipeline-verified CI jobs and services, supervisor-recorded remote CI results, verbatim-recipe mappings, pre-existing and advisory failures. Notes for the reviewer; they never block.",
+      "type": "array",
+      "items": {"type": "object"}
+    },
     "fresh": {
       "type": "object"
     },

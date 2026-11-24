@@ -70,7 +70,14 @@
           },
           "verification": {"type": "object"},
           "remote_source": {"$ref": "#/$defs/github_source"},
-          "remote": {"oneOf": [{"type": "object", "required": ["provider", "repository_id", "run_id", "attempt", "job_id"], "properties": {"provider": {"const": "github"}, "repository_id": {"type": "integer", "minimum": 1}, "run_id": {"type": "integer", "minimum": 1}, "attempt": {"type": "integer", "minimum": 1}, "job_id": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, {"type": "object", "properties": {"provider": {"const": "gitlab"}}}]}
+          "remote": {"oneOf": [{"type": "object", "required": ["provider", "repository_id", "run_id", "attempt", "job_id"], "properties": {"provider": {"const": "github"}, "repository_id": {"type": "integer", "minimum": 1}, "run_id": {"type": "integer", "minimum": 1}, "attempt": {"type": "integer", "minimum": 1}, "job_id": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, {"type": "object", "required": ["provider", "project_id", "job_name"], "properties": {"provider": {"const": "gitlab"}, "project_id": {"type": ["integer", "string"]}, "job_name": {"type": "string", "minLength": 1}}}]},
+          "ci_recipe": {
+            "description": "Offered by discovery for a sourced CI job AL could not map: the job's verbatim before_script + script lines. A planner maps the job by making the gate APPLICABLE with exactly this argv; `gates plan` checks it against the independently reconstructed recipe.",
+            "type": "object",
+            "required": ["argv", "cwd", "execution_kind", "env_names", "semantics"],
+            "properties": {"argv": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "cwd": {"const": "."}, "execution_kind": {"const": "local"}, "env_names": {"type": "array", "items": {"type": "string"}}, "semantics": {"type": "string"}},
+            "additionalProperties": false
+          }
         },
         "not": {"required": ["env"]}
       }

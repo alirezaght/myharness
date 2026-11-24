@@ -326,6 +326,7 @@ def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
             chosen['obligation_ids'].append(verification)
             chosen['conventional_verification']=proof
             facts['checks']['gaps']=[g for g in facts['checks']['gaps'] if not (g.get('unit')==unit and g['code']=='missing-verification-check')]
+    pipeline_verification(facts,services,ci,projected)
     # Only checks of the selected services run in this task; others are verified by the pipeline.
     # Keep every observed binding; the common projection chooses required ones.
     names.update(d['path'] for d in ci['dependencies'])
@@ -365,6 +366,29 @@ def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
             'services':services,'import_dependencies':dependencies,'ci':ci,'repository_facts':facts,
             'service_coverage':assessment,'relevance_projection':projection,'global_diagnostics':projection['records'],
             'auxiliary':{'loc':loc,'hook':hooks[0] if hooks else None,'contracts':contracts,'other_ci':sorted(other_ci)}}
+
+
+def pipeline_verification(facts,services,ci,projection):
+    """A service whose sourced verification is a CI job AL cannot run locally is verified by the
+    pipeline (#17).
+
+    Its `missing-verification-check` gap becomes a recorded `pipeline_verified` obligation: the
+    jobs stay UNRESOLVED gates that `gates status` and the review packet list as unverified, and
+    review stays reachable. Unknown inventories, advisory and release jobs never qualify, so a
+    service whose only jobs are mapped (but do not cover it) keeps the gap."""
+    relevant=set(projection['relevant_ci_ids']);records=[]
+    for unit in services:
+        if not any(g.get('unit')==unit and g['code']=='missing-verification-check' for g in facts['checks']['gaps']):continue
+        jobs=[o for o in ci['obligations'] if Relevance.ci_record_id(o) in relevant and (unit in o['units'] or '.' in o['units'])]
+        delegated=[o for o in jobs if CI.pipeline_verified(o)]
+        if not delegated:continue
+        verification='verification-'+unit.replace('/','-').replace('.','root')
+        facts['checks']['gaps']=[g for g in facts['checks']['gaps'] if not (g.get('unit')==unit and g['code']=='missing-verification-check')]
+        facts['checks']['obligations']=[o for o in facts['checks']['obligations'] if o['id']!=verification]
+        records.append({'unit':unit,'obligation_id':verification,'verified_by':'pipeline',
+                        'jobs':[{'source_path':o['source_path'],'job':o['job'],'applicability':o['applicability'],'reason':o['reason']}
+                                for o in sorted(delegated,key=lambda o:(o['source_path'],o['job']))]})
+    if records:facts['checks']['pipeline_verified']=records
 
 
 def advisory_bindings(scan,facts,ci,inside):
