@@ -109,8 +109,8 @@ first. Refusals on this path name the next supported command. A verification-onl
 run whose implementation already exists in the worktree walks the same edges without
 a writer: `phase IMPLEMENTATION` (after `phase PSEUDOCODE` on a Designer route),
 `phase FINALIZATION` when COMPLEX, then `phase VERIFICATION` and `review-start`.
-Final proof, review and approval enforce unverified-check, link, unclassified-directory
-and CI-inventory gaps only where the change reaches (its paths, their units, the literal
+Final proof, review and approval enforce unverified-check, link, unclassified-directory,
+outside-layout consumer and CI-inventory gaps only where the change reaches (its paths, their units, the literal
 dependency closure and the links they consume); such gaps elsewhere, including units
 selected only through dependency uncertainty, are verification notes (`gates status`
 `coverage_notes`). A coverage refusal names each in-scope gap, its

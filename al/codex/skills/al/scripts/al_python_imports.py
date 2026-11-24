@@ -204,6 +204,7 @@ def _analyze(facts,scan):
         Visitor().visit(tree)
     progress.report('inventory-analysis',count=len(records),force=True)
     affected={p for _,p in records if scope.overlaps(p)}
+    changed_sources=set(affected)
     artifacts,unclassified=artifact_consumers(scan,records,units)
     if unclassified:
         uncertainties.append({'code':'uncertain-artifact-classification','unit':None,'path':scan.paths[0] if len(scan.paths)==1 else '.', 'location':None,'target':None,'reason':'changed runtime source/data has no complete consumer classification'})
@@ -272,7 +273,34 @@ def _analyze(facts,scan):
     order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
             'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'task_import_targets_digest':_targets_digest({row for row in import_targets if row[1] in affected or records[(row[0],row[1])]['unit'] in (set(potential) if uncertainties else known|set(facts.get('policy_selection',[])))}),'affected_source_paths':sorted(affected|{consumer for row in artifacts for consumer in row['consumers']}),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[]),
-            'runtime_consumer_dependents':outside_dependents}
+            'runtime_consumer_dependents':outside_dependents,
+            'runtime_consumer_reach':_consumer_reach(scan,units,edges,importers,changed_sources,artifacts,outside)}
+
+
+def _consumer_reach(scan,units,edges,importers,changed_sources,artifacts,outside):
+    """Whether each consumer outside the unit layout literally reaches the change.
+
+    Consumer discovery over-approximates on shared file and directory names; a script that
+    only shares a name is no consumer of the change. It reaches the change when its bytes
+    name a changed path (or the unit directory owning one) in full, or when it imports a
+    module in the changed sources' importer closure."""
+    reached=set(changed_sources);pending=list(changed_sources)
+    while pending:
+        for consumer in importers.get(pending.pop(),()):
+            if consumer not in reached:reached.add(consumer);pending.append(consumer)
+    changed=set(scan.paths)|{row['path'] for row in artifacts}
+    owners=set()
+    for path in changed:
+        found=[u['path'] for u in units.values() if u['path'] not in {'.',''} and within(u['path'],path)]
+        if found:owners.add(max(found,key=unit_depth))
+    tokens=sorted({t.rstrip('/').encode() for t in changed if t not in {'.',''}}|{(o.rstrip('/')+'/').encode() for o in owners})
+    imports=defaultdict(set)
+    for a,b in edges:imports[a].add(b)
+    out={}
+    for consumer in outside:
+        data=scan.files.get(consumer) if consumer in scan.files else scan.base.get(consumer,b'')
+        out[consumer]=bool(imports.get(consumer,set())&reached) or any(token in data for token in tokens)
+    return out
 
 
 DATA_SUFFIXES=('.json','.yaml','.yml')

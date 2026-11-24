@@ -166,6 +166,45 @@ def test_structure_gaps_the_change_reaches_still_block(repo):
     assert 'gates discover --extend current --paths-file <file containing []> --bounded' in guidance
 
 
+def test_outside_layout_consumers_block_only_when_they_reach_the_change(repo):
+    """#15: helper scripts that merely share a name with a changed file are notes."""
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/prompt.json','{"prompt": "x"}\n')
+    put(repo,'tooling/report.js','const PROMPT = "docs/prompt.json";\n')   # names the changed path
+    put(repo,'tooling/other.js','const NOTE = "prompt.json";\n')           # shares only the file name
+    # Unowned dependents that are not consumers themselves defeat the leaf proof for both.
+    put(repo,'scripts/run_report.js','require("../tooling/report.js");\n')
+    put(repo,'scripts/run_other.js','require("../tooling/other.js");\n')
+    _git(repo,'add','.');_git(repo,'commit','-qm','outside-layout consumers with dependents')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.json'],opaque=[])
+    reach=facts['dependencies']['runtime_consumer_reach']
+    assert reach['tooling/report.js'] is True and reach['tooling/other.js'] is False
+    assessment=Coverage.assess(facts)
+    blocking={g['path'] for g in assessment['gaps'] if g['code']=='unclassified-runtime-consumer'}
+    notes={g['path'] for g in assessment['coverage_notes'] if g['code']=='unclassified-runtime-consumer'}
+    assert 'tooling/report.js' in blocking and 'tooling/other.js' in notes
+    assert 'tooling/other.js' not in blocking
+    # Editing the unrelated script itself puts it in scope.
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.json','tooling/other.js'],opaque=[])
+    assert 'tooling/other.js' in {g['path'] for g in Coverage.assess(facts)['gaps'] if g['code']=='unclassified-runtime-consumer'}
+
+
+def test_unknown_root_ci_definition_limit_is_a_note_unless_edited(cli,repo,tmp_path,monkeypatch):
+    """#15: the root CI's definition-world limit names the CI file, not '.', so it is scoped."""
+    import al_ci_inventory as CI
+    monkeypatch.setattr(CI.Inventory,'MAX_WORLDS',0)
+    seed(repo);put(repo,'.gitlab-ci.yml','verify:\n  script: python3 -m pytest\n')
+    _git(repo,'add','.');_git(repo,'commit','-qm','ci fixture');start(cli)
+    _,m=discover(cli,tmp_path,['services/a/src/app.py']);a=m['service_coverage']['assessment']
+    limit=[g for g in a['coverage_notes'] if g['code']=='unknown-ci-inventory']
+    assert limit and all(g['path']=='.gitlab-ci.yml' and 'definition-world limit' in g['reason'] for g in limit)
+    assert not any(g['code']=='unknown-ci-inventory' for g in a['gaps'])
+    _,m=discover(cli,tmp_path,['services/a/src/app.py','.gitlab-ci.yml'])
+    assert any(g['code']=='unknown-ci-inventory' for g in m['service_coverage']['assessment']['gaps'])
+
+
 def test_runtime_consumer_outside_unit_layout_does_not_widen_coverage(repo):
     import al_repository_facts as Facts
     import al_service_coverage as Coverage
