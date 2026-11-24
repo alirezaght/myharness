@@ -171,6 +171,7 @@
   ],
   "shared_reference_files": [
     "acceptance.md",
+    "agent-rules.md",
     "artifacts.md",
     "escape-seeds/user-earlier-mr-corrections-omitted.json",
     "escape-seeds/user-rollout-safety-omission.json",

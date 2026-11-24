@@ -7,10 +7,14 @@ contract AL validates on return.
 **Direct source artifacts, never a summary chain.** No agent may receive only
 the previous agent's summary. Every prompt carries the ORIGINAL specification
 verbatim, and every stage that needs the plan, the pseudocode, the real diff or
-the verification output gets the artifact itself. An Architect-written
-`SPEC_SUMMARY` is a reading aid that travels *with* the specification — it never
-replaces it. Reviewer findings never become the specification either: they sit
-below it in the authority order and are quoted as findings, not requirements.
+the verification output gets the artifact itself. A long artifact may be
+referenced **by hash plus the relevant excerpt or delta** — original text cut
+from the artifact, never a paraphrase — and the agent reads the rest by hash when
+it needs it. Plans do not restate the specification; they cite criterion IDs.
+Reviewer findings never become the specification either: they sit below it in
+the authority order and are quoted as findings, not requirements. Each agent ends
+with a structured handoff record (`reference/schemas/agent-handoff-record.json`)
+that the next agent receives by hash instead of a prose summary.
 
 ```
 AL WORKFLOW HANDOFF — you are <agent display name>. Read your agent instructions first.
@@ -143,7 +147,7 @@ Required output: `SPEC_STATUS: SPEC_READY|SPEC_BLOCKED`.
 - On `SPEC_BLOCKED`: `BLOCKING_QUESTIONS` (each with `WHY_MATERIAL` and `RECOMMENDED`),
   `WHAT_IS_CLEAR` — and nothing else.
 - On `SPEC_READY`: `TASK_CLASSIFICATION`, `CLASSIFICATION_REASON`, `IMPLEMENTER`,
-  `IMPLEMENTER_REASON`, `DESIGNER_REQUIRED`, `DESIGNER_REASON`, `SPEC_SUMMARY`,
+  `IMPLEMENTER_REASON`, `DESIGNER_REQUIRED`, `DESIGNER_REASON`,
   `ASSUMPTIONS`, `INVARIANTS`, `IMPLEMENTATION_PLAN` (with
   `INFRASTRUCTURE_CONSTRAINTS`—trigger/applicability, inspected source-backed
   timeout and per-environment flag findings, consequences, unresolved gaps or a
@@ -360,12 +364,27 @@ corrections, earlier unresolved findings, and explicit fix/dispute/defer
 rationales. `APPROVED` or `CHANGES_REQUIRED` with zero blockers may advance to
 the bounded notes pass or final verification. Any blocker requires correction.
 
+**Delta re-review (after a correction).** When `review-start` reports a delta
+review, resume the Architect agent that wrote the earlier review (the printed
+resume call) with the delta packet instead of a full packet. Both stages still use
+separate invocations; the fresh stage sees only the changed trees, the earlier
+findings and the affected criteria and invariants, and the comparison stage also
+sees the implementer handoff records. Omit `--plan` at `review-compare-start` to
+reuse the reviewed plan. The final independent review of an approval-bound
+candidate may use a fresh agent; record it with `agent record --fresh-reason`.
+Reports stay compact: findings as one-sentence records with source, severity and
+locations, no restated spec or packet, kept verdicts copied for unaffected
+criteria, and invariant locations in the optional `invariants` field.
+
 ## al-engineer / al-builder (correction)
 Add: `CORRECTION ITERATION: <c> of 6`, `REVIEWER FINDINGS FOR YOU (exact, all
 SEVERITY: BLOCKING, TYPE <CORE|BOTH> or <TESTS_BOILERPLATE|BOTH>): <verbatim
 findings>`, `APPROVED PLAN`, `INVARIANTS`, `ACCEPTANCE_CRITERIA`, `PSEUDOCODE`
 (or `none`), the **concurrency block** when the corrections run in parallel, and
-for a sequential Builder the Engineer's correction summary plus its diff.
+for a sequential Builder the Engineer's handoff record (by hash) plus its diff.
+Send the correction to the warm writer instance that did the work (`agent resume
+--role <role>` prints the call); only the findings, the new diff and new ledger
+rows are new.
 Instruct: fix exactly these findings, nothing else; the ORIGINAL specification
 still outranks any finding; dispute a wrong finding under CONCERNS with evidence
 instead of applying it. NON_BLOCKING findings are NOT routed and must not be

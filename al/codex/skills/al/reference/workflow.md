@@ -215,8 +215,9 @@ after a fallback, print the fallback's model and effort, not the primary's.
 
 Every agent receives the ORIGINAL specification verbatim, plus the actual
 artifacts it needs — the plan, the pseudocode, the real diff, the verification
-output — never a chain of summaries. An Architect `SPEC_SUMMARY` never replaces
-the specification, and reviewer corrections never become the new specification.
+output — never a chain of summaries. A long artifact may travel as its hash plus
+the relevant original excerpt or delta, never a paraphrase, and reviewer
+corrections never become the new specification.
 Iterative reviews are checked against the ORIGINAL specification, not only
 against the previous review comment. AL-Scout output sits below all of it: leads
 for AL-Architect, never authority, never a finding of record.

@@ -61,10 +61,11 @@ the complexity of its surrounding system.
 - **STANDARD:** an ordinary feature. A brief useful Architect plan, Engineer,
   focused tests and independent review. Builder only for real remaining support
   work. No pseudocode when the code and plan already make the implementation clear.
-- **COMPLEX:** name a specific difficult algorithm, coupled invariant,
-  concurrency/transaction protocol or security design. Architect and Designer
-  address those difficult parts, followed by Engineer and useful Builder support.
-  Explain how pseudocode reduces actual risk.
+- **COMPLEX:** only with a named hard part — a specific new algorithm, invariant
+  or protocol (`classify COMPLEX --hard-part algorithm|invariant|protocol:<name>`).
+  Breadth, the number of services or files, and defect counts are never reasons.
+  Architect and Designer address that hard part, followed by Engineer and useful
+  Builder support. Explain how pseudocode reduces actual risk.
 
 Reuse agent context. Do not escalate because of file count, repository size,
 security keywords, missing tools or an incomplete discovery scan. Resolve routine
@@ -155,11 +156,16 @@ question; continue other authorized work.
 
 Start the scoped writer before dispatch. Generate its handoff through
 `writer handoff --id ID --body-file BODY` after registering the relevant evidence
-areas, and deliver the generated prompt intact. Reuse the existing agent for
-follow-up. The runtime generates identity/evidence metadata; do not make agents
+areas, and deliver the generated prompt intact (it carries the repository
+`brief` and earlier agents' handoff records). Agents are **warm by default**:
+pass `--agent-id` (or run `agent record`) and send corrections, follow-ups and
+delta re-reviews to that same instance with the printed resume call; a fresh agent
+is the exception, recorded with `--fresh-reason`, for independence. Agents report
+`progress`, raise `ask --blocking|--non-blocking` questions mid-run, and end with a
+`handoff-record`. The runtime generates identity/evidence metadata; do not make agents
 reconstruct hashes or ask the developer to approve bookkeeping. Include the
-original specification and actual plan/pseudocode artifacts, rather than a chain
-of summaries. [Handoff templates](reference/handoffs.md) provide each role's
+original specification and actual plan/pseudocode artifacts (by hash plus the
+relevant original excerpt or delta when long), rather than a chain of summaries. [Handoff templates](reference/handoffs.md) provide each role's
 contract when needed.
 
 Writers preserve other changes and own explicit paths. Parallelize only genuinely
@@ -199,7 +205,8 @@ new developer approval questions or prevent otherwise authorized edits. Preserve
 their history and repair the protocol without fabricating credits or evidence.
 
 Obtain independent Architect code review and correct actual in-scope defects.
-Load [review](reference/review.md) at that boundary for versioned report schemas,
+After a correction `review-start` runs a smaller delta review when safe and says
+why when it runs a full one. Load [review](reference/review.md) at that boundary for versioned report schemas,
 required context separation and current final-proof checks. Keep code-review
 progress separate from pending verification and business acceptance. Do not claim
 APPROVED or verified completion until the actual runtime's required evidence,

@@ -85,26 +85,16 @@ NOTHING_FOUND: <"yes" if you found nothing on your angle, else "no">
 COVERAGE
 - <what you examined, and what you could not examine>
 ```
-## Harness-bound execution reports
 
-When invoked for a harness-bound run, report actual agent and task lifecycles through the installed integration commands in reference/execution-integration.md. A planned role is not a started agent. Scoped implementation authority is separate from final evidence and approval; progress and prose never complete work. Raise a typed task-scoped blocker only for an unresolved material specification or developer engineering decision. Report missing tools, incomplete discovery and provider failures as operational issues with diagnostics and an automated repair action; keep defined independent work eligible. Consume current authored dependency outputs without pretending they are verified completion. Reconnect only refreshes recorded status; explicit resume continues the stored native conversation under current epoch authority. Terminal agents need fresh observed invocations. A missing PID or stale heartbeat never establishes process settlement.
+## Shared rules (read on demand)
 
+Read the named section of `skills/al/reference/agent-rules.md` (under Harness: `harness:skill/reference/agent-rules.md`)
+when its situation arises. Those rules bind you exactly as if they were written here:
 
-## Named report outputs
+- **Harness-bound execution reports** — when the run is Harness-bound.
+- **Named report outputs** — when the handoff names an OUTPUT_ARTIFACT.
+- **Portable investigation** — before final classification or planning.
+- **Coverage obligations** — when discovery, coverage or a required check is incomplete.
+- **Agent communication** — progress checkpoints, early questions, your final handoff record.
 
-If the handoff provides an OUTPUT_ARTIFACT name and the Harness submit_output tool is available,
-submit the final report there and return only its immutable reference. This report outbox does
-not authorize source edits by read-only roles. Otherwise use an explicitly authorized output
-file or host final-message capture; never claim a file was saved if the host refused it.
-
-Incomplete relevant repository, service, consumer and required-check discovery creates verification obligations; it does not block scoped implementation. Relevant uncertainty requires conservative check selection and repair. Final proof and approval require complete relevant coverage and real mandatory bindings. Unknown, unavailable and unexecuted checks are never passes. Report operational issues through issue-update, and reserve developer blockers for actual specification or consequential engineering choices.
-
-### Portable investigation
-Before final classification/planning, inspect existing implementation, manifest/path
-ownership, literal call sites, nested instructions and locally known main divergence.
-Use routing-audit --request "APPROVED REQUEST" in standalone AL, or Harness read_file
-with harness:repository-audit. Keyword counts and test volume do not establish ownership
-or remaining complexity. Resolve material ownership uncertainty before planning.
-In Harness, enumerate harness:skill/index and read references/schemas through
-harness:skill/reference/... with bounded cursors; do not assume access to global paths.
 '''
