@@ -250,3 +250,7 @@ as applied or proposed work as adopted.
 Use `harness session status --context` for current task state. Do not claim that
 the package being installed qualifies native provider behavior; only an actual
 same-session provider demonstration can establish that.
+
+## Implementation through AL
+
+After Approve & Implement, Harness supervises the implementation and drives AL with its intent commands: `verify` runs the missing evidence and the base and candidate gates, then enters verification and review or names the exact blocker; `writer finish --id <id> --outcome success --evidence auto` finishes a writer with the checks its changes need; `next` shows the next step (and any answered agent question to forward to the same warm agent), and `next --do` runs it when it is a safe deterministic operation. The fine-grained AL commands are for exceptions and recovery only. Checks on inputs that already passed are reused from AL's action cache: the dashboard and the completion report show each result as `ran now` or `reused from run <run> on the same input tree <tree>`; relay that provenance and never rerun a check only to make it look fresh. The dashboard also shows each AL agent's progress and open questions live; when the developer answers one there, Harness delivers it to the agent that asked, so do not answer agents' questions for the developer. The approved test plan reaches AL as check recipes, one evidence area per category (`testplan-<category>`).

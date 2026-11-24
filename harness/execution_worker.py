@@ -604,6 +604,17 @@ def _prompt(execution, package, envelope, mode, focus=None):
             if execution.get("native_id")
             else ""
         )
+        + "Drive AL with its intent commands (al_command arguments): ['verify'] runs the "
+        "missing evidence and the base and candidate gates, then enters VERIFICATION and "
+        "starts review, or names the exact blocker; ['writer', 'finish', '--id', <id>, "
+        "'--outcome', 'success', '--evidence', 'auto'] finishes a writer with the checks its "
+        "changes need; ['next'] shows the next step and any answered agent question to "
+        "forward, and ['next', '--do'] runs it when it is a safe deterministic operation. "
+        "Use the fine-grained commands only for exceptions and recovery. Checks on unchanged "
+        "inputs are reused from AL's action cache and reported as reused; do not rerun them "
+        "to make them look fresh. Agents record milestones with ['progress', ...] and raise "
+        "questions with ['ask', ...]; when next names an answer to forward, send it to that "
+        "same warm agent with the call it names, then run ['ask', '--forwarded', <QID>]. "
         + "Run every AL state command through the protected launcher as `"
         + launcher
         + " <command>`; never invoke al_state.py directly. Its run state is in "
@@ -615,7 +626,16 @@ def _prompt(execution, package, envelope, mode, focus=None):
             else ""
         )
         + "Requirements and approved test plan are in the handoff; retain them "
-        "verbatim. Do not bypass "
+        "verbatim. "
+        + (
+            __import__("harness.testplan_checks", fromlist=["render"]).render(
+                envelope["check_recipes"]
+            )
+            + " "
+            if envelope.get("check_recipes")
+            else ""
+        )
+        + "Do not bypass "
         "approval, evidence or review guards. Only genuine specification ambiguities or developer "
         "engineering decisions pause affected authored work and require task-scoped developer "
         "acknowledgement. Tooling, provider, coverage and verification gaps are operational "

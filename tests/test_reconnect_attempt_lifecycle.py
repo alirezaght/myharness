@@ -213,3 +213,11 @@ def test_prompt_requires_fresh_observed_child_without_replacing_run(reconnect):
     assert "fresh actual native invocation" in prompt and "observed child ID" in prompt
     assert "valid task binding" in prompt and saved["al_session_id"] in prompt
     assert "Never invoke start or create a different AL run" in prompt
+    # #31: AL is driven with its intent commands, and the test plan arrives as check recipes.
+    assert "['verify']" in prompt and "'--evidence', 'auto'" in prompt and "['next', '--do']" in prompt
+    assert "['ask', '--forwarded', <QID>]" in prompt
+    envelope = dict(read_handoff(saved["handoff_path"]), check_recipes=[{
+        "area": "testplan-unit", "plan_argv": ["evidence", "plan", "--area", "testplan-unit"],
+        "scenarios": ["S1"], "cacheable": True}])
+    assert "evidence plan --area testplan-unit" in worker._prompt(
+        saved, {"launcher": "/fixture/alctl"}, envelope, "resume")
