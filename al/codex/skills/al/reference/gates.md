@@ -107,6 +107,20 @@ Two paths resolve such a job:
 
 Gate checkouts do not inherit ambient settings that switch off or redirect dependency installation: `UV_NO_SYNC`, `UV_OFFLINE`, `UV_FROZEN`, `UV_LOCKED`, `UV_NO_INSTALL_*`, `UV_NO_BUILD*`, `UV_NO_INDEX`, `VIRTUAL_ENV`, `PIP_NO_INDEX`, `PIP_NO_DEPS`, `PIP_REQUIRE_VIRTUALENV`, npm/yarn offline switches and `COREPACK_ENABLE_NETWORK`. They are removed before a gate or its dependency setup runs, and the log records `environment scrubbed: <names>`. A gate that declares one of these names in `env_names` keeps it, because declared names are part of its environment fingerprint.
 
+## Action cache
+
+`gates run --stage base|candidate` looks each local gate up in the repository's action cache (see
+[evidence.md](evidence.md#action-cache-reuse-across-runs-tasks-and-worktrees)) before it materializes
+a checkout. The key is the gate's argv, cwd, category, scope and sources, its declared environment plus
+the scrubbed-environment policy above, the tool identity and lockfiles, and the input tree: the base
+commit's tree at base, the worktree's at candidate, over the gate's scope plus its package. Base gates
+on an unchanged target branch therefore run once for every task and worktree, and an unchanged
+candidate reuses the base result. A hit is recorded as the gate's run (`reused from run <run> (<entry>)`
+in the output, `reused_from` in the stage report, `reused_results` in the review packet). A cached FAIL
+is reused; INFRA, TORN and timeouts never are. An explicit retry (`--retry-failed`, or `--resume --id <gate>`) always executes and replaces the record,
+`--no-cache` skips the cache, a gate with `"hermetic": false` is never cached, and `AL_ACTION_CACHE=0`
+disables it. Remote, package-script, review-state and pytest-guarded gates always execute.
+
 ## Repository pytest suites
 
 A locally mapped CI job's `uv run pytest` step is executed through AL's guarded pytest runner exactly as the job declares it: the repository's configured `testpaths`, only reviewed non-masking options, and no deselection, skips or expected failures. A literal marker expression (`pytest -m "not browser"`) is the one supported selection: it must be identifiers combined with `not`, `and`, `or` and parentheses, it may come only from the job's own command (never from `addopts` or `PYTEST_ADDOPTS`), it is part of the execution profile and signature, and every deselected test is recorded in the evidence. Declared `markers` in the pytest configuration are accepted. Tests a marker excludes belong to whatever job runs them (for example a separate browser workflow); AL only verifies the jobs that apply to the planned CI context.

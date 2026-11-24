@@ -325,6 +325,30 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
     return text
 
 
+def _replay(sid, entry, cache, hit):
+    """Record a cached result as this run's entry: the original log, status and counts,
+    fingerprinted against the current tree like an execution, with its origin."""
+    import al_action_cache as Cache
+    name = f"{entry.get('run') or 'run'}-{entry['id']}-{entry['area']}-{entry['kind']}.log"
+    log = L.log_dir(sid) / name.replace('/', '_')
+    entry['log'] = str(log)
+    try:
+        entry['log_sha256'] = Cache.restore_log(hit, log)
+        entry.update({field: hit[field] for field in Cache.RESULT_FIELDS})
+    except (OSError, KeyError) as exc:
+        entry.update(status='INFRA', exit=None, note='cached result unavailable: ' + str(exc))
+    entry['action_cache'] = Cache.provenance(cache, hit)
+    entry['note'] = (entry['note'] + '; ' if entry['note'] else '') + Cache.reused_text(entry)
+    entry['fp_after'] = _fingerprint(entry)
+    entry['inputs_after'] = L.inputs_fingerprint(entry)
+    if entry['fp_after'] != entry['fp_before'] and entry['status'] == 'PASS':
+        entry['status'], entry['note'] = 'TORN', 'the scope changed while the cached result was recorded'
+    entry['ended_at'] = time.time()
+    _commit(sid, entry)
+    if entry.get('rejected'):
+        sys.exit(f"al_state: {entry['id']} not recorded — {entry['rejected']}; re-run it in the current run")
+
+
 def reusable(st, prev):
     """A VALID PASS is reused only while its inputs are unchanged (issue #21)."""
     if L.entry_verdict(st, prev)[0] != "VALID":
@@ -450,6 +474,7 @@ def cmd_evidence_plan(a, sid):
     spec = {"area": a.area, "kind": a.kind, "tier": a.tier, "argv": argv, "cwd": a.cwd or ".",
             "scope": scope, "sources": sources, "env": env_names, "preflight": a.preflight or None,
             "needs": _split(a.needs)}
+    if getattr(a, "non_hermetic", False):spec["hermetic"] = False
     if storage is not None:spec["storage"] = storage
     if getattr(a, "shards", None):
         areas = _plan_shards(st, a, spec)
@@ -570,11 +595,26 @@ def cmd_evidence_run(a, sid):
         print(f"AL · evidence {prev['id']} reused · {spec['area']} · PASS · {L.counts_text(prev)} · "
               f"scope fingerprint unchanged ({prev['fp_after']}) · log {prev['log']}")
         return
+    if getattr(a, "non_hermetic", False) or (planned and planned.get("hermetic") is False
+                                              and L.same_command(spec, planned)):
+        spec["hermetic"] = False
+    import al_action_cache as Cache
+    cache, _ = Cache.evidence_plan(st, spec, no_cache=getattr(a, "no_cache", False))
+    hit = None if a.fresh else Cache.lookup(cache)
     entry = _create(sid, st.get("run_id"), area=spec["area"], kind=spec["kind"], tier=spec["tier"], argv=spec["argv"],
                     cwd=spec["cwd"], scope=spec["scope"], env_names=spec["env"],
                     preflight=spec.get("preflight"), needs=spec.get("needs") or (), sources=spec.get("sources", []),
                     own_writer=getattr(a, "writer", None), storage=spec.get("storage"))
+    if hit:
+        _replay(sid, entry, cache, hit)
+        print(f"AL · evidence {entry['id']} · {entry['area']} · {entry['status']} · {L.counts_text(entry)} · "
+              f"{Cache.reused_text(entry)} (action cache, inputs unchanged) · log {entry['log']}")
+        if entry["status"] != "PASS":
+            sys.exit(1)
+        return
     text = _execute(sid, entry, a.timeout)
+    if cache is not None:
+        Cache.save(cache, entry, entry["log"], Cache.origin(st, sid, entry), replace=a.fresh)
     tail = text.splitlines()[-a.tail:] if a.tail else []
     if tail:
         print("\n".join(tail))
@@ -603,10 +643,12 @@ def _later_pass_note(st, e):
 def cmd_evidence_status(a, sid):
     st = al_store.load(sid)
     entries = L.ledger(st)["entries"]
+    import al_action_cache as Cache
     if not entries:
         print("AL · evidence ledger empty")
     for e in entries:
-        print(L.row(e, *L.entry_verdict(st, e)) + _later_pass_note(st, e))
+        reused = Cache.reused_text(e)
+        print(L.row(e, *L.entry_verdict(st, e)) + _later_pass_note(st, e) + (" · " + reused if reused else ""))
     for area, shards in L.ledger(st).get("shard_sets", {}).items():
         plan = L.ledger(st)["plan"]
         done = [name for name in shards["areas"] if L.planned_verdict(st, name, plan.get(name))[1] == "VALID"]
@@ -691,6 +733,8 @@ def register(sub):
                       description='Register a check without executing it. Put all AL options before `--`.',
                       epilog=_command_example('plan'))
     common(p); p.set_defaults(fn=cmd_evidence_plan, tier="broad")
+    p.add_argument("--non-hermetic", action="store_true",
+                   help="the check reads undeclared state (network, time, randomness): never cache its results")
     p.add_argument("--shards", type=int, metavar="N",
                    help="plan the area as N shard checks AREA.shard-I-of-N; {shard} and {shards} in the "
                         "command are replaced by I and N; the area is evidenced by all current shard PASSes")
@@ -698,6 +742,10 @@ def register(sub):
                       description='Run the planned area, or supply an ad-hoc check after `--`. Put all AL options before it.',
                       epilog=_command_example('run'))
     common(p); p.add_argument("--fresh", action="store_true")
+    p.add_argument("--no-cache", action="store_true",
+                   help="neither reuse nor record an action-cache result for this run")
+    p.add_argument("--non-hermetic", action="store_true",
+                   help="the check reads undeclared state (network, time, randomness): never cache it")
     p.add_argument("--writer", help="the active writer this check belongs to; its own files may overlap the scope")
     p.add_argument("--timeout", type=float); p.add_argument("--tail", type=int, default=40)
     p.add_argument("--recovery-file",dest="operation_recovery_file")

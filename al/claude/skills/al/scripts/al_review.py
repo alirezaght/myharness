@@ -85,6 +85,9 @@ def cmd_packet(a,sid):
     # results, pre-existing and advisory failures): the reviewer weighs them, they never block.
     from al_gates import unverified
     data['unverified']=unverified(st)
+    # Results reused from the action cache, each with the run where it originally executed.
+    from al_action_cache import annotate_packet
+    data=annotate_packet(st,data)
     if a.stage=='compare':
         data.update(fresh=A.read_json(r['fresh']),prior_findings=prior_findings(st),comparison_artifacts=st.get('comparison_artifacts',[]),approved_inputs=al_comparison.packet(st))
         data['comparison_contents'] = [{'artifact':ref,'content':A.read(ref).decode(errors='replace')} for ref in data['comparison_artifacts']]
