@@ -151,6 +151,8 @@ def packet(st, data):
             "verification_authority",
             "behavior",
             "rework_recovery_lineage",
+            # Checks AL did not verify (#17): factual, reviewer-visible, never blocking.
+            "unverified",
         }
         if set(data) != allowed:
             refuse("fresh review context contains unsupported inputs")

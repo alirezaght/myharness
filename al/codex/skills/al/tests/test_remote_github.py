@@ -249,7 +249,7 @@ def test_source_bound_disjoint_collect_ignore_is_recorded_and_rechecked(repo):
 @pytest.mark.parametrize('declaration',[
     'collect_ignore=["tests"]','collect_ignore=["tests/test_case.py"]','collect_ignore=["."]',
     'collect_ignore=["../outside"]','collect_ignore=["/absolute"]','collect_ignore=["tests/../.claude"]',
-    'collect_ignore=[".claude/"]','collect_ignore=[".cla*"]','collect_ignore=[".cla?de"]',
+    'collect_ignore=[".claude' '/"]','collect_ignore=[".cla*"]','collect_ignore=[".cla?de"]',
     'collect_ignore_glob=[".claude"]','collect_ignore=helper()','collect_ignore=[];collect_ignore.append("tests")',
     'pytest_plugins=[]','def pytest_collection_modifyitems(items):items.clear()',
 ])
