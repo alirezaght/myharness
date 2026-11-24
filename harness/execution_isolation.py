@@ -241,8 +241,10 @@ class AlGrants:
     index and private snapshot objects), the repository's snapshot refs
     (`<common dir>/refs/al/snapshots`), the action cache (`<common dir>/al-action-cache`) and
     the repository's analysis fact store. `sockets`: the resident AL service's socket for this
-    run (macOS only; the Linux seccomp filter keeps refusing Unix stream sockets, so AL falls
-    back to its own snapshot there). `environment`: what tells AL to use them."""
+    run. macOS admits connecting to exactly that path; on Linux the seccomp filter keeps
+    refusing every new Unix socket, and the contained process reaches the service only through
+    a supervisor-held relay passed in as a connected descriptor (`AL_SERVICE_FD`, #34), which
+    relays snapshot requests and nothing else. `environment`: what tells AL to use them."""
 
     writable: tuple[str, ...] = ()
     sockets: tuple[str, ...] = ()
@@ -314,7 +316,8 @@ def al_grants(repository, *, service_directory=None, system=None):
         pass  # no fact store: AL computes its facts without one
     environment = [("AL_SNAPSHOT_OBJECTS", "private")]
     sockets = []
-    if service_directory is not None and (system or platform.system()) == "Darwin":
+    system = system or platform.system()
+    if service_directory is not None and system in {"Darwin", "Linux"}:
         directory = Path(service_directory).resolve(strict=True)
         endpoint = directory / "s"
         info = endpoint.lstat()
@@ -324,7 +327,9 @@ def al_grants(repository, *, service_directory=None, system=None):
             and stat.S_IMODE(directory.stat().st_mode) == 0o700
         ):
             sockets.append(str(endpoint))
-            environment.append(("AL_SERVICE_SNAPSHOT", str(directory)))
+            if system == "Darwin":
+                # Linux reaches it through the supervisor's relay instead (operation_popen).
+                environment.append(("AL_SERVICE_SNAPSHOT", str(directory)))
     return AlGrants(tuple(writable), tuple(sockets), tuple(environment))
 
 
@@ -691,12 +696,31 @@ def operation_command(profile, argv, *, cwd=None):
         return
     import struct
 
-    machine = platform.machine()
-    numbers = {"x86_64": (0xC000003E, 41, 53), "aarch64": (0xC00000B7, 198, 199)}
-    if machine not in numbers:
+    instructions = seccomp_program(platform.machine())
+    path = Path(profile.temporary).parent / "operation.seccomp"
+    path.write_bytes(b"".join(struct.pack("HBBI", *entry) for entry in instructions))
+    path.chmod(0o600)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        command = operation_argv(profile, argv, cwd=cwd)
+        command[1:1] = ["--seccomp", str(descriptor)]
+        yield command, (descriptor,)
+    finally:
+        os.close(descriptor)
+
+
+SECCOMP_ARCHITECTURES = {"x86_64": (0xC000003E, 41, 53), "aarch64": (0xC00000B7, 198, 199)}
+
+
+def seccomp_program(machine):
+    """The operation sandbox's classic-BPF syscall filter: `socket(AF_UNIX, ...)` fails with
+    EPERM, so no Unix socket path or abstract name can be reached from inside (connect needs a
+    new socket); `socketpair` is allowed only as AF_UNIX/SOCK_STREAM/0. Descriptors inherited
+    from outside (the AL service relay, #34) keep working: they are not created here."""
+    if machine not in SECCOMP_ARCHITECTURES:
         raise ValueError("unsupported operation seccomp architecture")
-    arch, socket_call, socketpair_call = numbers[machine]
-    instructions = [
+    arch, socket_call, socketpair_call = SECCOMP_ARCHITECTURES[machine]
+    return [
         (0x20, 0, 0, 4),
         (0x15, 1, 0, arch),
         (0x06, 0, 0, 0x80000000),
@@ -720,16 +744,6 @@ def operation_command(profile, argv, *, cwd=None):
         (0x06, 0, 0, 0x00050001),
         (0x06, 0, 0, 0x7FFF0000),
     ]
-    path = Path(profile.temporary).parent / "operation.seccomp"
-    path.write_bytes(b"".join(struct.pack("HBBI", *entry) for entry in instructions))
-    path.chmod(0o600)
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    try:
-        command = operation_argv(profile, argv, cwd=cwd)
-        command[1:1] = ["--seccomp", str(descriptor)]
-        yield command, (descriptor,)
-    finally:
-        os.close(descriptor)
 
 
 def _validate_scratch(profile):
@@ -750,9 +764,38 @@ def operation_popen(profile, argv, **kwargs):
     cwd = kwargs.get("cwd")
     if cwd is not None:
         kwargs["cwd"] = _operation_cwd(profile, cwd)
-    with operation_command(profile, argv, cwd=cwd) as (command, descriptors):
-        extra = kwargs.pop("pass_fds", ())
-        return subprocess.Popen(command, pass_fds=(*descriptors, *extra), **kwargs)
+    relay = _service_relay(profile)
+    try:
+        if relay is not None:
+            environment = dict(kwargs.get("env") or os.environ)
+            environment.pop("AL_SERVICE_SNAPSHOT", None)
+            kwargs["env"] = environment | relay.environment()
+        with operation_command(profile, argv, cwd=cwd) as (command, descriptors):
+            extra = (*kwargs.pop("pass_fds", ()), *((relay.descriptor,) if relay else ()))
+            process = subprocess.Popen(command, pass_fds=(*descriptors, *extra), **kwargs)
+    except BaseException:
+        if relay is not None:
+            relay.close()
+        raise
+    if relay is not None:
+        relay.spawned()
+    return process
+
+
+def _service_relay(profile):
+    """On Linux, the supervisor-side relay to the run's AL service (#34), or None.
+
+    The sandbox keeps refusing new Unix sockets; the contained process gets one inherited,
+    connected descriptor whose other end relays snapshot requests to the service and nothing
+    else. No service, or one the relay cannot vouch for: AL takes its own snapshot."""
+    if profile.system != "Linux" or not profile.al_sockets:
+        return None
+    from harness.execution_al_service import SnapshotRelay
+
+    try:
+        return SnapshotRelay(Path(profile.al_sockets[0]).parent)
+    except (OSError, ValueError):
+        return None
 
 
 def operation_exec(profile, argv, environment):

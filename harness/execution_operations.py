@@ -1102,7 +1102,7 @@ class OperationController:
         environment["TMPDIR"] = profile.temporary
         if profile.al_writable:
             environment["AL_SNAPSHOT_OBJECTS"] = "private"
-        if profile.al_sockets:
+        if profile.al_sockets and profile.system == "Darwin":  # Linux: the relay (#34)
             environment["AL_SERVICE_SNAPSHOT"] = str(Path(profile.al_sockets[0]).parent)
 
         def validate_check():

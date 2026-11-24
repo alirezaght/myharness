@@ -91,9 +91,11 @@ def test_grants_name_exactly_the_cache_paths(repository, service):
     for path in grants.writable:
         assert Path(path).is_dir() and not Path(path).is_symlink()
     assert (git_dir / "al-snapshot").stat().st_mode & 0o777 == 0o700
-    # Linux keeps its seccomp refusal of Unix stream sockets: no socket grant there.
+    # Linux keeps its seccomp refusal of Unix sockets; the service is reached through the
+    # supervisor's relay descriptor instead of its path (#34, test_al_service_relay).
     linux = al_grants(repository, service_directory=service, system="Linux")
-    assert linux.sockets == () and "AL_SERVICE_SNAPSHOT" not in dict(linux.environment)
+    assert linux.sockets == (str(service / "s"),)
+    assert "AL_SERVICE_SNAPSHOT" not in dict(linux.environment)
 
 
 def test_symlinked_grant_path_is_refused(repository, tmp_path):

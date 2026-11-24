@@ -138,13 +138,64 @@ def untracked(root=None):
     return [row for row in raw.split(b'\0') if row]
 
 
-def _service_tree(root):
-    """The resident AL service's proven-current tree of `root` (`AL_SERVICE_SNAPSHOT` names the
-    service directory a supervisor admitted, #31), or None. Any doubt is None."""
+_RELAY = {}
+
+
+def _relay_answer(root, value):
+    """The service's snapshot answer through the supervisor's relay (#34, Linux sandbox).
+
+    `AL_SERVICE_FD` is `<fd>:<inode>`: an inherited, already connected socket whose other end
+    the Harness supervisor holds outside the sandbox; the supervisor adds the service token and
+    relays `snapshot` requests only. The inode proves the descriptor is still that socket (a
+    child that did not inherit it may have reused the number). Requests on it are sequential."""
     import json
     import socket
     import stat
     import struct
+    import threading
+    lock = _RELAY.setdefault('lock', threading.Lock())
+    try:
+        fd, inode = (int(part) for part in value.split(':'))
+        state = os.fstat(fd)
+        if not stat.S_ISSOCK(state.st_mode) or state.st_ino != inode:
+            return None
+        sock = socket.socket(fileno=os.dup(fd))
+    except (ValueError, OSError):
+        return None
+    with lock, sock:
+        try:
+            sock.settimeout(10)
+            data = json.dumps({'op': 'snapshot', 'repository': str(root)}, sort_keys=True,
+                              separators=(',', ':')).encode()
+            sock.sendall(struct.pack('>I', len(data)) + data)
+
+            def exact(size):
+                raw = b''
+                while len(raw) < size:
+                    chunk = sock.recv(size - len(raw))
+                    if not chunk:
+                        raise ValueError('relay closed')
+                    raw += chunk
+                return raw
+            size = struct.unpack('>I', exact(4))[0]
+            if size > 65536:
+                return None
+            return json.loads(exact(size))
+        except (OSError, ValueError, UnicodeError):
+            return None
+
+
+def _service_tree(root):
+    """The resident AL service's proven-current tree of `root` (`AL_SERVICE_SNAPSHOT` names the
+    service directory a supervisor admitted, #31; `AL_SERVICE_FD` its relay, #34), or None.
+    Any doubt is None."""
+    import json
+    import socket
+    import stat
+    import struct
+    relay = os.environ.get('AL_SERVICE_FD')
+    if relay:
+        return _checked_tree(root, _relay_answer(root, relay))
     directory = os.environ.get('AL_SERVICE_SNAPSHOT')
     if not directory or not os.path.isabs(directory):
         return None
@@ -180,6 +231,11 @@ def _service_tree(root):
                 os.fchdir(here)
             finally:
                 os.close(here)
+    return _checked_tree(root, answer)
+
+
+def _checked_tree(root, answer):
+    """The tree id an answer names, when it is a well-formed snapshot answer naming a tree."""
     tree = answer.get('tree') if isinstance(answer, dict) and answer.get('event') == 'snapshot' else None
     if not isinstance(tree, str) or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', tree):
         return None

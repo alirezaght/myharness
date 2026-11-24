@@ -4,7 +4,9 @@ Harness never runs AL commands in the service: a contained command keeps its own
 and the service refuses it. The supervisor uses the service for two things only:
 
 * locating it, so the operation sandbox can admit exactly its socket (AL then reads the
-  service's proven-current snapshot tree instead of capturing the worktree itself);
+  service's proven-current snapshot tree instead of capturing the worktree itself); on Linux,
+  where the sandbox refuses every new Unix socket, `SnapshotRelay` passes in one connected
+  descriptor that relays snapshot requests only (#34);
 * subscribing to changes of the AL run's state file, so step 8 replays the run's outbox as
   soon as AL commits instead of on the next polling tick. Without a service, or when the
   subscription ends, step 8 polls exactly as before: both paths read the same file through
@@ -207,3 +209,87 @@ class Subscription:
         except OSError:
             pass
         self.sock.close()
+
+
+RELAY_VARIABLE = "AL_SERVICE_FD"
+
+
+class SnapshotRelay:
+    """The AL service as a Linux-contained AL command sees it (#34).
+
+    The Linux operation sandbox's seccomp filter refuses every new Unix socket, so the contained
+    process cannot connect to the service (or to any other socket). Instead the supervisor
+    makes a socketpair outside the sandbox and passes one end in, named by `AL_SERVICE_FD`
+    (`<fd>:<inode>`). This relay, on the supervisor's end, answers only
+    `{"op": "snapshot", "repository": ...}` requests: for each it connects to the service,
+    adds the service token (which the sandbox never sees) and returns just the snapshot answer.
+    Anything else is refused without reaching the service. The relay ends when every holder of
+    the inner end has closed it."""
+
+    def __init__(self, directory):
+        directory = Path(directory)
+        if not (_private(directory, "dir") and _private(directory / "token", "file")):
+            raise ValueError("AL service directory is not private")
+        if not stat.S_ISSOCK(os.lstat(directory / "s").st_mode):
+            raise ValueError("AL service socket missing")
+        self.directory = directory
+        self.outer, self.inner = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.thread.start()
+
+    @property
+    def descriptor(self):
+        return self.inner.fileno()
+
+    def environment(self):
+        return {RELAY_VARIABLE: f"{self.descriptor}:{os.fstat(self.descriptor).st_ino}"}
+
+    def spawned(self):
+        """The child holds the inner end now; the supervisor keeps only its own."""
+        self.inner.close()
+
+    def close(self):
+        self.inner.close()
+        try:
+            self.outer.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def _serve(self):
+        try:
+            while True:
+                try:
+                    message = receive(self.outer)
+                except EOFError:
+                    return
+                self.outer.sendall(_frame(self.answer(message)))
+        except (OSError, ValueError):
+            pass
+        finally:
+            self.outer.close()
+
+    def answer(self, message):
+        if (
+            not isinstance(message, dict)
+            or set(message) != {"op", "repository"}
+            or message["op"] != "snapshot"
+            or not isinstance(message["repository"], str)
+        ):
+            return {"event": "refused", "reason": "only snapshot requests are relayed"}
+        try:
+            sock, token = connect(self.directory)
+            with sock:
+                sock.settimeout(5)
+                request = {
+                    "protocol": PROTOCOL,
+                    "op": "snapshot",
+                    "token": token,
+                    "repository": message["repository"],
+                }
+                sock.sendall(_frame(request))
+                answer = receive(sock)
+        except (OSError, ValueError, EOFError, UnicodeError):
+            answer = None
+        valid = isinstance(answer, dict) and answer.get("event") == "snapshot"
+        tree = answer.get("tree") if valid else None
+        return {"event": "snapshot", "tree": tree if isinstance(tree, str) else None}

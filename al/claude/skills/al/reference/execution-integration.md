@@ -130,3 +130,12 @@ the view. The commands are read-only: they need no AL run state, record nothing 
 one canonical JSON document. Harness runs them as `alctl run --repository R --platform P
 --session S -- facts ...`, which the run's resident service serves warm, and never imports
 AL scripts; without an answer the knowledge graph keeps only its text and symbol index.
+
+Inside the Harness operation sandbox, AL reads the service's snapshot tree instead of taking
+its own snapshot. On macOS the sandbox admits connecting to exactly the service socket
+(`AL_SERVICE_SNAPSHOT` names its directory). On Linux the seccomp filter refuses every new
+Unix socket, so no socket path is reachable; the supervisor instead passes one connected
+descriptor in as `AL_SERVICE_FD=<fd>:<inode>`. Its other end, outside the sandbox, relays
+`snapshot` requests with the service token added and refuses every other request. AL uses the
+descriptor only while its inode matches, sends one request at a time, and treats any doubt as
+no answer.
