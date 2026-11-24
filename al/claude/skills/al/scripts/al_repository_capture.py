@@ -300,9 +300,12 @@ class CaptureMixin:
         for path in self.absent:
             if self.path_observation(path)["state"] != "absent":
                 raise CaptureDrift("source-absence", [path])
-        for (pattern, _), old in self.match_observations.items():
-            if self.matched(pattern, fresh["members"]) != old:
-                raise CaptureDrift("match-membership", old)
+        # The fresh listing equals the one every match was computed from (checked above), so
+        # each match set is unchanged; only a differing member list is matched again.
+        if list(fresh["members"]) != list(self.members):
+            for (pattern, _), old in self.match_observations.items():
+                if self.matched(pattern, fresh["members"]) != old:
+                    raise CaptureDrift("match-membership", old)
 
     def capture_metadata(self, attempts=1, discarded=()):
         from al_repository_facts import digest
