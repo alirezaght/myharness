@@ -7,6 +7,23 @@ import time
 
 SIGNALS={signal.SIGINT,signal.SIGTERM}
 
+# Ambient settings that switch off or redirect dependency installation. A disposable gate checkout
+# installs what its recipe declares, so an exported `UV_NO_SYNC=1` or `PIP_NO_INDEX=1` in the
+# supervisor's shell must not turn a check into a spawn failure. A gate that declares one of these
+# names in env_names keeps it (declared names are part of its environment fingerprint).
+INSTALL_ENV=('UV_NO_SYNC','UV_OFFLINE','UV_FROZEN','UV_LOCKED','UV_NO_INSTALL_PROJECT','UV_NO_INSTALL_WORKSPACE',
+             'UV_NO_INSTALL_LOCAL','UV_NO_INSTALL_PACKAGE','UV_NO_BUILD','UV_NO_BUILD_PACKAGE','UV_NO_INDEX',
+             'VIRTUAL_ENV','PIP_NO_INDEX','PIP_NO_DEPS','PIP_REQUIRE_VIRTUALENV','npm_config_offline',
+             'NPM_CONFIG_OFFLINE','YARN_ENABLE_OFFLINE_MODE','COREPACK_ENABLE_NETWORK')
+
+
+def gate_environment(declared=()):
+    """The ambient environment without undeclared installation switches, and the removed names."""
+    env=dict(os.environ)
+    removed=sorted(name for name in INSTALL_ENV if name in env and name not in set(declared))
+    for name in removed:env.pop(name)
+    return env,removed
+
 
 class Owner:
     def __init__(self,log):

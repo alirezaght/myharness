@@ -486,6 +486,14 @@ review and approval. Planning metadata is never a developer approval question:
    ordinary `writer start` records the `phase IMPLEMENTATION` edge itself under the
    same guards; a Designer route records `phase PSEUDOCODE` before any writer.
 
+A verification-only run, whose implementation already exists in the worktree
+(pre-existing changes, or a whole-MR review), needs no writer. After steps 1-4 it
+walks the ordinary edges with `phase`: `PLANNING → IMPLEMENTATION → VERIFICATION`,
+with `PSEUDOCODE` before `IMPLEMENTATION` on a Designer route and `FINALIZATION`
+before `VERIFICATION` when COMPLEX. Then run the candidate gates and `review-start`.
+`PLANNING → VERIFICATION` is not an edge; its refusal lists the allowed edges and
+this route.
+
 Packet and report authoring may overlap a normal registered ACTIVE writer. Their
 `authoring` response labels the source as an issued observation and grants no
 admission or approval. The template marks begun writer work as `partially_built`;
@@ -600,7 +608,9 @@ attributed and blocks the task. A writer's own checks run with
 `evidence run ... --writer <id>`; without it, a check overlapping an active
 writer's files is refused. `gates run --stage base` runs every base gate and
 lists all failures at once, so each pre-existing failure gets its
-`gates decision` in one pass.
+`gates decision` in one pass. An advisory gate (its CI step never fails the
+pipeline) needs no decision. At candidate, a failure identical to its base failure
+is reported as pre-existing and the stage continues; only new failures stop it.
 Checks are reserved before execution. A failed/interrupted operation is never
 recorded as PASS. No writer or check may be active or unresolved at review or
 approval barriers.

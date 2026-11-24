@@ -71,6 +71,7 @@ def stage_report(st, stage, selected_results=(), selected=()):
             'selected': list(selected), 'completed': [r for r in selected_results if r['status'] == 'PASS'],
             'retained_valid': [g for g, s in states.items() if s == 'valid' and g not in selected],
             'accepted_existing_failures': [g for g,s in states.items() if s=='accepted-existing-failure'],
+            'advisory': [g for g,s in states.items() if s=='advisory'],
             'retained_failed': [g for g, s in states.items() if s == 'failed'],
             'unresolved': [g for g, s in states.items() if s == 'unresolved']+uncertain,
             'unverified': [g for g, s in states.items() if s == 'unverified'],
@@ -96,6 +97,6 @@ def admit_destination(st, context):
         states, _ = _states(st, current, context['stage'])
         status = states[gate['id']]
         if status == 'unresolved':refuse('gate destination is unresolved')
-        if not context.get('explicit') and (status in {'valid', 'accepted-base-decision', 'accepted-existing-failure'} or (status == 'failed' and not context.get('retry_failed'))):
+        if not context.get('explicit') and (status in {'valid', 'accepted-base-decision', 'accepted-existing-failure', 'advisory'} or (status == 'failed' and not context.get('retry_failed'))):
             raise DestinationSettled(gate['id'])
     return _identity(context['manifest'], context['stage'], context['gate'])

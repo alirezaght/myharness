@@ -307,7 +307,10 @@ def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
             facts['checks']['obligations'].append({'id':oid,'category':'ci','units':sorted(selected),'global_required':global_required})
             execution=job['execution'];src={'path':job['source_path'],'sha256':job['source_sha256'],'selector':job['job'],'semantics':'sourced CI execution'}
             b={'id':oid,'global_required':global_required,'category':'ci','units':sorted(set(job['units'])|selected),'required':True,**execution,'sources':[], 'required_scope':sorted(set(job['inputs']+[d['path'] for d in job['dependencies']])), 'source_chain':[src]+[{'path':d['path'],'sha256':d['sha256'],'selector':job['job'],'semantics':'sourced CI dependency'} for d in job['dependencies'] if d['path']!=src['path']],'obligation_ids':[oid]}
+            if job.get('advisory'):b.update(required=False,advisory=job['advisory'])
+            if job.get('advisory_steps'):b['advisory_steps']=job['advisory_steps']
             b['execution_signature']=digest(b);facts['checks']['bindings'].append(b)
+    names.update(advisory_bindings(scan,facts,ci,inside))
     facts['ci_observations']=ci
     progress.report('inventory-relevance',count=len(ci['obligations']),force=True)
     projected=Relevance.project_task(facts)
@@ -364,6 +367,37 @@ def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
             'auxiliary':{'loc':loc,'hook':hooks[0] if hooks else None,'contracts':contracts,'other_ci':sorted(other_ci)}}
 
 
+def advisory_bindings(scan,facts,ci,inside):
+    """A check the repository configures (for example import-linter in pyproject.toml) that its CI
+    runs only as an advisory step is informational, not a required gate.
+
+    The CI definitions and every script they run or source are read and bound as rule sources,
+    so a recipe change that makes the step blocking invalidates the manifest."""
+    import al_ci_advisory as Advisory
+    candidates=[b for b in facts['checks']['bindings'] if b['category']!='ci' and b.get('argv') and not b.get('advisory') and not b.get('runner_resource')]
+    entries=Advisory.ci_entries(ci) if candidates else []
+    bound=set()
+    if not entries:return bound
+    def read(path):
+        if inside(path) or scan.observe_path(path)['state']!='regular':return None
+        try:return scan.capture_bytes(path,required=True,rule=True).decode('utf-8')
+        except UnicodeError:return None
+    complete=Advisory.complete(ci)
+    for binding in candidates:
+        names=Advisory.tool_names(binding['argv'])
+        result=Advisory.classify(entries,names,read) if names else None
+        if not result or not result['advisory']:continue
+        reasons='; '.join(sorted({m['reason'] for m in result['mentions']}))
+        note='' if complete else ' (CI inventory incomplete: unread definitions were not inspected)'
+        binding.update(required=False,advisory='CI runs '+'/'.join(sorted(names))+' only as an advisory step: '+reasons+note)
+        for path in result['sources']:
+            record={'path':path,'sha256':hashlib.sha256(scan.capture_bytes(path,required=True,rule=True)).hexdigest(),
+                    'selector':'advisory CI recipe','semantics':'advisory CI recipe'}
+            if record not in binding['source_chain']:binding['source_chain'].append(record)
+            bound.add(path)
+    return bound
+
+
 def gaps(st,m,anticipated=(),*,admission=True):
     progress.report('inventory-validate',count=len(m.get('paths',[])),force=True)
     expected=inventory(st,[*m.get('paths',[]),*anticipated],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded');out=[]
@@ -379,6 +413,17 @@ def gaps(st,m,anticipated=(),*,admission=True):
         if needed and not active:out.append('N/A contradicts known '+category+' obligation')
     out.extend(Coverage.current_gaps(expected['repository_facts'],expected['service_coverage'],m,admission=admission))
     out.extend(CI.gaps(expected['ci'],gates,projection=expected['relevance_projection']))
+    # Only an independently reconstructed advisory step can make a gate informational.
+    bindings={tuple(b['obligation_ids']):b for b in expected['service_coverage']['required_bindings']}
+    for gate in gates:
+        if 'advisory' not in gate:continue
+        if gate.get('obligation_ids'):
+            binding=bindings.get(tuple(gate['obligation_ids']))
+            sourced=bool(binding) and binding.get('advisory')==gate['advisory'] and not Coverage.validate_check_binding(binding,gate)
+        else:
+            source=gate.get('source') or {}
+            sourced=any(o.get('advisory')==gate['advisory'] and o['source_path']==source.get('path') and o['job']==source.get('job') for o in expected['ci']['obligations'])
+        if not sourced:out.append('advisory gate has no sourced advisory CI step: '+gate['id'])
     return sorted(set(out))
 
 

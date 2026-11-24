@@ -34,7 +34,9 @@ def validate_check_binding(expected,gate):
     gaps=[]
     for key in ('argv','cwd','execution_kind','category'):
         if gate.get(key)!=expected[key]:gaps.append('check '+key+' differs from sourced execution: '+expected['id'])
-    if gate.get('required') is not True or gate.get('applicability')!='APPLICABLE':gaps.append('required executable check was disabled: '+expected['id'])
+    # A check whose sourced CI step is advisory is informational (required=false); any other stays required.
+    if gate.get('required') is not expected.get('required',True) or gate.get('applicability')!='APPLICABLE':gaps.append('required executable check was disabled: '+expected['id'])
+    if gate.get('advisory')!=expected.get('advisory'):gaps.append('check advisory status differs from sourced CI: '+expected['id'])
     for key in ('units','env_names'):
         if not set(expected[key])<=set(gate.get(key,[])):gaps.append('check omits '+key+': '+expected['id'])
     if not all_within(gate.get('scope',[]),expected['required_scope']):gaps.append('check omits required scope: '+expected['id'])
