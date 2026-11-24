@@ -178,6 +178,21 @@ def test_a_failure_is_reused_but_infra_is_not_stored(cli, repo, state_file, tmp_
     assert code == 1 and "reused from" not in out  # INFRA is executed again
 
 
+def test_rerunning_a_failed_area_in_the_same_run_executes_and_replaces_the_record(cli, repo, state_file, tmp_path):
+    """A new run reuses a cached FAIL, but running the area again after it failed in this run
+    is a retry (a flake or a timeout on a busy host): it executes, and its PASS is cached."""
+    marker = tmp_path / "ran-once"
+    flaky = [PY, "-c", "import os,sys; first=not os.path.exists(sys.argv[1]); open(sys.argv[1],'w').close(); "
+                       "print('1 passed'); sys.exit(1 if first else 0)", str(marker)]
+    cli("start", "--spec", SPEC)
+    assert cli("evidence", "run", "--area", "unit", "--scope", "svc", "--", *flaky)[0] == 1
+    code, out, _ = cli("evidence", "run", "--area", "unit", "--scope", "svc", "--", *flaky)
+    assert code == 0 and "reused from" not in out
+    cli("--session", "al-other", "start", "--spec", SPEC)
+    code, out, _ = cli("--session", "al-other", "evidence", "run", "--area", "unit", "--scope", "svc", "--", *flaky)
+    assert code == 0 and "reused from" in out and "(E2)" in out
+
+
 def test_never_store_infra_torn_or_timeout(repo, tmp_path):
     log = tmp_path / "log"
     log.write_text("x\n")

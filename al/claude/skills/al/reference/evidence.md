@@ -58,7 +58,9 @@ moved while it ran.
 The store lives in the git common directory (`.git/al-action-cache`), so every
 worktree of the repository shares it. Records are immutable and content-addressed,
 written lock-free with an atomic rename and bounded by LRU (`AL_ACTION_CACHE_MAX`,
-default 4096 records). `--fresh` executes and replaces the record.
+default 4096 records). `--fresh` executes and replaces the record, and so does running
+an area again after its latest attempt in this run did not pass (a retry after a flake
+or a timeout): only a new run reuses a cached FAIL.
 
 A check that reads undeclared state (network, time, randomness) opts out with
 `--non-hermetic` on `evidence plan` or `evidence run`; `--no-cache` skips the cache
