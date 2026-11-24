@@ -141,3 +141,14 @@ def test_ordinary_reader_size_and_stability(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "read", changing)
     with pytest.raises(ValueError, match="unstable source"):
         read_ordinary_text(tmp_path, "input", 1024)
+
+
+def test_described_by_text_is_compact_but_searchable():
+    """#31: the stored described-by copy keeps each word once, not 8 KiB of source."""
+    body = "".join(f"def handler_{i}(request):\n    return render(request)\n" for i in range(400))
+    raw = ('"""Order service."""\n' + body).encode()
+    source = SourceVersion("s", "v", "pkg/orders.py", "python", "", raw, {})
+    described = next(a for a in extract_source(source).assertions if a.predicate == "described-by")
+    assert len(described.text) <= 2048 and described.text.startswith("Order service")
+    assert "handler_0" in described.text and described.text.count("request") == 1
+    assert (described.start_byte, described.end_byte) == (0, 8192)

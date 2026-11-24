@@ -27,9 +27,17 @@ def test_reports_show_each_check_result_provenance(controller, sample_repo, monk
 
     _, eid = approved_execution(controller, sample_repo, monkeypatch)
     ran = {"id": "E1", "area": "unit", "status": "PASS", "scope": ["src"], "validity": "VALID"}
-    reused = dict(ran, id="E2", area="lint", provenance={
-        "mode": "reused", "origin": {"run": "run-0", "entry": "E9", "session": "s"},
-        "tree": "ab" * 20, "key": "k"})
+    reused = dict(
+        ran,
+        id="E2",
+        area="lint",
+        provenance={
+            "mode": "reused",
+            "origin": {"run": "run-0", "entry": "E9", "session": "s"},
+            "tree": "ab" * 20,
+            "key": "k",
+        },
+    )
     put_entity(controller.conn, eid, "test", "E1", ran)
     put_entity(controller.conn, eid, "test", "E2", reused)
     report = completion_report(controller.conn, eid)
@@ -38,7 +46,10 @@ def test_reports_show_each_check_result_provenance(controller, sample_repo, monk
     assert texts["E2"] == "reused from run run-0 (E9) on the same input tree " + "ab" * 6
     assert report["al_tests"]["provenance"] == {"ran": 1, "reused": 1, "running": 0}
     view = execution_view(controller.conn, eid)
-    assert {c["id"]: c["provenance"]["mode"] for c in view["checks"]} == {"E1": "ran", "E2": "reused"}
+    assert {c["id"]: c["provenance"]["mode"] for c in view["checks"]} == {
+        "E1": "ran",
+        "E2": "reused",
+    }
     assert view["check_provenance"]["reused"] == 1
     assert view["al_live"] is None and view["question_answers"] == []
 

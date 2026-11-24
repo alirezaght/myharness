@@ -28,8 +28,12 @@ darwin = pytest.mark.skipif(sys.platform != "darwin", reason="macOS sandbox-exec
 
 def git(cwd, *args):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    env.update(GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@x.invalid", GIT_COMMITTER_NAME="t",
-               GIT_COMMITTER_EMAIL="t@x.invalid")
+    env.update(
+        GIT_AUTHOR_NAME="t",
+        GIT_AUTHOR_EMAIL="t@x.invalid",
+        GIT_COMMITTER_NAME="t",
+        GIT_COMMITTER_EMAIL="t@x.invalid",
+    )
     result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, env=env)
     assert result.returncode == 0, result.stderr
     return result.stdout.decode().strip()
@@ -80,7 +84,10 @@ def test_grants_name_exactly_the_cache_paths(repository, service):
         str(store),
     )
     assert grants.sockets == (str(service / "s"),)
-    assert dict(grants.environment) == {"AL_SNAPSHOT_OBJECTS": "private", "AL_SERVICE_SNAPSHOT": str(service)}
+    assert dict(grants.environment) == {
+        "AL_SNAPSHOT_OBJECTS": "private",
+        "AL_SERVICE_SNAPSHOT": str(service),
+    }
     for path in grants.writable:
         assert Path(path).is_dir() and not Path(path).is_symlink()
     assert (git_dir / "al-snapshot").stat().st_mode & 0o777 == 0o700
@@ -101,8 +108,16 @@ def test_linux_bubblewrap_binds_exactly_the_grants_after_the_read_only_git(repos
     scratch = tmp_path / "operation/tmp"
     scratch.mkdir(parents=True)
     profile = OperationIsolation(
-        str(tmp_path / "operation/operation.sb"), str(repository), (), (str(repository / ".git"),), (),
-        str(scratch), None, None, "Linux", al_writable=grants.writable,
+        str(tmp_path / "operation/operation.sb"),
+        str(repository),
+        (),
+        (str(repository / ".git"),),
+        (),
+        str(scratch),
+        None,
+        None,
+        "Linux",
+        al_writable=grants.writable,
     )
     argv = operation_argv(profile, ["true"])
     binds = [argv[i + 1] for i, token in enumerate(argv) if token == "--bind"]
@@ -163,7 +178,12 @@ ALLOWED = {"snapshot dir", "snapshot ref", "action cache", "analysis store", "se
 def test_macos_profile_admits_exactly_the_grants(repository, service, tmp_path):
     grants = al_grants(repository, service_directory=service)
     profile = prepare_operation_isolation(
-        repository, writable=[], protected=[], hidden=[], directory=tmp_path / "operation", al_grants=grants
+        repository,
+        writable=[],
+        protected=[],
+        hidden=[],
+        directory=tmp_path / "operation",
+        al_grants=grants,
     )
     foreign_root = Path(tempfile.mkdtemp(prefix="alf-", dir="/tmp")).resolve()
     foreign = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -172,8 +192,16 @@ def test_macos_profile_admits_exactly_the_grants(repository, service, tmp_path):
     try:
         process = operation_popen(
             profile,
-            [sys.executable, "-I", "-c", PROBE, str(repository / ".git"), str(service), grants.writable[3],
-             str(foreign_root / "f")],
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                PROBE,
+                str(repository / ".git"),
+                str(service),
+                grants.writable[3],
+                str(foreign_root / "f"),
+            ],
             cwd=repository,
             env=safe_environment() | {"TMPDIR": profile.temporary},
             stdout=subprocess.PIPE,
@@ -198,8 +226,16 @@ def test_macos_without_grants_denies_them_all(repository, service, tmp_path):
     )
     process = operation_popen(
         profile,
-        [sys.executable, "-I", "-c", PROBE, str(repository / ".git"), str(service), grants.writable[3],
-         str(service / "t")],
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            PROBE,
+            str(repository / ".git"),
+            str(service),
+            grants.writable[3],
+            str(service / "t"),
+        ],
         cwd=repository,
         env=safe_environment() | {"TMPDIR": profile.temporary},
         stdout=subprocess.PIPE,
@@ -214,7 +250,8 @@ SNAPSHOT = r"""
 import json, sys
 sys.path.insert(0, sys.argv[1])
 import al_snapshot
-print(json.dumps({'tree': al_snapshot.snapshot(), 'subset': al_snapshot.input_tree({}, ['app.py'])}))
+print(json.dumps({'tree': al_snapshot.snapshot(),
+                  'subset': al_snapshot.input_tree({}, ['app.py'])}))
 """
 
 
@@ -223,18 +260,36 @@ def test_al_snapshot_inside_the_sandbox_matches_the_unsandboxed_tree(repository,
     """AL captures with its private index and objects only; tree ids are the same (#31)."""
     (repository / "app.py").write_text("print('changed in the working copy')\n")
     (repository / "new.py").write_text("print('untracked')\n")
-    outside = subprocess.run([sys.executable, "-I", "-c", SNAPSHOT, str(SCRIPTS)], cwd=repository,
-                             capture_output=True, env=safe_environment() | {"PATH": os.environ["PATH"]})
+    outside = subprocess.run(
+        [sys.executable, "-I", "-c", SNAPSHOT, str(SCRIPTS)],
+        cwd=repository,
+        capture_output=True,
+        env=safe_environment() | {"PATH": os.environ["PATH"]},
+    )
     assert outside.returncode == 0, outside.stderr
     objects_before = sorted(p.name for p in (repository / ".git/objects").rglob("*"))
     grants = al_grants(repository)
     profile = prepare_operation_isolation(
-        repository, writable=[], protected=[], hidden=[], directory=tmp_path / "operation", al_grants=grants
+        repository,
+        writable=[],
+        protected=[],
+        hidden=[],
+        directory=tmp_path / "operation",
+        al_grants=grants,
     )
-    environment = safe_environment() | {"PATH": os.environ["PATH"], "TMPDIR": profile.temporary,
-                                        **dict(grants.environment)}
-    process = operation_popen(profile, [sys.executable, "-I", "-c", SNAPSHOT, str(SCRIPTS)], cwd=repository,
-                              env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    environment = safe_environment() | {
+        "PATH": os.environ["PATH"],
+        "TMPDIR": profile.temporary,
+        **dict(grants.environment),
+    }
+    process = operation_popen(
+        profile,
+        [sys.executable, "-I", "-c", SNAPSHOT, str(SCRIPTS)],
+        cwd=repository,
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
     stdout, stderr = process.communicate(timeout=60)
     assert process.returncode == 0, stderr
     assert json.loads(stdout) == json.loads(outside.stdout)
@@ -250,7 +305,8 @@ CACHE = r"""
 import json, os, sys, time
 sys.path.insert(0, sys.argv[1])
 import al_action_cache as Cache
-spec = {"area": "svc", "kind": "test", "argv": [sys.executable, "-c", "print('1 passed')"], "cwd": ".",
+spec = {"area": "svc", "kind": "test", "cwd": ".",
+        "argv": [sys.executable, "-c", "print('1 passed')"],
         "scope": ["app.py"], "sources": [], "env": [], "storage": None}
 plan, reason = Cache.evidence_plan({}, spec)
 out = {"key": plan and plan.digest, "reason": reason}
@@ -262,7 +318,8 @@ if plan is not None and sys.argv[2] == "record":
     now = time.time()
     entry = {"id": "E1", "status": "PASS", "exit": 0, "note": "", "counts": {"passed": 1},
              "log_sha256": L.file_sha(log), "started_at": now, "ended_at": now}
-    out["saved"] = Cache.save(plan, entry, log, {"run": "run-standalone", "session": "s", "entry": "E1"})
+    origin = {"run": "run-standalone", "session": "s", "entry": "E1"}
+    out["saved"] = Cache.save(plan, entry, log, origin)
 elif plan is not None:
     hit = Cache.lookup(plan)
     out["origin"] = hit and hit["origin"]
@@ -273,22 +330,43 @@ print(json.dumps(out))
 
 
 @darwin
-def test_a_check_recorded_standalone_is_a_cache_hit_inside_the_harness_sandbox(repository, tmp_path):
+def test_a_check_recorded_standalone_is_a_cache_hit_inside_the_harness_sandbox(
+    repository, tmp_path
+):
     """Same keys inside and outside Harness (#31): a check that already ran on identical
     inputs is found by the contained AL process, and reported as reused."""
     base = safe_environment() | {"PATH": os.environ["PATH"]}
-    recorded = subprocess.run([sys.executable, "-I", "-c", CACHE, str(SCRIPTS), "record", str(tmp_path)],
-                              cwd=repository, capture_output=True, env=base)
+    recorded = subprocess.run(
+        [sys.executable, "-I", "-c", CACHE, str(SCRIPTS), "record", str(tmp_path)],
+        cwd=repository,
+        capture_output=True,
+        env=base,
+    )
     assert recorded.returncode == 0, recorded.stderr
     recorded = json.loads(recorded.stdout)
     assert recorded["saved"] is True, recorded
 
     def contained(grants, name):
-        profile = prepare_operation_isolation(repository, writable=[], protected=[], hidden=[],
-                                              directory=tmp_path / name, al_grants=grants)
-        environment = base | {"TMPDIR": profile.temporary, **dict(grants.environment if grants else ())}
-        process = operation_popen(profile, [sys.executable, "-I", "-c", CACHE, str(SCRIPTS), "lookup"],
-                                  cwd=repository, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        profile = prepare_operation_isolation(
+            repository,
+            writable=[],
+            protected=[],
+            hidden=[],
+            directory=tmp_path / name,
+            al_grants=grants,
+        )
+        environment = base | {
+            "TMPDIR": profile.temporary,
+            **dict(grants.environment if grants else ()),
+        }
+        process = operation_popen(
+            profile,
+            [sys.executable, "-I", "-c", CACHE, str(SCRIPTS), "lookup"],
+            cwd=repository,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
         stdout, stderr = process.communicate(timeout=60)
         assert process.returncode == 0, stderr
         return json.loads(stdout)
@@ -296,7 +374,9 @@ def test_a_check_recorded_standalone_is_a_cache_hit_inside_the_harness_sandbox(r
     inside = contained(al_grants(repository), "granted")
     assert inside["key"] == recorded["key"]
     assert inside["origin"]["run"] == "run-standalone"
-    assert inside["provenance"].startswith("reused from run run-standalone (E1) on the same input tree ")
+    assert inside["provenance"].startswith(
+        "reused from run run-standalone (E1) on the same input tree "
+    )
     # Without the grants the contained process cannot capture its inputs: no cache, it runs.
     ungranted = contained(None, "ungranted")
     assert ungranted["key"] is None and "unavailable" in ungranted["reason"]

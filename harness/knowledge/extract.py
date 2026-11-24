@@ -10,6 +10,29 @@ from harness.knowledge.adapters import extract_record
 from harness.knowledge.code_edges import python_endpoints, script_assertions
 from harness.knowledge.models import Assertion, Extraction, SourceVersion
 
+DESCRIBED_SPAN = 8192
+DESCRIBED_TEXT = 2048
+_WORD = re.compile(r"[^\W\d][\w$-]{2,}")
+
+
+def described_text(text: str) -> str:
+    """The stored text of a `described-by` assertion (#31): each distinct word of the described
+    span once, in first-seen order, at most DESCRIBED_TEXT characters. The assertion's evidence
+    still covers the whole span, and explanations read the source bytes themselves; only the
+    copy kept for display and full-text search is compact (it was the bulk of the database)."""
+    seen, words, size = set(), [], 0
+    for match in _WORD.finditer(text):
+        word = match.group(0)
+        key = word.lower()
+        if key in seen:
+            continue
+        if size + len(word) + 1 > DESCRIBED_TEXT:
+            break
+        seen.add(key)
+        words.append(word)
+        size += len(word) + 1
+    return " ".join(words)
+
 
 def extract_source(source: SourceVersion) -> Extraction:
     if source.kind in {"requirements", "design", "checkpoint", "task-event", "execution-event"}:
@@ -26,9 +49,9 @@ def extract_source(source: SourceVersion) -> Extraction:
             "described-by",
             None,
             locator,
-            text[:8192],
+            described_text(text[:DESCRIBED_SPAN]),
             0,
-            min(len(raw), len(text[:8192].encode())),
+            min(len(raw), len(text[:DESCRIBED_SPAN].encode())),
         )
     ]
     coverage = []

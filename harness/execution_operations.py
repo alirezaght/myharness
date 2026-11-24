@@ -562,6 +562,7 @@ class OperationController:
                     "read_file",
                     "knowledge_query",
                     "knowledge_explain",
+                    "knowledge_consumers",
                     "poll_process",
                     "cancel_process",
                     "diagnostic",
@@ -583,6 +584,12 @@ class OperationController:
                     canonical(
                         {"bundle_hash": result.get("bundle_hash"), "status": "returned"}
                         if name in {"knowledge_query", "knowledge_explain"}
+                        else {
+                            "target": result.get("target"),
+                            "status": result.get("status"),
+                            "consumers": len(result.get("consumers") or []),
+                        }
+                        if name == "knowledge_consumers"
                         else result
                     ),
                     audit,
@@ -592,7 +599,8 @@ class OperationController:
 
     def _dispatch(self, controller, principal, name, a, state):
         root, owner = self.envelope["repository"], principal["thread_id"]
-        if name in {"knowledge_query", "knowledge_explain"}:
+        if name in {"knowledge_query", "knowledge_explain", "knowledge_consumers"}:
+            from harness.knowledge.consumers import consumers
             from harness.knowledge.models import ContextRequest
             from harness.knowledge.policy import derive_scope, policy_digest
             from harness.knowledge.query import explain, query
@@ -601,6 +609,12 @@ class OperationController:
                 raise ValueError("closed knowledge query required")
             if name == "knowledge_explain" and set(a) != {"bundle_hash", "assertion_id"}:
                 raise ValueError("closed knowledge explanation required")
+            if name == "knowledge_consumers" and (
+                not {"target"} <= set(a) <= {"target", "limit"}
+                or not isinstance(a["target"], str)
+                or not a["target"].strip()
+            ):
+                raise ValueError("closed knowledge consumers request required")
             execution = get_execution(controller.conn, self.execution_id)
             try:
                 scope = derive_scope(
@@ -613,6 +627,13 @@ class OperationController:
                         ContextRequest(a.get("query", ""), tuple(a.get("entity_refs", ()))),
                     ).to_dict()
                     if name == "knowledge_query"
+                    else consumers(
+                        controller.conn,
+                        scope,
+                        a["target"],
+                        limit=max(1, min(1000, int(a.get("limit", 200)))),
+                    )
+                    if name == "knowledge_consumers"
                     else explain(controller.conn, scope, a["bundle_hash"], a["assertion_id"])
                 )
                 current_execution, current_state = self.authority(

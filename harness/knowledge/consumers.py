@@ -24,6 +24,8 @@ from harness.knowledge.policy import validate_scope
 from harness.knowledge.sources import read_source
 
 DEFAULT_LIMIT = 200
+# Re-exporting modules (index.ts barrels, `export * from`) are followed this many levels.
+REEXPORT_DEPTH = 5
 
 
 def _snapshot(conn, scope, snapshot_id):
@@ -116,8 +118,21 @@ def consumers(conn, scope, target, *, snapshot_id=None, limit=DEFAULT_LIMIT):
     )
     files, endpoints = resolve_target(layout, target)
     found, gaps = {}, []
+    sources = {}
 
-    def add(row, relation, via, owner):
+    def reexports(row):
+        """Whether the importing statement re-exports (`export ... from`): its consumers then
+        consume the target too (transitively, #31)."""
+        locator = row["locator"]
+        if locator not in sources:
+            try:
+                sources[locator] = read_source(scope.repository, locator, MAX_SOURCE_BYTES)
+            except (OSError, ValueError):
+                sources[locator] = b""
+        span = sources[locator][row["start_byte"] : row["end_byte"]]
+        return span.lstrip().startswith(b"export")
+
+    def add(row, relation, via, owner, through=()):
         importer = row["locator"]
         if importer in files:
             return
@@ -141,6 +156,8 @@ def consumers(conn, scope, target, *, snapshot_id=None, limit=DEFAULT_LIMIT):
             "start_byte": row["start_byte"],
             "end_byte": row["end_byte"],
         }
+        if through:
+            found[key]["through"] = list(through)
 
     for locator in files:
         if locator.endswith(".py"):
@@ -163,21 +180,22 @@ def consumers(conn, scope, target, *, snapshot_id=None, limit=DEFAULT_LIMIT):
                     add(row, "imports", name, locator)
                     break
         elif locator.endswith(SCRIPT_EXTENSIONS):
-            stem = strip_ext(locator)
-            relative = {f"path:{stem}", f"path:{locator}"}
-            relative.update(f"path:{stem}{extension}" for extension in SCRIPT_EXTENSIONS)
-            if posixpath.basename(stem) == "index":
-                relative.add(f"path:{posixpath.dirname(stem)}")
-            for row in _edges(conn, project, "imports", relative):
-                add(row, "imports", row["object"].removeprefix("path:"), locator)
-            specifiers = layout.script_specifiers(locator)
-            scopes = defaultdict(set)
-            for spec, spec_scope in specifiers:
-                scopes[f"import:{spec}"].add(spec_scope)
-            for row in _edges(conn, project, "imports", scopes):
-                allowed = scopes[row["object"]]
-                if "" in allowed or any(row["locator"].startswith(s + "/") for s in allowed):
-                    add(row, "imports", row["object"].removeprefix("import:"), locator)
+            pending, visited = [(locator, ())], {locator}
+            while pending:
+                current, through = pending.pop(0)
+                relation = "imports-via-reexport" if through else "imports"
+                for row, via in _script_importers(conn, project, layout, current):
+                    add(row, relation, via, locator, through)
+                    importer = row["locator"]
+                    if (
+                        importer not in visited
+                        and importer not in files
+                        and len(through) < REEXPORT_DEPTH
+                        and importer.endswith(SCRIPT_EXTENSIONS)
+                        and reexports(row)
+                    ):
+                        visited.add(importer)
+                        pending.append((importer, (*through, importer)))
         subject = (
             "module:"
             + ".".join(PurePosixPath(locator).with_suffix("").parts).removesuffix(".__init__")
@@ -223,6 +241,27 @@ def consumers(conn, scope, target, *, snapshot_id=None, limit=DEFAULT_LIMIT):
         "truncated": len(results) > limit,
         "gaps": gaps,
     }
+
+
+def _script_importers(conn, project, layout, locator):
+    """(edge row, specifier as written) of every static import of a script `locator`."""
+    stem = strip_ext(locator)
+    relative = {f"path:{stem}", f"path:{locator}"}
+    relative.update(f"path:{stem}{extension}" for extension in SCRIPT_EXTENSIONS)
+    if posixpath.basename(stem) == "index":
+        relative.add(f"path:{posixpath.dirname(stem)}")
+    rows = [
+        (row, row["object"].removeprefix("path:"))
+        for row in _edges(conn, project, "imports", relative)
+    ]
+    scopes = defaultdict(set)
+    for spec, spec_scope in layout.script_specifiers(locator):
+        scopes[f"import:{spec}"].add(spec_scope)
+    for row in _edges(conn, project, "imports", scopes):
+        allowed = scopes[row["object"]]
+        if "" in allowed or any(row["locator"].startswith(s + "/") for s in allowed):
+            rows.append((row, row["object"].removeprefix("import:")))
+    return rows
 
 
 def _coverage_status(conn, snapshot):

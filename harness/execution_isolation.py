@@ -579,7 +579,9 @@ def _write_operation_policy(profile, paths, protected, hidden, temporary, sessio
         for path in profile.al_writable:
             rules.append(f"(allow file-write* (subpath {_literal(path)}))")
         for path in profile.al_sockets:
-            rules.append(f"(allow network-outbound (remote unix-socket (literal {_literal(path)})))")
+            rules.append(
+                f"(allow network-outbound (remote unix-socket (literal {_literal(path)})))"
+            )
         for path in [*hidden, profile.policy]:
             rules.append(f"(deny file-read* (subpath {_literal(path)}))")
         Path(profile.policy).write_text("\n".join(rules) + "\n")
