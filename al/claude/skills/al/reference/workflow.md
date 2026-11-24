@@ -493,9 +493,45 @@ A verification-only run, whose implementation already exists in the worktree
 (pre-existing changes, or a whole-MR review), needs no writer. After steps 1-4 it
 walks the ordinary edges with `phase`: `PLANNING → IMPLEMENTATION → VERIFICATION`,
 with `PSEUDOCODE` before `IMPLEMENTATION` on a Designer route and `FINALIZATION`
-before `VERIFICATION` when COMPLEX. Then run the candidate gates and `review-start`.
+before `VERIFICATION` when COMPLEX. Then run the candidate gates and `review-start`;
+`verify` walks the edges, gates and `review-start` itself when no Designer or
+finalization work is pending.
 `PLANNING → VERIFICATION` is not an edge; its refusal lists the allowed edges and
 this route.
+
+### Intent commands (the default path)
+
+Drive the mechanical part of a run with three intent commands. Each one is a
+composition of the fine-grained commands below, run in one invocation under the same
+parser, locks, guards and refusals, so its recorded state, evidence and gate results
+are exactly the fine-grained sequence's. Use the fine-grained commands for
+exceptions and recovery.
+
+- `writer finish --id <id> --outcome success --evidence auto` finishes the writer,
+  then runs `evidence run` for every planned area its recorded changed paths reach
+  (with their prerequisites first; a current VALID PASS is kept), and prints the
+  next step. A check AL refuses while a sibling writer is still ACTIVE is reported
+  as deferred, not failed; `verify` runs it.
+- `verify` does everything required before review: it runs each planned area that
+  is missing or stale, `gates run --stage base --resume` and `gates run --stage
+  candidate --resume`, records the mechanical phase edges (`phase VERIFICATION`;
+  `IMPLEMENTATION` first on a verification-only run) and `review-start`, then prints
+  one summary. It enters VERIFICATION only after every check passed, so a failure
+  leaves the run in its writing phase. Otherwise it refuses with `verify blocked:
+  <blocker>` and `resolve with: <fine-grained command>`: an ACTIVE writer, a failed
+  area, a gate gap, missing behavior observations (`behavior packet` / `behavior
+  observe`), or COMPLEX work still needing `phase FINALIZATION`.
+- `next` prints `recovery next`'s first suggestion; `next --do` runs it when it is a
+  safe deterministic public operation (`gates run`, `evidence run`, `planning
+  packet`, `review-packet`) with the same exact binding as `--recovery-file`. It
+  refuses anything that needs input (a report, a decision, a reconciliation) and
+  names that input and the fine-grained operation.
+
+`approved` from REVIEW records the `phase FINAL_VERIFICATION` edge itself, like
+`writer start` records `phase IMPLEMENTATION`. A typical route is: `writer start`,
+dispatch, `writer finish ... --evidence auto`, `behavior packet` / `behavior
+observe`, `verify`, `next --do` (fresh packet), the fresh review, `review-compare-start`,
+`next --do` (comparison packet), the comparison review, `approved`.
 
 Packet and report authoring may overlap a normal registered ACTIVE writer. Their
 `authoring` response labels the source as an issued observation and grants no

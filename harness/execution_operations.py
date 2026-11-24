@@ -27,6 +27,7 @@ from harness.execution_store import get_execution
 
 READ_COMMANDS = {"show", "status", "review-status", "next", "help", "routing-audit"}
 COMMANDS = READ_COMMANDS | {
+    "verify",
     "artifact",
     "preflight",
     "classify",
@@ -83,6 +84,11 @@ COMMANDS = READ_COMMANDS | {
     "check-reconcile",
     "behavior",
 }
+
+
+def read_only(args):
+    """`next --do` runs the suggested operation, so only a bare `next` reads."""
+    return bool(args) and args[0] in READ_COMMANDS and not (args[0] == "next" and "--do" in args)
 
 
 class OperationController:
@@ -536,7 +542,7 @@ class OperationController:
                     "cancel_process",
                     "diagnostic",
                     "submit_output",
-                } or (name == "al_command" and args[0] in READ_COMMANDS):
+                } or (name == "al_command" and read_only(args)):
                     mode = "read"
                 _, state = self.authority(controller, principal, operation=mode)
                 result = self._dispatch(controller, principal, name, arguments, state)
@@ -898,7 +904,7 @@ class OperationController:
                 if readiness:
                     return readiness
         child_task = None
-        if principal["role"] != "orchestrator" and args[0] not in READ_COMMANDS:
+        if principal["role"] != "orchestrator" and not read_only(args):
             assignment = self.assignments.get(principal["thread_id"])
             if not assignment or len(args) != 4 or args[:3] != ["evidence", "run", "--area"]:
                 raise ValueError(

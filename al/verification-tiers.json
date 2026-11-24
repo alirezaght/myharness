@@ -164,6 +164,10 @@
       "tests": 4,
       "seconds": 21.7
     },
+    "claude:tests/test_intent_commands.py": {
+      "tests": 5,
+      "seconds": 140.0
+    },
     "claude:tests/test_model_slots.py": {
       "tests": 3,
       "seconds": 59.9
@@ -495,6 +499,10 @@
     "codex:tests/test_inspection.py": {
       "tests": 4,
       "seconds": 21.1
+    },
+    "codex:tests/test_intent_commands.py": {
+      "tests": 5,
+      "seconds": 140.0
     },
     "codex:tests/test_launcher_templates.py": {
       "tests": 3,

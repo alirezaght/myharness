@@ -108,6 +108,9 @@ guarded replacement-planning route when new obligations are not covered.
    EVIDENCE block). Report the ledger's id, status and counts; never retype them.
    A rework or correction round runs focused checks only; AL runs the broad
    suites once at the barrier.
+   After you return, the supervisor closes your writer with `writer finish --evidence auto`
+   (it runs the planned areas your changed paths reach) and `verify` (the remaining
+   evidence, gates and review start); do not run those yourself.
 3. Compare the implementation against the pseudocode and the plan.
 
 ## Output EXACTLY

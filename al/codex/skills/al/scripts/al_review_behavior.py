@@ -151,13 +151,9 @@ def packet(st, data):
             "verification_authority",
             "behavior",
             "rework_recovery_lineage",
-            # Checks AL did not verify (#17): factual, reviewer-visible, never blocking.
-            "unverified",
         }
-        # Gate notes AL did not verify are factual, never implementer context (#17).
-        if "unverified" in data:
-            allowed.add("unverified")
-        if set(data) != allowed:
+        # Checks AL did not verify (#17) are reviewer-visible notes that never block.
+        if set(data) - {"unverified"} != allowed:
             refuse("fresh review context contains unsupported inputs")
     return data
 

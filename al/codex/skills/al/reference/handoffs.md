@@ -437,6 +437,11 @@ snapshotted with a writer-bound receipt. Generation does not execute checks,
 finish the writer, prove delivery, or intercept arbitrary host dispatch.
 Regenerate after relevant plan, writer or phase changes.
 
+When the writer returns, close it with `writer finish --id WRITER_ID --outcome
+success --evidence auto`, which runs the registered areas its changed paths reach
+and prints the next step; after the last writer, `verify` runs the remaining
+evidence and the gates and starts review.
+
 An intact generated handoff file is a valid delivery when the host supports
 file-based input; the writer must read the complete file, including every page
 and the managed EVIDENCE block, before work begins. Acknowledge its byte count

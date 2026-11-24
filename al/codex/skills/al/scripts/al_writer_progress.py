@@ -72,6 +72,7 @@ _OPERATIONS = {
     'review-result': 'review result', 'review-compare-result': 'review comparison result',
     'correction': 'correction', 'notes-triage': 'review notes', 'oscillation': 'correction review',
     'conflict-resolved': 'conflict resolution', 'retarget': 'retarget',
+    'verify': 'verify', 'next': 'next step',
 }
 _READ_ACTIONS = {
     ('integration', 'capabilities'), ('integration', 'events'), ('artifact', 'show'),

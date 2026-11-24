@@ -107,7 +107,8 @@ PSEUDOCODE) to IMPLEMENTATION edge itself; a Designer route records `phase PSEUD
 first. Refusals on this path name the next supported command. A verification-only
 run whose implementation already exists in the worktree walks the same edges without
 a writer: `phase IMPLEMENTATION` (after `phase PSEUDOCODE` on a Designer route),
-`phase FINALIZATION` when COMPLEX, then `phase VERIFICATION` and `review-start`.
+`phase FINALIZATION` when COMPLEX, then `phase VERIFICATION` and `review-start`
+(`verify` records these edges itself when no Designer or finalization work is pending).
 Final proof, review and approval enforce unverified-check, link, unclassified-directory,
 outside-layout consumer and CI-inventory gaps only where the change reaches (its paths, their units, the literal
 dependency closure and the links they consume); such gaps elsewhere, including units
@@ -170,6 +171,15 @@ pretending its producer is verified Completed. Operational issues and actual
 specification/developer decisions use separate typed interfaces.
 
 ## 5. Test, repair and review
+
+Use the intent commands by default ([workflow](reference/workflow.md#intent-commands-the-default-path)):
+`writer finish --id ID --outcome success --evidence auto` finishes a writer and runs
+the planned evidence its changed paths reach; `verify` runs the missing or stale
+evidence and the base and candidate gates, then enters VERIFICATION and starts review,
+or refuses naming the blocker and the fine-grained command that resolves it;
+`next --do` runs `recovery next`'s suggestion only when it is a safe deterministic
+operation; `approved` records the FINAL_VERIFICATION edge. Keep the fine-grained
+commands for exceptions and recovery.
 
 Run relevant checks as soon as they are useful, using the generated evidence
 commands. Install locked dependencies in isolated checkouts before package-backed
