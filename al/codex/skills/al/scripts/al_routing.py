@@ -19,6 +19,32 @@ from al_phases import CLASSIFICATIONS, MAIN_PHASES, PATH_TEMPLATE, phase_plan  #
 from al_store import load, save  # noqa: E402
 
 
+def _hard_parts(a, assessment, refuse):
+    """COMPLEX names its hard part: an algorithm, an invariant or a protocol (#30).
+
+    From `--hard-part KIND:NAME`, a reason that starts with `KIND:`, or a source-bound assessment
+    whose new-design hard part is described. Breadth and defect counts are not reasons."""
+    from al_task_risk import named_hard_part, breadth_only
+    values = list(getattr(a, "hard_part", None) or [])
+    if not values and a.reason and a.reason.split(":", 1)[0].strip().lower() in {"algorithm", "invariant", "protocol"}:
+        values = [a.reason]
+    parts = []
+    for value in values:
+        try:
+            parts.append(named_hard_part(value))
+        except ValueError as exc:
+            refuse(str(exc))
+    if not parts and assessment:
+        parts = [{"kind": p["kind"], "name": p["description"].strip()} for p in assessment.get("hard_parts", []) if p.get("new_design")]
+    if not parts:
+        refuse("COMPLEX needs a named hard part: pass --hard-part algorithm|invariant|protocol:<name>. "
+               "Breadth (files, services, modules) and defect or finding counts are not reasons; "
+               "without a hard part classify STANDARD")
+    if a.reason and breadth_only(a.reason) and not getattr(a, "hard_part", None):
+        refuse("the COMPLEX reason argues from breadth or a defect count; name the hard part with --hard-part")
+    return parts
+
+
 def cmd_classify(a, sid):
     """Record the classification, the routing decision and the path AL will run."""
     st = load(sid)
@@ -58,6 +84,9 @@ def cmd_classify(a, sid):
         if a.classification == 'COMPLEX' and not designer:
             refuse('COMPLEX requires a useful pseudocode step')
     if a.classification == "COMPLEX" and not designer: refuse("COMPLEX requires Designer")
+    hard_parts = []
+    if a.classification == "COMPLEX":
+        hard_parts = _hard_parts(a, assessment, refuse)
     if a.classification == "SMALL" and len((a.implementers or "al-engineer").split(",")) != 1: refuse("SMALL requires one writer")
     _, optional, skipped = phase_plan(a.classification, designer)
     impl = [x.strip() for x in (a.implementers or "").split(",") if x.strip()]
@@ -68,6 +97,7 @@ def cmd_classify(a, sid):
         and (not a.reason or st.get("classification_reason") == a.reason)
         and (not a.designer_reason or st.get("designer_reason") == a.designer_reason)
         and (assessment is None or st.get("classification_assessment") == assessment)
+        and st.get("classification_hard_parts", []) == hard_parts
     )
     if unchanged:
         print(f"AL · Task classification unchanged: {a.classification}")
@@ -82,6 +112,10 @@ def cmd_classify(a, sid):
     if assessment is not None:
         st["classification_assessment"] = assessment
     st["designer_required"] = designer
+    if hard_parts:
+        st["classification_hard_parts"] = hard_parts
+    else:
+        st.pop("classification_hard_parts", None)
     st["designer_reason"] = a.designer_reason
     st["skipped_phases"] = skipped
     st["optional_phases"] = optional
@@ -94,6 +128,8 @@ def cmd_classify(a, sid):
     print(f"AL · Task classification: {a.classification}")
     if a.reason:
         print(f"Reason: {a.reason}")
+    for part in hard_parts:
+        print(f"Hard part: {part['kind']}: {part['name']}")
     print(f"Path: {st['path']}")
     if not designer:
         print(f"AL · Designer skipped — {a.designer_reason or 'Architect plan is sufficiently concrete'}")

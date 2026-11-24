@@ -85,7 +85,7 @@ def test_designer_route_writer_refusal_names_the_next_phase_command(cli,repo,tmp
     code,out,err=invoke(cli,*writer,ok=False)
     assert '`spec-gate SPEC_READY`' in str(code)+out+err
     invoke(cli,'spec-gate','SPEC_READY')
-    invoke(cli,'classify','COMPLEX','--designer','yes','--implementers','al-engineer','--reason','Coupled state invariant needs pseudocode.')
+    invoke(cli,'classify','COMPLEX','--designer','yes','--implementers','al-engineer','--reason','Coupled state invariant needs pseudocode.','--hard-part','invariant: coupled coverage state')
     before=state_file().read_bytes()
     code,out,err=invoke(cli,*writer,ok=False)
     assert '`phase PSEUDOCODE`' in str(code)+out+err and state_file().read_bytes()==before

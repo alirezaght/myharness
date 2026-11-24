@@ -201,6 +201,8 @@ def _main():
     s.add_argument("--assessment-file", help="source-bound residual implementation risk")
     s.add_argument("--designer", choices=["yes", "no"], required=True)
     s.add_argument("--implementers"); s.add_argument("--reason"); s.add_argument("--designer-reason")
+    s.add_argument("--hard-part", action="append",
+                   help="COMPLEX only: algorithm|invariant|protocol:<name>; breadth and defect counts are not reasons")
     s.set_defaults(fn=cmd_classify)
     s = sub.add_parser("phase"); s.add_argument("phase"); s.add_argument("--agents")
     s.add_argument("--mode"); s.add_argument("--labels"); s.add_argument("--reason")

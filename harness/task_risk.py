@@ -5,6 +5,7 @@ The caller binds evidence and checks unresolved product decisions separately.
 """
 
 import hashlib
+import re
 from pathlib import Path
 
 # `harness classify --assessment-schema` prints a JSON Schema built from these
@@ -31,7 +32,48 @@ KINDS = {
     "security",
     "distributed",
     "domain",
+    "invariant",
+    "protocol",
 }
+
+
+# COMPLEX requires a named hard part (#30): an algorithm, an invariant or a protocol. Breadth (files,
+# services, modules), and defect or finding counts are never reasons on their own.
+HARD_CLASSES = ("algorithm", "invariant", "protocol")
+_BREADTH = re.compile(
+    r"\b(\d+|many|several|multiple|numerous|lots of|all)\s+(files?|services?|modules?|packages?|components?|"
+    r"repos|repositories|defects?|bugs?|findings?|call[- ]?sites?|places|endpoints?|screens?|tests?)\b"
+    r"|\b(breadth|cross[- ]cutting|large (diff|change|refactor)|file count|defect count|many changes)\b",
+    re.I,
+)
+_HARD_WORDS = re.compile(
+    r"algorithm|invariant|protocol|order|consisten|atomic|idempot|lock|race|concurren|transaction|"
+    r"handshake|coheren|exactly[- ]once|at[- ]least[- ]once|monoton|linearizab|serializab|state machine|"
+    r"merge|schedul|recurs|graph|search|sort|hash|encrypt|sign|auth|quorum|leader|retry|backoff",
+    re.I,
+)
+
+
+def breadth_only(text):
+    """True when the text argues from breadth or defect counts and names no hard part."""
+    return bool(_BREADTH.search(text or "")) and not _HARD_WORDS.search(text or "")
+
+
+def named_hard_part(value):
+    """Parse `KIND:NAME[ — detail]` (KIND = algorithm | invariant | protocol); raise ValueError."""
+    kind, sep, name = (value or "").partition(":")
+    kind, name = kind.strip().lower(), name.strip()
+    if not sep or kind not in HARD_CLASSES or len(name) < 3:
+        raise ValueError(
+            "COMPLEX needs a named hard part: --hard-part algorithm|invariant|protocol:<name> "
+            "(for example `invariant: balance never goes negative under concurrent withdrawals`)"
+        )
+    if breadth_only(name):
+        raise ValueError(
+            "hard part " + repr(name) + " argues from breadth or a defect count; name the algorithm, "
+            "invariant or protocol instead (breadth, services and defect counts are not reasons)"
+        )
+    return {"kind": kind, "name": name}
 
 
 def assess(value, root):
@@ -98,6 +140,11 @@ def assess(value, root):
             or len(part["description"].strip()) < MIN_EXPLANATION
         ):
             raise ValueError("hard parts require a specific design problem, not a topic keyword")
+        if part["new_design"] and breadth_only(part["description"]):
+            raise ValueError(
+                "hard part argues from breadth or a defect count; name the algorithm, invariant or "
+                "protocol (breadth, services and defect counts are not reasons for COMPLEX)"
+            )
     benefit = value["pseudocode_benefit"]
     if not isinstance(benefit, str):
         raise ValueError("pseudocode benefit must be text, empty when unnecessary")

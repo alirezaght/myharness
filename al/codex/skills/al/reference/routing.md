@@ -45,8 +45,17 @@ AL-Architect returns `TASK_CLASSIFICATION`, `IMPLEMENTER` and
 ```
 "${STATE[@]}" classify <SMALL|STANDARD|COMPLEX> --designer <yes|no> \
        --implementers <al-engineer[,al-builder]> \
-       --reason "<classification reason>" --designer-reason "<why / why not>"
+       --reason "<classification reason>" --designer-reason "<why / why not>" \
+       [--hard-part "algorithm|invariant|protocol:<name>"]   # required for COMPLEX
 ```
+
+COMPLEX needs a **named hard part**: the algorithm, the invariant or the protocol
+that is hard to get right (for example `invariant: balance never goes negative
+under concurrent withdrawals`). Give it with `--hard-part`, as a reason that starts
+with `algorithm:`, `invariant:` or `protocol:`, or through an assessment's new-design
+hard part. Breadth (many files, several services or modules) and defect or finding
+counts are **not** reasons: a hard part that argues only from them is refused. Without
+a named hard part, classify STANDARD.
 
 The command prints the classification, the path, and — when the Designer is
 skipped — the reason. A skipped Designer is **expected behaviour, not an error**.
@@ -95,9 +104,10 @@ improve the implementation.
 `Architect → Designer → Engineer + safe independent Builder work → Builder
 finalization → Verify → Architect review`
 
-For a specific new difficult algorithm, coupled invariant, concurrency or
-transaction protocol, security design, or domain rule that remains after
-clarification and inspection. Name why pseudocode helps. A localized change to
+For a named hard part that remains after clarification and inspection: a
+specific new algorithm, a coupled invariant, or a concurrency, transaction or
+security protocol. Name it (`--hard-part`) and why pseudocode helps. The number
+of files, services or earlier defects never makes a task COMPLEX. A localized change to
 an existing state machine or retry implementation may still be SMALL; inherited
 subsystem complexity and keywords are insufficient.
 
