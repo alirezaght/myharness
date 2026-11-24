@@ -25,6 +25,7 @@ def test_handoff_records_the_agent_and_prints_how_to_resume_it(cli, tmp_path, re
     body.write_text('ORIGINAL SPEC: retain exactly.\n')
     _, prompt, err = invoke(cli, 'writer', 'handoff', '--id', 'worker', '--body-file', str(body), '--agent-id', 'agent-b1')
     assert prompt.startswith('ORIGINAL SPEC') and 'resume' not in prompt  # the prompt stays intact
+    assert 'REPOSITORY BRIEF' in prompt and prompt.index('REPOSITORY BRIEF') < prompt.index('EVIDENCE')
     assert 'agent-b1' in err and al_agents.resume_call('agent-b1') in err
     rows = state(cli)['agent_instances']
     assert rows[0]['role'] == 'al-builder' and rows[0]['id'] == 'agent-b1' and rows[0]['writer'] == 'worker'

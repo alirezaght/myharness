@@ -266,6 +266,13 @@ for AL-Architect, never authority, never a finding of record.
   independence is required (the final independent Architect review, or a role
   whose earlier instance is gone) and record it with `agent record --fresh-reason
   "<why>"`.
+- **Repository brief.** `"${STATE[@]}" brief [--paths-file JSON] [--format json]`
+  prints what the change reaches: paths, reached units, consumers, applicable and
+  unverified gates, coverage gaps and notes, and the governing rule files, with
+  the hash of the facts it came from. `writer handoff` injects it automatically;
+  include its output in Architect, Designer and Scout prompts so they do not
+  rediscover the repository by hand. Before gates are planned it names what is
+  missing instead of refusing.
 - A model-availability or entitlement error is NOT an agent failure — handle it
   under **Model policy** above.
 - A model-service content/safety refusal is not an approval request or model

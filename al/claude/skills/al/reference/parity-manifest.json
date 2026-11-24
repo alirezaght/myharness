@@ -17,6 +17,7 @@
     "al_behavior_observations.py",
     "al_behavior_sections.py",
     "al_blob_analysis.py",
+    "al_brief.py",
     "al_check_setup.py",
     "al_checkout_paths.py",
     "al_checkouts.py",
