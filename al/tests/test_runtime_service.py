@@ -173,8 +173,8 @@ def test_runs_pinned_to_different_runtimes_are_isolated(setup):
         setup.run(session, "show", "--json", repo=repo)
     setup.wait(lambda: {row["pin_identity"] for row in setup.control("status")} >= {
         first_pin["pin_identity"], second_pin["pin_identity"]})
-    rows = {row["pin_identity"]: row for row in setup.control("status")
-            if row["launcher_identity"] == setup.control("status")[-1]["launcher_identity"]}
+    # Each release has its own launcher identity, so index every live service by pin.
+    rows = {row["pin_identity"]: row for row in setup.control("status")}
     assert rows[first_pin["pin_identity"]]["pid"] != rows[second_pin["pin_identity"]]["pid"]
     for session, repo, pin in (("s1", setup.repo, first_pin), ("s2", worktree, second_pin)):
         before = setup.served(pin["pin_identity"])
