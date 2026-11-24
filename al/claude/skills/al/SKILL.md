@@ -124,7 +124,8 @@ check planning. Preserve actual changed paths and root/shared obligations.
 continue on the admitted plan; add paths with `gates discover --extend current
 --paths-file <json>`, and use `--bounded` on large monorepos (see gates). Pass
 `--output <file>` to `gates discover` or `gates plan` to write the manifest JSON to a
-file and keep stdout to a one-line summary. A CI step whose failure never fails the
+file and keep stdout to a one-line summary (a run started on AL 0.1.25 or earlier keeps its pinned
+runtime, which has no `--output`). A CI step whose failure never fails the
 pipeline (`allow_failure`, `continue-on-error`, `cmd || true`, a shell function that
 swallows the failure) becomes an informational gate, and a candidate failure
 identical to its base failure is reported as pre-existing: only new failures block.

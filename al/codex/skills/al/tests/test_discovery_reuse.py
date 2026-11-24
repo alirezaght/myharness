@@ -254,6 +254,27 @@ def test_output_writes_the_manifest_and_prints_one_summary_line(cli, repo, tmp_p
     assert json.loads(plan_target.read_text())['gates'] == manifest['gates']
 
 
+def test_output_is_accepted_on_every_discover_path(cli, repo, tmp_path):
+    """--output works with --bounded, with --extend and with both, through the pinned run path (#23)."""
+    _fixture(repo)
+    start(cli)
+    first = tmp_path / 'bounded.json'
+    code, out, err = invoke(cli, 'gates', 'discover', '--paths-file', str(_paths(tmp_path, ['packages/shared/src/common.py'])),
+                            '--bounded', '--output', str(first))
+    assert out.strip().startswith(f'gate manifest {first} sha256=')
+    assert json.loads(first.read_text())['discovery_mode'] == 'bounded'
+    extended = tmp_path / 'extended.json'
+    code, out, err = invoke(cli, 'gates', 'discover', '--output', str(extended), '--extend', 'current', '--bounded',
+                            '--paths-file', str(_paths(tmp_path, ['services/b/src/app.py'], 'more.json')))
+    assert out.strip().startswith(f'gate manifest {extended} sha256=')
+    manifest = json.loads(extended.read_text())
+    assert {'packages/shared/src/common.py', 'services/b/src/app.py'} <= set(manifest['paths'])
+    plain = tmp_path / 'extended-default.json'
+    invoke(cli, 'gates', 'discover', '--extend', str(extended), '--paths-file', str(_paths(tmp_path, ['services/a/src/app.py'], 'third.json')),
+           '--output', str(plain))
+    assert 'services/a/src/app.py' in json.loads(plain.read_text())['paths']
+
+
 def test_moved_base_ref_names_the_pinned_sha_and_the_rerun(cli, repo, tmp_path):
     _fixture(repo)
     st = start(cli)

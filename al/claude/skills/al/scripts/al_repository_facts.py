@@ -601,16 +601,47 @@ def collect_from_snapshot(scan):
     facts['dependencies']=imports.analyze(facts,scan)
     facts['unsupported_boundaries']=[gap('opaque-boundary',p,'opaque child content cannot be enumerated') for p in sorted(scan.opaque)]
     facts['rule_sources']=[{'path':p,'sha256':scan.files.records[p]['sha256']} for p in sorted(scan.rules) if p in scan.files]
-    progress.report('inventory-provenance',force=True)
-    facts['scan_inputs']=[{'path':p,'snapshot':which,'sha256':record['sha256']} for which,files in [('base',scan.base),('current',scan.files)] for p,record in sorted(files.records.items()) if p.endswith(SOURCE_SUFFIXES) and any((p.endswith('.py') and any(within(r,p) for r in u['source_roots'])) or (not p.endswith('.py') and within(u['path'],p)) for u in facts['units'])]
+    facts['scan_inputs']=scan_inputs(scan,facts['units'])
     facts['enumeration']['absent_paths']=sorted(scan.absent)
     facts['scan']={'stable':True,'limits':LIMITS,'membership_digest':digest(scan.members),'provenance_digest':digest(facts['scan_inputs'])}
     selected=set(facts['dependencies']['potential_services']) if facts['dependencies']['uncertainties'] else set(facts['dependencies']['known_affected'])|set(facts['dependencies'].get('policy_selection',[]))
     facts['dependencies']['coverage_inputs']=sorted({row[1] for row in facts['dependencies']['source_membership'] if row[2] in selected}|set(facts['dependencies'].get('affected_source_paths',[])))
     facts['question']={'changed_paths':scan.paths,'directory_paths':sorted(p for p in scan.paths if scan.observe_path(p)['state']=='directory')}
     facts['capture']=scan.capture_metadata()
-    facts['dependencies']['boundary_consumers']={p:imports._referencing(scan,p,p) for p in sorted(set(scan.opaque)|{g['path'] for g in scan.gaps if g['code'] in {'symlink-boundary','unsafe-boundary','gitlink-boundary'}})}
+    facts['dependencies']['boundary_consumers']=boundary_consumers(scan)
     validate_facts(facts);return facts
+
+
+def scan_inputs(scan,units):
+    """Scanned source inputs bound to some unit: Python sources under a unit's source
+    roots, other sources under a unit directory.
+
+    Membership is answered by ancestor lookup (O(path depth) per file), not by
+    comparing every scanned file with every unit (#23)."""
+    python=PathScope(r for u in units for r in u['source_roots'])
+    other=PathScope(u['path'] for u in units)
+    rows=[(which,p,record) for which,files in [('base',scan.base),('current',scan.files)] for p,record in sorted(files.records.items()) if p.endswith(SOURCE_SUFFIXES)]
+    out=[]
+    progress.report('inventory-provenance',count=0,total=len(rows),force=True)
+    for index,(which,p,record) in enumerate(rows,1):
+        if (python if p.endswith('.py') else other).covers(p):
+            out.append({'path':p,'snapshot':which,'sha256':record['sha256']})
+        if index%2048==0:progress.report('inventory-provenance',count=index,total=len(rows))
+    progress.report('inventory-provenance',count=len(rows),total=len(rows),force=True)
+    return out
+
+
+def boundary_consumers(scan):
+    """Literal consumers of every opaque, symlink, unsafe or gitlink boundary.
+
+    One shared pass over repository sources answers all boundaries: a pass per
+    boundary re-read every current file and every base blob once per boundary, which
+    on large repositories with many boundaries dominated discovery (#23)."""
+    import al_python_imports as imports
+    boundaries=sorted(set(scan.opaque)|{g['path'] for g in scan.gaps if g['code'] in {'symlink-boundary','unsafe-boundary','gitlink-boundary'}})
+    if not boundaries:return {}
+    found=imports._referencing_many(scan,boundaries,stage='inventory-boundaries')
+    return {p:[c for c in found[p] if c!=p] for p in boundaries}
 
 
 def validate_facts(facts):

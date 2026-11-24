@@ -31,6 +31,7 @@ _STAGES = {
     'inventory-imports': 'analyzing source imports',
     'inventory-references': 'finding literal references to changed artifacts',
     'inventory-provenance': 'binding scanned inputs to units',
+    'inventory-boundaries': 'finding source consumers of repository boundaries',
     'inventory-coverage': 'assessing affected services and coverage',
     'inventory-ci': 'evaluating CI jobs, includes and rules',
     'inventory-relevance': 'projecting task-relevant checks',
@@ -133,8 +134,10 @@ def _heartbeat(state, stop):
             if state['last'] is not None and now - state['last'] < _HEARTBEAT:
                 continue
             description = _STAGES.get(state['stage'], 'working')
-            count = state.get('count')
-            counted = f' · {count} items processed so far' if type(count) is int else ''
+            # Items processed out of the phase total (when the phase knows it) tell a
+            # slow phase from a stuck one: the count must keep moving between beats.
+            counted = _counted(state.get('count'), state.get('total'))
+            counted = counted + ' so far' if counted else ''
             state['last'] = now
             _emit(state, description + ' · still working', counted, now)
         except Exception:
@@ -152,7 +155,7 @@ def operation_progress(operation):
         yield
         return
     try:
-        state = {'started': time.monotonic(), 'last': None, 'stage': None, 'operation': label, 'count': None}
+        state = {'started': time.monotonic(), 'last': None, 'stage': None, 'operation': label, 'count': None, 'total': None}
         token = _ACTIVE.set(state)
     except Exception:
         # Diagnostics cannot change the outcome when even their clock is unavailable.
@@ -193,6 +196,7 @@ def report(stage, *, count=None, total=None, force=False):
         now = time.monotonic()
         changed = state['stage'] != stage
         state['count'] = count if type(count) is int else None
+        state['total'] = total if type(total) is int else None
         if (not force and not changed and state['last'] is not None
                 and now - state['last'] < _INTERVAL):
             return

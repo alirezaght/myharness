@@ -120,3 +120,66 @@ def parse_python(data, memo=None):
     if key not in memo:
         memo[key] = ast.parse(data)
     return memo[key]
+
+
+class DerivedStore:
+    """Small content-addressed records shared by later commands of the same repository.
+
+    A record is the output of a deterministic analysis keyed by every input it read
+    (captured content hashes plus the runtime implementation digest), so a later
+    command that captured the same inputs reuses it instead of recomputing it; any
+    changed input is a different key and therefore a miss. Records carry their own
+    key and payload digest; an unreadable, foreign or corrupt record is a miss.
+    Writes are best-effort and atomic. AL_ANALYSIS_CACHE=0 disables reads and writes."""
+    KEEP = 8
+
+    def __init__(self, namespace):
+        self.namespace = namespace
+
+    def _directory(self):
+        import al_store
+        return al_store.RUNTIME_DIR / 'derived' / self.namespace
+
+    def _enabled(self):
+        return os.environ.get('AL_ANALYSIS_CACHE', '1') != '0'
+
+    def load(self, key):
+        if not self._enabled():
+            return None
+        identity = content_key(key)
+        try:
+            path = self._directory() / (identity + '.json')
+            if path.is_symlink() or not path.is_file():
+                return None
+            row = json.loads(path.read_bytes())
+            if not isinstance(row, dict) or row.get('key') != identity:
+                return None
+            if hashlib.sha256(_encoding(row['value'])).hexdigest() != row.get('digest'):
+                return None
+            return row['value']
+        except (OSError, ValueError, TypeError, KeyError, RecursionError):
+            return None
+
+    def store(self, key, value):
+        if not self._enabled():
+            return
+        import tempfile
+        identity = content_key(key)
+        try:
+            directory = self._directory()
+            directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+            data = json.dumps({'key': identity, 'digest': hashlib.sha256(_encoding(value)).hexdigest(), 'value': value},
+                              sort_keys=True, separators=(',', ':')).encode()
+            fd, temporary = tempfile.mkstemp(dir=str(directory), prefix='.' + identity[:16] + '.', suffix='.tmp')
+            try:
+                with os.fdopen(fd, 'wb') as handle:
+                    handle.write(data)
+                os.replace(temporary, directory / (identity + '.json'))
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            records = sorted(directory.glob('*.json'), key=lambda p: p.stat().st_mtime, reverse=True)
+            for stale in records[self.KEEP:]:
+                stale.unlink(missing_ok=True)
+        except (OSError, ValueError, TypeError, RecursionError):
+            return
