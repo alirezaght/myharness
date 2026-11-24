@@ -7,6 +7,8 @@ from pathlib import Path
 KINDS = {
     "task-attribution-v1": {
         "task_hash",
+        # Written by every current start (al_task_attribution.capture_attribution).
+        "captured_requirement_hash",
         "baseline_capture_ref",
         "baseline_changed_paths",
         "admitted_paths",
@@ -36,6 +38,8 @@ KINDS = {
         "reason",
     },
 }
+# Fields earlier runtimes did not write yet; their records stay recognizable.
+OPTIONAL = {"task-attribution-v1": {"captured_requirement_hash"}}
 PREPARATION = set(
     """schema_version kind repository_identity session_id run_id task_hash destination spec
 evidence_plan_digest runtime_binding command_profiles configuration_bindings
@@ -141,7 +145,7 @@ def validate(value, provenance):
             }
         if (
             not isinstance(data, dict)
-            or set(data) != fields
+            or not fields - OPTIONAL.get(ref["kind"], set()) <= set(data) <= fields
             or data["schema_version"] != int(ref["kind"].rsplit("-v", 1)[1])
             or data["kind"] != ref["kind"]
             or binding != expected

@@ -220,6 +220,7 @@ def status(st):
     return {'base':base_gaps(st),'candidate':candidate_gaps(st),'recovery':descriptors(st),'evidence':runs,
             'baseline_exceptions':Exceptions.view(st,manifest(st)),'unverified':unverified(st),
             'coverage_blockers':__import__('al_service_coverage').admission_gaps(st),
+            'coverage_notes':__import__('al_service_coverage').coverage_notes(st),
             'coverage_resolution':'Complete repository, consumer and required-check discovery before admission'}
 @S.decision
 def candidate_gaps(st):

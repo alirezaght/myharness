@@ -29,7 +29,8 @@ recovery_replans resumes retry_history native_conversation_id integration gate_r
 runtime_origin proof_admission planning_authorship planning_history behavior_observations editorial_history
 conflict_resolution conflict_resolution_history notes_triage publication_authorizations publication_records
 baseline_exceptions gate_retentions delivery_completion_history rework_recovery
-classification_assessment code_assessments business_acceptances'''.split())
+classification_assessment code_assessments business_acceptances
+implementation_readiness operational_issues'''.split())
 
 
 def decode(raw):
@@ -230,6 +231,16 @@ def _modern(value, path, provenance):
     for field in ('code_assessments','business_acceptances'):
         if field in value and not isinstance(value[field],list):
             raise ValueError('invalid acceptance activity reference list')
+    # Proof admission records implementation readiness debt and typed operational issues.
+    readiness = value.get('implementation_readiness')
+    if readiness is not None and (not isinstance(readiness, dict) or readiness.get('schema_version') != 1
+                                  or not isinstance(readiness.get('obligations'), list)
+                                  or not isinstance(readiness.get('paths'), list)):
+        raise ValueError('invalid implementation readiness activity record')
+    issues = value.get('operational_issues')
+    if issues is not None and (not isinstance(issues, dict) or any(
+            not isinstance(row, dict) or row.get('id') != key for key, row in issues.items())):
+        raise ValueError('invalid operational issue activity registry')
     if integration is not None:
         if not isinstance(integration, dict) or integration.get('schema_version') != 1:
             raise ValueError('unknown execution integration')

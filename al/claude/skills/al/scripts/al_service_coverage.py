@@ -111,12 +111,32 @@ def current_gaps(facts,assessment,manifest,*,admission=True):
     return out
 
 
+def describe_gap(g):
+    return g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason']
+
+
 def readiness_gaps(value,gates):
-    """Reconstruct coverage before granting any admission; sentinels confer no authority."""
+    """Reconstruct coverage before granting any admission; sentinels confer no authority.
+
+    Only gaps in the change's scope are listed: gaps outside the paths and units the change
+    reaches are recorded as the assessment's verification notes and never block."""
     validate_declaration(value,gates)
     a=value['assessment']
     if a['outcome']!='incomplete':return []
-    return sorted(set('coverage incomplete: '+g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason'] for g in a['gaps']))
+    return sorted(set('coverage incomplete: '+describe_gap(g) for g in a['gaps']))
+
+
+def notes(value):
+    """Verification notes: coverage gaps outside the change's reach (never blocking)."""
+    if not isinstance(value,dict):return []
+    return sorted(set('coverage note (outside the change\'s reach; not verified by this task): '+describe_gap(g)
+                      for g in value.get('assessment',{}).get('coverage_notes',[])))
+
+
+def coverage_notes(st):
+    import al_artifacts as A
+    refs=st.get('gate_manifests',[])
+    return notes(A.read_json(refs[-1]).get('service_coverage')) if refs else []
 
 
 def admission_gaps(st,*,current=False):
@@ -135,13 +155,60 @@ NEXT_COVERAGE_STEP=('next: repair the named gaps, then rediscover task-relevant 
                     '`gates discover --paths-file <json> --base <pinned-base>` and '
                     '`gates plan --file <manifest>`; `recovery next` names any earlier prerequisite')
 
+BOUNDARY_REPAIR=('AL cannot enumerate this link/gitlink the change reaches: run AL rooted in its target '
+                 'repository, or replace the link with ordinary files')
+PACKAGE_REPAIR=("make the unit's package manager, workspace members and scripts literal and available "
+                '(the reason names what is missing)')
+CHECK_REPAIR="declare a supported check for the unit (manifest test/lint/architecture configuration or a CI job)"
+REPAIRS={
+    'symlink-boundary':BOUNDARY_REPAIR,'gitlink-boundary':BOUNDARY_REPAIR,'opaque-boundary':BOUNDARY_REPAIR,
+    'unsafe-boundary':BOUNDARY_REPAIR,'base-symlink':BOUNDARY_REPAIR,
+    'package-execution-pending':PACKAGE_REPAIR,'package-discovery-unavailable':PACKAGE_REPAIR,
+    'package-script-nonliteral':"replace the nonliteral package script with a literal command",
+    'package-semantic-unverified':"give the unit's package script a supported, finite check configuration",
+    'missing-check':CHECK_REPAIR,'missing-verification-check':CHECK_REPAIR,'missing-architecture-check':CHECK_REPAIR,
+    'unsupported-architecture-chain':CHECK_REPAIR,
+    'unclassified-unit':'add a supported manifest (pyproject.toml, package.json or go.mod) to the directory',
+    'unknown-ci-inventory':'the CI definition the change edits cannot be enumerated: keep it within the supported definition limits',
+    'unsupported-ci-provider':'the changed CI provider is unsupported: verify its jobs in the remote pipeline',
+    'torn-capture':'the repository changed during discovery: let concurrent writers finish, then rediscover',
+    'torn-scan':'the repository changed during discovery: let concurrent writers finish, then rediscover',
+    'required-rule-boundary':'make the governing rule file a regular file',
+}
+
+
+def coverage_guidance(gaps,manifest=None):
+    """Name each in-scope gap with its repair and the exact rediscovery commands (#14)."""
+    if not gaps:return NEXT_COVERAGE_STEP
+    lines=['next: these coverage gaps are in the change\'s scope (a changed path, its unit, or a unit or',
+           'link it literally reaches); rediscovery alone cannot clear them:']
+    for g in sorted(gaps,key=lambda g:(g['code'],str(g.get('unit')),str(g.get('path')))):
+        where='unit '+g['unit'] if g.get('unit') else 'path '+str(g.get('path'))
+        if g.get('unit') and g.get('path') not in {None,'.',g['unit']}:where+=' ('+g['path']+')'
+        lines.append('  - '+g['code']+' at '+where+': '+g['reason']+' -> '+REPAIRS.get(g['code'],'repair the named source'))
+    bounded=' --bounded' if (manifest or {}).get('discovery_mode')=='bounded' else ''
+    lines+=['after the repair, rediscover over the same planned paths and replan:',
+            '  gates discover --extend current --paths-file <file containing []>'+bounded+' --output <manifest.json>',
+            '  gates plan --file <manifest.json>',
+            'coverage gaps outside the change\'s reach are verification notes (`gates status` coverage_notes) and do not block']
+    return '\n'.join(lines)
+
+
+def manifest_guidance(st):
+    """Guidance for the latest manifest's in-scope gaps (used where only gap strings are known)."""
+    import al_artifacts as A
+    refs=st.get('gate_manifests',[])
+    if not refs:return NEXT_COVERAGE_STEP
+    manifest=A.read_json(refs[-1]);value=manifest.get('service_coverage') or {}
+    return coverage_guidance(value.get('assessment',{}).get('gaps',[]),manifest)
+
 
 def require_ready(st,*,current=False):
     """Final proof, review and approval barriers: incomplete relevant coverage refuses there."""
     from al_schema import refuse
     missing=admission_gaps(st,current=current)
     if missing:refuse('service coverage incomplete (required before final proof, review and approval): '
-                      +str(missing)+'\n'+NEXT_COVERAGE_STEP)
+                      +str(missing)+'\n'+manifest_guidance(st))
 
 
 def record_obligations(st,*,current=True):
@@ -171,9 +238,17 @@ def assess(facts):
     bindings=[b for b in facts['checks']['bindings'] if b['id'] in projection['required_binding_ids']]
     obligations=[o for o in facts['checks']['obligations'] if o['id'] in projection['relevant_obligation_ids']]
     bound={oid for b in bindings for oid in b['obligation_ids']}
+    reach=R.change_reach(facts,projection['question'])
+    outside={d['record_id'] for d in projection['deferred'] if d['reason']=='outside-change-reach'}
+    notes=[row['record'] for row in projection['records'] if row['record_id'] in outside]
     for o in obligations:
-        if o['id'] not in bound:relevant.append({'code':'missing-check','unit':o['units'][0] if o['units'] else None,
-            'path':'.','category':o['category'],'reason':'required obligation has no executable binding: '+o['id']})
+        if o['id'] not in bound:
+            record={'code':'missing-check','unit':o['units'][0] if o['units'] else None,
+                    'path':'.','category':o['category'],'reason':'required obligation has no executable binding: '+o['id']}
+            # A selected unit the change does not reach (selected only through dependency
+            # uncertainty) has an unverified check: a verification note, not an obligation.
+            if not o['units'] or set(o['units'])&reach['units']:relevant.append(record)
+            else:notes.append(record)
     enum=[row['record_id'] for row in projection['records'] if row['record_id'] in ids and row['kind']=='enumeration']
     checks=[row['record_id'] for row in projection['records'] if row['record_id'] in ids and row['kind']=='check']
     deps=facts['dependencies'];uncertain=deps['uncertainties']
@@ -184,6 +259,7 @@ def assess(facts):
             'check_discovery':{'status':'incomplete' if relevant and not enum else 'complete','obligation_ids':[o['id'] for o in obligations],'gap_ids':checks},
             'required_bindings':bindings,'gaps':relevant,'global_inventory':projection['global_inventory'],
             'deferred_record_ids':[d['record_id'] for d in projection['deferred']],
+            'coverage_notes':notes,
             'projection_sha256':projection['semantic_sha256']}
 
 

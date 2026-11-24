@@ -427,6 +427,13 @@
             "$ref": "#/$defs/hash"
           }
         },
+        "coverage_notes": {
+          "description": "Coverage gaps outside the paths and units the change reaches: verification notes that never block.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/gap"
+          }
+        },
         "projection_sha256": {
           "$ref": "#/$defs/hash"
         }

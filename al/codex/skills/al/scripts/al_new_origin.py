@@ -181,10 +181,12 @@ def require_admitted(st):
     # Unplanned sources and incomplete discovery still refuse admission.
     from al_gate_refresh import refresh
     currency = refresh(st)
-    from al_service_coverage import NEXT_COVERAGE_STEP, require_ready
+    from al_service_coverage import coverage_guidance, require_ready
     if not currency["current"]:
+        import al_artifacts as A
+        manifest = A.read_json(st["gate_manifests"][-1]) if st.get("gate_manifests") else None
         refuse("current gate obligations require replanning: " + str(currency["reasons"])
-               + "\n" + NEXT_COVERAGE_STEP)
+               + "\n" + coverage_guidance(currency.get("coverage_gaps", []), manifest))
     require_ready(st,current=True)
     if any(v['state'] != 'Resolved' for v in st.get('operational_issues', {}).values()):
         refuse('final proof has unresolved operational issues')

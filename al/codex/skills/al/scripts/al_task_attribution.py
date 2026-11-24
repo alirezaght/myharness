@@ -202,13 +202,24 @@ def _content_changes(before, after):
     return sorted(p for p in before.keys() | after.keys() if _content(before.get(p)) != _content(after.get(p)))
 
 
-def _replay(st, expected, owned, ambiguous, *, content_only=False):
+def _cause(causes, path, cause, *writers):
+    if causes is not None:
+        causes.setdefault(path, []).append({'cause': cause, 'writers': [w for w in writers if w]})
+
+
+def _replay(st, expected, owned, ambiguous, *, content_only=False, causes=None):
+    """Replay admitted contributions.
+
+    Ownership compares content (worktree bytes/type, physical mode, gitlink child), never
+    index or HEAD identity: staging or committing a writer's result between sequential
+    writers is no concurrent edit. `causes` (optional) collects why each path is ambiguous."""
     row = _content if content_only else lambda value: value
     comparison = _content_changes if content_only else _changes
     seen = set()
     from al_task_reconciliation import Replay
     replay = Replay(st, expected, owned, ambiguous)
     revisions = set(al_task.revision_hashes(st))
+    last = {}
     progress.report('attribution-replay', count=0)
     for index, ref in enumerate(st['task_attribution']['contributions']):
         replay.apply(index)
@@ -227,21 +238,52 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False):
         for path in comparison(before, after):
             if not _owned(path, writer['files']):
                 continue
-            if row(before.get(path)) != row(expected.get(path)) or c['outcome'] != 'success' or c['task_hash'] != c['ended_task_hash']:
+            if row(before.get(path)) != row(expected.get(path)):
                 ambiguous.add(path)
+                _cause(causes, path, 'changed-before-writer: the content differed from the last attributed '
+                       'content when this writer started (an unregistered edit, or a change by '
+                       + ('writer ' + last[path] if path in last else 'no registered writer') + ')',
+                       last.get(path), c['writer_id'])
+            elif c['outcome'] != 'success':
+                ambiguous.add(path)
+                _cause(causes, path, 'writer-outcome-' + c['outcome'] + ': the writer did not finish successfully', c['writer_id'])
+            elif c['task_hash'] != c['ended_task_hash']:
+                ambiguous.add(path)
+                _cause(causes, path, 'task-revised-during-writer: the task was amended while the writer ran', c['writer_id'])
             else:
                 owned.add(path)
+            last[path] = c['writer_id']
             if path in after: expected[path] = after[path]
             else: expected.pop(path, None)
         progress.report('attribution-replay', count=index+1)
     replay.apply(len(st['task_attribution']['contributions']))
     replay.finish()
     progress.report('attribution-replay', count=len(st['task_attribution']['contributions']), force=True)
+    if causes is not None:
+        causes['__last_writer__'] = last
     return replay.external
 
 
 @S.decision
 def classify_changes(st, current_capture=None):
+    return _classify(st, current_capture)
+
+
+@S.decision
+def explain_ambiguity(st):
+    """Which paths overlap, which writers touched them, and why (for `recovery next`)."""
+    causes = {}
+    result = _classify(st, None, causes)
+    last = causes.pop('__last_writer__', {})
+    rows = []
+    for path in result['ambiguous']:
+        reasons = causes.get(path) or []
+        writers = sorted({w for r in reasons for w in r['writers']} | ({last[path]} if path in last else set()))
+        rows.append({'path': path, 'writers': writers, 'causes': [r['cause'] for r in reasons]})
+    return {'classification': result, 'overlaps': rows}
+
+
+def _classify(st, current_capture=None, causes=None):
     if 'inherited_lineage' in st:
         from al_inherited_lineage import classify
         return classify(st, current_capture)
@@ -254,16 +296,23 @@ def classify_changes(st, current_capture=None):
     baseline = _map(_capture(st, snapshot['baseline_capture_ref']))
     expected = dict(baseline)
     owned, ambiguous = set(), set()
-    external_reconciled = _replay(st, expected, owned, ambiguous)
+    external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=causes)
     current = _map(current_capture or observe(st))
     limitations = S.child_content_gaps({'files': list(current.values())}) + S.unresolved_index_gaps({'files': list(current.values())})
-    ambiguous.update(r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed'))
-    external = set(_changes(expected, current)) | (external_reconciled - owned)
+    children = {r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed')}
+    for path in children:
+        _cause(causes, path, 'uncaptured-gitlink-child: the submodule is dirty or cannot be inspected; '
+               'explicit reconciliation cannot clear it (commit or clean the child, or run AL rooted in it)')
+    ambiguous.update(children)
+    external = set(_content_changes(expected, current)) | (external_reconciled - owned)
+    for path in external & owned:
+        _cause(causes, path, 'changed-after-writer: the content changed after its last registered writer '
+               'finished (an unregistered edit, formatter or generator)')
     ambiguous.update(external & owned)
     owned -= ambiguous | external
     # Contributions that reverted to start content are no longer task changes.
-    owned &= set(_changes(baseline, current))
-    preexisting = {p for p in snapshot['baseline_changed_paths'] if baseline.get(p) == current.get(p)} - owned - ambiguous
+    owned &= set(_content_changes(baseline, current))
+    preexisting = {p for p in snapshot['baseline_changed_paths'] if _content(baseline.get(p)) == _content(current.get(p))} - owned - ambiguous
     result = {'attributed': True, 'task_owned': sorted(owned), 'unchanged_preexisting': sorted(preexisting),
               'externally_changed': sorted(external - ambiguous), 'ambiguous': sorted(ambiguous),
               'overlapping_or_ambiguous': sorted(ambiguous), 'limitations': limitations}

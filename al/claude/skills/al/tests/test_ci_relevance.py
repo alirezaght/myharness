@@ -187,9 +187,11 @@ def test_unavailable_root_gitlab_keeps_governing_obligation(cli,repo,tmp_path,st
     start(cli)
     _,manifest=discover(cli,tmp_path,['docs/readme.md'])
     coverage=manifest['service_coverage']
-    assert coverage['assessment']['outcome']=='incomplete'
+    # The unavailable root CI stays a visible diagnostic and an unresolved CI obligation, but a
+    # change that does not edit it records its unknown inventory as a verification note (#15).
     assert coverage['global_inventory']['status']=='incomplete'
-    assert any(g['code']=='unknown-ci-inventory' and g['path']=='.gitlab-ci.yml' for g in coverage['assessment']['gaps'])
+    unknown=lambda rows:any(g['code']=='unknown-ci-inventory' and g['path']=='.gitlab-ci.yml' for g in rows)
+    assert unknown(coverage['assessment']['coverage_notes']) and not unknown(coverage['assessment']['gaps'])
     jobs=[row['record'] for row in coverage['projection']['ci_records'] if row['relevant']]
     assert len(jobs)==1 and jobs[0]['impact']['inventory_complete'] is False
     assert jobs[0]['execution'] is None
@@ -213,10 +215,11 @@ def test_unavailable_root_gitlab_keeps_governing_obligation(cli,repo,tmp_path,st
     packet=json.loads(invoke(cli,'planning','packet')[1])
     report=tmp_path/'unavailable-ci-report.json';report.write_text(json.dumps(_reports().report_for(packet)))
     response=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
-    # Unknown root CI inventory is verification debt: admission records it, final proof refuses.
+    # Unknown root CI inventory outside the change's reach is no admission obligation.
     invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
     state=json.loads(cli('show')[1])
     assert state['proof_admission']['status']=='admitted'
-    assert any(o.startswith('coverage incomplete') for o in state['implementation_readiness']['obligations'])
+    assert not any('unknown-ci-inventory' in o for o in state['implementation_readiness']['obligations'])
     import al_service_coverage as Coverage
-    assert Coverage.admission_gaps(state,current=True)
+    assert not any('unknown-ci-inventory' in g for g in Coverage.admission_gaps(state,current=True))
+    assert any('unknown-ci-inventory' in n for n in Coverage.coverage_notes(state))
