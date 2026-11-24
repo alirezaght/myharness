@@ -12,7 +12,7 @@ import selectors
 import stat
 import time
 import tomllib
-from al_repository_capture import CaptureMixin, CaptureDrift, CaptureUnavailable, capture_discovery, immutable_observation, opaque_owner, literal_opaque_exclusions
+from al_repository_capture import RACY_NS, CaptureMixin, CaptureDrift, CaptureUnavailable, capture_discovery, immutable_observation, opaque_owner, literal_opaque_exclusions
 from al_profile import measured
 import al_writer_progress as progress
 
@@ -222,11 +222,20 @@ class Snapshot(CaptureMixin):
         if listing_only:return
         progress.report('inventory-current', count=0)
         scope=PathScope(self.paths)
+        vouched=self.vouched_hashes(scope)
         for count,p in enumerate(sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))),1):
             affected=scope.covers(p)
             if not p.endswith('/') and affected:self.observe_path(p)
             if not p.endswith('/') and (self.relevant(p) or affected and p.endswith(('.md','.markdown','.mdx'))) and (self.root/p).exists():
                 try:
+                    identity=self.vouched_identity(p,vouched.get(p))
+                    if identity is not None:
+                        self.total+=identity[3]
+                        self.files.records[p]={'sha256':vouched[p][0],'identity':identity,'size':identity[3]}
+                        self.modes[p]=identity[2]&0o7777
+                        if Path(p).name=='.gitignore':self.rules.add(p)
+                        progress.report('inventory-current', count=count, total=len(self.members))
+                        continue
                     data,identity=self.read_observed(p)
                     self.total+=len(data)
                     self.files.records[p]={'sha256':hashlib.sha256(data).hexdigest(),'identity':identity,'size':len(data)}
@@ -237,6 +246,55 @@ class Snapshot(CaptureMixin):
             progress.report('inventory-current', count=count, total=len(self.members))
         progress.report('inventory-current', count=len(self.members), force=True)
         self.read_base()
+
+    def vouched_hashes(self,scope):
+        """{path: (sha256, size)} for working-copy files the Git snapshot tree vouches for (#25).
+
+        The tree comes from a private per-worktree index (`git add -A`, incremental through
+        Git's stat cache and fsmonitor); each blob's sha256 is a fact of its object id. Files
+        whose bytes Git may convert (attributes, autocrlf) are left to be read directly, as is
+        everything when the snapshot is unavailable or the fact store is disabled."""
+        import al_analysis_index as index
+        if not index.enabled():return {}
+        import al_snapshot
+        from al_git_cache import blobs
+        try:
+            tree=al_snapshot.snapshot(self.root)
+            rows={p:row for p,row in al_snapshot.entries(self.root,tree).items()
+                  if row[0] in ('100644','100755') and row[1]=='blob' and row[3] is not None and row[3]<=LIMITS['file_bytes']
+                  and (self.relevant(p) or p.endswith(('.md','.markdown','.mdx')) and scope.covers(p))}
+            for p in al_snapshot.convertible(self.root,sorted(rows)):rows.pop(p,None)
+        except (al_snapshot.Unavailable,OSError,ValueError,subprocess.SubprocessError):
+            return {}
+        paths=sorted(rows)
+        known=index.lookup('git-blob-sha256',BLOB_SHA256,[rows[p][2] for p in paths],root=self.root)
+        out={paths[i]:(v,rows[paths[i]][3]) for i,v in known.items() if isinstance(v,str) and len(v)==64}
+        missing=[p for p in paths if p not in out];batch=[];size=0
+        def read(batch):
+            try:values=blobs(self.root,[rows[p][2] for p in batch],max_bytes=self.batch_bytes,file_bytes=LIMITS['file_bytes'])
+            except (OSError,ValueError,subprocess.SubprocessError):return
+            found=[]
+            for p in batch:
+                digest=hashlib.sha256(values[rows[p][2]]).hexdigest();out[p]=(digest,rows[p][3]);found.append((rows[p][2],digest))
+            index.record('git-blob-sha256',BLOB_SHA256,found,root=self.root)
+        for p in missing:
+            if batch and size+rows[p][3]>self.batch_bytes:read(batch);batch=[];size=0
+            batch.append(p);size+=rows[p][3]
+        if batch:read(batch)
+        self.vouch_before=self.capture_started_ns-RACY_NS
+        return out
+
+    def vouched_identity(self,p,vouched):
+        """The no-follow identity of a file the snapshot vouches for, or None to read it.
+
+        Vouching needs a regular file of the blob's size whose change and modification times
+        precede the capture by the racy window: a later edit changes its ctime."""
+        if vouched is None:return None
+        self.safe_file(p)
+        value=os.lstat(os.path.join(str(self.root),p))
+        if not stat.S_ISREG(value.st_mode) or value.st_size!=vouched[1] or value.st_size>LIMITS['file_bytes']:return None
+        if max(value.st_mtime_ns,value.st_ctime_ns)>=self.vouch_before:return None
+        return file_identity(value)
 
     @staticmethod
     def relevant(p):
