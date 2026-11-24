@@ -1,4 +1,6 @@
 """Explicit writer/check lifetimes share the run's admission lock."""
+import contextlib
+import contextvars
 import json
 import os
 import shlex
@@ -19,6 +21,55 @@ def operation_gaps(st):
     out += ['check ' + e['id'] + ' unresolved' for e in st['evidence']['entries']
             if (e['status'] == 'RUNNING' or e.get('interrupted')) and not e.get('reconciliation')]
     return out
+
+def _active(st):
+    return {w['id']: w for w in st.get('writers', {}).values() if w.get('state') == 'ACTIVE'}
+
+
+_COMMAND = contextvars.ContextVar('al_sibling_drift_command', default=None)
+
+
+def refuse_sibling_drift(command, paths, still, earlier=None, rerun=None, nothing_saved=True):
+    """Refuse with the ACTIVE writers behind a moving input, or return when no writer was active.
+
+    A repository read made twice is unstable while a writer still edits its files. With no
+    writer active the caller's original drift error stands: the drift is then real."""
+    import al_task_attribution as T
+    command = command or _COMMAND.get() or 'implementation readiness'
+    earlier = earlier or {}
+    if not still and not earlier:
+        return
+    moved = sorted(set(paths))
+    def named(writers):
+        return sorted(i for i, w in writers.items() if any(T._owned(p, w['files']) for p in moved)) or sorted(writers)
+    detail = ('inputs changed while writers were editing' + (' (' + ', '.join(moved) + ')' if moved else '')
+              + ('; nothing was saved. ' if nothing_saved else '. '))
+    def plural(owners):
+        return 'writer' + ('s' if len(owners) > 1 else '') + ' ' + ', '.join(owners)
+    if still:
+        refuse(command + ': ' + plural(named(still)) + ' still active; run after writer finish: ' + detail
+               + 'Re-run after `writer finish`' + (': ' + rerun if rerun else '.'))
+    refuse(command + ': ' + plural(named(earlier)) + ' finished during ' + command + ': ' + detail
+           + 'Re-run' + (': ' + rerun if rerun else '.'))
+
+
+@contextlib.contextmanager
+def sibling_drift(command, st, *, current=None, rerun=None):
+    """Translate a capture drift or unstable attribution read while writers are ACTIVE."""
+    from al_repository_capture import CaptureDrift
+    import al_task_attribution as T
+    token = _COMMAND.set(command)
+    try:
+        yield
+    except (CaptureDrift, SystemExit) as exc:
+        if isinstance(exc, SystemExit) and exc.code != 'al_state: ' + T.UNSTABLE_OBSERVATION:
+            raise
+        now = current() if current else st
+        refuse_sibling_drift(command, getattr(exc, 'paths', ()), _active(now), _active(st), rerun)
+        raise
+    finally:
+        _COMMAND.reset(token)
+
 
 def canonical_paths(paths):
     out=[]
@@ -80,11 +131,46 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
     if gate_context and gate_context.get('stage')=='base':return
     if own_writer is not None and not any(w['id']==own_writer and w['state']=='ACTIVE' for w in unresolved_writers(st)):
         refuse('--writer names no active writer: '+str(own_writer))
+    provisional = []
     for w in unresolved_writers(st):
-        # A writer's own check runs between its own edits; other writers still conflict as before.
+        # A writer's own check runs between its own edits.
         if w['id']==own_writer and w['state']=='ACTIVE':continue
-        if w['state'] != 'ACTIVE' or st['phase'] in BARRIERS or shared or al_parallel.shared_state_hits(w['commands']) or '.' in spec['scope'] or al_parallel.overlaps(w['files'],spec['scope']):
-            refuse('check overlaps unresolved writer ' + w['id'])
+        conflict = w['state'] != 'ACTIVE' or st['phase'] in BARRIERS or shared or al_parallel.shared_state_hits(w['commands'])
+        reads = '.' in spec['scope'] or al_parallel.overlaps(w['files'],spec['scope'])
+        if not conflict and reads and own_writer is not None:
+            # The scope only reads a disjoint sibling's paths: run now, provisional on that sibling.
+            provisional.append(w['id']);continue
+        if conflict or reads:
+            hint = '' if conflict or own_writer is not None else '; a writer\'s own check may run with --writer <id> (provisional until ' + w['id'] + ' finishes)'
+            refuse('check overlaps unresolved writer ' + w['id'] + hint)
+    return provisional
+
+
+PROVISIONAL_PENDING = {'ACTIVE', 'UNRESOLVED'}
+
+
+def provisional_note(writers):
+    return 'needs revalidation after writer' + ('s ' if len(writers) > 1 else ' ') + ', '.join(writers) + ' finish' + ('' if len(writers) > 1 else 'es')
+
+
+def provisional_gap(st, entry):
+    """Why a provisional result is not yet evidence, or None once every sibling it read finished.
+
+    A finished sibling's in-scope edits are caught by the scope fingerprint: the result stays
+    VALID only if nothing the check read changed since it ran, otherwise it is STALE."""
+    value = entry.get('provisional')
+    if not value:return None
+    pending = [w for w in value.get('writers', []) if st.get('writers', {}).get(w, {}).get('state', 'ACTIVE') in PROVISIONAL_PENDING]
+    return provisional_note(pending) if pending else None
+
+
+def _report_provisional(st, writer_id):
+    import al_ledger as L
+    for e in st['evidence']['entries']:
+        if writer_id not in (e.get('provisional') or {}).get('writers', []):continue
+        verdict, why = L.entry_verdict(st, e)
+        tail = ' — rerun `evidence run --area ' + e['area'] + '`' if verdict not in {'VALID', 'PROVISIONAL'} else ''
+        print('AL · evidence ' + e['id'] + ' ' + e['area'] + ' provisional on ' + writer_id + ': now ' + verdict + (' (' + why + ')' if why else '') + tail)
 
 def _implicit_entry(st):
     # A writer after SPEC_READY/classification begins implementation; the Designer stage
@@ -190,7 +276,9 @@ def _cmd_writer(a,sid):
             if execution_task['status'] != 'Running' or receipt != {'revision':execution_task['revision'],'graph_revision':st['integration']['graph_revision']}: refuse('writer requires current admitted and started task')
             if not agent or agent['task'] != task or agent['role'] != a.role or agent['status'] != 'Running': refuse('writer requires compatible actual assigned running agent')
         from al_gate_coverage import writer_ready
-        writer_ready(st,files)
+        # A gate refresh rediscovers planned inputs; a sibling still editing them is named.
+        with sibling_drift('writer start', st):
+            writer_ready(st,files)
         if 'integration' in st:
             from al_execution_outputs import invalidate_for_write
             invalidate_for_write(st, a.task, files)
@@ -215,6 +303,8 @@ def _cmd_writer(a,sid):
         from al_writer_progress import report
         report('writer-publication', force=True)
     al_store.save(sid,st)
+    if a.action in {'finish', 'reconcile'}:
+        _report_provisional(st, a.id)
     if a.action == 'start':
         if entered:
             print('AL · IMPLEMENTATION entered by writer start (the `phase IMPLEMENTATION` edge).')

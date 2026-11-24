@@ -162,8 +162,10 @@ def _create(sid, expected_run, *, gate_context=None, own_writer=None, **fields):
         if gate_context:
             from al_gate_continuation import admit_destination
             destination = admit_destination(st, gate_context)
-        al_writers.admit_check(st, spec, gate_context=destination, own_writer=own_writer)
+        provisional = al_writers.admit_check(st, spec, gate_context=destination, own_writer=own_writer)
         entry = L.new_entry(st, **fields)
+        if provisional:
+            entry["provisional"] = {"writers": provisional, "note": al_writers.provisional_note(provisional)}
         if destination is not None: entry['gate_reservation'] = destination
         entry["reservation"] = secrets.token_hex(16)
         entry["fp_before"] = _fingerprint(entry)

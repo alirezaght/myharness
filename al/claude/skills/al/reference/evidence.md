@@ -29,6 +29,20 @@ A change in another package keeps reuse. Validity is unchanged: a change outside
 the scope still does not make the earlier PASS STALE, it only stops it being
 reused. Declare cross-package dependencies in `--scope`, or pass `--fresh`.
 
+## Writer checks during parallel writers
+
+`evidence run ... --writer <id>` runs a writer's own check between its edits. When the
+check's scope also covers paths of another ACTIVE writer (whose ownership is disjoint), the
+run still proceeds and is recorded as **provisional**: `evidence status` shows it as
+`PROVISIONAL — needs revalidation after writer B finishes` and it is not evidence yet.
+When B finishes (or is reconciled), `writer finish` reports each provisional result it held:
+the scope fingerprint decides, so the result becomes `VALID` if nothing the check reads
+changed since it ran, or `STALE` (rerun the area) if B changed any of those inputs. An edit
+during the run itself makes it `TORN`. While B is ACTIVE or UNRESOLVED the result stays
+provisional, so review, approval and `needs` prerequisites never accept it. A check without
+`--writer`, a shared-state command, or a barrier phase is still refused while it overlaps an
+unresolved writer.
+
 `evidence supersede --id EOLD --replaced-by ENEW --reason TEXT` appends an immutable audit artifact. Both entries and their logs remain unchanged, including the original FAIL. The replacement must be a newer original execution, a current VALID PASS of the same declared obligation and current plan. A later failed/running attempt wins. Changed command semantics require separate supported replanning; free text cannot assert equivalence. Corrupt logs, unresolved processes, foreign runs and conflicting replay refuse without changing state. Exact replay is idempotent while its binding is current.
 
 This records why a current rerun replaces obsolete evidence; it does not resurrect old receipts, clear review findings or retire gates. Evidence status and inspection expose the relation. Area/repro readiness still uses the current command and latest-attempt ledger rules. `evidence retire` remains a distinct mistaken-plan operation.

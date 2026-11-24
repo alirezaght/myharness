@@ -306,33 +306,12 @@ def _discover_requested_paths(a,st):
     return sorted(set(base['paths'])|set(paths)),base
 
 
-@contextlib.contextmanager
 def _sibling_writer_drift(a,sid,st):
-    """Name the active writers behind a moving discovery input instead of a raw capture drift.
-
-    Discovery reads every planned input twice; a writer still editing its files makes that
-    read unstable. With no writer active the original error stands: the drift is then real."""
-    from al_repository_capture import CaptureDrift
-    import al_task_attribution as T
-    try:
-        yield
-    except (CaptureDrift,SystemExit) as exc:
-        if isinstance(exc,SystemExit) and exc.code!='al_state: '+T.UNSTABLE_OBSERVATION:raise
-        with al_store.locked(sid):current=al_store.load(sid)
-        def active(run):return {w['id']:w for w in run.get('writers',{}).values() if w.get('state')=='ACTIVE'}
-        still,earlier=active(current),active(st)
-        if not still and not earlier:raise
-        moved=list(getattr(exc,'paths',()))
-        def named(writers):
-            return sorted(i for i,w in writers.items() if any(T._owned(p,w['files']) for p in moved)) or sorted(writers)
-        detail='discovery inputs changed while writers were editing'+(' ('+', '.join(moved)+')' if moved else '')+'; nothing was saved. '
-        if still:
-            owners=named(still)
-            refuse('gates discover: writer'+('s' if len(owners)>1 else '')+' '+', '.join(owners)+' still active; run after writer finish: '
-                   +detail+'Re-run after `writer finish`: '+_rerun_command(a))
-        owners=named(earlier)
-        refuse('gates discover: writer'+('s' if len(owners)>1 else '')+' '+', '.join(owners)+' finished during discovery: '
-               +detail+'Re-run: '+_rerun_command(a))
+    """Name the active writers behind a moving discovery input instead of a raw capture drift."""
+    from al_writers import sibling_drift
+    def current():
+        with al_store.locked(sid):return al_store.load(sid)
+    return sibling_drift('gates discover',st,current=current,rerun=_rerun_command(a))
 
 
 def _discover(a,sid):
