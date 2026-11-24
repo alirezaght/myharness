@@ -200,17 +200,35 @@ def test_admission_capture_cannot_be_substituted_between_writers(cli, repo, stat
         T.finish_contribution(st, dict(writer, id='other'), before)
 
 
-def test_retained_content_survives_later_edit_and_corruption_refuses(cli, repo, state_file):
+def test_retained_content_survives_later_edit_and_corruption_refuses(cli, repo, state_file, monkeypatch):
     (repo/'docs/readme.md').write_bytes(b'preexisting binary\x00content\n')
     run(cli, 'start', '--spec', 'Retain exact source preimages without exposing their bytes in observation output.')
     st = state(state_file)
     snapshot = A.read_json(st['task_attribution']['snapshot'])
     capture = A.read_json(snapshot['baseline_capture_ref'])
-    ref = capture['contents']['docs/readme.md']
+    # The snapshot tree retains the preimage (#25); it is pinned for the run.
+    tree = capture['snapshot_tree']
+    assert 'docs/readme.md' not in capture['contents']
+    pinned = subprocess.run(['git', 'for-each-ref', '--format=%(objectname)', 'refs/al/snapshots/' + st['run_id'] + '/'],
+                            cwd=repo, capture_output=True, text=True, check=True).stdout.split()
+    assert tree in pinned
     (repo/'docs/readme.md').write_bytes(b'changed after capture')
-    assert A.read(ref) == b'preexisting binary\x00content\n'
+    shown = subprocess.run(['git', 'cat-file', 'blob', tree + ':docs/readme.md'], cwd=repo, capture_output=True, check=True)
+    assert shown.stdout == b'preexisting binary\x00content\n'
+    # Content outside the tree is an immutable artifact; altering it refuses.
+    (repo/'docs/late.md').write_text('late\n')
+    import al_attribution_tree
+    monkeypatch.setattr(al_attribution_tree, 'open_observation', lambda base: None)
+    capture = T.observe(st, retain_content=True)
+    ref = capture['contents']['docs/late.md']
     Path(ref['stored_path']).write_bytes(b'altered retained preimage')
     with pytest.raises(SystemExit, match='immutable artifact was altered'):
+        T._capture(st, T._save(st, capture, capture['kind']))
+    # A retained tree that left the object store refuses.
+    monkeypatch.setattr(al_attribution_tree, '_EXISTS', set())
+    loose = repo / '.git' / 'objects' / tree[:2] / tree[2:]
+    loose.unlink()
+    with pytest.raises(SystemExit, match='retained attribution snapshot tree is unavailable'):
         T.classify_changes(st)
 
 
@@ -255,7 +273,13 @@ def test_reconciliation_never_acknowledges_drift_or_unobserved_scope(cli, repo, 
         run(cli, 'writer', 'start', '--id', 'active', '--role', 'al-engineer', '--files', 'svc')
     else:
         st=state(state_file);snapshot=A.read_json(st['task_attribution']['snapshot'])
-        capture=A.read_json(snapshot['baseline_capture_ref']);Path(capture['contents']['svc/app.py']['stored_path']).unlink()
+        capture=A.read_json(snapshot['baseline_capture_ref'])
+        if 'svc/app.py' in capture['contents']:Path(capture['contents']['svc/app.py']['stored_path']).unlink()
+        else:
+            # Tree-backed retention (#25): the preimage is gone when its snapshot tree is.
+            import al_attribution_tree
+            al_attribution_tree._EXISTS.clear()
+            tree=capture['snapshot_tree'];(repo/'.git'/'objects'/tree[:2]/tree[2:]).unlink()
     before=state_file().read_bytes()
     result, _, _ = cli('task', 'reconcile-attribution', '--file', str(request))
     assert result != 0 and state_file().read_bytes() == before

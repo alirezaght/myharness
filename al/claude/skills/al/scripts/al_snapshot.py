@@ -18,6 +18,8 @@ Under a sandbox that admits only AL's private paths (the Harness operation sandb
 `AL_SNAPSHOT_OBJECTS=private` keeps the objects a snapshot writes in the private directory
 (`al-snapshot/objects`, the repository's object store read as an alternate): tree ids are
 content hashes, so they are the same ids a snapshot with the shared object store computes."""
+import contextlib
+import contextvars
 import os
 import re
 import subprocess
@@ -34,6 +36,21 @@ EXCLUDED = ('.git', '.codex', '.claude', '.venv', 'node_modules', '__pycache__',
 CONVERSIONS = ('text', 'eol', 'crlf', 'filter', 'ident', 'working-tree-encoding')
 _GIT = ['git', '--no-optional-locks', '-c', 'core.excludesFile=/dev/null', '-c', 'advice.addEmbeddedRepo=false',
         '-c', 'core.safecrlf=false']
+
+
+# A tree an enclosing capture took and will confirm unchanged when it ends (attribution, #25).
+_REUSE = contextvars.ContextVar('al_snapshot_reuse', default=None)
+
+
+@contextlib.contextmanager
+def reusing(root, tree):
+    """Inside, `vouched` answers from `tree` instead of a new snapshot of `root`. Only for a
+    caller that compares the working copy with `tree` again afterwards and refuses movement."""
+    token = _REUSE.set((str(_root(root)), tree))
+    try:
+        yield
+    finally:
+        _REUSE.reset(token)
 
 
 class Unavailable(Exception):
@@ -282,7 +299,8 @@ def vouched(root, wanted):
         return {}
     root = _root(root)
     try:
-        tree = snapshot(root)
+        reused = _REUSE.get()
+        tree = reused[1] if reused is not None and reused[0] == str(root) else snapshot(root)
         rows = {p: row for p, row in entries(root, tree).items()
                 if row[0] in ('100644', '100755') and row[1] == 'blob' and row[3] is not None
                 and row[3] <= FILE_BYTES and wanted(p)}

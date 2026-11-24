@@ -11,6 +11,7 @@
     "al_artifact_cli.py",
     "al_artifacts.py",
     "al_assessments.py",
+    "al_attribution_tree.py",
     "al_baseline_exceptions.py",
     "al_behavior_obligations.py",
     "al_behavior_observation_items.py",

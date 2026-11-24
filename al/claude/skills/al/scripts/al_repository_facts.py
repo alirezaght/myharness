@@ -363,9 +363,16 @@ class Snapshot(CaptureMixin):
             data,identity=self.read_observed(p)
             declarations.append({'path':p,'sha256':hashlib.sha256(data).hexdigest(),'identity':list(identity)})
             return data
+        added={}
         def add(p,protected=False):
             p=p.rstrip('/')
             if not p or p=='.':return
+            # The same path is listed by several sources (tracked, base, scopes): one observation
+            # per listing, its outcome replayed exactly (an exclusion record per call).
+            replay=added.get((p,protected))
+            if replay is not None:
+                if replay:exclusions.append(dict(replay))
+                return
             boundary=opaque_owner(opaque_paths,p)
             if boundary is not None:
                 diagnostics.append(gap('opaque-boundary',boundary,'supplied opaque source boundary'));return
@@ -388,6 +395,7 @@ class Snapshot(CaptureMixin):
                     diagnostics.append(gap('file-limit','.', 'coverage membership limit exceeded'));return
                 result.add(entry)
                 progress.report('inventory-membership', count=len(result))
+            added[(p,protected)]=exclusions[-1] if protected and any(part in EXCLUDED for part in parts) else {}
         # Reserve root and supported member manifests before ordinary enumeration.
         roots=['.'];root_set={'.'};protected=set(self.paths)
         def add_root(p):
