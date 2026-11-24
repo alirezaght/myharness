@@ -599,9 +599,7 @@ def cmd_evidence_run(a, sid):
                                               and L.same_command(spec, planned)):
         spec["hermetic"] = False
     import al_action_cache as Cache
-    cache, why = Cache.evidence_plan(st, spec, no_cache=getattr(a, "no_cache", False))
-    if why and why.startswith("not cached:"):
-        print(f"AL · evidence {spec['area']} · {why}")
+    cache, _ = Cache.evidence_plan(st, spec, no_cache=getattr(a, "no_cache", False))
     # Running an area again after its latest attempt in this run did not pass is a retry (a
     # timeout or flake on a busy host): it executes and its result replaces the cached one.
     retry = bool(prev) and prev["status"] not in {"PASS", "RUNNING"}

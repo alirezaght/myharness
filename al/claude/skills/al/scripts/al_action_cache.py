@@ -105,47 +105,28 @@ def _bounded(tree):
     return tree
 
 
-def _excluded_tracked(listing):
-    """Guard until #25 step 4 fixes snapshot membership: the snapshot leaves out directories
-    such as dist/, build/ or .venv/ even when their files are tracked, so a change to such a
-    tracked input would not change the key. Those inputs are not cached at all."""
-    import al_snapshot
-    excluded = set(al_snapshot.EXCLUDED) - {'.git'}
-    for row in listing.split(b'\0'):
-        parts = os.fsdecode(row).split('/')[:-1]
-        for depth, part in enumerate(parts):
-            if part in excluded:
-                raise Uncacheable('not cached: tracked inputs under ' + '/'.join(parts[:depth + 1]))
-
-
 def input_tree(st, paths):
-    """Git tree hash of the working copy under `paths` (al_snapshot.input_tree).
-    Raises Uncacheable when it cannot be taken or bounded exactly."""
+    """Git tree hash of the working copy under `paths` (al_snapshot.input_tree; every tracked
+    file is a member, wherever it lives). Raises Uncacheable when it cannot be taken or
+    bounded exactly."""
     import al_snapshot
     try:
-        paths = _minimal(paths)
-        _excluded_tracked(al_snapshot._run(al_store.REPO_ROOT, ['ls-files', '-z', '--', *paths]))
-        return _bounded(al_snapshot.input_tree(st, paths))
+        return _bounded(al_snapshot.input_tree(st, _minimal(paths)))
     except (al_snapshot.Unavailable, OSError, ValueError) as exc:
         raise Uncacheable('input snapshot unavailable: ' + str(exc)) from exc
 
 
 def commit_tree(oid, paths):
-    """The same tree hash for a commit's content (a base gate runs on the base commit), with
-    the snapshot's exclusions applied, so an unchanged candidate shares the base's key."""
+    """The same tree hash for a commit's content under `paths` (a base gate runs on the base
+    commit). Every tracked file is a snapshot member, so an unchanged candidate shares the
+    base's key."""
     import al_snapshot
     paths = _minimal(paths)
     root = al_store.REPO_ROOT
     try:
         listing = al_snapshot._run(root, ['ls-tree', '-r', '-z', '--full-tree', oid,
                                           *([] if paths == ['.'] else ['--', *paths])])
-        rows = []
-        for row in listing.split(b'\0'):
-            if not row:
-                continue
-            meta, path = row.split(b'\t', 1)
-            _excluded_tracked(path)
-            rows.append(meta + b'\t' + path + b'\0')
+        rows = [row + b'\0' for row in listing.split(b'\0') if row]
         target = al_snapshot.index_path(root).with_name(al_snapshot.INDEX + '.commit.' + str(os.getpid()))
         try:
             env = {'GIT_INDEX_FILE': str(target)}

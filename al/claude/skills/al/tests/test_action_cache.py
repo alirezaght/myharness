@@ -101,27 +101,28 @@ def test_ignored_files_and_other_packages_are_not_inputs(repo):
     assert _key(spec) != first
 
 
-def test_tracked_inputs_in_snapshot_excluded_directories_are_not_cached(cli, repo, state_file, tmp_path):
-    """The snapshot leaves out dist/, build/, .venv/ ... even when tracked; until it includes
-    them, a check reading such a tracked input must re-run rather than reuse a stale result."""
+def test_tracked_inputs_under_build_output_directories_are_keyed(cli, repo, state_file, tmp_path):
+    """Tracked files under dist/, build/, node_modules/ ... are snapshot members (#25): an
+    unchanged tracked dist/x.js is a hit, a changed one a miss that re-runs the check."""
     (repo / "dist").mkdir()
     (repo / "dist/x.js").write_text("export const v = 1\n")
     subprocess.run(["git", "add", "dist/x.js"], cwd=repo, check=True, capture_output=True)
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "dist"], cwd=repo,
                    check=True, capture_output=True)
-    marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
-    code, out, _ = cli("evidence", "run", "--area", "dist", "--scope", "dist", "--", *counting(marker))
-    assert code == 0 and "not cached: tracked inputs under dist" in out
-    (repo / "dist/x.js").write_text("export const v = 2\n")
-    cli("--session", "al-other", "start", "--spec", SPEC)
-    code, out, _ = cli("--session", "al-other", "evidence", "run", "--area", "dist", "--scope", "dist",
-                       "--", *counting(marker))
-    assert code == 0 and "reused from" not in out and marker.read_text() == "xx"
-    assert not (Path(Cache.store_root()) / "actions").exists()
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
-    with pytest.raises(Cache.Uncacheable, match="tracked inputs under dist"):
-        Cache.commit_tree(head, ["."])  # base gates: the base commit's tracked dist/ too
+    assert Cache.commit_tree(head, ["dist"]) == Cache.input_tree({}, ["dist"])  # base gates share the key
+    marker = tmp_path / "runs"
+    run = ("evidence", "run", "--area", "dist", "--scope", "dist", "--", *counting(marker))
+    cli("start", "--spec", SPEC)
+    assert cli(*run)[0] == 0 and marker.read_text() == "x"
+    cli("--session", "al-other", "start", "--spec", SPEC)
+    code, out, _ = cli("--session", "al-other", *run)
+    assert code == 0 and "reused from" in out and marker.read_text() == "x"
+    (repo / "dist/x.js").write_text("export const v = 2\n")
+    assert Cache.commit_tree(head, ["dist"]) != Cache.input_tree({}, ["dist"])
+    cli("--session", "al-third", "start", "--spec", SPEC)
+    code, out, _ = cli("--session", "al-third", *run)
+    assert code == 0 and "reused from" not in out and marker.read_text() == "xx"
 
 
 def test_inputs_leading_outside_the_repository_are_not_cached(repo, tmp_path):
