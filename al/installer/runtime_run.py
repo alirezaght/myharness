@@ -120,6 +120,11 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     validate_live(
         manifest["interpreter_execution_identity"], manifest["interpreter"], observe(os.getpid())
     )
+    # Later commands of this run go to the resident service (#27) when its pin carries one;
+    # this command still runs in process below.
+    from .runtime_service_boot import ensure as ensure_service
+    ensure_service(storage(readonly=existing_run), repository, platform, None if implicit else session, transaction,
+                   manifest, argv, existing_run=existing_run, private_session=private_session)
     request = {"transaction": transaction, "argv": list(argv), "storage": str(storage(readonly=existing_run)), "existing_run": existing_run,
                "native_implicit": implicit}
     executable = manifest["interpreter"]["executable"]

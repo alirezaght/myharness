@@ -24,6 +24,9 @@ def parser():
     pinned.add_argument('--session-directory', action='store_true')
     pinned.add_argument('--session', help='AL run id; inside a Claude conversation it may be omitted')
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
+    service = sub.add_parser('service', help='status or stop the resident AL services of this user')
+    service.add_argument('action', choices=('status', 'stop'))
+    service.add_argument('--repository', help='only the service of this repository')
     successor = sub.add_parser('runtime-successor', help='trusted operator successor preparation only')
     child = successor.add_subparsers(dest='successor_action', required=True)
     for action in ('prepare', 'activate', 'inputs', 'recovery-inputs', 'origin', 'inspect', 'distribution'):
@@ -138,6 +141,17 @@ def main(argv=None):
                 _, verified = distribution(args.platform)
                 result = {'distribution_identity': verified['manifest']['closure_digest']}
             print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == 'service':
+            from .runtime_pin_transaction import storage
+            from .runtime_service_boot import control
+            try:
+                root = storage(readonly=True)
+            except (OSError, ValueError):
+                result = {'action': args.action, 'services': []}
+            else:
+                result = control(root, args.action, args.repository)
+            print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == 'run':
             from .runtime_run import run

@@ -15,6 +15,8 @@ def isolated_home(tmp_path, monkeypatch):
     home = tmp_path / "home"
     monkeypatch.setenv("HARNESS_HOME", str(home))
     monkeypatch.delenv("HARNESS_DB", raising=False)
+    # AL commands run in process unless a test opts into the resident AL service.
+    monkeypatch.setenv("AL_SERVICE", "0")
     from tests.native_provider_fixture import isolated_provider_environment
 
     env = isolated_provider_environment(dict(os.environ), tmp_path)

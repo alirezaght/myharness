@@ -67,7 +67,14 @@ exec(compile(captured['bytes']['installer/terminal_probe.py'],filename,'exec'),n
 
 def launcher(request):
     interpreter = shlex.quote(request['interpreter'])
-    return ('#!/bin/sh\n' + "'''exec' " + interpreter + ' -I -S -B "$0" "$@"\n' + "' '''\n" + BOOT + '\n' +
+    prelude = ''
+    if request.get('mode') == 'snapshot':
+        # A warm `alctl run` is served by the resident AL service before self-verification (#27).
+        from pathlib import Path
+        from .runtime_service_client import launcher_prelude
+        prelude = launcher_prelude(Path(request['root']).parents[3] / 'al-services',
+                                   request['expected']['snapshot_identity'])
+    return ('#!/bin/sh\n' + "'''exec' " + interpreter + ' -I -S -B "$0" "$@"\n' + "' '''\n" + BOOT + '\n' + prelude +
             'captured=_boot('+repr(request)+')\n' +
             "utility=_utility(captured,'validator_loader.py')\n" +
             "utility.install_closed_loader(captured,'codex',installers=True)\n" +

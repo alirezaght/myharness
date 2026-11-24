@@ -15,6 +15,12 @@ import pytest
 from al.installer.source_materialization import copy2
 
 
+@pytest.fixture(autouse=True)
+def no_resident_service(monkeypatch):
+    """Commands run in process unless a test opts into the resident AL service (#27)."""
+    monkeypatch.setenv("AL_SERVICE", "0")
+
+
 @pytest.fixture
 def installer_workspace(tmp_path, monkeypatch):
     """Create a tagged AL source and isolated homes/state for CLI tests."""

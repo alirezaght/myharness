@@ -95,7 +95,10 @@ when the target is a local branch behind its upstream; fix it before review with
 evidence and drops only gate plans, review scope and admitted planning. Do not invoke
 `al_state.py` directly, set `AL_RUNTIME_DIR`, edit a pin/state file, reset counters
 or transplant an old run into a new runtime. `clear` removes a pointer, not history.
-A new installation does not upgrade an existing pin. Use supported recovery for
+A new installation does not upgrade an existing pin. Later commands of a run are served
+by a resident per-repository service with identical results, falling back to in-process
+execution whenever it is unavailable (`alctl service status|stop`; `AL_SERVICE=0` disables it;
+see [performance](reference/performance.md#resident-service)). Use supported recovery for
 an existing Harness execution, preserving its approval and requirement lineage.
 
 Record SPEC_READY and the justified classification. Defined scoped implementation
