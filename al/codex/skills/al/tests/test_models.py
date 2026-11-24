@@ -14,8 +14,8 @@ def test_resolve_returns_spec_table_slots_for_every_role_and_aux():
         "al-architect": ("astra", "gpt-6-astra", "medium", "read-only"),
         "al-designer": ("astra", "gpt-6-astra", "low", "read-only"),
         "al-engineer": ("sol", "gpt-6.1-sol", "medium", "workspace-write"),
-        "al-builder": ("luna", "gpt-6-luna", "high", "workspace-write"),
-        "al-scout": ("luna", "gpt-6-luna", "medium", "read-only"),
+        "al-builder": ("luna", "gpt-6-luna", "medium", "workspace-write"),
+        "al-scout": ("luna", "gpt-6-luna", "low", "read-only"),
     }
     for role, (model, slug, effort, sandbox) in cases.items():
         slot = al_models.resolve(st, role)
@@ -85,7 +85,7 @@ def test_render_models_lists_every_role_label():
     out = al_models.render_models(st)
     assert "Astra / MEDIUM" in out
     assert "Sol / MEDIUM" in out
-    assert "Luna / HIGH" in out
+    assert "Luna / MEDIUM" in out
 
 
 def test_spawn_args_pairs_model_and_effort_for_every_policy_slot():

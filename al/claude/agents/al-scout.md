@@ -2,7 +2,7 @@
 name: al-scout
 description: "AL-Scout. Read-only investigation/analysis worker of the AL orchestrator. Runs in parallel with siblings to answer ONE narrow question about the repository or a diff; never edits, never decides, never approves. Invoked ONLY by the /al skill — never select this agent for ordinary tasks."
 model: sonnet
-effort: medium
+effort: low
 tools: Read, Grep, Glob
 maxTurns: 40
 color: blue

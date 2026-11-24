@@ -142,7 +142,7 @@ note, never AL proof).
 ## 4. Implement with the right agents
 
 Use the fixed role/model/effort slots from `show --models` and `show --spawn ROLE`:
-Architect Astra/MEDIUM, Designer Astra/LOW, Engineer Sol/MEDIUM, Builder Luna/HIGH.
+Architect Astra/MEDIUM, Designer Astra/LOW, Engineer Sol/MEDIUM, Builder Luna/MEDIUM, Scout Luna/LOW.
 Only genuine model unavailability enables the documented fallback; never silently
 downgrade or invent availability. See the detailed workflow for that failure path.
 A role that cannot run is a technical capability problem, not a specification

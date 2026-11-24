@@ -91,9 +91,9 @@ or execution authority.
   (`"${STATE[@]}" rework` exit 10; see **Rework and the fast path**).
 - Agents (Agent tool `subagent_type` → model / effort, fixed in their frontmatter):
   `al-architect` Fable/MEDIUM · `al-designer` Fable/LOW · `al-engineer` Opus/MEDIUM ·
-  `al-builder` Sonnet/HIGH. Fallbacks: `al-architect-fallback` Opus/HIGH ·
+  `al-builder` Sonnet/MEDIUM. Fallbacks: `al-architect-fallback` Opus/HIGH ·
   `al-designer-fallback` Opus/MEDIUM (see **Model policy**). Read-only
-  helper: `al-scout` Sonnet/MEDIUM — an optional accelerator with no authority,
+  helper: `al-scout` Sonnet/LOW — an optional accelerator with no authority,
   never a substitute for a role. The single source of truth is
   `scripts/al_models.py`; `"${STATE[@]}" show --models` prints it.
 - State script: every new run goes through the protected managed launcher that the
@@ -138,8 +138,8 @@ sequential or stop branch, do not argue with it.
 | AL-Architect | `al-architect` Fable/MEDIUM | `al-architect-fallback` Opus/HIGH | STOP |
 | AL-Designer | `al-designer` Fable/LOW | `al-designer-fallback` Opus/MEDIUM | STOP |
 | AL-Engineer | `al-engineer` Opus/MEDIUM | none | STOP |
-| AL-Builder | `al-builder` Sonnet/HIGH | none | STOP |
-| AL-Scout (read-only helper) | `al-scout` Sonnet/MEDIUM | none | skip the fan-out |
+| AL-Builder | `al-builder` Sonnet/MEDIUM | none | STOP |
+| AL-Scout (read-only helper) | `al-scout` Sonnet/LOW | none | skip the fan-out |
 
 Always attempt the primary first. Claude Code has no per-subagent fallback
 (agent frontmatter has no fallback key; the Agent tool's inline `model` override
@@ -892,7 +892,7 @@ AL · Design
 → AL-Designer · Fable/LOW
 AL · Implementation
 ├─ AL-Engineer · Opus/MEDIUM
-└─ AL-Builder · Sonnet/HIGH · independent test scaffolding
+└─ AL-Builder · Sonnet/MEDIUM · independent test scaffolding
 AL · Builder finalization
 AL · Verification
 AL · Review #1

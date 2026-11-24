@@ -79,7 +79,7 @@ def test_show_spawn_prints_effective_spawn_args(cli):
     code, out, err = cli("show", "--spawn", "al-builder")
     assert code == 0
     assert out.strip() == (
-        "agent_type=al-builder model=gpt-6-luna reasoning_effort=high fork_turns=none"
+        "agent_type=al-builder model=gpt-6-luna reasoning_effort=medium fork_turns=none"
     )
 
 

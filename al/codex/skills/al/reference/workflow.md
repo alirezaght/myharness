@@ -92,10 +92,10 @@ or execution authority.
   `$HOME/.codex/agents/<agent_type>.toml` and registered in `$HOME/.codex/config.toml`):
   `al-architect` Astra/MEDIUM (`gpt-6-astra` / `medium`) · `al-designer` Astra/LOW
   (`gpt-6-astra` / `low`) · `al-engineer` Sol/MEDIUM (`gpt-6.1-sol` / `medium`) ·
-  `al-builder` Luna/HIGH (`gpt-6-luna` / `high`). Fallbacks:
+  `al-builder` Luna/MEDIUM (`gpt-6-luna` / `medium`). Fallbacks:
   `al-architect-fallback` Sol/HIGH (`gpt-6.1-sol` / `high`) · `al-designer-fallback`
   Sol/MEDIUM (`gpt-6.1-sol` / `medium`) (see **Model policy**). Read-only helper:
-  `al-scout` Luna/MEDIUM (`gpt-6-luna` / `medium`) — an optional accelerator
+  `al-scout` Luna/LOW (`gpt-6-luna` / `low`) — an optional accelerator
   with no authority, never a substitute for a role. The single source of truth is
   `$HOME/.codex/skills/al/scripts/al_models.py`; `"${STATE[@]}" show --models` prints it and
   `"${STATE[@]}" show --spawn <role>` prints the exact `spawn_agent` arguments of the
@@ -143,8 +143,8 @@ sequential or stop branch, do not argue with it.
 | AL-Architect | `al-architect` | `gpt-6-astra` Astra/MEDIUM | `al-architect-fallback` `gpt-6.1-sol` Sol/HIGH | STOP | read-only |
 | AL-Designer | `al-designer` | `gpt-6-astra` Astra/LOW | `al-designer-fallback` `gpt-6.1-sol` Sol/MEDIUM | STOP | read-only |
 | AL-Engineer | `al-engineer` | `gpt-6.1-sol` Sol/MEDIUM | none | STOP | workspace-write |
-| AL-Builder | `al-builder` | `gpt-6-luna` Luna/HIGH | none | STOP | workspace-write |
-| AL-Scout (read-only helper) | `al-scout` | `gpt-6-luna` Luna/MEDIUM | none | skip the fan-out | read-only |
+| AL-Builder | `al-builder` | `gpt-6-luna` Luna/MEDIUM | none | STOP | workspace-write |
+| AL-Scout (read-only helper) | `al-scout` | `gpt-6-luna` Luna/LOW | none | skip the fan-out | read-only |
 
 Always attempt the primary first. A fallback is a different `agent_type` whose
 role TOML carries the approved model **and** effort pair. Every `spawn_agent`
@@ -903,7 +903,7 @@ AL · Design
 → AL-Designer · Astra/LOW
 AL · Implementation
 ├─ AL-Engineer · Sol/MEDIUM
-└─ AL-Builder · Luna/HIGH · independent test scaffolding
+└─ AL-Builder · Luna/MEDIUM · independent test scaffolding
 AL · Builder finalization
 AL · Verification
 AL · Review #1

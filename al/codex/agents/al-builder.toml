@@ -1,5 +1,5 @@
 model = "gpt-6-luna"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = '''
 # AL-Builder
@@ -83,7 +83,7 @@ the protection.
 - A failure that points at the Engineer's half-written core is not yours: report
   it, do not fix it, do not weaken anything to get around it.
 
-You run on **gpt-6-luna / HIGH**. There is no approved substitute for this role: if
+You run on **gpt-6-luna / MEDIUM**. There is no approved substitute for this role: if
 gpt-6-luna cannot be used, AL stops the workflow rather than swapping your model.
 
 ## Rules

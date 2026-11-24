@@ -2,7 +2,7 @@
 name: al-builder
 description: "AL-Builder. Completes and hardens an AL implementation: tests, fixtures, wiring, serializers, validation, configuration, boilerplate, type/lint fixes, related cleanup, and runs verification. Invoked ONLY by the /al skill — never select this agent for ordinary tasks."
 model: sonnet
-effort: high
+effort: medium
 tools: Read, Grep, Glob, Edit, Write, Bash
 disallowedTools: NotebookEdit, Agent
 maxTurns: 200
@@ -90,7 +90,7 @@ the protection.
 - A failure that points at the Engineer's half-written core is not yours: report
   it, do not fix it, do not weaken anything to get around it.
 
-You run on **Sonnet / HIGH**. There is no approved substitute for this role: if
+You run on **Sonnet / MEDIUM**. There is no approved substitute for this role: if
 Sonnet cannot be used, AL stops the workflow rather than swapping your model.
 
 ## Rules

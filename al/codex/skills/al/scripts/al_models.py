@@ -23,6 +23,10 @@ above. AL-Scout reuses Luna — a model already required by AL-Builder — so th
 fan-out introduces no new model entitlement surface. It has no fallback: if
 Luna is unavailable the fan-out is skipped (and AL-Builder blocks the run
 anyway, under the normal model policy).
+
+Per-role defaults (#30): Builder and Scout run the fast model at reduced effort (their work is
+mechanical or a narrow read-only question); the Architect keeps the strongest model. Models and
+fallbacks are unchanged, so no new entitlement surface is introduced.
 """
 
 import time
@@ -55,7 +59,7 @@ POLICY = {
     },
     "al-builder": {
         "display": "AL-Builder",
-        "primary": _slot("al-builder", "luna", LUNA, "high", RW),
+        "primary": _slot("al-builder", "luna", LUNA, "medium", RW),
         "fallback": None,
     },
 }
@@ -63,7 +67,7 @@ POLICY = {
 AUX_POLICY = {
     "al-scout": {
         "display": "AL-Scout",
-        "primary": _slot("al-scout", "luna", LUNA, "medium", RO),
+        "primary": _slot("al-scout", "luna", LUNA, "low", RO),
         "fallback": None,
     },
 }
