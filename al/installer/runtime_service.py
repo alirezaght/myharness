@@ -44,6 +44,9 @@ TAIL_MARKER = 'import al_runtime_resources'
 COOKIE_TIMEOUT = 2.0
 SETTLE = 0.3
 MAX_WORKTREES = 16
+MAX_SUBSCRIBERS = 16
+MAX_SUBSCRIBED_PATHS = 8
+SUBSCRIBED_TICK = 0.1
 
 
 def log(message):
@@ -254,6 +257,7 @@ class Service:
         self.stopping = False
         self.environment = dict(os.environ)
         self.pin_watch = None
+        self.subscribers = {}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -362,6 +366,9 @@ class Service:
             worktree.stop()
         if self.pin_watch is not None:
             self.pin_watch.kill()
+        for conn in list(self.subscribers):
+            conn.close()  # subscribers see the end and fall back to polling
+        self.subscribers.clear()
         for path in (self.directory / 's', self.directory / 'token'):
             try:
                 os.unlink(path)
@@ -389,11 +396,14 @@ class Service:
                 break
             if self.stopping:
                 self.close_listener()
+            self.notify()
+            if self.subscribers:
+                self.last_active = time.monotonic()  # a subscribed supervisor keeps the service
             if not self.children and time.monotonic() - self.last_active > self.idle:
                 log('idle timeout')
                 break
             self.background()
-            for key, _ in self.selector.select(timeout=0.5):
+            for key, _ in self.selector.select(timeout=SUBSCRIBED_TICK if self.subscribers else 0.5):
                 kind, value = key.data
                 if kind == 'accept':
                     self.accept()
@@ -414,6 +424,8 @@ class Service:
                     self.helper_done(key.fileobj, value)
                 elif kind == 'snapshot':
                     self.snapshot_request(key.fileobj, value)
+                elif kind == 'subscriber':
+                    self.unsubscribe(key.fileobj)
         self.shutdown()
 
     def forget(self, fileobj):
@@ -480,6 +492,18 @@ class Service:
         if operation == 'stop':
             self.stopping = True
             return self.reply(conn, {'event': 'stopping', 'pid': os.getpid()})
+        if operation in ('snapshot', 'subscribe'):
+            for descriptor in fds:
+                os.close(descriptor)
+            if operation == 'snapshot':
+                return self.reply(conn, self.snapshot_answer(message))
+            return self.subscribe(conn, message)
+        if operation == 'run' and isinstance(message.get('env'), dict) and 'HARNESS_CHECK_CONTEXT' in message['env']:
+            # A Harness-contained command keeps its own sandbox: it never runs in a child of
+            # the (uncontained) service. It may still ask for snapshots and subscribe (#31).
+            for descriptor in fds:
+                os.close(descriptor)
+            return self.reply(conn, {'event': 'fallback', 'reason': 'contained Harness command'})
         if operation != 'run' or len(fds) != 3:
             for descriptor in fds:
                 os.close(descriptor)
@@ -617,6 +641,86 @@ class Service:
         parent, child = socket.socketpair()
         state.update(root=root, worktree=worktree, channel=child, current=_asker(child, root))
         return state, parent
+
+    # ------------------------------------------------------------------ subscriptions
+
+    @staticmethod
+    def _identity(path):
+        try:
+            state = os.lstat(path)
+        except OSError:
+            return None
+        if not stat.S_ISREG(state.st_mode) or state.st_uid != os.getuid():
+            return None
+        return [state.st_ino, state.st_size, state.st_mtime_ns]
+
+    def subscribe(self, conn, message):
+        """`op: subscribe`: push `{'event': 'changed', 'path': P}` whenever one of the named files
+        (owned regular files, such as an AL run's state) is replaced or rewritten. The service
+        records and interprets nothing: the supervisor (Harness, #31) reads the file it named."""
+        paths = message.get('paths')
+        if (not isinstance(paths, list) or not 0 < len(paths) <= MAX_SUBSCRIBED_PATHS
+                or len(self.subscribers) >= MAX_SUBSCRIBERS
+                or any(not isinstance(p, str) or not os.path.isabs(p) or os.path.islink(p) for p in paths)):
+            return self.reply(conn, {'event': 'fallback', 'reason': 'unsupported subscription'})
+        watched = {p: self._identity(p) for p in paths}
+        try:
+            WIRE['_al_service_send'](conn, {'event': 'subscribed', 'paths': sorted(watched)})
+        except OSError:
+            conn.close()
+            return None
+        conn.setblocking(False)
+        self.subscribers[conn] = watched
+        self.selector.register(conn, selectors.EVENT_READ, ('subscriber', None))
+        return None
+
+    def unsubscribe(self, conn):
+        try:
+            if conn.recv(4096):
+                return  # subscribers send nothing; stray bytes are ignored until they close
+        except BlockingIOError:
+            return
+        except OSError:
+            pass
+        self.forget(conn)
+        self.subscribers.pop(conn, None)
+        conn.close()
+
+    def notify(self):
+        for conn, watched in list(self.subscribers.items()):
+            for path, before in list(watched.items()):
+                current = self._identity(path)
+                if current == before:
+                    continue
+                watched[path] = current
+                try:
+                    conn.setblocking(True)
+                    conn.settimeout(2)
+                    WIRE['_al_service_send'](conn, {'event': 'changed', 'path': path, 'present': current is not None})
+                    conn.setblocking(False)
+                except OSError:
+                    self.forget(conn)
+                    self.subscribers.pop(conn, None)
+                    conn.close()
+                    break
+
+    def snapshot_answer(self, message):
+        """`op: snapshot`: the proven-current snapshot tree of a worktree of this repository, or
+        None. A worktree seen for the first time starts its watcher and answers None."""
+        try:
+            located = self.location(str(message['repository']))
+        except (KeyError, TypeError):
+            located = None
+        if located is None or located[2] != os.path.realpath(self.request['common_dir']):
+            return {'event': 'snapshot', 'tree': None}
+        self.last_active = time.monotonic()
+        worktree = self.worktrees.get(located[0])
+        if worktree is None:
+            if len(self.worktrees) < MAX_WORKTREES:
+                worktree = self.worktrees[located[0]] = Worktree(self, *located)
+                worktree.start(self.captured['bytes']['installer/runtime_service_watch.py'].decode())
+            return {'event': 'snapshot', 'tree': None}
+        return {'event': 'snapshot', 'tree': worktree.current() if worktree.process is not None else None}
 
     def snapshot_request(self, channel, worktree):
         """A command child asks for the current snapshot tree of its worktree."""

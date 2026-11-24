@@ -446,7 +446,8 @@ def restore_log(record, destination):
 
 def provenance(plan, record):
     return {'key': plan.digest, 'origin': record['origin'], 'recorded_at': record.get('recorded_at'),
-            'al_version': record.get('al_version'), 'original_seconds': (record.get('timing') or {}).get('seconds')}
+            'al_version': record.get('al_version'), 'original_seconds': (record.get('timing') or {}).get('seconds'),
+            'tree': plan.key['inputs']['tree']}
 
 
 def reused_text(entry):
@@ -454,7 +455,9 @@ def reused_text(entry):
     if not cached:
         return ''
     source = cached.get('origin') or {}
-    return 'reused from run ' + str(source.get('run')) + ' (' + str(source.get('entry')) + ')'
+    tree = cached.get('tree')
+    return ('reused from run ' + str(source.get('run')) + ' (' + str(source.get('entry')) + ')'
+            + (' on the same input tree ' + tree[:12] if tree else ''))
 
 
 def annotate_packet(st, data):
