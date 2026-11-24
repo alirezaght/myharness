@@ -132,6 +132,30 @@ def test_snapshot_never_touches_the_user_index_or_worktree(repo):
     assert listing['services/nested'][1] == 'commit'
 
 
+def test_tracked_files_in_generated_directories_are_members(repo):
+    """Tracked files are always members; only untracked ones follow AL's exclusions."""
+    _fixture(repo)
+    put(repo, 'web/dist/bundle.js', 'v1\n')
+    put(repo, 'web/node_modules/lib/index.js', 'v1\n')
+    _git(repo, 'add', '-f', 'web/dist/bundle.js', 'web/node_modules/lib/index.js')
+    _git(repo, 'commit', '-qm', 'tracked generated files')
+    put(repo, 'web/node_modules/other/untracked.js', 'u\n')    # untracked: excluded by AL's rule
+    put(repo, 'build/untracked.txt', 'u\n')
+    listing = al_snapshot.entries(repo, al_snapshot.snapshot(repo))
+    assert 'web/dist/bundle.js' in listing and 'web/node_modules/lib/index.js' in listing
+    assert 'web/node_modules/other/untracked.js' not in listing and 'build/untracked.txt' not in listing
+    before = (al_snapshot.input_tree({}, ['web/dist']), al_snapshot.input_tree({}, ['web/node_modules']))
+    put(repo, 'web/dist/bundle.js', 'v2\n')
+    put(repo, 'web/node_modules/lib/index.js', 'v2\n')
+    after = (al_snapshot.input_tree({}, ['web/dist']), al_snapshot.input_tree({}, ['web/node_modules']))
+    assert before[0] != after[0] and before[1] != after[1]
+    # A file an earlier snapshot saw untracked does not linger once it is ignored.
+    put(repo, 'services/b/src/later.py', 'L = 1\n')
+    assert 'services/b/src/later.py' in al_snapshot.entries(repo, al_snapshot.snapshot(repo))
+    put(repo, '.gitignore', '__pycache__/\nignored/\n*.log\nlater.py\n')
+    assert 'services/b/src/later.py' not in al_snapshot.entries(repo, al_snapshot.snapshot(repo))
+
+
 def test_input_tree_is_a_content_identity_of_the_scoped_paths(repo):
     _fixture(repo)
     import al_store

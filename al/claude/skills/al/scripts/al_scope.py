@@ -99,7 +99,15 @@ def _blob_hashes(root, oids):
     except (OSError,ValueError,subprocess.SubprocessError) as exc:refuse('indexed blob identity unavailable: '+str(exc))
     oids = list(dict.fromkeys(oids))
     known = {oid: _BLOB_SHA256[(binding, oid)] for oid in oids if (binding, oid) in _BLOB_SHA256}
+    # A blob's sha256 is also a fact of the repository's shared store (#25).
+    import al_analysis_index as index
+    from al_snapshot import BLOB_SHA256
+    pending = [oid for oid in oids if oid not in known]
+    stored = index.lookup('git-blob-sha256', BLOB_SHA256, pending, root=root) if pending else {}
+    known.update({pending[i]: v for i, v in stored.items() if isinstance(v, str) and len(v) == 64})
     computed = _blob_hashes_uncached(root, [oid for oid in oids if oid not in known])
+    if computed:
+        index.record('git-blob-sha256', BLOB_SHA256, list(computed.items()), root=root)
     for oid, value in computed.items():
         _BLOB_SHA256[(binding, oid)] = value
     return {**known, **computed}
@@ -238,6 +246,18 @@ def _file_digest(p):
     return before.st_mode, sha
 
 
+def _worktree_digest(p, vouched, settled):
+    """(mode, sha256) of a worktree file: the snapshot's blob hash when the file is a regular
+    file of the blob's size unchanged since before the racy window, else its bytes."""
+    if vouched is not None:
+        import stat as stat_module
+        value = os.lstat(p)
+        if (stat_module.S_ISREG(value.st_mode) and value.st_size == vouched[1]
+                and max(value.st_mtime_ns, value.st_ctime_ns) < settled):
+            return value.st_mode, vouched[0]
+    return _file_digest(p)
+
+
 def _records(base,root=None):
     import al_writer_progress as progress
     progress.report('scope-index', count=0)
@@ -273,6 +293,11 @@ def _records(base,root=None):
         key = parts
         if key not in symlinked:symlinked[key] = (root / Path(*parts)).is_symlink()
         return symlinked[key]
+    # Working-copy content the private snapshot tree vouches for is not re-read (#25).
+    import time
+    settled = time.time_ns() - _DIGEST_RACY_NS
+    from al_snapshot import vouched as snapshot_vouched
+    vouched = snapshot_vouched(root, lambda path: True)
     progress.report('scope-worktree', count=0, total=len(raw_paths))
     for raw in sorted(raw_paths):
         if any(raw.rstrip(b'/') != parent and raw.startswith(parent + b'/') for parent in opaque):
@@ -289,7 +314,7 @@ def _records(base,root=None):
             row['worktree'] = obs['effective']
         elif p.is_symlink(): row['worktree'] = {'type':'symlink','text':os.readlink(p)}
         elif p.is_file():
-            mode, sha = _file_digest(p)
+            mode, sha = _worktree_digest(p, vouched.get(rel.as_posix()), settled)
             row['worktree'] = {'type':'file','executable':bool(mode & 0o111),'sha256':sha}
         elif not p.exists() or (obs and p.is_dir()): row['worktree'] = {'type':'deleted'}
         else: refuse('unsupported candidate file type: ' + str(rel))

@@ -199,6 +199,10 @@ class CapturedContent(Mapping):
     def hashes(self):return {p:r['sha256'] for p,r in self.records.items()}
 
 
+# Listing observations of listing-only snapshots, adoptable once by a full capture (see Snapshot).
+_LISTINGS={}
+
+
 class Snapshot(CaptureMixin):
     def __init__(self,root,base_oid,paths,opaque,required_adapter=None,*,listing_only=False):
         """`listing_only` observes membership and path states without capturing content:
@@ -216,7 +220,15 @@ class Snapshot(CaptureMixin):
         self.batch_bytes=max(LIMITS['file_bytes'],min(LIMITS['bytes'],4*1024*1024))
         if path_overflow:self.gaps.append(gap('file-limit','.', 'explicit path membership limit'))
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
-        self.listing_observation=self.observe_listing()
+        # A full capture adopts the membership listing a listing-only snapshot of the identical
+        # question just observed in this process (discovery expands paths with one, #25). The
+        # capture still ends with a fresh listing compared against it, so drift is refused.
+        key=(str(self.root),base_oid,tuple(self.paths),tuple(self.opaque),required_adapter)
+        adopted=None if listing_only else _LISTINGS.pop(key,None)
+        self.listing_observation=adopted if adopted is not None else self.observe_listing()
+        if listing_only:
+            if len(_LISTINGS)>=4:_LISTINGS.clear()
+            _LISTINGS[key]=self.listing_observation
         self.install_listing(self.listing_observation)
         for path in self.paths:self.observe_path(path)
         if listing_only:return
@@ -254,35 +266,9 @@ class Snapshot(CaptureMixin):
         Git's stat cache and fsmonitor); each blob's sha256 is a fact of its object id. Files
         whose bytes Git may convert (attributes, autocrlf) are left to be read directly, as is
         everything when the snapshot is unavailable or the fact store is disabled."""
-        import al_analysis_index as index
-        if not index.enabled():return {}
         import al_snapshot
-        from al_git_cache import blobs
-        try:
-            tree=al_snapshot.snapshot(self.root)
-            rows={p:row for p,row in al_snapshot.entries(self.root,tree).items()
-                  if row[0] in ('100644','100755') and row[1]=='blob' and row[3] is not None and row[3]<=LIMITS['file_bytes']
-                  and (self.relevant(p) or p.endswith(('.md','.markdown','.mdx')) and scope.covers(p))}
-            for p in al_snapshot.convertible(self.root,sorted(rows)):rows.pop(p,None)
-        except (al_snapshot.Unavailable,OSError,ValueError,subprocess.SubprocessError):
-            return {}
-        paths=sorted(rows)
-        known=index.lookup('git-blob-sha256',BLOB_SHA256,[rows[p][2] for p in paths],root=self.root)
-        out={paths[i]:(v,rows[paths[i]][3]) for i,v in known.items() if isinstance(v,str) and len(v)==64}
-        missing=[p for p in paths if p not in out];batch=[];size=0
-        def read(batch):
-            try:values=blobs(self.root,[rows[p][2] for p in batch],max_bytes=self.batch_bytes,file_bytes=LIMITS['file_bytes'])
-            except (OSError,ValueError,subprocess.SubprocessError):return
-            found=[]
-            for p in batch:
-                digest=hashlib.sha256(values[rows[p][2]]).hexdigest();out[p]=(digest,rows[p][3]);found.append((rows[p][2],digest))
-            index.record('git-blob-sha256',BLOB_SHA256,found,root=self.root)
-        for p in missing:
-            if batch and size+rows[p][3]>self.batch_bytes:read(batch);batch=[];size=0
-            batch.append(p);size+=rows[p][3]
-        if batch:read(batch)
         self.vouch_before=self.capture_started_ns-RACY_NS
-        return out
+        return al_snapshot.vouched(self.root,lambda p:self.relevant(p) or p.endswith(('.md','.markdown','.mdx')) and scope.covers(p))
 
     def vouched_identity(self,p,vouched):
         """The no-follow identity of a file the snapshot vouches for, or None to read it.

@@ -27,6 +27,39 @@ def test_plan_after_discover_verifies_instead_of_rediscovering(cli, repo, tmp_pa
     assert drop(json.loads(planned.read_bytes())) == drop(json.loads(out.read_bytes()))
 
 
+def test_discovery_lists_membership_once_for_the_capture_and_once_to_revalidate(cli, repo, tmp_path, monkeypatch):
+    import al_repository_facts as F
+    _fixture(repo)
+    start(cli)
+    listings = []
+    real = F.Snapshot.observe_listing
+    import traceback
+    monkeypatch.setattr(F.Snapshot, 'observe_listing', lambda self: listings.append(' > '.join(f.name for f in traceback.extract_stack())) or real(self))
+    invoke(cli, 'gates', 'discover', '--paths-file', str(_paths(tmp_path, ['services/a/src/app.py'])))
+    # Listing-only expansion, adopted by the capture, then the end-of-capture revalidation
+    # (the run-state save's own admission check is a separate command step).
+    discovery = [s for s in listings if '_discover' in s and 'prepare_save' not in s]
+    assert len(discovery) == 2, discovery
+
+
+def test_membership_drift_after_an_adopted_listing_is_refused_or_retried(repo, monkeypatch):
+    import al_repository_facts as F
+    import al_scope as S
+    from al_repository_capture import capture_discovery
+    _fixture(repo)
+    base = S.git_bytes('rev-parse', 'HEAD').decode().strip()
+    F.Snapshot(repo, base, ['services/a/src/app.py'], set(), listing_only=True)
+    put(repo, 'services/b/src/new.py', 'NEW = 1\n')  # membership moves after the adopted listing
+    attempts = []
+
+    def attempt(scan):
+        attempts.append(sorted(scan.members))
+        return {}
+
+    capture_discovery(lambda: F.Snapshot(repo, base, ['services/a/src/app.py'], set()), attempt)
+    assert len(attempts) == 2 and 'services/b/src/new.py' in attempts[-1]
+
+
 def test_a_changed_input_after_discover_makes_plan_reanalyse(cli, repo, tmp_path, monkeypatch):
     _fixture(repo)
     start(cli)
