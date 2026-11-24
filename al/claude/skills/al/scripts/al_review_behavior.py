@@ -152,7 +152,8 @@ def packet(st, data):
             "behavior",
             "rework_recovery_lineage",
         }
-        if set(data) != allowed:
+        # Checks AL did not verify (#17) are reviewer-visible notes that never block.
+        if set(data) - {"unverified"} != allowed:
             refuse("fresh review context contains unsupported inputs")
     return data
 

@@ -158,6 +158,9 @@ current and prospective gate obligations, with applicable base readiness. If a
 new path, unit, consumer, rule, or CI job is not covered, use the guarded
 replacement-planning route before requesting the writer.
 
+The supervisor closes your writer with `writer finish --evidence auto` (it runs the
+planned areas your changed paths reach) and runs `verify` (the remaining evidence,
+gates and review start) after you return; do not run those yourself.
 Run the plan's checks for the affected areas **through the AL ledger** (the
 EVIDENCE block in your prompt has the exact `evidence run` command): planned
 checks by `--area`, anything extra as `--tier focused` with an honest `--scope`.

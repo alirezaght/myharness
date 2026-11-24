@@ -135,6 +135,13 @@ def cmd_model_unavailable(a, sid):
 
 def cmd_approved(a, sid):
     st = load(sid)
+    if st.get("phase") == "REVIEW" and st.get("status") == "RUNNING":
+        # The REVIEW -> FINAL_VERIFICATION edge follows mechanically from a complete review:
+        # record it with the same guarded `phase FINAL_VERIFICATION` command.
+        import argparse
+        cmd_phase(argparse.Namespace(phase="FINAL_VERIFICATION", agents=None, mode=None, labels=None,
+                                     reason=None), sid)
+        st = load(sid)
     al_transitions.require_transition(st, "approved", "DONE")
     from al_execution_tasks import completion_gaps, authority
     if completion_gaps(st): al_schema.refuse(str(completion_gaps(st)))
@@ -261,6 +268,9 @@ def _main():
     al_acceptance.register(sub)
     al_evidence.register(sub)
     al_preflight.register(sub)
+    import al_intent
+    al_intent.register(sub)
+    al_intent.bind(ap)
     argv = sys.argv[1:]
     command_argv = []
     command_separator = "--" in argv
@@ -297,13 +307,14 @@ def _dispatch(a, al_recovery_guidance):
         if a.recovery_file:
             import al_proof_json as J
             al_recovery_guidance.activate(load(sid),J.loads(Path(a.recovery_file).read_bytes()),a)
-        # `evidence run` / `preflight` / `gates discover` can take minutes: they lock each read/write
-        # themselves; every other command is one short locked load-modify-save.
-        if a.cmd in {"preflight", "isolate"} or (a.cmd in {"evidence", "gates"} and a.action == "run") or (a.cmd == "gates" and a.action == "discover"):
+        # `evidence run` / `preflight` / `gates discover` and the intent commands can take minutes:
+        # they lock each read/write themselves; every other command is one short locked load-modify-save.
+        import al_intent
+        if al_intent.self_locking(a):
             a.fn(a, sid)
         else:
             with locked(sid):
-                if a.cmd not in {"rework-recovery","start","show","clear","resume","checkpoint","waiting","interrupt","transfer","stopped","writer","check-reconcile","retry","agent-peer-reconcile","integration","recovery","artifact"} and not (a.cmd in {"publication", "acceptance"} and a.action in {"packet", "status"}):
+                if al_intent.requires_running(a):
                     existing = load(sid)
                     if existing["status"] != "RUNNING": al_schema.refuse("run is not running; explicit resume required")
                 a.fn(a, sid)

@@ -73,6 +73,7 @@
     "al_implementation.py",
     "al_inherited_lineage.py",
     "al_inspection.py",
+    "al_intent.py",
     "al_interpreters.py",
     "al_isolation.py",
     "al_ledger.py",

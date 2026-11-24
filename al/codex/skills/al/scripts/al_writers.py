@@ -219,6 +219,10 @@ def next_writer_step(st):
 
 
 def cmd_writer(a,sid):
+    if a.action == 'finish' and getattr(a, 'evidence_mode', None) == 'auto':
+        # Intent command: the same `writer finish`, then `evidence run` for the areas its changes reach.
+        import al_intent
+        return al_intent.writer_finish_auto(a, sid)
     if a.action == 'start':
         from al_writer_progress import report, writer_progress
         with writer_progress():
@@ -328,5 +332,8 @@ def register(sub):
         if action=='start':
             p.add_argument('--role',required=True); p.add_argument('--files',required=True); p.add_argument('--commands-file'); p.add_argument('--task'); p.add_argument('--agent')
             p.add_argument('--degraded',action='store_true');p.add_argument('--reason',default='')
-        elif action=='finish': p.add_argument('--outcome',required=True,choices=['success','failed','abandoned'])
+        elif action=='finish':
+            p.add_argument('--outcome',required=True,choices=['success','failed','abandoned'])
+            p.add_argument('--evidence',dest='evidence_mode',choices=['auto','none'],default='none',
+                           help='auto: then run the planned evidence areas the writer\'s changed paths reach, and print the next step')
         else: p.add_argument('--reason',required=True); p.add_argument('--artifact',required=True)
