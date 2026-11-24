@@ -201,7 +201,17 @@ def decision(fn):
         except SystemExit:
             opening = None
         if opening is not None:
-            return _observed_decision(fn, opening, base, st, args, kwargs)
+            done, result = _observed_decision(fn, opening, base, st, args, kwargs, tree.chained(opening))
+            if done:
+                return result
+            # Something moved since the previous bracket closed: one window from a fresh observation.
+            try:
+                opening = tree.fresh_observation(base)
+            except SystemExit:
+                opening = None
+            if opening is not None:
+                return _observed_decision(fn, opening, base, st, args, kwargs, False)[1]
+            return fn(st, *args, **kwargs)
         try:
             before = _records(base, al_store.REPO_ROOT)
         except (OSError, ValueError, SystemExit):
@@ -225,14 +235,21 @@ def decision(fn):
     return wrapper
 
 
-def _observed_decision(fn, opening, base, st, args, kwargs):
+def _observed_decision(fn, opening, base, st, args, kwargs, retry):
     """A decision window bracketed by two observations of the working copy (snapshot tree plus
     the state a tree does not record, al_attribution_tree). Equal observations prove nothing the
-    decision read moved; otherwise it is evaluated again exactly as without memoization."""
+    decision read moved; otherwise it is evaluated again exactly as without memoization.
+    Returns (done, result); with `retry` an unstable window is not re-run here (done False)."""
     import al_attribution_tree as tree
     from al_analysis_cache import ObservationContext
     failure = None
-    with ObservationContext({'decision': [str(al_store.REPO_ROOT), base, opening.key()]}):
+    binding = [str(al_store.REPO_ROOT), base, opening.key()]
+    with ObservationContext({'decision': binding}) as context:
+        # Windows of this command that observed exactly this working copy (equal opening and
+        # closing observations) answered their questions about it: those answers carry over.
+        carried = _WINDOWS.get(json.dumps(binding))
+        if carried is not None:
+            context.local.update(carried)
         with tree.bracket(opening) as state:
             try:
                 result = fn(st, *args, **kwargs)
@@ -243,10 +260,19 @@ def _observed_decision(fn, opening, base, st, args, kwargs):
     except SystemExit:
         stable = False
     if not stable:
-        return fn(st, *args, **kwargs)
+        return (False, None) if retry else (True, fn(st, *args, **kwargs))
+    _WINDOWS.clear()
+    # Only answers that are functions of what the observation saw carry over; a membership
+    # listing or an inventory also reads ignored paths, which an observation does not record.
+    _WINDOWS[json.dumps(binding)] = {k: v for k, v in context.local.items() if k[0] in _CARRIED}
     if failure is not None:
         raise failure
-    return result
+    return True, result
+
+
+# The answers of the latest stable decision window, by the observation it opened and closed on.
+_WINDOWS = {}
+_CARRIED = ('records', 'task-classification', 'candidate', 'candidate-fingerprint', 'source-rows')
 
 
 def records(base,root=None):

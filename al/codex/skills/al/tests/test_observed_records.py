@@ -95,6 +95,7 @@ def test_decision_window_classifies_once_and_reruns_on_movement(cli, repo, state
     run(cli, 'start', '--spec', 'Classify once per decision window and re-run it when anything moved.')
     st = state(state_file)
     (repo / 'svc/app.py').write_text('x = 9\n')
+    T.observe(st)   # the windows below open from this capture's closing observation
     classified, bodies = [], []
     original = T._classify
     monkeypatch.setattr(T, '_classify', lambda *a, **k: classified.append(1) or original(*a, **k))
@@ -114,10 +115,21 @@ def test_decision_window_classifies_once_and_reruns_on_movement(cli, repo, state
         cold = original(st)
     for result in results:
         _same(result, cold)
-    # State a records comparison cannot see (a non-executable mode) still re-runs the window.
+    # A later window observing the same working copy carries the answers over.
+    for result in decide(st):
+        _same(result, cold)
+    assert len(classified) == 1 and len(bodies) == 2
+    # State a records comparison cannot see (a non-executable mode) still re-runs the window,
+    # and nothing is carried over from before the movement.
     del classified[:], bodies[:]
-    decide(st, move=lambda: os.chmod(repo / 'docs/readme.md', 0o600))
-    assert len(bodies) == 2
+    moved = decide(st, move=lambda: os.chmod(repo / 'docs/readme.md', 0o600))
+    assert len(bodies) == 2 and len(classified) >= 1
+    with monkeypatch.context() as patch:
+        patch.setenv('AL_ANALYSIS_CACHE', '0')
+        patch.setattr(tree, 'open_observation', lambda base: None)
+        cold = original(st)
+    for result in moved:
+        _same(result, cold)
 
 
 def test_membership_matching_equals_pattern_matches():
@@ -131,3 +143,75 @@ def test_membership_matching_equals_pattern_matches():
     for pattern in patterns:
         expected = tuple(sorted(p.rstrip('/') for p in members if pattern_matches(pattern, p.rstrip('/')) is True))
         assert CaptureMixin.matched(pattern, members) == expected, pattern
+
+
+def _observations(monkeypatch):
+    taken = []
+    real = tree.Observation
+
+    def observation(root, base):
+        taken.append(base)
+        return real(root, base)
+    monkeypatch.setattr(tree, 'Observation', observation)
+    return taken
+
+
+def test_a_bracket_opens_from_the_previous_closing_observation(cli, repo, state_file, monkeypatch):
+    run(cli, 'start', '--spec', 'Open a bracket from the closing observation of the previous one.')
+    st = state(state_file)
+    T.observe(st)
+    taken = _observations(monkeypatch)
+    _same(T.observe(st, retain_content=True)['files'], _fresh(monkeypatch, st))
+    assert len(taken) == 1, 'only the closing observation is taken'
+
+
+def test_movement_between_brackets_retries_from_a_fresh_observation(cli, repo, state_file, monkeypatch):
+    run(cli, 'start', '--spec', 'A chained bracket that finds movement starts again instead of refusing.')
+    st = state(state_file)
+    T.observe(st)
+    (repo / 'svc/app.py').write_text('x = 77\n')              # moved after the previous bracket closed
+    (repo / 'docs/readme.md').chmod(0o600)
+    taken = _observations(monkeypatch)
+    capture = T.observe(st, retain_content=True)
+    _same(capture['files'], _fresh(monkeypatch, st))
+    assert len(taken) == 3, 'chained attempt closing, then a fresh opening and closing'
+    T._capture(st, T._save(st, capture, capture['kind']))
+    # A decision window chained from that closing observation after more movement is
+    # evaluated again from a fresh observation and equals a cold evaluation.
+    (repo / 'svc/app.py').write_text('x = 78\n')
+
+    @S.decision
+    def decide(st):
+        return T.classify_changes(st)
+    result = decide(st)
+    with monkeypatch.context() as patch:
+        patch.setenv('AL_ANALYSIS_CACHE', '0')
+        patch.setattr(tree, 'open_observation', lambda base: None)
+        cold = T._classify(st)
+    _same(result, cold)
+
+
+def test_movement_during_a_retried_capture_still_refuses(cli, repo, state_file, monkeypatch):
+    import pytest
+    run(cli, 'start', '--spec', 'Movement during the capture refuses even after a chained retry.')
+    st = state(state_file)
+    T.observe(st)
+    original, moves = T._rows, []
+
+    def moving(st):
+        moves.append(1)
+        (repo / 'svc/app.py').write_text('x = %d\n' % (100 + len(moves)))
+        return original(st)
+    monkeypatch.setattr(T, '_rows', moving)
+    with pytest.raises(SystemExit, match=T.UNSTABLE_OBSERVATION):
+        T.observe(st, retain_content=True)
+    assert len(moves) == 2, 'one chained attempt, one fresh attempt'
+
+
+def test_path_helpers_equal_pathlib():
+    from pathlib import Path
+    import al_repository_facts as F
+    for case in ['a', 'a/b', 'a/b/', 'a//b', '/a', '.', './a', 'a/./b', 'a/.', '', '/', 'a/..', '..', '.gitignore',
+                 'dir/', 'x/.git/', 'a b/c.py', 'services/a/package.json']:
+        assert F.path_parts(case) == Path(case).parts, case
+        assert F.path_name(case) == Path(case).name, case

@@ -178,7 +178,10 @@ def test_pinned_snapshot_refs_are_removed_and_swept(repo):
     assert al_snapshot.pinned(repo) == ['refs/al/snapshots/run1/start', 'refs/al/snapshots/run2/start']
     al_snapshot.unpin('run1', repo)
     assert al_snapshot.pinned(repo) == ['refs/al/snapshots/run2/start']
-    al_snapshot.sweep([], repo)
+    import time
+    al_snapshot.sweep(root=repo)
+    assert al_snapshot.pinned(repo) == ['refs/al/snapshots/run2/start']   # pinned recently
+    al_snapshot.sweep(root=repo, now=time.time() + al_snapshot.ORPHAN_SECONDS + 60)
     assert al_snapshot.pinned(repo) == []
     with pytest.raises(ValueError):
         al_snapshot.pin('../x', 'start', tree, repo)
@@ -202,3 +205,35 @@ def test_disabled_store_reads_directly(repo, monkeypatch, vouching):
     _collect(repo)
     assert 'packages/shared/src/common.py' in vouching
     assert not index.index_root().exists() or not list(index.index_root().rglob('*.pack'))
+
+
+def _cold_tree(repo):
+    """The snapshot tree a private index seeded afresh from the real index produces."""
+    target = al_snapshot.index_path(repo)
+    for path in (target, target.with_name(al_snapshot.INDEX + '.seed')):
+        if path.exists():
+            path.unlink()
+    return al_snapshot.snapshot(repo)
+
+
+def test_kept_private_index_equals_a_fresh_seed_on_every_change(repo):
+    """The private index is kept while the real index is unchanged; every tree it gives equals
+    the tree of a private index seeded afresh (#25)."""
+    _fixture(repo)
+    steps = [
+        lambda: put(repo, 'services/a/src/app.py', 'VALUE = 41\n'),          # modified tracked
+        lambda: put(repo, 'services/a/src/new.py', 'NEW = 1\n'),             # new untracked member
+        lambda: put(repo, '.gitignore', '__pycache__/\nignored/\n*.log\nservices/a/src/new.py\n'),  # member now ignored
+        lambda: os.unlink(repo / 'packages/shared/src/common.py'),           # deleted tracked
+        lambda: (repo / 'services/b/src/app.py').chmod(0o755),               # mode change
+        lambda: _git(repo, 'add', 'services/a/src/app.py'),                  # real index changed: reseed
+        lambda: _git(repo, 'update-index', '--assume-unchanged', 'services/c/src/app.py'),
+        lambda: put(repo, 'services/c/src/app.py', 'import common\nCHANGED = 1\n'),
+        lambda: (os.unlink(repo / 'services/a/src/new.py'), put(repo, '.gitignore', '__pycache__/\nignored/\n*.log\n')),
+    ]
+    al_snapshot.snapshot(repo)
+    for step in steps:
+        step()
+        kept = al_snapshot.snapshot(repo)
+        assert kept == _cold_tree(repo)
+        assert al_snapshot.snapshot(repo) == kept

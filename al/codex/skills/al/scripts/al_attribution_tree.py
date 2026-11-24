@@ -126,12 +126,35 @@ class Recorded:
         self.direct = {p: tuple(v) for p, v in value['direct'].items()}
 
 
+# The closing observation of this process's latest bracket that found nothing moved. A
+# bracket opening right after it may start from it: its own closing observation is then
+# compared with an observation taken before anything of it was read, which proves the same
+# stability. A bracket that started from it and found movement is taken again with a fresh
+# opening observation (`chained`), so a chained opening never refuses what a fresh one admits.
+_LAST = {}
+
+
 def open_observation(base):
-    """The opening Observation, or None when the snapshot is unavailable (read twice instead)."""
+    """The opening Observation (the previous bracket's closing one when it found nothing
+    moved), or None when the snapshot is unavailable (read twice instead)."""
+    from al_analysis_cache import CURRENT
+    # Only between top-level brackets: an enclosing observation context (a read-only
+    # inspection) answers its reads from its own memo, which a chained opening must not meet.
+    last = _LAST.get((str(al_store.REPO_ROOT), base)) if _enabled() and CURRENT.get() is None else None
+    return last if last is not None else fresh_observation(base)
+
+
+def fresh_observation(base):
+    """A new opening Observation, or None when the snapshot is unavailable."""
     try:
         return Observation(al_store.REPO_ROOT, base)
     except (al_snapshot.Unavailable, OSError, ValueError):
         return None
+
+
+def chained(observation):
+    """Whether `observation` was a previous bracket's closing observation."""
+    return getattr(observation, 'closing', False)
 
 
 # Candidate records read inside a bracket whose closing observation equalled its opening one,
@@ -289,6 +312,7 @@ def stable(opening, base, ignored, state=None):
     """True when nothing outside `ignored` moved since `opening`; None when the closing
     observation is unavailable (the caller then compares a second read of the records).
     With the `bracket` state, records read inside are confirmed when nothing moved at all."""
+    _LAST.clear()
     try:
         closing = Observation(al_store.REPO_ROOT, base)
     except (al_snapshot.Unavailable, OSError, ValueError):
@@ -296,6 +320,8 @@ def stable(opening, base, ignored, state=None):
     moved = opening.changed(closing)
     if moved == set():
         confirm(state)
+        closing.closing = True
+        _LAST[(closing.root, base)] = closing
     return moved is not None and all(_owned(p, ignored) for p in moved)
 
 

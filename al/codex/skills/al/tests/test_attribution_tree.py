@@ -106,6 +106,7 @@ def test_movement_during_the_capture_is_torn(cli, repo, state_file, monkeypatch,
     run(cli, 'start', '--spec', 'Refuse attribution captures torn by working-copy movement.')
     st = state(state_file)
     _moving(monkeypatch, repo, path)
+    tree._LAST.clear()   # a fresh opening observation: movement during the capture itself
     with pytest.raises(SystemExit, match=T.UNSTABLE_OBSERVATION):
         T.observe(st, retain_content=True)
 
@@ -127,6 +128,7 @@ def test_movement_outside_membership_and_in_the_index_is_torn(cli, repo, state_f
         (repo / 'node_modules/x.js').write_text('moved\n')
         return original(st)
     for rows in (moving, staging, chmod):
+        tree._LAST.clear()   # a fresh opening observation: movement during the capture itself
         with monkeypatch.context() as patch:
             patch.setattr(T, '_rows', rows)
             with pytest.raises(SystemExit, match=T.UNSTABLE_OBSERVATION):
@@ -157,6 +159,7 @@ def test_unavailable_closing_snapshot_falls_back_to_a_second_read(cli, repo, sta
         opened.append(1)
         return real(root, base)
     monkeypatch.setattr(tree, 'Observation', observation)
+    tree._LAST.clear()
     assert T.observe(st)['files'] == original(st)
     assert len(calls) == 2
 

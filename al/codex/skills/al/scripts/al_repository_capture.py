@@ -317,6 +317,7 @@ class CaptureMixin:
             for (pattern, _), old in self.match_observations.items():
                 if self.matched(pattern, fresh["members"]) != old:
                     raise CaptureDrift("match-membership", old)
+        self.last_listing = fresh
 
     def capture_metadata(self, attempts=1, discarded=()):
         from al_repository_facts import digest
