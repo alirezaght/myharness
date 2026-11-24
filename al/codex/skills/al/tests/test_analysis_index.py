@@ -1,5 +1,6 @@
 """Per-repository content-addressed fact store: reuse equals recomputation (#25)."""
 import json
+from pathlib import Path
 import os
 import stat
 import threading
@@ -254,6 +255,51 @@ def test_concurrent_writers_of_the_same_facts_race_harmlessly(repo, monkeypatch)
     reader = index.Store(directory)
     found = reader.get_many({index.identity('t', 'c', n) for n in range(200)})
     assert found == {index.identity('t', 'c', n): b'value-%d' % n for n in range(200)}
+
+
+_COLLECT = '''
+import json, sys
+sys.path.insert(0, sys.argv[1])
+import al_repository_facts as F, al_scope as S, al_analysis_index as index
+repo = sys.argv[2]
+base = S.git_bytes('rev-parse', 'HEAD', root=repo).decode().strip()
+facts = F.collect(repo, base_oid=base, paths=['services/a/data/rows.json', 'packages/shared/src/common.py'], opaque=set())
+facts.pop('capture')
+index.flush()
+sys.stdout.write(json.dumps(facts, sort_keys=True))
+'''
+
+
+def _processes(roots, env):
+    import subprocess
+    import sys
+    scripts = str(Path(index.__file__).parent)
+    procs = [subprocess.Popen([sys.executable, '-c', _COLLECT, scripts, str(root)], cwd=root, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE) for root in roots]
+    out = [p.communicate(timeout=240) for p in procs]
+    assert all(p.returncode == 0 for p in procs), [o[1][-2000:] for o in out]
+    return [o[0].decode() for o in out]
+
+
+@pytest.mark.parametrize('branches', ['same', 'different'])
+def test_concurrent_discovery_in_two_worktrees_is_byte_identical(repo, tmp_path, branches):
+    _fixture(repo)
+    first, second = tmp_path / 'one', tmp_path / 'two'
+    _git(repo, 'worktree', 'add', '-q', '--detach', str(first))
+    if branches == 'same':
+        _git(repo, 'worktree', 'add', '-q', '--detach', str(second))
+    else:
+        _git(repo, 'worktree', 'add', '-q', '-b', 'other', str(second))
+        put(second, 'services/c/src/app.py', 'import common\nOTHER = 1\n')
+        _git(second, 'add', '.')
+        _git(second, 'commit', '-qm', 'other branch')
+    env = dict(os.environ)
+    shared = _processes([first, second], env)
+    cold = _processes([first, second], dict(env, AL_ANALYSIS_CACHE='0'))
+    assert shared == cold
+    assert (shared[0] == shared[1].replace(str(second), str(first))) == (branches == 'same')
+    # Both commands published into the one repository store without waiting on each other.
+    assert len({p.parent for p in _packs()}) == 1
 
 
 def test_reference_runs_answer_every_safe_token_like_the_bytes():

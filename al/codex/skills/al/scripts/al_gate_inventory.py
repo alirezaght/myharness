@@ -197,9 +197,12 @@ def inventory(st,anticipated=(),ci_context=None,*,_finalize=None,bounded=False):
     if memo is not None:memo['__last__']=key
     def compute():
         context=inputs['context'];paths=inputs['paths'];opaque=set(inputs['opaque']);required_adapter=inputs['required_adapter']
-        return capture_discovery(
-            lambda:Snapshot(al_store.REPO_ROOT,inputs['base'],paths,opaque,required_adapter),
-            lambda scan:_inventory_attempt(st,paths,context,opaque,scan,bounded=inputs['bounded']))
+        scans=[]
+        def snapshot():
+            scans.append(Snapshot(al_store.REPO_ROOT,inputs['base'],paths,opaque,required_adapter));return scans[-1]
+        value=capture_discovery(snapshot,lambda scan:_inventory_attempt(st,paths,context,opaque,scan,bounded=inputs['bounded']))
+        _OBSERVED[inputs_key(inputs)]=_observations(scans[-1])
+        return value
     from al_analysis_cache import CURRENT
     observation=CURRENT.get()
     if key is not None and key in memo:
@@ -452,5 +455,105 @@ def gaps(st,m,anticipated=(),*,admission=True):
 
 
 def validate(st,m):
+    """Refuse a manifest whose repository inventory has gaps.
+
+    A manifest this worktree already validated (normally by the `gates discover` that
+    produced it) is not re-analysed: its recorded capture observations are re-observed
+    instead, which is AL's own end-of-capture stability check (#25)."""
+    key=_verification_key(st,m)
+    if key is not None and _verified(key):return
     missing=gaps(st,m,admission=False)
     if missing:refuse('incomplete repository gate inventory: '+str(missing))
+    if key is not None:_record_verification(key,st,m)
+
+
+# Observations of the capture behind each inventory computed in this process, by inputs key.
+_OBSERVED={}
+_VOLATILE_ENVIRONMENT={'_','OLDPWD','SHLVL','PWD'}
+
+
+def _observations(scan):
+    return {'root':str(scan.root),'base_oid':scan.base_oid,'paths':list(scan.paths),'opaque':sorted(scan.opaque),
+            'required_adapter':scan.required_adapter,'capture_started_ns':scan.capture_started_ns,
+            'listing':json.loads(json.dumps(scan.listing_observation)),
+            'path_observations':json.loads(json.dumps(scan.path_observations)),
+            'files':{p:{'sha256':r['sha256'],'identity':list(r['identity']),'size':r['size']} for p,r in scan.files.records.items()},
+            'absent':sorted(scan.absent),
+            'matches':[[pattern,purpose,list(values)] for (pattern,purpose),values in sorted(scan.match_observations.items())]}
+
+
+def _environment():
+    """What an inventory reads outside the repository: the environment and the PATH directories."""
+    import sys
+    rows=[]
+    for directory in os.environ.get('PATH','').split(os.pathsep):
+        try:value=os.stat(directory);rows.append([directory,value.st_ino,value.st_mtime_ns])
+        except OSError:rows.append([directory,None,None])
+    return {'environ':sorted([k,v] for k,v in os.environ.items() if k not in _VOLATILE_ENVIRONMENT),'path':rows,'executable':sys.executable}
+
+
+def _verification_key(st,m):
+    import al_analysis_index as index
+    if not index.enabled():return None
+    try:
+        inputs=inventory_inputs(st,[*m.get('paths',[])],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded')
+        head=S.git_bytes('rev-parse','--verify','--quiet','HEAD').decode().strip()
+        return digest({'code':index.code_digest('al_gate_inventory','al_gate_discovery'),'inputs':inputs_key(inputs),
+                       'manifest':digest(m),'rows':digest(S.source_rows()),'head':head,'root':str(al_store.REPO_ROOT),
+                       'environment':_environment()})
+    except (OSError,ValueError,TypeError,KeyError,SystemExit):
+        return None
+
+
+def _verification_path(key):
+    return Path(al_store.RUNTIME_DIR)/'inventory-verifications'/(key+'.json')
+
+
+def _record_verification(key,st,m):
+    """Keep, per worktree run, the observations a successful validation depended on."""
+    inputs=inventory_inputs(st,[*m.get('paths',[])],m.get('ci_context'),bounded=m.get('discovery_mode')=='bounded')
+    observed=_OBSERVED.get(inputs_key(inputs))
+    if observed is None:return
+    import tempfile
+    path=_verification_path(key)
+    try:
+        # The runtime directory ignores itself, so a record never becomes a task change.
+        al_store._ensure_runtime_dir()
+        path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+        if path.parent.is_symlink():return
+        fd,temporary=tempfile.mkstemp(dir=str(path.parent),prefix='.tmp.',suffix='.json')
+        try:
+            with os.fdopen(fd,'w') as handle:json.dump({'key':key,'observations':observed},handle,sort_keys=True)
+            os.replace(temporary,path)
+        finally:
+            if os.path.exists(temporary):os.unlink(temporary)
+        rows=sorted(path.parent.glob('*.json'),key=lambda p:p.stat().st_mtime,reverse=True)
+        for stale in rows[8:]:stale.unlink(missing_ok=True)
+    except (OSError,ValueError,TypeError):
+        return
+
+
+def _verified(key):
+    """Whether the recorded capture is unchanged: listing, path, absence, match and source
+    observations re-observed with the capture's own racy-clean rule. Any doubt is False."""
+    from al_repository_capture import immutable_observation
+    path=_verification_path(key)
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_uid!=os.getuid():return False
+        record=json.loads(path.read_bytes())
+        if record.get('key')!=key:return False
+        obs=record['observations']
+        if obs['root']!=str(al_store.REPO_ROOT):return False
+        progress.report('inventory-verify',force=True)
+        scan=Snapshot(al_store.REPO_ROOT,obs['base_oid'],obs['paths'],set(obs['opaque']),obs['required_adapter'],listing_only=True)
+        fresh=scan.listing_observation
+        scan.listing_observation=immutable_observation(obs['listing'])
+        scan.path_observations=obs['path_observations']
+        scan.files.records={p:{**r,'identity':tuple(r['identity'])} for p,r in obs['files'].items()}
+        scan.absent=set(obs['absent'])
+        scan.match_observations={(pattern,purpose):tuple(values) for pattern,purpose,values in obs['matches']}
+        scan.capture_started_ns=obs['capture_started_ns']
+        scan.revalidate(fresh)
+        return True
+    except (CaptureDrift,CaptureUnavailable,OSError,ValueError,TypeError,KeyError,SystemExit):
+        return False
