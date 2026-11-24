@@ -129,9 +129,7 @@ def execution_action(db_path, body, action):
                 execution = get_execution(controller.conn, data["execution"])
                 if execution["status"] not in {"Running", "Launching", "WorkerOwned"}:
                     raise ValueError("questions are answered while the run is supervised")
-                return 200, presentation(
-                    queue_answer(execution, data["question"], data["text"])
-                )
+                return 200, presentation(queue_answer(execution, data["question"], data["text"]))
             if action == "retry-start":
                 from harness.execution_worker import launch_worker
 

@@ -19,21 +19,57 @@ STATE = {
     "status": "RUNNING",
     "phase": "IMPLEMENTATION",
     "progress_notes": [
-        {"at": 1.0, "note": "parsed the spec", "role": "al-engineer", "agent": "a1", "done": 1, "total": 3},
-        {"at": 2.0, "note": "wrote the parser", "role": "al-engineer", "agent": "a1", "done": 2, "total": 3},
+        {
+            "at": 1.0,
+            "note": "parsed the spec",
+            "role": "al-engineer",
+            "agent": "a1",
+            "done": 1,
+            "total": 3,
+        },
+        {
+            "at": 2.0,
+            "note": "wrote the parser",
+            "role": "al-engineer",
+            "agent": "a1",
+            "done": 2,
+            "total": 3,
+        },
     ],
     "evidence": {
         "plan": {"unit": {}, "lint": {}},
         "entries": [
-            {"id": "E1", "area": "unit", "status": "PASS",
-             "action_cache": {"origin": {"run": "run-0", "entry": "E7"}, "tree": "a" * 40, "key": "k"}},
+            {
+                "id": "E1",
+                "area": "unit",
+                "status": "PASS",
+                "action_cache": {
+                    "origin": {"run": "run-0", "entry": "E7"},
+                    "tree": "a" * 40,
+                    "key": "k",
+                },
+            },
             {"id": "E2", "area": "lint", "status": "RUNNING"},
         ],
     },
     "agent_questions": [
-        {"id": "Q1", "kind": "blocking", "state": "open", "question": "Which port?", "agent": "a1", "at": 3.0},
-        {"id": "Q2", "kind": "non-blocking", "state": "answered", "question": "Name?", "answer": "x",
-         "agent": "a1", "forwarded": True},
+        {
+            "id": "Q1",
+            "kind": "blocking",
+            "state": "open",
+            "question": "Which port?",
+            "agent": "a1",
+            "at": 3.0,
+        },
+        {
+            "id": "Q2",
+            "kind": "non-blocking",
+            "state": "answered",
+            "question": "Name?",
+            "answer": "x",
+            "agent": "a1",
+            "forwarded": True,
+        },
     ],
 }
 
@@ -43,8 +79,15 @@ def test_live_view_carries_progress_cache_hits_snapshots_and_questions():
     assert view["progress"]["done"] == 2 and view["progress"]["total"] == 3
     assert view["checks"] == {"done": 1, "total": 2}
     assert view["agents"] == [dict(STATE["progress_notes"][-1], id="a1")]
-    assert view["cache_hits"] == [{"entry": "E1", "area": "unit", "status": "PASS",
-                                   "reused_from": {"run": "run-0", "entry": "E7"}, "tree": "a" * 40}]
+    assert view["cache_hits"] == [
+        {
+            "entry": "E1",
+            "area": "unit",
+            "status": "PASS",
+            "reused_from": {"run": "run-0", "entry": "E7"},
+            "tree": "a" * 40,
+        }
+    ]
     assert view["snapshots"] == [{"entry": "E1", "area": "unit", "tree": "a" * 40}]
     assert [q["id"] for q in view["questions"]] == ["Q1"]
 
@@ -73,7 +116,12 @@ def test_dashboard_answer_is_queued_then_delivered_through_al(tmp_path):
 
     def run_al(argv):
         calls.append(argv)
-        return 0, "AL · answered Q1\nAL · send the answer to the asking agent: Send" + "Message(to=\"a1\")\n", ""
+        return (
+            0,
+            "AL · answered Q1\nAL · send the answer to the asking agent: Send"
+            + 'Message(to="a1")\n',
+            "",
+        )
 
     delivered = Live.answer_pending(execution, run_al)
     assert calls == [["ask", "--answer", "Q1", "--text", "8080"]]
@@ -160,7 +208,9 @@ def test_locate_follows_the_route_of_the_run(tmp_path):
         route = root / "routes" / Service.route("/repo", "claude", "s1")
         route.write_text(name)
         route.chmod(0o600)
-        assert Service.locate(root, "/repo", "claude", "s1") is None  # a symlinked service is refused
+        assert (
+            Service.locate(root, "/repo", "claude", "s1") is None
+        )  # a symlinked service is refused
         link.unlink()
         service.directory.rename(link)
         service.directory = link
@@ -174,12 +224,20 @@ def test_source_events_poll_without_a_service(monkeypatch, tmp_path):
     from harness import execution_worker as Worker
 
     monkeypatch.setattr(Worker, "al_source", lambda execution, envelope: tmp_path / "state.json")
-    events = Worker.SourceEvents({"host": "claude", "al_session_id": "s"}, {"repository": str(tmp_path)},
-                                 {"launcher": str(tmp_path / "missing-alctl")}, lambda _: None)
+    events = Worker.SourceEvents(
+        {"host": "claude", "al_session_id": "s"},
+        {"repository": str(tmp_path)},
+        {"launcher": str(tmp_path / "missing-alctl")},
+        lambda _: None,
+    )
     events.refresh()
     assert events.transport == "polling"
     assert events.due(time.monotonic() - 2) and not events.due(time.monotonic())
     monkeypatch.setenv("HARNESS_AL_SERVICE_EVENTS", "0")
-    disabled = Worker.SourceEvents({"host": "claude", "al_session_id": "s"}, {"repository": str(tmp_path)},
-                                   {"launcher": "x"}, lambda _: None)
+    disabled = Worker.SourceEvents(
+        {"host": "claude", "al_session_id": "s"},
+        {"repository": str(tmp_path)},
+        {"launcher": "x"},
+        lambda _: None,
+    )
     assert disabled.locator is None and disabled.transport == "polling"

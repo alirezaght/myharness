@@ -23,7 +23,16 @@ def test_each_approved_category_is_one_evidence_area():
     recipes = {r["category"]: r for r in check_recipes(PLAN)}
     assert list(recipes) == ["unit", "integration", "e2e", "edge_case"]
     unit = recipes["unit"]
-    assert unit["plan_argv"] == ["evidence", "plan", "--area", "testplan-unit", "--kind", "test", "--tier", "focused"]
+    assert unit["plan_argv"] == [
+        "evidence",
+        "plan",
+        "--area",
+        "testplan-unit",
+        "--kind",
+        "test",
+        "--tier",
+        "focused",
+    ]
     assert unit["scenarios"] == ["S1", "S2"] and unit["cacheable"] is True
     assert recipes["integration"]["tier"] == "broad" and recipes["integration"]["cacheable"]
     assert recipes["edge_case"]["area"] == "testplan-edge-case"
@@ -31,7 +40,11 @@ def test_each_approved_category_is_one_evidence_area():
 
 def test_end_to_end_reaching_real_services_is_not_cached():
     e2e = next(r for r in check_recipes(PLAN) if r["category"] == "e2e")
-    assert e2e["hermetic"] is False and e2e["cacheable"] is False and "--non-hermetic" in e2e["plan_argv"]
+    assert (
+        e2e["hermetic"] is False
+        and e2e["cacheable"] is False
+        and "--non-hermetic" in e2e["plan_argv"]
+    )
     mocked = {"categories": {"e2e": [scenario("S9", mock="payment API")]}}
     assert check_recipes(mocked)[0]["cacheable"] is True
 
@@ -52,4 +65,6 @@ def test_execution_handoff_carries_the_recipes(controller, sample_repo, monkeypa
     tid, eid = approved_execution(controller, sample_repo, monkeypatch)
     execution = get_execution(controller.conn, eid)
     envelope = read_handoff(execution["handoff_path"], execution["handoff_hash"])
-    assert envelope["check_recipes"] == check_recipes(TestPlanner(controller, tid).document().to_dict())
+    assert envelope["check_recipes"] == check_recipes(
+        TestPlanner(controller, tid).document().to_dict()
+    )

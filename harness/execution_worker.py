@@ -378,7 +378,11 @@ def deliver_answers(controller, execution_id, package):
         )
         try:
             result = subprocess.run(
-                command, cwd=envelope["repository"], env=environment, capture_output=True, timeout=30
+                command,
+                cwd=envelope["repository"],
+                env=environment,
+                capture_output=True,
+                timeout=30,
             )
         except (OSError, subprocess.SubprocessError) as error:
             return 1, "", str(error)
@@ -410,12 +414,17 @@ class SourceEvents:
             from harness.execution_al_service import Locator
 
             self.locator = Locator(
-                package["launcher"], envelope["repository"], execution["host"], execution["al_session_id"]
+                package["launcher"],
+                envelope["repository"],
+                execution["host"],
+                execution["al_session_id"],
             )
 
     @property
     def transport(self):
-        return "service" if self.subscription is not None and self.subscription.active else "polling"
+        return (
+            "service" if self.subscription is not None and self.subscription.active else "polling"
+        )
 
     def refresh(self):
         if not self.enabled or self.transport == "service":
@@ -961,6 +970,7 @@ def supervise(conn, execution_id, token, mode="start", focus=None):
                     proc.stdin.close()
                 except BrokenPipeError:
                     pass
+
             def source_changed(_path):
                 try:
                     output.put_nowait(("al-event", None))

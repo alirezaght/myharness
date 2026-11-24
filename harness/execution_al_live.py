@@ -34,6 +34,7 @@ def durable_file(path, raw):
         if os.path.exists(temporary):
             os.unlink(temporary)
 
+
 LIVE = "al-live.json"
 ANSWERS = "question-answers"
 MAX_ANSWER = 2000
@@ -66,7 +67,9 @@ def live_view(state):
     for entry in entries:
         cached = entry.get("action_cache") or {}
         if cached.get("tree"):
-            trees.append({"entry": entry.get("id"), "area": entry.get("area"), "tree": cached["tree"]})
+            trees.append(
+                {"entry": entry.get("id"), "area": entry.get("area"), "tree": cached["tree"]}
+            )
         if cached:
             origin = cached.get("origin") or {}
             hits.append(
@@ -82,7 +85,10 @@ def live_view(state):
     for q in state.get("agent_questions") or []:
         if q.get("state") == "open" or (q.get("state") == "answered" and not q.get("forwarded")):
             questions.append(
-                {k: q.get(k) for k in ("id", "kind", "state", "question", "context", "role", "agent", "at")}
+                {
+                    k: q.get(k)
+                    for k in ("id", "kind", "state", "question", "context", "role", "agent", "at")
+                }
                 | ({"answer": q.get("answer")} if q.get("state") == "answered" else {})
             )
     return {
@@ -111,7 +117,10 @@ def publish(execution, state, transport):
         previous = json.loads(path.read_bytes())
     except (OSError, ValueError):
         previous = None
-    if previous is not None and {k: v for k, v in previous.items() if k not in {"transport", "updated_at"}} == view:
+    if (
+        previous is not None
+        and {k: v for k, v in previous.items() if k not in {"transport", "updated_at"}} == view
+    ):
         if previous.get("transport") == transport:
             return None
     record = view | {"transport": transport, "updated_at": time.time()}
@@ -149,7 +158,9 @@ def queue_answer(execution, question_id, text, *, source="dashboard"):
         "state": "Queued",
         "queued_at": time.time(),
     }
-    durable_file(directory / (request["id"] + ".json"), json.dumps(request, sort_keys=True).encode())
+    durable_file(
+        directory / (request["id"] + ".json"), json.dumps(request, sort_keys=True).encode()
+    )
     return request
 
 

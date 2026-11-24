@@ -208,8 +208,22 @@ def test_dashboard_answer_reaches_the_waiting_agent_through_the_supervisor(
 
     tid, eid = approved_execution(controller, sample_repo, monkeypatch)
     execution = get_execution(controller.conn, eid)
-    Live.publish(execution, {"run_id": "r", "agent_questions": [
-        {"id": "Q1", "kind": "blocking", "state": "open", "question": "Port?", "agent": "eng-1"}]}, "service")
+    Live.publish(
+        execution,
+        {
+            "run_id": "r",
+            "agent_questions": [
+                {
+                    "id": "Q1",
+                    "kind": "blocking",
+                    "state": "open",
+                    "question": "Port?",
+                    "agent": "eng-1",
+                }
+            ],
+        },
+        "service",
+    )
     body = json.dumps({"task": tid, "execution": eid, "question": "Q1", "text": "8080"}).encode()
     status, data = execution_action(db_path, body, "question-answer")
     assert status == 409 and "supervised" in data["error"]  # Reserved: no supervisor to deliver it
@@ -218,8 +232,10 @@ def test_dashboard_answer_reaches_the_waiting_agent_through_the_supervisor(
     status, data = execution_action(db_path, body, "question-answer")
     assert status == 200 and data["state"] == "Queued"
     status, data = execution_action(
-        db_path, json.dumps({"task": tid, "execution": eid, "question": "Q9", "text": "x"}).encode(),
-        "question-answer")
+        db_path,
+        json.dumps({"task": tid, "execution": eid, "question": "Q9", "text": "x"}).encode(),
+        "question-answer",
+    )
     assert status == 409 and "not open" in data["error"]
     # The supervisor delivers it through the protected launcher (a recording stand-in here).
     launcher = tmp_path / "alctl"
@@ -227,11 +243,13 @@ def test_dashboard_answer_reaches_the_waiting_agent_through_the_supervisor(
     launcher.write_text(
         "#!" + sys.executable + "\nimport json,sys\n"
         f"open({str(record)!r},'a').write(json.dumps(sys.argv[1:])+'\\n')\n"
-        "print('AL · answered Q1');print('AL · send the answer to the asking agent: Send'+'Message(to=\"eng-1\")')\n")
+        "print('AL · answered Q1')\n"
+        "print('AL · send the answer to the asking agent: Send'+'Message(to=\"eng-1\")')\n"
+    )
     launcher.chmod(0o755)
     monkeypatch.setattr(Worker, "require_execution_authority", lambda *a, **k: None)
     delivered = Worker.deliver_answers(controller, eid, {"launcher": str(launcher)})
     argv = json.loads(record.read_text())
-    assert argv[argv.index("--") + 1:] == ["ask", "--answer", "Q1", "--text", "8080"]
+    assert argv[argv.index("--") + 1 :] == ["ask", "--answer", "Q1", "--text", "8080"]
     assert delivered[0]["state"] == "Delivered" and "eng-1" in delivered[0]["result"]
     assert Worker.deliver_answers(controller, eid, {"launcher": str(launcher)}) == []
