@@ -185,3 +185,47 @@ def test_changing_declared_outputs_changes_command_identity(cli, tmp_path):
     )
     assert result[0] != 0
     assert len(cli.state()["evidence"]["entries"]) == 1
+
+
+def test_managed_tmpdir_is_short_private_and_removed(cli, tmp_path):
+    """Issue #18: AF_UNIX socket paths under TMPDIR (multiprocessing) must fit the platform limit."""
+    assert (
+        cli(
+            "start",
+            "--spec",
+            "Verify managed evidence runs get a short private temporary directory "
+            "that multiprocessing can bind sockets in.",
+        )[0]
+        == 0
+    )
+    record = tmp_path / "observed-tmpdir"
+    command = [
+        PY,
+        "-c",
+        "import os,stat,sys;from multiprocessing.managers import SyncManager;"
+        "t=os.environ['TMPDIR'];info=os.stat(t);"
+        "assert stat.S_IMODE(info.st_mode)==0o700 and info.st_uid==os.getuid(),t;"
+        "assert os.environ['TMP']==t==os.environ['TEMP'];"
+        "open(sys.argv[1],'w').write(t);"
+        "m=SyncManager();m.start();m.shutdown();print('1 passed')",
+        str(record),
+    ]
+    result = cli("evidence", "run", "--area", "mp", "--scope", "svc", "--", *command)
+    assert result[0] == 0, result
+    entry = cli.state()["evidence"]["entries"][-1]
+    assert entry["status"] == "PASS", entry
+    observed = record.read_text()
+    assert Path(observed).name.startswith("al-") and len(observed) < 40, observed
+    assert not Path(observed).exists()
+    assert Path(entry["storage_allocation"]["path"]) not in Path(observed).parents
+
+
+def test_short_temporary_falls_back_when_no_root_is_usable(tmp_path):
+    import al_evidence_storage
+
+    assert al_evidence_storage.short_temporary(roots=(str(tmp_path / "missing"),)) is None
+    created = al_evidence_storage.short_temporary(roots=(str(tmp_path),))
+    assert created.parent == tmp_path and created.name.startswith("al-")
+    (created / "nested").mkdir()
+    al_evidence_storage.remove_short_temporary(created)
+    assert not created.exists()

@@ -58,6 +58,16 @@ proof of equivalence to a CI command with different extras or frozen semantics.
 If the managed profile cannot represent the source recipe or setup, report that
 verification gap; do not bypass the profile or execute a guessed substitute.
 
+A managed evidence run sets `TMPDIR`, `TMP` and `TEMP` to a fresh private
+directory directly under `/tmp` (or `/var/tmp`), named `al-<random>`, mode 0700
+and owned by the user; it is removed once the check's process group has
+settled. It stays short because Unix-domain socket paths are limited (104 bytes
+on macOS, 108 on Linux) and tools such as Python multiprocessing (`black`,
+`pytest-xdist`) bind sockets under `TMPDIR`. Declared scratch, outputs and the
+uv cache stay inside the managed allocation. A check that sets its own
+`env TMPDIR=...` keeps it. Checks dispatched through a Harness execution use the
+Harness operation's temporary directory instead.
+
 ### Source-backed example: user-listing service
 
 This example is specific to the inspected Amber CI sources, not a repository
