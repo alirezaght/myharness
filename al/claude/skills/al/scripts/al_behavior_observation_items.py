@@ -1,6 +1,7 @@
 """Evidence, source assertions and exact declared scenario-item coverage."""
 
 import hashlib
+import re
 from pathlib import Path
 
 import al_ledger as L
@@ -24,12 +25,84 @@ def evidence(st, identifiers):
         if not entry or L.entry_verdict(st, entry)[0] != "VALID" or entry.get("status") != "PASS":
             refuse("behavior evidence is not a successful current execution: " + identifier)
         counts = entry.get("counts", {})
-        if any(
-            counts.get(name, 0)
-            for name in ("failed", "errors", "skipped", "xfailed", "xpassed", "xfail", "xpass")
-        ):
-            refuse("behavior evidence contains failed, skipped or expected-failure results")
+        if any(counts.get(name, 0) for name in FAILURE_COUNTS):
+            refuse("behavior evidence contains failed or errored results")
+        # Skipped and expected-failure results are unverified, not failures: they never
+        # refuse an observation (issue #19); unverified_results() reports them instead.
         result.append(entry)
+    return result
+
+
+FAILURE_COUNTS = ("failed", "errors")
+UNVERIFIED_COUNTS = ("skipped", "xfailed", "xpassed", "xfail", "xpass", "todo")
+# pytest -rs summary, pytest -v node lines and -rxX summaries; other runners report
+# counts only, and their unverified results stay unlocated.
+UNVERIFIED_LOCATION_RES = (
+    re.compile(r"^\s*SKIPPED \[\d+\] (?P<path>[^\s:]+):\d+"),
+    re.compile(r"^\s*(?P<path>[^\s:]+)::\S.*?\s(?:SKIPPED|XFAIL|XPASS)\b"),
+    re.compile(r"^\s*(?:SKIPPED|XFAIL|XPASS)\s+(?P<path>[^\s:]+)::"),
+)
+LOG_LIMIT = 16 * 1024 * 1024
+
+
+def unverified_locations(entry):
+    """Repository-relative files of the entry's reported skips/xfails, or None if unknown."""
+    try:
+        log = Path(entry["log"])
+        if log.stat().st_size > LOG_LIMIT:
+            return None
+        text = log.read_bytes().decode(errors="replace")
+    except (KeyError, TypeError, OSError):
+        return None
+    cwd = Path(entry.get("cwd") or ".")
+    found = set()
+    for line in text.splitlines():
+        for pattern in UNVERIFIED_LOCATION_RES:
+            match = pattern.match(line)
+            if match:
+                raw = Path(match.group("path"))
+                if not raw.is_absolute() and ".." not in raw.parts:
+                    found.add((cwd / raw).as_posix().removeprefix("./"))
+                break
+    return found or None
+
+
+def unverified_results(st, evidence_ids, assertion_paths=(), changed_paths=None):
+    """Report skipped/expected-failure results of the cited evidence; never refuse.
+
+    A skip located in an asserted or changed file leaves that part of the scenario
+    unverified and is reported as related. Skips elsewhere (pre-existing, credential-
+    gated or unrelated tests) are informational. Unlocated skips are reported with
+    their counts so the reader can add `-rs` to locate them."""
+    if changed_paths is None:
+        try:
+            import al_scope as S
+
+            changed_paths = S.changed_paths(st["identity"]["merge_base"])
+        except (OSError, ValueError, KeyError, TypeError, SystemExit):
+            changed_paths = ()
+    relevant = set(assertion_paths) | set(changed_paths)
+    result = []
+    for identifier in evidence_ids:
+        entry = L.find(st, identifier) or {}
+        counts = entry.get("counts", {})
+        unverified = {name: counts[name] for name in UNVERIFIED_COUNTS if counts.get(name, 0)}
+        if not unverified:
+            continue
+        located = unverified_locations(entry)
+        row = {
+            "evidence_id": identifier,
+            "counts": unverified,
+            "related_paths": sorted(located & relevant) if located else [],
+            "located": located is not None,
+        }
+        if not row["located"]:
+            row["note"] = "locations not reported (add -rs to list them); not blocking"
+        elif row["related_paths"]:
+            row["note"] = "skipped or expected-failure tests in asserted or changed files are unverified"
+        else:
+            row["note"] = "only in files unrelated to the change or its assertions; informational"
+        result.append(row)
     return result
 
 

@@ -550,6 +550,14 @@ scenario in the admitted plan needs one observation: `review-start` refuses with
 3. `"${STATE[@]}" behavior observe --file <observation.json>` per scenario. An
    observation still containing `FILL:` is refused.
 
+Cited runs must have passed with no failed or errored tests. Skipped and
+expected-failure results never refuse an observation: they are unverified, not
+failures. `behavior observe` lists them under `unverified` with their counts and
+`related_paths`: the asserted or changed files that contain them, located from
+pytest `-rs`/`-v`/`-rxX` output. A skip in a related file leaves that part of the
+scenario unverified; skips elsewhere (pre-existing, credential-gated or unrelated
+tests) are informational.
+
 A planned check that was a mistake (a command or scope CI does not use) is
 withdrawn with `"${STATE[@]}" evidence retire --area <area> --reason <text>
 [--replaced-by E<n>,...]`; its runs stay in the ledger and reviewers see the

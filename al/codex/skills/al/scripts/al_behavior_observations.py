@@ -245,7 +245,15 @@ def cmd_observe(a, sid):
         refuse("duplicate immutable behavior observation")
     history.append(reference)
     al_store.save(sid, st)
-    print(J.raw({"artifact": reference, "gaps": behavior_gaps(st)}).decode())
+    result = {"artifact": reference, "gaps": behavior_gaps(st)}
+    unverified = Items.unverified_results(
+        st,
+        observation["evidence_ids"],
+        {row["path"] for row in observation["assertion_locations"]},
+    )
+    if unverified:
+        result["unverified"] = unverified
+    print(J.raw(result).decode())
 
 
 def cmd_packet(a, sid):
