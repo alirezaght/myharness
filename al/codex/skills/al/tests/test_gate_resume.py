@@ -44,11 +44,12 @@ def report(output):
 
 def test_failed_middle_resumes_only_missing_and_requires_explicit_failed_retry(cli, repo, tmp_path):
     markers, release = prepare(cli, repo, tmp_path)
+    # A blocking failure fails the stage but the remaining gates still run (issue #33).
     invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
-    assert [p.read_text() if p.exists() else '' for p in markers] == ['x', 'x', '']
+    assert [p.read_text() if p.exists() else '' for p in markers] == ['x', 'x', 'x']
     _, output, _ = invoke(cli, 'gates', 'run', '--stage', 'candidate', '--resume', ok=False)
     result = report(output)
-    assert result['selected'] == ['last'] and result['retained_failed'] == ['middle']
+    assert result['selected'] == [] and result['retained_failed'] == ['middle']
     assert not result['stage_ready'] and result['unexecuted'] == []
     assert [p.read_text() for p in markers] == ['x', 'x', 'x']
     release.write_text('retry explicitly authorized by the test')
@@ -66,11 +67,12 @@ def test_failed_middle_resumes_only_missing_and_requires_explicit_failed_retry(c
 
 def test_explicit_id_can_retry_failure_but_does_not_claim_unexecuted_stage(cli, repo, tmp_path):
     markers, release = prepare(cli, repo, tmp_path)
-    invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
+    invoke(cli, 'gates', 'run', '--stage', 'candidate', '--id', 'boundary')
+    invoke(cli, 'gates', 'run', '--stage', 'candidate', '--id', 'middle', ok=False)
     release.write_text('explicit retry')
     _, output, _ = invoke(cli, 'gates', 'run', '--stage', 'candidate', '--resume', '--id', 'middle', ok=False)
     result = report(output)
-    assert result['selected'] == ['middle'] and result['unexecuted'] == ['last']
+    assert result['selected'] == ['middle'] and 'last' in result['unexecuted'] and 'middle' not in result['unexecuted']
     assert not result['stage_ready'] and not result['retained_failed']
     assert markers[1].read_text() == 'xx' and not markers[2].exists()
 
@@ -188,10 +190,11 @@ def test_resume_other_checks_never_approves_around_actual_architecture_failure(c
     from evidence_helpers import plan_and_run_broad
     assert plan_and_run_broad(cli) == 0
     invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
+    assert marker.read_text()=='verified'  # the other gates ran past the blocking failure (issue #33)
     _, output, _=invoke(cli, 'gates', 'run', '--stage', 'candidate', '--resume', ok=False)
     result=report(output)
-    assert result['selected']==['boundary'] and result['retained_failed']==[architecture]
-    assert marker.read_text()=='verified' and not result['stage_ready']
+    assert result['selected']==[] and result['retained_failed']==[architecture]
+    assert not result['stage_ready']
     state=cli.state()
     failed=next(e for e in reversed(state['evidence']['entries']) if e['area']=='gate-candidate-'+architecture)
     assert failed['status']=='FAIL' and 'forbidden_dependency' in Path(failed['log']).read_text()
