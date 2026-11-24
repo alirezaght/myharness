@@ -116,6 +116,10 @@
       "tests": 2,
       "seconds": 19.2
     },
+    "claude:tests/test_gate_refresh_rule_sources.py": {
+      "tests": 4,
+      "seconds": 28.0
+    },
     "claude:tests/test_gate_resume.py": {
       "tests": 9,
       "seconds": 68.9
@@ -439,6 +443,10 @@
     "codex:tests/test_gate_refresh.py": {
       "tests": 2,
       "seconds": 18.9
+    },
+    "codex:tests/test_gate_refresh_rule_sources.py": {
+      "tests": 4,
+      "seconds": 30.0
     },
     "codex:tests/test_gate_resume.py": {
       "tests": 9,

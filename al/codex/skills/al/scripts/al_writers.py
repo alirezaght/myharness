@@ -303,6 +303,10 @@ def _cmd_writer(a,sid):
         else:
             if w['state'] not in {'ACTIVE','UNRESOLVED'} or not a.reason: refuse('reconciliation requires unresolved writer and reason')
             w.update(state='RECONCILED',reconciliation={'reason':a.reason,'artifact':snapshot_artifact(sid,Path(a.artifact),'writer-reconciliation'),'at':time.time()})
+        # A rule file the writer edited (a nested AGENTS.md, manifest or CI file) refreshes the
+        # gate manifest now, once no writer is still editing, instead of failing every gate later.
+        from al_gate_refresh import settle
+        settle(st,changed=w['files'])
     if a.action == 'start':
         from al_writer_progress import report
         report('writer-publication', force=True)

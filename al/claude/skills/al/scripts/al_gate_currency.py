@@ -23,6 +23,22 @@ def _execution_semantics(bindings):
     return [semantic(b) for b in bindings]
 
 
+REQUIREMENTS='task coverage requirements changed; rediscover repository gates'
+
+
+def _widened(now,planned):
+    """Paths the task question gained when that is the projection's only difference, else None.
+
+    An edit to a file outside the planned paths (a unit's nested AGENTS.md reached from a
+    planned file) only adds it to the question's changed paths; every requirement stays."""
+    import al_coverage_relevance as R
+    a=R.semantic_projection(now);b=R.semantic_projection(planned)
+    qa=dict(a['question']);qb=dict(b['question'])
+    added=sorted(set(qa.pop('changed_paths',[]))-set(qb.pop('changed_paths',[])))
+    if not added or qa!=qb or {k:v for k,v in a.items() if k!='question'}!={k:v for k,v in b.items() if k!='question'}:return None
+    return added
+
+
 def check(st):
     from al_repository_capture import CaptureDrift,CaptureUnavailable
     refs=st.get('gate_manifests',[])
@@ -49,8 +65,10 @@ def check(st):
     import al_service_coverage as Coverage
     for gap in assessment['gaps']:
         reasons.append('task-relevant coverage incomplete: '+Coverage.describe_gap(gap));pathless=True
+    widened=None
     if projection['semantic_sha256']!=declaration['projection']['semantic_sha256']:
-        reasons.append('task coverage requirements changed; rediscover repository gates');pathless=True
+        reasons.append(REQUIREMENTS);pathless=True
+        widened=_widened(projection,declaration['projection'])
     if current['capture']['implementation_binding']!=declaration['capture']['implementation_binding']:
         reasons.append('coverage implementation policy changed; rediscover repository gates');pathless=True
     if _execution_semantics(assessment['required_bindings'])!=_execution_semantics(declaration['assessment']['required_bindings']):
@@ -68,4 +86,5 @@ def check(st):
     for unit in set(current['units'])-set(manifest['units']):
         reasons.append('new touched unit requires replanning: '+unit);pathless=True
     return {'current':not reasons,'reasons':sorted(set(reasons)),'superseded':ref,
-            'paths':sorted(set(subjects)),'pathless':pathless,'coverage_gaps':assessment['gaps']}
+            'paths':sorted(set(subjects)),'pathless':pathless,'coverage_gaps':assessment['gaps'],
+            **({'widened_paths':widened} if widened else {})}
