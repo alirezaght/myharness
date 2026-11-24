@@ -37,6 +37,7 @@ _STAGES = {
     'inventory-relevance': 'projecting task-relevant checks',
     'inventory-bindings': 'binding check inputs and sources',
     'inventory-validate': 'revalidating the manifest against a fresh inventory',
+    'inventory-verify': 'verifying the recorded capture of the validated manifest',
     'inventory-stability': 'checking repository snapshot stability',
     'attribution-first': 'observing source for attribution',
     'attribution-second': 'confirming source attribution stability',
