@@ -32,7 +32,8 @@ def _manifest(state, source=None, rule=None, active=None, argv=None):
 def _start(cli, tmp_path, repo, classification="SMALL", designer="no", manifest=None):
     invoke(cli, "start", "--spec", "Preserve every gate and review obligation through recovery.")
     invoke(cli, "spec-gate", "SPEC_READY")
-    invoke(cli, "classify", classification, "--designer", designer, "--implementers", "al-engineer")
+    invoke(cli, "classify", classification, "--designer", designer, "--implementers", "al-engineer",
+           *(["--hard-part", "invariant: recovery keeps every gate obligation"] if classification == "COMPLEX" else []))
     state = json.loads(cli("show")[1])
     path = tmp_path / "gates.json"; path.write_text(json.dumps(manifest or _manifest(state)))
     invoke(cli, "gates", "plan", "--file", str(path))

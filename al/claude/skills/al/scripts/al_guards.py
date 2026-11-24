@@ -138,6 +138,9 @@ def cmd_spec_gate(a, sid):
         sys.exit(8)
     save(sid, st)
     print("AL · SPEC_READY")
+    print("Next: classify. COMPLEX (and the Designer) needs a named hard part: "
+          "--hard-part algorithm|invariant|protocol:<name>. Breadth, the number of services or files, "
+          "and defect counts are not reasons.")
 
 
 def cmd_snapshot(a, sid):
