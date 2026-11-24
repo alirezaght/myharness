@@ -199,13 +199,19 @@ def inventory(st,anticipated=(),ci_context=None,*,_finalize=None,bounded=False,_
         # An inventory of these inputs recorded earlier in this worktree run is the answer
         # while its capture re-observes unchanged (#25); otherwise a new capture is analysed.
         recorded_key=answer_key({'kind':'inventory'},inputs)
+        # A capture whose re-observation found only content changes is the start of an
+        # incremental one (#35): its fresh listing and the unchanged files' hashes are reused.
+        reuse={}
         if recorded_key is not None:
-            recorded=verified_answer(recorded_key,inputs)
+            recorded=verified_answer(recorded_key,inputs,reuse)
             if isinstance(recorded,dict) and isinstance(recorded.get('paths'),list):return recorded
         context=inputs['context'];paths=inputs['paths'];opaque=set(inputs['opaque']);required_adapter=inputs['required_adapter']
         scans=[]
         def snapshot():
-            scans.append(Snapshot(al_store.REPO_ROOT,inputs['base'],paths,opaque,required_adapter));return scans[-1]
+            # Only the first attempt is incremental: a retry after drift captures afresh.
+            prior=reuse.pop('capture',None)
+            extra={'listing':prior['listing'],'known':prior['known']} if prior else {}
+            scans.append(Snapshot(al_store.REPO_ROOT,inputs['base'],paths,opaque,required_adapter,**extra));return scans[-1]
         value=capture_discovery(snapshot,lambda scan:_inventory_attempt(st,paths,context,opaque,scan,bounded=inputs['bounded']))
         _OBSERVED[inputs_key(inputs)]=_observations(scans[-1])
         if recorded_key is not None:record_answer(recorded_key,inputs,value)
@@ -501,7 +507,7 @@ def _observations(scan):
             'listing':json.loads(json.dumps(scan.listing_observation)),
             'path_observations':json.loads(json.dumps(scan.path_observations)),
             'files':{p:{'sha256':r['sha256'],'identity':list(r['identity']),'size':r['size']} for p,r in scan.files.records.items()},
-            'absent':sorted(scan.absent),
+            'absent':sorted(scan.absent),'rules':sorted(scan.rules),
             'matches':[[pattern,purpose,list(values)] for (pattern,purpose),values in sorted(scan.match_observations.items())]}
 
 
@@ -556,7 +562,8 @@ def record_answer(key,inputs,answer):
         if path.parent.is_symlink():return
         fd,temporary=tempfile.mkstemp(dir=str(path.parent),prefix='.tmp.',suffix='.json')
         try:
-            with os.fdopen(fd,'w') as handle:json.dump({'key':key,'observations':observed,'answer':answer},handle,sort_keys=True)
+            # One C-encoded string: json.dump streams through the pure-Python encoder.
+            with os.fdopen(fd,'w') as handle:handle.write(json.dumps({'key':key,'observations':observed,'answer':answer},sort_keys=True))
             os.replace(temporary,path)
         finally:
             if os.path.exists(temporary):os.unlink(temporary)
@@ -566,9 +573,13 @@ def record_answer(key,inputs,answer):
         return
 
 
-def verified_answer(key,inputs=None):
+def verified_answer(key,inputs=None,reuse=None):
     """The recorded answer when the recorded capture is unchanged (listing, path, absence, match
-    and source observations re-observed with the capture's own racy-clean rule), else None."""
+    and source observations re-observed with the capture's own racy-clean rule), else None.
+
+    With a `reuse` dict, a recorded capture that moved only in file content (#35) leaves
+    `reuse['capture']`: the fresh listing and the recorded file records, from which the new
+    capture starts incrementally. Any structural change leaves nothing (a full capture)."""
     from al_repository_capture import immutable_observation
     path=_verification_path(key)
     try:
@@ -586,8 +597,49 @@ def verified_answer(key,inputs=None):
         scan.absent=set(obs['absent'])
         scan.match_observations={(pattern,purpose):tuple(values) for pattern,purpose,values in obs['matches']}
         scan.capture_started_ns=obs['capture_started_ns']
-        scan.revalidate(fresh)
+        try:scan.revalidate(fresh)
+        except CaptureDrift:
+            if reuse is not None and _content_only(scan,fresh,obs):
+                reuse['capture']={'listing':fresh,'known':(scan.files.records,obs['capture_started_ns'])}
+            raise
         if inputs is not None:_OBSERVED[inputs_key(inputs)]=obs
         return record['answer']
     except (CaptureDrift,CaptureUnavailable,OSError,ValueError,TypeError,KeyError,SystemExit):
         return None
+
+
+def _content_only(scan,fresh,obs):
+    """Whether a recorded capture moved only in the content of files it captured (#35).
+
+    Structural changes answer False: a different listing (added, removed or ignored paths,
+    changed declarations), a path whose state or boundary changed, an absent path now present,
+    a captured file gone or no longer regular, and a changed rule source, manifest or ignore
+    file (they decide layout and rules). Records from before rule sources were kept also
+    answer False."""
+    import stat
+    from al_repository_facts import file_identity,path_name,MANIFESTS,RACY_NS
+    if 'rules' not in obs or fresh!=scan.listing_observation:return False
+    scan.begin_observation_epoch()
+    shape=lambda o:(o['state'],o.get('frontier'),o.get('boundary_kind'))
+    for path,old in scan.path_observations.items():
+        if shape(scan.path_observation(path))!=shape(old):return False
+    for path in scan.absent:
+        if scan.path_observation(path)['state']!='absent':return False
+    governing=set(obs['rules'])
+    settled=obs['capture_started_ns']-RACY_NS
+    for path,record in scan.files.records.items():
+        try:
+            scan.safe_file(path)
+            current=os.lstat(os.path.join(str(scan.root),path))
+        except (OSError,ValueError):return False
+        if not stat.S_ISREG(current.st_mode):return False
+        identity=tuple(record['identity'])
+        if path in governing or path_name(path) in MANIFESTS:
+            # Rule and layout sources must be unchanged: same identity, and a source too recent
+            # for the racy-clean rule is read again (the capture's own revalidation rule).
+            if file_identity(current)!=identity:return False
+            if max(identity[4],identity[5])>=settled:
+                try:data,now=scan.read_observed(path)
+                except (OSError,ValueError):return False
+                if tuple(now)!=identity or hashlib.sha256(data).hexdigest()!=record['sha256']:return False
+    return True

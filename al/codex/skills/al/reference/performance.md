@@ -39,6 +39,10 @@ Each command observes the working copy through its snapshot tree, and repeated q
 
 A changed task file still costs one new inventory of the planned question (the membership listing, the capture and the analysis of the changed blobs; facts of unchanged blobs come from the fact store).
 
+## Warm commands after an edit (#35)
+
+- **Incremental inventory.** When a recorded inventory's capture re-observes with only file content changed, the new capture starts from it: the fresh membership listing the verification just took is the capture's listing, and every member whose no-follow identity is unchanged and settled before the recorded capture by the racy window keeps its recorded hash (the capture's own revalidation rule); only the other members are read. The answer is then derived again from the fact store, so only facts keyed by the changed blobs are computed. Any structural change takes the full inventory: a different listing (added, removed or ignored paths, changed declarations), a path whose state or boundary changed, an absent path now present, a captured file gone or no longer regular, or a changed rule source, manifest or ignore file. Only the first capture attempt is incremental; a retry after drift captures afresh, and every capture still ends with its own fresh listing and revalidation. Incremental inventories are byte-identical to a cold one with the store disabled (`AL_ANALYSIS_CACHE=0`).
+
 ## Further opportunities
 
 - Avoid rewriting candidate files in a scratch checkout when their captured bytes and modes already match the pinned tree entry; retain the existing post-overlay representation check.

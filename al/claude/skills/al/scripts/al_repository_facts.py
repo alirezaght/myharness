@@ -245,9 +245,16 @@ def _keep_window_listing(key,listing):
 
 
 class Snapshot(CaptureMixin):
-    def __init__(self,root,base_oid,paths,opaque,required_adapter=None,*,listing_only=False):
+    def __init__(self,root,base_oid,paths,opaque,required_adapter=None,*,listing_only=False,listing=None,known=None):
         """`listing_only` observes membership and path states without capturing content:
-        enough to expand task directories before the single full capture."""
+        enough to expand task directories before the single full capture.
+
+        An incremental capture (#35) starts from a membership `listing` of the identical
+        question observed just before (`al_gate_inventory.verified_answer`) and from the
+        `known` file records of an earlier capture, `(records, capture_started_ns)`: a member
+        whose no-follow identity is unchanged and settled before that capture by the racy
+        window keeps its recorded hash; every other member is read. The capture still ends
+        with its own fresh listing and revalidation, exactly like a full one."""
         if any(type(v) is not int or v<=0 for v in LIMITS.values()):raise ValueError('invalid coverage limits')
         self.required_adapter=required_adapter;self.root=Path(root).resolve();self.base_oid=base_oid
         self.paths=[];path_overflow=False
@@ -265,7 +272,7 @@ class Snapshot(CaptureMixin):
         # question just observed in this process (discovery expands paths with one, #25). The
         # capture still ends with a fresh listing compared against it, so drift is refused.
         key=(str(self.root),base_oid,tuple(self.paths),tuple(self.opaque),required_adapter)
-        adopted=None if listing_only else _LISTINGS.pop(key,None)
+        adopted=None if listing_only else (listing if listing is not None else _LISTINGS.pop(key,None))
         # A full capture always ends with its own fresh listing (revalidate), and a retry after
         # drift must observe afresh: only listing-only snapshots answer from the window's listing.
         if adopted is None and listing_only:adopted=_window_listing(key)
@@ -280,13 +287,20 @@ class Snapshot(CaptureMixin):
         if listing_only:return
         progress.report('inventory-current', count=0)
         scope=PathScope(self.paths)
-        vouched=self.vouched_hashes(scope)
+        if known is not None:
+            records,known_started=known;vouched={}
+            self.vouch_before=known_started-RACY_NS
+        else:vouched=self.vouched_hashes(scope)
         for count,p in enumerate(sorted(self.members,key=lambda p:(p not in self.priority_inputs,priority(p))),1):
             affected=scope.covers(p)
             if not p.endswith('/') and affected:self.observe_path(p)
             if not p.endswith('/') and (self.relevant(p) or affected and p.endswith(('.md','.markdown','.mdx'))) and (self.root/p).exists():
                 try:
-                    identity=self.vouched_identity(p,vouched.get(p))
+                    if known is not None:
+                        record=records.get(p)
+                        identity=self.known_identity(p,record)
+                        if identity is not None:vouched[p]=(record['sha256'],record['size'])
+                    else:identity=self.vouched_identity(p,vouched.get(p))
                     if identity is not None:
                         self.total+=identity[3]
                         self.files.records[p]={'sha256':vouched[p][0],'identity':identity,'size':identity[3]}
@@ -332,6 +346,18 @@ class Snapshot(CaptureMixin):
         if not stat.S_ISREG(value.st_mode) or value.st_size!=vouched[1] or value.st_size>LIMITS['file_bytes']:return None
         if max(value.st_mtime_ns,value.st_ctime_ns)>=self.vouch_before:return None
         return file_identity(value)
+
+    def known_identity(self,p,record):
+        """The no-follow identity of a file an earlier capture recorded, when it is unchanged
+        and settled before that capture by the racy window (the capture's own revalidation
+        rule), else None to read it."""
+        if record is None:return None
+        self.safe_file(p)
+        value=os.lstat(os.path.join(str(self.root),p))
+        identity=file_identity(value)
+        if not stat.S_ISREG(value.st_mode) or identity!=tuple(record['identity']) or value.st_size>LIMITS['file_bytes']:return None
+        if max(value.st_mtime_ns,value.st_ctime_ns)>=self.vouch_before:return None
+        return identity
 
     @staticmethod
     def relevant(p):
