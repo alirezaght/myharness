@@ -3,7 +3,11 @@
 import hashlib
 import os
 import stat
+import time
 from pathlib import Path
+
+
+RACY_NS = 2_000_000_000
 
 
 class FrozenObservation(dict):
@@ -71,45 +75,88 @@ class CaptureMixin:
         self.source_purposes = {}
         self.listing_observation = None
         self.match_work = 0
+        # Files unchanged for RACY_NS before capture started can be revalidated by
+        # their full stat identity alone (Git's racy-clean rule); newer ones are re-read.
+        self.capture_started_ns = time.time_ns()
+
+    def begin_observation_epoch(self):
+        """Start a fresh window for shared ancestor observations (see path_observation)."""
+        self._ancestors = {}
+
+    def _ancestor(self, name):
+        """lstat + nested-repository probe of one ancestor directory, once per epoch.
+
+        Within one pass over many task paths their shared ancestors are observed once;
+        every pass that must detect drift (listing, revalidation) starts a new epoch.
+        The leaf of each observed path is always observed afresh."""
+        from al_repository_facts import file_identity
+
+        cache = self.__dict__.setdefault("_ancestors", {})
+        hit = cache.get(name)
+        if hit is not None:
+            return hit
+        value = os.lstat(os.path.join(str(self.root), name))
+        kind = (
+            "symlink"
+            if stat.S_ISLNK(value.st_mode)
+            else (
+                "supplied-opaque"
+                if name in self.opaque
+                else "nested-repository"
+                if stat.S_ISDIR(value.st_mode) and os.path.lexists(os.path.join(str(self.root), name, ".git"))
+                else None
+            )
+        )
+        row = (kind, list(file_identity(value)), stat.S_ISDIR(value.st_mode))
+        cache[name] = row
+        return row
 
     def path_observation(self, path):
         from al_repository_facts import file_identity, safe
 
         safe(path)
-        parts = Path(path).parts
+        parts = [] if path == "." else path.split("/")
+        root = str(self.root)
         for index in range(1, len(parts) + 1):
-            name = Path(*parts[:index]).as_posix()
+            name = "/".join(parts[:index])
+            leaf = index == len(parts)
             try:
-                value = (self.root / name).lstat()
+                if leaf:
+                    value = os.lstat(os.path.join(root, name))
+                    kind = (
+                        "symlink"
+                        if stat.S_ISLNK(value.st_mode)
+                        else (
+                            "supplied-opaque"
+                            if name in self.opaque
+                            else "nested-repository"
+                            if stat.S_ISDIR(value.st_mode) and os.path.lexists(os.path.join(root, name, ".git"))
+                            else None
+                        )
+                    )
+                    identity, is_dir = list(file_identity(value)), stat.S_ISDIR(value.st_mode)
+                    leaf_value = value
+                else:
+                    # Explicit: callers also apply this to plain observation contexts.
+                    kind, identity, is_dir = CaptureMixin._ancestor(self, name)
             except FileNotFoundError:
                 return {"path": path, "state": "absent", "frontier": name}
-            kind = (
-                "symlink"
-                if stat.S_ISLNK(value.st_mode)
-                else (
-                    "supplied-opaque"
-                    if name in self.opaque
-                    else "nested-repository"
-                    if stat.S_ISDIR(value.st_mode) and os.path.lexists(self.root / name / ".git")
-                    else None
-                )
-            )
             if kind:
                 return {
                     "path": path,
                     "state": "opaque",
                     "frontier": name,
                     "boundary_kind": kind,
-                    "identity": list(file_identity(value)),
+                    "identity": list(identity),
                 }
-            if index < len(parts) and not stat.S_ISDIR(value.st_mode):
+            if not leaf and not is_dir:
                 return {
                     "path": path,
                     "state": "absent",
                     "frontier": name,
-                    "identity": list(file_identity(value)),
+                    "identity": list(identity),
                 }
-        value = (self.root / path).lstat()
+        value = leaf_value if parts else os.lstat(root)
         return {
             "path": path,
             "state": "directory"
@@ -215,13 +262,30 @@ class CaptureMixin:
         self.source_purposes.setdefault(path, set()).add(purpose)
 
     def revalidate(self, listing=None):
+        self.begin_observation_epoch()
         fresh = listing if listing is not None else self.observe_listing()
         if fresh != self.listing_observation:
             raise CaptureDrift("repository-membership")
         for path, old in self.path_observations.items():
             if self.path_observation(path) != old:
                 raise CaptureDrift("path-identity", [path])
+        self.__dict__.pop("_safe_ancestors", None)
+        settled = self.__dict__.get("capture_started_ns", 0) - RACY_NS
         for path, record in self.files.records.items():
+            identity = tuple(record["identity"])
+            if max(identity[4], identity[5]) < settled:
+                from al_repository_facts import file_identity
+
+                try:
+                    self.safe_file(path)
+                    current = os.lstat(os.path.join(str(self.root), path))
+                except (FileNotFoundError, NotADirectoryError) as exc:
+                    raise CaptureDrift("source-existence", [path]) from exc
+                except OSError as exc:
+                    raise CaptureUnavailable("source-permission-or-io", [path]) from exc
+                if not stat.S_ISREG(current.st_mode) or file_identity(current) != identity:
+                    raise CaptureDrift("source-content-or-identity", [path])
+                continue
             try:
                 data, identity = self.read_observed(path)
             except (FileNotFoundError, NotADirectoryError) as exc:

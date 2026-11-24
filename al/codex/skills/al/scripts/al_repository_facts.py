@@ -1,4 +1,6 @@
 """Bounded read-only snapshots and semantic coverage provenance."""
+import errno
+import functools
 import hashlib
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -26,9 +28,20 @@ def digest(value):return hashlib.sha256(json.dumps(value,sort_keys=True,separato
 
 
 def safe(path):
+    if type(path) is str and _safe_text(path):return path
     p=Path(path)
     if not isinstance(path,str) or not path or p.is_absolute() or '..' in p.parts or p.as_posix()!=path:raise ValueError('unsafe coverage path: '+str(path))
     return path
+
+
+_ABSENT_ERRNOS=frozenset({errno.ENOENT,errno.ENOTDIR,errno.EBADF,errno.ELOOP})
+
+
+@functools.lru_cache(maxsize=1<<17)
+def _safe_text(path):
+    """Memoized acceptance of a normalized relative path (the slow check decides refusals)."""
+    p=Path(path)
+    return bool(path) and not p.is_absolute() and '..' not in p.parts and p.as_posix()==path
 
 
 def unit_depth(path):return len(Path(path).parts)
@@ -228,17 +241,23 @@ class Snapshot(CaptureMixin):
     def safe_file(self,p):
         safe(p)
         if any(within(o,p) for o in self.opaque):raise ValueError('opaque source boundary')
-        parts=Path(p).parts
+        parts=() if p=='.' else tuple(p.split('/'))
         if len(parts)>LIMITS['depth']:raise ValueError('coverage depth limit')
         # Ancestor directories are checked once per snapshot, not once per file beneath them;
         # the leaf is always re-checked and reads still open every component with O_NOFOLLOW.
+        # One lstat per component (no follow), as Path.is_symlink()/is_dir() would observe.
         checked=self.__dict__.setdefault('_safe_ancestors',set())
+        root=str(self.root)
         for i in range(1,len(parts)+1):
             key=parts[:i]
             if i<len(parts) and key in checked:continue
-            ancestor=self.root/Path(*key)
-            if ancestor.is_symlink():raise ValueError('symlink source boundary')
-            if ancestor.is_dir() and (ancestor/'.git').exists():raise ValueError('nested repository/gitlink source boundary')
+            ancestor=os.path.join(root,*key)
+            try:mode=os.lstat(ancestor).st_mode
+            except OSError as exc:
+                if exc.errno not in _ABSENT_ERRNOS:raise
+                mode=None
+            if mode is not None and stat.S_ISLNK(mode):raise ValueError('symlink source boundary')
+            if mode is not None and stat.S_ISDIR(mode) and os.path.exists(os.path.join(ancestor,'.git')):raise ValueError('nested repository/gitlink source boundary')
             if i<len(parts):checked.add(key)
 
     def cached(self,key):
@@ -286,6 +305,7 @@ class Snapshot(CaptureMixin):
         finally:os.close(fd)
 
     def observe_listing(self):
+        self.begin_observation_epoch()
         progress.report('inventory-membership', count=0)
         result=set();exclusions=[];diagnostics=[];declarations=[];base_rows=[];priority_inputs=set()
         opaque_paths=set(self.opaque)
@@ -304,12 +324,16 @@ class Snapshot(CaptureMixin):
             try:self.safe_file(p)
             except (OSError,ValueError) as exc:
                 diagnostics.append(gap('symlink-boundary' if 'symlink' in str(exc) else 'unsafe-boundary',p,str(exc)));return
-            if not (self.root/p).exists():return
+            try:is_dir=stat.S_ISDIR(os.stat(os.path.join(str(self.root),p)).st_mode)
+            except OSError as exc:
+                # The same errors Path.exists() reports as absent.
+                if exc.errno in _ABSENT_ERRNOS:return
+                raise
             parts=Path(p).parts
             if any(part in EXCLUDED for part in parts):
                 if not protected:return
                 exclusions.append({'path':p,'reason':'protected membership overrides generated exclusion','provenance':['tracked/base/explicit/declaration']})
-            entries=['/'.join(parts[:i])+'/' for i in range(1,len(parts))]+[p+'/' if (self.root/p).is_dir() else p]
+            entries=['/'.join(parts[:i])+'/' for i in range(1,len(parts))]+[p+'/' if is_dir else p]
             for entry in entries:
                 if entry in result:continue
                 if len(result)>=LIMITS['files']:
@@ -364,10 +388,14 @@ class Snapshot(CaptureMixin):
                     elif observed_child['state']=='directory':add_root(p);add(p)
             except FileNotFoundError:pass
             except (OSError,ValueError) as exc:diagnostics.append(gap('file-limit',kind,str(exc)))
+        # Each ancestor directory is observed once, not once per task path beneath it.
+        observed_ancestors=set()
         for p in self.paths:
             parts=Path(p).parts
             for i in range(1,len(parts)+1):
                 ancestor=Path(*parts[:i]).as_posix()
+                if ancestor in observed_ancestors:continue
+                observed_ancestors.add(ancestor)
                 if self.path_observation(ancestor)['state']=='directory':add_root(ancestor)
         # Parse literal declarations as data, with the same pre-read bounds.
         visited=set()
@@ -420,6 +448,7 @@ class Snapshot(CaptureMixin):
         excluded=[v for name in sorted(EXCLUDED) for v in ('--exclude='+name+'/','--exclude=**/'+name+'/')]+opaque_excluded
         try:
             for row in git_records(self.root,['ls-files','--others','--exclude-per-directory=.gitignore',*excluded,'-z'],LIMITS):add(row.decode())
+            listed=[]
             for scope in sorted(protected):
                 if scope=='.':continue
                 add(scope,True)
@@ -428,9 +457,9 @@ class Snapshot(CaptureMixin):
                     self.safe_file(scope)
                     regular=stat.S_ISREG((self.root/scope).lstat().st_mode)
                 except (OSError,ValueError):regular=False
-                if regular:continue
-                for row in git_records(self.root,['ls-files','--others',*opaque_excluded,'-z','--',scope],LIMITS):
-                    p=row.decode();add(p,not any(part in EXCLUDED for part in Path(p).parts[len(Path(scope).parts):]))
+                if not regular:listed.append(scope)
+            for scope,p in self.untracked_under(listed,opaque_excluded):
+                add(p,not any(part in EXCLUDED for part in Path(p).parts[len(Path(scope).parts):]))
         except (OSError,ValueError,UnicodeError) as exc:diagnostics.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
         # Bind repository ignore rules even when they exclude themselves.
         try:
@@ -450,6 +479,34 @@ class Snapshot(CaptureMixin):
         observation={'members':sorted(result),'exclusions':sorted(exclusions,key=lambda e:(e['path'],e['reason'])),'diagnostics':[unique[k] for k in sorted(unique)],'boundaries':boundaries,'declarations':declarations,'base_rows':[row.hex() for row in base_rows],'priority_inputs':sorted(priority_inputs),'complete':not diagnostics}
         progress.report('inventory-membership', count=len(result), force=True)
         return immutable_observation(observation)
+
+    PATHSPEC_BATCH=256
+
+    def untracked_under(self,scopes,opaque_excluded):
+        """(scope, path) for every untracked path under each scope, in scope order.
+
+        Equivalent to one `git ls-files --others -- <scope>` per scope, but literal
+        scopes share batched git invocations (one process per scope made large
+        planned path sets spend most of their time spawning git). A path under
+        nested scopes is reported once per containing scope, as before. Scopes
+        with pathspec magic keep their own invocation."""
+        magic=lambda scope:scope.startswith(':') or any(c in scope for c in '*?[]\\')
+        literal=[s for s in scopes if not magic(s)];found={}
+        for start in range(0,len(literal),self.PATHSPEC_BATCH):
+            batch=literal[start:start+self.PATHSPEC_BATCH]
+            members=PathScope(batch)
+            for row in git_records(self.root,['ls-files','--others',*opaque_excluded,'-z','--',*batch],LIMITS):
+                p=row.decode()
+                if not members.covers(p):continue
+                parts=p.split('/')
+                for i in range(1,len(parts)+1):
+                    scope='/'.join(parts[:i])
+                    if scope in members.raw:found.setdefault(scope,[]).append(p)
+        out=[]
+        for scope in scopes:
+            rows=[row.decode() for row in git_records(self.root,['ls-files','--others',*opaque_excluded,'-z','--',scope],LIMITS)] if magic(scope) else found.get(scope,[])
+            out.extend((scope,p) for p in rows)
+        return out
 
     def install_listing(self, observation):
         self.members=list(observation['members'])

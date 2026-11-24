@@ -66,12 +66,8 @@ def test_mixed_nested_directories_keep_generated_override_semantics(repo, monkey
         "build/node_modules/__pycache__/three.py",
     } <= scan.files.keys()
     assert "build/node_modules/__pycache__/deeper/node_modules/excluded.py" not in scan.files
-    assert queries == [
-        ["build"],
-        ["build/node_modules"],
-        ["build/node_modules/__pycache__"],
-        ["svc"],
-    ]
+    # Literal protected scopes share one batched listing process (#8); each is still scanned.
+    assert queries == [["build", "build/node_modules", "build/node_modules/__pycache__", "svc"]]
     assert scan.stable()
     put(repo, "build/new.py")
     assert not scan.stable()
@@ -88,7 +84,7 @@ def test_regular_file_type_changes_after_first_listing_invalidate(repo, monkeypa
     elif replacement == "symlink":
         path.symlink_to(repo / "svc/app.py")
     assert not scan.stable()
-    assert queries == [["explicit.py"], ["svc"]]
+    assert queries == [["explicit.py", "svc"]]
     if replacement == "symlink":
         assert any(g["code"] == "symlink-boundary" for g in scan.gaps)
 

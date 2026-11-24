@@ -121,7 +121,7 @@ def validate_manifest(st,m,check_sources=True):
         p=al_store.REPO_ROOT/S.safe_path(rule['path'])
         if not re.fullmatch(r'[0-9a-f]{64}',str(rule.get('sha256',''))):refuse('corrupt source rule hash')
         if check_sources and (not p.is_file() or hashlib.sha256(p.read_bytes()).hexdigest()!=rule.get('sha256')): refuse('repository rule changed: '+rule['path'])
-    gates=m.get('gates'); ids=[]
+    gates=m.get('gates'); ids=[]; safe_scopes=set()
     if not isinstance(gates,list): refuse('manifest needs gates')
     for g in gates:
         ids.append(g.get('id'))
@@ -137,7 +137,8 @@ def validate_manifest(st,m,check_sources=True):
             if g.get('applicability')!='APPLICABLE' or g.get('execution_kind')!='local':refuse('review_state requires an applicable local gate')
         if not isinstance(g.get('scope'),list) or not isinstance(g.get('units'),list): refuse('gate scope/units arrays required')
         for path in g['scope']:
-            if path!='.': S.safe_path(path)
+            # Gates share their (often repository-sized) scopes: check each path once.
+            if path!='.' and path not in safe_scopes: S.safe_path(path);safe_scopes.add(path)
         if g.get('cwd')!='.': S.safe_path(g.get('cwd',''))
         if g.get('category') not in CATEGORIES or g.get('applicability') not in {'APPLICABLE','NOT_APPLICABLE','UNRESOLVED'}: refuse('invalid gate category/applicability')
         if g['applicability']=='NOT_APPLICABLE':

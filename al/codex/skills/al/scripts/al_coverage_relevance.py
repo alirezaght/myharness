@@ -225,9 +225,11 @@ def project_task(facts, ci=None, question=None):
             )
     relevant_ci = []
     ci_records = []
+    # The task's path universe is the same for every job: sort it once, not per job.
+    question_paths = _question_paths(question)
     for job in ci.get("obligations", []) + ci.get("deferred", []):
         identifier = ci_record_id(job)
-        decision = ci_relevant(job, question)
+        decision = ci_relevant(job, question, question_paths)
         ci_records.append({"record_id": identifier, "record": job, "relevant": decision})
         if decision:
             relevant_ci.append(identifier)
@@ -380,11 +382,15 @@ def ci_record_id(job):
     return digest(["ci", job["source_path"], job.get("job", "<workflow>")])
 
 
-def ci_relevant(job, question):
+def _question_paths(question):
+    return sorted(set(question["changed_paths"] + question.get("affected_source_paths", [])))
+
+
+def ci_relevant(job, question, paths=None):
     import al_ci_rules as Rules
     from al_ci_yaml import Unsupported
 
-    paths = sorted(set(question["changed_paths"] + question.get("affected_source_paths", [])))
+    paths = _question_paths(question) if paths is None else paths
     if "trigger_definition" in job:
         from al_ci_github import applicability
 

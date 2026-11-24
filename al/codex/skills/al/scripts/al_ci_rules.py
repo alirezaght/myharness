@@ -83,9 +83,18 @@ def changes(value,paths,directories=()):
         value=value.get('paths')
     if not isinstance(value,list) or not value:return None,set(paths)
     matching=set();unknown=False
+    directories=set(directories)
     for pattern in value:
+        if not isinstance(pattern,str) or any(c in pattern for c in '${}[]\\'):
+            if paths:unknown=True
+            continue
+        # A glob's literal head must prefix every file it fully matches: skip the
+        # regex for paths outside it (rules are evaluated against every changed path).
+        head=re.split(r'[*?]',pattern,maxsplit=1)[0]
         for path in paths:
-            result=pattern_matches(pattern,path,path in directories)
+            if path in directories:result=pattern_matches(pattern,path,True)
+            elif not path.startswith(head):result=False
+            else:result=pattern_matches(pattern,path)
             if result is None:unknown=True
             elif result:matching.add(path)
     return (None,set(paths)) if unknown else (True,matching) if matching else (False,set())

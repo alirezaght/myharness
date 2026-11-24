@@ -202,3 +202,70 @@ def test_phase_readiness_answers_one_inventory_question_once(cli, repo, tmp_path
     # Gate currency and service coverage re-ask the manifest's question inside one
     # stability-checked decision window; it is answered once, not once per check.
     assert len(calls) == 1
+
+
+def _wide_fixture(repo, directories):
+    _fixture(repo)
+    for index in range(directories):
+        put(repo, f'services/a/src/area{index}/mod.py', 'VALUE = 1\n')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'many directories')
+
+
+def test_plan_spawns_a_bounded_number_of_listing_processes(cli, repo, tmp_path, monkeypatch):
+    import al_repository_facts as F
+    _wide_fixture(repo, 60)
+    start(cli)
+    target = tmp_path / 'manifest.json'
+    invoke(cli, 'gates', 'discover', '--paths-file', str(_paths(tmp_path, ['services/a'])), '--output', str(target))
+    manifest = json.loads(target.read_text())
+    assert sum(1 for p in manifest['paths'] if p.startswith('services/a/src/area')) >= 120
+    spawned = []
+    original = F.git_records
+
+    def counted(root, args, limits):
+        spawned.append(tuple(args[:2]))
+        return original(root, args, limits)
+
+    monkeypatch.setattr(F, 'git_records', counted)
+    invoke(cli, 'gates', 'plan', '--file', str(target))
+    # One listing process per planned directory made large plans spawn thousands of
+    # processes; batched pathspecs keep the count independent of the directory count.
+    assert len(spawned) < 40, len(spawned)
+
+
+def test_output_writes_the_manifest_and_prints_one_summary_line(cli, repo, tmp_path):
+    import hashlib
+    _fixture(repo)
+    start(cli)
+    target = tmp_path / 'out' / 'manifest.json'
+    target.parent.mkdir()
+    code, out, err = invoke(cli, 'gates', 'discover', '--paths-file', str(_paths(tmp_path, ['services/a/src/app.py'])),
+                            '--output', str(target))
+    lines = out.strip().splitlines()
+    assert len(lines) == 1 and lines[0].startswith(f'gate manifest {target} sha256=')
+    assert hashlib.sha256(target.read_bytes()).hexdigest() in lines[0]
+    manifest = json.loads(target.read_text())
+    assert f"gates={len(manifest['gates'])}" in lines[0]
+    assert [p.name for p in target.parent.iterdir()] == ['manifest.json']
+    plan_target = tmp_path / 'planned.json'
+    code, out, err = invoke(cli, 'gates', 'plan', '--file', str(target), '--output', str(plan_target))
+    assert out.strip().splitlines()[0].startswith(f'gate manifest {plan_target} sha256=')
+    assert json.loads(plan_target.read_text())['gates'] == manifest['gates']
+
+
+def test_moved_base_ref_names_the_pinned_sha_and_the_rerun(cli, repo, tmp_path):
+    _fixture(repo)
+    st = start(cli)
+    pinned = st['identity']['merge_base']
+    put(repo, 'later.txt', 'moved\n')
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'moved on')
+    _git(repo, 'branch', '-f', 'moved-ref', 'HEAD')
+    paths = _paths(tmp_path, ['services/a/src/app.py'])
+    code, out, err = cli('gates', 'discover', '--paths-file', str(paths), '--base', 'moved-ref')
+    message = str(code) + out + err
+    assert code != 0 and f'pinned to merge base {pinned}' in message
+    assert f'Re-run: gates discover --paths-file {paths} --base {pinned}' in message
+    code, out, err = cli('gates', 'discover', '--paths-file', str(paths), '--base', 'no-such-ref')
+    assert code != 0 and 'does not resolve to a commit' in str(code) + out + err

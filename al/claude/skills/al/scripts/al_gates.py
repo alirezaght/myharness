@@ -230,14 +230,47 @@ def _discovery_state(st):
     return digest({k:st.get(k) for k in ('identity','gate_manifests','review_mode','inherited_lineage','task_attribution','status')})
 
 
-def _rerun_command(a):
+def _rerun_command(a,base=None):
     import shlex
     words=['gates','discover']
     if a.extend:words+=['--extend',a.extend]
     words+=['--paths-file',a.paths_file]
-    if a.base:words+=['--base',a.base]
+    base=base or a.base
+    if base:words+=['--base',base]
     if a.bounded:words.append('--bounded')
+    if getattr(a,'output',None):words+=['--output',a.output]
     return shlex.join(words)
+
+
+def _check_base(a,st):
+    """`--base` must name the run's pinned merge base; a moved ref names the fix."""
+    if not a.base or a.base=='pinned-base':return
+    pinned=st['identity']['merge_base']
+    try:resolved=S.git_bytes('rev-parse','--verify','--quiet',a.base+'^{commit}').decode().strip()
+    except (SystemExit,OSError,ValueError,subprocess.CalledProcessError):resolved=None
+    if resolved==pinned:return
+    found=('resolves to '+resolved) if resolved else 'does not resolve to a commit'
+    refuse('--base '+a.base+' '+found+', but this run is pinned to merge base '+pinned
+           +' (the ref may have moved since the run started). Re-run: '+_rerun_command(a,pinned))
+
+
+def _emit_manifest(m,output):
+    """Print the manifest, or write it atomically to --output and print a one-line summary."""
+    raw=json.dumps(m,indent=2)
+    if not output:
+        print(raw);return
+    import os
+    import tempfile
+    target=Path(output)
+    data=(raw+'\n').encode()
+    fd,tmp=tempfile.mkstemp(dir=str(target.parent) if str(target.parent) else '.',prefix='.'+target.name+'.',suffix='.tmp')
+    try:
+        with os.fdopen(fd,'wb') as handle:
+            handle.write(data);handle.flush();os.fsync(handle.fileno())
+        os.replace(tmp,target)
+    finally:
+        if os.path.exists(tmp):os.unlink(tmp)
+    print('gate manifest '+str(target)+' sha256='+hashlib.sha256(data).hexdigest()+' gates='+str(len(m.get('gates',[])))+' paths='+str(len(m.get('paths',[]))))
 
 
 def _discover_requested_paths(a,st):
@@ -267,7 +300,7 @@ def _discover(a,sid):
         st=al_store.load(sid)
         if st['status']!='RUNNING':refuse('run is not running; explicit resume required')
     # `pinned-base` (as the docs write it) names the run's pinned merge base.
-    if a.base and a.base!='pinned-base' and S.git_bytes('rev-parse',a.base).decode().strip()!=st['identity']['merge_base']: refuse('base differs from pinned merge base')
+    _check_base(a,st)
     paths,extended=_discover_requested_paths(a,st)
     observed=_discovery_state(st)
     with V.reuse_inventories():
@@ -284,7 +317,7 @@ def _discover(a,sid):
             from al_gate_recovery import planning
             planning(current,sid,m.get('paths',[]))
             _save_manifest(current,sid,m,a.paths_file)
-    print(json.dumps(m,indent=2))
+    _emit_manifest(m,a.output)
 
 
 def _save_manifest(st,sid,m,source):
@@ -306,7 +339,7 @@ def cmd_gates(a,sid):
             D.validate_manifest(st,m)
             planning(st,sid,m.get('paths',[]))
         _save_manifest(st,sid,m,a.file)
-        print(json.dumps(m,indent=2)); return
+        _emit_manifest(m,getattr(a,'output',None)); return
     if a.action=='decision':
         m=manifest(st)
         if not m or a.id not in [g['id'] for g in m['gates']]: refuse('unknown gate ID')
@@ -618,8 +651,11 @@ def register(sub):
     p=children.add_parser('discover'); p.add_argument('--paths-file',required=True); p.add_argument('--base')
     p.add_argument('--extend',metavar='MANIFEST',help='extend an existing manifest ("current", its stored path or sha256, or a manifest file) with the paths in --paths-file')
     p.add_argument('--bounded',action='store_true',help='units reached only through dependency edges inherit their checks from the unit directory instead of a per-file analysis')
+    p.add_argument('--output',metavar='FILE',help='write the manifest JSON atomically to FILE and print a one-line summary instead')
     p.set_defaults(fn=cmd_gates)
-    p=children.add_parser('plan'); p.add_argument('--file',required=True); p.set_defaults(fn=cmd_gates)
+    p=children.add_parser('plan'); p.add_argument('--file',required=True)
+    p.add_argument('--output',metavar='FILE',help='write the accepted manifest JSON atomically to FILE and print a one-line summary instead')
+    p.set_defaults(fn=cmd_gates)
     p=children.add_parser('run'); p.add_argument('--stage',choices=['base','candidate'],required=True); p.add_argument('--id'); p.add_argument('--resume',action='store_true'); p.add_argument('--retry-failed',action='store_true'); p.add_argument('--timeout',type=float,default=300); p.add_argument('--recovery-file',dest='operation_recovery_file'); p.set_defaults(fn=cmd_run)
     p=children.add_parser('decision'); p.add_argument('--id',required=True); p.add_argument('--action',dest='decision',choices=['fix','stop','defer','exception'],required=True); p.add_argument('--source',required=True); p.add_argument('--reason',required=True); p.set_defaults(fn=cmd_gates)
     children.add_parser('status').set_defaults(fn=cmd_gates)

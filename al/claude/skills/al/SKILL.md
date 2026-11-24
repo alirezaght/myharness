@@ -106,7 +106,9 @@ being performed, and [gates](reference/gates.md) for task-relevant discovery and
 check planning. Preserve actual changed paths and root/shared obligations.
 `gates discover` analyses without holding the run lock, so writers and amendments
 continue on the admitted plan; add paths with `gates discover --extend current
---paths-file <json>`, and use `--bounded` on large monorepos (see gates).
+--paths-file <json>`, and use `--bounded` on large monorepos (see gates). Pass
+`--output <file>` to `gates discover` or `gates plan` to write the manifest JSON to a
+file and keep stdout to a one-line summary.
 
 ## 4. Implement with the right agents
 
