@@ -185,3 +185,21 @@ has. Per file:
 | runtime_batch14_cancel, commit_race | signals reap the process group and finalize; no late PASS at any seam |
 | runtime_batch14_consumers, 14_context, 16_writers | body-only edits, changed obligations, active operations, corrupt markers, CI context history, writer admission coverage |
 | runtime_batch15_recovery | stopping commands on finished runs; stop/resume and retry occurrences; terminalization |
+
+## 5. Host-neutral tests run once
+
+`al/codex/skills/al/tests/single-run.json` lists 102 test files that exercise only shared
+scripts through the host-adapter fixtures (`cli`, `cli_process`, `state_file`, `launcher`,
+`run_state`; each host's `conftest.py` defines them for its own runtime layout). They run once,
+in the Codex suite; their Claude copies were removed. The shared scripts they exercise are
+byte-identical in both hosts (`test_parity.py`), so a second run proves nothing new.
+
+A file keeps a copy in both suites when it differs between hosts, when its name marks a host
+boundary (native, session, hook, statusline, read-only, model, parity, consistency, docs,
+resources, launcher, start, state machine, run templates), when it or a helper it imports uses a
+host-specific script (`al_state`, `al_start`, `al_models` and the Claude-only adapters) or names a
+host (`.codex`, `.claude`, a platform comparison), or when a remaining Claude module imports it.
+`test_single_run.py` enforces the rule for every listed file, so a host-specific dependency cannot
+hide in a single-run file. `verification_affected.py` treats a change to either byte-identical
+copy of a shared script or resource as a change to both, so `verify_changed.py` still selects the
+single-run tests when only the Claude copy is named.

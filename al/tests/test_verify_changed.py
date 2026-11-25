@@ -61,6 +61,20 @@ def test_imports_depth_and_guards_select_affected_host_tests(tmp_path):
     assert reached == {'codex:tests/test_base.py', 'codex:tests/test_user.py'} | GUARDS
 
 
+def test_a_changed_claude_copy_of_a_shared_script_selects_the_single_run_codex_tests(tmp_path):
+    # Host-neutral tests run once, in the Codex suite (#36); a byte-identical Claude copy of a
+    # shared script is the same code, so changing it selects them too. A differing copy does not.
+    root = tree(tmp_path)
+    claude = root / 'al/claude/skills/al/scripts/al_base.py'
+    claude.parent.mkdir(parents=True, exist_ok=True)
+    claude.write_text('VALUE = 1\n')
+    shared, _ = chosen(root, 'al/claude/skills/al/scripts/al_base.py', depth=0)
+    assert {'codex:tests/test_base.py'} | GUARDS <= shared
+    claude.write_text('VALUE = 2\n')
+    differing, _ = chosen(root, 'al/claude/skills/al/scripts/al_base.py', depth=0)
+    assert 'codex:tests/test_base.py' not in differing
+
+
 def test_string_references_naming_convention_and_helpers(tmp_path):
     root = tree(tmp_path)
     assert chosen(root, HOST + '/scripts/al_dynamic.py')[0] == {'codex:tests/test_loader.py'} | GUARDS

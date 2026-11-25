@@ -186,6 +186,19 @@ def select(root, changed, *, depth=1, everything=False):
     """
     graph = Graph(root)
     changed = sorted(set(changed))
+    # Host-neutral tests run once, in one host suite (#36). A shared script or resource is
+    # byte-identical in both hosts, so a change to either copy selects the tests of both.
+    peers = []
+    for path in changed:
+        host = host_of(path)
+        if host and '/tests/' not in path:
+            other = path.replace('al/' + host + '/', 'al/' + HOSTS[1 - HOSTS.index(host)] + '/', 1)
+            try:
+                if (graph.root / path).read_bytes() == (graph.root / other).read_bytes():
+                    peers.append(other)
+            except OSError:
+                pass
+    changed = sorted(set(changed) | set(peers))
     full, reasons = set(SUITES) if everything else set(), []
     selected = {suite: set() for suite in SUITES}
     tests = graph.test_files()
