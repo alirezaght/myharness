@@ -114,7 +114,9 @@ def _migrations() -> list[tuple[int, str, str]]:
 def apply_migrations(conn: sqlite3.Connection) -> list[str]:
     """Recognized histories only; canonical current databases require no write lock."""
     from harness.migration_compatibility import (
-        execute_migration, reconcile_checkpoint_history, validate_history,
+        execute_migration,
+        reconcile_checkpoint_history,
+        validate_history,
     )
 
     migrations = _migrations()

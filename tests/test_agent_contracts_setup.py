@@ -114,7 +114,7 @@ def registered_setup(operations, files, task_id="T"):
     return operation, principal, controller, state(operation)
 
 
-def admitted_setup(operation, principal, controller, current, request):
+def admitted_setup(operation, principal, controller, current, request, *, plan_defaults=True):
     """Invoke the handler under real admission, retaining its original OS exception type."""
     from harness.policy.context import scope, start_effect
     from harness.policy.resources import prepare as reserve
@@ -124,7 +124,9 @@ def admitted_setup(operation, principal, controller, current, request):
     with scope(attempt):
         try:
             start_effect()
-            result = handler(operation, controller, principal, current, request)
+            result = handler(
+                operation, controller, principal, current, request, plan_defaults=plan_defaults
+            )
         except BaseException:
             attempt.owner_finished(outcome="failed")
             raise
@@ -184,15 +186,24 @@ def test_queued_setup_retains_exact_owner_and_polling_reads_no_dependencies(
         assert ("A", "work/three") not in operation.policy_setup_pending
         original_unit = setup.task_unit
         modes = []
+        completion_modes = []
+        polling_thread = threading.get_ident()
 
         def unit(*args, **kwargs):
-            modes.append(kwargs.get("verify_outputs", True))
+            mode = kwargs.get("verify_outputs", True)
+            if threading.get_ident() == polling_thread:
+                modes.append(mode)
+            else:
+                completion_modes.append((mode, CURRENT.get()))
             return original_unit(*args, **kwargs)
 
         monkeypatch.setattr(setup, "task_unit", unit)
         operation.dispatch(principal, "poll_process", {"handle": result["handle"]})
         operation.dispatch(principal, "cancel_process", {"handle": result["handle"]})
+        record["thread"].join(20)
+        assert not record["thread"].is_alive()
         assert modes == [False, False]
+        assert all(mode is True and attempt is owner for mode, attempt in completion_modes)
         assert record["policy"].attempt is owner
         assert owner.legacy
         assert (
@@ -238,3 +249,100 @@ def test_unrelated_actual_attempt_cannot_be_relabelled_as_setup(operations, monk
         assert owner.intent.operation == "al_command" and owner.intent.task_id is None
     finally:
         owner.release_unstarted()
+
+
+def test_completion_callback_uses_live_original_attempt_and_resets_after_failure(
+    operations, monkeypatch
+):
+    import harness.task_environment as setup
+
+    operation, principal = locked_unit(operations)
+    current = state(operation)
+    seen = []
+
+    def publish(report, code):
+        owner = CURRENT.get()
+        assert owner is not None
+        assert owner.intent.operation == "environment_operation"
+        assert owner.started and owner.owner_done
+        seen.append(owner)
+        raise ValueError("callback-fault")
+
+    monkeypatch.setattr(setup.SetupReport, "publish", publish)
+    request = dict(
+        operation="prepare",
+        task_id="A",
+        expected_revision=context_revision(current, "A"),
+        cwd="work",
+    )
+    result = operation.dispatch(principal, "environment_operation", request)
+    record = operation.processes.records[result["handle"]]
+    record["thread"].join(20)
+    assert not record["thread"].is_alive() and seen == [record["policy"].attempt]
+    assert record["status"] == "Failed" and "callback-fault" in record["error"]
+    assert record["result"] is None and not operation.prepared_plan_pending
+    assert CURRENT.get() is None
+    # An ended/unresolved owner cannot be revived merely by restoring its ContextVar.
+    import pytest
+
+    with pytest.raises(ValueError):
+        operation.processes._publish(record, record["process"])
+
+
+def test_graph_context_invalidation_before_completion_refuses_before_source_reads(
+    operations, monkeypatch
+):
+    import harness.task_environment as setup
+    from harness.execution_processes import ProcessManager
+
+    operation, principal = locked_unit(operations)
+    current = state(operation)
+    ready, release = threading.Event(), threading.Event()
+    actual = ProcessManager._publish
+    reads = []
+    caller = threading.get_ident()
+    ordinary = setup.ordinary
+
+    def observe_read(*args, **kwargs):
+        if threading.get_ident() != caller:
+            reads.append(CURRENT.get())
+        return ordinary(*args, **kwargs)
+
+    def pause(manager, record, process):
+        ready.set()
+        assert release.wait(20), "completion barrier expired"
+        return actual(manager, record, process)
+
+    monkeypatch.setattr(ProcessManager, "_publish", pause)
+    monkeypatch.setattr(setup, "ordinary", observe_read)
+    request = dict(
+        operation="prepare",
+        task_id="A",
+        expected_revision=context_revision(current, "A"),
+        cwd="work",
+    )
+    try:
+        result = operation.dispatch(principal, "environment_operation", request)
+        record = operation.processes.records[result["handle"]]
+        assert ready.wait(20)
+        report(
+            operation,
+            principal,
+            "task-register",
+            {
+                "id": "C",
+                "title": "Actual independent graph growth",
+                "files": ["independent"],
+                "criteria": ["AC-01"],
+                "dependencies": [],
+            },
+        )
+        assert context_revision(state(operation), "A") != request["expected_revision"]
+        release.set()
+        record["thread"].join(20)
+        assert not record["thread"].is_alive()
+        assert record["status"] == "Failed" and record["result"] is None
+        assert reads == [] and not operation.prepared_plan_pending
+        assert CURRENT.get() is None
+    finally:
+        release.set()

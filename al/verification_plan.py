@@ -138,7 +138,11 @@ def build_plan(collections, declarations, *, tier, changed_paths, binding):
     isolation = declarations.get('isolated_files', {})
     assignments = [];group_offsets = {}
     closure_current = isolation_current(declarations, binding)
-    for q in sorted(selection - omitted):
+    executed = selection - omitted
+    # Keep pytest's collected order: module fixtures can have ordered lifecycle effects.
+    for q in all_nodes:
+        if q not in executed:
+            continue
         node = all_nodes[q];suite = node['suite'];file = node['source']['path']
         file_key = suite + ':' + file
         conftest = ('al/tests/conftest.py' if suite == 'installer' else 'al/' + suite + '/skills/al/tests/conftest.py')

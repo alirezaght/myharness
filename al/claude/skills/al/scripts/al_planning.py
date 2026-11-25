@@ -261,7 +261,14 @@ def cmd_packet(a, sid):
     reference = J.snapshot(sid, value, "architect-planning-packet-v1")
     if previous:
         st.setdefault("planning_history", []).append(previous)
-    st["planning_authorship"] = {"attempt": attempt_ref, "packet": reference}
+    from al_agent_exchange import require_analysis
+    analysis = J.snapshot(sid, {
+        'schema_version': 1, 'kind': 'planning-analysis-observation-v1',
+        'packet': reference, 'analysis': require_analysis(st),
+    }, 'planning-analysis-observation-v1')
+    st["planning_authorship"] = {
+        "attempt": attempt_ref, "packet": reference, "analysis_observation": analysis,
+    }
     st["proof_admission"]["planning_occurrence"] = N.occurrence(st)
     if observe(st, expected=observed) != observed:
         refuse("planning source moved before packet publication")

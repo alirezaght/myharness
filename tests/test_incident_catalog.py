@@ -128,7 +128,7 @@ def test_schema_only_upgrade_preserves_legacy_and_positional_policy_rows(request
     from harness import db
 
     migrations = db._migrations()
-    monkeypatch.setattr(db, "_migrations", lambda: [m for m in migrations if m[0] <= 22])
+    monkeypatch.setattr(db, "_migrations", lambda: [m for m in migrations if m[0] <= 24])
     observed = request.getfixturevalue("observed")
     conn = observed[2].conn
     seed(observed, 2)
@@ -142,7 +142,7 @@ def test_schema_only_upgrade_preserves_legacy_and_positional_policy_rows(request
     before = [tuple(r) for r in conn.execute("SELECT * FROM reliability_incidents")]
     policy = tuple(conn.execute("SELECT * FROM policy_decisions").fetchone())
     monkeypatch.undo()
-    assert db.apply_migrations(conn) == ["0023_incident_catalog.sql"]
+    assert db.apply_migrations(conn) == ["0025_incident_catalog.sql"]
     assert [tuple(r) for r in conn.execute("SELECT * FROM reliability_incidents")] == before
     assert tuple(conn.execute("SELECT * FROM policy_decisions").fetchone()) == policy
     assert conn.execute("SELECT count(*) FROM reliability_incident_catalog").fetchone()[0] == 0

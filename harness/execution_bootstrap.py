@@ -12,6 +12,7 @@ def _knowledge_modules(source):
     hand-kept list silently drops new ones from the trusted snapshot."""
     return sorted(p.name for p in (source / "knowledge").glob("*.py"))
 
+
 _RELIABILITY_MODULES = (
     "catalog.py",
     "legacy_projection.py",
@@ -46,6 +47,7 @@ _POLICY_MODULES = (
     "native_presence.py",
     "control_git.py",
     "control_boundary.py",
+    "control_launcher.py",
     "control_qualification.py",
     "control_channel.py",
     "control_sources_installer.py",
@@ -97,7 +99,7 @@ def authority_snapshot(directory, *, versioned=False):
         if p.is_file()
         and (
             len(p.relative_to(source).parts) == 1
-            and p.suffix in {".py", ".gz"}
+            and (p.suffix in {".py", ".gz"} or p.name == "migration_schema_manifest.json")
             or p.parent == source / "migrations"
             and p.suffix == ".sql"
         )

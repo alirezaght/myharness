@@ -249,6 +249,8 @@ class CheckChannel:
                     bound = hooks.prepare(identifier, observer)
                     if bound is not None:
                         record["deadline"] = min(record["deadline"], bound)
+                if time.monotonic() >= record["deadline"]:
+                    raise ValueError("BUDGET_EXHAUSTED")
                 record["process"] = subprocess.Popen(
                     [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
                     cwd=cwd,
@@ -320,7 +322,11 @@ class CheckChannel:
             while not self.closed.is_set():
                 descriptors = []
                 try:
-                    if self.policy_attempt and self.process is not None and not self.records[self.active_handle]["settled"]:
+                    if (
+                        self.policy_attempt
+                        and self.process is not None
+                        and not self.records[self.active_handle]["settled"]
+                    ):
                         self.server.settimeout(max(0.001, min(1, self.deadline - time.monotonic())))
                     header, ancillary, flags, _ = self.server.recvmsg(4, socket.CMSG_SPACE(32))
                     if not header:
@@ -346,7 +352,7 @@ class CheckChannel:
                         except (ValueError, OSError, LookupError):
                             self.stop()
                     continue
-                except (ValueError, OSError, KeyError, TypeError) as error:
+                except (ValueError, OSError, KeyError, TypeError):
                     if self.requesting_handle in self.records:
                         self.stop(self.requesting_handle)
                     result = {"error": "check request unavailable or binding changed"}

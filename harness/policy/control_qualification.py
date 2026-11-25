@@ -2,13 +2,13 @@
 
 import ast
 import json
-import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 from harness.policy.contracts import require
 from harness.policy.control_git import configuration, environment, file_state
+from harness.policy.control_launcher import expected_launcher
 
 PROFILE = "sealed-al-retry-v1"
 FINISH = "sealed-al-writer-finish-v1"
@@ -103,38 +103,15 @@ def _prepare(operation, args, state):
         ),
         "UNSUPPORTED_ENFORCEMENT_CAPABILITY",
     )
-    boot_tree = ast.parse((snapshot / "installer/validator_boot.py").read_text())
-    boot = next(
-        ast.literal_eval(node.value)
-        for node in boot_tree.body
-        if isinstance(node, ast.Assign)
-        and any(isinstance(target, ast.Name) and target.id == "BOOT" for target in node.targets)
-    )
     require(
         request["interpreter"] == manifest["interpreter"]["executable"],
         "UNSUPPORTED_ENFORCEMENT_CAPABILITY",
     )
-    expected_launcher = (
-        "#!/bin/sh\n"
-        + "'''exec' "
-        + shlex.quote(request["interpreter"])
-        + ' -I -S -B "$0" "$@"\n'
-        + "' '''\n"
-        + boot
-        + "\n"
-        + "captured=_boot("
-        + repr(request)
-        + ")\n"
-        + "utility=_utility(captured,'validator_loader.py')\n"
-        + "utility.install_closed_loader(captured,'codex',installers=True)\n"
-        + "filename=str(Path(captured['snapshot'])/'alctl.py')\n"
-        + (
-            "exec(compile(captured['bytes']['alctl.py'],filename,'exec'),"
-            "{'__name__':'__main__','__file__':filename})\n"
-        )
-    ).encode()
-    require(launcher.read_bytes() == expected_launcher, "UNSUPPORTED_ENFORCEMENT_CAPABILITY")
     states.extend(_closure(snapshot, origin["closure"]))
+    require(
+        launcher.read_bytes() == expected_launcher(request, snapshot, INSTALLER),
+        "UNSUPPORTED_ENFORCEMENT_CAPABILITY",
+    )
     interpreter = manifest["interpreter"]["canonical_executable"]
     executable = file_state(Path(interpreter))
     require(

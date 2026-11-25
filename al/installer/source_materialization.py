@@ -224,7 +224,9 @@ def _same_source_metadata(first, second):
     return first.security == second.security and first.times[::2] == second.times[::2]
 
 
-def _materialize(source, destination, *, expected=None, mode=None, metadata=False):
+def _materialize(source, destination, *, expected=None, mode=None, metadata=False, allow_clone=True):
+    if type(allow_clone) is not bool:
+        raise ValueError("materialization clone choice must be boolean")
     source_parent, source_name, source_path = _parent(source)
     destination_parent = source_fd = None
     candidate = reference = None
@@ -310,7 +312,9 @@ def _materialize(source, destination, *, expected=None, mode=None, metadata=Fals
                 eligible, reason = False, "metadata_observation_unsupported"
             else:
                 source_profile, parent_profile = observed_source, observed_parent
-        if eligible:
+        if not allow_clone:
+            reason = "clone_not_requested"
+        if eligible and allow_clone:
             context()
             for _ in range(8):
                 try:
@@ -446,12 +450,12 @@ def _materialize(source, destination, *, expected=None, mode=None, metadata=Fals
         raise
 
 
-def copy2(source, destination, *, follow_symlinks=True):
+def copy2(source, destination, *, follow_symlinks=True, allow_clone=True):
     """copytree callback for reviewed regular sources; aliases always refuse."""
     destination = Path(destination)
     if destination.is_dir() and not destination.is_symlink():
         destination = destination / Path(source).name
-    _materialize(source, destination, metadata=True)
+    _materialize(source, destination, metadata=True, allow_clone=allow_clone)
     return str(destination)
 
 

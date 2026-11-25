@@ -91,15 +91,6 @@ class ProcessManager:
                     close_fds=True,
                     pass_fds=pass_fds,
                 )
-                if policy:
-                    try:
-                        policy.spawned(proc)
-                    except BaseException:
-                        self._kill(proc)
-                        proc.wait(timeout=5)
-                        proc.stdout.close()
-                        proc.stderr.close()
-                        raise
             except BaseException as error:
                 if not policy or not policy.launched:
                     release_process_temporary(getattr(profile, "process_temporary", ""))
@@ -146,7 +137,21 @@ class ProcessManager:
         with self.lock:
             self.launching -= 1
             self.records[handle] = record
-        self._notify(record, "process.started")
+        try:
+            if policy:
+                policy.spawned(proc)
+            self._notify(record, "process.started")
+        except BaseException:
+            # Ownership is already retained even when durable launch publication failed.
+            self._kill(proc)
+            try:
+                proc.wait(timeout=5)
+            finally:
+                if policy:
+                    policy.finish(closed=False, outcome="failed")
+                record["status"] = "Failed"
+                record["error"] = "process launch publication unavailable"
+            raise
         thread = threading.Thread(target=self._drain, args=(record, timeout), daemon=True)
         record["thread"] = thread
         thread.start()
@@ -232,15 +237,7 @@ class ProcessManager:
                 record["stop_reason"] = record["stop_reason"] or "cancel_requested"
                 record["error"] = "operation cancelled or deadline exceeded"
             try:
-                from harness.template_classification import validate_reference
-
-                if record.get("completion"):
-                    record["completion"]()
-                validate_reference(
-                    record.get("classification"), root=record.get("classification_root")
-                )
-                if record.get("report") and not record["error"]:
-                    record["result"] = record["report"].publish(proc.returncode)
+                self._publish(record, proc)
             except Exception as error:
                 with self.lock:
                     record["output"] = ""
@@ -316,6 +313,52 @@ class ProcessManager:
                     else {}
                 ),
             }
+
+    def _publish(self, record, process):
+        """Keep the original live source claim through completion-time source reads."""
+        from harness.policy.context import check_deadline, scope
+        from harness.policy.contracts import require
+        from harness.template_classification import validate_reference
+
+        hooks = record.get("policy")
+        owner = hooks.attempt if hooks is not None else None
+        with scope(owner):
+            if owner is not None:
+                require(hooks.process is process, "AUTHORITY_STALE")
+                with owner.authority() as (conn, execution):
+                    approvals, _ = owner.current(conn, execution)
+                    from harness.policy import capabilities, claims
+
+                    capabilities.validate(conn, owner.intent, owner.digest, approvals)
+                    row = conn.execute(
+                        "SELECT a.state,p.launch_state,p.pid FROM policy_attempts a "
+                        "JOIN policy_processes p ON p.attempt_id=a.id "
+                        "WHERE a.id=? AND p.id=? AND p.instance_ref=?",
+                        (owner.intent.id, hooks.id, hooks.instance_ref),
+                    ).fetchone()
+                    require(
+                        row is not None
+                        and row["state"] == "started"
+                        and row["launch_state"] == "launched"
+                        and row["pid"] == process.pid,
+                        "ATTEMPT_NOT_EXECUTABLE",
+                    )
+                    if not owner.legacy:
+                        claims.revalidate(conn, owner.intent.id, owner.intent.claims)
+                        require(
+                            not conn.execute(
+                                "SELECT 1 FROM policy_resource_claims "
+                                "WHERE attempt_id=? AND state!='active' LIMIT 1",
+                                (owner.intent.id,),
+                            ).fetchone(),
+                            "ATTEMPT_NOT_EXECUTABLE",
+                        )
+                check_deadline()
+            if record.get("completion"):
+                record["completion"]()
+            validate_reference(record.get("classification"), root=record.get("classification_root"))
+            if record.get("report") and not record["error"]:
+                record["result"] = record["report"].publish(process.returncode)
 
     def pending(self):
         """Observation only: include terminal results until their owner collects them."""

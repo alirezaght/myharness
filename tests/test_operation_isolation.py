@@ -219,7 +219,6 @@ def test_linux_operation_cwd_preserves_grants_and_exec(tmp_path, monkeypatch):
     assert "--unshare-net" in command
 
 
-
 def test_process_temporary_is_the_only_writable_tmp_directory(tmp_path):
     """Issue #18: the short TMPDIR is granted exactly; the rest of /tmp stays denied."""
     import secrets

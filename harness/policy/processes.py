@@ -24,6 +24,10 @@ class ProcessHooks:
             bound, _ = deadline(conn, pools, a.requested)
             if a.deadline is not None:
                 a.deadline = min(a.deadline, bound)
+            if a.deadline is not None:
+                import time
+
+                require(time.monotonic() < a.deadline, "BUDGET_EXHAUSTED")
             span = getattr(observer, "span_id", None)
             observed = getattr(observer, "attempt_id", None)
             if span:

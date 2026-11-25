@@ -129,6 +129,7 @@ class OperationController:
         self.processes = ProcessManager()
         self.check_channels = []
         self.al_service = None
+        self.prepared_plan_pending = {}
         self.setup_pending = {}
         self.policy_setup_pending = {}
         self.setup_outcomes = {}
@@ -146,7 +147,7 @@ class OperationController:
         from harness.task_environment import task_unit
 
         try:
-            with self.lock, closing(connect(self.database)) as conn:
+            with closing(connect(self.database)) as conn:
                 controller = HarnessController(conn)
                 _, current = self.authority(controller, principal)
                 task_unit(self, controller, current, principal, request)
@@ -195,42 +196,13 @@ class OperationController:
                         descriptor["task_id"] + ":" + descriptor["unit"],
                         result,
                     )
-                response = self.al_command(
-                    controller,
+                self.prepared_plan_pending[(request["task_id"], request["cwd"])] = (
                     principal,
-                    {
-                        "arguments": [
-                            "evidence",
-                            "plan",
-                            "--area",
-                            descriptor["area"],
-                            "--kind",
-                            "test",
-                            "--tier",
-                            "broad",
-                            "--cwd",
-                            ".",
-                            "--scope",
-                            "tests,harness,al,pyproject.toml,uv.lock",
-                            "--recipe",
-                            descriptor["recipe"]["name"],
-                            "--recipe-descriptor-file",
-                            artifact,
-                        ]
-                    },
-                    current,
+                    dict(request),
+                    descriptor,
+                    artifact,
                 )
-                if response.get("returncode") != 0:
-                    return result | {
-                        "status": "Pending",
-                        "reason": "recipe_plan_reconciliation_required",
-                        "plan_result": response,
-                    }
-                return result | {
-                    "status": "Planned",
-                    "area": descriptor["area"],
-                    "artifact": artifact,
-                }
+                return result | {"status": "Pending", "reason": "recipe_plan_queued"}
         except (
             OSError,
             ValueError,
@@ -459,6 +431,10 @@ class OperationController:
         return execution, state, writers[0]["files"]
 
     def profile(self, writable=(), *, al=False, al_optimizations=True):
+        from harness.policy.context import CURRENT
+
+        owner = CURRENT.get()
+        al_optimizations = al_optimizations and (owner is None or owner.legacy)
         root = Path(self.envelope["repository"])
         database = Path(self.envelope["database"])
         from harness.template_classification import selected_reference
@@ -1307,7 +1283,9 @@ class OperationController:
             environment["HARNESS_RETRY_CONTROL_FD"] = str(control_channel.descriptor)
             environment["HARNESS_RETRY_CONTROL_NONCE"] = control_channel.nonce
             self.check_channels.append(control_channel)
-        channel = CheckChannel(context_path, validate_check, storage=storage, policy_attempt=policy_attempt)
+        channel = CheckChannel(
+            context_path, validate_check, storage=storage, policy_attempt=policy_attempt
+        )
         self.check_channels.append(channel)
         descriptors = (
             (channel.descriptor,)
@@ -1634,7 +1612,8 @@ class OperationController:
             with self.lock, closing(connect(self.database)) as conn:
                 controller = HarnessController(conn)
                 for key, pending in list(self.setup_pending.items()):
-                    principal, request, plan_defaults = pending
+                    principal, request = pending[:2]
+                    plan_defaults = pending[2] if len(pending) == 3 else False
                     try:
                         _, state = self.authority(controller, principal)
                         from harness.policy import capabilities
@@ -1649,7 +1628,14 @@ class OperationController:
                                 )
                             with scope(attempt):
                                 check_deadline()
-                                result = prepare(self, controller, principal, state, request, plan_defaults=plan_defaults)
+                                result = prepare(
+                                    self,
+                                    controller,
+                                    principal,
+                                    state,
+                                    request,
+                                    plan_defaults=plan_defaults,
+                                )
                         else:
                             result = self.dispatch(principal, "environment_operation", request)
                         self.setup_outcomes[request["cwd"]] = result
@@ -1700,6 +1686,48 @@ class OperationController:
                     )
 
         self.processes.revalidate(validate)
+        # Process completion callbacks have returned and reset the retained setup context.
+        # Run a distinct AL effect through dispatch, outside DB/artifact/controller locks.
+        if CURRENT.get() is None:
+            for key, pending in tuple(self.prepared_plan_pending.items()):
+                principal, request, descriptor, artifact = pending
+                self.prepared_plan_pending.pop(key, None)
+                try:
+                    response = self.dispatch(
+                        principal,
+                        "al_command",
+                        {
+                            "arguments": [
+                                "evidence",
+                                "plan",
+                                "--area",
+                                descriptor["area"],
+                                "--kind",
+                                "test",
+                                "--tier",
+                                "broad",
+                                "--cwd",
+                                ".",
+                                "--scope",
+                                "tests,harness,al,pyproject.toml,uv.lock",
+                                "--recipe",
+                                descriptor["recipe"]["name"],
+                                "--recipe-descriptor-file",
+                                artifact,
+                            ]
+                        },
+                    )
+                    self.setup_outcomes[request["cwd"]] = {
+                        "status": "Planned" if response.get("returncode") == 0 else "Pending",
+                        "area": descriptor["area"],
+                        "test_evidence": False,
+                    }
+                except (OSError, ValueError, LookupError, sqlite3.Error):
+                    self.setup_outcomes[request["cwd"]] = {
+                        "status": "Pending",
+                        "reason": "recipe_plan_admission_required",
+                        "test_evidence": False,
+                    }
 
     def close(self):
         self.processes.close()
@@ -1710,6 +1738,7 @@ class OperationController:
                 id(value): value for value in getattr(self, "policy_setup_pending", {}).values()
             }.values()
         )
+        self.prepared_plan_pending.clear()
         self.setup_pending.clear()
         getattr(self, "policy_setup_pending", {}).clear()
         for attempt in queued:

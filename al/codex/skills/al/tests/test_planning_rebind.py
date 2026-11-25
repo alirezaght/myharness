@@ -63,6 +63,16 @@ def fill(result, tmp_path):
 def test_rebind_preserves_original_and_does_not_admit_or_submit(cli, repo, tmp_path, monkeypatch, state_file, accepted):
     old, report, packet_path, report_path, fresh = prepared(cli, repo, tmp_path, monkeypatch, accepted=accepted)
     before_bytes = report_path.read_bytes()
+    before_state = json.loads(state_file().read_bytes())
+    historical = before_state['planning_history'][-1]
+    current = before_state['planning_authorship']
+    old_analysis = J.read(historical['analysis_observation'])
+    current_analysis = J.read(current['analysis_observation'])
+    assert old_analysis['packet'] == historical['packet']
+    assert current_analysis['packet'] == current['packet']
+    assert old_analysis['analysis']['source_specification']['amendments'] == []
+    assert len(current_analysis['analysis']['source_specification']['amendments']) == 1
+    assert historical['analysis_observation'] != current['analysis_observation']
     result = derive(cli, packet_path, report_path)
     receipt = J.read(result['receipt'])
     assert receipt['original_report_status'] == ('retained' if accepted else 'unsubmitted')
@@ -74,11 +84,56 @@ def test_rebind_preserves_original_and_does_not_admit_or_submit(cli, repo, tmp_p
     assert result['report_template']['binding'] == fresh['content']['binding']
     assert 'FILL:' in result['report_template']['invocation_id']
     state = json.loads(state_file().read_bytes())
+    assert state['agent_contracts'] == before_state['agent_contracts']
+    assert state['agent_contract_history'] == before_state['agent_contract_history']
     assert state['proof_admission']['status'] == 'pending'
     assert 'report' not in state['planning_authorship']
     path = tmp_path / 'unfinished.json'
     path.write_text(json.dumps(result['report_template']))
     assert cli('planning', 'report', '--file', str(path))[0] != 0
+
+
+@pytest.mark.parametrize('defect', ['missing', 'newer-issuance', 'ambiguous-reference', 'bytes'])
+def test_historical_analysis_cannot_be_regenerated_or_substituted(
+        cli, repo, tmp_path, monkeypatch, state_file, defect):
+    _, _, packet, report, _ = prepared(cli, repo, tmp_path, monkeypatch)
+    state = json.loads(state_file().read_bytes())
+    prior = state['planning_history'][-1]
+    if defect == 'missing':
+        del prior['analysis_observation']
+    elif defect == 'newer-issuance':
+        prior['analysis_observation'] = state['planning_authorship']['analysis_observation']
+    elif defect == 'ambiguous-reference':
+        prior['analysis_observation'] = [prior['analysis_observation']]
+    else:
+        reference = prior['analysis_observation']
+        Path(reference['stored_path']).write_bytes(Path(reference['stored_path']).read_bytes() + b' ')
+    state_file().write_text(json.dumps(state))
+    before = state_file().read_bytes()
+    response = cli('planning', 'rebind', '--from-packet', str(packet), '--from-report', str(report))
+    assert response[0] != 0 and 'report_template' not in response[1]
+    assert state_file().read_bytes() == before
+
+
+def test_same_spec_later_analysis_observation_cannot_authorize_old_packet(
+        cli, repo, tmp_path, monkeypatch, state_file):
+    pending(cli, repo, tmp_path, monkeypatch)
+    old = json.loads(ok(cli, 'planning', 'packet')[1])
+    report = tmp_path / 'original-report.json'
+    report.write_text(json.dumps(_reports().report_for(old)))
+    packet = tmp_path / 'original-packet.json'
+    packet.write_text(json.dumps(old['content']))
+    (repo / 'svc/app.py').write_text('later_source = 1\n')
+    fresh = json.loads(ok(cli, 'planning', 'packet')[1])
+    assert old['content']['task_package'] == fresh['content']['task_package']
+    assert old['content']['accepted_amendments'] == fresh['content']['accepted_amendments'] == []
+    state = json.loads(state_file().read_bytes())
+    state['planning_history'][-1]['analysis_observation'] = state['planning_authorship']['analysis_observation']
+    state_file().write_text(json.dumps(state))
+    before = state_file().read_bytes()
+    result = cli('planning', 'rebind', '--from-packet', str(packet), '--from-report', str(report))
+    assert result[0] != 0 and 'different planning issuance' in ''.join(map(str, result))
+    assert state_file().read_bytes() == before
 
 
 def test_current_revalidation_binds_final_report_and_retains_derivation(cli, repo, tmp_path, monkeypatch, state_file):

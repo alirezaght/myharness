@@ -94,7 +94,6 @@ def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path
         channel.close()
 
 
-
 def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_path):
     """Issue #18: a check under a Harness execution can bind AF_UNIX sockets in TMPDIR
     (multiprocessing manager), may write only its own /tmp directory, and that

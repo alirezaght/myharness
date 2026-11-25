@@ -1063,6 +1063,7 @@ class Service:
         import linecache
         import threading
         from installer.runtime_pin_transaction import commit_run_binding
+        from installer.runtime_retry_control import complete
         request = prepared['request']
         program = self.child_text.replace('request=REQUEST', 'request=' + repr(request), 1)
         if hasattr(linecache, '_register_code'):
@@ -1074,6 +1075,7 @@ class Service:
             'base': self.base, 'run_context': prepared['run_context'], 'manifest': self.manifest,
             'captured': self.captured['bytes'], 'payload': self.payload, 'platform': self.platform,
             'prefix': self.prefix, 'value': prepared['value'], 'commit_run_binding': commit_run_binding,
+            'complete': complete,
             **prepared['functions'],
         }
         code = 0

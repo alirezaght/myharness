@@ -48,10 +48,11 @@ def coordinator(tmp_path, monkeypatch):
     monkeypatch.setattr(R, 'read', lambda path: transaction)
     monkeypatch.setattr(R, 'validate', lambda *args: None)
     manifest = {'interpreter': {'executable': '/fixture/python'}, 'interpreter_execution_identity': {}}
-    def verify(*args):
+    def verify(*args, **kwargs):
+        assert kwargs == {'create': True, 'write': True}
         events.append(('verify', stderr.getvalue()))
         return {'manifest': manifest}
-    monkeypatch.setattr(R, 'verify_pin', verify)
+    monkeypatch.setattr(R, 'verify_pin_cached', verify)
     monkeypatch.setattr(R, 'validate_live', lambda *args: None)
     monkeypatch.setattr(R, 'observe', lambda *args: {})
     requests, executions = [], []

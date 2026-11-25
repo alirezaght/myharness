@@ -35,6 +35,26 @@ def supplied_packet(st, value):
     return data
 
 
+def _historical_analysis(st, view, previous):
+    import al_agent_exchange as X
+
+    key = 'requirement-analysis:' + st['task_package']['id']
+    reference = previous.get('analysis_observation')
+    if not reference:
+        refuse('historical planning packet has no bound analysis observation; '
+               'use the current packet with a fresh Architect report')
+    observed = J.read(reference)
+    J.closed(observed, {'schema_version', 'kind', 'packet', 'analysis'}, 'planning analysis observation')
+    if (observed['schema_version'] != 1 or observed['kind'] != 'planning-analysis-observation-v1'
+            or observed['packet'] != previous['packet']):
+        refuse('historical analysis observation belongs to a different planning issuance')
+    if observed['analysis'] == {'coverage': 'legacy'}:
+        view.setdefault('agent_contracts', {}).pop(key, None)
+    else:
+        view.setdefault('agent_contracts', {})[key] = copy.deepcopy(observed['analysis'])
+    X.require_analysis(view)
+
+
 def historical(st, supplied):
     """Construct an isolated validation view from this run's retained issuance."""
     import al_planning as P
@@ -56,6 +76,7 @@ def historical(st, supplied):
     view['designer_required'] = supplied['routing']['designer_required']
     view['planning_authorship'] = copy.deepcopy(previous)
     view['proof_admission']['status'] = 'pending'
+    _historical_analysis(st, view, previous)
     view['proof_admission']['requirement_lineage_hash'] = Q.lineage(view)
     current, contents, attempt = P.packet(view, current_source=False)
     return view, current, contents, attempt

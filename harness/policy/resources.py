@@ -13,7 +13,7 @@ from harness.reliability.identity import verified_principal
 from harness.reliability.process_context import CURRENT
 
 CLEANUP = {"poll_process", "cancel_process", "await_assignment"}
-READS = {"read_file", "knowledge_query", "knowledge_explain", "diagnostic"}
+READS = {"read_file", "knowledge_query", "knowledge_explain", "knowledge_consumers", "diagnostic"}
 
 
 CONTROL_READS = {
@@ -194,7 +194,9 @@ def prepare(operation, controller, principal, name, a, state):
         operation._policy_supervisor = secrets.token_hex(16)
     boundary = (
         "unqualified_process_tree"
-        if name in {"run_command", "al_command"} or name == "environment_operation" and mutating
+        if name in {"run_command", "al_command", "knowledge_consumers"}
+        or name == "environment_operation"
+        and mutating
         else "external_operation"
         if name == "delivery_operation" and mutating
         else "closed_handler"

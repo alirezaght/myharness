@@ -76,6 +76,11 @@ def argv(method, values):
             "inventory_tree": ["ls-tree", "-r", "-l", "-z", ref],
             "currency_diff": ["diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", ref],
         }[method]
+    if method == "retained_tree":
+        require(set(values) == {"revision"})
+        ref = values["revision"]
+        require(isinstance(ref, str) and re.fullmatch("[0-9a-f]{40}|[0-9a-f]{64}", ref))
+        return ["cat-file", "-e", ref + "^{tree}"]
     if method == "parent_diff":
         require(
             set(values) == {"revision", "binary", "ignore"}

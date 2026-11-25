@@ -77,3 +77,24 @@ def test_regrouped_assigned_nodes_are_not_drift_but_changed_content_is():
     for changed in ([nodes[0], dict(nodes[2], source='other'), nodes[1]], [nodes[0], nodes[1]], [nodes[0], nodes[0], nodes[1]]):
         errors = validate_child_report(assignment, dict(report, nodes=changed), {'returncode': 0})['errors']
         assert 'assigned collection/source/fixture drift' in errors
+
+
+def test_real_module_lifecycle_keeps_collected_order_on_every_host(tmp_path):
+    body = '''SEEN = []
+
+def test_z_first():
+    SEEN.append('initialized')
+
+def test_a_last():
+    assert SEEN == ['initialized']
+'''
+    root = source(tmp_path, {suite: body for suite in ('installer', 'codex', 'claude')})
+    collections, binding = collected(root, tmp_path)
+    plan = build_plan(collections, declarations(root), tier='full', changed_paths=[], binding=binding)
+    assert len(plan['execution_assignments']) == 6
+    result = run(plan, workers=3, artifact_root=tmp_path / 'workers', cache_mode='cold')
+    assert result['reconciliation']['complete'], result['reconciliation']
+    assert result['reconciliation']['executed_passed'] == 6
+    for suite in ('installer', 'codex', 'claude'):
+        nodes = [a['node']['nodeid'].split('::')[-1] for a in plan['execution_assignments'] if a['suite'] == suite]
+        assert nodes == ['test_z_first', 'test_a_last']

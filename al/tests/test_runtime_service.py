@@ -37,7 +37,9 @@ def git(cwd, *args):
 class Setup:
     def __init__(self, base):
         self.base = base
-        self.source = copy_al_source(base / "source/al")
+        self.base.mkdir(parents=True, exist_ok=True)
+        self.profile_count = 0
+        self.source = self.measured('source-copy', lambda: copy_al_source(base / "source/al"))
         self.home = base / "home"
         self.home.mkdir()
         self.repo = base / "repo"
@@ -47,29 +49,46 @@ class Setup:
                         GIT_COMMITTER_NAME="f", GIT_COMMITTER_EMAIL="f@x.invalid")
         for name in ("AL_RUNTIME_DIR", "AL_DISTRIBUTION_STATE", "PYTHONPATH", "PYTHONHOME"):
             self.env.pop(name, None)
-        assert invoke(["git", "init", "-q"], self.repo, self.env).returncode == 0
+        assert self.measured('git-init', lambda: invoke(["git", "init", "-q"], self.repo, self.env)).returncode == 0
         (self.repo / "app.py").write_text("print('x')\n")
-        assert invoke(["git", "add", "-A"], self.repo, self.env).returncode == 0
-        assert invoke(["git", "commit", "-qm", "initial"], self.repo, self.env).returncode == 0
+        assert self.measured('git-add', lambda: invoke(["git", "add", "-A"], self.repo, self.env)).returncode == 0
+        assert self.measured('git-commit', lambda: invoke(["git", "commit", "-qm", "initial"], self.repo, self.env)).returncode == 0
         self.launcher = self.home / "bin/alctl"
         self.bootstrap()
         self.services = self.home / "installer/al-services"
 
+    def measured(self, stage, operation):
+        started = time.monotonic()
+        try:
+            return operation()
+        finally:
+            self.profile_count += 1
+            if self.profile_count <= 512:
+                value = {'stage': stage, 'seconds': time.monotonic() - started}
+                with (self.base / 'stage-profile.jsonl').open('a') as output:
+                    output.write(json.dumps(value) + '\n')
+            elif self.profile_count == 513:
+                with (self.base / 'stage-profile.jsonl').open('a') as output:
+                    output.write(json.dumps({'truncated': True}) + '\n')
+
     def bootstrap(self):
-        result = invoke([sys.executable, "-I", "-S", "-B", self.source / "alctl.py", "bootstrap", "--source-root",
+        result = self.measured('bootstrap', lambda: invoke([sys.executable, "-I", "-S", "-B", self.source / "alctl.py", "bootstrap", "--source-root",
                          self.source, "--destination", self.launcher, "--state-root", self.home / "installer"],
-                        self.repo, self.env)
+                        self.repo, self.env))
         assert result.returncode == 0, result.stderr[-2000:]
 
     def run(self, session, *argv, repo=None, service=True, env=None):
         repo = repo or self.repo
         environment = dict(env or self.env, AL_SERVICE="1" if service else "0")
-        result = invoke([self.launcher, "run", "--repository", repo, "--platform", "codex", "--session", session,
-                         "--", *argv], repo, environment)
+        command = argv[0] if argv and argv[0] in {'start', 'show', 'phase', 'bogus-op'} else 'command'
+        stage = 'run-' + command + ('-service' if service else '-in-process')
+        result = self.measured(stage, lambda: invoke([self.launcher, "run", "--repository", repo, "--platform", "codex", "--session", session,
+                         "--", *argv], repo, environment))
         return result.returncode, result.stdout, result.stderr
 
     def control(self, action):
-        result = invoke([self.launcher, "service", action], self.repo, self.env)
+        stage = 'service-' + action if action in {'status', 'stop'} else 'service-control'
+        result = self.measured(stage, lambda: invoke([self.launcher, "service", action], self.repo, self.env))
         assert result.returncode == 0, result.stdout + result.stderr
         return json.loads(result.stdout)["services"]
 
@@ -100,7 +119,8 @@ def setup(tmp_path_factory):
     code, out, err = value.run("s1", "start", "--spec", SPEC)
     assert code == 0, (out[-2000:], err[-2000:])
     # The first command after start runs in process and leaves a warm service behind.
-    assert value.run("s1", "show", "--json")[0] == 0
+    code, out, err = value.run("s1", "show", "--json")
+    assert code == 0, (out[-4000:], err[-4000:])
     value.wait(lambda: value.control("status"))
     yield value
     try:

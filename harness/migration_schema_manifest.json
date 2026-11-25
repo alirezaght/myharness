@@ -4324,5 +4324,32 @@
       "workspace_proposals": "510e29acaa420879accf69e407109abcd5eaa3162a9073c7bf07ac5a967f120a",
       "workspace_proposals_task": "4a8b71e32b1b9329498866bd24ce9d1b0e673735bd5fc83f97386993b9b57dd6"
     }
+  },
+  "migration_hashes": {
+    "0001_tasks.sql": "3168a8bc6102526e911f28adb36adcc865e3da958bf51a48cf19a77d3a2a8a7f",
+    "0002_workspace.sql": "b3edeac11fd4cd7239959e8f2c0482cb3e458a4c2aa1a402118c28e2180f6703",
+    "0003_interview.sql": "b66a476c2cfae650d8e954b12416d4cdab14690da3af54499ee3c8d50e621fe0",
+    "0004_design.sql": "b077b366ea23d078a2f9068de222f93f320902f31fb6421e05c42fb68f3013ef",
+    "0005_decision_changes.sql": "eaf72c7091072b1bd1d72f987261b5f74f56c3db48a58ba5876b5ad9f7c79b9b",
+    "0006_spec_versions.sql": "ebf60684bb0ee8bc648acac735a1852f9ed3a481cab8039f3e62c7f72365547e",
+    "0007_test_plan.sql": "cd465a6587c8299e9e4d722b9b228c61215bc196161ce13cf88269a81763628c",
+    "0008_approvals.sql": "11e32cd61e22fa706d2532f8a760c162c780e8b9d269a3bc46662e75a23c70d1",
+    "0009_diagram_versions.sql": "d44009e98a6fe02e3a2747442ec4d1839a0aec847dc27ad242ba4634dd687b19",
+    "0010_comments.sql": "7502978c2402ce977f5a69b7c9eabfe13103ebe062982dce0f2a1ae611ed6e94",
+    "0011_executions.sql": "53c41bdc5ae669e292a737c2768315c043e1f8e4d2772854f4c632b7bd610a18",
+    "0012_delivery.sql": "c2f0e6951be512f35c3ae27c70dbd5407b9de8b59f9b604271291bf5936a0f82",
+    "0013_browser_validation.sql": "c4b57b83c9bd35ead642e84ca5f737b0711304258c0f055dd830393671a19f94",
+    "0014_execution_epochs.sql": "6211507a20897f8b928999c9601ab16165ab0df3934285507c14cf93d631afb4",
+    "0015_knowledge.sql": "17e4e5d087ca54350f902362dbb889725d021d1a587bed16133507c165cefa82",
+    "0016_knowledge_index.sql": "35cbb8aca1885366cfcec6750642bc59d11e1d8bd5bb4b7124d031bbf5bef9ed",
+    "0017_workspace_proposals.sql": "94e83617c7cb3b3357503b231095830ebc59e8fd5bbaddef508a70fab6cd155d",
+    "0018_authoring.sql": "9f70f5d234d8ea6b7888a25d0244c06ea281a8ac88c109406230be5b48537689",
+    "0019_investigation_sources.sql": "f4c0527db2d71ac7123015ffc17b7c61cef5833af11e2466bf55b248d73c508e",
+    "0020_planning_sessions.sql": "cfbebb31c4960e4693f385871d16c069e78a30b84652c7156fe8652ab64d29f9",
+    "0021_reliability_observations.sql": "d34ed4205a85d3aca025808676bded8981a3564ff8f9eba030e4b4d4fb6fff53",
+    "0022_reliability_timeline.sql": "343f8b3bdb03a8b40974a32ce65110504511c682e165f516486923a77e68a60f",
+    "0023_runtime_policy.sql": "478675f1ffa8951b6ecd42cae3163671cdecf9736e810752035e2bfbbdf714ce",
+    "0024_dependency_launch_fencing.sql": "03f2f373bd1b6b977a2cd869d65e9f577353fbbd09d4c542b0ae790006c46f68",
+    "0025_incident_catalog.sql": "91819bf441e752263fda7ca3cffe62041fa428b05c7664744b17f076272a19e7"
   }
 }

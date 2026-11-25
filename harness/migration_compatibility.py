@@ -4,15 +4,19 @@ import json
 import re
 import sqlite3
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.resources import files
 
-from harness.migration_schema import identities
+from harness.migration_schema import identities, schema
 
 OLD_NAMES = (
-    "0019_reliability_observations.sql", "0020_reliability_timeline.sql",
-    "0021_runtime_policy.sql", "0022_dependency_launch_fencing.sql", "0023_incident_catalog.sql",
+    "0019_reliability_observations.sql",
+    "0020_reliability_timeline.sql",
+    "0021_runtime_policy.sql",
+    "0022_dependency_launch_fencing.sql",
+    "0023_incident_catalog.sql",
 )
-CANONICAL_NAMES = tuple(f"{i+21:04d}" + name[4:] for i, name in enumerate(OLD_NAMES))
+CANONICAL_NAMES = tuple(f"{i + 21:04d}" + name[4:] for i, name in enumerate(OLD_NAMES))
 MAIN_NAMES = ("0019_investigation_sources.sql", "0020_planning_sessions.sql")
 
 
@@ -28,14 +32,81 @@ class History:
         return f"c{self.common}" if self.common < 18 else f"m{self.main}r{self.reliability}"
 
 
+@lru_cache(maxsize=1)
+def schema_manifest():
+    return json.loads((files("harness") / "migration_schema_manifest.json").read_text())
+
+
 def _refuse(reason):
     raise RuntimeError("unrecognized migration history: " + reason)
 
 
+def _validate_ledger(conn, managed, prefixes):
+    def owned(name):
+        return name.casefold() in managed or name.casefold().startswith(prefixes)
+
+    # TEMP names can shadow main reads; TEMP triggers may mutate managed main tables.
+    for name, table in conn.execute("SELECT name,tbl_name FROM temp.sqlite_schema"):
+        if owned(name) or owned(table):
+            _refuse("TEMP object conflicts with managed schema: " + name)
+    rows = conn.execute(
+        "SELECT type,name,sql FROM main.sqlite_schema WHERE lower(name)='schema_migrations'"
+    ).fetchall()
+    if not rows:
+        return False
+    kind, name, sql = rows[0]
+    expected = (
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, "
+        "name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+    )
+
+    def tokens(value):
+        # Only the published finite declaration, allowing lexical whitespace differences.
+        parts = re.findall(r"[A-Za-z_][A-Za-z_0-9]*|[(),]|\S", value or "")
+        return [part.casefold() for part in parts]
+
+    columns = [
+        tuple(r)
+        for r in conn.execute("SELECT * FROM pragma_table_xinfo('schema_migrations','main')")
+    ]
+    if (
+        kind != "table"
+        or name != "schema_migrations"
+        or tokens(sql) != tokens(expected)
+        or columns
+        != [
+            (0, "version", "INTEGER", 0, None, 1, 0),
+            (1, "name", "TEXT", 1, None, 0, 0),
+            (2, "applied_at", "TEXT", 1, None, 0, 0),
+        ]
+        or conn.execute("SELECT 1 FROM pragma_index_list('schema_migrations','main')").fetchone()
+        or conn.execute(
+            "SELECT 1 FROM main.sqlite_schema WHERE tbl_name='schema_migrations' "
+            "AND name!='schema_migrations'"
+        ).fetchone()
+    ):
+        _refuse("migration ledger structure differs")
+    return True
+
+
 def validate_history(conn, migrations):
     expected = {v: name for v, name, _ in migrations}
-    exists = conn.execute("SELECT 1 FROM sqlite_schema WHERE name='schema_migrations'").fetchone()
-    rows = dict(conn.execute("SELECT version,name FROM schema_migrations ORDER BY version")) if exists else {}
+    manifest = schema_manifest()
+    import hashlib
+
+    for _, name, sql in migrations:
+        if manifest["migration_hashes"].get(name) != hashlib.sha256(sql.encode()).hexdigest():
+            _refuse("packaged SQL differs at " + name)
+    managed = {name.casefold() for name in manifest["managed_objects"]} | {"schema_migrations"}
+    prefixes = tuple(manifest["managed_prefixes"])
+    exists = _validate_ledger(conn, managed, prefixes)
+    rows = (
+        dict(conn.execute("SELECT version,name FROM main.schema_migrations ORDER BY version"))
+        if exists
+        else {}
+    )
+    if any(v < 1 for v in rows):
+        _refuse("nonpositive migration version")
     common = 0
     for v in range(1, 19):
         if v not in rows:
@@ -50,7 +121,7 @@ def validate_history(conn, migrations):
         history = History(common, 0, 0, False)
     elif extra and extra.get(19) == OLD_NAMES[0]:
         count = len(extra)
-        if count > 5 or extra != {i+19: name for i, name in enumerate(OLD_NAMES[:count])}:
+        if count > 5 or extra != {i + 19: name for i, name in enumerate(OLD_NAMES[:count])}:
             _refuse("checkpoint prefix has a hole or destination collision")
         history = History(18, 0, count, True)
     else:
@@ -58,22 +129,29 @@ def validate_history(conn, migrations):
         if main == 1 and 20 in extra:
             _refuse("main prefix has a hole")
         reliability = 0
-        while reliability < 5 and extra.get(21+reliability) == CANONICAL_NAMES[reliability]:
+        while reliability < 5 and extra.get(21 + reliability) == CANONICAL_NAMES[reliability]:
             reliability += 1
-        allowed = {i+19: n for i, n in enumerate(MAIN_NAMES[:main])}
-        allowed.update({i+21: n for i, n in enumerate(CANONICAL_NAMES[:reliability])})
+        allowed = {i + 19: n for i, n in enumerate(MAIN_NAMES[:main])}
+        allowed.update({i + 21: n for i, n in enumerate(CANONICAL_NAMES[:reliability])})
         if extra != allowed:
             _refuse("unknown filename, hole, or mixed migration identity")
         history = History(18, main, reliability, False)
-    manifest = json.loads((files("harness") / "migration_schema_manifest.json").read_text())
+    manifest = schema_manifest()
     wanted = manifest["histories"][history.key]
     actual = identities(conn)
-    managed = set(manifest["managed_objects"])
     # New conflicting objects in application-owned namespaces must not hide behind a ledger.
-    prefixes = tuple(manifest["managed_prefixes"])
-    observed = {k: v for k, v in actual.items() if k in managed or k.startswith(prefixes)}
+    definitions = schema(conn)
+    observed = {
+        k: v
+        for k, v in actual.items()
+        if k.casefold() in managed
+        or k.casefold().startswith(prefixes)
+        or definitions[k]["table"].casefold() in managed
+    }
     if observed != wanted:
-        differences = sorted(k for k in observed.keys() | wanted.keys() if observed.get(k) != wanted.get(k))
+        differences = sorted(
+            k for k in observed.keys() | wanted.keys() if observed.get(k) != wanted.get(k)
+        )
         _refuse("schema differs at " + ", ".join(differences[:8]))
     return history
 
@@ -86,7 +164,9 @@ def execute_migration(conn, sql):
             continue
         # Comments are immaterial only when finding the leading control keyword.
         head = re.sub(r"--[^\n]*|/\*.*?\*/", " ", pending, flags=re.S).lstrip()
-        if re.match(r"(?i)(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|VACUUM|ATTACH|DETACH)\b", head):
+        if re.match(
+            r"(?i)(BEGIN|COMMIT|END|ROLLBACK|SAVEPOINT|RELEASE|VACUUM|ATTACH|DETACH)\b", head
+        ):
             _refuse("migration contains transaction control")
         conn.execute(pending)
         pending = ""
@@ -101,7 +181,7 @@ def reconcile_checkpoint_history(conn, migrations):
         for index in reversed(range(history.reliability)):
             changed = conn.execute(
                 "UPDATE schema_migrations SET version=?,name=? WHERE version=? AND name=?",
-                (index+21, CANONICAL_NAMES[index], index+19, OLD_NAMES[index]),
+                (index + 21, CANONICAL_NAMES[index], index + 19, OLD_NAMES[index]),
             ).rowcount
             if changed != 1:
                 _refuse("checkpoint ledger moved during reconciliation")

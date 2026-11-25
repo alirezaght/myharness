@@ -4,6 +4,7 @@
 import hashlib
 import json
 import subprocess
+import traceback
 from pathlib import Path
 
 import pytest
@@ -44,7 +45,22 @@ def retry(r, **extra):
     )
 
 
-def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(protected_policy_runtime):
+def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(
+    protected_policy_runtime, monkeypatch
+):
+    from harness.policy import control_qualification
+
+    qualification_errors = []
+    prepare = control_qualification._prepare
+
+    def observed_prepare(*args, **kwargs):
+        try:
+            return prepare(*args, **kwargs)
+        except ValueError:
+            qualification_errors.append(traceback.format_exc())
+            raise
+
+    monkeypatch.setattr(control_qualification, "_prepare", observed_prepare)
     r = protected_policy_runtime
     repo = Path(r.operation.envelope["repository"])
     canary = "opaque-helper-content-73119"
@@ -64,7 +80,10 @@ def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(protected_poli
     ):
         subprocess.run([git, *args], cwd=repo, check=True, capture_output=True)
     setup_retry(r)
-    result = retry(r)
+    try:
+        result = retry(r)
+    except ValueError:
+        pytest.fail("Real public retry refused qualification:\n" + "\n".join(qualification_errors))
     assert result["returncode"] == 0, result
     helpers = [
         dict(row) for row in r.controller.conn.execute("SELECT * FROM policy_control_helpers")
@@ -428,17 +447,20 @@ def test_qualified_finish_keeps_attribution_and_prior_liability_under_exhausted_
         )
 
 
-def test_modified_managed_startup_cannot_run_before_the_private_guard(protected_policy_runtime):
+@pytest.mark.parametrize("position", ["startup", "service_prelude"])
+def test_modified_managed_startup_cannot_run_before_the_private_guard(
+    protected_policy_runtime, position
+):
     r = protected_policy_runtime
     setup_retry(r)
     launcher = Path(r.operation.package["launcher"])
     canary = launcher.parent / "pre-guard-executed"
     raw = launcher.read_text()
-    anchor = "' '''\n"
+    anchor = "' '''\n" if position == "startup" else "if len(sys.argv)>2 and sys.argv[1]=='run'"
     assert anchor in raw
-    launcher.write_text(
-        raw.replace(anchor, anchor + "open(" + repr(str(canary)) + ",'w').write('bad')\n", 1)
-    )
+    payload = "open(" + repr(str(canary)) + ",'w').write('bad')\n"
+    replacement = anchor + payload if position == "startup" else payload + anchor
+    launcher.write_text(raw.replace(anchor, replacement, 1))
     with pytest.raises(ValueError, match="UNSUPPORTED_ENFORCEMENT_CAPABILITY"):
         retry(r)
     assert not canary.exists()

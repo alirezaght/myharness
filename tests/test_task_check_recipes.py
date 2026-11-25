@@ -1,15 +1,15 @@
+# ruff: noqa: F811
 """Prepared default selection is source-bound and does not confer check authority."""
 
 import json
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from al.installer import verification_contracts as C
 from harness.execution_contract import digest
-from harness.task_environment import SetupReport, context_revision, prepare
+from harness.task_environment import SetupReport, context_revision
 from harness.task_tooling import TaskTooling
 
 
@@ -79,20 +79,32 @@ def test_inspection_does_not_create_recipe_or_environment_state(prepared):
     assert not (tooling.directory / "environments.json").exists()
 
 
-def test_cached_success_invokes_same_internal_ready_hook(prepared):
-    tooling, record, state, request = prepared
-    tooling.ready(".", record)
-    calls = []
-    operation = SimpleNamespace(
-        tooling=tooling,
-        envelope={"repository": str(tooling.repository)},
-        processes=SimpleNamespace(records={}),
-        setup_pending={},
-        prepared_checks=lambda principal, request, record, **kw: (
-            calls.append(kw) or {"status": "Pending"}
-        ),
+def test_cached_success_invokes_same_internal_ready_hook(prepared, operations, monkeypatch):
+    from tests.test_agent_contracts_setup import admitted_setup, registered_setup
+
+    tooling, record, _, _ = prepared
+    operation, principal, controller, state = registered_setup(
+        operations, ["pyproject.toml", "uv.lock"], task_id="T"
     )
-    result = prepare(operation, None, {"role": "orchestrator"}, state, request, plan_defaults=False)
+    root = Path(operation.envelope["repository"])
+    for name in ("pyproject.toml", "uv.lock"):
+        (root / name).write_bytes((tooling.repository / name).read_bytes())
+    record = record | {
+        "tools": digest(operation.tooling.catalog()["tools"]),
+        "sources": [str(root)],
+    }
+    operation.tooling.ready(".", record)
+    calls = []
+    monkeypatch.setattr(
+        operation, "prepared_checks", lambda *a, **kw: calls.append(kw) or {"status": "Pending"}
+    )
+    request = {
+        "operation": "prepare",
+        "cwd": ".",
+        "task_id": "T",
+        "expected_revision": context_revision(state, "T"),
+    }
+    result = admitted_setup(operation, principal, controller, state, request, plan_defaults=False)
     assert result["status"] == "Ready" and result["cached"] is True
     assert calls == [{"plan_defaults": False}]
     assert result["checks"]["status"] == "Pending"
@@ -144,11 +156,9 @@ def test_authenticated_cached_prepare_creates_real_public_plan_once(operations, 
         'version=1\nrevision=3\nrequires-python=">=3.11"\n[[package]]\nname="prepared-fixture"\nversion="0.1.0"\nsource={virtual="."}\n'
     )
     path = Path(initialization["source"])
-    state = json.loads(path.read_bytes())
-    state["integration"].update(
-        tasks={"T": {"revision": 1, "files": ["harness"]}}, graph_revision=1
-    )
-    path.write_text(json.dumps(state))
+    from tests.test_agent_contracts_setup import registered_setup
+
+    _, _, _, state = registered_setup(operations, ["harness"], task_id="T")
     tooling = operation.tooling
     record = {
         "kind": "python",
@@ -179,6 +189,11 @@ def test_authenticated_cached_prepare_creates_real_public_plan_once(operations, 
             time.sleep(0.05)
         assert observed["status"] != "Running", observed
         result = observed["result"]
+    assert result["status"] == "Ready"
+    assert result["checks"]["status"] == "Pending"
+    assert result["checks"]["reason"] == "recipe_plan_queued"
+    operation.tick()  # Distinct AL effect obtains normal admission after setup returned.
+    result = operation.dispatch(principal, "environment_operation", request)
     assert result["status"] == "Ready"
     assert result["checks"]["status"] == "Planned", json.dumps(result, indent=2)
     current = json.loads(path.read_bytes())

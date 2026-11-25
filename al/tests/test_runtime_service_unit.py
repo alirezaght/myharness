@@ -130,7 +130,12 @@ def test_service_and_run_child_share_one_pin_verification():
     assert len(lines) == len(original)
     start = original.index(TAIL_MARKER)
     assert lines[start:] == original[start:] and not any(lines[:start])
-    assert "al_state.main()" in lines[start:]
+    import ast
+    calls = [node for node in ast.walk(ast.parse(tail)) if isinstance(node, ast.Call)]
+    assert any(isinstance(node.func, ast.Attribute) and node.func.attr == 'main'
+               and isinstance(node.func.value, ast.Name) and node.func.value.id == 'al_state'
+               for node in calls)
+    assert any(isinstance(node.func, ast.Name) and node.func.id == 'complete' for node in calls)
     compile(tail, "<string>", "exec")
 
 

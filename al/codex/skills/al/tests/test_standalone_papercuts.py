@@ -87,7 +87,10 @@ def test_rebind_accepts_the_printed_packet_or_its_hash(cli, repo, tmp_path, monk
         argument = str(supplied)
     else:
         argument = previous["packet"]["sha256"]
-    result = json.loads(ok(cli, "planning", "rebind", "--from-packet", argument, "--from-report", str(old_report))[1])
+    response = cli("planning", "rebind", "--from-packet", argument, "--from-report", str(old_report))
+    if response[0] != 0:
+        pytest.fail("Actual public planning rebind response: " + str(response))
+    result = json.loads(response[1])
     assert J.read(result["receipt"])["original_packet"] == previous["packet"]
 
 

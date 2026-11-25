@@ -89,6 +89,15 @@ def _objects(root):
 
 
 def _run(root, args, *, env=None, data=None, timeout=120):
+    import al_retry_control
+    control = al_retry_control.current()
+    if control:
+        if (len(args) == 3 and args[:2] == ['cat-file', '-e']
+                and isinstance(args[2], str)
+                and re.fullmatch(r'[0-9a-f]{40}\^\{tree\}|[0-9a-f]{64}\^\{tree\}', args[2])
+                and env is None and data is None):
+            return control.git('retained_tree', {'revision': args[2][:-7]}, root)
+        raise Unavailable('snapshot operation unavailable in sealed control')
     result = subprocess.run(_GIT + args, cwd=str(root), input=data, capture_output=True, timeout=timeout,
                             env={**os.environ, **_objects(root), **(env or {})})
     if result.returncode:

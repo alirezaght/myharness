@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -106,7 +107,8 @@ def copy_al_source(destination):
         base = Path(tempfile.mkdtemp(prefix="al-source-template-")).resolve()
         atexit.register(shutil.rmtree, base, True)
         template = base / "al"
-        shutil.copytree(root, template, ignore=shutil.ignore_patterns(*_SOURCE_IGNORED), copy_function=copy2)
+        shutil.copytree(root, template, ignore=shutil.ignore_patterns(*_SOURCE_IGNORED),
+                        copy_function=partial(copy2, allow_clone=False))
         if _source_state(root) != state:
             raise RuntimeError("al/ source changed while its test template was copied")
         _SOURCE_TEMPLATE.clear()
