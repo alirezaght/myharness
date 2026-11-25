@@ -9,6 +9,11 @@ against the disk like any other. The resulting tree's blob ids are content hashe
 the working copy; AL's own membership rules, symlink, nested-repository and torn
 capture checks are unchanged and decide what the tree may vouch for.
 
+A snapshot of a working copy that has not changed since the last one (#36) reuses that tree
+after a two-call probe (the untracked listing and `git ls-files -m -d` against the private
+index) instead of `add`, `ls-files`, `rm` and `write-tree`; see `TREE_RECORD` for why a clean
+probe proves the tree is the one a full snapshot would write.
+
 All state here is per worktree and mutable; the shared fact store holds only facts.
 Concurrent snapshots in one worktree never wait: a busy private index is a fallback to
 direct reads. Snapshot trees used by a run are pinned under `refs/al/snapshots/<run>/`
@@ -373,6 +378,12 @@ def _snapshot(root, target):
     # real index changed, and members an earlier snapshot added that are no longer members
     # are removed below, so nothing an earlier snapshot added can linger.
     seeded = _seeded(root, target)
+    extra = None
+    if seeded is not None:
+        extra = untracked(root)
+        tree = _unchanged(root, target, seeded, extra)
+        if tree is not None:
+            return tree
     if seeded is None:
         identity = _identity(_real_index(root))
         _seed(root, target)
@@ -383,7 +394,8 @@ def _snapshot(root, target):
             for flag in ('--no-assume-unchanged', '--no-skip-worktree'):
                 _run(root, ['update-index', flag, '-z', '--stdin'], env=env, data=b'\0'.join(flagged) + b'\0')
     _run(root, ['add', '-u', '--ignore-errors'], env=env, timeout=600)
-    extra = untracked(root)
+    if extra is None:
+        extra = untracked(root)
     if seeded is not None:
         # Untracked members an earlier snapshot added that are no longer members (now ignored).
         tracked = set(_run(root, ['ls-files', '-z']).split(b'\0'))
@@ -402,11 +414,94 @@ def _snapshot(root, target):
             _record_seed(root, target, identity)
         except OSError:
             pass
+    real = seeded if seeded is not None else identity
+    if real is not None and real != ['moving']:
+        _record_tree(target, real, extra, tree)
     return tree
+
+
+# The tree a snapshot wrote, keyed by everything it was computed from (#36). The next snapshot
+# of the worktree reuses it instead of `add`/`rm`/`write-tree` only when the working copy still
+# matches it: the private index is byte-identical to the one `write-tree` read (so its entries,
+# hence the tree, are the same: the tree is a content hash of those entries), the real index is
+# unchanged (the same tracked set), the untracked listing by AL's rule is byte-identical (the
+# same untracked members, none newly ignored), and `git ls-files -m -d` against the private
+# index lists nothing: no entry was modified, removed or changed mode on disk. That is Git's
+# own stat-cache check, racily-clean entries compared by content, the check `git add -u` uses
+# to choose what to hash again, so a clean probe means `add -u` would change nothing.
+TREE_RECORD = INDEX + '.tree'
+
+
+def _listing(extra):
+    import hashlib
+    return hashlib.sha256(b'\0'.join(extra)).hexdigest()
+
+
+def _record_tree(target, real, extra, tree):
+    import json
+    record = target.with_name(TREE_RECORD)
+    temporary = str(record) + '.' + str(os.getpid())
+    try:
+        index = _identity(target)
+        if index is None or index == ['moving']:
+            return
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as handle:
+            json.dump({'index': index, 'real': real, 'untracked': _listing(extra), 'tree': tree}, handle)
+        os.replace(temporary, record)
+    except OSError:
+        pass
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _unchanged(root, target, real, extra):
+    """The recorded tree when the working copy provably still matches it (see TREE_RECORD), else None."""
+    import json
+    record = target.with_name(TREE_RECORD)
+    try:
+        # A held index lock is a writer of the private index at work: take the snapshot itself.
+        if record.is_symlink() or os.path.lexists(str(target) + '.lock'):
+            return None
+        value = json.loads(record.read_bytes())
+    except (OSError, ValueError):
+        return None
+    tree = value.get('tree') if isinstance(value, dict) else None
+    if (not isinstance(tree, str) or not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', tree)
+            or value.get('real') != real or value.get('untracked') != _listing(extra)):
+        return None
+    index = _identity(target)
+    if index is None or index == ['moving'] or value.get('index') != index:
+        return None
+    # Every entry is checked against the disk: no fsmonitor answers, the full stat comparison.
+    if _run(root, ['-c', 'core.fsmonitor=false', '-c', 'core.checkStat=default', 'ls-files', '-z', '-m', '-d'],
+            env={'GIT_INDEX_FILE': str(target)}):
+        return None
+    return tree if _has_tree(root, tree) else None
+
+
+def _has_tree(root, tree):
+    """Whether the object store still holds `tree` (a recorded tree may have been pruned)."""
+    directory = _objects(root).get('GIT_OBJECT_DIRECTORY')
+    loose = Path(directory) if directory else _git_path(root, 'objects')
+    if (loose / tree[:2] / tree[2:]).is_file():
+        return True
+    try:
+        return _run(root, ['cat-file', '-t', tree], timeout=30).decode().strip() == 'tree'
+    except Unavailable:
+        return False
+
+
+# The latest full listing, by (worktree, tree id): a tree id names immutable content.
+_ENTRIES = {}
 
 
 def entries(root, tree, paths=None):
     """{path: (mode, kind, oid, size or None)} of a tree, recursively (optionally under `paths`)."""
+    key = (str(_root(root)), tree)
+    if not paths and key in _ENTRIES:
+        return dict(_ENTRIES[key])
     out = {}
     raw = _run(_root(root), ['ls-tree', '-r', '-l', '-z', '--full-tree', tree, *(['--', *paths] if paths else [])])
     for row in raw.split(b'\0'):
@@ -415,6 +510,9 @@ def entries(root, tree, paths=None):
         meta, path = row.split(b'\t', 1)
         mode, kind, oid, size = meta.split()
         out[path.decode()] = (mode.decode(), kind.decode(), oid.decode(), int(size) if size.isdigit() else None)
+    if not paths:
+        _ENTRIES.clear()
+        _ENTRIES[key] = dict(out)
     return out
 
 
