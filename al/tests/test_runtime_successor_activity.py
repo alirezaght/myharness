@@ -40,7 +40,11 @@ def observed(tmp_path, monkeypatch):
 
 
 def test_ambient_working_directory_has_no_task_authority(observed):
-    root, task, state, *_ = observed
+    root, task, state, argv, cwd, _ = observed
+    # The coordinator's own working directory in the repository is ambient. An unrelated process
+    # working inside the repository is unproven ownership and refuses
+    # (test_execution_process_arguments, f82888c), so the helper here works elsewhere.
+    cwd[45678] = root.parent
     assert (
         census.require_quiescent(root, transaction=task, state=state)["kind"]
         == "kernel-task-census-v2"

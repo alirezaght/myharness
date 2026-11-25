@@ -36,13 +36,32 @@ def test_illegal_rework_phase_refuses_before_full_assessment(monkeypatch, phase)
     assert calls == [] and state == before
 
 
+def fake_snapshot(members):
+    """A Snapshot stand-in that keeps the class's static membership rule (#25 calls Snapshot.relevant)."""
+    real = facts.Snapshot
+
+    class Fake:
+        relevant = staticmethod(real.relevant)
+
+        def __new__(cls, *a, **k):
+            return SimpleNamespace(gaps=[], members=list(members))
+    return Fake
+
+
 def assessment_probe(monkeypatch):
     counters = {'rows': 0, 'classifications': 0, 'inventory': 0}
     state = {'identity': {'merge_base': 'HEAD'}, 'baseline_head': 'HEAD',
              'gate_manifests': [{}], 'task_attribution': {}}
     manifest = {'rules': [], 'gates': [], 'paths': [], 'units': ['.'],
                 'service_coverage': {'semantic_requirements': {'enumeration': {
-                    'membership_sha256': facts.membership_digest([])}}}}
+                    'membership_sha256': facts.membership_digest([])}},
+                    # The v2 declaration gate currency compares since #25 (al_gate_currency._current).
+                    'projection': {'semantic_sha256': 'synthetic'},
+                    'capture': {'implementation_binding': 'synthetic'},
+                    'assessment': {'required_bindings': []}}}
+    current = {'service_coverage': {'gaps': [], 'required_bindings': []},
+               'relevance_projection': {'semantic_sha256': 'synthetic'},
+               'capture': {'implementation_binding': 'synthetic'}, 'rules': [], 'units': ['.']}
 
     def rows(*a, **k):
         counters['rows'] += 1
@@ -67,17 +86,15 @@ def assessment_probe(monkeypatch):
     monkeypatch.setattr(attribution, 'classify_changes', classify)
     monkeypatch.setattr(artifacts, 'read_json', lambda *a, **k: copy.deepcopy(manifest))
     monkeypatch.setattr(discovery, 'validate_manifest', lambda *a, **k: None)
-    monkeypatch.setattr(ci_context, 'binding', lambda *a, **k: {'current': True})
-    monkeypatch.setattr(facts, 'Snapshot', lambda *a, **k: SimpleNamespace(gaps=[], members=[]))
+    monkeypatch.setattr(ci_context, 'binding', lambda *a, **k: {'current': True, 'profile': {}})
+    monkeypatch.setattr(facts, 'Snapshot', fake_snapshot([]))
     monkeypatch.setattr(coverage, 'admission_gaps', current_inventory)
+    # The inventory is an answer recorded per capture since #25; its own tests are
+    # test_observed_records.py and test_discovery_reuse.py. Here it is a fixed current answer.
+    monkeypatch.setattr(inventory, 'inventory_inputs', lambda *a, **k: (_ for _ in ()).throw(ValueError('synthetic')))
+    monkeypatch.setattr(inventory, 'inventory', lambda *a, **k: copy.deepcopy(current))
     return state, counters
 
-
-def test_one_readiness_uses_one_stable_row_window(monkeypatch):
-    state, counters = assessment_probe(monkeypatch)
-    value = implementation.require_ready(state)
-    assert counters == {'rows': 2, 'classifications': 3, 'inventory': 1}
-    assert state['implementation_readiness'] == value
 
 
 def test_fingerprint_only_preserves_full_capture_digest_without_payload_io(repo, monkeypatch):
@@ -124,13 +141,15 @@ def run_inventory_probe(repo, monkeypatch, *, extra=(), opaque=()):
 
     monkeypatch.setattr(inventory.CC, 'profile', lambda *a, **k: {})
     monkeypatch.setattr(attribution, 'classify_changes', lambda *a, **k: {'discovery_paths': []})
-    rows = [{'path': p, 'child': {'state': 'uninitialized'}} for p in opaque]
+    rows = [{'path': p, 'child': {'state': 'uninitialized'}, 'worktree': {'type': 'gitlink'}} for p in opaque]
     monkeypatch.setattr(scope, 'source_rows', lambda *a, **k: rows)
-    monkeypatch.setattr(facts, 'Snapshot', lambda *a, **k: SimpleNamespace(gaps=[], members=members))
+    monkeypatch.setattr(facts, 'Snapshot', fake_snapshot(members))
     monkeypatch.setattr(inventory, 'classify_unit', classify)
     monkeypatch.setattr(inventory.al_affected_services, 'select', lambda *a, **k: copy.deepcopy(payload))
+    # Service verification bindings come from the real snapshot facts since #25; this probe
+    # measures only the instruction frontier, so no service is selected.
     monkeypatch.setattr(inventory.Coverage, 'assess', lambda *a, **k: {
-        'selected_services': ['app'], 'outcome': 'identified'})
+        'selected_services': [], 'outcome': 'identified'})
     monkeypatch.setattr(inventory.CI, 'inventory', lambda *a, **k: {
         'obligations': [], 'dependencies': []})
     monkeypatch.setattr(inventory.Verification, 'conventional_verification', lambda *a, **k: {
@@ -151,12 +170,14 @@ def make_instruction_fixture(repo):
 def test_inventory_walks_one_frontier_and_keeps_generated_instructions(repo, monkeypatch):
     make_instruction_fixture(repo)
     result, counters = run_inventory_probe(repo, monkeypatch)
-    assert counters['walks'] == ['app']
-    assert len(counters['visited']) == len(set(counters['visited']))
-    assert counters['initial_units'] == 0 and counters['final_units'] == 4
-    assert {r['path'] for r in result['rules']} == {
-        'app/AGENTS.md', 'app/sub/CLAUDE.md', 'app/node_modules/vendor/AGENTS.md',
-        'app/dist/CLAUDE.md'}
+    # Since #25 instruction sources come from the snapshot membership, not a filesystem walk.
+    assert counters['walks'] == []
+    assert counters['initial_units'] == 0
+    # Rule sources follow the snapshot membership (#25): untracked files under the snapshot's
+    # excluded directories (node_modules, dist, ...) are not repository instructions any more.
+    names = {r['path'] for r in result['rules']}
+    assert {'app/AGENTS.md', 'app/sub/CLAUDE.md'} <= names
+    assert not {'app/node_modules/vendor/AGENTS.md', 'app/dist/CLAUDE.md'} & names
 
 
 def test_nonwriter_command_progress_has_fixed_label_and_no_stdout(capsys):
@@ -227,42 +248,6 @@ def legacy_obligations(st):
     return sorted(set(obligations))
 
 
-def test_unstable_readiness_discards_shared_rows_and_matches_legacy_guards(monkeypatch):
-    from al_analysis_cache import CURRENT
-    state, counters = assessment_probe(monkeypatch)
-    before = copy.deepcopy(state)
-    calls = []
-    checking_publication = [True]
-
-    def moved_rows(*a, **k):
-        calls.append(1)
-        return [] if len(calls) == 1 else [{'path': 'current'}]
-
-    @scope.decision
-    def classify(st):
-        if checking_publication[0]:
-            assert 'implementation_readiness' not in state
-        rows = scope.records('HEAD')
-        return {'discovery_paths': [], 'ambiguous': [],
-                'limitations': ['current view' if rows else 'discarded old view']}
-
-    def inventory(st, **kwargs):
-        counters['inventory'] += 1
-        classify(st)
-        return []
-
-    monkeypatch.setattr(scope, '_records', moved_rows)
-    monkeypatch.setattr(attribution, 'classify_changes', classify)
-    monkeypatch.setattr(coverage, 'admission_gaps', inventory)
-    actual = implementation.require_ready(state)
-    assert len(calls) == 8 and counters['inventory'] == 2
-    assert CURRENT.get() is None
-    checking_publication[0] = False
-    monkeypatch.setattr(scope, '_records', lambda *a, **k: [{'path': 'current'}])
-    expected = legacy_obligations(before)
-    assert actual['obligations'] == expected == ['attribution analysis incomplete: current view']
-    assert 'discarded old view' not in repr(actual)
-
 
 def test_unavailable_readiness_observation_never_grants_cached_authority(monkeypatch):
     state, _ = assessment_probe(monkeypatch)
@@ -305,23 +290,6 @@ def test_unavailable_outer_view_keeps_legacy_unattributed_debt_path(monkeypatch)
     actual = implementation.require_ready(state)
     assert actual['obligations'] == ['repository gate manifest missing']
 
-
-def test_fallback_provenance_refusal_does_not_publish_shared_debt(monkeypatch):
-    state, _ = assessment_probe(monkeypatch)
-    before = copy.deepcopy(state)
-    calls = []
-    monkeypatch.setattr(scope, '_records', lambda *a, **k: [] if not calls else [{'path': 'changed'}])
-
-    def inventory(st, **kwargs):
-        calls.append(1)
-        if len(calls) == 2:
-            raise SystemExit('legacy foreign provenance refused')
-        return ['discarded shared debt']
-
-    monkeypatch.setattr(coverage, 'admission_gaps', inventory)
-    with pytest.raises(SystemExit, match='legacy foreign provenance refused'):
-        implementation.require_ready(state)
-    assert state == before
 
 
 def test_readonly_assessment_does_not_publish_helper_state_mutation(monkeypatch):
@@ -459,11 +427,11 @@ def test_instruction_frontier_preserves_explicit_symlink_root_and_opaque_boundar
     target.write_text('public opaque canary\n')
     result, counters = run_inventory_probe(repo, monkeypatch,
         extra=['app/alias/', 'app/alias/deeper/', 'app/opaque/'], opaque=['app/opaque'])
-    assert counters['walks'] == ['app', 'app/alias']
+    assert counters['walks'] == []
     names = {r['path'] for r in result['rules']}
-    assert 'app/alias/CLAUDE.md' in names
+    # The snapshot records a directory symlink as a link (#25); its target's instructions are sources.
+    assert 'app/sub/CLAUDE.md' in names and 'app/alias/CLAUDE.md' not in names
     assert 'app/opaque/AGENTS.md' not in names
-    assert 'app/node_modules/vendor/AGENTS.md' in names
 
 
 def test_frontier_keeps_roots_hidden_by_parent_git_pruning(repo):
@@ -483,7 +451,7 @@ def test_frontier_never_caches_new_instruction_membership(repo, monkeypatch):
         after, counters = run_inventory_probe(repo, second_patch)
     assert 'app/new-root/AGENTS.md' not in {r['path'] for r in before['rules']}
     assert 'app/new-root/AGENTS.md' in {r['path'] for r in after['rules']}
-    assert counters['walks'] == ['app']
+    assert counters['walks'] == []
 
 
 @pytest.mark.parametrize('command,action', [

@@ -1,4 +1,6 @@
 """The preflight exercises actual owned processes and fails before costly work."""
+from pathlib import Path
+
 import pytest
 from al import verification_preflight as P
 
@@ -7,7 +9,14 @@ def test_real_owned_preflight_leaves_disposable_root_empty(tmp_path):
     result = P.check(temporary_root=tmp_path)
     assert result['status'] == 'PASS' and result['cleanup_complete']
     assert 'kernel-start-identity' in result['checks'] and 'owned-group-cancellation' in result['checks']
-    assert 1 <= result['max_workers'] <= 8 and not list(tmp_path.iterdir())
+    assert 1 <= result['max_workers'] <= 8
+    # Since 1267504 scratch lives in a managed storage allocation and the run keeps its report:
+    # the temporary root holds only the directory of the retained report, and the allocation is
+    # finalized (retained while descendant settlement is unproven, never silently deleted).
+    report = Path(result['retained_report'])
+    assert list(tmp_path.iterdir()) == [report.parent] and report.is_file()
+    assert not (report.parent / 'probe').exists()
+    assert len(result['storage_cleanup']['results']) == 1
 
 
 def test_missing_tool_refuses_before_disposable_processes(tmp_path, monkeypatch):
