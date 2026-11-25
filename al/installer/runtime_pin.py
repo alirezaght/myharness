@@ -104,6 +104,16 @@ def prepare_pin(trusted_distribution, platform, storage):
 
 
 def verify_pin(storage, binding, *, readonly=False):
+    """Full verification: every manifest, membership and payload byte check. Never cached."""
+    root, manifest = verified_manifest(storage, binding, readonly=readonly)
+    files = manifest["complete_file_manifest"]
+    contents = verify_payload(root, files)
+    verify_coverage(manifest)
+    return {"root": root, "manifest": manifest, "bytes": contents}
+
+
+def verified_manifest(storage, binding, *, readonly=False):
+    """The pin's binding, storage, manifest, interpreter profile and top-level membership."""
     if not isinstance(binding, dict) or set(binding) != {"pin_identity", "pin_manifest_digest"}:
         raise ValueError("invalid protected runtime pin binding")
     pin = binding["pin_identity"]
@@ -132,6 +142,11 @@ def verify_pin(storage, binding, *, readonly=False):
     validate_profile(manifest["interpreter_execution_identity"], manifest["interpreter"])
     if set(p.name for p in root.iterdir()) != {"payload", "manifest.json"}:
         raise ValueError("runtime pin metadata membership differs")
+    return root, manifest
+
+
+def verify_payload(root, files):
+    """Read and hash every payload file against the manifest (the expensive part)."""
     contents = {}
     for directory, dirs, names in os.walk(root / "payload", followlinks=False):
         for name in dirs + names:
@@ -145,10 +160,14 @@ def verify_pin(storage, binding, *, readonly=False):
             contents[logical] = raw
     if set(contents) != set(files):
         raise ValueError("runtime pin payload membership differs")
+    return contents
+
+
+def verify_coverage(manifest):
+    files = manifest["complete_file_manifest"]
     if not isinstance(manifest["resource_map"], dict) or set(
         manifest["resource_map"].values()
     ) != set(files):
         raise ValueError("runtime pin resource coverage differs")
     for name in files:
         relative(name)
-    return {"root": root, "manifest": manifest, "bytes": contents}

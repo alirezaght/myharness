@@ -47,7 +47,12 @@ sys.modules['_al_run_pin_context']=run_context
 from installer.runtime_pin_transaction import subject,read_state,commit_run_binding,coordinated,read,validate
 from installer.interpreter_execution import validate_live
 from installer.execution_process import observe
-verified=verify_pin(base/'pins',pin)
+# A pin that carries the verification cache (#36) skips only an unchanged payload re-hash;
+# its bytes were hashed against the manifest above. Older pins verify in full.
+if 'installer/runtime_pin_cache.py' in captured:
+    from installer.runtime_pin_cache import verify_pin_cached
+    verified=verify_pin_cached(base/'pins',pin,captured=captured,write=False)
+else:verified=verify_pin(base/'pins',pin)
 if verified['bytes']!=captured:raise ValueError('runtime pin moved before import')
 value=subject(transaction['repository_identity']['root'],platform,transaction['session_id'])
 if request.get('prepared_start'):

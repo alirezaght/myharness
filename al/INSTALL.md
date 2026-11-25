@@ -418,6 +418,18 @@ and stop the services of this user; `AL_SERVICE=0` disables it and `AL_SERVICE_I
 sets its idle timeout. The thin client lives in the launcher, so a new launcher (re-bootstrap
 or update) is needed to use it. See [performance.md](codex/skills/al/reference/performance.md#resident-service).
 
+### Pin verification cache
+
+An in-process `alctl run` command checks its pin's manifest every time and re-hashes the
+pin's files only when they changed. After a full verification passes, the launcher
+writes `al-run-pins/pin-verification/<pin>.json` (0600 in a 0700 directory, written
+atomically). The record holds the pin identity, manifest digest, every file's content hash
+and the device, inode, mode, owner, link count, size, mtime and ctime of every file and
+directory in the pin. If any of those differs, or the record is malformed, foreign or has
+the wrong permissions, the launcher runs the full verification again. A failed
+verification is never recorded. install, update, rollback, doctor and every caller other than
+`alctl run` always verify in full. Deleting the directory only clears the cache.
+
 ### Existing run pins and successor guidance
 
 Installing a release and bootstrapping a coordinator do not replace an existing

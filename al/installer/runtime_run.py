@@ -10,7 +10,8 @@ import time
 
 from .interpreter_execution import validate_live
 from .execution_process import observe
-from .runtime_pin import _directory, prepare_pin, verify_pin
+from .runtime_pin import _directory, prepare_pin
+from .runtime_pin_cache import verify_pin_cached
 from .runtime_pin_boot import program
 from .runtime_pin_transaction import coordinated, publication_lock, read, reserve_locked, storage, subject, validate
 from .validator_origin import verify_snapshot
@@ -115,7 +116,10 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
         print("AL state cleared")
         return 0
     _writer_progress(progress_started, "verifying immutable runtime resources")
-    verified = verify_pin(storage(readonly=existing_run) / "pins", transaction["pin"])
+    # Skips only an unchanged payload re-hash after an earlier full verification (#36); the
+    # manifest checks always run and any change to the pin verifies it in full.
+    verified = verify_pin_cached(storage(readonly=existing_run) / "pins", transaction["pin"],
+                                 create=not existing_run)
     manifest = verified["manifest"]
     validate_live(
         manifest["interpreter_execution_identity"], manifest["interpreter"], observe(os.getpid())
