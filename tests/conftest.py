@@ -10,13 +10,36 @@ def launched(tmp_path_factory):
     return isolated_launcher.__wrapped__(tmp_path_factory)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def real_al_registry_guard():
+    """Fail the session when a test writes run state into the real AL registry (#37)."""
+    from al.tests.registry_guard import session_guard
+
+    yield from session_guard()
+
+
+@pytest.fixture(scope="session")
+def global_alctl_shadow(tmp_path_factory):
+    """PATH directories that hold the global `alctl`, mirrored without it (#37).
+
+    The global launcher writes run pins into the real registry; a test reaches AL only
+    through a launcher it bootstraps itself and puts on PATH."""
+    from tests.al_launcher import path_without_global_alctl
+
+    return path_without_global_alctl(tmp_path_factory.mktemp("path-without-alctl"))
+
+
 @pytest.fixture(autouse=True)
-def isolated_home(tmp_path, monkeypatch):
+def isolated_home(tmp_path, monkeypatch, global_alctl_shadow):
     home = tmp_path / "home"
     monkeypatch.setenv("HARNESS_HOME", str(home))
     monkeypatch.delenv("HARNESS_DB", raising=False)
     # AL commands run in process unless a test opts into the resident AL service.
     monkeypatch.setenv("AL_SERVICE", "0")
+    # No test may reach the global AL install or its registry (#37).
+    monkeypatch.setenv("AL_DISTRIBUTION_STATE", str(tmp_path / "al-distribution" / "registry"))
+    monkeypatch.setenv("HARNESS_ALCTL", str(tmp_path / "no-global-alctl" / "alctl"))
+    monkeypatch.setenv("PATH", global_alctl_shadow(os.environ.get("PATH", "")))
     from tests.native_provider_fixture import isolated_provider_environment
 
     env = isolated_provider_environment(dict(os.environ), tmp_path)

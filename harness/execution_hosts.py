@@ -42,9 +42,14 @@ def al_source(execution, envelope):
 
 
 def managed_launcher():
-    """The protected `alctl` launcher that admits every new AL run command."""
+    """The protected `alctl` launcher that admits every new AL run command.
+
+    `alctl` on PATH wins; otherwise `HARNESS_ALCTL` names the launcher (default
+    `~/.local/bin/alctl`). Test sessions point it at a missing path so no test can
+    reach the global install and its run registry (#37)."""
     found = shutil.which("alctl")
-    candidate = Path(found) if found else Path.home() / ".local" / "bin" / "alctl"
+    fallback = os.environ.get("HARNESS_ALCTL") or str(Path.home() / ".local" / "bin" / "alctl")
+    candidate = Path(found) if found else Path(fallback)
     if not candidate.is_file() or not os.access(candidate, os.X_OK):
         raise ValueError("managed alctl launcher unavailable; install AL globally first")
     return str(candidate)

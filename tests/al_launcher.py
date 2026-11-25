@@ -39,3 +39,40 @@ def al_command(alctl, host, repository, session, *arguments, session_directory=F
         "--",
         *arguments,
     ]
+
+
+def path_without_global_alctl(base: Path):
+    """Return `shadow(PATH)`: PATH with each directory that holds a global `alctl`
+    replaced by a mirror of its other entries (#37).
+
+    A launcher under the temporary directory was bootstrapped by a test and stays."""
+    import hashlib
+    import os
+    import tempfile
+
+    temporary = [
+        Path(root).resolve() for root in {tempfile.gettempdir(), str(base)} if Path(root).exists()
+    ]
+    mirrors: dict[str, str] = {}
+
+    def mirror(entry: str) -> str:
+        directory = Path(entry)
+        launcher = directory / "alctl"
+        if not entry or not os.path.lexists(launcher):
+            return entry
+        resolved = directory.resolve()
+        if any(resolved.is_relative_to(root) for root in temporary):
+            return entry
+        if entry not in mirrors:
+            target = Path(base) / hashlib.sha256(entry.encode()).hexdigest()[:16]
+            target.mkdir(parents=True, exist_ok=True)
+            for child in directory.iterdir():
+                if child.name != "alctl" and not os.path.lexists(target / child.name):
+                    (target / child.name).symlink_to(child)
+            mirrors[entry] = str(target)
+        return mirrors[entry]
+
+    def shadow(path: str) -> str:
+        return os.pathsep.join(mirror(entry) for entry in path.split(os.pathsep))
+
+    return shadow

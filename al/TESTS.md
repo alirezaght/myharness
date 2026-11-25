@@ -203,3 +203,15 @@ host (`.codex`, `.claude`, a platform comparison), or when a remaining Claude mo
 hide in a single-run file. `verification_affected.py` treats a change to either byte-identical
 copy of a shared script or resource as a change to both, so `verify_changed.py` still selects the
 single-run tests when only the Claude copy is named.
+
+## 6. No test touches the real AL registry (#37)
+
+Tests keep AL state under their own temporary roots. The autouse fixtures of
+`al/tests/conftest.py` and `tests/conftest.py` point `AL_DISTRIBUTION_STATE` at the
+test's `tmp_path`; the Harness suite also sets `HARNESS_ALCTL` to a missing path and
+removes a global `alctl` from `PATH`, so a test reaches AL only through a launcher it
+bootstraps itself. A session guard (`al/tests/registry_guard.py`) snapshots the real
+`~/.local/state/al-distribution/registry` of the account and fails the session when a
+run binding or initialization record that names a temporary directory appears there;
+other changes (a concurrent real AL run) only warn. Archive leaked bindings whose
+repository is gone with `alctl prune-stale-runs --apply`.

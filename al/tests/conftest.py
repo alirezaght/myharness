@@ -21,6 +21,21 @@ def no_resident_service(monkeypatch):
     monkeypatch.setenv("AL_SERVICE", "0")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def real_al_registry_guard():
+    """Fail the session when a test writes run state into the real AL registry (#37)."""
+    from al.tests.registry_guard import session_guard
+
+    yield from session_guard()
+
+
+@pytest.fixture(autouse=True)
+def isolated_distribution_state(tmp_path, monkeypatch):
+    """The default registry of in-process commands is the test's own (#37); tests that
+    exercise the default resolution remove the variable and set HOME themselves."""
+    monkeypatch.setenv("AL_DISTRIBUTION_STATE", str(tmp_path / "al-distribution" / "registry"))
+
+
 @pytest.fixture
 def installer_workspace(tmp_path, monkeypatch):
     """Create a tagged AL source and isolated homes/state for CLI tests."""
