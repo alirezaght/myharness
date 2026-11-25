@@ -175,50 +175,8 @@
     "additional_reason": "These focused implementation tests use per-test tmp_path copies/private owned-process directories and restored function monkeypatches. Actual worker/session/index/home/log/signal/descendant isolation was exercised through E336/E337/E342; both platform observation contracts through E347/E348. They retain complete file groups and every autouse fixture. Full-source closure and fixture-source validation remain mandatory; missing/drifted proof serializes. test_git_memo.py, test_decision_window.py (both platforms) and installer test_workspace_activity_capture.py use only the per-test repository copy, tmp_path and restored monkeypatches (2026-10-23). Isolation review 2026-10-23 of the Phase 3 test files added since the original review (launcher-era runtime/editorial/planning/publication/activity/readiness/receipt suites): each uses tmp_path repositories, homes, installer state and owned child processes (launched/repo fixtures, disposable alctl installs); no fixed host paths, ports, shared registries or foreign-process signalling (only self-directed signals). test_artifact_consumers.py, test_review_state.py and test_baseline_exceptions.py (both platforms) use only per-test repository copies, tmp_path and restored monkeypatches (2026-10-23). Claude test_model_slots.py uses only the per-test repository copy and runtime (2026-10-23). Issue #16 review (2026-11-24): installer test_verify_changed.py builds synthetic trees under tmp_path and runs the release runner with managed storage under the worker HARNESS_HOME and a tmp_path tempdir; codex test_launcher_templates.py prepares pins only under tmp_path with a tmp_path template directory. Neither uses ports, fixed host paths or shared registries. The installer conftest copy_al_source now clones a private per-process template made by the same reviewed materialization; every caller still receives its own fresh tree under its tmp_path, the template is never handed out and is removed at exit. Launcher pins under the runner are copied per session from a run-private template directory and re-verified; only installer fixture fingerprints whose test fingerprints are current are refreshed."
   },
   "isolated_files": {
-    "claude:tests/test_analysis_cache.py": {
-      "test": "627ac009cb31296962fba82b9846cde509874928fc327cd1fe8c46d2a84a1752",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_artifact_consumers.py": {
-      "test": "c9589c574d3d8ec42bf85ce09ce41243f4b5903f8b0d40ce6690c9a26d333d9f",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_assessments_recovery.py": {
-      "test": "94428c7476e75cc294a9b62ae9bca2339be11da5e0f99412923df8caacb60347",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_baseline_exceptions.py": {
-      "test": "44ebb171c47f14f3e0f244d8bcd4cb8a26f48a965587196d885e3a15256ac1a0",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_checkout_objects.py": {
-      "test": "eec8f128aa0f62fed846e545b3b839a869302b517ca3dc7429c4c1f951a741aa",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_ci_conventional.py": {
       "test": "10f051db66bf7d3505be153a5e96923a633add736853c3524005a6c6df0e3994",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_ci_environment_actions.py": {
-      "test": "4c136d27078a842fa94920d3ae50db3e6dd9e7708b92159975c5ff054d514d18",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -238,13 +196,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_decision_window.py": {
-      "test": "dd193122b9d28ab1f6ae12bddcd4f64cca092adf88019886eaae50d3d2e04b28",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_distribution_registry.py": {
       "test": "2b86b017dda8d3265c36e0ad503315924f9d96095102a62b4a8293225f83867d",
       "fixtures": {
@@ -259,106 +210,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_escape_seeds.py": {
-      "test": "fcb60c9f951128e6c4a17dd9557c92ad135169a1437e441ce8565ca5ff3bbba6",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_evidence_cancellation.py": {
-      "test": "8edb74e8ffd182b551adda460c1c647bbad1ab2817416d92635e839a92a293d2",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_evidence_concurrency.py": {
-      "test": "3ddc48f7e15b82659d3124df52510028f6b1d8cff8eca40da66deeb58bd430df",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_evidence_execution.py": {
-      "test": "6c0a190a94b1642132973a4ef5cf021fe3aad1574606879dcddf2c6b96cd0d2d",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_evidence_integrity.py": {
       "test": "0bb389b4b7e915041e70d406964006bb40516a6d08e4f3cdcdac09c4b5e00e40",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_evidence_scopes.py": {
-      "test": "38d91ee2bc5105bfef7f3633cecd5f1a27f821b42ab2857c36c68d8b0981ea8d",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_execution_blockers.py": {
-      "test": "99040f05a27367d5c5f95e22130064dca3b3b09ec52e1817f169630e9c3f9a2e",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_execution_decisions.py": {
-      "test": "bcea33b76247ba6dac711f97ec6ab01ce5f68994462c3022eafd168b58ea8e7c",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_execution_events.py": {
-      "test": "88917fb98fda9e277c29bf26614e1dbfb23cbf13b857e5741fd7e245f3509587",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_fixture_observation.py": {
-      "test": "f75352fe072cad7be14524a0351d466739e545824ad001c9f74d4861ab4c857b",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_gate_resume.py": {
-      "test": "2433a13c5f8db83cbb39d2163693054d7799aeb6301931a32125dc83356fde56",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_git_memo.py": {
-      "test": "675f762fe67359f744192b747cf56b7a82a09244ab5b18ef4e6bbd45a94c4e4b",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_git_observation.py": {
-      "test": "32c29b18927cd66e4b1e13899a3c2bdaac90f11929d4b6723c88095f99c50355",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_gitlink_isolation.py": {
-      "test": "6d9e1f6c31d086a84a420849d6f75c9534d9751d1d4331637670094e92cd105a",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_gitlinks.py": {
-      "test": "7d3807540b3a6d4c4158de969965307c6f31c7aa26067fdeee35db34239a2520",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -413,13 +266,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_planning_template.py": {
-      "test": "ab0eb1ff2d67ad54f8b83528fcdcc5f38edc43977f2c78b1ac5e88f46590d4c5",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_readonly_guard.py": {
       "test": "b962f18f2a8550d3ed2a85dfc463aa019ed188403a6fcb521286dbe26e53a37e",
       "fixtures": {
@@ -429,20 +275,6 @@
     },
     "claude:tests/test_remote_gates.py": {
       "test": "0a640ee5f2d044c344bad8d734fcafc059e03190944c06ec0ab568c1fc323e05",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_replay_paths.py": {
-      "test": "c24e2ef4428b91c75fea19a542e9342b947fb0fa254cdcd4533d52057ddacf4d",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_replay_scenarios.py": {
-      "test": "b13f43f367625209514c84bb57ee5146b43bdb7a3dbb3c11ffb49973ae8316ba",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -462,22 +294,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_review_state.py": {
-      "test": "a835c5aa39d351d9c94650cbbdb2b1fcd2b674bdd2c85b6bc4fcc298d7d9044d",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_rework.py": {
       "test": "192a3291e75f11d7af932494766edc5ab140769e57b58e7a49d7958038b17fd7",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch10_ci.py": {
-      "test": "1d57ae6281df072e1f9b939c516ded11b23da3dc1939b5e14488f1e9a73a4a1e",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -490,50 +308,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_runtime_batch11_recovery.py": {
-      "test": "ebb03d1d4f3dd16d6f63507f106a28a655116ed1d9d3b15fe72de726163e8451",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch11_shell.py": {
-      "test": "84a4bd16f71096fe9ea829817d62e6629551809b91d0129f8206b124aab658a6",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_runtime_batch12_native.py": {
       "test": "4bb48b5e5f7296d787dd377760f133678346d2242b0e357dd732f540b7c136fe",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch12_scripts.py": {
-      "test": "0b22ea69cca70c5a09b18818399459852d3c2a8c7d5a2fe720e492d28f513287",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch14_cancel.py": {
-      "test": "d175266ee2aca20739578697643fe938574b8d6fb92a9571af3b6b7a9b7d56f4",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch14_commit_race.py": {
-      "test": "a1777710ac3abb7907bed67464c08b6b298f421652e842b1e0acefb4f01d4511",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch14_context.py": {
-      "test": "fd70a934e98e35d493161fef57fd37184887706057a9b48c8b129215f5d5f81e",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -555,20 +331,6 @@
     },
     "claude:tests/test_runtime_batch15_native.py": {
       "test": "00b1e63f285f6b13dc639d0473e5a8dc923f9fd65a93cdb9abd05ce6fda2a6c2",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch15_recovery.py": {
-      "test": "1f23d09c03acdcd0bec19f079c442b70c306c5eda96311206655cc12d921685d",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch15_replay.py": {
-      "test": "7fe054eb023712a09c26cf9e354c3cf20454577ab6bdfa1e6b57068a431fc59b",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -616,36 +378,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_runtime_batch7_inventory.py": {
-      "test": "e7c4d8f71a08ad076488606d07bc1190c357df5fa73a8380d6ea42c0a753c7e8",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_runtime_batch7_native.py": {
       "test": "a07b8d98b282fbd4980baaa939512497d4038400e6f0c50cfead781f53cf9122",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch7_shell.py": {
-      "test": "7d2c1e5861e8c71071e1d879d005a71e1cd3206068c15114586023f1feef49f4",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch8_ci.py": {
-      "test": "c0886ccaf03a0f35866ae4ae21459cc1c04ebcb5f38332031fe4413ff7ceb402",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch8_context.py": {
-      "test": "921fa2edb042e4dd15ef1a334709098349dad04e473a8487299bd1b1eb131d67",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -658,43 +392,8 @@
         "mode": 420
       }
     },
-    "claude:tests/test_runtime_batch8_shell.py": {
-      "test": "068ed11b347536a92aae703911fc4ef607bc2ecdc6c0827fe6c050735d4c411c",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch9_ci.py": {
-      "test": "a79eb7d939bfc042d75d89db0b36c73828b9379025c361b9a82b156c4e007e6d",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_runtime_batch9_native.py": {
       "test": "3e702389c057172450a9fad5ff3f41cb01fa136c23b3957cf0e7d2bf666d31ba",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch9_rollout.py": {
-      "test": "802888bf2d2dcfc3fa30635391201548f863d77c5427f200029ec9d9b28b5196",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_runtime_batch9_shell.py": {
-      "test": "f7c10414a0e686d16442fc4f83fdc843b37684f52b8b066833843f31a8596c85",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_scope_performance.py": {
-      "test": "b6138c8f11f5c664498f69cd0c085ccb8602c10ef531b79c1c8c0eba67979dff",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -716,27 +415,6 @@
     },
     "claude:tests/test_task_attribution.py": {
       "test": "cc700c95128b6b9b84519183397575ed4cf4feb2723825c16600fd1449e6a149",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_unverified_policy.py": {
-      "test": "b7a65d03ad18e92a26b60c94887b7f3e2d750df4c875579421e8c675147dd848",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_verification_prepare.py": {
-      "test": "de97830c2138a65c6498cfa740c2448725666fe48ae25b143a7b5fe62ff7660a",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_workflow_routing.py": {
-      "test": "b82231e390997b5db6a75757450b2f93e66a10a53cf8a3732b877a0eccd2b3de",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -1806,27 +1484,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_failure_recovery.py": {
-      "test": "a2dadcbe97cefc96aec7c0cb0d7a85893cb3c94e9e5ebbca78af06aac4ebada3",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_execution_corrections.py": {
-      "test": "e0b7e99d0c04bcdbe5a858d7357a71d400f6947fa850913879196e96be937234",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_review_rules.py": {
-      "test": "7b30205ba7c3b80b0875d44692c11119f06080f582870a2f58aeb457bc214b01",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "installer:al/tests/test_runtime_existing.py": {
       "test": "981dfc117f29db7c81809568ab570d8ab7c1f103b15a8bd5cb9bbd9260709f93",
       "fixtures": {
@@ -1904,27 +1561,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_acceptance_states.py": {
-      "test": "3bc44dea315413fb5c6d8df233755563d23fcbe05b96311e56eba4fc45b0f170",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_check_setup.py": {
-      "test": "7653673d570c2cdf4653ac4f830bbb5b51e9fd4307c4daae554bbbf4aec28e68",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_ci_relevance.py": {
-      "test": "052eb47ed78fda7726d51eee7b9551c5eda8d6a4e0846508d88e11dc96fd7879",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_evidence_supersession.py": {
       "test": "10796df51ac66b68aaf721fcc01a9828f09d377af87cebde381a4354326a84d3",
       "fixtures": {
@@ -1939,20 +1575,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_repository_membership.py": {
-      "test": "8a71f5b42d1f7ad78743074aa4a1728025b6404be5dbcfe9678935f1d6b67459",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_review_contract.py": {
-      "test": "13ed22aabfa939079d33c83df52adc09917436c8dc0a753827046c5f953e56a1",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_rework_recovery.py": {
       "test": "c6efc3654a56b7704a399a208133fef45813e351a1415628ce93447136ccf137",
       "fixtures": {
@@ -1962,13 +1584,6 @@
     },
     "claude:tests/test_rework_recovery_integration.py": {
       "test": "fa5601a3e150c1b26352febf98460d03ae8ecddfeea235bb07d7b1627aec60c5",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_risk_routing.py": {
-      "test": "5eb758f209e7ed255b3b9b089992c9c39f033342701b4b47ac07c75735cbb9b8",
       "fixtures": {
         "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
         "mode": 420
@@ -2051,20 +1666,6 @@
         "mode": 420
       }
     },
-    "claude:tests/test_implementation_continuity.py": {
-      "test": "12743105d36ad3cf8fc34522ed80a4404997d318aa398b1e0513815f14ffc7c0",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
-    "claude:tests/test_implementation_outputs.py": {
-      "test": "74b244b48e5eb0019b5b1134c6db6b823da4afc3f320a8de4c043001e2b55267",
-      "fixtures": {
-        "sha256": "c0eb56a75e46d9509074f5034837fc4d85b9ccda7cca4e88527b4edc2d661dfb",
-        "mode": 420
-      }
-    },
     "claude:tests/test_rework_implementation_continuity.py": {
       "test": "638b7a71c471644c1ca6d7d4a81c6aa5e94fcbfc6a25ad29a0cb552c0ebfbef5",
       "fixtures": {
@@ -2088,20 +1689,6 @@
     }
   },
   "classified_nodes": [
-    "claude:tests/test_analysis_cache.py::test_bounded_defensive_cache_and_corrupt_entries",
-    "claude:tests/test_analysis_cache.py::test_disabled_and_warm_facts_equal_with_defensive_graph_results",
-    "claude:tests/test_analysis_cache.py::test_graph_cache_replays_gap_and_consumed_policy_deltas",
-    "claude:tests/test_analysis_cache.py::test_same_mtime_edit_new_and_deleted_sources_invalidate",
-    "claude:tests/test_analysis_cache.py::test_scan_stability_is_required_even_on_cache_hits",
-    "claude:tests/test_analysis_cache.py::test_verified_blob_cache_corruption_is_miss",
-    "claude:tests/test_assessments_recovery.py::test_changed_candidate_resume_invalidates_review_and_returns_to_verification[x = \"changed while stopped\"\\n-VERIFICATION]",
-    "claude:tests/test_assessments_recovery.py::test_rendered_ui_trigger_requires_observations_and_artifact",
-    "claude:tests/test_assessments_recovery.py::test_rollout_trigger_requires_each_operational_dimension",
-    "claude:tests/test_assessments_recovery.py::test_waiting_checkpoint_resumes_unchanged_candidate",
-    "claude:tests/test_checkout_objects.py::test_linked_worktree_with_spaces_uses_common_objects",
-    "claude:tests/test_checkout_objects.py::test_materialization_uses_alternates_without_fetch",
-    "claude:tests/test_checkout_objects.py::test_missing_revision_is_materialization_error",
-    "claude:tests/test_checkout_objects.py::test_sha256_repository_materializes_matching_object_format",
     "claude:tests/test_core_hardening.py::test_approval_requires_complete_route_and_refusal_does_not_write",
     "claude:tests/test_core_hardening.py::test_comparison_is_locked_until_fresh_report",
     "claude:tests/test_core_hardening.py::test_distribution_backs_up_and_preserves_unmanaged_files_and_rejects_drift",
@@ -2135,40 +1722,6 @@
     "claude:tests/test_docs.py::test_rework6_protocol_covers_report_ownership_recovery_and_git_options",
     "claude:tests/test_docs.py::test_service_coverage_policy_and_schemas_match_admission_contract",
     "claude:tests/test_docs.py::test_workflow_docs_cover_sources_writers_gates_and_assessments",
-    "claude:tests/test_escape_seeds.py::test_recording_a_user_seed_persists_it_for_the_current_run",
-    "claude:tests/test_escape_seeds.py::test_seed_records_are_limited_to_user_described_escape_classes",
-    "claude:tests/test_escape_seeds.py::test_unverified_incident_cannot_be_seeded_as_reproduced",
-    "claude:tests/test_evidence_cancellation.py::test_finalized_log_and_no_commit_for_all_outcomes[command0-5-PASS]",
-    "claude:tests/test_evidence_cancellation.py::test_finalized_log_and_no_commit_for_all_outcomes[command1-5-INFRA]",
-    "claude:tests/test_evidence_cancellation.py::test_finalized_log_and_no_commit_for_all_outcomes[command2-0.05-INFRA]",
-    "claude:tests/test_evidence_cancellation.py::test_interruption_is_finalized_before_reraising_without_commit",
-    "claude:tests/test_evidence_cancellation.py::test_timeout_preserves_primary_cause_when_cleanup_signal_is_denied",
-    "claude:tests/test_evidence_concurrency.py::test_a_scope_that_matches_nothing_or_leaves_the_repo_is_refused",
-    "claude:tests/test_evidence_concurrency.py::test_adding_an_env_var_to_the_plan_does_not_reuse_the_old_pass",
-    "claude:tests/test_evidence_concurrency.py::test_committing_the_tested_content_keeps_the_evidence",
-    "claude:tests/test_evidence_concurrency.py::test_concurrent_runs_get_distinct_ids_and_never_corrupt_state",
-    "claude:tests/test_evidence_concurrency.py::test_non_utf8_content_change_is_detected",
-    "claude:tests/test_evidence_concurrency.py::test_start_refuses_a_repository_without_a_target_commit",
-    "claude:tests/test_evidence_concurrency.py::test_timeout_kills_a_command_that_ignores_sigterm",
-    "claude:tests/test_evidence_execution.py::test_a_passed_preflight_survives_source_changes",
-    "claude:tests/test_evidence_execution.py::test_broad_browser_suite_waits_for_the_focused_runtime_check",
-    "claude:tests/test_evidence_execution.py::test_coupled_fix_stays_sequential_and_a_moved_scope_tears_the_run",
-    "claude:tests/test_evidence_execution.py::test_declared_env_var_change_invalidates_without_storing_the_value",
-    "claude:tests/test_evidence_execution.py::test_edited_log_is_not_evidence",
-    "claude:tests/test_evidence_execution.py::test_fixture_change_inside_the_scope_invalidates_the_run",
-    "claude:tests/test_evidence_execution.py::test_independent_fix_may_overlap_a_running_check",
-    "claude:tests/test_evidence_execution.py::test_invented_id_and_wrong_status_claims_are_rejected",
-    "claude:tests/test_evidence_execution.py::test_missing_command_is_an_infrastructure_failure",
-    "claude:tests/test_evidence_execution.py::test_missing_log_blocks_require_and_validate",
-    "claude:tests/test_evidence_execution.py::test_no_overlap_at_a_barrier",
-    "claude:tests/test_evidence_execution.py::test_preflight_failure_stops_the_broad_suite_before_it_runs",
-    "claude:tests/test_evidence_execution.py::test_preflight_never_prints_an_env_value",
-    "claude:tests/test_evidence_execution.py::test_review_start_is_only_available_after_verification",
-    "claude:tests/test_evidence_execution.py::test_review_without_a_plan_is_refused_from_planning",
-    "claude:tests/test_evidence_execution.py::test_run_records_argv_cwd_exit_log_counts_and_fingerprint",
-    "claude:tests/test_evidence_execution.py::test_unrelated_web_change_reuses_the_service_run",
-    "claude:tests/test_evidence_execution.py::test_untracked_file_and_ignored_named_config_count_as_scope",
-    "claude:tests/test_evidence_execution.py::test_zero_tests_is_empty_not_pass",
     "claude:tests/test_evidence_integrity.py::test_a_broken_preflight_two_levels_down_blocks_required_evidence",
     "claude:tests/test_evidence_integrity.py::test_a_failed_suite_line_is_a_failure",
     "claude:tests/test_evidence_integrity.py::test_a_flaky_only_playwright_run_is_a_pass",
@@ -2196,43 +1749,6 @@
     "claude:tests/test_evidence_integrity.py::test_suite_and_file_summaries_and_the_echoed_command_are_not_test_counts",
     "claude:tests/test_evidence_integrity.py::test_timeout_also_kills_descendants_that_outlive_the_parent",
     "claude:tests/test_evidence_integrity.py::test_turbo_prefixed_suite_summaries_are_not_test_counts",
-    "claude:tests/test_evidence_scopes.py::test_a_scope_git_cannot_describe_is_infra_not_pass",
-    "claude:tests/test_evidence_scopes.py::test_a_scope_inside_a_submodule_is_refused",
-    "claude:tests/test_evidence_scopes.py::test_absolute_scopes_become_repository_relative",
-    "claude:tests/test_evidence_scopes.py::test_an_unchanged_submodule_in_parent_scope_is_opaque",
-    "claude:tests/test_evidence_scopes.py::test_declared_future_gate_scope_preserves_evidence_typo_and_symlink_guards",
-    "claude:tests/test_evidence_scopes.py::test_scope_patterns_are_refused",
-    "claude:tests/test_evidence_scopes.py::test_symlinked_directories_cannot_hide_scope_changes",
-    "claude:tests/test_execution_blockers.py::test_blocked_task_and_dependents_but_independent_admission",
-    "claude:tests/test_execution_blockers.py::test_graph_and_task_identity_cannot_be_rebound",
-    "claude:tests/test_execution_decisions.py::test_foreign_decision_and_unproven_revalidation_are_refused",
-    "claude:tests/test_execution_decisions.py::test_global_amendment_cannot_bypass_developer_delivery",
-    "claude:tests/test_execution_decisions.py::test_real_registry_rejection_amendment_ack_and_scoped_revalidation",
-    "claude:tests/test_execution_events.py::test_capabilities_without_run_and_atomic_outbox",
-    "claude:tests/test_execution_events.py::test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[False]",
-    "claude:tests/test_execution_events.py::test_pre_task_base_gate_is_real_but_candidate_and_label_spoof_are_refused[True]",
-    "claude:tests/test_execution_events.py::test_pre_task_base_gate_rechecks_exact_harness_authority[sealed-bytes]",
-    "claude:tests/test_execution_events.py::test_pre_task_base_gate_rechecks_exact_harness_authority[terminal]",
-    "claude:tests/test_execution_events.py::test_pre_worker_bootstrap_rejects_foreign_binding_and_dispatch_spec",
-    "claude:tests/test_execution_events.py::test_reporting_cannot_manufacture_approval",
-    "claude:tests/test_execution_events.py::test_target_harness_package_cannot_shadow_authority_bridge",
-    "claude:tests/test_gitlink_isolation.py::test_isolation_uses_effective_pointer_without_copying_child_and_preserves_ordinary_index",
-    "claude:tests/test_gitlink_isolation.py::test_uncaptured_child_isolation_refuses_before_destination_creation[dirty]",
-    "claude:tests/test_gitlink_isolation.py::test_uncaptured_child_isolation_refuses_before_destination_creation[inspection-failed]",
-    "claude:tests/test_gitlinks.py::test_base_index_and_effective_pointer_are_distinct",
-    "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[added]",
-    "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[committed]",
-    "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[removed]",
-    "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[staged]",
-    "claude:tests/test_gitlinks.py::test_pointer_lifecycle_materializes_effective_parent[unstaged]",
-    "claude:tests/test_gitlinks.py::test_source_pointer_drift_during_overlay_refuses_execution",
-    "claude:tests/test_gitlinks.py::test_type_transitions_replace_stale_disposable_paths[file-gitlink]",
-    "claude:tests/test_gitlinks.py::test_type_transitions_replace_stale_disposable_paths[gitlink-directory]",
-    "claude:tests/test_gitlinks.py::test_type_transitions_replace_stale_disposable_paths[gitlink-file]",
-    "claude:tests/test_gitlinks.py::test_unchanged_children_need_no_modules_file_or_parent_objects[empty]",
-    "claude:tests/test_gitlinks.py::test_unchanged_children_need_no_modules_file_or_parent_objects[initialized]",
-    "claude:tests/test_gitlinks.py::test_unchanged_children_need_no_modules_file_or_parent_objects[missing]",
-    "claude:tests/test_gitlinks.py::test_unsafe_and_unmerged_parent_states_still_refuse",
     "claude:tests/test_hook_batch5.py::test_actual_readonly_hook_denies_both_git_output_option_forms",
     "claude:tests/test_hook_batch5.py::test_discovery_passes_supported_directories_to_loc_checker",
     "claude:tests/test_hook_batch5.py::test_failed_agent_can_take_its_single_guarded_retry",
@@ -2273,14 +1789,6 @@
     "claude:tests/test_remote_gates.py::test_remote_candidate_cannot_claim_uncommitted_work",
     "claude:tests/test_remote_gates.py::test_remote_gate_accepts_only_exact_job_pipeline_and_revision",
     "claude:tests/test_remote_gates.py::test_remote_gate_mismatch_is_infra_and_a_failed_job_is_a_failure",
-    "claude:tests/test_replay_paths.py::test_fixture_write_accepts_root_alias_without_changing_containment[False]",
-    "claude:tests/test_replay_paths.py::test_fixture_write_accepts_root_alias_without_changing_containment[True]",
-    "claude:tests/test_replay_paths.py::test_fixture_write_does_not_overwrite_external_symlink_target",
-    "claude:tests/test_replay_paths.py::test_fixture_write_refuses_paths_outside_canonical_root[False]",
-    "claude:tests/test_replay_paths.py::test_fixture_write_refuses_paths_outside_canonical_root[True]",
-    "claude:tests/test_replay_paths.py::test_fixture_write_refuses_symlink_directory_escape",
-    "claude:tests/test_replay_scenarios.py::test_harmless_search_fixture_passes_both_guard_policies",
-    "claude:tests/test_replay_scenarios.py::test_replay_fixtures_cover_each_user_requested_regression",
     "claude:tests/test_repo_adapters.py::test_actual_mutation_during_read_is_a_torn_scan",
     "claude:tests/test_repo_adapters.py::test_source_free_legacy_manifest_can_prove_absence",
     "claude:tests/test_repo_adapters.py::test_torn_and_limited_scan_never_certify",
@@ -2307,198 +1815,11 @@
     "claude:tests/test_rework.py::test_rework_is_bounded_per_batch_and_counted",
     "claude:tests/test_rework.py::test_status_line_shows_the_rework_counter",
     "claude:tests/test_rework.py::test_zero_findings_is_refused",
-    "claude:tests/test_runtime_batch10_ci.py::test_conditional_definition_and_workflow_uncertainty_precede_false_exclusion",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_inherited_and_referenced_jobs_retain_source_dependencies",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: []\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: null\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: true\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: {name: [], action: prepare}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: {name: production, action: []}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: {name: production, action: unexpected}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  environment: {name: production, extra: value}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  stage: \"\"\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  stage: []\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  stage: null\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  stage: true\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_rules_cannot_hide_malformed_semantic_fields[  stage: {}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_valid_execution_identity_is_excluded[  environment: {name: production, action: access}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_valid_execution_identity_is_excluded[  environment: {name: production, action: prepare}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_valid_execution_identity_is_excluded[  stage: provision-prod\\n  environment: {name: production, action: prepare}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_false_valid_execution_identity_is_excluded[  stage: provision-prod\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - false\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - if: 0\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - if: 1\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - when: invalid\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - when: never\\n    - changes: []\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - when: never\\n    - changes: [false]\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - when: never\\n    - changes: {paths: [apps/web/**/*], compare_to: []}\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - when: never\\n    - if: \"$FLAG =~ /yes/\"\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_full_selection_boundary_is_validated_before_false_result[    - when: never\\n    - unsupported: true\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_legacy_selection_cannot_hide_under_false_rules[except]",
-    "claude:tests/test_runtime_batch10_ci.py::test_legacy_selection_cannot_hide_under_false_rules[only]",
-    "claude:tests/test_runtime_batch10_ci.py::test_mr_selected_verification_and_false_prepare_have_full_approval_route",
-    "claude:tests/test_runtime_batch10_ci.py::test_public_unknown_rules_cannot_be_cleared_and_refusal_is_byte_identical",
-    "claude:tests/test_runtime_batch10_ci.py::test_supported_false_condition_skips_valid_unknown_compare_to",
-    "claude:tests/test_runtime_batch10_ci.py::test_unknown_selection_precedes_proven_release_classification[  environment: production\\n]",
-    "claude:tests/test_runtime_batch10_ci.py::test_unknown_selection_precedes_proven_release_classification[  stage: deploy\\n]",
     "claude:tests/test_runtime_batch11_distribution.py::test_apply_independently_rejects_forged_reduced_prior_ownership",
     "claude:tests/test_runtime_batch11_distribution.py::test_failed_subset_transaction_retains_all_prior_ownership_pending",
     "claude:tests/test_runtime_batch11_distribution.py::test_overlapping_changed_adoption_requires_rationale_and_revalidates_provenance",
     "claude:tests/test_runtime_batch11_distribution.py::test_subset_adoption_cannot_hide_unmentioned_owned_drift",
     "claude:tests/test_runtime_batch11_distribution.py::test_subset_adoption_deletes_unmentioned_owned_file_and_preserves_backup_and_unmanaged",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[artifact]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[check]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[checkpoint]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[empty]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[identity]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[manifest]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[phase]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[task]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_invalid_pre_amendment_recovery_refuses_without_state_mutation[writer]",
-    "claude:tests/test_runtime_batch11_recovery.py::test_repeated_amendments_rebind_checkpoints_preserve_provenance_and_require_ready_base",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git blame -L 1,2 file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git blame -L 1,2 file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git config --get -- --unknown-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git config --get -- --unknown-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git describe --match --output=file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git describe --match --output=file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git diff -O orderfile -- --output=file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git diff -O orderfile -- --output=file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep --ignore-case --word-regexp --line-number --context 2 -e text-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep --ignore-case --word-regexp --line-number --context 2 -e text-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep --regexp --open-files-in-pager -- --literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep --regexp --open-files-in-pager -- --literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep --regexp=--open-files-in-page -- --literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep --regexp=--open-files-in-page -- --literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep -e --open-files-in-page-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep -e --open-files-in-page-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep -n -e text -- --literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep -n -e text -- --literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep -ne--open-files-in-page-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git grep -ne--open-files-in-page-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git log --grep --open-files-in-page-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git log --grep --open-files-in-page-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git log -1 --format=%s-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git log -1 --format=%s-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git ls-files --exclude --output=file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git ls-files --exclude --output=file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git status --porcelain=v1-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[git status --porcelain=v1-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[node script.js -e literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[node script.js -e literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[perl script.pl -e literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[perl script.pl -e literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -- -c literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -- -c literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -B -mcompileall --help-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -B -mcompileall --help-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -Impytest --version-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -Impytest --version-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -W ignore -X dev -m pytest --version-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -W ignore -X dev -m pytest --version-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -m pytest --version-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 -m pytest --version-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 script.py -c literal -m pytest-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[python3 script.py -c literal -m pytest-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[ruby script.rb -e literal-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_consumed_operands_and_actual_safe_selectors_remain_data[ruby script.rb -e literal-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_public_ownership_refuses_admission_but_records_negative_diagnostic[git grep --open-files-in-page=touch -e text]",
-    "claude:tests/test_runtime_batch11_shell.py::test_public_ownership_refuses_admission_but_records_negative_diagnostic[python3 -Icx -m pytest]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_safe_selectors_and_script_arguments_execute_without_reclassification",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git blame --ext-diff file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git blame --ext-diff file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git check-ignore --unknown file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git check-ignore --unknown file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git config --get --unknown-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git config --get --unknown-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git config --get key --add key value-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git config --get key --add key value-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git describe --unknown-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git describe --unknown-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git diff --ext-dif-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git diff --ext-dif-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git diff --out=file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git diff --out=file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --line-number=1 text-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --line-number=1 text-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --open-files-in-page=touch -e text-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --open-files-in-page=touch -e text-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --open-files-in-pager -e text-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --open-files-in-pager -e text-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --regexp-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --regexp-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --threads-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --threads-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --unknown text-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep --unknown text-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep -nOtouch text-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep -nOtouch text-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep -ne-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git grep -ne-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git log --max-count-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git log --max-count-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git log --textcon-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git log --textcon-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git ls-files --unknown-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git ls-files --unknown-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git ls-tree --form=bad-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git ls-tree --form=bad-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git merge-base --unknown HEAD HEAD-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git merge-base --unknown HEAD HEAD-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git rev-parse --exec-path-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git rev-parse --exec-path-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git show --output=file-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git show --output=file-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git status --porc-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[git status --porc-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node --eval=process.exit(0)-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node --eval=process.exit(0)-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node --require evil script.js-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node --require evil script.js-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node -eprocess.exit(0)-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node -eprocess.exit(0)-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node -peprocess.exit(0)-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[node -peprocess.exit(0)-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -Eprint-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -Eprint-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -MModule script.pl-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -MModule script.pl-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -eprint-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -eprint-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -weprint-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[perl -weprint-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 --readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 --shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 --unknown -m pytest-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 --unknown -m pytest-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -Icprint(1)-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -Icprint(1)-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -Imos-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -Imos-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -W-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -W-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -X presite=evil -m pytest-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -X presite=evil -m pytest-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -c print -m pytest-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -c print -m pytest-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -cprint(1)-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -cprint(1)-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -i -m pytest-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -i -m pytest-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -m os -m pytest-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -m os -m pytest-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -m pytest.bad-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -m pytest.bad-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -m-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3 -m-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[python3-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[ruby --unknown script.rb-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[ruby --unknown script.rb-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[ruby -eputs-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[ruby -eputs-shared]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[ruby -weputs-readonly]",
-    "claude:tests/test_runtime_batch11_shell.py::test_real_selectors_and_unknown_git_options_are_denied[ruby -weputs-shared]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[pnpm --filter migrate:wissen test-0]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[pnpm --filter web run migrations:db-2]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[pnpm migrate:wissen --dry-run-2]",
@@ -2507,185 +1828,6 @@
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[pnpm run format:check-0]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[poetry run pnpm migration:db-2]",
     "claude:tests/test_runtime_batch12_native.py::test_native_hook_uses_migration_family_policy[rg 'pnpm migrate:wissen --check' .-0]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --dry-run-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen --dry-run-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen migration:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migrate:wissen migration:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migration:verify --fix-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migration:verify --fix-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migration:verify --update-snapshots-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_check_arguments_do_not_waive_mutation_or_existing_write_guards[pnpm migration:verify --update-snapshots-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[git log --grep=migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[git log --grep=migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm --filter migrate:wissen test-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm --filter migrate:wissen test-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm --filter web run migration:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm --filter web run migration:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm exec env MODE=test pnpm migration:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm exec env MODE=test pnpm migration:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm migration:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm migration:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm migrationish-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm migrationish-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm migrationsafe-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm migrationsafe-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm remigrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm remigrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm run format:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm run format:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm test migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[pnpm test migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[rg 'pnpm migrate:wissen --check' .-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[rg 'pnpm migrate:wissen --check' .-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[uv run -- pnpm migration:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_exact_check_only_exceptions_and_literal_operands_remain_allowed[uv run -- pnpm migration:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrate:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrate:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migration-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migration-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migration:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migration:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migration:verify:extra-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migration:verify:extra-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrations-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrations-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrations:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrations:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrations:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[npm --workspace web run {}-migrations:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrate:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrate:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migration-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migration-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migration:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migration:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migration:verify:extra-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migration:verify:extra-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrations-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrations-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrations:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrations:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrations:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm --filter web run {}-migrations:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrate:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrate:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migration-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migration-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migration:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migration:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migration:verify:extra-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migration:verify:extra-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrations-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrations-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrations:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrations:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrations:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm run {}-migrations:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrate:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrate:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migration-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migration-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migration:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migration:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migration:verify:extra-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migration:verify:extra-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrations-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrations-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrations:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrations:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrations:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[pnpm {}-migrations:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrate:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrate:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migration-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migration-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migration:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migration:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migration:verify:extra-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migration:verify:extra-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrations-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrations-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrations:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrations:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrations:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[poetry run env MODE=test pnpm {}-migrations:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrate-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrate-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrate:verify-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrate:verify-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrate:wissen-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrate:wissen-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migration-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migration-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migration:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migration:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migration:verify:extra-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migration:verify:extra-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations:check-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations:check-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations:db-readonly]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_migration_family_is_denied_at_every_supported_script_position[yarn workspace web run {}-migrations:db-shared]",
-    "claude:tests/test_runtime_batch12_scripts.py::test_public_ownership_records_denial_without_admitting_work",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[after-commit-False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[after-commit-True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[before-commit-False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[before-commit-True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[registration-False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[registration-True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[signal-commit-False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[signal-commit-True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[spawn-signal-False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass[spawn-signal-True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_normal_public_gate_still_passes[False-base]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_normal_public_gate_still_passes[False-candidate]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_normal_public_gate_still_passes[True-base]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_normal_public_gate_still_passes[True-candidate]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_pending_signal_during_public_child_commit_cannot_persist_late_pass[False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_pending_signal_during_public_child_commit_cannot_persist_late_pass[True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_repeated_cancellation_cannot_interrupt_group_cleanup[False]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_repeated_cancellation_cannot_interrupt_group_cleanup[True]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[15-False-base]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[15-False-candidate]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[15-True-base]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[15-True-candidate]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[2-False-base]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[2-False-candidate]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[2-True-base]",
-    "claude:tests/test_runtime_batch14_cancel.py::test_signals_reap_owned_child_and_grandchild_and_finalize_before_propagation[2-True-candidate]",
-    "claude:tests/test_runtime_batch14_commit_race.py::test_locked_observer_cannot_see_transient_pass_before_cancelled_finalization[False]",
-    "claude:tests/test_runtime_batch14_commit_race.py::test_locked_observer_cannot_see_transient_pass_before_cancelled_finalization[True]",
-    "claude:tests/test_runtime_batch14_context.py::test_amend_interrupt_resume_requires_new_context_and_base_evidence",
-    "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[amendment-tamper]",
-    "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[arbitrary-task]",
-    "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[foreign-run]",
-    "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[foreign-session]",
-    "claude:tests/test_runtime_batch14_context.py::test_corrupt_or_foreign_context_is_never_historical_currency[tamper]",
-    "claude:tests/test_runtime_batch14_context.py::test_each_real_amendment_prefix_is_intact_historical_provenance",
-    "claude:tests/test_runtime_batch14_context.py::test_fabricated_nonprefix_amendment_hash_is_not_historical",
     "claude:tests/test_runtime_batch14_native.py::test_native_uv_pip_policy[env X=value uv --directory workspace pip install requests]",
     "claude:tests/test_runtime_batch14_native.py::test_native_uv_pip_policy[rg \"uv pip uninstall --dry-run\" .]",
     "claude:tests/test_runtime_batch14_native.py::test_native_uv_pip_policy[uv --directory install run pytest -q]",
@@ -2768,24 +1910,6 @@
     "claude:tests/test_runtime_batch15_native.py::test_native_find_and_installing_dispatch[yarn --cwd . dlx prisma migrate deploy]",
     "claude:tests/test_runtime_batch15_native.py::test_native_find_and_installing_dispatch[yarn workspace web dlx echo harmless]",
     "claude:tests/test_runtime_batch15_native.py::test_native_find_and_installing_dispatch[yarn workspace web run dlx harmless]",
-    "claude:tests/test_runtime_batch15_recovery.py::test_approved_done_refuses_every_stopping_command_before_effects",
-    "claude:tests/test_runtime_batch15_recovery.py::test_corrupt_running_done_cannot_create_agent_failure_artifacts",
-    "claude:tests/test_runtime_batch15_recovery.py::test_failed_agent_can_terminalize_without_reconciliation_or_timing_rewrite",
-    "claude:tests/test_runtime_batch15_recovery.py::test_failed_agent_retry_keeps_closed_occurrence_without_completion",
-    "claude:tests/test_runtime_batch15_recovery.py::test_recovery_to_different_phase_does_not_complete_closed_verification",
-    "claude:tests/test_runtime_batch15_recovery.py::test_running_stop_resumes_once_and_repeated_stop_preserves_checkpoint[interrupt]",
-    "claude:tests/test_runtime_batch15_recovery.py::test_running_stop_resumes_once_and_repeated_stop_preserves_checkpoint[transfer]",
-    "claude:tests/test_runtime_batch15_recovery.py::test_running_stop_resumes_once_and_repeated_stop_preserves_checkpoint[waiting]",
-    "claude:tests/test_runtime_batch15_recovery.py::test_set_phase_cannot_complete_an_already_closed_occurrence",
-    "claude:tests/test_runtime_batch15_replay.py::test_executed_outcomes_store_resolved_checkpoint_python_and_file_arguments",
-    "claude:tests/test_runtime_batch15_replay.py::test_invocation_error_keeps_resolved_strings",
-    "claude:tests/test_runtime_batch15_replay.py::test_nonstring_arguments_are_not_stringified_or_invoked[42]",
-    "claude:tests/test_runtime_batch15_replay.py::test_nonstring_arguments_are_not_stringified_or_invoked[False]",
-    "claude:tests/test_runtime_batch15_replay.py::test_nonstring_arguments_are_not_stringified_or_invoked[value2]",
-    "claude:tests/test_runtime_batch15_replay.py::test_nonstring_arguments_are_not_stringified_or_invoked[value3]",
-    "claude:tests/test_runtime_batch15_replay.py::test_nonstring_arguments_are_not_stringified_or_invoked[value4]",
-    "claude:tests/test_runtime_batch15_replay.py::test_unavailable_reference_has_no_invocation_and_identifies_reference[value0]",
-    "claude:tests/test_runtime_batch15_replay.py::test_unavailable_reference_has_no_invocation_and_identifies_reference[value1]",
     "claude:tests/test_runtime_batch15_shell.py::test_dynamic_find_effective_executables_are_denied_through_wrappers[+-./{}/rg--exec]",
     "claude:tests/test_runtime_batch15_shell.py::test_dynamic_find_effective_executables_are_denied_through_wrappers[+-./{}/rg--execdir]",
     "claude:tests/test_runtime_batch15_shell.py::test_dynamic_find_effective_executables_are_denied_through_wrappers[+-./{}/rg--ok]",
@@ -3127,385 +2251,18 @@
     "claude:tests/test_runtime_batch6.py::test_unsatisfied_criterion_requires_unfixed_stable_finding[fixed]",
     "claude:tests/test_runtime_batch6.py::test_whole_quoted_nonexistent_executable_is_not_unquoted_into_commands[\"]",
     "claude:tests/test_runtime_batch6.py::test_whole_quoted_nonexistent_executable_is_not_unquoted_into_commands[']",
-    "claude:tests/test_runtime_batch7_inventory.py::test_concrete_contract_obligation_cannot_be_na",
-    "claude:tests/test_runtime_batch7_inventory.py::test_discovery_preserves_declared_environment_dependencies",
-    "claude:tests/test_runtime_batch7_inventory.py::test_known_transitive_shared_consumer_retains_unknown_remainder",
-    "claude:tests/test_runtime_batch7_inventory.py::test_new_independent_instruction_source_invalidates_currency",
-    "claude:tests/test_runtime_batch7_inventory.py::test_prior_anticipated_paths_and_rules_cannot_be_omitted",
-    "claude:tests/test_runtime_batch7_inventory.py::test_supported_repository_selection_includes_configured_consumers_and_inputs",
     "claude:tests/test_runtime_batch7_native.py::test_actual_native_readonly_hook_denies_pager_and_allows_operands",
     "claude:tests/test_runtime_batch7_native.py::test_failed_start_never_publishes_pointer",
     "claude:tests/test_runtime_batch7_native.py::test_git_really_executes_clustered_pager_and_native_guard_denies",
     "claude:tests/test_runtime_batch7_native.py::test_native_task_switch_preserves_unfinished_run_and_clear_is_local",
     "claude:tests/test_runtime_batch7_native.py::test_parallel_conversations_statusline_and_explicit_selection",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-bun run generate:contracts]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep --open-files-in-pager pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep --open-files-in-pager=cp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep -O pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep -Ocp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep -n -O cp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep -nO cp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-git grep -nOcp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-npm --workspace web run generate:contracts]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-pnpm --dir apps/web format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-pnpm --filter @acme/web run format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-pnpm -w generate:contracts]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-pnpm format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-pnpm run format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[readonly-yarn workspace web format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-bun run generate:contracts]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep --open-files-in-pager pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep --open-files-in-pager=cp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep -O pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep -Ocp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep -n -O cp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep -nO cp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-git grep -nOcp pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-npm --workspace web run generate:contracts]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-pnpm --dir apps/web format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-pnpm --filter @acme/web run format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-pnpm -w generate:contracts]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-pnpm format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-pnpm run format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_actual_writer_and_pager_positions_are_denied[shared-yarn workspace web format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_each_declared_command_is_checked",
-    "claude:tests/test_runtime_batch7_shell.py::test_public_owner_rejection_records_denial_without_phase_advance[git grep -O pattern]",
-    "claude:tests/test_runtime_batch7_shell.py::test_public_owner_rejection_records_denial_without_phase_advance[pnpm --filter web run format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git -c color.ui=never grep -e 'pnpm format']",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git diff -O orderfile]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep -e --open-files-in-pager]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep -e -O -- file]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep -n -f pager-patterns]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep -ne--open-files-in-pager]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep -ne-O]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep pattern -- --open-files-in-pager]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-git grep pattern -- -O]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-npm --workspace web run test -- --grep format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-pnpm --filter @acme/web run format:check]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-pnpm -w run format:check]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-rg 'pnpm format, generate:contracts']",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[readonly-yarn workspace web run format:check]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git -c color.ui=never grep -e 'pnpm format']",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git diff -O orderfile]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep -e --open-files-in-pager]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep -e -O -- file]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep -n -f pager-patterns]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep -ne--open-files-in-pager]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep -ne-O]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep pattern -- --open-files-in-pager]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-git grep pattern -- -O]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-npm --workspace web run test -- --grep format]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-pnpm --filter @acme/web run format:check]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-pnpm -w run format:check]",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-rg 'pnpm format, generate:contracts']",
-    "claude:tests/test_runtime_batch7_shell.py::test_search_and_check_arguments_remain_data[shared-yarn workspace web run format:check]",
-    "claude:tests/test_runtime_batch8_ci.py::test_changed_template_and_new_unit_invalidate_old_completeness",
-    "claude:tests/test_runtime_batch8_ci.py::test_ci_gate_scope_cannot_omit_consulted_inherited_definition",
-    "claude:tests/test_runtime_batch8_ci.py::test_complete_local_job_route_can_reach_approval",
-    "claude:tests/test_runtime_batch8_ci.py::test_currency_independently_checks_job_coverage",
-    "claude:tests/test_runtime_batch8_ci.py::test_environment_verification_is_not_misclassified_as_release",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[**/*.json-apps/web/config.json-APPLICABLE]",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[**/*.json-config.json-APPLICABLE]",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[apps/web/**/*-apps/web/.hidden.ts-APPLICABLE]",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[apps/web/**/*-apps/web/app.ts-APPLICABLE]",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[apps/web/**/*-apps/web/src/app.ts-APPLICABLE]",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[apps/web/*-apps/web/src/app.ts-None]",
-    "claude:tests/test_runtime_batch8_ci.py::test_gitlab_globs_never_erase_direct_nested_or_unknown_inputs[apps/{web,admin}/**/*-apps/web/app.ts-UNRESOLVED]",
-    "claude:tests/test_runtime_batch8_ci.py::test_inherited_template_from_conditional_include_keeps_missing_context_unresolved",
-    "claude:tests/test_runtime_batch8_ci.py::test_local_include_anchor_template_and_reference_are_sourced",
-    "claude:tests/test_runtime_batch8_ci.py::test_mixed_known_and_unknown_patterns_keep_uncertain_unit_coverage",
-    "claude:tests/test_runtime_batch8_ci.py::test_multiple_jobs_for_one_unit_are_independent",
-    "claude:tests/test_runtime_batch8_ci.py::test_nonlocal_include_is_explicitly_unresolved",
-    "claude:tests/test_runtime_batch8_ci.py::test_one_job_cannot_claim_two_units_or_impersonate_another[job]",
-    "claude:tests/test_runtime_batch8_ci.py::test_one_job_cannot_claim_two_units_or_impersonate_another[missing]",
-    "claude:tests/test_runtime_batch8_ci.py::test_one_job_cannot_claim_two_units_or_impersonate_another[units]",
-    "claude:tests/test_runtime_batch8_ci.py::test_reasoned_na_is_allowed_when_all_sourced_verification_jobs_are_unselected",
-    "claude:tests/test_runtime_batch8_ci.py::test_release_jobs_do_not_require_deployment_execution",
-    "claude:tests/test_runtime_batch8_ci.py::test_remote_job_must_equal_sourced_identity",
-    "claude:tests/test_runtime_batch8_ci.py::test_shared_job_really_covers_both_units",
-    "claude:tests/test_runtime_batch8_ci.py::test_unknown_pipeline_or_expression_cannot_be_declared_applicable[changes: {compare_to: main, paths: [apps/web/**/*]}]",
-    "claude:tests/test_runtime_batch8_ci.py::test_unknown_pipeline_or_expression_cannot_be_declared_applicable[exists: [config]]",
-    "claude:tests/test_runtime_batch8_ci.py::test_unknown_pipeline_or_expression_cannot_be_declared_applicable[if: '$CI_PIPELINE_SOURCE == \"merge_request_event\"']",
-    "claude:tests/test_runtime_batch8_ci.py::test_workflow_in_local_include_cannot_be_ignored_by_root_jobs",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[.-UNRESOLVED]",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[apps/admin-UNRESOLVED]",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[apps/web-UNRESOLVED]",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[apps/web/no-match.ts-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[apps/web/src-UNRESOLVED]",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[apps/web/src/app.ts-APPLICABLE]",
-    "claude:tests/test_runtime_batch8_context.py::test_anticipated_directories_keep_possible_wildcard_jobs[services/shortlist-service-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_context_content_tampering_refuses_admission_and_currency",
-    "claude:tests/test_runtime_batch8_context.py::test_context_replacement_requires_fresh_manifest_bound_base_evidence",
-    "claude:tests/test_runtime_batch8_context.py::test_context_still_requires_each_both_unit_job",
-    "claude:tests/test_runtime_batch8_context.py::test_explicit_profile_runs_local_checks_to_approval",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_profile_cannot_be_extended_with_caller_variables",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$CI_COMMIT_BRANCH-False]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$CI_MERGE_REQUEST_ID == \"123\"-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$CI_MERGE_REQUEST_ID == $OTHER-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$CI_MERGE_REQUEST_ID-True]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$CI_PIPELINE_SOURCE == \"merge_request_event\"-True]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$CI_PIPELINE_SOURCE =~ /merge_request/-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$FASTLANE == \"true\" || $BRANCH_ENV_CLEANUP == \"true\" || $SONAR_SCAN == \"true\"-False]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$UNKNOWN && $CI_COMMIT_BRANCH-False]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$UNKNOWN == \"yes\"-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[$UNKNOWN || $CI_MERGE_REQUEST_ID-True]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[($FASTLANE != \"true\" && $SONAR_SCAN != \"true\") && $CI_MERGE_REQUEST_ID-True]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[(((((((((((((((((((((((((((((((((($CI_MERGE_REQUEST_ID))))))))))))))))))))))))))))))))))-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_fixed_scenario_expression_semantics[__import__(\"os\")-None]",
-    "claude:tests/test_runtime_batch8_context.py::test_folded_script_list_data_preserves_source_rule_selection",
-    "claude:tests/test_runtime_batch8_context.py::test_literal_block_script_and_indentless_reports_do_not_erase_job_rules",
-    "claude:tests/test_runtime_batch8_context.py::test_malformed_typed_context_refuses_atomically[kind]",
-    "claude:tests/test_runtime_batch8_context.py::test_malformed_typed_context_refuses_atomically[profile]",
-    "claude:tests/test_runtime_batch8_context.py::test_malformed_typed_context_refuses_atomically[source]",
-    "claude:tests/test_runtime_batch8_context.py::test_malformed_typed_context_refuses_atomically[stored_path]",
-    "claude:tests/test_runtime_batch8_context.py::test_partial_component_wildcard_cannot_erase_anticipated_directory[apps/we*/src/**/*]",
-    "claude:tests/test_runtime_batch8_context.py::test_partial_component_wildcard_cannot_erase_anticipated_directory[apps/we?/src/**/*]",
-    "claude:tests/test_runtime_batch8_context.py::test_quality_profile_cannot_select_fastlane_to_erase_verification",
-    "claude:tests/test_runtime_batch8_context.py::test_unbound_context_refuses_without_state_mutation[changes0]",
-    "claude:tests/test_runtime_batch8_context.py::test_unbound_context_refuses_without_state_mutation[changes1]",
-    "claude:tests/test_runtime_batch8_context.py::test_unbound_context_refuses_without_state_mutation[changes2]",
-    "claude:tests/test_runtime_batch8_context.py::test_unbound_context_refuses_without_state_mutation[changes3]",
-    "claude:tests/test_runtime_batch8_context.py::test_unknown_or_excluded_context_is_never_empty_satisfied_inventory[include: ci/missing.yml\\n]",
-    "claude:tests/test_runtime_batch8_context.py::test_unknown_or_excluded_context_is_never_empty_satisfied_inventory[verify:\\n  script: echo checked\\n  rules:\\n    - if: \"$UNKNOWN\"\\n]",
-    "claude:tests/test_runtime_batch8_context.py::test_unknown_or_excluded_context_is_never_empty_satisfied_inventory[workflow:\\n  rules:\\n    - if: \"$CI_MERGE_REQUEST_ID\"\\n      auto_cancel: {script: arbitrary}\\nverify:\\n  script: echo checked\\n]",
-    "claude:tests/test_runtime_batch8_context.py::test_unknown_or_excluded_context_is_never_empty_satisfied_inventory[workflow:\\n  rules:\\n    - when: never\\nverify:\\n  script: echo checked\\n]",
-    "claude:tests/test_runtime_batch8_context.py::test_unsupported_profile_remains_explicitly_unresolved",
     "claude:tests/test_runtime_batch8_native.py::test_native_hook_uses_the_same_wrapper_grammar",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[readonly-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_inner_search_and_its_own_separator_are_untouched[shared-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-cp owned peer-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-env GIT_EXTERNAL_DIFF=evil git diff-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[readonly-git reset --hard-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-cp owned peer-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-env GIT_EXTERNAL_DIFF=evil git diff-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-env MODE=test uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-npm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-pnpm --filter web exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-uv --directory . run --project . --no-sync --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-uv run -- pnpm exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_nested_mutations_and_environment_overrides_are_rejected[shared-git reset --hard-yarn exec --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_owner_negative_receipt_cannot_advance_or_authorize",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[-- git reset --hard]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[env -- -- git reset --hard]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[npm exec --package]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[npm exec -c \"git reset --hard\"]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[pnpm exec --unknown -- rg harmless]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run -- -- git reset --hard]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run --]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run --env-file .env -- git diff]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run --project -- git reset --hard]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run --project= -- rg harmless]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run --project]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run --unknown -- rg harmless]",
-    "claude:tests/test_runtime_batch8_shell.py::test_unsupported_or_dangling_wrapper_forms_fail_closed[uv run -m arbitrary]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[migrate:check-  stage: build\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[migrate:check--APPLICABLE]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[release:deploy-  stage: deploy\\n-None]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[release:verify-  stage: test\\n-APPLICABLE]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: \"\"\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: \"$STAGE\"\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: []\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: build\\n  environment: \"$ENV\"\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: build\\n  environment: staging\\n-None]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: build\\n  environment: {name: staging, action: verify}\\n-APPLICABLE]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: null\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: release\\n-None]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_inherited_and_explicit_stage_classification[verify-  stage: {}\\n-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_default_test_stage_job_has_complete_public_approval_route",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[\"$ENV\"-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[\"$ENV\"-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[[]-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[[]-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[null-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[null-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[staging-None-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[staging-None-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{action: verify}-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{action: verify}-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: \"$ACTION\"}-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: \"$ACTION\"}-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: prepare}-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: prepare}-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: start}-None-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: start}-None-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: stop}-None-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: stop}-None-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: verify}-APPLICABLE-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, action: verify}-APPLICABLE-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, script: unknown}-UNRESOLVED-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging, script: unknown}-UNRESOLVED-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging}-None-  stage: test\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_environment_semantics_precede_default_or_test_stage[{name: staging}-None-]",
-    "claude:tests/test_runtime_batch9_ci.py::test_explicit_release_stage_precedes_verify_environment_but_invalid_stage_is_unknown",
-    "claude:tests/test_runtime_batch9_ci.py::test_false_true_and_unknown_include_conditions_merge_honestly[$OPTIONAL == \"yes\"-UNRESOLVED]",
-    "claude:tests/test_runtime_batch9_ci.py::test_false_true_and_unknown_include_conditions_merge_honestly[false-APPLICABLE]",
-    "claude:tests/test_runtime_batch9_ci.py::test_false_true_and_unknown_include_conditions_merge_honestly[true-None]",
-    "claude:tests/test_runtime_batch9_ci.py::test_known_true_repeated_include_reapplies_normal_merge_order",
-    "claude:tests/test_runtime_batch9_ci.py::test_manifest_and_currency_cannot_clear_definition_uncertainty[APPLICABLE]",
-    "claude:tests/test_runtime_batch9_ci.py::test_manifest_and_currency_cannot_clear_definition_uncertainty[NOT_APPLICABLE]",
-    "claude:tests/test_runtime_batch9_ci.py::test_manifest_and_currency_cannot_clear_definition_uncertainty[omit]",
-    "claude:tests/test_runtime_batch9_ci.py::test_public_discovery_retains_verify_and_unknown_environment_but_excludes_deployment",
-    "claude:tests/test_runtime_batch9_ci.py::test_repeated_unconditional_include_cannot_erase_earlier_uncertain_contribution",
-    "claude:tests/test_runtime_batch9_ci.py::test_transitive_hidden_template_or_reference_taint_is_retained[extends]",
-    "claude:tests/test_runtime_batch9_ci.py::test_transitive_hidden_template_or_reference_taint_is_retained[reference]",
-    "claude:tests/test_runtime_batch9_ci.py::test_transitive_hidden_template_or_reference_taint_is_retained[stage-reference]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify: null\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify:\\n  environment: staging\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify:\\n  environment: {name: staging, action: stop}\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify:\\n  rules:\\n    - changes: [outside/**/*]\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify:\\n  rules:\\n    - when: never\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify:\\n  stage: \"$STAGE\"\\n]",
-    "claude:tests/test_runtime_batch9_ci.py::test_uncertain_job_override_precedes_all_exclusion_paths[verify:\\n  stage: deploy\\n]",
     "claude:tests/test_runtime_batch9_native.py::test_native_hook_uses_positional_cat_file_and_poetry_rules[git cat-file --batch-check=\"%(objectname) --filters\"-True]",
     "claude:tests/test_runtime_batch9_native.py::test_native_hook_uses_positional_cat_file_and_poetry_rules[git cat-file --batch-command --filters-False]",
     "claude:tests/test_runtime_batch9_native.py::test_native_hook_uses_positional_cat_file_and_poetry_rules[git log --grep='cat-file --filters'-True]",
     "claude:tests/test_runtime_batch9_native.py::test_native_hook_uses_positional_cat_file_and_poetry_rules[poetry run -- env GIT_EXTERNAL_DIFF=evil git diff-False]",
     "claude:tests/test_runtime_batch9_native.py::test_native_hook_uses_positional_cat_file_and_poetry_rules[poetry run -- git reset --hard-False]",
     "claude:tests/test_runtime_batch9_native.py::test_native_hook_uses_positional_cat_file_and_poetry_rules[poetry run -- rg 'git reset --hard, --filters' -- --write-True]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_public_review_rejects_na_or_missing_dimensions_then_accepts_complete_report[False]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_public_review_rejects_na_or_missing_dimensions_then_accepts_complete_report[True]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_selected_alembic_paths_trigger_even_without_surviving_file_rows[./services/bid-service/alembic/versions/003_next.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_selected_alembic_paths_trigger_even_without_surviving_file_rows[services/bid-service/alembic/./versions/003_next.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_selected_alembic_paths_trigger_even_without_surviving_file_rows[services/bid-service/alembic/versions/002_bid_duration.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_unrelated_versions_names_do_not_force_rollout[docs/services/bid-service/alembic/versions/example.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_unrelated_versions_names_do_not_force_rollout[services/bid-service/alembic/versions/../readme.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_unrelated_versions_names_do_not_force_rollout[services/bid-service/alembic/versions_notes/readme.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_unrelated_versions_names_do_not_force_rollout[services/bid-service/src/handler.py]",
-    "claude:tests/test_runtime_batch9_rollout.py::test_unrelated_versions_names_do_not_force_rollout[services/bid-service/src/versions/data.py]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -- --filters-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -- --filters-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --batch-check --buffer-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --batch-check --buffer-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --batch-check='%(objectname) --filters'-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --batch-check='%(objectname) --filters'-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --batch-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --batch-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --path --filters -p HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --path --filters -p HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --path=--filters -p HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file --path=--filters -p HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -e HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -e HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -p HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -p HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -s HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -s HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -t HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git cat-file -t HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git log --grep='cat-file --filters'-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[git log --grep='cat-file --filters'-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[poetry run -- env MODE=test git status-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[poetry run -- env MODE=test git status-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[poetry run -- rg 'git reset --hard, --filters' -- --write-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[poetry run -- rg 'git reset --hard, --filters' -- --write-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[poetry run rg 'git reset --hard, --filters' -- --write-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[poetry run rg 'git reset --hard, --filters' -- --write-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[rg 'poetry run git reset --hard, --filters' .-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[rg 'poetry run git reset --hard, --filters' .-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[uv run pytest -q-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_literal_option_operands_and_nested_searches_remain_data[uv run pytest -q-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_public_owner_diagnostics_do_not_authorize_filters_or_poetry_writes",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[env GIT_CONFIG_COUNT=1 poetry run git status-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[env GIT_CONFIG_COUNT=1 poetry run git status-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch --filters-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch --filters-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch-c-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch-c-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch-check --filters HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch-check --filters HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch-command --filters-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --batch-command --filters-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --filt HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --filt HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --filters HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --filters HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --path-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --path-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --textc HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file --textc HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file blob --filters HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[git cat-file blob --filters HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry --directory . run git status-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry --directory . run git status-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry install-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry install-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run -- -- git reset --hard-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run -- -- git reset --hard-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run -- cp owned peer-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run -- cp owned peer-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run -- git cat-file --filters HEAD:payload-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run -- git cat-file --filters HEAD:payload-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run ---readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run ---shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run --directory . git status-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run --directory . git status-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run env GIT_EXTERNAL_DIFF=evil git diff-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run env GIT_EXTERNAL_DIFF=evil git diff-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run git reset --hard-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run git reset --hard-shared]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run-readonly]",
-    "claude:tests/test_runtime_batch9_shell.py::test_real_filters_nested_writes_and_unsupported_forms_are_denied[poetry run-shared]",
-    "claude:tests/test_scope_performance.py::test_batch_pipe_failure_is_refused_and_cleanup_cannot_override_it",
-    "claude:tests/test_scope_performance.py::test_batch_rejects_bad_frames_and_reaps[x blob 0\\n!-0]",
-    "claude:tests/test_scope_performance.py::test_batch_rejects_bad_frames_and_reaps[x blob 0\\n\\n-1]",
-    "claude:tests/test_scope_performance.py::test_batch_rejects_bad_frames_and_reaps[x blob 9\\nabc-0]",
-    "claude:tests/test_scope_performance.py::test_batch_rejects_bad_frames_and_reaps[x missing\\n-0]",
-    "claude:tests/test_scope_performance.py::test_batch_rejects_bad_frames_and_reaps[x tree 0\\n\\n-0]",
-    "claude:tests/test_scope_performance.py::test_batch_rejects_bad_frames_and_reaps[y blob 0\\n\\n-0]",
-    "claude:tests/test_scope_performance.py::test_complete_candidate_keeps_vendor_files_outside_narrow_gate_scope",
-    "claude:tests/test_scope_performance.py::test_empty_index_does_not_start_batch_process",
-    "claude:tests/test_scope_performance.py::test_records_use_one_batch_with_duplicate_empty_binary_and_symlink",
     "claude:tests/test_service_coverage.py::test_changed_mixed_language_shared_package_broadens_or_blocks_missing_checks",
     "claude:tests/test_service_coverage.py::test_current_local_override_is_not_external_identity_despite_registry_lock",
     "claude:tests/test_service_coverage.py::test_duplicate_modules_and_external_shadow_do_not_overwrite_owners",
@@ -5350,8 +4107,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1785,
-    "digest": "13bc888681a4dad234fdc472c30fd2d7cbdc78ab00bf0560a370ec7f18383d30"
+    "members": 1722,
+    "digest": "3ef38bd755130e3a298ed294ce904be67f80b178b37c7e0a76b351f7c8cbd7e4"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",

@@ -21,4 +21,8 @@ flows. It runs only in `python3 al/release_verify.py --full` (release) or nightl
 `verify_changed.py --tier all` only when you are asked to, or when you changed one of those slow flows on purpose.
 Elapsed time is reported, never judged.
 
+When writing AL tests, start from a prebuilt run (`run_state("implemented")` and the other
+states) instead of rebuilding one, test decision functions directly, and put host-neutral tests
+only in the Codex suite (`single-run.json`). See [al/TESTS.md](al/TESTS.md).
+
 See [al/README.md](al/README.md#verifying-a-change).

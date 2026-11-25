@@ -2,47 +2,15 @@
   "schema_version": 1,
   "policy": "Fast tier (default of al/verify_changed.py): affected test files not listed here plus the parity, consistency and docs guards; run after every change. Slow tier: the files below and the acceptance tier; run by release_verify.py --full (release) or nightly, never by default.",
   "rule": "a test file is slow when its mean measured test time exceeds 1.0 s",
-  "measured_files": 349,
+  "measured_files": 299,
   "slow": {
-    "claude:tests/test_acceptance_states.py": {
-      "tests": 3,
-      "seconds": 15.8
-    },
     "claude:tests/test_al_usability.py": {
       "tests": 7,
       "seconds": 27.6
     },
-    "claude:tests/test_amendment_feedback.py": {
-      "tests": 2,
-      "seconds": 10.6
-    },
-    "claude:tests/test_artifact_consumers.py": {
-      "tests": 18,
-      "seconds": 46.4
-    },
-    "claude:tests/test_assessments_recovery.py": {
-      "tests": 11,
-      "seconds": 115.9
-    },
-    "claude:tests/test_baseline_exceptions.py": {
-      "tests": 8,
-      "seconds": 58.9
-    },
-    "claude:tests/test_check_setup.py": {
-      "tests": 4,
-      "seconds": 4.3
-    },
-    "claude:tests/test_checkout_objects.py": {
-      "tests": 4,
-      "seconds": 7.2
-    },
     "claude:tests/test_ci_conventional.py": {
       "tests": 24,
       "seconds": 104.5
-    },
-    "claude:tests/test_ci_environment_actions.py": {
-      "tests": 41,
-      "seconds": 92.2
     },
     "claude:tests/test_ci_pytest_profile.py": {
       "tests": 45,
@@ -52,85 +20,17 @@
       "tests": 27,
       "seconds": 44.1
     },
-    "claude:tests/test_ci_relevance.py": {
-      "tests": 16,
-      "seconds": 30.8
-    },
     "claude:tests/test_core_hardening.py": {
       "tests": 11,
       "seconds": 106.8
-    },
-    "claude:tests/test_discovery_reuse.py": {
-      "tests": 13,
-      "seconds": 53.7
-    },
-    "claude:tests/test_escape_seeds.py": {
-      "tests": 3,
-      "seconds": 3.7
-    },
-    "claude:tests/test_evidence_concurrency.py": {
-      "tests": 7,
-      "seconds": 14.4
-    },
-    "claude:tests/test_evidence_execution.py": {
-      "tests": 21,
-      "seconds": 37.8
     },
     "claude:tests/test_evidence_integrity.py": {
       "tests": 28,
       "seconds": 85.8
     },
-    "claude:tests/test_evidence_recipe.py": {
-      "tests": 5,
-      "seconds": 16.8
-    },
-    "claude:tests/test_evidence_scopes.py": {
-      "tests": 10,
-      "seconds": 15.9
-    },
-    "claude:tests/test_evidence_storage.py": {
-      "tests": 4,
-      "seconds": 5.9
-    },
     "claude:tests/test_evidence_supersession.py": {
       "tests": 2,
       "seconds": 5.2
-    },
-    "claude:tests/test_execution_blockers.py": {
-      "tests": 10,
-      "seconds": 35.1
-    },
-    "claude:tests/test_execution_corrections.py": {
-      "tests": 3,
-      "seconds": 188.9
-    },
-    "claude:tests/test_execution_decisions.py": {
-      "tests": 3,
-      "seconds": 7.9
-    },
-    "claude:tests/test_execution_events.py": {
-      "tests": 9,
-      "seconds": 41.1
-    },
-    "claude:tests/test_gate_refresh.py": {
-      "tests": 2,
-      "seconds": 19.2
-    },
-    "claude:tests/test_gate_refresh_rule_sources.py": {
-      "tests": 4,
-      "seconds": 28.0
-    },
-    "claude:tests/test_gate_resume.py": {
-      "tests": 9,
-      "seconds": 68.9
-    },
-    "claude:tests/test_gitlink_isolation.py": {
-      "tests": 3,
-      "seconds": 9.8
-    },
-    "claude:tests/test_gitlinks.py": {
-      "tests": 14,
-      "seconds": 20.0
     },
     "claude:tests/test_go_repository_coverage.py": {
       "tests": 68,
@@ -156,21 +56,9 @@
       "tests": 11,
       "seconds": 153.1
     },
-    "claude:tests/test_implementation_continuity.py": {
-      "tests": 8,
-      "seconds": 57.9
-    },
-    "claude:tests/test_implementation_outputs.py": {
-      "tests": 1,
-      "seconds": 4.2
-    },
     "claude:tests/test_inspection.py": {
       "tests": 4,
       "seconds": 21.7
-    },
-    "claude:tests/test_intent_commands.py": {
-      "tests": 5,
-      "seconds": 140.0
     },
     "claude:tests/test_model_slots.py": {
       "tests": 3,
@@ -179,26 +67,6 @@
     "claude:tests/test_output_contracts.py": {
       "tests": 11,
       "seconds": 11.1
-    },
-    "claude:tests/test_package_checks.py": {
-      "tests": 63,
-      "seconds": 74.1
-    },
-    "claude:tests/test_package_corrections.py": {
-      "tests": 56,
-      "seconds": 117.5
-    },
-    "claude:tests/test_planning_authoring.py": {
-      "tests": 7,
-      "seconds": 51.9
-    },
-    "claude:tests/test_planning_rebind.py": {
-      "tests": 11,
-      "seconds": 49.8
-    },
-    "claude:tests/test_planning_template.py": {
-      "tests": 7,
-      "seconds": 37.3
     },
     "claude:tests/test_recovery_prerequisite_order.py": {
       "tests": 3,
@@ -211,14 +79,6 @@
     "claude:tests/test_repo_adapters.py": {
       "tests": 32,
       "seconds": 61.4
-    },
-    "claude:tests/test_review_contract.py": {
-      "tests": 2,
-      "seconds": 89.9
-    },
-    "claude:tests/test_review_state.py": {
-      "tests": 16,
-      "seconds": 41.6
     },
     "claude:tests/test_rework.py": {
       "tests": 19,
@@ -240,61 +100,13 @@
       "tests": 5,
       "seconds": 174.6
     },
-    "claude:tests/test_risk_routing.py": {
-      "tests": 2,
-      "seconds": 2.3
-    },
-    "claude:tests/test_runtime_batch10_ci.py": {
-      "tests": 35,
-      "seconds": 52.1
-    },
-    "claude:tests/test_runtime_batch11_recovery.py": {
-      "tests": 10,
-      "seconds": 151.9
-    },
-    "claude:tests/test_runtime_batch14_cancel.py": {
-      "tests": 26,
-      "seconds": 97.1
-    },
-    "claude:tests/test_runtime_batch14_commit_race.py": {
-      "tests": 2,
-      "seconds": 10.4
-    },
-    "claude:tests/test_runtime_batch14_context.py": {
-      "tests": 8,
-      "seconds": 31.6
-    },
-    "claude:tests/test_runtime_batch15_recovery.py": {
-      "tests": 9,
-      "seconds": 111.0
-    },
-    "claude:tests/test_runtime_batch15_replay.py": {
-      "tests": 9,
-      "seconds": 137.1
-    },
     "claude:tests/test_runtime_batch6.py": {
       "tests": 64,
       "seconds": 714.6
     },
-    "claude:tests/test_runtime_batch7_inventory.py": {
-      "tests": 6,
-      "seconds": 76.6
-    },
     "claude:tests/test_runtime_batch7_native.py": {
       "tests": 5,
       "seconds": 6.8
-    },
-    "claude:tests/test_runtime_batch8_ci.py": {
-      "tests": 28,
-      "seconds": 85.2
-    },
-    "claude:tests/test_runtime_batch8_context.py": {
-      "tests": 43,
-      "seconds": 96.4
-    },
-    "claude:tests/test_runtime_batch9_rollout.py": {
-      "tests": 10,
-      "seconds": 62.0
     },
     "claude:tests/test_service_coverage.py": {
       "tests": 26,
@@ -308,14 +120,6 @@
       "tests": 22,
       "seconds": 89.3
     },
-    "claude:tests/test_verification_prepare.py": {
-      "tests": 16,
-      "seconds": 21.6
-    },
-    "claude:tests/test_workflow_routing.py": {
-      "tests": 5,
-      "seconds": 42.2
-    },
     "claude:tests/test_workspace_source.py": {
       "tests": 3,
       "seconds": 465.9
@@ -323,10 +127,6 @@
     "claude:tests/test_writer_handoff.py": {
       "tests": 17,
       "seconds": 50.9
-    },
-    "claude:tests/test_writer_registration_order.py": {
-      "tests": 22,
-      "seconds": 38.6
     },
     "codex:tests/test_acceptance_states.py": {
       "tests": 3,

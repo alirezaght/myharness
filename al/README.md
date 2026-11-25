@@ -76,6 +76,22 @@ uv run python al/verify_changed.py --record-tiers /tmp/al-all/report.json
 New test files count as fast until they are recorded. Keep new end-to-end tests
 in files that are already slow, or record the tiers again.
 
+### Writing fast tests
+
+See [TESTS.md](TESTS.md) for the cost of each slow file, the invariant map of the
+regression batches and the rules below.
+
+- Start from a prebuilt run instead of building one: a host test that requests the
+  `run_state` fixture and calls `run_state("planned" | "implemented" | "finalizing" | "verified")`
+  as its first action gets a private, byte-identical copy of an admitted run built once
+  per process. Installer tests get the same for `launched`.
+- Test a decision function directly; keep one public journey per outcome.
+- Host-neutral tests (shared scripts through the `cli`, `state_file`, `launcher` and
+  `run_state` adapters) live only in the Codex suite and are listed in
+  `al/codex/skills/al/tests/single-run.json`; `test_single_run.py` checks that they never
+  depend on host-specific code. Tests of host-specific scripts or host boundaries keep a
+  copy in both suites.
+
 It maps changed files to the test files that can observe them in `al/tests`
 and both host suites. The mapping uses Python imports (including relative and
 in-function imports), file names and module names quoted in source, and the
