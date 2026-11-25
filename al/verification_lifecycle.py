@@ -2,6 +2,10 @@
 import json
 from pathlib import Path
 
+# OwnedProcess.cleanup() also records its settlement proof (al/installer/owned_process.py, 1267504).
+CLEANUP_FIELDS = {'complete', 'errors', 'unresolved', 'secondary_signals', 'cause', 'leader_reaped', 'owned_group_settled',
+                  'descendant_scope', 'descendants_settled', 'settlement_basis', 'settlement_evidence'}
+
 
 def _pairs(items):
     result = {}
@@ -26,8 +30,9 @@ def _finished(path, *, collection):
     if type(value.get('owner_pid')) is not int or value['owner_pid'] <= 0:
         raise ValueError('missing lifecycle owner')
     cleanup = value.get('cleanup')
-    if (not isinstance(cleanup, dict) or set(cleanup) - {'complete', 'errors', 'unresolved', 'secondary_signals', 'cause'}
-            or cleanup.get('complete') is not True or cleanup.get('errors') != [] or cleanup.get('unresolved') != []):
+    if (not isinstance(cleanup, dict) or set(cleanup) - CLEANUP_FIELDS
+            or cleanup.get('complete') is not True or cleanup.get('errors') != [] or cleanup.get('unresolved') != []
+            or cleanup.get('owned_group_settled', True) is not True):
         raise ValueError('unresolved lifecycle cleanup')
     if collection:
         if not isinstance(value.get('assignment'), str) or not value['assignment']:

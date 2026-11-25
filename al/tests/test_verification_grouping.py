@@ -142,9 +142,13 @@ def test_a(mode):
     assert not result['reconciliation']['complete'] and result['cleanup']['complete']
     assert len(result['shards']) == 7 and result['reconciliation']['executed_passed'] == 5
     assert len(result['reconciliation']['unaccounted']) == 2
-    assert len(list((tmp_path / 'workers').glob('*/home/sibling-survived'))) == 2
+    # Shard HOMEs live in managed storage allocations, named by each shard's binding (1267504).
+    homes = [Path(json.loads(b.read_text())['allocation']['path']) / 'home'
+             for b in (tmp_path / 'workers').glob('*/storage-binding.json')]
+    assert len(homes) == 7
+    assert sum((home / 'sibling-survived').is_file() for home in homes) == 2
     time.sleep(2.1)
-    assert not list((tmp_path / 'workers').glob('*/home/late-write'))
+    assert not any((home / 'late-write').exists() for home in homes)
 
 
 def test_focused_cohort_executes_complete_platform_templates_without_full_claim(tmp_path):
