@@ -81,6 +81,11 @@ in files that are already slow, or record the tiers again.
 See [TESTS.md](TESTS.md) for the cost of each slow file, the invariant map of the
 regression batches and the rules below.
 
+- **Time budget.** `verify_changed.py` and `release_verify.py` fail a run when a test takes
+  more than 5 s or a test file more than 60 s (setup + call + teardown, measured by the
+  runner). Only the acceptance journeys in `al/verification-budget.json` are exempt; the
+  total run time is still reported, not judged.
+
 - Start from a prebuilt run instead of building one: a host test that requests the
   `run_state` fixture and calls `run_state("planned" | "implemented" | "finalizing" | "verified")`
   as its first action gets a private, byte-identical copy of an admitted run built once

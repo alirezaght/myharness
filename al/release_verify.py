@@ -234,12 +234,17 @@ def main(argv=None) -> int:
             else:
                 reconciliation=suites['reconciliation']
                 complete=(reconciliation['complete'] if args.full else reconciliation['selected_success'])
+                # The time budget (#36) fails a run like a failing test; the total run time is still not judged.
+                from al.verification_budget import violations, observed
+                over_budget=violations(observed(suites))
+                complete=complete and not over_budget
+                for line in over_budget[:50]:print('BUDGET '+line)
                 elapsed=time.monotonic()-started
                 # Status reflects the tests alone; the run time is reported, not judged.
                 report = {'schema_version':1,'contract':'al-complete-verification-v1','status':'PASS' if complete else 'FAIL',
                           'kind': 'tagged-release' if manifest else 'development','layout':layout,'verification':suites,
                           'source_binding':source,'context_before':before,'context_after':after,'command':list(argv) if argv is not None else sys.argv[1:],
-                          'complete':bool(args.full and reconciliation['complete']),'elapsed_seconds':elapsed}
+                          'complete':bool(args.full and complete),'over_budget':over_budget,'elapsed_seconds':elapsed}
                 if manifest:
                     report['manifest']=manifest;report['binding']='verified-before-and-after-suites'
                 path=Path(suites['report_path']);write_json(path,report)
