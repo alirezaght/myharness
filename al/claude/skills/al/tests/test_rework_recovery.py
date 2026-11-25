@@ -121,9 +121,9 @@ def test_append_only_state_refuses_authority_rewrites(cli, state_file, tmp_path,
 
 
 @pytest.mark.parametrize('point',['before-replace','after-replace'])
-def test_interrupted_decision_commit_has_no_partial_credit_and_replays(cli,state_file,tmp_path,monkeypatch,point):
+def test_interrupted_decision_commit_has_no_partial_credit_and_replays(cli,state_file,tmp_path,monkeypatch,point, run_state):
     import al_rework_recovery as Recovery
-    started(cli,tmp_path);exhaust(cli);path,_=decision(cli,tmp_path)
+    run_state("finalizing");exhaust(cli);path,_=decision(cli,tmp_path)
     before=state_file().read_bytes();real=Recovery.Store.save
     def interrupted(sid,st):
         if point=='after-replace':real(sid,st)
@@ -142,9 +142,9 @@ def test_interrupted_decision_commit_has_no_partial_credit_and_replays(cli,state
 
 
 @pytest.mark.parametrize('operation',['packet','decide'])
-def test_unresolved_operations_refuse_recovery_without_mutation(cli,state_file,tmp_path,monkeypatch,operation):
+def test_unresolved_operations_refuse_recovery_without_mutation(cli,state_file,tmp_path,monkeypatch,operation, run_state):
     import al_rework_recovery as Recovery
-    started(cli,tmp_path);exhaust(cli);path,_=decision(cli,tmp_path)
+    run_state("finalizing");exhaust(cli);path,_=decision(cli,tmp_path)
     before=state_file().read_bytes()
     monkeypatch.setattr(Recovery,'operation_gaps',lambda st:['unresolved recorded check E1'])
     args=['rework-recovery',operation]
@@ -154,11 +154,11 @@ def test_unresolved_operations_refuse_recovery_without_mutation(cli,state_file,t
 
 
 @pytest.mark.parametrize('mutation',['missing','changed','extra'])
-def test_factual_review_packet_rejects_missing_changed_or_extra_lineage(cli,state_file,tmp_path,monkeypatch,mutation):
+def test_factual_review_packet_rejects_missing_changed_or_extra_lineage(cli,state_file,tmp_path,monkeypatch,mutation, run_state):
     import al_review_behavior as Behavior
     import al_rework_recovery_contract as Contract
     from evidence_helpers import plan_and_run_broad,complete_review
-    started(cli,tmp_path)
+    run_state("finalizing")
     # Complete a real review via the existing public evidence seams, then exercise its producer contract.
     from test_rework import REPRO
     Path('svc/fixed').write_text('fixed')
@@ -208,9 +208,9 @@ def test_corrupt_retained_bytes_refuse_without_grant(cli, state_file, tmp_path, 
     assert state_file().read_bytes()==before
 
 
-def test_current_success_requires_current_prerequisite_currency(cli,state_file,tmp_path,repo):
+def test_current_success_requires_current_prerequisite_currency(cli,state_file,tmp_path,repo, run_state):
     from test_rework import REPRO
-    started(cli,tmp_path)
+    run_state("finalizing")
     assert cli('evidence','plan','--area','support','--tier','focused','--scope','web','--',__import__('sys').executable,'-c',"print('1 passed')")[0]==0
     assert cli('evidence','run','--area','support')[0]==0
     assert cli('evidence','run','--area','green','--tier','focused','--scope','svc','--needs','support','--',__import__('sys').executable,'-c',"print('1 passed')")[0]==0
@@ -302,9 +302,9 @@ def test_an_unchanged_approach_requires_new_supporting_evidence(cli, state_file,
 
 
 
-def test_no_approved_model_stops_with_precise_checkpoint_and_no_budget_authority(cli,state_file,tmp_path):
+def test_no_approved_model_stops_with_precise_checkpoint_and_no_budget_authority(cli,state_file,tmp_path, run_state):
     import al_models as Models
-    started(cli,tmp_path);exhaust(cli);decision(cli,tmp_path)
+    run_state("finalizing");exhaust(cli);decision(cli,tmp_path)
     primary=Models.POLICY['al-architect']['primary']['model']
     fallback=Models.POLICY['al-architect']['fallback']['model']
     assert cli('model-unavailable',primary,'--reason','provider does not support this model')[0]==0
@@ -331,9 +331,9 @@ def test_pending_request_replay_is_exact_and_candidate_drift_refuses(cli, state_
     assert state_file().read_bytes()==before
 
 
-def test_boolean_attempt_schema_cannot_authorize(cli,state_file,tmp_path):
+def test_boolean_attempt_schema_cannot_authorize(cli,state_file,tmp_path, run_state):
     import al_rework_recovery_attempts as Attempts
-    started(cli,tmp_path);exhaust(cli);decision(cli,tmp_path)
+    run_state("finalizing");exhaust(cli);decision(cli,tmp_path)
     st=load(state_file);o=st['rework_recovery']['occurrences'][0]
     value=J.read(o['packets'][0]['attempt']);value['schema_version']=True
     ref=J.snapshot(st['session_id'],value,'malformed-recovery-attempt')
@@ -341,9 +341,9 @@ def test_boolean_attempt_schema_cannot_authorize(cli,state_file,tmp_path):
 
 
 
-def test_save_cannot_forge_a_repro_resolution_without_recorded_red(cli,state_file,tmp_path):
+def test_save_cannot_forge_a_repro_resolution_without_recorded_red(cli,state_file,tmp_path, run_state):
     from test_rework import flags
-    started(cli,tmp_path)
+    run_state("finalizing")
     assert cli('rework','--source','finalization',*flags(cli,cause_demonstrated='no',repro=''))[0]==12
     before=load(state_file);after=copy.deepcopy(before)
     ref=J.snapshot(before['session_id'],{'explanation':'supporting resolution bytes'},'rework-resolution')
@@ -353,9 +353,9 @@ def test_save_cannot_forge_a_repro_resolution_without_recorded_red(cli,state_fil
 
 
 @pytest.mark.parametrize('command',[('show',),('rework','--source','finalization')])
-def test_current_managed_load_refuses_deleted_capability_without_mutation(cli,state_file,tmp_path,command):
+def test_current_managed_load_refuses_deleted_capability_without_mutation(cli,state_file,tmp_path,command, run_state):
     from test_rework import without_repro
-    started(cli,tmp_path);st=load(state_file);st.pop('rework_recovery')
+    run_state("finalizing");st=load(state_file);st.pop('rework_recovery')
     raw=json.dumps(st).encode();state_file().write_bytes(raw)
     arguments=list(command)
     if command[0]=='rework':arguments+=without_repro()
@@ -365,10 +365,10 @@ def test_current_managed_load_refuses_deleted_capability_without_mutation(cli,st
 
 
 @pytest.mark.parametrize('field',['session_id','run_id','runtime_origin','identity'])
-def test_current_recovery_boundary_refuses_foreign_protected_identity(cli,state_file,tmp_path,monkeypatch,field):
+def test_current_recovery_boundary_refuses_foreign_protected_identity(cli,state_file,tmp_path,monkeypatch,field, run_state):
     from types import SimpleNamespace
     import al_new_origin as Origin
-    started(cli,tmp_path);st=load(state_file)
+    run_state("finalizing");st=load(state_file)
     protected={key:st['runtime_origin'][key] for key in ('kind','schema_version','run_id','publication_transaction','pin','initialization')}
     if protected['schema_version']==2:
         protected.update({key:st['runtime_origin'][key] for key in ('runtime_layout','runtime_directory')})
@@ -383,9 +383,9 @@ def test_current_recovery_boundary_refuses_foreign_protected_identity(cli,state_
     assert state_file().read_bytes()==before
 
 
-def test_schema_only_historical_inspection_does_not_require_current_capability(cli,state_file,tmp_path):
+def test_schema_only_historical_inspection_does_not_require_current_capability(cli,state_file,tmp_path, run_state):
     from al_schema import validate_state
-    started(cli,tmp_path);st=load(state_file);st.pop('rework_recovery')
+    run_state("finalizing");st=load(state_file);st.pop('rework_recovery')
     # This is the generic historical validation seam, not a claim that a deleted current run is old.
     validate_state(st)
     assert 'rework_recovery' not in st

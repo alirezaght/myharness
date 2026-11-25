@@ -42,8 +42,8 @@ def user_request(cli, state_file, tmp_path, request_id, *, binding=None):
     return path
 
 
-def test_pending_reassessment_preserves_real_admission_boundaries_without_blocking_work(cli, state_file, tmp_path):
-    started(cli, tmp_path)
+def test_pending_reassessment_preserves_real_admission_boundaries_without_blocking_work(cli, state_file, tmp_path, run_state):
+    run_state("finalizing")
     exhaust(cli)
     before = load(state_file)
     assert cli("integration", "task-admit", "--task", "unknown-task")[0] != 0
@@ -57,8 +57,8 @@ def test_pending_reassessment_preserves_real_admission_boundaries_without_blocki
     assert cli("approved", "--reason", "No verification proof was supplied")[0] != 0
 
 
-def test_distinct_user_continuations_grant_two_each_and_replay_once(cli, state_file, tmp_path):
-    started(cli, tmp_path)
+def test_distinct_user_continuations_grant_two_each_and_replay_once(cli, state_file, tmp_path, run_state):
+    run_state("finalizing")
     exhaust(cli)
     for number in (1, 2):
         if number == 1:
@@ -113,8 +113,8 @@ def test_distinct_user_continuations_grant_two_each_and_replay_once(cli, state_f
     ]
 
 
-def test_changed_source_rejects_stale_continuation_then_current_binding_refreshes(cli, state_file, tmp_path, repo):
-    started(cli, tmp_path)
+def test_changed_source_rejects_stale_continuation_then_current_binding_refreshes(cli, state_file, tmp_path, repo, run_state):
+    run_state("finalizing")
     exhaust(cli)
     path, _ = decision(cli, tmp_path, decision="decline", basis="no-useful-next-step")
     assert cli("rework-recovery", "decide", "--file", str(path))[0] == 0
@@ -137,13 +137,13 @@ def test_changed_source_rejects_stale_continuation_then_current_binding_refreshe
     assert st["evidence"].get("invalidated_at") is not None
 
 
-def test_final_review_inspects_recovery_reports_and_rejects_tampering(cli, state_file, tmp_path):
+def test_final_review_inspects_recovery_reports_and_rejects_tampering(cli, state_file, tmp_path, run_state):
     import al_proof_json as Proof
     import al_rework_recovery_contract as Contract
     from evidence_helpers import complete_review, plan_and_run_broad
     from test_rework import REPRO
 
-    started(cli, tmp_path)
+    run_state("finalizing")
     exhaust(cli)
     report, _ = decision(cli, tmp_path, request_id="reviewed-recovery")
     assert cli("rework-recovery", "decide", "--file", str(report))[0] == 0

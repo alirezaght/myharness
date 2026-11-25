@@ -320,9 +320,9 @@ def test_preflight_continuity_and_existing_debt_survive_pure_assessment(monkeypa
     assert state['implementation_readiness']['obligations'] == ['old pending proof']
 
 
-def test_actual_corrupt_task_artifact_still_refuses_before_readiness_publication(cli, tmp_path):
+def test_actual_corrupt_task_artifact_still_refuses_before_readiness_publication(cli, tmp_path, run_state):
     from evidence_helpers import start_implementation
-    start_implementation(cli, tmp_path)
+    run_state("implemented")
     state = cli.state()
     before = copy.deepcopy(state)
     original = Path(state['task_package']['stored_path']).read_bytes()
