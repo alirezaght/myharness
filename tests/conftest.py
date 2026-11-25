@@ -4,10 +4,10 @@ import pytest
 
 
 @pytest.fixture
-def launched(tmp_path):
+def launched(tmp_path_factory):
     from al.tests.runtime_run_helpers import launched as isolated_launcher
 
-    return isolated_launcher.__wrapped__(tmp_path)
+    return isolated_launcher.__wrapped__(tmp_path_factory)
 
 
 @pytest.fixture(autouse=True)
