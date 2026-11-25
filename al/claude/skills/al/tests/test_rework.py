@@ -44,8 +44,8 @@ def started(cli, tmp_path):
     record_red(cli)
 
 
-def test_confirmed_local_core_defect_goes_straight_to_the_engineer(cli, state_file, tmp_path):
-    started(cli, tmp_path)
+def test_confirmed_local_core_defect_goes_straight_to_the_engineer(cli, state_file, tmp_path, run_state):
+    run_state("finalizing")
     code, out, _ = cli("rework", "--source", "finalization", "--findings", "2", *fast(cli))
     assert code == 0
     assert "→ AL-Engineer · fast path" in out
@@ -56,20 +56,46 @@ def test_confirmed_local_core_defect_goes_straight_to_the_engineer(cli, state_fi
     assert st["phase_timings"]["PLANNING"]["ended"] is not None  # planning not re-opened
 
 
-@pytest.mark.parametrize("trigger", [
+TRIGGERS = [
     {"cause_demonstrated": "no"}, {"local": "no"}, {"contract_change": "yes"},
     {"scope_ambiguous": "yes"}, {"safety_decision": "yes"}, {"spec_conflict": "yes"},
-])
-def test_a_real_decision_still_reaches_the_architect(cli, state_file, trigger, tmp_path):
-    started(cli, tmp_path)
-    code, out, _ = cli("rework", "--source", "core-flaw", *flags(cli, **trigger))
+]
+
+
+def test_a_real_decision_still_reaches_the_architect(cli, state_file, tmp_path, run_state):
+    # One public journey per route; the per-trigger decision is proved directly below (#36).
+    run_state("finalizing")
+    code, out, _ = cli("rework", "--source", "core-flaw", *flags(cli, contract_change="yes"))
     assert code == 12
     assert "AL-Architect first" in out
     assert load(state_file)["agents"] == ["al-architect", "al-engineer"]
 
 
-def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path):
-    started(cli, tmp_path)
+def test_every_decision_trigger_routes_to_the_architect_and_none_takes_the_fast_path(cli, state_file, run_state):
+    import argparse
+    import al_rework
+    run_state("finalizing")
+    state = load(state_file)
+
+    def request(**overrides):
+        values = dict(zip([f[2:].replace("-", "_") for f in fast(cli)[0::2]], fast(cli)[1::2]))
+        values.update(overrides)
+        return al_rework.validated_request(state, argparse.Namespace(
+            source="core-flaw", findings=1, files=None, label=None, **values))
+    assert request()["route"] == "fast" and request()["reasons"] == []
+    for trigger in TRIGGERS:
+        routed = request(**trigger)
+        (key, value), = trigger.items()
+        assert routed["route"] == "architect", trigger
+        assert routed["reasons"] == [why for k, bad, why in al_rework.TRIGGERS if k == key and bad == value], trigger
+        # The Architect is consulted first, then the Engineer repairs.
+        st = load(state_file)
+        al_rework.consume_return(st, routed)
+        assert st["phase"] == "REWORK" and st["agents"] == ["al-architect", "al-engineer"], trigger
+
+
+def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path, run_state):
+    run_state("finalizing")
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     cli("phase", "FINALIZATION")
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
@@ -89,8 +115,8 @@ def test_rework_is_bounded_per_batch_and_counted(cli, state_file, tmp_path):
     assert st["correction_iteration"] == 0  # review corrections stay separate
 
 
-def test_a_genuine_correction_does_not_replenish_rework_credit(cli, state_file, tmp_path, repo):
-    started(cli, tmp_path)
+def test_a_genuine_correction_does_not_replenish_rework_credit(cli, state_file, tmp_path, repo, run_state):
+    run_state("finalizing")
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     assert cli("phase", "FINALIZATION")[0] == 0
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
@@ -114,15 +140,15 @@ def test_a_genuine_correction_does_not_replenish_rework_credit(cli, state_file, 
     assert len(st['rework_recovery']['grants'])==1
 
 
-def test_status_line_shows_the_rework_counter(cli, tmp_path):
-    started(cli, tmp_path)
+def test_status_line_shows_the_rework_counter(cli, tmp_path, run_state):
+    run_state("finalizing")
     cli("rework", "--source", "finalization", *fast(cli))
     _, out, _ = cli("show", "--line")
     assert "Rework 1/2" in out
 
 
-def test_zero_findings_is_refused(cli, tmp_path):
-    started(cli, tmp_path)
+def test_zero_findings_is_refused(cli, tmp_path, run_state):
+    run_state("finalizing")
     code, *_ = cli("rework", "--source", "finalization", "--findings", "0", *fast(cli))
     assert isinstance(code, str) and "--findings" in code
 
@@ -168,8 +194,8 @@ def without_repro():
     return list(FAST)
 
 
-def test_a_demonstrated_cause_without_a_recorded_repro_is_refused(cli, state_file, tmp_path):
-    started(cli, tmp_path)
+def test_a_demonstrated_cause_without_a_recorded_repro_is_refused(cli, state_file, tmp_path, run_state):
+    run_state("finalizing")
     code, _, err = cli("rework", "--source", "core-flaw", *without_repro())
     assert code == 14 and "--repro" in err
     assert load(state_file)["rework"]["used"] == 0  # no budget spent on a refused claim
@@ -177,8 +203,8 @@ def test_a_demonstrated_cause_without_a_recorded_repro_is_refused(cli, state_fil
 
 @pytest.mark.parametrize("repro, reason", [("missing", "no such ledger entry"),
                                            ("green", "not FAIL")])
-def test_a_repro_must_be_a_recorded_red_run(cli, repo, repro, reason, tmp_path):
-    started(cli, tmp_path)
+def test_a_repro_must_be_a_recorded_red_run(cli, repo, repro, reason, tmp_path, run_state):
+    run_state("finalizing")
     (repo / "svc" / "fixed").write_text("")
     cli("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc", "--", *REPRO)
     state = json.loads(cli("show")[1])
@@ -187,8 +213,8 @@ def test_a_repro_must_be_a_recorded_red_run(cli, repo, repro, reason, tmp_path):
     assert code == 14 and reason in err
 
 
-def test_a_repro_with_an_edited_log_is_refused(cli, state_file, tmp_path):
-    started(cli, tmp_path)
+def test_a_repro_with_an_edited_log_is_refused(cli, state_file, tmp_path, run_state):
+    run_state("finalizing")
     log = next(e["log"] for e in reversed(load(state_file)["evidence"]["entries"]) if e["area"] == "repro")
     with open(log, "a") as f:
         f.write("tampered\n")
@@ -196,15 +222,15 @@ def test_a_repro_with_an_edited_log_is_refused(cli, state_file, tmp_path):
     assert code == 14 and "LOG_ALTERED" in err
 
 
-def test_an_undemonstrated_cause_needs_no_repro_and_goes_to_the_architect(cli, tmp_path):
-    started(cli, tmp_path)
+def test_an_undemonstrated_cause_needs_no_repro_and_goes_to_the_architect(cli, tmp_path, run_state):
+    run_state("finalizing")
     flags_ = without_repro()
     flags_[flags_.index("--cause-demonstrated") + 1] = "no"
     assert cli("rework", "--source", "core-flaw", *flags_)[0] == 12
 
 
-def test_review_waits_until_the_repro_command_goes_green(cli, repo, tmp_path):
-    started(cli, tmp_path)
+def test_review_waits_until_the_repro_command_goes_green(cli, repo, tmp_path, run_state):
+    run_state("finalizing")
     assert cli("rework", "--source", "finalization", *fast(cli))[0] == 0
     assert cli("phase", "VERIFICATION")[0] == 0
     assert plan_and_run_broad(cli) == 0
@@ -222,8 +248,8 @@ def test_review_waits_until_the_repro_command_goes_green(cli, repo, tmp_path):
     assert cli("review-start")[0] == 0
 
 
-def test_a_green_repro_whose_prerequisite_went_stale_still_blocks_review(cli, repo, tmp_path):
-    started(cli, tmp_path)
+def test_a_green_repro_whose_prerequisite_went_stale_still_blocks_review(cli, repo, tmp_path, run_state):
+    run_state("finalizing")
     cli("evidence", "plan", "--area", "unit", "--tier", "focused", "--scope", "web",
         "--", sys.executable, "-c", "print('1 passed')")
     assert cli("evidence", "run", "--area", "unit")[0] == 0
