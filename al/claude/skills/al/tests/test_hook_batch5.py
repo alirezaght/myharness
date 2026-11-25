@@ -134,9 +134,9 @@ def test_fresh_blocker_survives_comparison_only_unresolved_resolution(
     invoke(cli, "review-packet", "--stage", "fresh")
     next_fresh = save_report(cli, tmp_path, "fresh", "fresh-round-two")
     invoke(cli, "review-fresh", "--file", str(next_fresh))
-    next_plan = tmp_path / "plan-round-two.md"
-    next_plan.write_text("Check the complete candidate after the attempted correction.\n")
-    invoke(cli, "review-compare-start", "--plan", str(next_plan))
+    # Round two is a delta review (#30): it keeps the reviewed plan, and must keep the
+    # unresolved fresh blocker too.
+    invoke(cli, "review-compare-start")
     invoke(cli, "review-packet", "--stage", "compare")
     next_compare = save_report(cli, tmp_path, "compare", "compare-round-two")
     code, out, err = cli("review-result", "--file", str(next_compare))

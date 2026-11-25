@@ -391,7 +391,10 @@ def upgrade_report(state, report):
     issued = json.loads(Path(state["review"]["packets"][stage]["stored_path"]).read_bytes())
     value = issued.get("content", issued)
     attempt = value["attempt"]
-    registry = [c["id"] for c in value["behavior"]["obligations"]["content"]["criteria_registry"]]
+    obligations = value["behavior"]["obligations"]
+    # A delta packet (#30) references obligations its base review already saw by hash.
+    content = obligations.get("content") or json.loads(Path(obligations["artifact"]["stored_path"]).read_bytes())
+    registry = [c["id"] for c in content["criteria_registry"]]
     result = {k: copy.deepcopy(v) for k, v in report.items()
               if k in V2_REQUIRED | V2_OPTIONAL | ({"prior_resolutions"} if stage == "compare" else set())}
 
@@ -426,7 +429,7 @@ def upgrade_report(state, report):
         evidence = next((e["id"] for e in reversed(state["evidence"]["entries"]) if e["status"] == "PASS"), None)
         locations = [l for c in result.get("criteria", []) if isinstance(c, dict) for l in c.get("locations", [])][:4]
         result["counterexample_search"] = [{
-            "obligation_ids": [g["id"] for g in value["behavior"]["obligations"]["content"]["obligations"]],
+            "obligation_ids": [g["id"] for g in content["obligations"]],
             "scenario": "A candidate that skipped the exercised workflow would contradict the declared outcome.",
             "inspected_locations": locations or ["svc/app.py:1"], "evidence": [evidence] if evidence else [],
             "result": "none_found", "rationale": "The linked verification exercised the cited source in the frozen candidate."}]
