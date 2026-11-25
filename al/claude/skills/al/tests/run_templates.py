@@ -21,10 +21,20 @@ restores a fresh, private copy of that template. Nothing is shared between tests
 * every restored copy is verified to be byte-identical (content, mode, symlink target) to the
   template before the test continues, and the build itself is verified against its own record.
 
+A test module may also name its own state: `run_state("name", build)` runs `build()` (which
+sets up the run through public commands, from the untouched repository) once per process and
+restores a copy for every later test that asks for the same name. `build`'s return value is
+handed back on every call; a Path under the building test's tmp_path is re-rooted (with its
+bytes) under the asking test's tmp_path.
+
 States form a chain; each is built from a copy of the previous one:
   planned      STANDARD run, N/A gates planned and base-run, planning admitted (phase PLANNING)
   implemented  planned + `phase IMPLEMENTATION` (== evidence_helpers.start_implementation)
   finalizing   implemented + `phase FINALIZATION` + test_rework's red repro run (== test_rework.started)
+  reviewed     finalizing + the repro fixed and rerun green, phase VERIFICATION, broad evidence and a
+               complete fresh review (test_rework_recovery's factual-packet prefix)
+  exhausted    finalizing + two fast-path reworks back to FINALIZATION and a third stopped at the
+               automatic cap in REWORK_REASSESSMENT (== test_rework_recovery.exhaust)
   verified     SMALL run implemented by one finished writer, candidate gates run, phase VERIFICATION
                with passing broad evidence (== hook_regression_helpers.begin(cli, tmp_path, repo))
 """
@@ -116,7 +126,8 @@ class RunState:
     """The `run_state` fixture value: call it with a state name as the test's first action."""
 
     # state -> the state it is built from (None: built from the seed repository)
-    BUILD = {"planned": None, "implemented": "planned", "finalizing": "implemented", "verified": None}
+    BUILD = {"planned": None, "implemented": "planned", "finalizing": "implemented", "exhausted": "finalizing",
+             "reviewed": "finalizing", "verified": None}
 
     def __init__(self, *, cli, repo, tmp_path, launcher, seed_digest, store):
         self.cli, self.repo, self.tmp_path, self.launcher = cli, repo, tmp_path, launcher
@@ -182,7 +193,23 @@ class RunState:
             from test_rework import record_red
             ok("phase", "FINALIZATION")
             record_red(cli)
-        return {"planned": planned, "implemented": implemented, "finalizing": finalizing, "verified": verified}[name]
+        def exhausted():
+            from test_rework import fast
+            for _ in range(2):
+                ok("rework", "--source", "finalization", *fast(cli))
+                ok("phase", "FINALIZATION")
+            code, out, err = cli("rework", "--source", "finalization", *fast(cli))
+            assert code == 10, f"rework past the automatic cap: {code} {out}{err}"
+        def reviewed():
+            from evidence_helpers import plan_and_run_broad, complete_review
+            from test_rework import REPRO
+            (self.repo / "svc/fixed").write_text("fixed")
+            ok("evidence", "run", "--area", "repro", "--tier", "focused", "--scope", "svc", "--", *REPRO)
+            ok("phase", "VERIFICATION")
+            assert plan_and_run_broad(cli) == 0
+            complete_review(cli, self.tmp_path)
+        return {"planned": planned, "implemented": implemented, "finalizing": finalizing, "exhausted": exhausted,
+                "reviewed": reviewed, "verified": verified}[name]
 
     def _pristine(self):
         if tree_digest(self.repo) != self.seed_digest:
@@ -252,7 +279,11 @@ class RunState:
         self.launcher.enter(self.repo, self.session)
         self.restored = meta["digest"]
 
-    def __call__(self, name):
+    def __call__(self, name, build=None):
+        if build is not None:
+            if name in self.BUILD:
+                raise ValueError("a module state may not reuse a built-in name: " + repr(name))
+            return self._custom(name, build)
         if name not in self.BUILD:
             raise ValueError("unknown run state " + repr(name))
         if self.used is not None:
@@ -271,6 +302,56 @@ class RunState:
         if name == "verified":  # like hook_regression_helpers.begin, which this state replaces
             return json.loads(self.cli("show")[1])
         return None
+
+    def _custom(self, name, build):
+        key = "module:" + name
+        if self.used is not None:
+            raise AssertionError("run_state() may be called once per test")
+        self._pristine()
+        self.used = key
+        reset_process_caches()
+        if key in _TEMPLATES:
+            self._restore(key)
+            return self._reroot(json.loads((_TEMPLATES[key] / "result.json").read_text()), _TEMPLATES[key])
+        result = build()
+        self._record(key)
+        template = _TEMPLATES[key]
+        (template / "result.json").write_text(json.dumps(self._portable(result, template)))
+        return result
+
+    def _portable(self, value, template):
+        if isinstance(value, Path):
+            path = Path(value)
+            if path.is_absolute() and Path(self.tmp_path) in path.parents:
+                relative = path.relative_to(self.tmp_path).as_posix()
+                if path.is_file():
+                    (template / "files" / relative).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(path, template / "files" / relative)
+                return {"__tmp_path__": relative}
+            return {"__path__": str(path)}
+        if isinstance(value, (list, tuple)):
+            return {"__seq__": [self._portable(v, template) for v in value], "tuple": isinstance(value, tuple)}
+        if isinstance(value, dict):
+            return {"__dict__": [[k, self._portable(v, template)] for k, v in value.items()]}
+        json.dumps(value)  # anything else must be plain JSON data
+        return value
+
+    def _reroot(self, value, template):
+        if isinstance(value, dict) and "__tmp_path__" in value:
+            path = Path(self.tmp_path) / value["__tmp_path__"]
+            saved = template / "files" / value["__tmp_path__"]
+            if saved.is_file():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(saved, path)
+            return path
+        if isinstance(value, dict) and "__path__" in value:
+            return Path(value["__path__"])
+        if isinstance(value, dict) and "__seq__" in value:
+            items = [self._reroot(v, template) for v in value["__seq__"]]
+            return tuple(items) if value["tuple"] else items
+        if isinstance(value, dict) and "__dict__" in value:
+            return {k: self._reroot(v, template) for k, v in value["__dict__"]}
+        return value
 
 
 def fixed_repository(base):

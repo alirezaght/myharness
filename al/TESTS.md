@@ -217,3 +217,29 @@ bootstraps itself. A session guard (`al/tests/registry_guard.py`) snapshots the 
 run binding or initialization record that names a temporary directory appears there;
 other changes (a concurrent real AL run) only warn. Archive leaked bindings whose
 repository is gone with `alctl prune-stale-runs --apply`.
+
+## 6. Acceptance journeys and the time budget
+
+Every test must finish in 5 s and every file in 60 s (`al/verification-budget.json`, enforced by
+`verify_changed.py --tier all` and `release_verify.py`). Only these real end-to-end journeys are
+exempt; each covers a distinct risk. A `*:` pattern is one journey run on both hosts.
+
+| Journey | Risk it covers |
+|---|---|
+| `*:tests/test_state_machine.py::test_full_walk_to_the_correction_limit` | SMALL to correction limit through every phase, both hosts |
+| `*:tests/test_runtime_batch6.py::test_changed_rules_replan_then_complete_fresh_approval*` | changed rule source: resume/retry replan, fresh review, approval |
+| `*:tests/test_rework_recovery.py::test_six_returns_two_automatic_grants_then_precise_cap` | rework credits: automatic grants, Architect decisions, precise cap |
+| `*:tests/test_rework_recovery.py::test_genuine_corrections_between_recovered_batches_never_create_credit` | corrections between recovered batches never mint rework credit |
+| `*:tests/test_workspace_source.py::*` | public approval read through the installed source query, both hosts |
+| `installer:al/tests/test_workspace_journey.py::*` | Harness workspace task end to end |
+| `installer:al/tests/test_issuing_runtime.py::*` | a run issued by an old runtime is validated by the new one |
+| `installer:al/tests/test_terminal_queries.py::*` | terminal queries across moving snapshot/origin boundaries |
+| `installer:al/tests/test_pinned_terminal.py::*` | an approved pinned run through the installed validator seam |
+| `installer:al/tests/test_review_behavior_proof.py::test_actual_review_requires_fresh_counterexamples_and_preserves_inflight_packets` | a launched run to fresh review with behaviour counterexamples |
+| `installer:al/tests/test_operator_update.py::test_managed_old_pin_stays_old_and_separate_bootstrap_selects_new` | operator update: old pins stay, a new bootstrap selects the new payload |
+| `installer:al/tests/test_reviewed_runtime_update.py::test_real_old_pin_survives_and_fresh_bootstrap_selects_new_payload` | reviewed runtime update from real release tags |
+| `installer:al/tests/test_proof_initialization.py::test_pending_proof_allows_scoped_implementation_but_never_verified_approval` | mandatory proof initialization through the launcher |
+
+A handful of tooling tests that must spawn real runners or interpreters are listed under `exempt`
+with their reason. Everything else starts from `run_state(...)` (a built-in state or a module state,
+`run_state("name", build)`, built once per process) or calls the decision function directly.
