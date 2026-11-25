@@ -27,7 +27,7 @@ def events(monkeypatch):
     monkeypatch.setattr(W, "revalidate_scope", lambda scope, root: None)
     monkeypatch.setattr(W, "read_reference", lambda ref: inventory)
     monkeypatch.setattr(W, "validate_seal", lambda value, kind: value)
-    monkeypatch.setattr(W, "invoking", lambda source: "run")
+    monkeypatch.setattr(W, "invoking", lambda source, state_root=None: "run")
     monkeypatch.setattr(W, "_nonstate", lambda stored: None)
     monkeypatch.setattr(W, "inventory_activity", lambda roots, **kw: inventory)
     monkeypatch.setattr(W, "select_profile", lambda current: W._PROFILE)
