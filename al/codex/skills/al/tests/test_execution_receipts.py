@@ -14,6 +14,14 @@ from hook_regression_helpers import invoke
 from test_gate_reuse import two_gates, evidence_for_gates
 
 
+@pytest.fixture(autouse=True)
+def receipts_only(monkeypatch):
+    # Since #26 (e8654a8) the action cache serves a gate with identical inputs before the execution-receipt
+    # association runs; these tests prove the receipt association itself, so the cache is off here
+    # (test_action_cache.py and test_gate_reuse.py cover the cache).
+    monkeypatch.setenv('AL_ACTION_CACHE', '0')
+
+
 def reader_gates(cli, repo, tmp_path, anticipated=()):
     start(cli, repo)
     argv = [sys.executable, '-I', '-m', 'json.tool', 'svc/tests/fixtures/rows.json']

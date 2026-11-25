@@ -46,6 +46,7 @@ BASE_COMMANDS = [
     "skill",
     "spec",
     "start",
+    "storage",  # managed scratch accounting (1267504)
     "testplan",
 ]
 

@@ -366,8 +366,9 @@ def test_authorized_lesson_survives_large_repository_coverage_budget(sharing):
 
     conn, scope, other, target, _, _, exported = sharing
     grant(conn, scope, other, target, "portable", 1, grant_id="budget-lesson")
+    # Text-only sources (no dependency analysis); since 34da13e JavaScript is analysed, so YAML stands in.
     for index in range(226):
-        name = f"coverage-{index:03}-" + "component-" * 12 + ".js"
+        name = f"coverage-{index:03}-" + "component-" * 12 + ".yaml"
         (target.repository / name).write_text("public static analysis limitation\n")
     git(target.repository, "add", ".")
     install(other, target, exported["payload"])

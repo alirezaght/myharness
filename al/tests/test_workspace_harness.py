@@ -25,6 +25,9 @@ def built(tmp_path_factory):
             and path.suffix not in {".pyc", ".pyo"}
         ):
             contents[path.relative_to(ROOT).as_posix()] = path.read_bytes()
+    # The wheel pairs Harness with al.installer (1267504), so its modules are build inputs too.
+    for path in (ROOT / "al" / "installer").glob("*.py"):
+        contents[path.relative_to(ROOT).as_posix()] = path.read_bytes()
     copy, metadata = W.build_copy(contents, directory / "source")
     env = T.environment(directory / "owned-environment")
     tool = T.tool_identity("uv")

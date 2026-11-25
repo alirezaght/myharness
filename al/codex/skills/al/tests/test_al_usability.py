@@ -79,11 +79,6 @@ def test_named_output_is_exact_private_versioned_and_not_a_prompt_match(cli, tmp
 
 def test_degraded_writer_tracks_edits_and_evidence_without_waiving_admission(cli, tmp_path, repo, state_file):
     pending(cli, tmp_path, repo)
-    before = state_file().read_bytes()
-    code, out, err = invoke(cli, 'writer', 'start', '--id', 'early', '--role', 'al-engineer',
-                            '--files', 'svc/app.py', ok=False)
-    assert code != 0 and 'proof admission pending' in str(code) + out + err and '--degraded' in str(code) + out + err
-    assert state_file().read_bytes() == before
     _, out, _ = invoke(cli, 'writer', 'start', '--id', 'early', '--role', 'al-engineer', '--files',
                        'svc/app.py', '--degraded', '--reason', 'Repair consumer proof while keeping source edits attributable')
     assert 'EVIDENCE' in out and '--writer early' in out and 'DEGRADED TRACKING' in out
@@ -96,7 +91,8 @@ def test_degraded_writer_tracks_edits_and_evidence_without_waiving_admission(cli
     assert current['proof_admission']['status'] == 'pending'
     assert current['writers']['early']['contribution_before']
     assert current['evidence']['entries'][-1]['status'] == 'PASS'
-    invoke(cli, 'phase', 'IMPLEMENTATION', ok=False)
+    # Entering IMPLEMENTATION is no longer gated by proof admission (b5735a9; see
+    # test_pending_proof_admission_is_implementation_debt_not_a_writer_refusal); approval still is.
     invoke(cli, 'approved', ok=False)
     packet = json.loads(invoke(cli, 'planning', 'packet')[1])
     assert packet['report_template']['authored_obligations']['implementation_context']['status'] == 'partially_built'
@@ -113,10 +109,21 @@ def test_degraded_writer_tracks_edits_and_evidence_without_waiving_admission(cli
 def test_public_writer_refusal_exits_nonzero_without_publishing_state(cli,tmp_path,repo,state_file,cli_process):
     pending(cli,tmp_path,repo)
     before=state_file().read_bytes()
-    process=cli_process('writer','start','--id','refused','--role','al-engineer','--files','svc/app.py')
+    process=cli_process('writer','start','--id','refused','--role','al-architect','--files','svc/app.py')
     out,err=process.communicate(timeout=30)
-    assert process.returncode==1 and 'proof admission pending' in out+err
+    assert process.returncode==1 and 'invalid writer role' in out+err
     assert state_file().read_bytes()==before
+
+
+def test_pending_proof_admission_is_implementation_debt_not_a_writer_refusal(cli,tmp_path,repo):
+    # b5735a9 (kept by #9, 6677112): pending Architect proof admission no longer refuses a writer;
+    # it is recorded as an implementation obligation, and review/approval still require admission.
+    pending(cli,tmp_path,repo)
+    invoke(cli,'writer','start','--id','early','--role','al-engineer','--files','svc/app.py')
+    current=state(cli)
+    assert current['phase']=='IMPLEMENTATION' and current['proof_admission']['status']=='pending'
+    assert 'Architect proof admission pending' in current['implementation_readiness']['obligations']
+    invoke(cli,'approved',ok=False)
 
 
 def test_named_preflight_satisfies_recovery_without_an_invented_plan(cli, tmp_path):

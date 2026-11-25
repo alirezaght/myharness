@@ -25,7 +25,10 @@ def running(tmp_path,monkeypatch):
     path=root/'.codex/al-runtime/known-session.json';path.parent.mkdir(parents=True);path.write_text(json.dumps(state))
     caller=observe(pid);owner=observe(parent)
     caller.update(cwd=str(root),argv=[caller['argv'][0],*entry['argv'][1:]])
-    owner.update(cwd=str(root),argv=[owner['argv'][0],str(installation/'scripts/al_state.py'),'--session','known-session','evidence','run','--area',area])
+    # The owner frame stands for an al_state dispatcher on the same protected interpreter. The real
+    # parent is whatever launched pytest (uv, a driver, the verification runner), so only its pid is real.
+    owner.update(cwd=str(root),image=deepcopy(caller['image']),
+                 argv=[caller['argv'][0],str(installation/'scripts/al_state.py'),'--session','known-session','evidence','run','--area',area])
     frames={pid:caller,parent:owner};monkeypatch.setattr(reservation,'observe',lambda subject:deepcopy(frames[subject]))
     def query():return reservation.current_reservation(root,'known-session','known-run','codex',binding,area)
     return state,path,frames,query
