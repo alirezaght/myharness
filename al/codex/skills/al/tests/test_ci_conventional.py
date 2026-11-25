@@ -78,14 +78,17 @@ def test_complete_conventional_ci_is_independently_bound(cli,repo,tmp_path):
     lambda s:s.replace('- run: uv build','- if: success()\n        run: uv build'),
     lambda s:s.replace('on: [push, pull_request]','on: {pull_request: {paths: [src/**]}}'),
 ])
-def test_unsupported_chain_blocks_admission(cli,repo,tmp_path,change):
+def test_unsupported_chain_never_certifies(cli,repo,tmp_path,change):
     project(repo);put(repo,'.github/workflows/quality.yml',change(WORKFLOW));start(cli)
     st,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
+    file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
+    invoke(cli,'gates','plan','--file',str(file))
+    if m['service_coverage']['semantic_requirements']['checks'].get('pipeline_verified'):
+        assert_left_to_pipeline(cli,m)
+        return
     a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete'
     assert any(g['code']=='missing-verification-check' for g in a['gaps'])
-    file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
-    invoke(cli,'gates','plan','--file',str(file))
     assert_incomplete_refuses_admission(cli,tmp_path)
 
 
@@ -166,17 +169,30 @@ def test_pytest_ambient_execution_controls_cannot_be_unbound(cli,repo,tmp_path,m
     assert name in binding['env_names']
     monkeypatch.setenv(name,value)
     _,after=discover(cli,tmp_path,['ordinary_project/__init__.py'])
-    assert after['service_coverage']['assessment']['outcome']=='incomplete'
     m=manifest_for(json.loads(cli('show')[1]),repo,['ordinary_project/__init__.py'])
     file=tmp_path/'ambient-control.json';file.write_text(json.dumps(m));invoke(cli,'gates','plan','--file',str(file))
-    assert_incomplete_refuses_admission(cli,tmp_path)
+    # The masked job can no longer be qualified locally: it is left to the pipeline (#17).
+    assert_left_to_pipeline(cli,after)
 
 
 def test_collection_only_pytest_configuration_is_not_verification(cli,repo,tmp_path):
     project(repo);p=repo/'pyproject.toml'
     p.write_text(p.read_text()+'[tool.pytest.ini_options]\naddopts="--collect-only"\n')
     start(cli);_,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
-    assert m['service_coverage']['assessment']['outcome']=='incomplete'
+    file=tmp_path/'collect-only.json';file.write_text(json.dumps(m));invoke(cli,'gates','plan','--file',str(file))
+    assert_left_to_pipeline(cli,m)
+
+
+def assert_left_to_pipeline(cli,m):
+    """A CI job AL cannot qualify locally (#17): never a certified check, recorded under
+    checks.pipeline_verified and reported as an unverified CI obligation."""
+    a=m['service_coverage']['assessment']
+    assert a['outcome']=='identified'
+    assert not any(b.get('conventional_verification') or b.get('verification_chain') for b in a['required_bindings'])
+    delegated=m['service_coverage']['semantic_requirements']['checks']['pipeline_verified']
+    assert [j['job'] for d in delegated for j in d['jobs']]==['quality']
+    status=json.loads(cli('gates','status')[1])
+    assert any(u['category']=='ci' for u in status['unverified'])
 
 
 def assert_incomplete_refuses_admission(cli,tmp_path):

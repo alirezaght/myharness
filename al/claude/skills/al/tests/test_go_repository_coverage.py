@@ -468,7 +468,13 @@ def test_container_go_identification_has_no_host_tool_requirement_or_local_autho
     observed = job["verification_observations"][0]
     assert observed["host_go_required"] is False and observed["execution_status"] == "unverified"
     assert job["execution"] is None
-    assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+    # A job AL cannot run locally is pipeline-verified (#17): an unverified obligation, never
+    # a certified check, never a local CI gate.
+    assessment = manifest["service_coverage"]["assessment"]
+    assert assessment["outcome"] == "identified"
+    assert not any(b.get("conventional_verification") for b in assessment["required_bindings"])
+    delegated = facts["checks"]["pipeline_verified"]
+    assert [[j["job"] for j in d["jobs"]] for d in delegated] == [["test"]]
     assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 
 
@@ -881,7 +887,10 @@ def test_malformed_go_command_remains_named_ci_obligation(cli, repo, tmp_path, e
     start(cli)
     _, manifest = discover(cli, tmp_path, ["main.go"])
     c = manifest["service_coverage"]
-    assert c["assessment"]["outcome"] == "incomplete"
+    # The malformed job stays a named obligation, left to the pipeline (#17), never certified.
+    assert c["assessment"]["outcome"] == "identified"
+    assert not any(b.get("conventional_verification") for b in c["assessment"]["required_bindings"])
+    assert [[j["job"] for j in d["jobs"]] for d in c["semantic_requirements"]["checks"]["pipeline_verified"]] == [["test"]]
     assert c["semantic_requirements"]["ci_observations"]["obligations"]
     assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 

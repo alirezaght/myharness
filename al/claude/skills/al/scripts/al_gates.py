@@ -739,9 +739,12 @@ def cmd_run(a,sid):
                     al_store.save(sid,current)
                 with al_store.locked(sid):
                     owner.finish(persist)
-            if cache is not None and dirty!='REBUILD':
+            # A run that changed its own checkout is AL's verdict on that change, not a result of
+            # the check's inputs: it is never stored for reuse (nor is a REBUILD).
+            if cache is not None and dirty is None:
                 Cache.save(cache,entry,log,Cache.origin(st,sid,entry),Cache.GATE_EXTRA_FIELDS,replace=retry)
-            if dirty=='REBUILD':
+            if dirty in ('REBUILD','FAIL'):
+                # Every selected gate runs (#33): the next one never inherits a changed checkout.
                 stack.close();checkout=None
             conclude(g,entry,pinned)
     failed=[r for r in results if r['status']!='PASS' and not r.get('accepted')]

@@ -210,6 +210,21 @@ def test_mistaken_wide_fail_is_retired_without_rewriting_its_receipt(
     assert 'wide-lint' not in current['evidence']['plan']
 
 
+def assert_left_to_pipeline(manifest, *, strict=True):
+    """A CI job AL cannot qualify locally never certifies the service (#17): it is recorded
+    under checks.pipeline_verified as an unverified obligation; a job AL can map but not
+    qualify may still be a coverage gap (strict=False accepts either outcome)."""
+    coverage = manifest["service_coverage"]
+    assessment = coverage["assessment"]
+    assert not any(b.get("conventional_verification") for b in assessment["required_bindings"])
+    delegated = coverage["semantic_requirements"]["checks"].get("pipeline_verified", [])
+    if delegated or strict:
+        assert assessment["outcome"] == "identified"
+        assert [j["job"] for d in delegated for j in d["jobs"]] == ["test"]
+    else:
+        assert assessment["outcome"] == "incomplete"
+
+
 class TestGoRecipes:
     @pytest.fixture
     def repo(self, tmp_path, seed_repo):
@@ -321,7 +336,7 @@ class TestGoRecipes:
         pinned(repo)
         start(cli)
         _, manifest = discover(cli, tmp_path, ["main.go"])
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest)
         assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 
     def test_go_review_higher_priority_makefile_cannot_be_ignored(
@@ -336,7 +351,7 @@ class TestGoRecipes:
         pinned(repo)
         start(cli)
         _, manifest = discover(cli, tmp_path, ["main.go"])
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest)
         assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 
     @pytest.mark.parametrize("mode", ["ambient_flags", "persisted_explicit", "persisted_default"])
@@ -399,7 +414,7 @@ class TestGoRecipes:
         start(cli)
         _, manifest = discover(cli, tmp_path, ["main.go"])
         assert {name: os.environ.get(name) for name in original} == original
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest, strict=False)
         assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 
     def test_go_review_make_environment_inputs_are_not_hidden_includes(
@@ -415,7 +430,7 @@ class TestGoRecipes:
         start(cli)
         monkeypatch.setenv("MAKEFILES", "extra.mk")
         _, manifest = discover(cli, tmp_path, ["main.go"])
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest)
         assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 
     def test_go_review_default_makefile_absence_is_captured(self, cli, repo, tmp_path, monkeypatch):
@@ -443,7 +458,7 @@ class TestGoRecipes:
         pinned(repo)
         start(cli)
         _, manifest = discover(cli, tmp_path, ["main.go"])
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest)
         assert not any(g["argv"] for g in manifest["gates"] if g["category"] == "ci")
 
     @pytest.mark.parametrize(
@@ -489,13 +504,9 @@ class TestGoRecipes:
         pinned(repo)
         start(cli)
         _, manifest = discover(cli, tmp_path, ["main.go"])
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest)
         ci = [g for g in manifest["gates"] if g["category"] == "ci"]
         assert ci and all(g["required"] and not g["argv"] for g in ci)
-        assert any(
-            gap["code"] == "missing-verification-check"
-            for gap in manifest["service_coverage"]["assessment"]["gaps"]
-        )
 
     def test_go_review_make_include_quotes_are_not_shell_unquoted(
         self, cli, repo, tmp_path, monkeypatch
@@ -517,7 +528,7 @@ class TestGoRecipes:
         pinned(repo)
         start(cli)
         _, manifest = discover(cli, tmp_path, ["main.go"])
-        assert manifest["service_coverage"]["assessment"]["outcome"] == "incomplete"
+        assert_left_to_pipeline(manifest, strict=False)
 
     def test_go_review_environment_change_cannot_run_previously_qualified_gate(
         self, cli, repo, tmp_path, monkeypatch, state_file

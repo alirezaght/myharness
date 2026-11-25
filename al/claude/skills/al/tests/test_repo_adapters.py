@@ -194,14 +194,26 @@ def test_actual_mutation_during_read_is_a_torn_scan(cli,repo,tmp_path,monkeypatc
             changed=True;(repo/'services/b/src/app.py').write_text('VALUE=2\n')
         return result
     monkeypatch.setattr(Snapshot,'text',read)
+    # A discovery decision whose working copy moved is evaluated again from a fresh
+    # observation (#25 decision windows), so the manifest answers the moved tree, never a torn view.
+    _,m=discover(cli,tmp_path,['services/a/src/app.py'])
+    assert changed and m['service_coverage']['assessment']['outcome']=='identified'
+    # The moved file is now a task change: the question was answered on the moved tree.
+    assert 'services/b/src/app.py' in m['paths'] and 'services/b' in m['units']
+
+
+def test_working_copy_that_keeps_moving_refuses_discovery(cli,repo,tmp_path,monkeypatch,state_file):
+    seed(repo);start(cli);original=Snapshot.text;reads=[0]
+    def read(self,path,**kwargs):
+        result=original(self,path,**kwargs)
+        reads[0]+=1;(repo/'services/b/src/app.py').write_text('VALUE=%d\n'%(reads[0]+1))
+        return result
+    monkeypatch.setattr(Snapshot,'text',read)
     from hook_regression_helpers import invoke
     p=tmp_path/'race-paths.json';p.write_text(json.dumps(['services/a/src/app.py']));before=state_file().read_bytes()
     result=invoke(cli,'gates','discover','--paths-file',str(p),ok=False)
-    assert 'incomplete repository gate inventory' in str(result[0])
-    assert 'rediscover repository gates' in str(result[0])
+    assert 'coverage capture drift: repeated-drift: services/b/src/app.py' in str(result[0])
     assert state_file().read_bytes()==before
-    _,m=discover(cli,tmp_path,['services/a/src/app.py'])
-    assert m['service_coverage']['assessment']['outcome']=='identified'
 
 
 def test_deleting_committed_contract_cannot_downgrade_to_generic(cli,repo,tmp_path):

@@ -6,26 +6,10 @@ from pathlib import Path
 
 from harness.execution_contract import BOOTSTRAP
 
-_KNOWLEDGE_MODULES = (
-    "__init__.py",
-    "adapters.py",
-    "contribution_contract.py",
-    "contributions.py",
-    "review_projection.py",
-    "identity.py",
-    "receipts.py",
-    "extract.py",
-    "integration.py",
-    "models.py",
-    "commit_sources.py",
-    "lessons.py",
-    "retention.py",
-    "policy.py",
-    "query.py",
-    "refresh.py",
-    "sources.py",
-    "store.py",
-)
+def _knowledge_modules(source):
+    """Every module of the knowledge package: execution operations import them lazily, so a
+    hand-kept list silently drops new ones from the trusted snapshot."""
+    return sorted(p.name for p in (source / "knowledge").glob("*.py"))
 
 
 def module_argv(module):
@@ -64,7 +48,7 @@ def authority_snapshot(directory, *, versioned=False):
             and p.suffix == ".sql"
         )
     }
-    for name in _KNOWLEDGE_MODULES:
+    for name in _knowledge_modules(source):
         files["knowledge/" + name] = (source / "knowledge" / name).read_bytes()
     from harness.storage import core_sources
 

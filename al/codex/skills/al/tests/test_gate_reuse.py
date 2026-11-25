@@ -70,10 +70,11 @@ def test_post_execution_generated_symlink_is_discarded_only_when_ignored(cli,rep
     two_gates(cli,tmp_path,[sys.executable,'-c',code]);roots=counted_checkout(monkeypatch)
     invoke(cli,'gates','run','--stage','candidate',ok=ignored)
     state=json.loads(cli('show')[1]);entries=state['evidence']['entries']
-    assert marker.read_text()==('xx' if ignored else 'x')
+    # Every selected candidate gate runs, even after a failure (#33); each executes afresh.
+    assert marker.read_text()=='xx'
     assert entries[-1]['status']==('PASS' if ignored else 'FAIL')
-    assert len(boundary_runs(state))==(2 if ignored else 1) and not (repo/'cache').exists()
-    assert len(set(roots))==(2 if ignored else 1) and not any(e.get('reuse') for e in entries)
+    assert len(boundary_runs(state))==2 and not (repo/'cache').exists()
+    assert len(set(roots))==2 and not any(e.get('reuse') or e.get('action_cache') for e in entries)
     assert (outside/'sentinel').read_text()=='preserve'
 
 
@@ -81,8 +82,12 @@ def test_post_execution_generated_symlink_is_discarded_only_when_ignored(cli,rep
 def test_contaminated_execution_never_reused(cli,repo,tmp_path,code):
     start(cli,repo);two_gates(cli,tmp_path,[sys.executable,'-c',code])
     invoke(cli,'gates','run','--stage','candidate',ok=False)
-    state=json.loads(cli('show')[1]);assert len(boundary_runs(state))==1
-    assert state['evidence']['entries'][-1]['status']=='FAIL'
+    # Every selected candidate gate runs (#33): the duplicate executes afresh, never reusing
+    # the contaminated execution.
+    state=json.loads(cli('show')[1]);assert len(boundary_runs(state))==2
+    entries=state['evidence']['entries'][-2:]
+    assert [e['status'] for e in entries]==['FAIL','FAIL']
+    assert not any(e.get('reuse') or e.get('action_cache') for e in entries)
 
 
 @pytest.mark.parametrize('field,value',[('argv',['true']),('cwd','svc'),('scope',['web']),('sources',[{'path':'child','kind':'pointer'}]),('env_names',['OTHER']),('execution_kind','remote')])
@@ -100,8 +105,10 @@ def test_metadata_symlinks_are_refused_before_git_reads(cli,repo,tmp_path,metada
     code='from pathlib import Path; p=Path('+repr('.git/'+metadata)+'); p.unlink(); p.symlink_to('+repr(str(source))+')'
     two_gates(cli,tmp_path,[sys.executable,'-c',code])
     invoke(cli,'gates','run','--stage','candidate',ok=False)
-    st=json.loads(cli('show')[1]);assert len(boundary_runs(st))==1
-    assert st['evidence']['entries'][-1]['status']=='INFRA' and source.read_bytes()==before
+    st=json.loads(cli('show')[1]);assert len(boundary_runs(st))==2
+    entries=st['evidence']['entries'][-2:]
+    assert [e['status'] for e in entries]==['INFRA','INFRA'] and source.read_bytes()==before
+    assert not any(e.get('reuse') or e.get('action_cache') for e in entries)
 
 
 def test_different_declared_environment_prevents_execution_reuse(cli,repo,tmp_path):
@@ -185,7 +192,9 @@ def test_between_gate_metadata_drift_is_checked_before_any_scratch_git_read(cli,
             pytest.fail('Git source inspection ran before metadata rejection')
         return real_rows(root,*args,**kwargs)
     monkeypatch.setattr(al_store,'save',save);monkeypatch.setattr(Gates.S,'source_rows',rows)
-    invoke(cli,'gates','run','--stage','candidate',ok=False)
+    # An action-cache hit (#26) never reads the first checkout; this checks the
+    # between-gate execution reuse, which must reject the drifted metadata first.
+    invoke(cli,'gates','run','--stage','candidate','--no-cache',ok=False)
     st=json.loads(cli('show')[1]);assert fired and len(boundary_runs(st))==2
     assert st['evidence']['entries'][-1]['status']=='INFRA'
 
@@ -252,5 +261,6 @@ def test_post_execution_generated_directory_symlink_never_runs_worktree_git(cli,
     monkeypatch.setattr(C,'run',run)
     invoke(cli,'gates','run','--stage','candidate',ok=False)
     st=json.loads(cli('show')[1])
-    assert st['evidence']['entries'][-1]['status']=='FAIL' and len(boundary_runs(st))==1
+    entries=st['evidence']['entries'][-2:]
+    assert [e['status'] for e in entries]==['FAIL','FAIL'] and len(boundary_runs(st))==2
     assert (outside/'app.py').read_text()=='preserve external bytes'
