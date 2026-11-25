@@ -227,6 +227,25 @@ def _env(names):
     return {name: value_digest(name) for name in sorted(set(names or ()))}
 
 
+def _execution_environment(names):
+    """The policy an execution receipt binds: declared names plus PATH, HOME, LANG, TZ, PYTHON* and LC_*.
+
+    It is part of the key (a different interpreter setup is a miss) and is recorded on a hit, so a later
+    reader (terminal validation) refuses the reused result when the caller's environment changed."""
+    from al_verification_inputs import execution_environment
+    declared = sorted(set(names or ()))
+    return {'kind': 'declared-execution-v1', 'declared_names': declared, 'inputs': execution_environment(declared)}
+
+
+def environment_gaps(entry):
+    """Current-environment gaps of a reused result (none for an entry without a recorded policy)."""
+    policy = (entry.get('action_cache') or {}).get('environment')
+    if policy is None:
+        return []
+    from al_verification_inputs import environment_gaps as gaps
+    return gaps(policy)
+
+
 def _input_paths(scope, cwd):
     import al_ledger as L
     return _minimal([L.inputs_root(cwd or '.'), *(scope or ())])
@@ -252,6 +271,7 @@ def evidence_plan(st, spec, *, no_cache=False):
         key = {'schema': SCHEMA, 'mode': 'evidence', 'argv': list(spec['argv']), 'cwd': spec.get('cwd') or '.',
                'kind': spec.get('kind'), 'scope': sorted(spec['scope']), 'sources': spec.get('sources', []),
                'storage': storage, 'env': _env(spec.get('env')), 'env_policy': {'mode': 'inherited'},
+               'execution_environment': _execution_environment(spec.get('env')),
                'tool': tool_identity(spec['argv'], spec.get('cwd') or '.'), 'lockfiles': lockfiles(spec.get('cwd')),
                'inputs': {'paths': paths, 'tree': tree_of()}}
     except Uncacheable as exc:
@@ -284,6 +304,7 @@ def gate_plan(st, m, g, stage, *, no_cache=False):
                'category': g.get('category'), 'variant': stage if g.get('category') == 'loc' else None,
                'scope': sorted(g['scope']), 'sources': g.get('sources', []), 'env': _env(g['env_names']),
                'env_policy': {'mode': 'scrubbed', 'removed_names': sorted(INSTALL_ENV), 'removed': scrubbed},
+               'execution_environment': _execution_environment(g['env_names']),
                'tool': tool_identity(g['argv'], g['cwd'], environment.get('PATH')), 'lockfiles': lockfiles(g['cwd']),
                'inputs': {'paths': paths, 'tree': tree_of()}}
     except Uncacheable as exc:
@@ -447,7 +468,7 @@ def restore_log(record, destination):
 def provenance(plan, record):
     return {'key': plan.digest, 'origin': record['origin'], 'recorded_at': record.get('recorded_at'),
             'al_version': record.get('al_version'), 'original_seconds': (record.get('timing') or {}).get('seconds'),
-            'tree': plan.key['inputs']['tree']}
+            'tree': plan.key['inputs']['tree'], 'environment': plan.key['execution_environment']}
 
 
 def reused_text(entry):

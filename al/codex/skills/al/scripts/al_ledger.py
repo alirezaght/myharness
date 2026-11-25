@@ -560,6 +560,10 @@ def entry_verdict(st, e, _seen=()):
         import al_gate_reuse
         gaps = al_gate_reuse.reuse_gaps(st, e)
         if gaps:return "REUSE_INVALID", "; ".join(gaps)
+    if verdict == "VALID" and 'action_cache' in e:
+        import al_action_cache
+        gaps = al_action_cache.environment_gaps(e)
+        if gaps:return "STALE", "reused result: " + "; ".join(gaps)
     if verdict == "VALID" and 'execution_association' in e:
         import al_execution_receipts
         gaps=al_execution_receipts.validate_association(st,e)
