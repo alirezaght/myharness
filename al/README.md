@@ -114,7 +114,8 @@ Each group of at most `--split` tests (default 8) from one file gets its own
 pytest process with private HOME, TMP, runtime and harness state. At most
 `--workers` (default 8) processes run at once. A group rebuilds its session and
 module fixtures, so a long file no longer bounds the run; `--split 0` keeps
-whole files. Test files whose isolation review is out of date also run in
+whole files. A file whose tests start from `run_state(...)` always stays in one process, so its
+prebuilt run states are built once. Test files whose isolation review is out of date also run in
 parallel. Pass `--strict-isolation` to use the release grouping and
 serialization of `release_verify.py --full`. Selected acceptance-tier files
 (the long end-to-end proofs) run too. The command prints the failing tests with their pytest failure output and log paths,

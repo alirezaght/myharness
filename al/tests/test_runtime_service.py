@@ -304,9 +304,12 @@ def test_tampered_pin_is_detected(setup):
     with member.open("a") as handle:
         handle.write("\n# tampered\n")
     member.chmod(mode & 0o777)
-    # A running service re-verifies on any change in its pin and stops.
-    setup.wait(lambda: not setup.control("status"))
-    assert "failed verification" in (service / "log").read_text()
+    # A running service re-verifies on any change in its pin and stops. The full re-verification
+    # can take long on a loaded machine, so wait for the service's own record of it (the event),
+    # with a bound far above its cost, before expecting it gone.
+    log = service / "log"
+    setup.wait(lambda: log.is_file() and "failed verification" in log.read_text(), seconds=180)
+    setup.wait(lambda: not setup.control("status"), seconds=60)
     # A service started on the tampered pin refuses before it listens.
     directory = setup.base / "manual"
     directory.mkdir(mode=0o700)

@@ -57,6 +57,14 @@ def changed_files(root, base=None):
     return start, sorted(paths)
 
 
+def _uses_run_state(root, suite, path):
+    from al.verification_plan import SUITES
+    try:
+        return 'run_state(' in (Path(root) / SUITES[suite][0] / path).read_text()
+    except (OSError, KeyError, UnicodeDecodeError):
+        return False
+
+
 def _plan(root, artifact_root, selection, *, strict_isolation, hosts, split=0):
     from al.verification_plan import build_plan, collect_suites
     from al.verification_profile import capture_source_binding, read_json
@@ -74,11 +82,15 @@ def _plan(root, artifact_root, selection, *, strict_isolation, hosts, split=0):
     if split:
         # Smaller node groups of one file run in separate fresh processes: session/module fixtures are
         # rebuilt per group (more isolation, never less), and one long file no longer bounds the wall time.
-        offsets = {}
+        # A file that starts its tests from prebuilt run states (run_state) builds each state once per
+        # process; splitting it would rebuild them per group, so it stays one process (#36).
+        offsets, whole = {}, {}
         for assignment in assignments:
             key = assignment['suite'] + ':' + assignment['node']['source']['path']
+            if key not in whole:
+                whole[key] = _uses_run_state(root, assignment['suite'], assignment['node']['source']['path'])
             offset = offsets.get(key, 0);offsets[key] = offset + 1
-            assignment['group'] = key + ':dev-chunk-' + str(offset // split)
+            assignment['group'] = key + ':dev-chunk-' + str(0 if whole[key] else offset // split)
     if not strict_isolation:
         # Every shard already runs in its own process with private HOME, TMP, runtime and
         # harness state. The release gate additionally serializes files whose isolation
