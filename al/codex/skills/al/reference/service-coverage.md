@@ -87,6 +87,9 @@ only when the change touches them. An `unclassified-runtime-consumer` (a script 
 unit layout) is in scope only when the change edits it or it literally imports a module in the
 changed sources' importer closure or names a changed path or its unit directory in full;
 sharing a file or directory name, which is how consumers are discovered, is no reference.
+The same holds for consumers inside the unit layout (`dependencies.change_reach`, #38): a
+consumer that only shares a changed file's name still selects its unit's checks, but neither it
+nor its importers reach the change, so that unit's coverage gaps are notes.
 Dependency uncertainty still selects every potential
 service for the checks that run (`exhaustive`), but a gap in a unit reached only through that
 uncertainty is an unverified check, not a safety gap. Out-of-scope gaps are deferred as

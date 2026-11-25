@@ -16,6 +16,7 @@
   "test_baseline_exceptions.py",
   "test_behavior_evidence_skips.py",
   "test_brief.py",
+  "test_change_reach.py",
   "test_check_setup.py",
   "test_checkout_objects.py",
   "test_ci_conventional.py",

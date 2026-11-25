@@ -85,6 +85,7 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     violations, the same exit code and normalised output; see al_gate_signature) is pre-existing,
     like a baseline exception, and a recorded exception covers that identical candidate failure."""
     if not e or not r or r.get('fingerprint')!=fp or not environment_current:return None
+    if stage=='base':return baseline_failure(st,g,e,r)
     base=[x for x in st.get('gate_runs',[]) if x['gate']==g['id'] and x['stage']=='base' and x['manifest']==r['manifest']]
     prior=L.find(st,base[-1]['evidence']) if base else None
     if stage!='candidate' or e['status']!='FAIL' or not prior or prior['status']!='FAIL':return None
@@ -99,6 +100,22 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     if match=='violations':
         return 'pre-existing failure: every failure the candidate reports also fails at base (see '+prior['id']+')'+covered
     return 'pre-existing failure: the candidate fails exactly as the base does (same exit code and output, see '+prior['id']+')'+covered
+
+
+def baseline_failure(st,g,e,r):
+    """Why a base failure is the baseline rather than a blocker, or None (#13, #38).
+
+    The base revision is the comparison point, not the change: a check that ran this run's
+    exact command and failed there records what already fails before the change. It never
+    needs a decision and never blocks; the candidate stage blocks only on a new failure."""
+    if e.get('status')!='FAIL' or not st.get('run_id') or e.get('run')!=st['run_id']:return None
+    if not (e.get('argv')==g.get('argv') and e.get('cwd')==g.get('cwd') and e.get('scope')==g.get('scope')
+            and e.get('sources',[])==g.get('sources',[]) and r.get('sources',[])==g.get('sources',[])
+            and r.get('execution_kind')==g.get('execution_kind')):return None
+    if not (e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256')):return None
+    if L.entry_verdict(st,e)[0]!='FAIL':return None
+    return ('baseline failure: it already fails at base ('+e['id']+'); the candidate stage blocks only on a '
+            'failure the base does not have')
 
 
 def is_advisory(g):
@@ -152,12 +169,12 @@ def gate_result(st,m,g,stage,fp):
         valid=not al_check_setup.current_gaps(e['setup'])
     if valid:return 'valid'
     if advisory:return 'advisory'
-    reason=accepted_failure(st,m,g,stage,e,r,fp,environment_current)
-    if reason:return 'accepted-existing-failure'
     decision=st.get('gate_decisions',{}).get(g['id'])
     if stage=='base' and environment_current and e['status']=='FAIL' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and r['fingerprint']==fp:
         if decision and decision['action']=='fix' and decision.get('manifest')==st['gate_manifests'][-1]['sha256'] and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id']:return 'accepted-base-decision'
         if Exceptions.current(st,m,g):return 'accepted-base-decision'
+    reason=accepted_failure(st,m,g,stage,e,r,fp,environment_current)
+    if reason:return 'accepted-existing-failure'
     same=bool(r and r.get('fingerprint')==fp and environment_current and e.get('run')==st['run_id']
               and e.get('argv')==g['argv'] and e.get('cwd')==g['cwd'] and e.get('scope')==g['scope']
               and e.get('sources',[])==g.get('sources',[]) and r.get('sources',[])==g.get('sources',[])
@@ -205,7 +222,8 @@ def unverified(st):
                                 'reason':'advisory, does not block: '+g['advisory']+(' (run '+e['status']+')' if e else ' (not run)'),
                                 'verified_by':'not verified','advisory':True})
                 continue
-            reason=accepted_failure(st,m,g,stage,e,runs[-1] if runs else None,fp)
+            # A base failure is the baseline; the candidate row reports it when it persists.
+            reason=accepted_failure(st,m,g,stage,e,runs[-1] if runs else None,fp) if stage=='candidate' else None
             if reason:out.append({'gate':g['id'],'category':g['category'],'stage':stage,'evidence':e['id'],'reason':reason,'verified_by':'not verified'})
     return out
 
@@ -399,10 +417,11 @@ def cmd_gates(a,sid):
 def _accepted(sid,m,g,stage,pinned):
     """'advisory' or 'accepted-existing-failure' when a finished non-passing gate does not block."""
     if is_advisory(g):return 'advisory'
-    if stage!='candidate' or pinned is None:return None
+    if stage=='base':pinned=m['base_oid']
+    if pinned is None:return None
     try:state=gate_result(al_store.load(sid),m,g,stage,pinned)
     except (Exception,SystemExit):return None
-    return state if state=='accepted-existing-failure' else None
+    return state if state=='accepted-existing-failure' or (stage=='base' and state=='accepted-base-decision') else None
 
 
 def _replay(sid,st,entry,g,stage,ref,fp,env_fingerprint,log,invocation,cache,hit):
@@ -475,9 +494,10 @@ def cmd_run(a,sid):
         accepted=_accepted(sid,m,g,a.stage,pinned) if status not in {'PASS','TORN'} else None
         if accepted:
             results[-1]['accepted']=accepted
-            print('AL · '+g['id']+' '+status+' does not block: '+('advisory in CI' if accepted=='advisory' else 'pre-existing failure, identical at base'))
+            print('AL · '+g['id']+' '+status+' does not block: '+('advisory in CI' if accepted=='advisory' else
+                  'baseline failure, the candidate stage compares against it' if a.stage=='base' else 'pre-existing failure, identical at base'))
         # Every selected gate runs and all failures are listed at once (issue #33): a base failure
-        # needs a decision, and a blocking candidate failure still fails the stage after the
+        # is the baseline (#38), and a blocking candidate failure still fails the stage after the
         # remaining gates have run. Only a torn run stops at once: the scope moved under the stage.
         if status=='TORN':
             if resume:report()

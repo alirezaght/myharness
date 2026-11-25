@@ -151,9 +151,29 @@ def _analyze(facts,scan):
                 uncertainties.append({'code':'uncertain-language-impact','unit':unit if owners_for_path else None,
                     'path':consumer,'location':None,'target':None,
                     'reason':'runtime consumer dependency analysis is unavailable for this source language'})
+    overlapping=set()
     for u in potential:
         roots=units[u]['source_roots']
-        if (u!='.' and scope.overlaps(u)) or (u=='.' and (bool(scope.raw&{'.','pyproject.toml','uv.lock'}) or any(scope.overlaps(r) for r in roots))):known.add(u)
+        if (u!='.' and scope.overlaps(u)) or (u=='.' and (bool(scope.raw&{'.','pyproject.toml','uv.lock'}) or any(scope.overlaps(r) for r in roots))):overlapping.add(u)
+    known|=overlapping
+    # Consumer discovery over-approximates on shared file names: it widens which checks run
+    # (known_affected), never which coverage gaps block. The change's reach keeps only the
+    # consumers that literally reach the change (#38).
+    every=sorted({c for row in artifacts for c in row['consumers']})
+    literal=_consumer_reach(scan,units,edges,importers,changed_sources,artifacts,every)
+    reach_affected=set(changed_sources)|{c for c in every if literal[c] and c.endswith('.py')}
+    pending=list(reach_affected)
+    while pending:
+        for consumer in importers.get(pending.pop(),()):
+            if consumer not in reach_affected:reach_affected.add(consumer);pending.append(consumer)
+    reach_units={record['unit'] for (_,p),record in records.items() if p in reach_affected and record['unit'] in potential}|overlapping
+    for consumer in every:
+        if not literal[consumer]:continue
+        if consumer in leaf:reach_units.update(o for o in map(owner_of,outside_dependents[consumer]) if o in potential)
+        found=owner_of(consumer)
+        if found in potential:reach_units.add(found)
+    change_reach={'units':sorted(reach_units),'source_paths':sorted(reach_affected|{c for c in every if literal[c]}),
+                  'consumers':[c for c in every if literal[c]]}
     # Deduplicate base/current diagnostics without source bytes or incidental order.
     uncertainties=list({(u['unit'],u['path'],u['location'],u['target'],u['reason']):u for u in uncertainties}.values())
     # Import-analysis uncertainty describes who may import a module. It is deferred (kept for
@@ -176,11 +196,12 @@ def _analyze(facts,scan):
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
             'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'task_import_targets_digest':_targets_digest({row for row in import_targets if row[1] in affected or records[(row[0],row[1])]['unit'] in (set(potential) if uncertainties else known|set(facts.get('policy_selection',[])))}),'affected_source_paths':sorted(affected|{consumer for row in artifacts for consumer in row['consumers']}),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[]),
             'runtime_consumer_dependents':outside_dependents,
-            'runtime_consumer_reach':_consumer_reach(scan,units,edges,importers,changed_sources,artifacts,outside)}
+            'runtime_consumer_reach':{c:literal[c] for c in outside},
+            'change_reach':change_reach}
 
 
 def _consumer_reach(scan,units,edges,importers,changed_sources,artifacts,outside):
-    """Whether each consumer outside the unit layout literally reaches the change.
+    """Whether each consumer (inside or outside the unit layout) literally reaches the change.
 
     Consumer discovery over-approximates on shared file and directory names; a script that
     only shares a name is no consumer of the change. It reaches the change when its bytes

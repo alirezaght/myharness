@@ -90,21 +90,30 @@ def analyze(facts, scan):
             prefix = "" if unit["path"] == "." else unit["path"] + "/"
             if any(p in {unit["path"], prefix + "go.mod", prefix + "go.sum"} for p in scan.paths):
                 known.add(unit["id"])
+    # The change's reach (#38): module edges and changed Go sources are literal; a consumer found
+    # only by a shared file name widens the checks (known) but not the reach.
+    python_reach = result.get("change_reach") or {}
+    reach = set(python_reach.get("units", result["known_affected"])) | (known - set(result["known_affected"]))
+    literal = python_reach.get("consumers")
     for row in result.get("artifact_consumers", []):
         if row["owner"] in by_id and row["kind"] != "documentation":
             known.add(row["owner"])
+            reach.add(row["owner"])
         for path in row["consumers"]:
             unit = Go.owner(units, path)
             if unit:
                 known.add(unit["id"])
-    while True:
-        added = {a for a, b in edges if b in known}
-        for context in contexts:
-            if known.intersection(context["members"]):
-                added.update(context["members"])
-        if added <= known:
-            break
-        known |= added
+                if literal is None or path in literal:
+                    reach.add(unit["id"])
+    for closed in (known, reach):
+        while True:
+            added = {a for a, b in edges if b in closed}
+            for context in contexts:
+                if closed.intersection(context["members"]):
+                    added.update(context["members"])
+            if added <= closed:
+                break
+            closed |= added
     # An unreadable/unsupported manifest can hide reverse consumers of any affected Go module.
     # Documentation without a Go consumer remains demonstrably independent and stays deferred.
     if known.intersection(by_id) or result["uncertainties"]:
@@ -131,4 +140,11 @@ def analyze(facts, scan):
     result["affected_source_paths"] = sorted(
         set(result["affected_source_paths"]) | {row[1] for row in membership if row[2] in known}
     )
+    result["change_reach"] = {
+        **python_reach,
+        "units": sorted(reach),
+        "source_paths": sorted(
+            set(python_reach.get("source_paths", [])) | {row[1] for row in membership if row[2] in reach}
+        ),
+    }
     return result

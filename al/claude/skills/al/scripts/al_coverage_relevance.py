@@ -95,8 +95,12 @@ def change_reach(facts, question):
     }
     deps = facts["dependencies"]
     # The literal closure, not the question's coverage inputs: those also hold every source
-    # of a service selected only through dependency uncertainty.
-    paths = touched | set(deps.get("affected_source_paths", []))
+    # of a service selected only through dependency uncertainty. Consumers found only by a
+    # shared file name select their units' checks but are not reached (#38).
+    literal = deps.get("change_reach")
+    paths = touched | set(
+        literal["source_paths"] if literal else deps.get("affected_source_paths", [])
+    )
     by_path = {u["path"].rstrip("/") or ".": u["id"] for u in facts["units"]}
 
     def owner(path):
@@ -108,7 +112,8 @@ def change_reach(facts, question):
         return by_path.get(".")
 
     units = {owner(p) for p in paths} - {None}
-    units |= set(deps.get("known_affected", [])) | set(deps.get("policy_selection", []))
+    units |= set(literal["units"] if literal else deps.get("known_affected", []))
+    units |= set(deps.get("policy_selection", []))
     edited = touched | {r["path"] for r in question.get("governing_source_refs", [])}
     return {"paths": paths, "prefixes": _prefixes(paths), "units": units, "owner": owner,
             "touched": {"paths": edited, "prefixes": _prefixes(edited)}}
