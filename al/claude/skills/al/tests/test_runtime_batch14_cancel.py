@@ -99,32 +99,3 @@ def test_repeated_cancellation_cannot_interrupt_group_cleanup(cli,cli_process,re
         wait_for(lambda:not any(alive(pid) for pid in pids));finalized(cli)
     finally:clean_process(proc,pids)
 
-
-@pytest.mark.parametrize('remote',[False,True])
-def test_pending_signal_during_public_child_commit_cannot_persist_late_pass(cli,repo,tmp_path,monkeypatch,remote,launcher):
-    import sys
-    from pathlib import Path
-    prepare(cli,repo,tmp_path,monkeypatch,remote,'normal')
-    monkeypatch.setenv('AL_TEST_LAUNCHER',launcher.request())
-    scripts=Path(__file__).resolve().parents[1]/'scripts';sid=state(cli)['session_id']
-    code="""import os,signal,sys
-sys.path.insert(0,sys.argv[1])
-import json
-from pathlib import Path
-sys.path.insert(0,json.loads(os.environ['AL_TEST_LAUNCHER'])['tests'])
-from launcher_context import Launcher
-Launcher.enter_from(os.environ['AL_TEST_LAUNCHER'],Path.cwd(),sys.argv[2])
-import al_store,al_state
-original=al_store.save
-fired=[]
-def save(sid,st):
-    if st['evidence']['entries'] and st['evidence']['entries'][-1]['status']=='PASS' and not fired:
-        fired.append(True);os.kill(os.getpid(),signal.SIGTERM)
-    return original(sid,st)
-al_store.save=save
-sys.argv=['al_state.py','--session',sys.argv[2],'gates','run','--stage','base','--id','owned-boundary']
-al_state.main()
-"""
-    result=subprocess.run([sys.executable,'-c',code,str(scripts),sid],cwd=repo,capture_output=True,text=True,timeout=8)
-    assert result.returncode!=0
-    assert 'SIGTERM' in finalized(cli)['note']

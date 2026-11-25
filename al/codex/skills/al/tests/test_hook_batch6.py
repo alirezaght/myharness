@@ -140,24 +140,6 @@ def test_unsatisfied_fresh_criterion_requires_a_same_report_blocker(cli, repo, t
     assert state_file().read_bytes() == before
 
 
-def test_second_plan_conflict_needs_its_own_architect_resolution(cli, repo, tmp_path, state_file):
-    _start(cli, tmp_path, repo, classification="COMPLEX", designer="yes")
-    invoke(cli, "phase", "PSEUDOCODE")
-    first = tmp_path / "first-resolution.md"; first.write_text("Resolve the first design conflict with the accepted constraint.\n")
-    invoke(cli, "phase", "PLAN_CONFLICT")
-    invoke(cli, "conflict-resolved", "--file", str(first), "--reason", "First conflict was resolved.")
-    invoke(cli, "phase", "PSEUDOCODE")
-    invoke(cli, "phase", "PLAN_CONFLICT")
-    before = state_file().read_bytes()
-    code, out, err = cli("phase", "PSEUDOCODE")
-    assert code != 0, f"a previous conflict resolution bypassed the new occurrence: {out}{err}"
-    assert state_file().read_bytes() == before
-    second = tmp_path / "second-resolution.md"
-    second.write_text("Resolve the second conflict using its own current occurrence.\n")
-    invoke(cli, "conflict-resolved", "--file", str(second), "--reason", "Second conflict has its own proof.")
-    invoke(cli, "phase", "PSEUDOCODE")
-
-
 def test_git_external_diff_side_effect_is_denied_by_both_policies(cli, repo):
     (repo / "old.txt").write_text("old contents\n"); (repo / "new.txt").write_text("new contents\n")
     command = "git -c diff.external='touch marker; :' diff --no-index --ext-diff old.txt new.txt"

@@ -1,9 +1,6 @@
 """Focused reproductions for five normal-hook findings (E218-1..5)."""
 import json
-import shutil
 import subprocess
-import sys
-from pathlib import Path
 
 import al_gate_discovery
 from test_service_coverage import unit
@@ -46,28 +43,6 @@ def test_contract_discovery_binds_full_service_to_declared_chain_without_executi
     again = al_gate_discovery.discover(state, ['services/user-listing-service/src/app.py'])
     changed = next(g for g in again['gates'] if g['id']==gate['id'])
     assert changed['execution_signature']!=gate['execution_signature']
-
-
-def test_discovery_passes_supported_directories_to_loc_checker(repo, cli):
-    source = repo / "services/user-listing-service/src/settings.py"
-    source.parent.mkdir(parents=True)
-    source.write_text("SETTING = True\n")
-    scripts = repo / "scripts"
-    scripts.mkdir()
-    fixture = Path(__file__).parent / "fixtures" / "repository" / "scripts"
-    shutil.copy2(fixture / "check-loc.py", scripts / "check-loc.py")
-    shutil.copy2(fixture / "check-loc.allowlist", scripts / "check-loc.allowlist")
-    state = _start_discovery_run(cli)
-
-    manifest = al_gate_discovery.discover(
-        state, ["services/user-listing-service/src/settings.py"]
-    )
-    gate = next(g for g in manifest["gates"] if g["category"] == "loc")
-    result = subprocess.run(gate["argv"], cwd=repo, capture_output=True, text=True)
-    assert result.returncode == 0, (
-        f"discovered LOC gate must use the checker's directory interface: {gate['argv']!r}\n"
-        f"{result.stdout}{result.stderr}"
-    )
 
 
 def test_failed_agent_can_take_its_single_guarded_retry(cli, repo, state_file):

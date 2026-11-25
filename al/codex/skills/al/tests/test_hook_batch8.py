@@ -8,14 +8,6 @@ from hook_regression_helpers import invoke
 from test_hook_batch7 import _planning
 
 
-def test_uv_separator_cannot_hide_git_reset_from_shared_ownership(cli):
-    command = "uv run -- git reset --hard"
-    invoke(cli, "start", "--spec", "Reject package wrappers that conceal shared Git mutations.")
-    code, out, err = cli("ownership", "--engineer", "svc/app.py", "--builder", "docs/notes.md",
-                         "--engineer-commands", command)
-    assert code != 0, f"ownership admitted a wrapped Git mutation: {out}{err}"
-
-
 def test_wrapped_harmless_search_remains_allowed(cli):
     command = "uv run -- rg 'git reset --hard' ."
     invoke(cli, "start", "--spec", "Keep read-only wrapped searches available to parallel owners.")

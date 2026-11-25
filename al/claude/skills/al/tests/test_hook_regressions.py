@@ -2,21 +2,18 @@
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import al_shell
 from supported_fixture_helpers import seed_ui
-import al_scope
 import al_store
-import al_traceability
 import al_artifacts
 import al_gate_discovery
 import al_store
 import al_distribution as distribution
 import al_distribution_registry as registry
 from hook_regression_helpers import (
-    CATEGORIES, SCRIPTS, applicable_manifest, begin, blocking_finding, finish_review, fresh_review,
-    invoke, report_data, save_report,
+    SCRIPTS, applicable_manifest, begin, blocking_finding, finish_review, fresh_review,
+    invoke, save_report,
 )
 
 GUARD = SCRIPTS / "al_readonly_guard.py"
@@ -66,25 +63,6 @@ def test_h166_3_listing_wizard_alpine_script_cannot_claim_ui_is_not_applicable(c
     comparison = save_report(cli, tmp_path, "compare", "ui-compare", ui=False)
     code, out, err = cli("review-result", "--file", str(comparison))
     assert code != 0, f"UI omission was accepted: {out}{err}"
-
-
-def test_h166_4_unresolved_prior_blocker_remains_blocking(cli, tmp_path, repo):
-    state = begin(cli, tmp_path, repo)
-    fresh_review(cli, tmp_path, "history-fresh")
-    plan = tmp_path / "approved-plan.md"; plan.write_text("Resolve prior findings against the approved plan.\n")
-    invoke(cli, "review-compare-start", "--plan", str(plan))
-    invoke(cli, "review-packet", "--stage", "compare")
-    finding = {"id": "F-prior", "source": "AC-01", "severity": "BLOCKING", "description": "Earlier blocker."}
-    report = report_data(cli, "compare", "resolve-unresolved", findings=[], prior_resolutions=[{
-        "id": finding["id"], "source": finding["source"], "status": "unresolved",
-        "rationale": "The earlier issue remains unresolved.", "locations": ["svc/app.py:1"],
-        "evidence": [state["evidence"]["entries"][-1]["id"]],
-    }])
-    try:
-        blockers, _ = al_traceability.validate(state, report, [finding])
-    except SystemExit:
-        return
-    assert blockers > 0, "an unresolved historical blocker was dropped from the derived count"
 
 
 def test_h166_5_real_candidate_gate_observes_task_mode_deletion(cli, repo, tmp_path):

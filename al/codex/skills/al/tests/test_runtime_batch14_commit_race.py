@@ -64,4 +64,4 @@ finally:
     wait_for(observed.exists)
     assert observed.read_text()=='INFRA',result.stdout+result.stderr
     assert premature.read_text()=='no'
-    finalized(cli)
+    assert 'SIGTERM' in finalized(cli)['note']
