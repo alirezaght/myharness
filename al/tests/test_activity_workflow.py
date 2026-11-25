@@ -109,8 +109,9 @@ def test_new_workflow_metadata_drift_stays_unknown(workflow_case, damage):
         elif damage == 'preparation-reference':state['verification_preparations'][0]['kind'] = 'task-content-capture-v1'
         else:
             snapshot = json.loads(Path(state['task_attribution']['snapshot']['stored_path']).read_bytes())
-            capture = json.loads(Path(snapshot['baseline_capture_ref']['stored_path']).read_bytes())
-            blob = Path(capture['contents']['src/app.py']['stored_path'])
+            # Since #25 (5d3ce78) unchanged source is held by the capture's pinned snapshot tree, not a
+            # retained blob; the capture record is the retained artifact the baseline references.
+            blob = Path(snapshot['baseline_capture_ref']['stored_path'])
             restore = (blob, blob.read_bytes(), blob.stat().st_mode & 0o777)
             if damage == 'blob-mode':blob.chmod(0o644)
             else:blob.write_bytes(b'changed retained source')

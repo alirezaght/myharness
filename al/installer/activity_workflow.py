@@ -14,7 +14,9 @@ KINDS = {
         "admitted_paths",
         "contributions",
     },
-    "task-content-capture-v1": {"files", "contents"},
+    # snapshot_tree: content held by a pinned snapshot tree instead of retained blobs (#25, 5d3ce78);
+    # concurrent_writer_paths: paths owned by an active sibling writer (#20, 886132e).
+    "task-content-capture-v1": {"files", "contents", "snapshot_tree", "concurrent_writer_paths"},
     "task-contribution-admission-v1": {"writer_id", "task_hash", "ownership_paths", "capture_ref"},
     "task-contribution-v1": {
         "task_hash",
@@ -39,7 +41,8 @@ KINDS = {
     },
 }
 # Fields earlier runtimes did not write yet; their records stay recognizable.
-OPTIONAL = {"task-attribution-v1": {"captured_requirement_hash"}}
+OPTIONAL = {"task-attribution-v1": {"captured_requirement_hash"},
+            "task-content-capture-v1": {"snapshot_tree", "concurrent_writer_paths"}}
 PREPARATION = set(
     """schema_version kind repository_identity session_id run_id task_hash destination spec
 evidence_plan_digest runtime_binding command_profiles configuration_bindings
