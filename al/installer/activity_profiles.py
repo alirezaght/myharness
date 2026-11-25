@@ -129,7 +129,15 @@ started_at ended_at pid owner_pid log log_sha256 fp_before fp_after phase correc
 execution_key gate_manifest gate_stage interrupted invocation reconciliation reservation rejected
 fingerprint_error process owner_identity cleanup aggregate_report complete_verification gate_reservation
 execution_projection_digest execution_completion execution_receipt execution_association review_state audit_receipt
-execution_stage setup'''.split())
+execution_stage setup'''.split()) | {
+    # Fields the current runtime writes on evidence entries: package inputs (#21), the action cache (#26),
+    # provisional writer admission, gate hook/pytest-guard/package-script results, recipe and storage records.
+    'inputs_before', 'inputs_after', 'action_cache', 'provisional', 'hook_status', 'pytest_guard_completion',
+    'pytest_guard_context', 'package_environment', 'package_failure', 'package_runtime_tools',
+    'package_script_result', 'remote_provenance', 'recipe', 'recipe_assignment', 'recipe_context',
+    'recipe_execution', 'recipe_log_copy', 'recipe_process', 'storage', 'storage_allocation',
+    'storage_capture_state', 'storage_error', 'storage_operands', 'storage_outputs', 'storage_pressure',
+    'storage_publication', 'storage_settlement'}
 WRITER_KEYS = {'id', 'role', 'files', 'commands', 'phase', 'started_at', 'ended_at', 'state',
                'outcome', 'reconciliation', 'task', 'agent', 'contribution_before'}
 
