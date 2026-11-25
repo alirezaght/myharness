@@ -52,3 +52,35 @@ def test_unplanned_rule_source_still_needs_a_replan(cli,tmp_path,repo,state_file
     out=invoke(cli,'review-start',ok=False)
     assert 'new repository rule source: AGENTS.md' in ''.join(out)
     assert state_file().read_bytes()==before and 'gate_refreshes' not in state(cli)
+
+
+def test_gate_plan_warns_about_a_source_that_is_not_a_rule_file(cli,tmp_path,repo):
+    """A hand-planned gate citing an ordinary file is admitted with a warning naming it (#24)."""
+    import sys
+    from hook_regression_helpers import begin
+    from test_hook_batch6 import _manifest,_source
+    begin(cli,tmp_path,repo)
+    argv=[sys.executable,'-c','print("ok")']
+    file=tmp_path/'foreign.json'
+    file.write_text(json.dumps(_manifest(state(cli),source=_source(repo,'svc/app.py'),active='loc',argv=argv)))
+    _,_,err=invoke(cli,'gates','plan','--file',str(file))
+    assert ('warning: gate loc cites svc/app.py, which is not a repository rule file; '
+            'review admission keeps it only while that file is unchanged') in err
+    assert err.count('warning: gate ')==1
+    (repo/'Makefile').write_text('loc:\n\ttrue\n')
+    file.write_text(json.dumps(_manifest(state(cli),rule=_source(repo,'Makefile'),active='loc',argv=argv)))
+    _,_,err=invoke(cli,'gates','plan','--file',str(file))
+    assert 'warning: gate ' not in err
+
+
+def test_recognised_rule_files():
+    import al_gate_currency as C
+    for path in ('AGENTS.md','svc/CLAUDE.md','pyproject.toml','svc/go.mod','Makefile','.gitlab-ci.yml',
+                 '.github/workflows/quality.yml','.pre-commit-config.yaml','tox.ini','Jenkinsfile'):
+        assert C.recognised_rule_file(path),path
+    for path in ('svc/app.py','README.md','docs/guide.md'):
+        assert not C.recognised_rule_file(path),path
+    manifest={'gates':[{'id':'a','source':{'path':'svc/app.py','sha256':'1'*64}},
+                       {'id':'b','source':{'path':'Makefile','sha256':'1'*64}},
+                       {'id':'c','source':{'path':'.gitlab-ci.yml','sha256':'0'*64}},{'id':'d','source':None}]}
+    assert C.foreign_gate_sources(manifest)==[('a','svc/app.py')]
