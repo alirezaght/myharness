@@ -38,6 +38,9 @@ def isolated_home(tmp_path, monkeypatch, global_alctl_shadow):
     monkeypatch.setenv("AL_SERVICE", "0")
     # No test may reach the global AL install or its registry (#37).
     monkeypatch.setenv("AL_DISTRIBUTION_STATE", str(tmp_path / "al-distribution" / "registry"))
+    # The release runner sets AL_RUNTIME_DIR for its own workers; a pinned run started by a
+    # test refuses an alternate runtime directory, so it never inherits the runner's.
+    monkeypatch.delenv("AL_RUNTIME_DIR", raising=False)
     monkeypatch.setenv("HARNESS_ALCTL", str(tmp_path / "no-global-alctl" / "alctl"))
     monkeypatch.setenv("PATH", global_alctl_shadow(os.environ.get("PATH", "")))
     from tests.native_provider_fixture import isolated_provider_environment

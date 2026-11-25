@@ -13,7 +13,7 @@ from al.installer.runtime_successor_lineage import observe_candidate, revisions
 from al.tests.runtime_run_helpers import launched  # noqa: F401
 from harness.execution_bootstrap import prepared_authority_snapshot
 from harness.execution_initialization_channel import InitializationChannel, build_start_resources
-from tests.conftest import conn, controller, db_path, isolated_home  # noqa: F401
+from tests.conftest import conn, controller, db_path, global_alctl_shadow, isolated_home  # noqa: F401
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 

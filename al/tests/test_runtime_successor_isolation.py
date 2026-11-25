@@ -6,7 +6,7 @@ import pytest
 
 from al.tests.runtime_run_helpers import launched  # noqa: F401
 from al.tests.test_runtime_successor import prepare
-from tests.conftest import conn, controller, db_path, isolated_home  # noqa: F401
+from tests.conftest import conn, controller, db_path, global_alctl_shadow, isolated_home  # noqa: F401
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from al.tests.runtime_run_helpers import invoke, launched, public_run, run_record  # noqa: F401
-from tests.conftest import conn, controller, db_path, isolated_home  # noqa: F401
+from tests.conftest import conn, controller, db_path, global_alctl_shadow, isolated_home  # noqa: F401
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 

@@ -29,7 +29,7 @@ from al.tests.test_runtime_successor import prepare
 from harness.execution_decisions import record_execution_decision
 from harness.execution_hosts import al_argv
 from harness.execution_worker import replay_source
-from tests.conftest import conn, controller, db_path, isolated_home  # noqa: F401
+from tests.conftest import conn, controller, db_path, global_alctl_shadow, isolated_home  # noqa: F401
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 
