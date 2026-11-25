@@ -476,8 +476,11 @@ def assess(e):
         body = RunnerOutput.captured_body(e, raw)
         if body is not None:
             current_counts = parse_counts(body) if e['kind']=='test' else e.get('counts', {})
+            # A preflight has no scope: its fp_after is the declared-environment fingerprint the
+            # STALE check below compares, not the end of a scope tree that could have torn.
+            before = e.get('fp_after') if e['kind'] == 'preflight' else e.get('fp_before')
             current, note = classify(e['kind'], e.get('exit'), current_counts, False,
-                                     e.get('fp_before'), e.get('fp_after'), output=body)
+                                     before, e.get('fp_after'), output=body)
             if current != 'PASS':
                 return current, 'stored PASS is unusable under current output classification: '+note
         else:
