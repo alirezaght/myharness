@@ -7,8 +7,11 @@ from al_schema import refuse
 
 
 def binding(st):
+    # The substantive requirement lineage: an editorial revision (labels, wording) changes the document
+    # hash but not the requirement, so it must not add a revalidation obligation (test_task_editorial_revision).
+    # Without an editorial overlay both hashes are equal, so earlier bindings stay valid.
     return {'session_id': st['session_id'], 'run_id': st['run_id'],
-            'requirement_hash': al_task.task_hash(st)}
+            'requirement_hash': al_task.revision_hashes(st)[-1]}
 
 
 def validate(st):
