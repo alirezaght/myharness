@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "kind": "publication-verification-status-v1",
+  "assessed_candidate_oid": "feee467a06bb0d4841b4d258fb8d803eeb274771",
+  "base_oid": "fef2cd1ec5650c7fba5cf9f056302d105f5c64a5",
+  "al_run_id": "68c713b1",
+  "timing": {
+    "accepted_by_user": true,
+    "compliant": false,
+    "optimization_requested": false,
+    "prior_accepted_result": {
+      "evidence_id": "E38",
+      "status": "FAIL",
+      "functional_assertions_passed": 111,
+      "timing_violations": 34
+    },
+    "current_selected_functional_result": {
+      "evidence_id": "E15",
+      "assertions_passed": 111,
+      "raw_runner_status": "FAIL",
+      "raw_exit_code": 1,
+      "timing_violations": 23,
+      "source_stable": true,
+      "cleanup_complete": true,
+      "descendant_settlement": "unknown",
+      "storage": "retained",
+      "producer_closure_claimed": false
+    }
+  },
+  "checks": [
+    {"evidence_id": "E1", "area": "remote-provider", "status": "INFRA", "raw_exit_code": 126, "qualification": "provider evidence unavailable or provenance mismatch; no authentication cause inferred"},
+    {"evidence_id": "E8", "area": "migrations", "status": "PASS", "passed": 85},
+    {"evidence_id": "E9", "area": "retained-handles", "status": "PASS", "passed": 13},
+    {"evidence_id": "E12", "area": "adapter-conformance", "status": "PASS", "passed": 39},
+    {"evidence_id": "E13", "area": "lint", "status": "PASS"},
+    {"evidence_id": "E14", "area": "format", "status": "PASS", "formatted_files": 788},
+    {"evidence_id": "E15", "area": "selected-functional", "status": "PASS", "counts": "unknown", "assertions_passed": 111, "raw_runner_status": "FAIL", "raw_exit_code": 1, "timing_violations": 23, "cleanup_complete": true, "descendant_settlement": "unknown", "storage": "retained"},
+    {"evidence_id": "E16", "area": "default-fast-development", "status": "PASS", "passed": 2925, "failed": 0, "errors": 0, "skipped": 0, "files": 144, "wall_seconds": 288.7, "qualification": "development check with timing warnings; not a release result"},
+    {"evidence_id": "E17", "area": "focused-setup", "status": "PASS", "passed": 3, "wall_seconds": 105.32}
+  ],
+  "assessments": {
+    "independent_source": {
+      "path": "final-independent-source-assessment.md",
+      "sha256": "7f6ded1d6ff3aa935d09e17c47922266b04fa8b7dd83059c4c21393366c8c159",
+      "finding": "No demonstrated publication-blocking source defect remains within the inspected scope.",
+      "formal_al_approval": false
+    },
+    "source_comparison": {
+      "path": "final-source-comparison-assessment.md",
+      "sha256": "7e3923ab69183243e911d149948815965c12d54ff20dbe6ad8c5cef53f3b7608",
+      "finding": "No additional demonstrated code blocker was found in the comparison.",
+      "scope": "Bounded whole-candidate requirements/integration comparison, not line-by-line review of all 609 changed files.",
+      "formal_al_approval": false
+    }
+  },
+  "formal_al_approval": {
+    "status": "pending",
+    "blocker": "verification-root required executable binding is missing",
+    "issue": "https://github.com/alirezaght/myharness/issues/47#issuecomment-7172661744"
+  },
+  "publication": {
+    "push_authorized": true,
+    "push_performed": true,
+    "remote_ref": "refs/heads/main",
+    "remote_published_oid": "feee467a06bb0d4841b4d258fb8d803eeb274771",
+    "remote_outcome_verified": true,
+    "assessed_candidate_was_clean": true,
+    "documentation_addendum_after_assessment": true,
+    "documentation_addendum_commit_pending": true
+  },
+  "recovery_and_scope": {
+    "r4_returns_used": 2,
+    "r4_returns_total": 2,
+    "r4_automatic_authorizations_or_grants": 0,
+    "rr1_architect_recommendation_accepted": false,
+    "r4_runtime_state": "PROOF_ADMISSION_PENDING",
+    "subsequent_work": "R5b-R11 remain unimplemented approved work",
+    "next_migration": "0026 provisional",
+    "blanket_knowledge_acceptance_gate": false,
+    "full_mission_completion_claimed": false
+  },
+  "qualification_limits": [
+    "E43 installed-package PASS2 and E44 focused Chrome PASS11 apply to unchanged package/app/browser source before QA-only corrections; no broader currency is claimed.",
+    "E15 does not establish producer closure or descendant settlement.",
+    "E16 is a development check with timing warnings, not a release result.",
+    "E1 remains INFRA; missing provenance or runtime availability is not interpreted as an authentication failure.",
+    "Native evidence-picker labels clip; incident detail exposes full fact, provenance and history as an inspection path."
+  ]
+}

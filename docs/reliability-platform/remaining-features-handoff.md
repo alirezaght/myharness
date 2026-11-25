@@ -1,8 +1,19 @@
 # Remaining Reliability Platform Implementation
 
+## Current publication status: 2026-11-25
+
+The assessed code checkpoint `feee467a06bb0d4841b4d258fb8d803eeb274771` was pushed to `origin/main` after a fresh fetch of base `fef2cd1ec5650c7fba5cf9f056302d105f5c64a5`; immediate `git ls-remote` verified `refs/heads/main` at that OID. This documentation-only status addendum follows publication and will be published separately by root; it does not claim a self-referential commit hash. The final run is `68c713b1`. Its actual evidence is summarized in [final-verification-status.json](publication-20261125/final-verification-status.json), and the two non-authorizing Architect assessments are archived alongside it. The comparison found no additional demonstrated code blocker in its bounded whole-candidate scope, but was not a line-by-line review of all 609 files. Formal AL approval remains pending the missing verification-root binding tracked in [issue 47](https://github.com/alirezaght/myharness/issues/47#issuecomment-7172661744).
+
+- E8 migrations PASS (85); E9 retained handles PASS (13); E12 adapter conformance PASS (39); E13 lint PASS; E14 format PASS (788 files); E16 default fast development check PASS (2925, 0 failed/errors/skipped, 144 files, 288.7s; timing warnings); E17 focused setup PASS (3, 105.32s).
+- E15 selected-functional AL wrapper PASS (counts unknown; 111 assertions passed); the unchanged raw runner remains FAIL (exit 1, 23 timing violations). `source_stable=true`, cleanup completed, descendant settlement remains unknown and storage retained. No producer closure is claimed.
+- E1 remote-provider evidence remains INFRA (raw exit 126; provider evidence unavailable or provenance mismatch). No authentication cause is inferred. `verification-root` still has no executable binding. This is the basis for pending formal AL approval; do not convert unknown or unverified scope to PASS.
+- Earlier E38 remains FAIL (111 functional passes, 34 timing violations) under the user's accepted no-optimization constraint. E43 installed-package PASS (2) and E44 focused Chrome PASS (11) cover unchanged package/app/browser source before QA-only corrections; do not broaden their currency. Native evidence-picker label clipping remains a nonblocking usability limitation with a detail/provenance/history path.
+- R4 used 2 of 2 returns and 0 automatic authorizations/grants. The Architect's RR1 recommendation was not accepted; runtime state is `PROOF_ADMISSION_PENDING`.
+- R5b–R11 remain unimplemented subsequent approved work. Migration 0026 is provisional. No blanket Knowledge acceptance gate, full-mission completion, or production-readiness claim is made.
+
 ## Integrated publication checkpoint: 2026-11-25
 
-This status supersedes the older R5a checkpoint and pre-integration paragraphs below for the current candidate. The full source-bound reports and hashes are archived in [publication evidence](publication-20261125/README.md); the immutable original mission and prepared remaining-task packages are unchanged.
+Historical status snapshot from before final QA corrections and verification. Retained as context; consult the current status above and the exact source-bound evidence below for present claims. The immutable original mission and prepared remaining-task packages remain unchanged.
 
 - Candidate worktree: `/private/tmp/myharness-main-integration-20261125`, branch `codex/reliability-publication-rebase-20261125`, rebased on `fef2cd1ec5650c7fba5cf9f056302d105f5c64a5` from preserved checkpoint `ded9054310d1f8ffe90736b192fcfaec557be3c9`.
 - Current clean core checkpoint before Builder support edits: `91d58709207fbb3b10c6546dbe6b73b6045bea65`. The candidate has not been pushed. Independent current-candidate review and a distinct verification/publication run against current `main` remain pending; original AL run `c82f62fb` retains its obsolete stored merge base and is not final publication proof.
