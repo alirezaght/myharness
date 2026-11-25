@@ -187,6 +187,17 @@ class RunState:
     def _pristine(self):
         if tree_digest(self.repo) != self.seed_digest:
             raise AssertionError("run_state() must be the test's first action on its untouched repository")
+        # An earlier test's run at this fixed path left its launcher transaction behind; this
+        # test's repository is new, so no run binding of the path may survive into it.
+        runs = Path(self.launcher.storage) / "runs"
+        for path in sorted(runs.glob("*.json")) if runs.is_dir() else ():
+            try:
+                root = json.loads(path.read_bytes())["repository_identity"]["root"]
+            except (OSError, ValueError, KeyError, TypeError):
+                continue
+            if Path(root) == self.repo.resolve():
+                for stale in runs.glob(path.stem + ".*"):
+                    stale.unlink()
 
     def _record(self, name):
         template = self.store / name
