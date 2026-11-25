@@ -43,6 +43,7 @@
   "test_evidence_integrity.py",
   "test_evidence_recipe.py",
   "test_evidence_scopes.py",
+  "test_evidence_self_mutation.py",
   "test_evidence_storage.py",
   "test_execution_blockers.py",
   "test_execution_corrections.py",

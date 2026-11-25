@@ -667,8 +667,9 @@ tests) are informational.
 
 A planned check that was a mistake (a command or scope CI does not use) is
 withdrawn with `"${STATE[@]}" evidence retire --area <area> --reason <text>
-[--replaced-by E<n>,...]`; its runs stay in the ledger and reviewers see the
-retirement. `clear` is handled by the launcher itself, so a run whose state can
+[--replaced-by E<n>|<area>,...]`; an area stands for its latest run, which must be a
+current pass (`evidence status` shows it VALID). Its runs stay in the ledger and reviewers
+see the retirement. `clear` is handled by the launcher itself, so a run whose state can
 no longer be read can still be put aside.
 
 A run pins repository root, worktree, Git common directory, current directory,

@@ -214,6 +214,71 @@ def _scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
             h.update(b'\0named:'+p.encode());_hash_file(h,target)
     return _env_digest(h,env_names)
 
+def scope_snapshot(scope):
+    """{path: (size, mtime_ns) or None} for every file the scope fingerprint lists (tracked or
+    untracked, not ignored), so a torn run can name the files that changed during it. Cheap: one
+    listing and a stat per file, no content read. None when the worktree cannot be listed."""
+    if not scope:
+        return None
+    root = al_store.REPO_ROOT
+    try:
+        listed = _git_bytes('ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', *scope)
+    except FingerprintError:
+        return None
+    names = {os.fsdecode(rel).rstrip('/') for rel in listed.split(b'\0') if rel}
+    names.update(p for p in scope if p != '.' and (root / p).is_file())
+    out = {}
+    for name in names:
+        try:
+            info = (root / name).lstat()
+            out[name] = (info.st_size, info.st_mtime_ns)
+        except OSError:
+            out[name] = None
+    return out
+
+
+def snapshot_changes(before, after):
+    """Sorted paths whose presence, size or modification time differ between two snapshots."""
+    if before is None or after is None:
+        return []
+    return sorted(p for p in set(before) | set(after) if before.get(p) != after.get(p))
+
+
+def files_text(files, limit=5):
+    shown = ", ".join(files[:limit])
+    return shown + (f" and {len(files) - limit} more" if len(files) > limit else "")
+
+
+def self_mutation_note(area, files, concurrent):
+    """The TORN note of a run whose own scope changed while it ran, naming the files and, when no
+    other AL check or writer was active meanwhile, the check itself as the writer."""
+    names = files_text(files)
+    noun = "file" if len(files) == 1 else "files"
+    if concurrent:
+        head = (f"{noun} {names} in the scope changed while check {area} ran, and "
+                f"{', '.join(concurrent)} ran at the same time: one of them modified it")
+    else:
+        head = f"check {area} modified tracked {noun} {names} in its own scope during its run"
+    return (head + " — the result describes no single tree. Make the command non-mutating (for example "
+            "a --frozen/--locked option of the tool that rewrites the file) and plan it again, or keep the "
+            f"change deliberately; restore an unintended change (`git checkout -- {' '.join(files[:5])}`). "
+            "Checks that share this scope are affected until then")
+
+
+def mutation_source(st, e):
+    """The first other run that recorded changing a file inside `e`'s scope at or after `e` started:
+    the run whose write made `e` stale or torn. None when no recorded run did."""
+    for other in ledger(st)["entries"]:
+        change = other.get("scope_changes")
+        if (not change or other["id"] == e["id"] or other.get("run") != e.get("run")
+                or (other.get("ended_at") or 0) < (e.get("started_at") or 0)):
+            continue
+        hit = [f for f in change.get("files", ()) if any(Sources.contains(p, f) for p in e.get("scope") or ())]
+        if hit:
+            return other, hit
+    return None
+
+
 def _env_digest(h, env_names):
     for name in sorted(env_names or ()):
         from al_environment_observation import value_digest
@@ -549,6 +614,13 @@ def entry_verdict(st, e, _seen=()):
     """assess() plus the prerequisites this run recorded (its plan's, when it
     matches one), checked recursively."""
     verdict, why = assess(e)
+    if verdict == "STALE" and e.get("kind") != "preflight":
+        source = mutation_source(st, e)
+        if source:
+            other, hit = source
+            did = "modified" if other["scope_changes"].get("attributed") else "saw a change to"
+            why = (f"affected-by-{other['area']}: check {other['area']} ({other['id']}) {did} {files_text(hit)} "
+                   f"during its run; rerun this check once {other['area']} no longer rewrites it")
     for invalidation in ledger(st).get('scope_invalidations', []):
         from al_execution_tasks import _overlap
         if e.get('started_at', 0) < invalidation['at'] and any(_overlap(a,b) for a in e['scope'] for b in invalidation['scope']):
@@ -578,6 +650,13 @@ def entry_verdict(st, e, _seen=()):
         if pending:
             return "PROVISIONAL", pending
     return verdict, why
+
+
+def current_pass(st, e):
+    """True when `e` is a PASS that is evidence on today's tree: exactly the runs `evidence
+    status` prints VALID (an executed run, an unchanged-fingerprint reuse or an action-cache
+    replay alike). Every command that accepts "a current passing run" asks this."""
+    return bool(e) and e.get("status") == "PASS" and entry_verdict(st, e)[0] == "VALID"
 
 
 def repro_gaps(st):

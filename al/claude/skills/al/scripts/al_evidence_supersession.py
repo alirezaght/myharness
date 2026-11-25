@@ -21,6 +21,20 @@ def binding(st):
             'verification_authority': authority_binding(st) if 'proof_admission' in st else None}
 
 
+def changed_obligation_guidance(original, replacement):
+    """Why supersede cannot pair two different commands, and the command that does: a
+    misregistered area (wrong command, flags or scope) is retired in favour of its corrected
+    check; a replanned area needs nothing, since its old runs no longer count."""
+    text = (f"replacement {replacement['id']} does not execute the same declared obligation as {original['id']} "
+            "(command, flags, scope or environment differ); supersede only pairs reruns of one obligation. ")
+    if original['area'] == replacement['area']:
+        return text + (f"Area {original['area']} was replanned: its earlier run {original['id']} no longer counts "
+                       "(PLAN_CHANGED), so nothing needs superseding.")
+    return text + (f"To withdraw the misregistered area in favour of the corrected one, run "
+                   f"`evidence retire --area {original['area']} --replaced-by {replacement['area']} --reason \"<why the "
+                   f"original registration was wrong>\"` once `evidence status` shows {replacement['id']} VALID.")
+
+
 def validate(st, original_id, replacement_id):
     original, replacement = L.find(st, original_id), L.find(st, replacement_id)
     if not original or not replacement or original is replacement:
@@ -32,7 +46,7 @@ def validate(st, original_id, replacement_id):
     if original['area'].startswith('gate-'):
         refuse('gate replacement requires its exact sourced gate rerun')
     if not L.same_command(original, replacement):
-        refuse('replacement must execute the same declared obligation; replan changed semantics separately')
+        refuse(changed_obligation_guidance(original, replacement))
     spec = L.ledger(st)['plan'].get(replacement['area'])
     if not spec or not L.same_command(replacement, spec):
         refuse('replacement does not match the current obligation')

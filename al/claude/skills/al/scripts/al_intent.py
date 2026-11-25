@@ -174,7 +174,44 @@ def run_areas(parent, sid, areas):
             results[area] = "REFUSED"
         else:
             results[area] = "FAIL"
+    _report_self_mutation(parent, sid, results)
     return results
+
+
+def self_mutation_effects(st, areas):
+    """({mutating area: files}, {affected area: mutating area}) among `areas`: checks whose latest
+    run tore because their scope changed during it, and the other areas whose evidence that
+    change made stale or torn."""
+    plan = L.ledger(st)["plan"]
+    mutating, affected = {}, {}
+    for area in areas:
+        entry = L.latest(st, area, plan.get(area))
+        if entry and entry.get("status") == "TORN" and (entry.get("scope_changes") or {}).get("files"):
+            mutating[area] = entry["scope_changes"]["files"]
+    for area in areas:
+        if area in mutating or area not in plan:
+            continue
+        entry = L.latest(st, area, plan[area])
+        source = entry and L.mutation_source(st, entry)
+        if source and source[0]["area"] in mutating and not L.current_pass(st, entry):
+            affected[area] = source[0]["area"]
+    return mutating, affected
+
+
+def _report_self_mutation(parent, sid, results):
+    """Say which check rewrote files in its own scope and which sibling areas it affected,
+    instead of leaving a generic TORN and silent STALE siblings. Siblings are not rerun: the
+    tree is not settled until the mutating check is made non-mutating (or its change kept)."""
+    st = al_store.load(sid)
+    mutating, affected = self_mutation_effects(st, list(results))
+    for area, files in mutating.items():
+        print("AL · " + parent.cmd + " · check " + area + " modified tracked file(s) " + L.files_text(files)
+              + " in its own scope during its run · make it non-mutating (for example --frozen/--locked) "
+              "and plan it again, or keep the change deliberately", flush=True)
+    for area, source in affected.items():
+        results[area] = "AFFECTED-BY-" + source
+        print("AL · " + parent.cmd + " · " + area + " affected-by-" + source + " · its evidence no longer "
+              "describes the tree; rerun `evidence run --area " + area + "` after " + source, flush=True)
 
 
 def _summary(results):
@@ -187,7 +224,7 @@ def _summary(results):
 
 
 def _failed(results):
-    return [a for a, r in results.items() if r in {"FAIL", "REFUSED", "SKIPPED"}]
+    return [a for a, r in results.items() if r in {"FAIL", "REFUSED", "SKIPPED"} or r.startswith("AFFECTED-BY-")]
 
 
 # ---------------------------------------------------------------- writer finish --evidence auto
@@ -215,9 +252,15 @@ def writer_finish_auto(a, sid):
     failed = _failed(results)
     print("AL · writer finish · evidence " + _summary(results))
     if failed:
+        mutating, _ = self_mutation_effects(st, list(results))
+        resolve = "fix the failure with a writer, then `evidence run --area <area>`; or `verify`"
+        if mutating:
+            resolve = ("make " + ", ".join(mutating) + " non-mutating (for example --frozen/--locked) with "
+                       "`evidence plan --area <area> ...` or keep the rewritten file(s) deliberately, then "
+                       "`evidence run --area <area>` for " + ", ".join(failed) + " one at a time; " + resolve)
         _blocked("writer finish --evidence auto",
                  "evidence did not pass: " + ", ".join(failed) + " (the writer finished and is recorded)",
-                 "fix the failure with a writer, then `evidence run --area <area>`; or `verify`")
+                 resolve)
     if active:
         print("AL · next: finish the active writer(s) " + ", ".join(active)
               + " with `writer finish --id <id> --outcome success --evidence auto`, then `verify`")

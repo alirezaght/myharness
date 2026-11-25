@@ -75,12 +75,18 @@ run still proceeds and is recorded as **provisional**: `evidence status` shows i
 When B finishes (or is reconciled), `writer finish` reports each provisional result it held:
 the scope fingerprint decides, so the result becomes `VALID` if nothing the check reads
 changed since it ran, or `STALE` (rerun the area) if B changed any of those inputs. An edit
-during the run itself makes it `TORN`. While B is ACTIVE or UNRESOLVED the result stays
+during the run itself makes it `TORN`. When the files that changed during a run can be named, the note
+names them: `check A modified tracked file uv.lock in its own scope during its run` when no other
+AL check ran meanwhile (for example a `uv run` that re-locks), or the overlapping checks when some did.
+Make such a command non-mutating (a `--frozen`/`--locked` option) and plan it again, or keep the change
+deliberately. A sibling area whose PASS that write made stale shows `STALE — affected-by-A: ...` instead
+of a generic stale reason, and `writer finish --evidence auto` reports it as `AFFECTED-BY-A` and names
+the mutating check; restoring the file revalidates the sibling, since fingerprints are content-based. While B is ACTIVE or UNRESOLVED the result stays
 provisional, so review, approval and `needs` prerequisites never accept it. A check without
 `--writer`, a shared-state command, or a barrier phase is still refused while it overlaps an
 unresolved writer.
 
-`evidence supersede --id EOLD --replaced-by ENEW --reason TEXT` appends an immutable audit artifact. Both entries and their logs remain unchanged, including the original FAIL. The replacement must be a newer original execution, a current VALID PASS of the same declared obligation and current plan. A later failed/running attempt wins. Changed command semantics require separate supported replanning; free text cannot assert equivalence. Corrupt logs, unresolved processes, foreign runs and conflicting replay refuse without changing state. Exact replay is idempotent while its binding is current.
+`evidence supersede --id EOLD --replaced-by ENEW --reason TEXT` appends an immutable audit artifact. Both entries and their logs remain unchanged, including the original FAIL. The replacement must be a newer original execution, a current VALID PASS of the same declared obligation and current plan. A later failed/running attempt wins. Changed command semantics require separate supported replanning; free text cannot assert equivalence. The refusal names the supported path: a replanned area's earlier runs no longer count (`PLAN_CHANGED`), and a misregistered area is withdrawn for its corrected one with `evidence retire --area OLD --replaced-by NEW --reason TEXT`. Corrupt logs, unresolved processes, foreign runs and conflicting replay refuse without changing state. Exact replay is idempotent while its binding is current.
 
 This records why a current rerun replaces obsolete evidence; it does not resurrect old receipts, clear review findings or retire gates. Evidence status and inspection expose the relation. Area/repro readiness still uses the current command and latest-attempt ledger rules. `evidence retire` remains a distinct mistaken-plan operation.
 

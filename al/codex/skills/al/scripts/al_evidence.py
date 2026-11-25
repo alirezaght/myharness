@@ -170,8 +170,43 @@ def _create(sid, expected_run, *, gate_context=None, own_writer=None, **fields):
         entry["reservation"] = secrets.token_hex(16)
         entry["fp_before"] = _fingerprint(entry)
         entry["inputs_before"] = L.inputs_fingerprint(entry)
+        _SNAPSHOTS[entry["reservation"]] = L.scope_snapshot(entry["scope"])
         al_store.save(sid, st)
     return entry
+
+
+# Per-file stat snapshots of each reserved run's scope, kept in memory only (never in the state):
+# when the run tears, they name the files that changed during it.
+_SNAPSHOTS = {}
+
+
+def _scope_change(sid, entry):
+    """Name the files a torn run's scope changed in and which other AL checks of this run executed
+    at the same time. With no other check overlapping it, the change is attributed to the check's
+    own process tree (the command waiting on it is not editing). None without a snapshot."""
+    before = _SNAPSHOTS.pop(entry.get("reservation"), None)
+    files = L.snapshot_changes(before, L.scope_snapshot(entry["scope"]))
+    if not files:
+        return None
+    try:
+        entries = L.ledger(al_store.load(sid))["entries"]
+    except (OSError, ValueError, KeyError, SystemExit):
+        entries = []
+    concurrent = concurrent_checks(entries, entry)
+    return {"files": files, "concurrent": concurrent, "attributed": not concurrent}
+
+
+def concurrent_checks(entries, entry):
+    """'check AREA (ID)' for every other run of this AL run whose execution overlapped `entry`'s."""
+    started = entry.get("started_at") or 0
+    out = []
+    for other in entries:
+        if other["id"] == entry["id"] or other.get("run") != entry.get("run") or not other.get("started_at"):
+            continue
+        running = other.get("ended_at") is None and other.get("status") == "RUNNING"
+        if running or (other.get("ended_at") or 0) >= started:
+            out.append(f"check {other['area']} ({other['id']})")
+    return out
 
 
 def _fingerprint(entry):
@@ -284,6 +319,12 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
     entry['fp_after'] = _fingerprint(entry)
     entry['inputs_after'] = L.inputs_fingerprint(entry)
     status, note = L.classify(entry['kind'], code, entry['counts'], timed_out, entry['fp_before'], entry['fp_after'], output=raw[start:end].decode(errors='replace') if entry.get('log_sha256') else '')
+    change = _scope_change(sid, entry) if status == 'TORN' else None
+    _SNAPSHOTS.pop(entry.get('reservation'), None)
+    if change:
+        # Name what changed instead of a generic tear: usually the check rewrote a file it reads.
+        entry['scope_changes'] = change
+        note = L.self_mutation_note(entry['area'], change['files'], change['concurrent'])
     if interrupted is not None:
         status, note = 'INFRA', 'cancelled — the run was interrupted'
         entry['interrupted'] = True
@@ -491,6 +532,41 @@ def cmd_evidence_plan(a, sid):
           f" · {env_text(L.ledger(st)['plan'][a.area])}")
 
 
+def _replacements(st, refs, retiring):
+    """The ledger ids that replace a retired area. Each reference is a ledger id (`E10`) or an
+    area name (planned, ad hoc or sharded) standing for its latest run(s). Every one must be a
+    current pass by the rule `evidence status` prints VALID for: `L.current_pass`."""
+    ev = L.ledger(st)
+    out = []
+    for ref in refs:
+        entry = L.find(st, ref)
+        if entry is not None:
+            found = [(entry["area"], entry)]
+        else:
+            names = expand_shards(st, [ref])
+            if set(names) & set(retiring):
+                sys.exit(f"al_state: area {ref} cannot replace itself; name the area or ledger id of the corrected check")
+            found = [(name, L.latest(st, name, ev["plan"].get(name))) for name in names]
+            if not any(e for _, e in found) and not set(names) & set(ev["plan"]):
+                sys.exit(f"al_state: replacement {ref} is neither a ledger id nor an area with a recorded run; "
+                         f"plan and run the corrected check first (`evidence run --area {ref}`), then retire")
+        for name, e in found:
+            if e is not None and e["area"] in retiring:
+                sys.exit(f"al_state: replacement {e['id']} is a run of the retired area {e['area']} itself; "
+                         "name the corrected check's area or ledger id")
+            if not L.current_pass(st, e):
+                if e is None:
+                    state = "it has no recorded run"
+                else:
+                    verdict, why = L.entry_verdict(st, e)
+                    state = f"its latest run {e['id']} is {e['status']}, {verdict}" + (f" ({why})" if why else "")
+                sys.exit(f"al_state: replacement {ref} is not a current passing run: {state}; "
+                         f"run `evidence run --area {name}` until `evidence status` shows it VALID, then retire")
+            if e["id"] not in out:
+                out.append(e["id"])
+    return out
+
+
 def cmd_evidence_retire(a, sid):
     """Withdraw a planned check that was a mistake (wrong command or scope), with a recorded reason.
 
@@ -502,11 +578,7 @@ def cmd_evidence_retire(a, sid):
     shards = ev.get("shard_sets", {}).get(a.area)
     if shards:
         if not a.reason or not a.reason.strip():sys.exit("al_state: retiring a planned check needs --reason")
-        replaced = _split(a.replaced_by)
-        for eid in replaced:
-            entry = L.find(st, eid)
-            if not entry or entry["status"] != "PASS" or L.entry_verdict(st, entry)[0] != "VALID":
-                sys.exit("al_state: replacement " + eid + " is not a current passing run")
+        replaced = _replacements(st, _split(a.replaced_by), shards["areas"])
         for name in shards["areas"]:
             if name in ev["plan"]:
                 ev.setdefault("retired", []).append({"area": name, "reason": a.reason.strip(), "replaced_by": replaced,
@@ -518,11 +590,7 @@ def cmd_evidence_retire(a, sid):
     if a.area not in ev["plan"]:sys.exit("al_state: no planned evidence area " + a.area)
     if a.area.startswith("gate-"):sys.exit("al_state: gate checks are governed by gates decisions, not retired")
     if not a.reason or not a.reason.strip():sys.exit("al_state: retiring a planned check needs --reason")
-    replaced = _split(a.replaced_by)
-    for eid in replaced:
-        entry = L.find(st, eid)
-        if not entry or entry["status"] != "PASS" or L.entry_verdict(st, entry)[0] != "VALID":
-            sys.exit("al_state: replacement " + eid + " is not a current passing run")
+    replaced = _replacements(st, _split(a.replaced_by), [a.area])
     ev.setdefault("retired", []).append({"area": a.area, "reason": a.reason.strip(), "replaced_by": replaced,
                                          "plan": ev["plan"].pop(a.area), "at": time.time()})
     al_store.save(sid, st)
@@ -754,7 +822,8 @@ def register(sub):
     p.add_argument("--recovery-file",dest="operation_recovery_file")
     p.set_defaults(fn=cmd_evidence_run)
     p = ev.add_parser("retire"); p.add_argument("--area", required=True); p.add_argument("--reason", required=True)
-    p.add_argument("--replaced-by", help="comma-separated ledger ids of the current passing runs that replace it")
+    p.add_argument("--replaced-by", help="comma-separated ledger ids or area names of the current passing runs that "
+                   "replace it (an area stands for its latest run, which `evidence status` must show VALID)")
     p.set_defaults(fn=cmd_evidence_retire)
     from al_evidence_supersession import cmd_supersede
     p = ev.add_parser("supersede"); p.add_argument("--id", required=True)
