@@ -4,6 +4,7 @@ One launcher and run are shared by the module (bootstrapping is the slow part). 
 command is compared with the in-process path (`AL_SERVICE=0`) byte for byte."""
 
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -108,13 +109,19 @@ def setup(tmp_path_factory):
         subprocess.run(["pkill", "-f", str(value.home / "installer/al-run-pins")], capture_output=True)
 
 
+def _timeless(result):
+    # Progress lines carry wall-clock elapsed times, which differ between any two runs.
+    code, out, err = result
+    return code, out, re.sub(rb"\d+\.\ds elapsed", b"Ns elapsed", err)
+
+
 @pytest.mark.parametrize("path", ["service", "in-process"])
 @pytest.mark.parametrize("argv", COMMANDS, ids=" ".join)
 def test_service_and_in_process_results_are_byte_identical(setup, argv, path):
     expected = setup.run("s1", *argv, service=False)
     before = setup.served()
     actual = setup.run("s1", *argv, service=path == "service")
-    assert actual == expected
+    assert _timeless(actual) == _timeless(expected)
     assert setup.served() == before + (1 if path == "service" else 0)
 
 
@@ -278,10 +285,10 @@ def test_idle_service_exits(setup):
     setup.wait(lambda: not setup.control("status"))
     env = dict(setup.env, AL_SERVICE_IDLE_SECONDS="1")
     assert setup.run("s1", "show", "--json", env=env)[0] == 0
-    setup.wait(lambda: setup.control("status"))
+    # With a 1 s idle limit the service can start and exit between two status polls on a loaded
+    # machine, so wait for its own idle-exit record rather than for a live status row first.
+    setup.wait(lambda: any("idle timeout" in p.read_text() for p in setup.services.glob("*/log")))
     setup.wait(lambda: not setup.control("status"))
-    logs = [p.read_text() for p in setup.services.glob("*/log")]
-    assert any("idle timeout" in text for text in logs)
 
 
 def test_tampered_pin_is_detected(setup):

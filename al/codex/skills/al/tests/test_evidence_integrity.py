@@ -322,9 +322,9 @@ def test_a_flaky_only_playwright_run_is_a_pass(cli, state_file):
     assert code == 0 and entries(state_file)[0]["status"] == "PASS"
 
 
-def test_a_just_allocated_run_counts_as_running_for_overlap(cli, state_file, tmp_path):
+def test_a_just_allocated_run_counts_as_running_for_overlap(cli, state_file, tmp_path, run_state):
     import al_evidence
-    start_implementation(cli, tmp_path)
+    run_state("implemented")
     st = json.loads(state_file().read_text())
     al_evidence._create(st["session_id"], st.get("run_id"), area="svc", kind="test", tier="focused",
                         argv=[sys.executable, "-c", "print('running')"], cwd=".", scope=["svc"], env_names=[])  # no child started yet

@@ -159,7 +159,8 @@ def test_writer_progress_context_closes_after_refusal_and_finish_stays_quiet(mon
     assert 'checking writer request' in failed.err and failed.out == ''
     report('readiness', force=True)
     assert capsys.readouterr().err == ''
-    st['writers']['writer'] = {'id': 'writer', 'state': 'ACTIVE'}
+    # A registered writer always records its files; writer finish settles gate currency with them (a556bc4, #32).
+    st['writers']['writer'] = {'id': 'writer', 'state': 'ACTIVE', 'files': []}
     monkeypatch.setattr(T, 'finish_contribution', lambda *args: None)
     W.cmd_writer(arguments(action='finish', outcome='success'), 'fixture')
     finished = capsys.readouterr()

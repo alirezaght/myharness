@@ -124,13 +124,15 @@ def test_shell_harmless_searches_and_real_commands():
 def test_gate_generation_runs_only_in_disposable_tree_and_drift_is_failure(cli):
     cli('start','--spec','Generation must not silently repair or alter the user candidate.')
     st=cli.state();import hashlib
-    manifest={'schema_version':1,'base_oid':st['identity']['merge_base'],'units':['.'],'rules':[],'gates':[
-        {'id':c,'category':c,'applicability':'NOT_APPLICABLE','required':False,'reason':'No obligation in the disposable fixture','units':['.'],'argv':[],'scope':['code.txt'],'source':None,'execution_kind':'local','cwd':'.'}
-        for c in ['lint-imports','loc','contracts','pre-commit','ci']]}
-    manifest['gates'][2].update(applicability='APPLICABLE',required=True,argv=[sys.executable,'-c','from pathlib import Path; Path("code.txt").write_text("generated")'],
-                                 source={'path':'code.txt','sha256':hashlib.sha256((cli.repo/'code.txt').read_bytes()).hexdigest()})
+    # Since 4bd481d a manifest carries its service-coverage v2 declaration, so the fixture starts
+    # from the discovered manifest and makes only the contracts gate an applicable generator.
+    manifest=_manifest_for_cli(cli,st,('code.txt',))
+    contracts=next(g for g in manifest['gates'] if g['category']=='contracts')
+    contracts.update(applicability='APPLICABLE',required=True,argv=[sys.executable,'-c','from pathlib import Path; Path("code.txt").write_text("generated")'],
+                     scope=['code.txt'],source={'path':'code.txt','sha256':hashlib.sha256((cli.repo/'code.txt').read_bytes()).hexdigest()})
+    contracts.pop('reason',None)
     f=cli.runtime/'manifest.json';f.write_text(json.dumps(manifest));cli('gates','plan','--file',str(f))
-    before=(cli.repo/'code.txt').read_bytes();cli('gates','run','--stage','base','--id','contracts',ok=False)
+    before=(cli.repo/'code.txt').read_bytes();cli('gates','run','--stage','base','--id',contracts['id'],ok=False)
     assert (cli.repo/'code.txt').read_bytes()==before
     assert cli.state()['evidence']['entries'][-1]['status']=='FAIL'
 

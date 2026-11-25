@@ -95,10 +95,22 @@ def _root(root):
     return Path(root or al_store.REPO_ROOT)
 
 
+# Git-directory paths of a worktree, per process: a worktree's Git directory does not move while
+# a command runs, so `rev-parse --git-path` is asked once per (worktree, name).
+_GIT_PATHS = {}
+
+
+def _git_path(root, name):
+    key = (str(root), name)
+    if key not in _GIT_PATHS:
+        _GIT_PATHS[key] = Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-path', name]).decode().strip())
+    return _GIT_PATHS[key]
+
+
 def index_path(root=None):
     """The private index, in AL's own directory of the worktree's Git directory (created 0700)."""
     root = _root(root)
-    directory = Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-path', PRIVATE]).decode().strip())
+    directory = _git_path(root, PRIVATE)
     if directory.is_symlink():
         raise Unavailable('private snapshot directory is a symlink')
     try:
@@ -109,7 +121,7 @@ def index_path(root=None):
 
 
 def _real_index(root):
-    return Path(_run(root, ['rev-parse', '--path-format=absolute', '--git-path', 'index']).decode().strip())
+    return _git_path(root, 'index')
 
 
 def _identity(path):

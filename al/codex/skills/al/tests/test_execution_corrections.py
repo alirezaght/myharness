@@ -59,8 +59,10 @@ def test_guarded_correction_ack_before_restart_and_fresh_review_required(cli, tm
     from pathlib import Path
     directory = Path(execution['handoff_path']).parent / 'corrections';directory.mkdir()
     path = directory / 'correction-test.json';path.write_text(canonical(request))
-    controller.conn.execute("INSERT INTO delivery_corrections VALUES (?,?,?,?,?,?,?,NULL)",
-                            ('correction-test',eid,1,'a'*40,42,canonical(request),'Admitted'))
+    # harness/migrations/0014 added delivery_corrections.epoch_id: the admitted row belongs to the execution's epoch.
+    controller.conn.execute("INSERT INTO delivery_corrections(id,execution_id,generation,candidate_sha,pipeline_id,"
+                            "request,state,acknowledgement,epoch_id) VALUES (?,?,?,?,?,?,?,NULL,?)",
+                            ('correction-test',eid,1,'a'*40,42,canonical(request),'Admitted',execution['epoch_id']))
     invoke(cli,'integration','delivery-correction','--file',str(path))
     changed = al_store.load(sid)
     assert changed['status']=='RUNNING' and changed['phase']=='PLANNING'

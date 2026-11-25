@@ -1,0 +1,19 @@
+{
+ "schema_version": 1,
+ "policy": "No test over test_seconds and no file over file_seconds (setup+call+teardown, from the verification runner). Exempt: the acceptance journeys (al/TESTS.md) and the few named tests in 'exempt', each with the reason it must spawn real processes.",
+ "test_seconds": 5,
+ "file_seconds": 60,
+ "acceptance": [
+  "installer:al/tests/test_workspace_journey.py::*",
+  "installer:al/tests/test_issuing_runtime.py::*",
+  "installer:al/tests/test_terminal_queries.py::*",
+  "codex:tests/test_workspace_source.py::*",
+  "claude:tests/test_workspace_source.py::*"
+ ],
+ "exempt": {
+  "installer:al/tests/test_verification_harness.py::test_normal_and_prepared_recipe_children_keep_target_imports_outside_sealed_code": "runs the sealed recipe child twice in real interpreters to prove import isolation",
+  "installer:al/tests/test_workspace_harness.py::test_real_harness_wheel_installs_in_owned_venv_and_neutral_help_does_not_launch": "builds and installs the real Harness wheel with uv",
+  "installer:al/tests/test_verify_changed.py::test_runs_selected_files_in_parallel_and_reports_failures": "drives the real verification runner (collection plus parallel pytest children)",
+  "installer:al/tests/test_verify_changed.py::test_split_runs_one_file_as_several_fresh_processes": "drives the real verification runner (collection plus split pytest children)"
+ }
+}

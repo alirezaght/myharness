@@ -55,12 +55,10 @@ def test_mandated_collection_is_distinct_from_application_scope(cli,repo,tmp_pat
 
 
 @pytest.mark.parametrize('value',['--co','--collect-only','-k selected','-m selected','--lf','--ff','--ignore tests','--deselect tests/test_case.py','-p plugin','-c elsewhere','--rootdir ..','"unterminated','tests'])
-def test_unsupported_addopts_blocks_admission(cli,repo,tmp_path,monkeypatch,value):
+def test_unsupported_addopts_never_certifies(cli,repo,tmp_path,monkeypatch,value):
     configured(repo);monkeypatch.setenv('PYTEST_ADDOPTS',value);start(cli)
-    st,m=discover(cli,tmp_path,['ordinary_project/__init__.py']);assert m['service_coverage']['assessment']['outcome']=='incomplete'
-    file=tmp_path/'incomplete.json';file.write_text(json.dumps(manifest_for(st,repo,['ordinary_project/__init__.py'])))
-    invoke(cli,'gates','plan','--file',str(file))
-    assert_incomplete_refuses_admission(cli,tmp_path)
+    st,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
+    assert_never_certified(cli,tmp_path,m,manifest_for(st,repo,['ordinary_project/__init__.py']))
 
 
 @pytest.mark.parametrize('name,body',[('pytest.ini','[pytest]\n'),('.pytest.ini','[pytest]\n'),('pytest.toml',''),('.pytest.toml',''),('setup.cfg','[tool:pytest]\n'),('tox.ini','[pytest]\n')])
@@ -68,14 +66,34 @@ def test_new_or_competing_configuration_invalidates_profile(cli,repo,tmp_path,na
     configured(repo);start(cli);_,before=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     put(repo,name,body);_,after=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     assert before['service_coverage']['assessment']['outcome']=='identified'
-    assert after['service_coverage']['assessment']['outcome']=='incomplete'
+    assert any(b.get('verification_chain') for b in before['service_coverage']['assessment']['required_bindings'])
+    assert_never_certified(cli,tmp_path,after)
 
 
 @pytest.mark.parametrize('body',['def pytest_collection_modifyitems(items):items.clear()\n','pytest_plugins=[]\n','collect_ignore=["test_case.py"]\n','import unknown_pytest_plugin\n','VALUE=configure_collection()\n'])
 def test_unmodeled_conftest_cannot_gain_authority_from_hashes(cli,repo,tmp_path,body):
     configured(repo);put(repo,'tests/conftest.py',body);start(cli)
     _,m=discover(cli,tmp_path,['ordinary_project/__init__.py'])
-    assert m['service_coverage']['assessment']['outcome']=='incomplete'
+    assert_never_certified(cli,tmp_path,m)
+
+
+def assert_never_certified(cli,tmp_path,m,planned=None):
+    """A pytest profile AL cannot model never certifies the quality chain. Since #17 the job is
+    left to the pipeline (checks.pipeline_verified, an unverified CI obligation in gates status);
+    an assessment that is still incomplete keeps refusing admission."""
+    file=tmp_path/'unmodeled-profile.json';file.write_text(json.dumps(planned or m));invoke(cli,'gates','plan','--file',str(file))
+    a=m['service_coverage']['assessment']
+    assert not any(b.get('conventional_verification') or b.get('verification_chain') for b in a['required_bindings'])
+    delegated=m['service_coverage']['semantic_requirements']['checks'].get('pipeline_verified')
+    if not delegated:
+        assert a['outcome']=='incomplete'
+        assert_incomplete_refuses_admission(cli,tmp_path)
+        return
+    # 'exhaustive' when a competing configuration also leaves a dependency uncertainty.
+    assert a['outcome'] in {'identified','exhaustive'}
+    assert [j['job'] for d in delegated for j in d['jobs']]==['quality']
+    status=json.loads(cli('gates','status')[1])
+    assert any(u['category']=='ci' for u in status['unverified'])
 
 
 @pytest.mark.parametrize('name',['../outside','missing','tests/test_case.py::test_real','tests/*'])

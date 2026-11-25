@@ -180,6 +180,11 @@ def execute(root, cwd, owner, log, timeout, records, argv=None, *, package_root=
                 # this owned venv link to the independently bound interpreter.
                 copied=interpreter.with_name('python.al-copy')
                 shutil.copy2(target,copied)
+                # A relocatable interpreter (python-build-standalone, which uv installs) loads its
+                # shared libpython through @executable_path/../lib or $ORIGIN/../lib; the copy runs
+                # from the venv, so the venv's lib directory carries the same libraries.
+                for library in sorted((target.parent.parent/'lib').glob('libpython*')):
+                    if library.is_file():shutil.copy2(library,interpreter.parent.parent/'lib'/library.name)
                 copied.replace(interpreter)
         validate(root)
         if _tree(root/'.git',True)!=before_git:

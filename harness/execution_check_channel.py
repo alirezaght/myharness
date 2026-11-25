@@ -198,7 +198,6 @@ class CheckChannel:
                 "from harness.execution_check_process import main;main()"
             )
             from harness.command_safety import safe_environment
-
             from harness.execution_check_process import PROCESS_TEMPORARY_VARIABLE
             from harness.execution_isolation import (
                 create_process_temporary,

@@ -114,7 +114,8 @@ class Workflow:
                       'scope':['.'],'cwd':'.','source':gate['source'],'execution_kind':'local','reason':'No corresponding declaration in this conventional fixture.'} for c in ('lint-imports','loc','contracts','pre-commit')]
         self.initial={'schema_version':1,'base_oid':state['identity']['merge_base'],'paths':['.'],'units':['.'],
                       'rules':[{'path':source,'sha256':sha,'job':None},
-                               {'path':'pyproject.toml','sha256':hashlib.sha256((self.repo/'pyproject.toml').read_bytes()).hexdigest(),'job':None}],'gates':gates}
+                               {'path':'pyproject.toml','sha256':hashlib.sha256((self.repo/'pyproject.toml').read_bytes()).hexdigest(),'job':None},
+                               *self.case_folded_instructions()],'gates':gates}
         path=self.artifacts/'original-manifest.json';path.write_text(json.dumps(self.initial))
         self.cli('gates','plan','--file',path);self.original_ref=self.state()['gate_manifests'][-1]
         self.original_raw=Path(self.original_ref['stored_path']).read_bytes()
@@ -127,6 +128,21 @@ class Workflow:
         assert (self.runtime/(self.session+'.json')).read_bytes()==before
         self.cli('phase','FINALIZATION');self.cli('phase','VERIFICATION')
         self.plan_broad()
+
+    def case_folded_instructions(self):
+        """Instruction-file rules the frozen v1 issuer observes on a case-insensitive filesystem.
+
+        The v1 inventory probes fixed names (`dir/CLAUDE.md`) with is_file(), so a differently
+        cased file (`claude.md`) answers the probe there; the original manifest declares what
+        that issuer will require. On a case-sensitive filesystem nothing is added."""
+        out=[]
+        for path in sorted(self.repo.rglob('*')):
+            if '.git' in path.parts or not path.is_file():continue
+            for name in ('AGENTS.md','CLAUDE.md'):
+                if path.name!=name and path.name.lower()==name.lower() and (path.parent/name).is_file():
+                    out.append({'path':(path.parent/name).relative_to(self.repo).as_posix(),
+                                'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),'job':None})
+        return out
 
     def plan_broad(self,scope='.'):
         self.cli('evidence','plan','--area','actual-pytest','--tier','broad','--kind','test','--scope',scope,

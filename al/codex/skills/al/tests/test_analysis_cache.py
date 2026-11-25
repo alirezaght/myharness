@@ -52,9 +52,16 @@ def test_same_mtime_edit_new_and_deleted_sources_invalidate(repo):
 
 
 def test_scan_stability_is_required_even_on_cache_hits(repo, monkeypatch):
+    # Since 4bd481d stability is not a reported flag: every capture revalidates its snapshot
+    # (al_repository_capture.capture_discovery) and a drifting one is retried, then refused.
+    from al_repository_capture import CaptureDrift
     facts(repo)
-    monkeypatch.setattr(F.Snapshot, 'stable', lambda self: False)
-    assert facts(repo)['scan']['stable'] is False
+    def drift(self, listing=None):
+        raise CaptureDrift('forced-drift', ['svc/app.py'])
+    monkeypatch.setattr(F.Snapshot, 'revalidate', drift)
+    with pytest.raises(CaptureDrift) as refused:
+        facts(repo)
+    assert refused.value.reason == 'repeated-drift'
 
 
 def test_graph_cache_replays_gap_and_consumed_policy_deltas(repo):

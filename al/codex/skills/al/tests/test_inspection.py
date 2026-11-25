@@ -66,9 +66,9 @@ def test_source_movement_is_not_reported_current(cli, state_file, repo, monkeypa
     assert result[0] != 0 and not json.loads(result[1])['stable']
 
 
-def test_populated_inspection_preserves_index_and_runtime(cli,state_file,repo,tmp_path,monkeypatch):
+def test_populated_inspection_preserves_index_and_runtime(cli,state_file,repo,tmp_path,monkeypatch, run_state):
     from hook_regression_helpers import begin
-    begin(cli,tmp_path,repo)
+    run_state("verified")
     state=json.loads(state_file().read_bytes())
     (repo/'svc/app.py').touch()
     index=repo/'.git/index'

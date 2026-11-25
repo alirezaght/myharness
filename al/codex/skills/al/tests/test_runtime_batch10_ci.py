@@ -1,7 +1,7 @@
 """Selection must be trustworthy before unsupported execution identity can disappear."""
 import pytest
 import al_ci_inventory as CI
-from test_runtime_batch9_ci import conditional,definitions
+from test_runtime_batch9_ci import assert_release_only,conditional,definitions
 from batch8_helpers import force_applicable_ci,setup,plan,executable_ci
 from batch8_context_helpers import prepared,approval
 
@@ -62,7 +62,7 @@ def test_selected_prepare_requires_supported_checks_but_definite_deploy_is_exclu
     assert 'unsupported environment verification command' in actual[0]['reason']
     import al_ci_rules as Rules
     assert Rules.release('validate',Rules.structure({'environment':{'name':'staging','action':'prepare'}})) is False
-    assert jobs(repo,'  stage: deploy\n','    - when: always\n')==[]
+    assert_release_only(jobs(repo,'  stage: deploy\n','    - when: always\n'),'release:prod')
 
 
 def test_supported_false_condition_skips_valid_unknown_compare_to(repo):
@@ -86,8 +86,15 @@ def test_conditional_definition_and_workflow_uncertainty_precede_false_exclusion
                                        'release:prod:\n  rules:\n    - when: never\n'))
     assert len(actual['obligations'])==1 and actual['obligations'][0]['applicability']=='UNRESOLVED'
     assert len(actual['dependencies'])==4
-    actual=definitions(repo,{'.gitlab-ci.yml':'workflow:\n  rules:\n    - if: \'$OPTIONAL == "yes"\'\nrelease:prod:\n  stage: deploy\n  script: echo release\n  rules:\n    - when: never\n'})
-    assert any(j['job']=='release:prod' and j['applicability']=='UNRESOLVED' for j in actual['obligations'])
+    workflow='workflow:\n  rules:\n    - if: \'$OPTIONAL == "yes"\'\n'
+    # An unknown workflow condition keeps a selectable job unresolved; a job whose own rules
+    # never select it cannot run under any workflow outcome and is deferred.
+    actual=definitions(repo,{'.gitlab-ci.yml':workflow+'release:prod:\n  stage: deploy\n  script: echo release\n'})
+    assert_release_only(actual['obligations'],'release:prod')
+    actual=definitions(repo,{'.gitlab-ci.yml':workflow+'verify:\n  script: echo checked\n'})
+    assert [(j['job'],j['applicability']) for j in actual['obligations']]==[('verify','UNRESOLVED')]
+    actual=definitions(repo,{'.gitlab-ci.yml':workflow+'release:prod:\n  stage: deploy\n  script: echo release\n  rules:\n    - when: never\n'})
+    assert actual['obligations']==[] and [d['job'] for d in actual['deferred']]==['release:prod']
 
 
 def test_public_unknown_rules_cannot_be_cleared_and_refusal_is_byte_identical(cli,repo,tmp_path,state_file):

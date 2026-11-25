@@ -25,7 +25,12 @@ def test_amend_interrupt_resume_requires_new_context_and_base_evidence(cli,repo,
     invoke(cli,'spec-gate','SPEC_READY');replacement=resolved(state(cli),['svc/app.py'],context(state(cli)))
     plan(cli,tmp_path,replacement)
     invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
-    st=state(cli);assert not st.get('gate_recovery') and st['gate_recovery_history'][-1]['evidence']
+    # Since b5735a9 base gates run alongside implementation: entering IMPLEMENTATION records a
+    # continuation of the recovery, which completes at the first non-implementation edge
+    # (review-start); the replacement manifest and its base evidence are already in place.
+    st=state(cli);recovery=st['gate_recovery'];current=st['gate_manifests'][-1]['sha256']
+    assert recovery['continuation_phase']=='IMPLEMENTATION' and recovery['replacement_manifest']==current
+    assert [r for r in st['gate_runs'] if r['stage']=='base' and r['manifest']==current]
 
 
 @pytest.mark.parametrize('defect',['arbitrary-task','foreign-run','foreign-session','tamper','amendment-tamper'])

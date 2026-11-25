@@ -277,12 +277,18 @@ def verify(root, args):
     # Source bytes and membership, not HEAD: committing during a development run changes nothing tested.
     stable = capture_source_binding(root)['files'] == binding['files']
     reconciliation = result['reconciliation']
-    passed = bool(reconciliation['selected_success']) and stable
+    from al.verification_budget import violations
+    over_budget = violations(observed)
+    # The budget is enforced where the slow tier runs (--tier all, release); the fast tier, often run
+    # on a loaded machine alongside other work, reports it without failing.
+    enforce_budget = args.tier == 'all'
+    passed = bool(reconciliation['selected_success']) and stable and not (over_budget and enforce_budget)
     elapsed = time.monotonic() - started
     result.update(plan_path=str(directory / 'plan.json'), plan_sha256=hashlib.sha256((directory / 'plan.json').read_bytes()).hexdigest())
     report = {'schema_version': 1, 'contract': 'al-development-changed-v1', 'status': 'PASS' if passed else 'FAIL',
               'release_claim': False, 'changed': changed, 'base': base, 'selection': selection, 'reasons': chosen['reasons'],
               'complete_suites': chosen['full'], 'source_stable': stable, 'strict_isolation': args.strict_isolation,
+              'over_budget': over_budget,
               'verification': result, 'elapsed_seconds': elapsed}
     write_json(report_path, report)
     try:
@@ -305,6 +311,12 @@ def verify(root, args):
             print('error: ' + str(error))
     if not stable:
         print('source changed while the tests ran; the result does not describe one source state')
+    if over_budget:
+        # The time budget (#36, al/verification-budget.json) fails a run like a failing test.
+        print(str(len(over_budget)) + ' over the time budget' + ('' if enforce_budget else ' (reported; enforced with --tier all)')
+              + ' (start from run_state or test the decision directly):')
+        for line in over_budget[:50]:
+            print('BUDGET ' + line)
     print('\n' + str(reconciliation['executed_passed']) + ' passed, ' + str(reconciliation['executed_failed']) + ' failed, '
           + str(reconciliation['executed_errors']) + ' errors, ' + str(reconciliation['skipped']) + ' skipped'
           + (', ' + str(len(reconciliation['missing'])) + ' missing' if reconciliation['missing'] else ''))

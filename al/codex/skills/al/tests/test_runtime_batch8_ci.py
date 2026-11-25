@@ -91,7 +91,10 @@ def test_changed_template_and_new_unit_invalidate_old_completeness(cli,repo,tmp_
 def test_release_jobs_do_not_require_deployment_execution(repo):
     (repo/'.gitlab-ci.yml').write_text('release:prod:\n  stage: deploy\n  script: deploy-production\nverify:\n  stage: test\n  script: echo checked\n')
     jobs=CI.inventory(repo,['svc/app.py'])['obligations']
-    assert [j['job'] for j in jobs]==['verify']
+    # The release job is kept as an unresolved obligation (since 4bd481d), never executed.
+    assert [j['job'] for j in jobs]==['release:prod','verify']
+    from test_runtime_batch9_ci import assert_release_only
+    assert_release_only(jobs,'release:prod')
 
 
 def test_complete_local_job_route_can_reach_approval(cli,repo,tmp_path):

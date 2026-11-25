@@ -163,7 +163,7 @@ def test_repository_snapshot_progress_preserves_data_and_stability(repo, capsys)
     assert captured.out == ""
     assert "enumerating repository membership" in captured.err
     assert "reading current repository inputs" in captured.err
-    assert "checking repository snapshot stability" in captured.err
+    # Since #25 (5d3ce78) stability is a re-observed snapshot tree, not a separate progress stage.
     assert "svc/app.py" not in captured.err and str(repo) not in captured.err
     for name in ["members", "modes", "base_modes", "gaps", "total"]:
         assert getattr(observed, name) == getattr(baseline, name)

@@ -77,10 +77,18 @@ def test_changed_sourced_rule_can_resume_and_replan(cli, repo, tmp_path, state_f
 
 
 def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path, state_file):
+    # The gate is sourced from a committed repository rule so the planned manifest stays current:
+    # since 0d8071a review admission rediscovers a manifest whose sources are not repository
+    # rules (svc/app.py is not one), which would replace the planned loc gate before review.
+    (repo / "Makefile").write_text("lint-imports:\n\ttrue\n")
+    subprocess.run(["git", "add", "Makefile"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid",
+                    "commit", "-m", "add sourced rule"], cwd=repo, check=True, capture_output=True)
+    rule = _source(repo, "Makefile")
     invoke(cli, "start", "--spec", "Revalidate gate evidence after the user amends this task.")
     invoke(cli, "spec-gate", "SPEC_READY"); invoke(cli, "classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
     current = json.loads(cli("show")[1])
-    manifest = _manifest(current, source=_source(repo, "svc/app.py"), active="loc",
+    manifest = _manifest(current, rule=rule, source=rule, active="loc",
                          argv=[sys.executable, "-c", "print('candidate gate passed')"])
     path = tmp_path / "gates.json"; path.write_text(json.dumps(manifest)); invoke(cli, "gates", "plan", "--file", str(path))
     invoke(cli, "gates", "run", "--stage", "base")
