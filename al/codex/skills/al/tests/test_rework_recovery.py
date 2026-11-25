@@ -31,7 +31,7 @@ def decision(cli,tmp_path,*,request_id='decision-1',decision='allow',basis='revi
 
 
 def test_six_returns_two_automatic_grants_then_precise_cap(cli, state_file, tmp_path, run_state):
-    run_state("finalizing");exhaust(cli)
+    run_state("exhausted")
     first=load(state_file);assert first['rework']['total']==2
     for i in (1,2):
         path,_=decision(cli,tmp_path,request_id='decision-'+str(i))
@@ -51,7 +51,7 @@ def test_six_returns_two_automatic_grants_then_precise_cap(cli, state_file, tmp_
 
 
 def test_decision_replay_is_nonmutating_and_changed_request_refuses(cli, state_file, tmp_path, run_state):
-    run_state("finalizing");exhaust(cli);path,data=decision(cli,tmp_path)
+    run_state("exhausted");path,data=decision(cli,tmp_path)
     code,out,_=cli('rework-recovery','decide','--file',str(path));assert code==0
     before=state_file().read_bytes()
     assert cli('rework-recovery','decide','--file',str(path))[:2]==(0,out)
@@ -63,7 +63,7 @@ def test_decision_replay_is_nonmutating_and_changed_request_refuses(cli, state_f
 
 @pytest.mark.parametrize('mutation',['no-progress','foreign','stale','attempt','empty','active'])
 def test_invalid_authorization_never_consumes_or_mutates(cli, state_file, tmp_path, mutation, run_state):
-    run_state("finalizing");exhaust(cli);path,data=decision(cli,tmp_path)
+    run_state("exhausted");path,data=decision(cli,tmp_path)
     if mutation=='no-progress':data['basis']='try-again'
     elif mutation=='foreign':data['evidence'][0]['entry_hash']='f'*64
     elif mutation=='stale':data['binding']['candidate_hash']='f'*64
@@ -82,7 +82,7 @@ def test_invalid_authorization_never_consumes_or_mutates(cli, state_file, tmp_pa
 
 
 def test_decline_and_explicit_two_credit_continuation_are_idempotent(cli, state_file, tmp_path, run_state):
-    run_state("finalizing");exhaust(cli)
+    run_state("exhausted")
     path,_=decision(cli,tmp_path,decision='decline',basis='no-useful-next-step')
     assert cli('rework-recovery','decide','--file',str(path))[0]==0
     st=load(state_file);assert st['status']=='STOPPED_WITH_BLOCKERS'
@@ -123,7 +123,7 @@ def test_append_only_state_refuses_authority_rewrites(cli, state_file, tmp_path,
 @pytest.mark.parametrize('point',['before-replace','after-replace'])
 def test_interrupted_decision_commit_has_no_partial_credit_and_replays(cli,state_file,tmp_path,monkeypatch,point, run_state):
     import al_rework_recovery as Recovery
-    run_state("finalizing");exhaust(cli);path,_=decision(cli,tmp_path)
+    run_state("exhausted");path,_=decision(cli,tmp_path)
     before=state_file().read_bytes();real=Recovery.Store.save
     def interrupted(sid,st):
         if point=='after-replace':real(sid,st)
@@ -144,7 +144,7 @@ def test_interrupted_decision_commit_has_no_partial_credit_and_replays(cli,state
 @pytest.mark.parametrize('operation',['packet','decide'])
 def test_unresolved_operations_refuse_recovery_without_mutation(cli,state_file,tmp_path,monkeypatch,operation, run_state):
     import al_rework_recovery as Recovery
-    run_state("finalizing");exhaust(cli);path,_=decision(cli,tmp_path)
+    run_state("exhausted");path,_=decision(cli,tmp_path)
     before=state_file().read_bytes()
     monkeypatch.setattr(Recovery,'operation_gaps',lambda st:['unresolved recorded check E1'])
     args=['rework-recovery',operation]
@@ -157,15 +157,8 @@ def test_unresolved_operations_refuse_recovery_without_mutation(cli,state_file,t
 def test_factual_review_packet_rejects_missing_changed_or_extra_lineage(cli,state_file,tmp_path,monkeypatch,mutation, run_state):
     import al_review_behavior as Behavior
     import al_rework_recovery_contract as Contract
-    from evidence_helpers import plan_and_run_broad,complete_review
-    run_state("finalizing")
-    # Complete a real review via the existing public evidence seams, then exercise its producer contract.
-    from test_rework import REPRO
-    Path('svc/fixed').write_text('fixed')
-    assert cli('evidence','run','--area','repro','--tier','focused','--scope','svc','--',*REPRO)[0]==0
-    assert cli('phase','VERIFICATION')[0]==0
-    assert plan_and_run_broad(cli)==0
-    complete_review(cli,tmp_path)
+    # A real review completed through the public evidence seams, then its producer contract.
+    run_state("reviewed")
     st=load(state_file);packet=J.read(st['review']['packets']['fresh'])
     assert packet['rework_recovery_lineage']==Contract.lineage(st)
     # Reconstruct exactly the producer's pre-Behavior.packet input, without snapshotting a forged packet.
@@ -180,7 +173,7 @@ def test_factual_review_packet_rejects_missing_changed_or_extra_lineage(cli,stat
 
 
 def test_unavailable_attempt_requires_explicit_recorded_fallback_replacement(cli, state_file, tmp_path, run_state):
-    run_state("finalizing");exhaust(cli);path,old=decision(cli,tmp_path)
+    run_state("exhausted");path,old=decision(cli,tmp_path)
     assert cli('model-unavailable',old['model'],'--reason','model is not supported by this provider')[0]==0
     before=state_file().read_bytes()
     assert 'unavailable' in cli('rework-recovery','decide','--file',str(path))[0]
@@ -198,7 +191,7 @@ def test_unavailable_attempt_requires_explicit_recorded_fallback_replacement(cli
 
 @pytest.mark.parametrize('target',['receipt','report','packet','checkpoint'])
 def test_corrupt_retained_bytes_refuse_without_grant(cli, state_file, tmp_path, target, run_state):
-    run_state("finalizing");exhaust(cli);path,_=decision(cli,tmp_path)
+    run_state("exhausted");path,_=decision(cli,tmp_path)
     if target in {'receipt','report'}:assert cli('rework-recovery','decide','--file',str(path))[0]==0
     st=load(state_file);r=st['rework_recovery'];o=r['occurrences'][0]
     ref=r['decisions'][0][target] if target in {'receipt','report'} else o['checkpoint'] if target=='checkpoint' else o['packets'][0]['packet']
@@ -225,7 +218,7 @@ def test_current_success_requires_current_prerequisite_currency(cli,state_file,t
 
 @pytest.mark.parametrize('mutation',['extra','version','counter','pending','disposition'])
 def test_nested_state_contract_fails_closed(cli, state_file, tmp_path, mutation, run_state):
-    run_state("finalizing");exhaust(cli);st=load(state_file)
+    run_state("exhausted");st=load(state_file)
     if mutation=='extra':st['rework_recovery']['grants'][0]['extra']=True
     elif mutation=='version':st['rework_recovery']['schema_version']=True
     elif mutation=='counter':st['rework']['history'][0]['n']=True
@@ -289,7 +282,7 @@ def test_genuine_corrections_between_recovered_batches_never_create_credit(cli, 
 
 
 def test_an_unchanged_approach_requires_new_supporting_evidence(cli, state_file, tmp_path, run_state):
-    run_state("finalizing");exhaust(cli);path,first=decision(cli,tmp_path,request_id='first')
+    run_state("exhausted");path,first=decision(cli,tmp_path,request_id='first')
     assert cli('rework-recovery','decide','--file',str(path))[0]==0
     assert cli('phase','FINALIZATION')[0]==0
     assert cli('rework','--source','finalization',*fast(cli))[0]==0
@@ -304,7 +297,7 @@ def test_an_unchanged_approach_requires_new_supporting_evidence(cli, state_file,
 
 def test_no_approved_model_stops_with_precise_checkpoint_and_no_budget_authority(cli,state_file,tmp_path, run_state):
     import al_models as Models
-    run_state("finalizing");exhaust(cli);decision(cli,tmp_path)
+    run_state("exhausted");decision(cli,tmp_path)
     primary=Models.POLICY['al-architect']['primary']['model']
     fallback=Models.POLICY['al-architect']['fallback']['model']
     assert cli('model-unavailable',primary,'--reason','provider does not support this model')[0]==0
@@ -323,7 +316,7 @@ def test_no_approved_model_stops_with_precise_checkpoint_and_no_budget_authority
 
 
 def test_pending_request_replay_is_exact_and_candidate_drift_refuses(cli, state_file, tmp_path, repo, run_state):
-    run_state("finalizing");exhaust(cli);before=state_file().read_bytes()
+    run_state("exhausted");before=state_file().read_bytes()
     assert cli('rework','--source','finalization',*fast(cli))[0]==10
     assert state_file().read_bytes()==before
     (repo/'svc/app.py').write_text('changed source')
@@ -333,7 +326,7 @@ def test_pending_request_replay_is_exact_and_candidate_drift_refuses(cli, state_
 
 def test_boolean_attempt_schema_cannot_authorize(cli,state_file,tmp_path, run_state):
     import al_rework_recovery_attempts as Attempts
-    run_state("finalizing");exhaust(cli);decision(cli,tmp_path)
+    run_state("exhausted");decision(cli,tmp_path)
     st=load(state_file);o=st['rework_recovery']['occurrences'][0]
     value=J.read(o['packets'][0]['attempt']);value['schema_version']=True
     ref=J.snapshot(st['session_id'],value,'malformed-recovery-attempt')

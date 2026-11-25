@@ -17,8 +17,8 @@ from batch6_helpers import ruled,pause,replanned_approval,gated,conflict
 
 
 @pytest.mark.parametrize('route',['resume','retry'])
-def test_changed_rules_replan_then_complete_fresh_approval(cli,repo,tmp_path,state_file,route):
-    ruled(cli,tmp_path,repo);old=state(cli)['gate_manifests'][-1]
+def test_changed_rules_replan_then_complete_fresh_approval(cli,repo,tmp_path,state_file,route,run_state):
+    run_state('ruled',lambda:ruled(cli,tmp_path,repo));old=state(cli)['gate_manifests'][-1]
     if route=='resume':checkpoint=pause(cli,tmp_path)
     else:invoke(cli,'agent-failed','al-engineer','--reason','transient','--retry-safe','yes')
     # A new rule source outside the planned paths needs the Architect's replacement plan.
@@ -30,15 +30,15 @@ def test_changed_rules_replan_then_complete_fresh_approval(cli,repo,tmp_path,sta
     replanned_approval(cli,tmp_path,repo);assert state(cli)['status']=='APPROVED'
 
 
-def test_new_unplanned_units_require_planning(cli,repo,tmp_path):
-    ruled(cli,tmp_path,repo);checkpoint=pause(cli,tmp_path)
+def test_new_unplanned_units_require_planning(cli,repo,tmp_path,run_state):
+    run_state('ruled',lambda:ruled(cli,tmp_path,repo));checkpoint=pause(cli,tmp_path)
     (repo/'apps/new').mkdir(parents=True);(repo/'apps/new/a.ts').write_text('server data')
     invoke(cli,'resume','--checkpoint',checkpoint)
     assert state(cli)['phase']=='PLANNING' and state(cli)['recovery_replans'][-1]['reasons']
 
 
-def test_removed_planned_rule_refreshes_without_replanning(cli,repo,tmp_path):
-    ruled(cli,tmp_path,repo);checkpoint=pause(cli,tmp_path)
+def test_removed_planned_rule_refreshes_without_replanning(cli,repo,tmp_path,run_state):
+    run_state('ruled',lambda:ruled(cli,tmp_path,repo));checkpoint=pause(cli,tmp_path)
     (repo/'Makefile').unlink()
     invoke(cli,'resume','--checkpoint',checkpoint)
     s=state(cli)
@@ -46,16 +46,16 @@ def test_removed_planned_rule_refreshes_without_replanning(cli,repo,tmp_path):
 
 
 @pytest.mark.parametrize('artifact',['manifest','checkpoint'])
-def test_corrupt_recovery_artifact_refuses_without_state_write(cli,repo,tmp_path,state_file,artifact):
-    ruled(cli,tmp_path,repo);checkpoint=pause(cli,tmp_path);s=state(cli)
+def test_corrupt_recovery_artifact_refuses_without_state_write(cli,repo,tmp_path,state_file,artifact,run_state):
+    run_state('ruled',lambda:ruled(cli,tmp_path,repo));checkpoint=pause(cli,tmp_path);s=state(cli)
     ref=s['gate_manifests'][-1] if artifact=='manifest' else s['checkpoints'][-1]
     Path(ref['stored_path']).write_bytes(b'corrupt artifact')
     (repo/'Makefile').write_text('changed rule\n');before=state_file().read_bytes()
     invoke(cli,'resume','--checkpoint',checkpoint,ok=False);assert state_file().read_bytes()==before
 
 
-def test_manifest_corrupt_metadata_is_not_ordinary_rule_drift(cli,repo,tmp_path,state_file):
-    ruled(cli,tmp_path,repo);checkpoint=pause(cli,tmp_path);s=state(cli)
+def test_manifest_corrupt_metadata_is_not_ordinary_rule_drift(cli,repo,tmp_path,state_file,run_state):
+    run_state('ruled',lambda:ruled(cli,tmp_path,repo));checkpoint=pause(cli,tmp_path);s=state(cli)
     data=A.read_json(s['gate_manifests'][-1]);data['rules'][0]['sha256']='not-a-hash'
     s['gate_manifests'][-1]=A.snapshot_bytes(s['session_id'],json.dumps(data).encode(),'gate-manifest','corrupt metadata')
     state_file().write_text(json.dumps(s));(repo/'Makefile').write_text('changed\n');before=state_file().read_bytes()
@@ -63,8 +63,8 @@ def test_manifest_corrupt_metadata_is_not_ordinary_rule_drift(cli,repo,tmp_path,
 
 
 @pytest.mark.parametrize('defect',['log','prerequisite','execution'])
-def test_candidate_gate_requires_full_ledger_and_execution_identity(cli,repo,tmp_path,state_file,defect):
-    gated(cli,tmp_path,repo);s=state(cli)
+def test_candidate_gate_requires_full_ledger_and_execution_identity(cli,repo,tmp_path,state_file,defect,run_state):
+    run_state('gated',lambda:gated(cli,tmp_path,repo));s=state(cli)
     entry=next(e for e in reversed(s['evidence']['entries']) if e['area']=='gate-candidate-loc')
     if defect=='log':Path(entry['log']).write_text('altered log')
     elif defect=='prerequisite':entry['needs']=['not-verified'];state_file().write_text(json.dumps(s))
@@ -97,8 +97,8 @@ def test_linked_unsatisfied_fresh_has_one_blocker_and_explicit_compare_fix_appro
 
 
 @pytest.mark.parametrize('defect',['new','tampered','occurrence','role','empty'])
-def test_conflict_transition_and_workflow_share_current_proof(cli,repo,tmp_path,state_file,defect):
-    file=conflict(cli,tmp_path,repo);s=state(cli)
+def test_conflict_transition_and_workflow_share_current_proof(cli,repo,tmp_path,state_file,defect,run_state):
+    file=run_state('conflict',lambda:conflict(cli,tmp_path,repo));s=state(cli)
     if defect=='new':invoke(cli,'phase','PSEUDOCODE');invoke(cli,'phase','PLAN_CONFLICT')
     elif defect=='tampered':Path(s['conflict_resolution']['artifact']['stored_path']).write_text('tampered')
     else:
@@ -123,9 +123,9 @@ BAD_GIT=["git -cdiff.external='touch marker; :' diff a b",'git --config-env=diff
 
 
 @pytest.mark.parametrize('command',BAD_GIT)
-def test_explicit_git_execution_is_denied_by_policies_and_ownership(cli,command):
+def test_explicit_git_execution_is_denied_by_policies_and_ownership(cli,command,run_state):
     for policy in ('readonly','shared'):assert al_shell.check(command,policy)
-    invoke(cli,'start','--spec','Reject explicit executable Git overrides in ownership admission.')
+    run_state('ownership-start',lambda:invoke(cli,'start','--spec','Check Git operands in ownership admission.'))
     invoke(cli,'ownership','--engineer','svc/app.py','--builder','docs/notes.md','--engineer-commands',command,ok=False)
 
 
@@ -134,9 +134,9 @@ def test_explicit_git_execution_is_denied_by_policies_and_ownership(cli,command)
          "git log --format='--textconv'",'git grep -e --ext-diff','git diff -- --config-env=SECRET',
          'git diff -- --output=file','env NOTE=GIT_EXTERNAL_DIFF git log','git -c log.decorate=short log',
          "git log --format='%an,%s'","rg 'cp, mv'"])
-def test_inert_git_config_and_option_looking_operands_remain_harmless(cli,command):
+def test_inert_git_config_and_option_looking_operands_remain_harmless(cli,command,run_state):
     for policy in ('readonly','shared'):assert not al_shell.check(command,policy)
-    invoke(cli,'start','--spec','Permit inert Git configuration and literal search operands.')
+    run_state('ownership-start',lambda:invoke(cli,'start','--spec','Check Git operands in ownership admission.'))
     invoke(cli,'ownership','--engineer','svc/app.py','--builder','docs/notes.md','--engineer-commands',command)
 
 
@@ -150,15 +150,15 @@ def test_fresh_cannot_supply_any_resolution_fields(cli, repo, tmp_path, state_fi
     invoke(cli,'review-fresh','--file',str(file),ok=False);assert state_file().read_bytes()==before
 
 
-def test_embedded_comparison_fix_cannot_replace_explicit_inherited_clearance(cli,repo,tmp_path,state_file):
-    resolution=second_round(cli,tmp_path,repo);file=comparison(cli,tmp_path,'embedded')
+def test_embedded_comparison_fix_cannot_replace_explicit_inherited_clearance(cli,repo,tmp_path,state_file,run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));file=comparison(cli,tmp_path,'embedded')
     data=json.loads(file.read_text());data['findings']=[{'id':'F-fresh','source':'AC-01','severity':'BLOCKING','description':'Claimed fix','resolution':resolution}]
     file.write_text(json.dumps(data));before=state_file().read_bytes()
     invoke(cli,'review-result','--file',str(file),ok=False);assert state_file().read_bytes()==before
 
 
-def test_unsatisfied_comparison_cannot_use_a_fixed_finding_as_its_link(cli,repo,tmp_path,state_file):
-    resolution=second_round(cli,tmp_path,repo);file=comparison(cli,tmp_path,'invalid-link',[resolution])
+def test_unsatisfied_comparison_cannot_use_a_fixed_finding_as_its_link(cli,repo,tmp_path,state_file,run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));file=comparison(cli,tmp_path,'invalid-link',[resolution])
     data=json.loads(file.read_text());data['criteria'][0]['status']='UNSATISFIED';data['status']='CHANGES_REQUIRED'
     data['findings']=[{'id':'F-fresh','source':'AC-01','severity':'BLOCKING','description':'Fixed assertion','resolution':resolution}]
     file.write_text(json.dumps(data));before=state_file().read_bytes();invoke(cli,'review-result','--file',str(file),ok=False)
@@ -179,15 +179,15 @@ def test_environment_external_diff_is_an_actual_side_effect_in_disposable_repo(r
 
 
 @pytest.mark.parametrize('disposition',['unresolved','deferred','disputed'])
-def test_comparison_disposition_never_clears_inherited_blocker(cli,repo,tmp_path,state_file,disposition):
-    resolution=second_round(cli,tmp_path,repo);resolution['status']=disposition
+def test_comparison_disposition_never_clears_inherited_blocker(cli,repo,tmp_path,state_file,disposition,run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));resolution['status']=disposition
     file=comparison(cli,tmp_path,'disposition',[resolution]);data=json.loads(file.read_text());data['status']='CHANGES_REQUIRED';file.write_text(json.dumps(data))
     invoke(cli,'review-result','--file',str(file));assert state(cli)['findings']['blocking']==1
     before=state_file().read_bytes();invoke(cli,'phase','FINAL_VERIFICATION',ok=False);assert state_file().read_bytes()==before
 
 
-def test_old_fresh_stage_receipt_is_material_not_comparison_clearance(cli,repo,tmp_path):
-    resolution=second_round(cli,tmp_path,repo);s=state(cli);item=s['review_history'][0];fresh=A.read_json(item['fresh'])
+def test_old_fresh_stage_receipt_is_material_not_comparison_clearance(cli,repo,tmp_path,run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));s=state(cli);item=s['review_history'][0];fresh=A.read_json(item['fresh'])
     fresh['findings'][0]['resolution']=resolution;item['fresh']=A.snapshot_bytes(s['session_id'],json.dumps(fresh).encode(),'architect-fresh','legacy')
     data={'schema_version':1,'fresh_sha256':item['fresh']['sha256'],'comparison_sha256':item['comparison']['sha256'],
           'validated_fixes':[{'stage':'fresh','kind':'finding','id':'F-fresh','source':'AC-01','resolution':resolution}]}
@@ -196,8 +196,8 @@ def test_old_fresh_stage_receipt_is_material_not_comparison_clearance(cli,repo,t
     assert A.read_json(item['fresh'])['findings'][0]['resolution']['status']=='fixed'
 
 
-def test_forged_current_receipt_stage_is_rejected(cli,repo,tmp_path):
-    resolution=second_round(cli,tmp_path,repo);file=comparison(cli,tmp_path,'fixed',[resolution]);invoke(cli,'review-result','--file',str(file))
+def test_forged_current_receipt_stage_is_rejected(cli,repo,tmp_path,run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));file=comparison(cli,tmp_path,'fixed',[resolution]);invoke(cli,'review-result','--file',str(file))
     s=state(cli);item=s['review_history'][-1];data=A.read_json(item['resolution_validation']);data['stage']='fresh'
     item['resolution_validation']=A.snapshot_bytes(s['session_id'],json.dumps(data).encode(),'review-resolution-validation','forged')
     with pytest.raises(SystemExit):H.findings(s)

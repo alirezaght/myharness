@@ -127,8 +127,8 @@ def test_retry_checkpoint_identity_mismatch_is_unchanged(cli,state_file,field):
     assert state_file().read_bytes()==before
 
 
-def test_retry_requires_writer_reconciliation_and_new_lifetime(cli,repo,tmp_path,state_file):
-    writing(cli,tmp_path);invoke(cli,'writer','start','--id','first','--role','al-engineer','--files','svc/app.py')
+def test_retry_requires_writer_reconciliation_and_new_lifetime(cli,repo,tmp_path,state_file, run_state):
+    run_state('writing',lambda:writing(cli,tmp_path));invoke(cli,'writer','start','--id','first','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'agent-failed','al-engineer','--reason','transient','--retry-safe','yes')
     before=state_file().read_bytes();invoke(cli,'retry','al-engineer','--reason','retry',ok=False)
     assert state_file().read_bytes()==before
@@ -158,8 +158,8 @@ def test_retry_requires_crashed_check_reconciliation(cli, repo, tmp_path, state_
 
 
 @pytest.mark.parametrize('label',['unknown','running','completed'])
-def test_peer_labels_do_not_prove_safe_retry(cli,tmp_path,state_file,label):
-    writing(cli,tmp_path)
+def test_peer_labels_do_not_prove_safe_retry(cli,tmp_path,state_file,label, run_state):
+    run_state('writing',lambda:writing(cli,tmp_path))
     invoke(cli,'agent-failed','al-engineer','--reason','failed','--retry-safe','yes','--peer','al-builder','--peer-status',label)
     before=state_file().read_bytes();invoke(cli,'retry','al-engineer','--reason','retry',ok=False)
     assert state_file().read_bytes()==before
@@ -170,8 +170,8 @@ def test_peer_labels_do_not_prove_safe_retry(cli,tmp_path,state_file,label):
     assert state(cli)['retry_history'][0]['failure']['peer_reconciliation']['artifact']['sha256']
 
 
-def test_peer_reconciliation_cannot_hide_active_writer(cli,tmp_path):
-    writing(cli,tmp_path);invoke(cli,'writer','start','--id','peer','--role','al-builder','--files','svc/app.py')
+def test_peer_reconciliation_cannot_hide_active_writer(cli,tmp_path, run_state):
+    run_state('writing',lambda:writing(cli,tmp_path));invoke(cli,'writer','start','--id','peer','--role','al-builder','--files','svc/app.py')
     invoke(cli,'agent-failed','al-engineer','--reason','failed','--retry-safe','yes','--peer','al-builder')
     proof=tmp_path/'peer.txt';proof.write_text('A claimed safe label is insufficient.\n')
     invoke(cli,'agent-peer-reconcile','al-builder','--reason','claimed stopped','--artifact',str(proof),ok=False)
@@ -189,8 +189,8 @@ def test_peer_reconciliation_cannot_hide_crashed_check(cli, repo, tmp_path, stat
     assert state_file().read_bytes()==before
 
 
-def test_retry_does_not_resurrect_a_finished_writer(cli,tmp_path):
-    writing(cli,tmp_path);invoke(cli,'writer','start','--id','finished','--role','al-engineer','--files','svc/app.py')
+def test_retry_does_not_resurrect_a_finished_writer(cli,tmp_path, run_state):
+    run_state('writing',lambda:writing(cli,tmp_path));invoke(cli,'writer','start','--id','finished','--role','al-engineer','--files','svc/app.py')
     invoke(cli,'writer','finish','--id','finished','--outcome','success')
     invoke(cli,'agent-failed','al-engineer','--reason','transient','--retry-safe','yes');invoke(cli,'retry','al-engineer','--reason','retry')
     assert state(cli)['writers']['finished']['state']=='FINISHED'
@@ -205,8 +205,8 @@ def test_changed_planning_retry_preserves_unfinished_work(cli,repo):
 
 
 @pytest.mark.parametrize('defect',['missing','stale','source','duplicate'])
-def test_second_round_fixed_resolution_requires_valid_proof(cli,repo,tmp_path,state_file,defect):
-    resolution=second_round(cli,tmp_path,repo)
+def test_second_round_fixed_resolution_requires_valid_proof(cli,repo,tmp_path,state_file,defect, run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo))
     if defect=='missing':resolution['evidence']=[]
     elif defect=='stale':resolution['evidence']=['E1']
     elif defect=='source':resolution['source']='INV-01'
@@ -218,8 +218,8 @@ def test_second_round_fixed_resolution_requires_valid_proof(cli,repo,tmp_path,st
     assert state_file().read_bytes()==before
 
 
-def test_second_round_explicit_evidenced_fix_approves_with_history_provenance(cli,repo,tmp_path):
-    resolution=second_round(cli,tmp_path,repo);report=comparison(cli,tmp_path,'compare-two',[resolution])
+def test_second_round_explicit_evidenced_fix_approves_with_history_provenance(cli,repo,tmp_path, run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));report=comparison(cli,tmp_path,'compare-two',[resolution])
     invoke(cli,'review-result','--file',str(report));invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
     s=state(cli);assert s['status']=='APPROVED'
     receipt=s['review_history'][-1]['resolution_validation'];proof=A.read_json(receipt)
@@ -227,8 +227,8 @@ def test_second_round_explicit_evidenced_fix_approves_with_history_provenance(cl
     assert H.findings(s)[0]['resolution']['status']=='fixed'
 
 
-def test_unvalidated_historical_fixed_dictionary_cannot_clear_blocker(cli,repo,tmp_path):
-    resolution=second_round(cli,tmp_path,repo);s=state(cli);item=s['review_history'][0]
+def test_unvalidated_historical_fixed_dictionary_cannot_clear_blocker(cli,repo,tmp_path, run_state):
+    resolution=run_state('second_round',lambda:second_round(cli,tmp_path,repo));s=state(cli);item=s['review_history'][0]
     report=A.read_json(item['comparison']);report['prior_resolutions']=[dict(resolution,evidence=['E1'])]
     item.pop('resolution_validation',None)
     item['comparison']=A.snapshot_bytes(s['session_id'],json.dumps(report).encode(),'architect-compare','legacy')

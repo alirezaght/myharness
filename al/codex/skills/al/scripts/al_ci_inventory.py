@@ -55,6 +55,15 @@ class Inventory:
         if len(unique)>self.MAX_WORLDS:raise Unsupported('CI definition-world limit')
         return list(unique.values())
 
+    def child_dependency(self,pattern):
+        """Whether a local include pattern can only resolve inside an opaque child root."""
+        literal=[]
+        for part in Path(pattern).parts:
+            if any(c in part for c in '*?['):break
+            literal.append(part)
+        head=Path(*literal).as_posix() if literal else '.'
+        return any(child!='.' and Sources.contains(child,head) for child in self.opaque)
+
     def read(self,path):
         if any(Sources.contains(child,path) for child in self.opaque):
             raise Unsupported('unavailable child-content dependency in CI include: '+path)
@@ -96,6 +105,10 @@ class Inventory:
             pattern=include['local'].lstrip('/')
             if '..' in Path(pattern).parts or '$' in pattern:
                 self.issue(path,'dynamic/unsafe local include');continue
+            # A child repository's content is not part of the parent's capture, so an include
+            # into it must be reported as that dependency before any membership lookup.
+            if status is not False and self.child_dependency(pattern):
+                self.issue(path,'unavailable child-content dependency in CI include: '+pattern);continue
             matches=(self.capture.observe_matches(pattern,purpose='include') if self.capture else
                      tuple(q.relative_to(self.root).as_posix() for q in sorted(self.root.glob(pattern))))
             if status is False:continue

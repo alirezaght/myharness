@@ -37,3 +37,9 @@ def test_invalid_budget_is_refused(tmp_path):
     path.write_text('{"schema_version": 1, "test_seconds": "5", "file_seconds": 60, "acceptance": []}')
     with pytest.raises(ValueError):
         load(path)
+
+
+def test_every_acceptance_journey_names_the_risk_it_covers():
+    value = load()
+    assert set(value['acceptance']) == set(value.get('acceptance_reasons', {}))
+    assert all(reason.strip() for reason in value['acceptance_reasons'].values())

@@ -141,7 +141,12 @@ def test_opaque_unit_root_discovery_and_passed_candidate_gates_agree(cli,repo,tm
     # Local execution passes, while opaque discovery still blocks admission.
     status=json.loads(cli('gates','status')[1])
     assert status['candidate'] and status['coverage_blockers']
-    assert any('gitlink' in gap for gap in status['coverage_blockers'])
+    # Since 51fcec1 (#15) only boundaries in the change's reach block: the new unit root's child
+    # does, the fixture's unrelated svc/vendor gitlink is a note. A child added in this task has no
+    # base gitlink row, so it is named as an opaque boundary rather than a base gitlink.
+    blockers=status['coverage_blockers']
+    assert any(relative in gap for gap in blockers),blockers
+    if operation!='add':assert any('gitlink-boundary: '+relative in gap for gap in blockers),blockers
     assert not any(u['category']=='lint-imports' for u in status['unverified'])
 
 

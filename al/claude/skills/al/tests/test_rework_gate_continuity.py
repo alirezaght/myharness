@@ -69,8 +69,8 @@ def pending(cli, state_file, tmp_path):
     return raw, ref
 
 
-def test_exhaustion_preserves_a_valid_gate_checkpoint_chain(cli, state_file, tmp_path):
-    _, ref = pending(cli, state_file, tmp_path)
+def test_exhaustion_preserves_a_valid_gate_checkpoint_chain(cli, state_file, tmp_path, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1])
     state = load(state_file)
     value = Gates.marker(state)
     assert value['checkpoint'] == ref['id']
@@ -80,8 +80,8 @@ def test_exhaustion_preserves_a_valid_gate_checkpoint_chain(cli, state_file, tmp
 
 
 @pytest.mark.parametrize('condition', ['pending', 'declined', 'cap'])
-def test_degraded_writer_continues_without_granting_or_clearing_proof(cli, state_file, tmp_path, condition):
-    raw, ref = pending(cli, state_file, tmp_path)
+def test_degraded_writer_continues_without_granting_or_clearing_proof(cli, state_file, tmp_path, condition, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     if condition == 'declined':
         path, _ = decision(raw, tmp_path, decision='decline', basis='no-useful-next-step')
         assert raw('rework-recovery', 'decide', '--file', str(path))[0] == 0
@@ -110,8 +110,8 @@ def test_degraded_writer_continues_without_granting_or_clearing_proof(cli, state
     assert raw('approved')[0] != 0
 
 
-def test_bound_decision_can_grant_only_budget_while_proof_is_pending(cli, state_file, tmp_path):
-    raw, ref = pending(cli, state_file, tmp_path)
+def test_bound_decision_can_grant_only_budget_while_proof_is_pending(cli, state_file, tmp_path, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     path, _ = decision(raw, tmp_path)
     before = load(state_file)
     result = raw('rework-recovery', 'decide', '--file', str(path))
@@ -129,8 +129,8 @@ def test_bound_decision_can_grant_only_budget_while_proof_is_pending(cli, state_
     assert raw('approved')[0] != 0
 
 
-def test_planning_authorship_remains_available_during_reassessment(cli, state_file, tmp_path):
-    raw, _ = pending(cli, state_file, tmp_path)
+def test_planning_authorship_remains_available_during_reassessment(cli, state_file, tmp_path, run_state):
+    run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     before = load(state_file)
     result = raw('planning', 'packet')
     assert result[0] == 0, result
@@ -141,9 +141,9 @@ def test_planning_authorship_remains_available_during_reassessment(cli, state_fi
     assert current['proof_admission'] == before['proof_admission']
 
 
-def test_planning_repair_preserves_pending_reassessment_and_checkpoint(cli, state_file, tmp_path):
+def test_planning_repair_preserves_pending_reassessment_and_checkpoint(cli, state_file, tmp_path, run_state):
     from launcher_context import admit_planning
-    raw, ref = pending(cli, state_file, tmp_path)
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     before = load(state_file)
     checkpoint_bytes = A.read(ref)
     plan_na_gates(raw, tmp_path)
@@ -158,8 +158,8 @@ def test_planning_repair_preserves_pending_reassessment_and_checkpoint(cli, stat
 
 
 @pytest.mark.parametrize('mutation', ['command', 'edge', 'checkpoint', 'occurrence'])
-def test_gate_continuation_corruption_is_still_rejected(cli, state_file, tmp_path, mutation):
-    _, _ = pending(cli, state_file, tmp_path)
+def test_gate_continuation_corruption_is_still_rejected(cli, state_file, tmp_path, mutation, run_state):
+    run_state('pending', lambda: pending(cli, state_file, tmp_path)[1])
     altered = copy.deepcopy(load(state_file))
     value = altered['gate_recovery']
     if mutation == 'command':
@@ -175,8 +175,8 @@ def test_gate_continuation_corruption_is_still_rejected(cli, state_file, tmp_pat
 
 
 @pytest.mark.parametrize('route', ['decision', 'implementation'])
-def test_new_gate_edges_require_retained_authority(cli, state_file, tmp_path, route):
-    raw, _ = pending(cli, state_file, tmp_path)
+def test_new_gate_edges_require_retained_authority(cli, state_file, tmp_path, route, run_state):
+    run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     if route == 'decision':
         path, _ = decision(raw, tmp_path)
         assert raw('rework-recovery', 'decide', '--file', str(path))[0] == 0
@@ -194,8 +194,8 @@ def test_new_gate_edges_require_retained_authority(cli, state_file, tmp_path, ro
 
 
 @pytest.mark.parametrize('condition', ['declined', 'cap'])
-def test_explicit_user_continuation_keeps_gate_history_valid(cli, state_file, tmp_path, condition):
-    raw, ref = pending(cli, state_file, tmp_path)
+def test_explicit_user_continuation_keeps_gate_history_valid(cli, state_file, tmp_path, condition, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     if condition == 'declined':
         path, _ = decision(raw, tmp_path, decision='decline', basis='no-useful-next-step')
         assert raw('rework-recovery', 'decide', '--file', str(path))[0] == 0
@@ -224,8 +224,8 @@ def test_explicit_user_continuation_keeps_gate_history_valid(cli, state_file, tm
 
 @pytest.mark.parametrize('stop', ['interrupt', 'waiting'])
 @pytest.mark.parametrize('route', ['decision', 'writer'])
-def test_reassessment_departure_accepts_authenticated_resume(cli, state_file, tmp_path, stop, route):
-    raw, ref = pending(cli, state_file, tmp_path)
+def test_reassessment_departure_accepts_authenticated_resume(cli, state_file, tmp_path, stop, route, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     path = tmp_path / 'pause.json'
     path.write_text(json.dumps({'reason': 'Synthetic pause', 'resume_instructions': 'Resume same task'}))
     before = load(state_file)
@@ -249,8 +249,8 @@ def test_reassessment_departure_accepts_authenticated_resume(cli, state_file, tm
 
 
 @pytest.mark.parametrize('mutation', ['resume-record', 'resume-checkpoint', 'user-receipt', 'user-checkpoint'])
-def test_checkpoint_restore_edges_reject_missing_authority(cli, state_file, tmp_path, mutation):
-    raw, ref = pending(cli, state_file, tmp_path)
+def test_checkpoint_restore_edges_reject_missing_authority(cli, state_file, tmp_path, mutation, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     if mutation.startswith('resume'):
         path = tmp_path / 'interrupt.json'
         path.write_text(json.dumps({'reason': 'Synthetic interruption', 'resume_instructions': 'Resume'}))
@@ -276,8 +276,8 @@ def test_checkpoint_restore_edges_reject_missing_authority(cli, state_file, tmp_
     ('IMPLEMENTATION', None), ('FINALIZATION', None),
     ('REWORK_REASSESSMENT', 'decision'), ('REWORK_REASSESSMENT', 'writer'),
 ])
-def test_guarded_agent_retry_preserves_real_checkpoint_authority(cli, state_file, tmp_path, phase, after):
-    raw, ref = pending(cli, state_file, tmp_path)
+def test_guarded_agent_retry_preserves_real_checkpoint_authority(cli, state_file, tmp_path, phase, after, run_state):
+    ref = run_state('pending', lambda: pending(cli, state_file, tmp_path)[1]); raw = cli.raw
     if phase != 'REWORK_REASSESSMENT':
         assert raw('writer', 'start', '--id', 'continue', '--role', 'al-engineer', '--files',
                    'svc/app.py', '--degraded', '--reason', 'Defined work')[0] == 0

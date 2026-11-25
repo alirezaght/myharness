@@ -95,9 +95,11 @@ def classify_unit(path,opaque,facts=None):
     if facts:
         candidates=[u['path'] for u in facts['units'] if within(u['path'],path)]
         if candidates and max(candidates,key=unit_depth)!='.':return max(candidates,key=unit_depth)
-    if facts is not None:return '/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.'
-    folder=path if (al_store.REPO_ROOT/path).is_dir() else str(Path(path).parent)
-    unit=manifest_unit(folder) or ('/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.')
+    if facts is not None:unit='/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.'
+    else:
+        folder=path if (al_store.REPO_ROOT/path).is_dir() else str(Path(path).parent)
+        unit=manifest_unit(folder) or ('/'.join(path.split('/')[:2]) if path.startswith(('services/','apps/','packages/')) else '.')
+    # A gitlink (opaque child) root is never a parent unit: its content is not the parent's (#24).
     return '.' if any(Sources.contains(child,unit) for child in opaque) else unit
 
 

@@ -94,3 +94,10 @@ def _filled(module, name):
     if hasattr(value, "__len__"):
         return len(value) > 0
     return False
+
+
+def test_exhausted_state_awaits_reassessment_at_the_automatic_rework_cap(cli, run_state):
+    run_state("exhausted")
+    state = cli.state()
+    assert state["phase"] == "REWORK_REASSESSMENT" and state["rework"]["total"] == 2
+    assert state["proof_admission"]["status"] != "pending"

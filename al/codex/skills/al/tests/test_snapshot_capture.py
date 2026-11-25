@@ -239,6 +239,49 @@ def test_kept_private_index_equals_a_fresh_seed_on_every_change(repo):
         assert al_snapshot.snapshot(repo) == kept
 
 
+def test_unchanged_working_copy_reuses_the_recorded_tree_after_a_probe(repo, monkeypatch):
+    """A snapshot of an unchanged working copy is the recorded tree after a read-only probe
+    (#36); any change the probe must see (a same-size edit within the same second, a new
+    untracked file, the nested repository moving, a changed private index) takes the full
+    snapshot, whose tree equals a cold seed."""
+    _fixture(repo)
+    calls = []
+    real = al_snapshot._run
+
+    def counting(root, args, **kwargs):
+        calls.append(next(a for a in args if not a.startswith('-') and '=' not in a))
+        return real(root, args, **kwargs)
+    monkeypatch.setattr(al_snapshot, '_run', counting)
+    first = al_snapshot.snapshot(repo)
+
+    def taken():
+        calls.clear()
+        tree = al_snapshot.snapshot(repo)
+        return tree, set(calls)
+    tree, used = taken()
+    assert tree == first and not used & {'add', 'rm', 'write-tree', 'update-index'}
+    nested = repo / 'services/nested'
+    for step in (lambda: put(repo, 'services/a/src/app.py', put_same_size(repo, 'services/a/src/app.py')),
+                 lambda: put(repo, 'services/a/src/fresh.py', 'FRESH = 1\n'),
+                 lambda: (put(nested, 'inner.py', 'INNER = 2\n'), _git(nested, 'commit', '-qam', 'moved'))):
+        step()
+        tree, used = taken()
+        assert 'write-tree' in used and tree == _cold_tree(repo)
+        assert taken() == (tree, {'ls-files'})
+    # A record of an earlier private index never vouches for the current one.
+    record = al_snapshot.index_path(repo).with_name(al_snapshot.TREE_RECORD)
+    earlier = record.read_bytes()
+    put(repo, 'services/a/src/fresh.py', 'FRESH = 2\n')
+    current = al_snapshot.snapshot(repo)
+    record.write_bytes(earlier)
+    assert al_snapshot.snapshot(repo) == current == _cold_tree(repo) != tree
+
+
+def put_same_size(repo, path):
+    old = (repo / path).read_text()
+    return old[:-2] + ('X' if old[-2] != 'X' else 'Y') + old[-1]
+
+
 def test_concurrent_snapshots_of_one_worktree_wait_for_each_other(repo):
     """A snapshot taken while another holds the private index (the service's background
     refresh) waits for it instead of failing into the slow direct capture (#35)."""

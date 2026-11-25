@@ -15,6 +15,34 @@ def rule_source(path):
     return any(fnmatch.fnmatchcase(path,pattern.replace('**/','*')) for pattern in V.PATTERNS)
 
 
+# Check declarations and toolchain profiles discovery reads besides rule_source's names.
+DECLARED_CHECK_FILES=('.pre-commit-config.yaml','.python-version','pytest.ini','tox.ini','setup.cfg','.coveragerc',
+                      'ruff.toml','.ruff.toml','tsconfig.json','requirements.txt')
+GITHUB_WORKFLOWS=('.github/workflows/*.yml','.github/workflows/*.yaml')
+
+
+def recognised_rule_file(path):
+    """Whether repository discovery reads `path` as a rule: instructions, manifests, CI
+    definitions, hooks or check declarations."""
+    name=PurePosixPath(path).name
+    if rule_source(path) or name in V.MANIFESTS or name in DECLARED_CHECK_FILES:return True
+    return any(fnmatch.fnmatchcase(path,pattern) for pattern in GITHUB_WORKFLOWS+V.OTHER_CI)
+
+
+def foreign_gate_sources(manifest):
+    """(gate id, source path) of every gate citing a file that is not a repository rule file.
+
+    `gates plan` admits any existing file as a gate source by its hash; currency keeps such a
+    source only while its own bytes are unchanged (_own_bytes_current)."""
+    out=[]
+    for gate in manifest.get('gates',[]):
+        source=gate.get('source')
+        if not isinstance(source,dict) or not isinstance(source.get('path'),str):continue
+        if source.get('sha256')=='0'*64 or recognised_rule_file(source['path']):continue
+        out.append((gate.get('id'),source['path']))
+    return out
+
+
 def _execution_semantics(bindings):
     def semantic(value):
         if isinstance(value,dict):

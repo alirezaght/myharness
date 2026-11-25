@@ -390,6 +390,11 @@ def cmd_gates(a,sid):
             D.validate_manifest(st,m)
             planning(st,sid,m.get('paths',[]))
         _save_manifest(st,sid,m,a.file)
+        import sys
+        import al_gate_currency as Currency
+        for gate,path in Currency.foreign_gate_sources(m):
+            print('warning: gate '+str(gate)+' cites '+path+', which is not a repository rule file; '
+                  'review admission keeps it only while that file is unchanged',file=sys.stderr)
         _emit_manifest(m,getattr(a,'output',None)); return
     if a.action=='decision':
         m=manifest(st)
