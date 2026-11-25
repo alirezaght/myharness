@@ -36,13 +36,12 @@ def review_candidate(cli,repo,tmp,deleted=False):
     invoke(cli,'writer','finish','--id','engineer','--outcome','success')
     if deleted:
         st=json.loads(cli('show')[1]);completed=st['completed_phases'][:]
-        # The deletion changes coverage requirements; the full inventory (planning, review start)
-        # reports it, so the plan is replaced before review.
+        # Since 4bd481d coverage currency compares the task's semantic projection: deleting a
+        # dependency-free file inside the planned paths leaves the requirements unchanged, so the
+        # full inventory reports no gap and the planned manifest stays current (no replan).
         import al_artifacts as A
         import al_gate_inventory as V
-        assert any('service coverage requirements changed' in g for g in V.gaps(st,A.read_json(st['gate_manifests'][-1])))
-        replacement=manifest_for(st,repo,anticipated_paths=(PATH,))
-        plan(cli,tmp,replacement);invoke(cli,'gates','run','--stage','base')
+        assert V.gaps(st,A.read_json(st['gate_manifests'][-1]))==[]
         assert json.loads(cli('show')[1])['completed_phases']==completed
     invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate')
     invoke(cli,'evidence','plan','--area','unit','--tier','broad','--kind','check','--scope',PATH,'--',sys.executable,'-c','print("verified")')

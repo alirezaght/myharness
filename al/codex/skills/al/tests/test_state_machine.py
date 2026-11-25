@@ -26,6 +26,8 @@ def test_full_walk_to_the_correction_limit(cli, tmp_path, state_file):
     code, out, err = cli(
         "classify", "COMPLEX", "--designer", "yes",
         "--implementers", "al-engineer,al-builder",
+        # 5b9bde8 (#30): COMPLEX must name its hard part.
+        "--hard-part", "invariant: every correction keeps the gate obligations",
     )
     assert code == 0
     st = load_state(tmp_path)

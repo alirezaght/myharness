@@ -10,6 +10,15 @@ from al.tests.runtime_run_helpers import launched, public_run
 from al.tests.test_task_editorial_revision import editorial, request_for
 
 
+@pytest.fixture(autouse=True)
+def receipts_only(monkeypatch):
+    # Since #26 (e8654a8) the action cache serves a gate with identical inputs before the execution-receipt
+    # association runs; this test proves the association itself, so the cache is off (as aad8f97 did for
+    # test_execution_receipts.py). Autouse runs before `launched`, whose environment copies os.environ,
+    # so the setting reaches every launched subprocess.
+    monkeypatch.setenv("AL_ACTION_CACHE", "0")
+
+
 # Platform-agnostic flow: the shared scripts are byte-identical across platforms (parity test).
 @pytest.mark.parametrize("platform", ["codex"])
 def test_editorial_overlay_reuses_real_original_execution_without_new_child(launched, platform):

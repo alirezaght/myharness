@@ -127,7 +127,7 @@ def test_real_accepted_amendments_survive_without_old_task_authority(registered,
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS prepared-start containment")
-def test_original_owned_contribution_survives_successor(registered, tmp_path):
+def test_original_owned_contribution_survives_successor(registered, tmp_path, tmp_path_factory):
     import sys
 
     data = registered[0]
@@ -205,9 +205,11 @@ def test_original_owned_contribution_survives_successor(registered, tmp_path):
 
     verify()
     # Only this newly created pytest repository may have its fixture index/HEAD changed.
-    assert root.resolve() == (tmp_path / "repo").resolve()
+    # Since #36 (0a4c7b0) each test's launched repository is a private copy at the
+    # process's fixed basetemp/launched path, not under tmp_path.
+    assert root.resolve() == (tmp_path_factory.getbasetemp() / "launched/repo").resolve()
     shared_checkout = Path(__file__).resolve().parents[2]
-    assert root.is_relative_to(tmp_path) and root != shared_checkout
+    assert root.is_relative_to(tmp_path_factory.getbasetemp()) and root != shared_checkout
     assert not shared_checkout.is_relative_to(root)
     for arguments in (("add", "app/owned.py"), ("commit", "-qm", "synthetic owned output")):
         result = subprocess.run(["git", "-C", str(root), *arguments], capture_output=True)
