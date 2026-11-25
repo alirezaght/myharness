@@ -61,4 +61,14 @@ def test_single_run_files_never_depend_on_host_specific_code():
         modules = _closure(stem, seen)
         assert not modules & host_specific, (name, sorted(modules & host_specific))
         for module in {stem} | seen:
+            # A reviewed file may name a host only as fixture data for a shared script
+            # (single-run.json `literal_data` gives the reason); it never selects host code.
+            if module + ".py" in MANIFEST.get("literal_data", {}):
+                continue
             assert not LITERAL.search((TESTS / (module + ".py")).read_text()), (name, module)
+
+
+def test_reviewed_literal_data_names_listed_files_with_a_reason():
+    reviewed = MANIFEST.get("literal_data", {})
+    assert set(reviewed) <= set(MANIFEST["files"])
+    assert all(isinstance(reason, str) and reason.strip() for reason in reviewed.values())

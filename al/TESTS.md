@@ -188,7 +188,7 @@ has. Per file:
 
 ## 5. Host-neutral tests run once
 
-`al/codex/skills/al/tests/single-run.json` lists 102 test files that exercise only shared
+`al/codex/skills/al/tests/single-run.json` lists 116 test files that exercise only shared
 scripts through the host-adapter fixtures (`cli`, `cli_process`, `state_file`, `launcher`,
 `run_state`; each host's `conftest.py` defines them for its own runtime layout). They run once,
 in the Codex suite; their Claude copies were removed. The shared scripts they exercise are
@@ -200,7 +200,9 @@ resources, launcher, start, state machine, run templates), when it or a helper i
 host-specific script (`al_state`, `al_start`, `al_models` and the Claude-only adapters) or names a
 host (`.codex`, `.claude`, a platform comparison), or when a remaining Claude module imports it.
 `test_single_run.py` enforces the rule for every listed file, so a host-specific dependency cannot
-hide in a single-run file. `verification_affected.py` treats a change to either byte-identical
+hide in a single-run file. A file that names a host only as fixture data for a shared script (a
+`collect_ignore` path, a registry row's platform, an argument of a shared function) is listed in
+`literal_data` with the reviewed reason; the import and boundary checks still apply to it. `verification_affected.py` treats a change to either byte-identical
 copy of a shared script or resource as a change to both, so `verify_changed.py` still selects the
 single-run tests when only the Claude copy is named.
 

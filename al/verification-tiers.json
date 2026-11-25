@@ -4,29 +4,9 @@
   "rule": "a test file is slow when its mean measured test time exceeds 1.0 s",
   "measured_files": 299,
   "slow": {
-    "claude:tests/test_al_usability.py": {
-      "tests": 7,
-      "seconds": 27.6
-    },
-    "claude:tests/test_ci_conventional.py": {
-      "tests": 24,
-      "seconds": 104.5
-    },
-    "claude:tests/test_ci_pytest_profile.py": {
-      "tests": 45,
-      "seconds": 96.2
-    },
-    "claude:tests/test_ci_recipe_fidelity.py": {
-      "tests": 27,
-      "seconds": 44.1
-    },
     "claude:tests/test_core_hardening.py": {
       "tests": 11,
       "seconds": 106.8
-    },
-    "claude:tests/test_evidence_integrity.py": {
-      "tests": 28,
-      "seconds": 85.8
     },
     "claude:tests/test_evidence_supersession.py": {
       "tests": 2,
@@ -72,10 +52,6 @@
       "tests": 3,
       "seconds": 20.9
     },
-    "claude:tests/test_remote_gates.py": {
-      "tests": 3,
-      "seconds": 4.2
-    },
     "claude:tests/test_repo_adapters.py": {
       "tests": 32,
       "seconds": 61.4
@@ -112,10 +88,6 @@
       "tests": 26,
       "seconds": 79.5
     },
-    "claude:tests/test_service_coverage_admission.py": {
-      "tests": 52,
-      "seconds": 229.4
-    },
     "claude:tests/test_task_attribution.py": {
       "tests": 22,
       "seconds": 89.3
@@ -123,10 +95,6 @@
     "claude:tests/test_workspace_source.py": {
       "tests": 3,
       "seconds": 465.9
-    },
-    "claude:tests/test_writer_handoff.py": {
-      "tests": 17,
-      "seconds": 50.9
     },
     "codex:tests/test_acceptance_states.py": {
       "tests": 3,
