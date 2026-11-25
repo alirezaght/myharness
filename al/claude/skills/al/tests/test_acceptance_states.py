@@ -5,8 +5,8 @@ import al_acceptance as Acceptance
 from evidence_helpers import start_implementation,plan_and_run_broad
 
 
-def test_code_assessment_is_separate_and_stales_with_source(cli,repo,tmp_path,state_file):
-    start_implementation(cli,tmp_path)
+def test_code_assessment_is_separate_and_stales_with_source(cli, repo, tmp_path, state_file, run_state):
+    run_state("implemented")
     assert plan_and_run_broad(cli)==0
     code,out,err=cli('acceptance','packet');assert code==0,(out,err)
     packet=json.loads(out)

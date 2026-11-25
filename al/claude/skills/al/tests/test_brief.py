@@ -11,8 +11,8 @@ def test_brief_names_missing_facts_before_gates_are_planned(cli):
     assert code == 0 and 'source: none' in out and 'gates discover' in out
 
 
-def test_brief_reports_units_gates_and_gaps_from_the_manifest(cli, tmp_path, state_file):
-    start_implementation(cli, tmp_path)
+def test_brief_reports_units_gates_and_gaps_from_the_manifest(cli, tmp_path, state_file, run_state):
+    run_state("implemented")
     code, out, _ = cli('brief', '--format', 'json')
     assert code == 0
     value = json.loads(out)

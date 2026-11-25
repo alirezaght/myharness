@@ -142,8 +142,8 @@ def test_retry_requires_writer_reconciliation_and_new_lifetime(cli,repo,tmp_path
     invoke(cli,'writer','start','--id','second','--role','al-engineer','--files','svc/app.py')
 
 
-def test_retry_requires_crashed_check_reconciliation(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo)
+def test_retry_requires_crashed_check_reconciliation(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified")
     s=state(cli);entry=s['evidence']['entries'][-1]
     runner=subprocess.Popen(['python3','-c','pass']);runner.wait()
     entry.update(status='RUNNING',interrupted=True,owner_pid=runner.pid,pid=runner.pid)
@@ -177,8 +177,8 @@ def test_peer_reconciliation_cannot_hide_active_writer(cli,tmp_path):
     invoke(cli,'agent-peer-reconcile','al-builder','--reason','claimed stopped','--artifact',str(proof),ok=False)
 
 
-def test_peer_reconciliation_cannot_hide_crashed_check(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);s=state(cli)
+def test_peer_reconciliation_cannot_hide_crashed_check(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");s=state(cli)
     runner=subprocess.Popen(['python3','-c','pass']);runner.wait()
     s['evidence']['entries'][-1].update(status='RUNNING',interrupted=True,owner_pid=runner.pid,pid=runner.pid)
     state_file().write_text(json.dumps(s))

@@ -30,8 +30,8 @@ def decision(cli,tmp_path,*,request_id='decision-1',decision='allow',basis='revi
     path=tmp_path/(request_id+'.json');path.write_text(json.dumps(d));return path,d
 
 
-def test_six_returns_two_automatic_grants_then_precise_cap(cli,state_file,tmp_path):
-    started(cli,tmp_path);exhaust(cli)
+def test_six_returns_two_automatic_grants_then_precise_cap(cli, state_file, tmp_path, run_state):
+    run_state("finalizing");exhaust(cli)
     first=load(state_file);assert first['rework']['total']==2
     for i in (1,2):
         path,_=decision(cli,tmp_path,request_id='decision-'+str(i))
@@ -50,8 +50,8 @@ def test_six_returns_two_automatic_grants_then_precise_cap(cli,state_file,tmp_pa
     assert cli('resume','--checkpoint',st['stopping_checkpoint'])[0]!=0
 
 
-def test_decision_replay_is_nonmutating_and_changed_request_refuses(cli,state_file,tmp_path):
-    started(cli,tmp_path);exhaust(cli);path,data=decision(cli,tmp_path)
+def test_decision_replay_is_nonmutating_and_changed_request_refuses(cli, state_file, tmp_path, run_state):
+    run_state("finalizing");exhaust(cli);path,data=decision(cli,tmp_path)
     code,out,_=cli('rework-recovery','decide','--file',str(path));assert code==0
     before=state_file().read_bytes()
     assert cli('rework-recovery','decide','--file',str(path))[:2]==(0,out)
@@ -62,8 +62,8 @@ def test_decision_replay_is_nonmutating_and_changed_request_refuses(cli,state_fi
 
 
 @pytest.mark.parametrize('mutation',['no-progress','foreign','stale','attempt','empty','active'])
-def test_invalid_authorization_never_consumes_or_mutates(cli,state_file,tmp_path,mutation):
-    started(cli,tmp_path);exhaust(cli);path,data=decision(cli,tmp_path)
+def test_invalid_authorization_never_consumes_or_mutates(cli, state_file, tmp_path, mutation, run_state):
+    run_state("finalizing");exhaust(cli);path,data=decision(cli,tmp_path)
     if mutation=='no-progress':data['basis']='try-again'
     elif mutation=='foreign':data['evidence'][0]['entry_hash']='f'*64
     elif mutation=='stale':data['binding']['candidate_hash']='f'*64
@@ -81,8 +81,8 @@ def test_invalid_authorization_never_consumes_or_mutates(cli,state_file,tmp_path
     assert state_file().read_bytes()==before
 
 
-def test_decline_and_explicit_two_credit_continuation_are_idempotent(cli,state_file,tmp_path):
-    started(cli,tmp_path);exhaust(cli)
+def test_decline_and_explicit_two_credit_continuation_are_idempotent(cli, state_file, tmp_path, run_state):
+    run_state("finalizing");exhaust(cli)
     path,_=decision(cli,tmp_path,decision='decline',basis='no-useful-next-step')
     assert cli('rework-recovery','decide','--file',str(path))[0]==0
     st=load(state_file);assert st['status']=='STOPPED_WITH_BLOCKERS'
@@ -108,8 +108,8 @@ def test_decline_and_explicit_two_credit_continuation_are_idempotent(cli,state_f
 
 
 @pytest.mark.parametrize('mutation',['rollback','grant','boolean','remove','history'])
-def test_append_only_state_refuses_authority_rewrites(cli,state_file,tmp_path,mutation):
-    started(cli,tmp_path)
+def test_append_only_state_refuses_authority_rewrites(cli, state_file, tmp_path, mutation, run_state):
+    run_state("finalizing")
     assert cli('rework','--source','finalization',*fast(cli))[0]==0
     before=load(state_file);after=copy.deepcopy(before)
     if mutation=='rollback':after['rework']['total']=0
@@ -179,8 +179,8 @@ def test_factual_review_packet_rejects_missing_changed_or_extra_lineage(cli,stat
     assert state_file().read_bytes()==before
 
 
-def test_unavailable_attempt_requires_explicit_recorded_fallback_replacement(cli,state_file,tmp_path):
-    started(cli,tmp_path);exhaust(cli);path,old=decision(cli,tmp_path)
+def test_unavailable_attempt_requires_explicit_recorded_fallback_replacement(cli, state_file, tmp_path, run_state):
+    run_state("finalizing");exhaust(cli);path,old=decision(cli,tmp_path)
     assert cli('model-unavailable',old['model'],'--reason','model is not supported by this provider')[0]==0
     before=state_file().read_bytes()
     assert 'unavailable' in cli('rework-recovery','decide','--file',str(path))[0]
@@ -197,8 +197,8 @@ def test_unavailable_attempt_requires_explicit_recorded_fallback_replacement(cli
 
 
 @pytest.mark.parametrize('target',['receipt','report','packet','checkpoint'])
-def test_corrupt_retained_bytes_refuse_without_grant(cli,state_file,tmp_path,target):
-    started(cli,tmp_path);exhaust(cli);path,_=decision(cli,tmp_path)
+def test_corrupt_retained_bytes_refuse_without_grant(cli, state_file, tmp_path, target, run_state):
+    run_state("finalizing");exhaust(cli);path,_=decision(cli,tmp_path)
     if target in {'receipt','report'}:assert cli('rework-recovery','decide','--file',str(path))[0]==0
     st=load(state_file);r=st['rework_recovery'];o=r['occurrences'][0]
     ref=r['decisions'][0][target] if target in {'receipt','report'} else o['checkpoint'] if target=='checkpoint' else o['packets'][0]['packet']
@@ -224,8 +224,8 @@ def test_current_success_requires_current_prerequisite_currency(cli,state_file,t
 
 
 @pytest.mark.parametrize('mutation',['extra','version','counter','pending','disposition'])
-def test_nested_state_contract_fails_closed(cli,state_file,tmp_path,mutation):
-    started(cli,tmp_path);exhaust(cli);st=load(state_file)
+def test_nested_state_contract_fails_closed(cli, state_file, tmp_path, mutation, run_state):
+    run_state("finalizing");exhaust(cli);st=load(state_file)
     if mutation=='extra':st['rework_recovery']['grants'][0]['extra']=True
     elif mutation=='version':st['rework_recovery']['schema_version']=True
     elif mutation=='counter':st['rework']['history'][0]['n']=True
@@ -266,8 +266,8 @@ def real_correction(cli,state_file,tmp_path,repo):
     assert cli('evidence','run','--area','repro','--tier','focused','--scope','svc','--',*REPRO)[0]==1
 
 
-def test_genuine_corrections_between_recovered_batches_never_create_credit(cli,state_file,tmp_path,repo):
-    started(cli,tmp_path)
+def test_genuine_corrections_between_recovered_batches_never_create_credit(cli, state_file, tmp_path, repo, run_state):
+    run_state("finalizing")
     for batch in range(3):
         if batch:
             path,_=decision(cli,tmp_path,request_id='recovered-'+str(batch))
@@ -288,8 +288,8 @@ def test_genuine_corrections_between_recovered_batches_never_create_credit(cli,s
     assert st['status']=='STOPPED_WITH_BLOCKERS'
 
 
-def test_an_unchanged_approach_requires_new_supporting_evidence(cli,state_file,tmp_path):
-    started(cli,tmp_path);exhaust(cli);path,first=decision(cli,tmp_path,request_id='first')
+def test_an_unchanged_approach_requires_new_supporting_evidence(cli, state_file, tmp_path, run_state):
+    run_state("finalizing");exhaust(cli);path,first=decision(cli,tmp_path,request_id='first')
     assert cli('rework-recovery','decide','--file',str(path))[0]==0
     assert cli('phase','FINALIZATION')[0]==0
     assert cli('rework','--source','finalization',*fast(cli))[0]==0
@@ -322,8 +322,8 @@ def test_no_approved_model_stops_with_precise_checkpoint_and_no_budget_authority
 
 
 
-def test_pending_request_replay_is_exact_and_candidate_drift_refuses(cli,state_file,tmp_path,repo):
-    started(cli,tmp_path);exhaust(cli);before=state_file().read_bytes()
+def test_pending_request_replay_is_exact_and_candidate_drift_refuses(cli, state_file, tmp_path, repo, run_state):
+    run_state("finalizing");exhaust(cli);before=state_file().read_bytes()
     assert cli('rework','--source','finalization',*fast(cli))[0]==10
     assert state_file().read_bytes()==before
     (repo/'svc/app.py').write_text('changed source')

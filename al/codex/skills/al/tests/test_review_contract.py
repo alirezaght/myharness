@@ -8,8 +8,8 @@ from referencing import Registry, Resource
 from evidence_helpers import start_implementation, plan_and_run_broad, complete_review
 
 
-def test_real_v2_fresh_and_comparison_schema_runtime_roundtrip(cli,tmp_path,state_file):
-    start_implementation(cli,tmp_path)
+def test_real_v2_fresh_and_comparison_schema_runtime_roundtrip(cli, tmp_path, state_file, run_state):
+    run_state("implemented")
     assert plan_and_run_broad(cli)==0
     assert cli("phase","VERIFICATION")[0]==0
     def inspect(report):

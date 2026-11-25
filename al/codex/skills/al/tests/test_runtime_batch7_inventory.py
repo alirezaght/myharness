@@ -16,8 +16,8 @@ def discover(cli,tmp_path,paths):
     state=json.loads(cli('show')[1]);return state,A.read_json(state['gate_manifests'][-1])
 
 
-def test_prior_anticipated_paths_and_rules_cannot_be_omitted(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo)
+def test_prior_anticipated_paths_and_rules_cannot_be_omitted(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified")
     (repo/'svc/AGENTS.md').write_text('Retain the existing service instruction.\n')
     state,m=discover(cli,tmp_path,['svc/future.py'])
     assert 'svc/future.py' in m['paths'] and 'svc/AGENTS.md' in {s['path'] for s in m['rules']}
@@ -26,16 +26,16 @@ def test_prior_anticipated_paths_and_rules_cannot_be_omitted(cli,repo,tmp_path,s
     assert state_file().read_bytes()==before
 
 
-def test_new_independent_instruction_source_invalidates_currency(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo)
+def test_new_independent_instruction_source_invalidates_currency(cli, repo, tmp_path, run_state):
+    run_state("verified")
     state=json.loads(cli('show')[1]);assert C.check(state)['current']
     (repo/'AGENTS.md').write_text('A new independently discovered instruction.\n')
     currency=C.check(state)
     assert not currency['current'] and any('AGENTS.md' in reason for reason in currency['reasons'])
 
 
-def test_concrete_contract_obligation_cannot_be_na(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo)
+def test_concrete_contract_obligation_cannot_be_na(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified")
     (repo/'package.json').write_text(json.dumps({'scripts':{'generate:contracts':'sh contracts.sh'}}))
     state,m=discover(cli,tmp_path,['svc/app.py'])
     for gate in m['gates']:

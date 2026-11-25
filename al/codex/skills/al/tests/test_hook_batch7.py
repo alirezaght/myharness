@@ -55,8 +55,8 @@ def _package_manager_stub(tmp_path):
     return bindir
 
 
-def test_declared_environment_change_invalidates_candidate_gate(cli, repo, tmp_path, monkeypatch):
-    begin(cli, tmp_path, repo)
+def test_declared_environment_change_invalidates_candidate_gate(cli, repo, tmp_path, monkeypatch, run_state):
+    run_state("verified")
     state = json.loads(cli("show")[1])
     command = [sys.executable, "-c", "import os; assert os.environ['AL_DIAGNOSTIC_VARIANT']=='before'"]
     manifest = _manifest(state, source=_source(repo, "svc/app.py"), active="loc", argv=command)
@@ -77,8 +77,8 @@ def test_declared_environment_change_invalidates_candidate_gate(cli, repo, tmp_p
     )
 
 
-def test_fresh_primary_review_survives_recorded_fallback(cli, tmp_path, repo):
-    begin(cli, tmp_path, repo)
+def test_fresh_primary_review_survives_recorded_fallback(cli, tmp_path, repo, run_state):
+    run_state("verified")
     invoke(cli, "review-start")
     invoke(cli, "review-packet", "--stage", "fresh")
     fresh = tmp_path / "fresh-primary.json"

@@ -76,8 +76,8 @@ def test_candidate_gate_requires_full_ledger_and_execution_identity(cli,repo,tmp
 
 
 @pytest.mark.parametrize('linked',['absent','fixed'])
-def test_unsatisfied_criterion_requires_unfixed_stable_finding(cli,repo,tmp_path,state_file,linked):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_unsatisfied_criterion_requires_unfixed_stable_finding(cli, repo, tmp_path, state_file, linked, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     data=report_data(cli,'fresh','unsatisfied');data['criteria'][0]['status']='UNSATISFIED';data['status']='CHANGES_REQUIRED'
     if linked=='fixed':data['findings']=[{'id':'F-unsat','source':'AC-01','severity':'BLOCKING','description':'Unresolved criterion',
         'resolution':{'status':'fixed','rationale':'claimed','locations':['svc/app.py:1'],'evidence':[state(cli)['evidence']['entries'][-1]['id']] }}]
@@ -85,8 +85,8 @@ def test_unsatisfied_criterion_requires_unfixed_stable_finding(cli,repo,tmp_path
     invoke(cli,'review-fresh','--file',str(file),ok=False);assert state_file().read_bytes()==before
 
 
-def test_linked_unsatisfied_fresh_has_one_blocker_and_explicit_compare_fix_approves(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_linked_unsatisfied_fresh_has_one_blocker_and_explicit_compare_fix_approves(cli, repo, tmp_path, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     finding={'id':'F-unsat','source':'AC-01','severity':'BLOCKING','description':'Criterion requires explicit comparison fix.'}
     data=report_data(cli,'fresh','linked',findings=[finding]);data['criteria'][0]['status']='UNSATISFIED';data['blocking']=1
     file=tmp_path/'fresh.json';file.write_text(json.dumps(data));invoke(cli,'review-fresh','--file',str(file))
@@ -141,8 +141,8 @@ def test_inert_git_config_and_option_looking_operands_remain_harmless(cli,comman
 
 
 @pytest.mark.parametrize('field',['finding','prior'])
-def test_fresh_cannot_supply_any_resolution_fields(cli,repo,tmp_path,state_file,field):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_fresh_cannot_supply_any_resolution_fields(cli, repo, tmp_path, state_file, field, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     data=report_data(cli,'fresh','prohibited');resolution={'id':'F','source':'AC-01','status':'fixed','rationale':'claim','locations':['svc/app.py:1'],'evidence':['E1']}
     if field=='prior':data['prior_resolutions']=[resolution]
     else:data['findings']=[{'id':'F','source':'AC-01','severity':'NON_BLOCKING','description':'claim','resolution':None}]

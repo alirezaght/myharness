@@ -10,8 +10,8 @@ def _packet_bytes(state, stage):
     return Path(state["review"]["packets"][stage]["stored_path"]).read_bytes()
 
 
-def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regression(cli, tmp_path, state_file, repo):
-    start_implementation(cli, tmp_path)
+def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regression(cli, tmp_path, state_file, repo, run_state):
+    run_state("implemented")
     (repo / "svc" / "app.py").write_text("x = 1\n" + "".join(f"keep_{i} = {i}\n" for i in range(40)))
     assert plan_and_run_broad(cli) == 0
     assert cli("phase", "VERIFICATION")[0] == 0
@@ -58,8 +58,8 @@ def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regres
     assert not errors, errors
 
 
-def test_full_review_requested_or_first_review_records_reasons(cli, tmp_path, state_file):
-    start_implementation(cli, tmp_path)
+def test_full_review_requested_or_first_review_records_reasons(cli, tmp_path, state_file, run_state):
+    run_state("implemented")
     assert plan_and_run_broad(cli) == 0
     assert cli("phase", "VERIFICATION")[0] == 0
     complete_review(cli, tmp_path, blocking=True)

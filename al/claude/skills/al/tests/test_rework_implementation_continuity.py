@@ -8,8 +8,8 @@ from test_rework_recovery import decision, exhaust
 
 
 @pytest.mark.parametrize('condition',['pending','declined','cap'])
-def test_authorized_work_continues_without_fabricating_rework_credits(cli,state_file,tmp_path,repo,condition):
-    started(cli,tmp_path)
+def test_authorized_work_continues_without_fabricating_rework_credits(cli, state_file, tmp_path, repo, condition, run_state):
+    run_state("finalizing")
     exhaust(cli)
     if condition=='declined':
         path,_=decision(cli,tmp_path,decision='decline',basis='no-useful-next-step')

@@ -17,22 +17,22 @@ def plan(cli,repo,tmp_path,names):
 
 
 @pytest.mark.parametrize('names',['VAR',['VAR','VAR'],[''],['bad-name'],[1],[[]]])
-def test_invalid_environment_declarations_preserve_state(cli,repo,tmp_path,state_file,names):
-    begin(cli,tmp_path,repo);path=plan(cli,repo,tmp_path,names)
+def test_invalid_environment_declarations_preserve_state(cli, repo, tmp_path, state_file, names, run_state):
+    run_state("verified");path=plan(cli,repo,tmp_path,names)
     before=state_file().read_bytes()
     invoke(cli,'gates','plan','--file',str(path),ok=False)
     assert state_file().read_bytes()==before
 
 
-def test_env_alias_is_rejected(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);path=plan(cli,repo,tmp_path,[])
+def test_env_alias_is_rejected(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");path=plan(cli,repo,tmp_path,[])
     m=json.loads(path.read_text());next(g for g in m['gates'] if g['id']=='loc')['env']=['VAR'];path.write_text(json.dumps(m))
     before=state_file().read_bytes();invoke(cli,'gates','plan','--file',str(path),ok=False)
     assert state_file().read_bytes()==before
 
 
-def test_unset_empty_and_changed_environment_invalidate_both_stages(cli,repo,tmp_path,monkeypatch):
-    begin(cli,tmp_path,repo);monkeypatch.delenv('AL_VARIANT',raising=False)
+def test_unset_empty_and_changed_environment_invalidate_both_stages(cli, repo, tmp_path, monkeypatch, run_state):
+    run_state("verified");monkeypatch.delenv('AL_VARIANT',raising=False)
     invoke(cli,'gates','plan','--file',str(plan(cli,repo,tmp_path,['AL_VARIANT'])))
     for stage in ('base','candidate'):invoke(cli,'gates','run','--stage',stage)
     status=json.loads(cli('gates','status')[1])
@@ -46,8 +46,8 @@ def test_unset_empty_and_changed_environment_invalidate_both_stages(cli,repo,tmp
     assert 'private-test-environment-value' not in cli('show')[1]
 
 
-def test_environment_change_cannot_authorize_failed_baseline(cli,repo,tmp_path,monkeypatch,state_file):
-    begin(cli,tmp_path,repo);monkeypatch.setenv('AL_VARIANT','before')
+def test_environment_change_cannot_authorize_failed_baseline(cli, repo, tmp_path, monkeypatch, state_file, run_state):
+    run_state("verified");monkeypatch.setenv('AL_VARIANT','before')
     path=plan(cli,repo,tmp_path,['AL_VARIANT']);m=json.loads(path.read_text())
     next(g for g in m['gates'] if g['id']=='loc')['argv']=[sys.executable,'-c','raise SystemExit(1)'];path.write_text(json.dumps(m))
     invoke(cli,'gates','plan','--file',str(path))
@@ -62,8 +62,8 @@ def test_environment_change_cannot_authorize_failed_baseline(cli,repo,tmp_path,m
     assert state_file().read_bytes()==before
 
 
-def test_fallback_before_packet_binds_current_approved_policy(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start')
+def test_fallback_before_packet_binds_current_approved_policy(cli, repo, tmp_path, run_state):
+    run_state("verified");invoke(cli,'review-start')
     primary=M.POLICY['al-architect']['primary']['model']
     invoke(cli,'model-unavailable',primary,'--reason','Provider unavailable')
     _,out,_=invoke(cli,'review-packet','--stage','fresh');packet=json.loads(out)['content']
@@ -75,8 +75,8 @@ def test_fallback_before_packet_binds_current_approved_policy(cli,repo,tmp_path)
     path=tmp_path/'fresh.json';path.write_text(json.dumps(data));invoke(cli,'review-fresh','--file',str(path))
 
 
-def test_packet_replacement_archives_abandoned_attempt_and_cannot_replace_saved(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_packet_replacement_archives_abandoned_attempt_and_cannot_replace_saved(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     first=json.loads(cli('show')[1])['review'];old=report_data(cli,'fresh','abandoned')
     primary=M.POLICY['al-architect']['primary']['model']
     invoke(cli,'model-unavailable',primary,'--reason','Provider became unavailable')
@@ -95,15 +95,15 @@ def test_packet_replacement_archives_abandoned_attempt_and_cannot_replace_saved(
 
 
 @pytest.mark.parametrize('change',[{'model':'unsupported'},{'effort':'low'},{'policy_digest':'0'*64},{'attempt_id':'abandoned'}])
-def test_report_cannot_forge_attempt_provenance(cli,repo,tmp_path,state_file,change):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_report_cannot_forge_attempt_provenance(cli, repo, tmp_path, state_file, change, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     data=report_data(cli,'fresh','forged');data.update(change);path=tmp_path/'report.json';path.write_text(json.dumps(data))
     before=state_file().read_bytes();invoke(cli,'review-fresh','--file',str(path),ok=False)
     assert state_file().read_bytes()==before
 
 
-def test_replacement_without_unavailability_refuses_without_state_write(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_replacement_without_unavailability_refuses_without_state_write(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     before=state_file().read_bytes()
     invoke(cli,'review-packet','--stage','fresh','--replace-unavailable-attempt',ok=False)
     assert state_file().read_bytes()==before

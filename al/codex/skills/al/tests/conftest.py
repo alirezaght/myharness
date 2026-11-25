@@ -22,6 +22,10 @@ sys.path.insert(0, str(SCRIPTS))
 
 import al_state  # noqa: E402
 import al_store  # noqa: E402
+import run_templates  # noqa: E402
+
+# Memo tables are found while they are still empty, before any test runs (#36).
+run_templates.register_memo_tables()
 
 
 def _git(repo, *args):
@@ -48,11 +52,27 @@ def seed_repo(tmp_path_factory):
     return root
 
 
+@pytest.fixture(scope="session")
+def seed_digest(seed_repo):
+    from run_templates import tree_digest
+    return tree_digest(seed_repo)
+
+
 @pytest.fixture
-def repo(tmp_path, seed_repo):
-    """Give each test an independent worktree without repeating Git setup."""
-    root = tmp_path / "repo"
+def repo(tmp_path, seed_repo, request, tmp_path_factory):
+    """Give each test an independent worktree without repeating Git setup.
+
+    A test that starts from a prebuilt run (`run_state`) gets its worktree at this process's
+    one run-state path, which is deleted and recreated for every test (#36)."""
     import shutil
+    if "run_state" in request.fixturenames:
+        from run_templates import fixed_repository
+        root = fixed_repository(tmp_path_factory.getbasetemp())
+        if root.exists():
+            shutil.rmtree(root)
+        root.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        root = tmp_path / "repo"
     shutil.copytree(seed_repo, root, symlinks=True)
     return root
 
@@ -152,6 +172,15 @@ def cli(monkeypatch, capsys, launcher, repo):
         return result, captured.out, captured.err
     _run.state = observer.read
     _run.fixed_session = observer.default_session
+    _run.observer = observer
     from launcher_context import current_protocol
     yield current_protocol(_run)
     launcher.leave()
+
+
+@pytest.fixture
+def run_state(cli, repo, tmp_path, launcher, seed_digest, tmp_path_factory):
+    """Start the test from a prebuilt admitted run: `run_state("implemented")` (see run_templates)."""
+    from run_templates import RunState, template_store
+    return RunState(cli=cli, repo=repo, tmp_path=tmp_path, launcher=launcher, seed_digest=seed_digest,
+                    store=template_store(tmp_path_factory.getbasetemp()))

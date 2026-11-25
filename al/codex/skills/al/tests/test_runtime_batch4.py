@@ -42,8 +42,8 @@ def test_changed_resume_preserves_each_unfinished_preverification_phase(cli,repo
     invoke(cli,'approved',ok=False)
 
 
-def test_changed_postimplementation_resume_returns_to_verification(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo);fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
+def test_changed_postimplementation_resume_returns_to_verification(cli, repo, tmp_path, run_state):
+    run_state("verified");fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
     p,_=comparison(cli,tmp_path);invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION')
     stop=tmp_path/'stop.json';stop.write_text(json.dumps({'reason':'Checkpoint final work','resume_instructions':'Recheck the candidate.'}))
     _,out,_=invoke(cli,'interrupt','--file',str(stop));(repo/'svc/app.py').write_text('new_candidate = True\n')
@@ -69,8 +69,8 @@ def test_server_only_typescript_does_not_require_a_browser(cli,repo,tmp_path,fil
     invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
 
 
-def test_correction_fresh_is_independent_and_comparison_requires_fixed_prior_resolution(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo);fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
+def test_correction_fresh_is_independent_and_comparison_requires_fixed_prior_resolution(cli, repo, tmp_path, run_state):
+    run_state("verified");fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
     finding={'id':'F-1','source':'AC-01','severity':'BLOCKING','description':'A source defect must be corrected.'}
     p,_=comparison(cli,tmp_path,findings=[finding]);invoke(cli,'review-result','--file',str(p))
     invoke(cli,'correction','--route','al-engineer');invoke(cli,'phase','FINALIZATION')
@@ -84,16 +84,16 @@ def test_correction_fresh_is_independent_and_comparison_requires_fixed_prior_res
     p.write_text(json.dumps(data));invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
 
 
-def test_uninspected_plan_hash_refuses_comparison_without_state_write(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
+def test_uninspected_plan_hash_refuses_comparison_without_state_write(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
     p=save_report(cli,tmp_path,'compare','uninspected-plan')
     report=json.loads(p.read_text());plan_hash=json.loads(cli('show')[1])['review']['comparison_inputs']['plan']['sha256']
     report['inspected_artifacts'].remove(plan_hash);p.write_text(json.dumps(report));before=state_file().read_bytes()
     invoke(cli,'review-result','--file',str(p),ok=False);assert state_file().read_bytes()==before
 
 
-def test_new_manifest_needs_base_obligations_at_review_and_approval(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
+def test_new_manifest_needs_base_obligations_at_review_and_approval(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
     p,_=comparison(cli,tmp_path);invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION')
     # Extend the active manifest as allowed at verification. Both barriers
     # independently recheck its base obligations, even if an earlier review passed.
@@ -141,8 +141,8 @@ def test_designer_comparison_requires_pseudocode_and_inspected_typed_hashes(cli,
     invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
 
 
-def test_approval_rechecks_actual_completion_proof_instead_of_completed_labels(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
+def test_approval_rechecks_actual_completion_proof_instead_of_completed_labels(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");fresh_review(cli,tmp_path);compare_start(cli,tmp_path)
     p,_=comparison(cli,tmp_path);invoke(cli,'review-result','--file',str(p));invoke(cli,'phase','FINAL_VERIFICATION')
     st=json.loads(state_file().read_text())
     next(o for o in reversed(st['phase_occurrences']) if o['phase']=='PLANNING')['completed']=False

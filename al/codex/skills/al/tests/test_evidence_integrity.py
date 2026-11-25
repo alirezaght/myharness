@@ -149,8 +149,8 @@ def test_inflight_result_stays_with_its_immutable_run(cli, cli_process, tmp_path
     assert [(e["id"], e["area"], e["status"]) for e in json.loads(first_state.read_text())["evidence"]["entries"]] == [("E1", "old", "PASS")]
 
 
-def test_a_broken_preflight_two_levels_down_blocks_required_evidence(cli, tmp_path):
-    start_implementation(cli, tmp_path)
+def test_a_broken_preflight_two_levels_down_blocks_required_evidence(cli, tmp_path, run_state):
+    run_state("implemented")
     cli("preflight", "--name", "rt", "--check", "env:PATH")
     cli("evidence", "plan", "--area", "focused", "--tier", "focused", "--scope", "web", "--preflight", "rt",
         "--", *ok_cmd("1 passed"))
@@ -172,8 +172,8 @@ def test_a_needs_cycle_is_never_valid(cli):
     assert cli("evidence", "require")[0] == 13
 
 
-def test_ad_hoc_prerequisites_are_rechecked_recursively(cli, tmp_path):
-    start_implementation(cli, tmp_path)
+def test_ad_hoc_prerequisites_are_rechecked_recursively(cli, tmp_path, run_state):
+    run_state("implemented")
     cli("preflight", "--name", "rt", "--check", "env:PATH")
     cli("evidence", "plan", "--area", "focused", "--tier", "focused", "--scope", "web", "--preflight", "rt",
         "--", *ok_cmd("1 passed"))
@@ -202,8 +202,8 @@ def test_log_files_of_separate_runs_never_collide(cli, state_file):
     assert first_log != second_log and "1 passed" in Path(first_log).read_text()
 
 
-def test_overlap_normalises_fix_paths(cli, cli_process, repo, tmp_path, state_file):
-    start_implementation(cli, tmp_path)
+def test_overlap_normalises_fix_paths(cli, cli_process, repo, tmp_path, state_file, run_state):
+    run_state("implemented")
     release = tmp_path / "release"
     proc = cli_process("evidence", "run", "--area", "svc", "--scope", "svc", "--", *slow_check(release))
     wait_running(state_file, "svc", process=proc)
@@ -271,8 +271,8 @@ def test_an_early_failure_is_not_hidden_by_a_later_passing_suite(cli, state_file
     assert code == 1 and entries(state_file)[0]["status"] == "FAIL"
 
 
-def test_overlap_checks_every_running_check(cli, cli_process, tmp_path, state_file):
-    start_implementation(cli, tmp_path)
+def test_overlap_checks_every_running_check(cli, cli_process, tmp_path, state_file, run_state):
+    run_state("implemented")
     r1, r2 = tmp_path / "r1", tmp_path / "r2"
     def waiting_check(marker):
         script = tmp_path / f"wait-{marker.name}.sh"

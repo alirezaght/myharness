@@ -22,8 +22,8 @@ def artifacts(st):
     return {str(p.relative_to(root)):(p.read_bytes(),p.stat().st_mode) for p in root.rglob('*') if p.is_file()}
 
 
-def test_approved_done_refuses_every_stopping_command_before_effects(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);assert approve_route(cli,tmp_path)[0]==0
+def test_approved_done_refuses_every_stopping_command_before_effects(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");assert approve_route(cli,tmp_path)[0]==0
     st=state(cli);assert st['status']=='APPROVED' and st['phase']=='DONE'
     before=state_file().read_bytes();members=artifacts(st)
     for command in requests(tmp_path):
@@ -72,8 +72,8 @@ def test_failed_agent_can_terminalize_without_reconciliation_or_timing_rewrite(c
     assert state_file().read_bytes()==before
 
 
-def test_recovery_to_different_phase_does_not_complete_closed_verification(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo);p=tmp_path/'wait.json';p.write_text(json.dumps({'reason':'Await policy','resume_instructions':'Replan changed rules'}))
+def test_recovery_to_different_phase_does_not_complete_closed_verification(cli, repo, tmp_path, run_state):
+    run_state("verified");p=tmp_path/'wait.json';p.write_text(json.dumps({'reason':'Await policy','resume_instructions':'Replan changed rules'}))
     invoke(cli,'waiting','--file',str(p));st=state(cli);closed=st['phase_occurrences'][-1].copy()
     (repo/'Makefile').write_text('all:\n\ttrue\n');invoke(cli,'resume','--checkpoint',st['stopping_checkpoint']);after=state(cli)
     assert after['phase']=='PLANNING' and after['phase_occurrences'][-2]==closed
@@ -91,8 +91,8 @@ def test_set_phase_cannot_complete_an_already_closed_occurrence(cli,repo,tmp_pat
     assert st['phase_occurrences'][-2]==closed and 'IMPLEMENTATION' not in st['completed_phases']
 
 
-def test_corrupt_running_done_cannot_create_agent_failure_artifacts(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);assert approve_route(cli,tmp_path)[0]==0
+def test_corrupt_running_done_cannot_create_agent_failure_artifacts(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");assert approve_route(cli,tmp_path)[0]==0
     st=state(cli);st['status']='RUNNING';state_file().write_text(json.dumps(st))
     before=state_file().read_bytes();members=artifacts(st)
     invoke(cli,'agent-failed','al-engineer','--reason','Must not reopen DONE','--retry-safe','yes',ok=False)

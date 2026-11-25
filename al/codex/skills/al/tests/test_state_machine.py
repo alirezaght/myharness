@@ -74,8 +74,8 @@ def test_spec_gate_blocked_exits_8(cli):
     assert code == 8
 
 
-def test_correction_without_blocking_findings_is_refused(cli, tmp_path):
-    start_implementation(cli, tmp_path)
+def test_correction_without_blocking_findings_is_refused(cli, tmp_path, run_state):
+    run_state("implemented")
     cli("phase", "FINALIZATION")
     cli("phase", "VERIFICATION")
     assert plan_and_run_broad(cli) == 0

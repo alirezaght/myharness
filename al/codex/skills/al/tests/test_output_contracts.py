@@ -6,8 +6,8 @@ import al_ledger as L
 from evidence_helpers import start_implementation
 
 
-def test_current_reentered_phase_is_active_and_uses_current_duration(cli,tmp_path,state_file,monkeypatch):
-    start_implementation(cli,tmp_path)
+def test_current_reentered_phase_is_active_and_uses_current_duration(cli, tmp_path, state_file, monkeypatch, run_state):
+    run_state("implemented")
     st=json.loads(state_file().read_bytes())
     st['completed_phases'].append('IMPLEMENTATION')
     st['phase_timings']['IMPLEMENTATION']={'started':1,'ended':4}

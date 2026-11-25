@@ -231,8 +231,8 @@ def test_broad_browser_suite_waits_for_the_focused_runtime_check(cli, tmp_path):
     assert code == 15 and "now FAIL" in err
 
 
-def test_independent_fix_may_overlap_a_running_check(cli, cli_process, repo, tmp_path, state_file):
-    start_implementation(cli, tmp_path)
+def test_independent_fix_may_overlap_a_running_check(cli, cli_process, repo, tmp_path, state_file, run_state):
+    run_state("implemented")
     release = tmp_path / "release"
     proc = cli_process("evidence", "run", "--area", "svc", "--scope", "svc", "--", *slow_check(release))
     wait_running(state_file, "svc", process=proc)
@@ -262,8 +262,8 @@ def test_coupled_fix_stays_sequential_and_a_moved_scope_tears_the_run(cli, cli_p
     assert entries(state_file)[-1]["status"] == "TORN"
 
 
-def test_no_overlap_at_a_barrier(cli, tmp_path):
-    start_implementation(cli, tmp_path)
+def test_no_overlap_at_a_barrier(cli, tmp_path, run_state):
+    run_state("implemented")
     cli("phase", "VERIFICATION")
     code, _, err = cli("overlap", "--area", "svc", "--fix-files", "web/app.js")
     assert code == 5 and "barrier" in err

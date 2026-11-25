@@ -18,8 +18,8 @@ def test_planning_attempt_fallback_binds_the_claude_fallback_slot(cli,repo,tmp_p
     assert 'slug' not in slot and 'agent_type' not in slot
 
 
-def test_fallback_before_packet_binds_current_approved_policy(cli,repo,tmp_path):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start')
+def test_fallback_before_packet_binds_current_approved_policy(cli, repo, tmp_path, run_state):
+    run_state("verified");invoke(cli,'review-start')
     primary=M.POLICY['al-architect']['primary']['model']
     invoke(cli,'model-unavailable',primary,'--reason','Provider unavailable')
     _,out,_=invoke(cli,'review-packet','--stage','fresh');packet=json.loads(out)['content']
@@ -31,8 +31,8 @@ def test_fallback_before_packet_binds_current_approved_policy(cli,repo,tmp_path)
     path=tmp_path/'fresh.json';path.write_text(json.dumps(data));invoke(cli,'review-fresh','--file',str(path))
 
 
-def test_packet_replacement_archives_abandoned_attempt_and_cannot_replace_saved(cli,repo,tmp_path,state_file):
-    begin(cli,tmp_path,repo);invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
+def test_packet_replacement_archives_abandoned_attempt_and_cannot_replace_saved(cli, repo, tmp_path, state_file, run_state):
+    run_state("verified");invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     first=json.loads(cli('show')[1])['review'];old=report_data(cli,'fresh','abandoned')
     primary=M.POLICY['al-architect']['primary']['model']
     invoke(cli,'model-unavailable',primary,'--reason','Provider became unavailable')
