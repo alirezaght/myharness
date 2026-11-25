@@ -70,6 +70,9 @@ class Workflow:
         path=self.repo/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text)
 
     def create_project(self):
+        # The CI workflow carries no pytest step: since 88b9da1 a CI gate that runs pytest through
+        # AL's guarded runner needs pytest guard context and completion records, which the frozen
+        # v1 issuer cannot write. Pytest is still proven by the broad `actual-pytest` evidence.
         workflow=(ROOT/'al/tests/fixtures/conventional-quality.yml').read_text()
         self.put('pyproject.toml','[project]\nname="ordinary-compatibility"\nversion="0.1.0"\nrequires-python=">=3.12"\ndependencies=[]\n[build-system]\nrequires=["uv_build>=0.10,<0.11"]\nbuild-backend="uv_build"\n[dependency-groups]\ndev=["pytest>=8"]\n[tool.uv]\npackage=false\nenvironments=["sys_platform != \'win32\'"]\nfind-links=[WHEELHOUSE]\n[tool.uv.build-backend]\nmodule-root=""\nmodule-name="svc"\n[tool.pytest.ini_options]\ntestpaths=["tests"]\n'.replace('WHEELHOUSE',json.dumps('fixture-wheels')))
         self.put('.python-version','3.12\n');self.put('svc/__init__.py','');self.put('svc/app.py','VALUE = 1\n')
@@ -107,7 +110,7 @@ class Workflow:
     def verification(self):
         state=self.state();source='.github/workflows/quality.yml';sha=hashlib.sha256((self.repo/source).read_bytes()).hexdigest()
         gate={'id':'old-quality','category':'ci','applicability':'APPLICABLE','required':True,'units':['.'],
-              'argv':['sh','-eu','-c','uv python install\nuv sync --locked\nuv run ruff check .\nuv run ruff format --check .\nuv run pytest\nuv build'],
+              'argv':['sh','-eu','-c','uv python install\nuv sync --locked\nuv run ruff check .\nuv run ruff format --check .\nuv build'],
               'scope':['.'],'env_names':['HOME','PATH','UV_CACHE_DIR','UV_PYTHON_INSTALL_DIR','UV_PYTHON_DOWNLOADS','UV_OFFLINE'],
               'cwd':'.','source':{'path':source,'sha256':sha,'job':'quality'},'execution_kind':'local'}
         gates=[gate]+[{'id':c,'category':c,'applicability':'NOT_APPLICABLE','required':False,'units':['.'],'argv':[],
