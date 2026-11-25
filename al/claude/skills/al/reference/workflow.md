@@ -674,9 +674,9 @@ pre-commit and touched-unit CI—needs an executable obligation or a sourced,
 reasoned NOT_APPLICABLE. Incomplete relevant service, consumer or check discovery remains explicit verification work while scoped implementation continues. Resolve relevant uncertainty with conservative scope, complete potential coverage and real mandatory bindings before final proof/review/approval. Never declare an unknown inventory harmless or imply pipeline success. Record diagnostic manifests and operational repair issues separately from developer decisions.
 
 Run checks in owned disposable checkouts. Before package-backed hooks, install supported locked dependencies there; never link ambient node_modules. Missing tooling/setup is INFRA with hook NOT_RUN and remains unsatisfied; executed code failures stay FAIL. Log wording cannot waive a failed check. Run base gates and preserve their actual results. A
-failed base gate requires a recorded `gates decision --id <id> --action
-fix|stop|defer --source <ref> --reason <text>` before review. Candidate gates run against a materialized
-candidate and every required candidate obligation must pass before review. A base
+failed base gate is the baseline for the candidate comparison: it needs no decision and never
+blocks (`gates decision --id <id> --action fix|stop|defer|exception` stays available). Candidate gates run against a materialized
+candidate and every required candidate obligation must pass before review, except a failure the base already has. A base
 decision never waives a candidate gate; local work never impersonates remote CI.
 
 Discovery records sourced command interfaces without executing repository
@@ -725,9 +725,9 @@ Retained preimages are the snapshot tree, pinned under `refs/al/snapshots/<run>/
 Approval releases a run's refs; every new run sweeps the refs of runs that pinned nothing
 for 30 days (a run is not enumerable from another run's runtime directory, so orphans are
 recognised by age; a stopped run resumed after that may find its preimages pruned and is refused). `gates run --stage base` runs every base gate and
-lists all failures at once, so each pre-existing failure gets its
-`gates decision` in one pass. An advisory gate (its CI step never fails the
-pipeline) needs no decision. At candidate, a failure identical to its base failure
+lists all failures at once. A base failure is the baseline (#38): it needs no
+`gates decision` and never blocks `verify`. An advisory gate (its CI step never fails the
+pipeline) is informational. At candidate, a failure identical to its base failure
 is reported as pre-existing and the stage continues; only new failures stop it.
 Checks are reserved before execution. A failed/interrupted operation is never
 recorded as PASS. No writer or check may be active or unresolved at review or

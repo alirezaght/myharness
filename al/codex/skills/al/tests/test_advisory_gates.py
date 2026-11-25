@@ -318,7 +318,9 @@ def test_identical_pre_existing_candidate_failure_does_not_block(cli, repo, tmp_
     _, m = discover(cli, tmp_path, ['services/a/src/app.py'])
     path = tmp_path / 'plan.json';path.write_text(json.dumps(m))
     invoke(cli, 'gates', 'plan', '--file', str(path))
-    invoke(cli, 'gates', 'run', '--stage', 'base', ok=False)
+    # A base failure is the baseline (#38): reported, never blocking; an exception stays optional.
+    _, out, _ = invoke(cli, 'gates', 'run', '--stage', 'base')
+    assert 'does not block: baseline failure' in out
     gate = next(g for g in m['gates'] if g['category'] == 'lint-imports' and 'services/a' in g['units'] and g.get('obligation_ids'))
     invoke(cli, 'gates', 'decision', '--id', gate['id'], '--action', 'exception', '--source',
            'user: the module ban already fails on main', '--reason', 'pre-existing violation; repair tracked outside this task')

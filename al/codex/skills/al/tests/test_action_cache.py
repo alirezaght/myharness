@@ -340,13 +340,13 @@ def test_a_failing_base_gate_is_reused_and_an_explicit_retry_executes(cli, repo,
     from hook_regression_helpers import invoke
     marker = tmp_path / "runs"
     _gate_session(cli, repo, tmp_path, counting(marker, "violation", 1))
-    invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary", ok=False)
+    invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary")  # a base failure is the baseline (#38)
     _gate_session(cli, repo, tmp_path, counting(marker, "violation", 1), session="al-other")
-    _, out, _ = invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary", ok=False)
+    _, out, _ = invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary")
     assert "reused from run" in out and marker.read_text() == "x"
     state, _, _ = _boundary(cli, "al-other")
     assert state["evidence"]["entries"][-1]["status"] == "FAIL"
-    invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary", "--retry-failed", ok=False)
+    invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary", "--retry-failed", ok=False)  # other base gates still unrun
     assert marker.read_text() == "xx"
 
 

@@ -276,8 +276,8 @@ def _gate_resolution(gaps, stage):
     if "coverage" in text or "discovery" in text:
         return "`gates status` names each coverage gap; `gates discover --extend current --paths-file <json>` and `gates plan`"
     if stage == "base":
-        return ("`gates status`; a pre-existing base failure needs `gates decision --id <gate> --action "
-                "exception|defer|fix|stop --source TEXT --reason TEXT`")
+        return ("`gates status`; a base failure is the baseline and never blocks, so the named gate did not "
+                "finish at base: rerun it with `gates run --stage base --id <gate> --resume`")
     return ("fix the failure with a writer, then `gates run --stage candidate --resume`; "
             "a deterministic failure on the same tree reruns with `gates run --stage candidate --id <gate> --retry-failed`")
 
