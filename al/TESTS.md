@@ -1,5 +1,9 @@
 # AL test suites: cost, structure and invariant map
 
+## Testing standards for every test change
+
+Apply the [canonical AL testing standards](codex/skills/al/reference/evidence.md#testing-standards) whenever writing or changing tests. Tests must prove observable behavior and meaningful outcomes, including relevant normal, edge, failure, integration, security, and regression behavior. Understand the production path first; avoid hollow existence/static checks and implementation mirroring; keep uncertain coverage and record concerns. During cleanup, account for every file's disposition and reason, preserve unique assertions when consolidating, and remove only tests confidently shown to provide no meaningful protection.
+
 This file records why the AL suites cost what they cost and how they are kept fast (#36):
 the slowest files and their causes, the prebuilt run states, the single-run scheme for
 host-neutral tests, and the invariant map of the regression batches with the reason for

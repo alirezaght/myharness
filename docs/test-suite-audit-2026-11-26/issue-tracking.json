@@ -1,0 +1,250 @@
+{
+  "audit_date": "2026-11-26",
+  "audit_sha256": "fd03d1ae901017dbfc44b60780e792034c72fd1dd5fbdb4aaf583f1ce578c63f",
+  "finding_count": 53,
+  "new_finding_issues": [
+    {
+      "slug": "cleanup",
+      "title": "Remove proven redundant tests while preserving runtime diagnostics",
+      "findings": [
+        30,
+        41,
+        46,
+        50,
+        51,
+        52,
+        53
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/73",
+      "reused": false,
+      "number": 73,
+      "verified_body_sha256": "01c6a7471d6260ae028438cd5264e7906d944de0937c88011c269e0324f0c5e2"
+    },
+    {
+      "slug": "watcher",
+      "title": "AL watcher import guard misses the runtime imports it is meant to forbid",
+      "findings": [
+        13
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/74",
+      "reused": false,
+      "number": 74,
+      "verified_body_sha256": "af833fa3933c12cc37be938e1c1bb782ffbe1a551f8ef3d1f2e394fe4fd5379f"
+    },
+    {
+      "slug": "analysis_assertions",
+      "title": "AL analysis tests need before-and-after keys and measured source-read behavior",
+      "findings": [
+        5,
+        6
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/75",
+      "reused": false,
+      "number": 75,
+      "verified_body_sha256": "e34c9669aa27f274e82871d1d5adeab16218b2e39454c6bf439fe4943906938f"
+    },
+    {
+      "slug": "al_contracts",
+      "title": "Strengthen AL host and installer tests that overclaim contract behavior",
+      "findings": [
+        1,
+        2,
+        3,
+        7,
+        9,
+        10,
+        11,
+        12
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/76",
+      "reused": false,
+      "number": 76,
+      "verified_body_sha256": "0487473665c5c4b8fac43f89fcf84041f52071712aabb45f6a9896cb95f211dd"
+    },
+    {
+      "slug": "readonly_http",
+      "title": "HTTP read-only tests must observe writes made through handler connections",
+      "findings": [
+        31,
+        47,
+        49
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/77",
+      "reused": false,
+      "number": 77,
+      "verified_body_sha256": "bd7255f6010dc1326c615e22dacb2177315de44aab8eabdf32e21c8fc02ca382"
+    },
+    {
+      "slug": "exact_receipt",
+      "title": "Bind retrieval timeline links to the exact returned knowledge receipt",
+      "findings": [
+        48
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/78",
+      "reused": false,
+      "number": 78,
+      "verified_body_sha256": "167b638cdc52ba364219d6e0f6ec052948a10b33f470ffb30a22047f798d9dcd"
+    },
+    {
+      "slug": "ui_behavior",
+      "title": "Browser tests should prove input effects, pipe exchange and safe rendered outcomes",
+      "findings": [
+        15,
+        16,
+        20,
+        21,
+        24,
+        26,
+        27,
+        43
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/79",
+      "reused": false,
+      "number": 79,
+      "verified_body_sha256": "29194caadff4f6791b52bd6ac68691ced3803136de142d05171a03a9bba8ab89"
+    },
+    {
+      "slug": "ui_consolidation",
+      "title": "Consolidate overlapping dashboard asset and delivery checks without losing unique assertions",
+      "findings": [
+        17,
+        22,
+        23,
+        25,
+        28
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/80",
+      "reused": false,
+      "number": 80,
+      "verified_body_sha256": "a69d2cec4564e5562f8da45f2972e44987154bd1a0471367303014959fc98fdf"
+    },
+    {
+      "slug": "harness_assertions",
+      "title": "Strengthen Harness tests for content, scope, dispatch and committed-state behavior",
+      "findings": [
+        14,
+        18,
+        19,
+        29,
+        32,
+        39,
+        40,
+        42,
+        44,
+        45
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/81",
+      "reused": false,
+      "number": 81,
+      "verified_body_sha256": "737a974ca1ddd997dc4e0a5cd77ffeef7fd1f442118e5a91e735c9c23562efd1"
+    },
+    {
+      "slug": "graph_paths",
+      "title": "Require a nonempty expected branch before asserting knowledge path contiguity",
+      "findings": [
+        33
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/82",
+      "reused": false,
+      "number": 82,
+      "verified_body_sha256": "c3fff6b5a69ee6139a37e22273551de1fa441f372acd2875bac74351734c074e"
+    },
+    {
+      "slug": "knowledge_migrations",
+      "title": "Knowledge migration tests should exercise populated historical upgrades",
+      "findings": [
+        37,
+        38
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/83",
+      "reused": false,
+      "number": 83,
+      "verified_body_sha256": "5ac30fa88ef3926b9763af470987d350ffae421c8c7042ded11f7816d68d77b6"
+    },
+    {
+      "slug": "observer_evidence",
+      "title": "Keep disabled-observer security tests but distinguish blanket refusal from parser qualification",
+      "findings": [
+        34,
+        35,
+        36
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/84",
+      "reused": false,
+      "number": 84,
+      "verified_body_sha256": "3450347e24b9cbb747564a05e8b5a8f0e1950838adc6cdaa3fbc1df7ed81e091"
+    }
+  ],
+  "existing_issue_updates": [
+    {
+      "issue": 36,
+      "findings": [
+        4,
+        8
+      ],
+      "url": "https://github.com/alirezaght/myharness/issues/36#issuecomment-7177568765"
+    }
+  ],
+  "verification_tooling_issue": {
+    "number": 85,
+    "url": "https://github.com/alirezaght/myharness/issues/85"
+  },
+  "rules_paths": [
+    "AGENTS.md",
+    "al/TESTS.md",
+    "al/codex/skills/al/SKILL.md",
+    "al/codex/skills/al/reference/evidence.md",
+    "al/codex/agents/al-builder.toml",
+    "al/codex/agents/al-engineer.toml",
+    "al/codex/agents/al-architect.toml",
+    "al/codex/agents/al-architect-fallback.toml",
+    "al/claude/skills/al/SKILL.md",
+    "al/claude/skills/al/reference/evidence.md",
+    "al/claude/agents/al-builder.md",
+    "al/claude/agents/al-engineer.md",
+    "al/claude/agents/al-architect.md",
+    "al/claude/agents/al-architect-fallback.md"
+  ],
+  "review": "Independent Architect source review: no actionable findings; no runtime AL approval claimed.",
+  "verification": {
+    "command": "UV_CACHE_DIR=/tmp/myharness-testing-rules-20261126/uv-cache uv run python al/verify_changed.py",
+    "test_outcomes": {
+      "passed": 2993,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "overall_status": "FAIL",
+    "elapsed_seconds": 278.4,
+    "budget_violations": 78,
+    "source_stable": false,
+    "cleanup_complete": true,
+    "limits": "The audit HTML and a concurrent tests/test_policy_retry_control_warm.py edit moved during execution; selected test outcomes passed, but this is not an overall verification or release PASS. Slow tier was deferred.",
+    "raw_report": "/tmp/myharness-testing-rules-20261126/final-verification-report.json",
+    "log": "/tmp/myharness-testing-rules-20261126/fast-verification.log",
+    "performance_comment": "https://github.com/alirezaght/myharness/issues/36#issuecomment-7177718906",
+    "permission_recovery_comment": "https://github.com/alirezaght/myharness/issues/85#issuecomment-7177724959"
+  },
+  "publication_verification": {
+    "command": "UV_CACHE_DIR=/tmp/myharness-testing-rules-20261126/uv-cache uv run python al/verify_changed.py",
+    "base": "77df6cc61596d10c093212933ace4411abcd4610",
+    "checkout": "isolated origin/main plus the 14 instruction-file additions and four audit artifacts",
+    "test_outcomes": {
+      "passed": 2924,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "overall_status": "FAIL",
+    "source_stable": true,
+    "elapsed_seconds": 288.5,
+    "budget_warnings": 70,
+    "slow_files_deferred": 163,
+    "failed_test": "installer:al/tests/test_policy_retry_control.py::test_managed_isolated_no_site_bootstrap_ignores_startup_canaries",
+    "failure": "Copied uv-managed CPython 3.13 venv cannot locate @rpath/libpython3.13.dylib on macOS; reproduced without loading AL code. Test and bootstrap production code unchanged. No workaround included.",
+    "tooling_issue": "https://github.com/alirezaght/myharness/issues/86",
+    "raw_report": "/tmp/myharness-testing-rules-20261126/publish-verification-report.json",
+    "log": "/tmp/myharness-testing-rules-20261126/publish-fast-verification.log",
+    "limits": "Overall FAIL retained. Fast tier only; timing warnings are reported separately. No release or runtime AL approval claimed."
+  }
+}

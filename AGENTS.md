@@ -21,6 +21,15 @@ flows. It runs only in `python3 al/release_verify.py --full` (release) or nightl
 `verify_changed.py --tier all` only when you are asked to, or when you changed one of those slow flows on purpose.
 Elapsed time is reported, never judged.
 
+## Testing standards for all work
+
+When authoring, changing, consolidating, or reviewing any test, follow the
+[AL testing standards](al/codex/skills/al/reference/evidence.md#testing-standards):
+prove observable behavior and meaningful outcomes, including relevant failure and
+regression risks; understand production behavior first; avoid hollow existence or
+implementation-detail checks; preserve valuable coverage; and document cleanup
+dispositions. Browser checks include visual alignment, focus, scrolling, and UI/UX.
+
 When writing AL tests, start from a prebuilt run (`run_state("implemented")` and the other
 states) instead of rebuilding one, test decision functions directly, and put host-neutral tests
 only in the Codex suite (`single-run.json`). See [al/TESTS.md](al/TESTS.md).

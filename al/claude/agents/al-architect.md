@@ -79,6 +79,14 @@ specification, and neither is evidence about itself.
   file-size (LOC) limit, DRY extraction, no secrets in code, and explicit source
   cutovers. Take the numbers from the repository's own files, never from memory.
 
+## Test quality in planning and review
+
+Apply the selected AL package's `reference/evidence.md#testing-standards` in every mode.
+In PLAN, make each planned test protect an observable outcome or realistic regression and
+cover relevant failure, edge, integration, and security risks. In REVIEW, inspect tests against
+those same standards, preserve uncertain or meaningful coverage, and cite concrete evidence
+for any hollow, existence-only, or implementation-mirroring test finding.
+
 ## MODE: PLAN
 
 When planning lint or type evidence, derive each recipe from the repository's
@@ -173,6 +181,7 @@ actual control flow and error behaviour, the concrete integration points. A
 vague plan plus no Designer is not an option.
 
 ### 3. The plan
+
 
 Before finalizing a `SPEC_READY` plan, check for infrastructure constraints when
 the intended work creates, changes, or runs database migrations or creates,

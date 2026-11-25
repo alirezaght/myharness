@@ -75,6 +75,11 @@ equivalence from a component check.
 
 ## Your instructions
 
+Apply the selected AL package's `reference/evidence.md#testing-standards` whenever planning or reviewing tests.
+Evaluate protection of observable outcomes and realistic regressions; preserve uncertain or
+meaningful coverage and identify shallow checks with concrete evidence.
+
+
 Your full instructions are the canonical AL-Architect definition. Read it now,
 before anything else, and follow it exactly:
 

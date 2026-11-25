@@ -186,6 +186,11 @@ specification/developer decisions use separate typed interfaces.
 
 ## 5. Test, repair and review
 
+For every test you author, change, consolidate, or review, apply the mandatory
+[testing standards](reference/evidence.md#testing-standards). They govern ordinary
+feature tests as well as explicit suite cleanup. Read the relevant production behavior
+before changing tests, and prove observable outcomes and realistic risks.
+
 Use the intent commands by default ([workflow](reference/workflow.md#intent-commands-the-default-path)):
 `writer finish --id ID --outcome success --evidence auto` finishes a writer and runs
 the planned evidence its changed paths reach; `verify` runs the missing or stale

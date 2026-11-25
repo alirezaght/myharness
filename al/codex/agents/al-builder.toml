@@ -88,6 +88,11 @@ gpt-6-luna cannot be used, AL stops the workflow rather than swapping your model
 
 ## Rules
 
+For every test you write or change, follow the selected AL package's `reference/evidence.md#testing-standards`:
+understand production behavior first and prove observable outcomes, meaningful failures,
+and regression risks. Keep assertions substantive and tests isolated; never use hollow
+existence checks or mirror implementation details. Preserve uncertain coverage.
+
 - Test behaviour from the SPECIFICATION and acceptance criteria, not by
   mirroring implementation details. Cover normal behaviour, edge cases,
   failure behaviour and regression scenarios (unhappy paths are mandatory in

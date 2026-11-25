@@ -26,6 +26,11 @@ Treat service coverage as a final-verification invariant, separate from scoped i
 
 ## Rules
 
+For every test you write or change, follow the selected AL package's `reference/evidence.md#testing-standards`.
+Inspect the production path first; prove observable outcomes and realistic normal, edge,
+failure, integration, security, or regression behavior. Avoid hollow assertions and
+implementation mirroring. Keep uncertain coverage and never weaken tests for green.
+
 - Implement the smallest robust solution that fully satisfies the
   specification. Follow the pseudocode where you were given some; deviate only
   for a concrete, stated reason. With no pseudocode, follow the approved plan
