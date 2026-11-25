@@ -40,6 +40,20 @@ def _widened(now,planned):
     return added
 
 
+def _own_bytes_current(source):
+    """A gate source the plan cites that the inventory does not list as a rule file is current
+    while its own bytes are those planned: `gates plan` admits any existing repository file as a
+    gate source by its hash (al_gate_discovery.validate_manifest), and `stale_sources` checks the
+    same bytes at every launch. Without this, an unchanged planned source reads as a missing rule
+    and the refresh rediscovers the planned gate away."""
+    import hashlib
+    import al_store
+    if source.get('sha256')=='0'*64:return False
+    try:p=al_store.REPO_ROOT/S.safe_path(source['path'])
+    except (SystemExit,ValueError,TypeError,KeyError):return False
+    return p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==source['sha256']
+
+
 @S.decision
 def check(st):
     """Whether the latest gate manifest still answers the task's coverage question, from one
@@ -96,7 +110,8 @@ def _current(st,manifest,declaration,ref,inputs):
     sources={r['path']:r['sha256'] for r in current['rules']}
     for source in manifest['rules']+[g['source'] for g in manifest['gates'] if g.get('source')]:
         if source['path'] not in sources:
-            reasons.append('source rule missing: '+source['path']);subjects.append(source['path'])
+            if not _own_bytes_current(source):
+                reasons.append('source rule missing: '+source['path']);subjects.append(source['path'])
         elif sources[source['path']]!=source['sha256']:
             reasons.append('source rule changed: '+source['path']);subjects.append(source['path'])
     declared={r['path'] for r in manifest['rules']}

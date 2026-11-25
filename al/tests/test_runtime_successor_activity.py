@@ -33,7 +33,7 @@ def observed(tmp_path, monkeypatch):
         census.subprocess,
         "run",
         lambda *a, **k: SimpleNamespace(
-            returncode=0, stdout="".join(f"{pid} {os.getuid()}\n" for pid in identities).encode()
+            returncode=0, stdout="".join(f"{pid} {os.getuid()} 1\n" for pid in identities).encode()
         ),
     )
     return tmp_path, task, state, argv, cwd, identities

@@ -37,7 +37,7 @@ def failed_observation(tmp_path, monkeypatch):
     monkeypatch.setattr(census, "identity", identity)
     monkeypatch.setattr(census, "process_arguments", arguments)
     monkeypatch.setattr(census, "process_cwd", lambda pid: tmp_path.parent)
-    monkeypatch.setattr(census.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=f"{current} {os.getuid()}\n{subject} {os.getuid()}\n".encode()))
+    monkeypatch.setattr(census.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=f"{current} {os.getuid()} 1\n{subject} {os.getuid()} 1\n".encode()))
     return tmp_path, task, state, before, after, calls
 
 

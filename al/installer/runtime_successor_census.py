@@ -24,16 +24,19 @@ def require_quiescent(repository, *, transaction, state, related=()):
         raise ValueError("successor census requires authenticated coordinator")
     coordinator = identity(os.getpid())
     coordinator_argv = process_arguments(os.getpid())
-    result = subprocess.run(["/bin/ps", "-axo", "pid=,uid="], capture_output=True, timeout=5)
+    result = subprocess.run(["/bin/ps", "-axo", "pid=,uid=,ppid="], capture_output=True, timeout=5)
     if result.returncode or len(result.stdout) > 4 * 1024 * 1024:
         raise ValueError("successor process census unavailable")
     known = {pid: metadata for pid, metadata in recorded_processes(state)}
-    observed = set()
+    rows = []
     for line in result.stdout.splitlines():
         values = line.split()
-        if len(values) != 2 or not all(v.isdigit() for v in values):
+        if len(values) != 3 or not all(v.isdigit() for v in values):
             raise ValueError("successor process census malformed")
-        pid, uid = map(int, values)
+        rows.append(tuple(map(int, values)))
+    requesters = _requesters(rows, os.getpid())
+    observed = set()
+    for pid, uid, _ in rows:
         if uid != os.getuid():
             continue
         observed.add(pid)
@@ -100,9 +103,24 @@ def require_quiescent(repository, *, transaction, state, related=()):
         within = cwd is not None and (cwd == root or cwd.is_relative_to(root))
         if managed and (attributed or str(root) in text or within):
             raise ValueError("live or queued task-managed operation")
-        if within:
+        # The process chain that requested this preparation (the Harness supervisor that
+        # launched the coordinator, typically started inside the repository) is the requester,
+        # not unattributed repository activity. A managed AL operation in that chain was
+        # already refused above.
+        if within and pid not in requesters:
             raise ValueError("unproven repository process ownership")
     for pid in set(known) - observed:
         if identity(pid) is not None:
             raise ValueError("recorded task process omitted from census")
     return {"kind": "kernel-task-census-v2", "repository": str(root), "relevant_processes": []}
+
+
+def _requesters(rows, coordinator):
+    """The coordinator's ancestors in one process snapshot (pid, uid, ppid rows)."""
+    parents = {pid: ppid for pid, _, ppid in rows}
+    chain, current = set(), parents.get(coordinator)
+    while current and current > 1 and current not in chain:
+        chain.add(current)
+        current = parents.get(current)
+    return chain
+

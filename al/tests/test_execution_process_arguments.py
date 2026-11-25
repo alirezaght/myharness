@@ -144,7 +144,7 @@ def test_empty_or_unavailable_fields_do_not_exempt_process(monkeypatch, tmp_path
     monkeypatch.setattr(census, 'process_cwd', lambda pid: None if reason == 'cwd-unavailable'
                         else root if reason == 'cwd' else other)
     monkeypatch.setattr(census.subprocess, 'run', lambda *args, **kwargs: SimpleNamespace(
-        returncode=0, stdout=f'123 {census.os.getuid()}\n'.encode()))
+        returncode=0, stdout=f'123 {census.os.getuid()} 1\n'.encode()))
     known = [(123, {'pid': 123, 'start': [1]})] if reason == 'known' else []
     monkeypatch.setattr(census, 'recorded_processes', lambda state: known)
     message = {'known': 'task-owned process is live', 'cwd': 'unproven repository process ownership',

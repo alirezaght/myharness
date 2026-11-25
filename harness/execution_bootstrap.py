@@ -6,6 +6,7 @@ from pathlib import Path
 
 from harness.execution_contract import BOOTSTRAP
 
+
 def _knowledge_modules(source):
     """Every module of the knowledge package: execution operations import them lazily, so a
     hand-kept list silently drops new ones from the trusted snapshot."""

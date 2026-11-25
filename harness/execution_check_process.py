@@ -138,7 +138,10 @@ def check_popen(context_path, argv, **kwargs):
     kwargs.pop("env", None)
     try:
         process = operation_popen(
-            profile, recipe_argv(context_path, profile, environment, argv), env=environment, **kwargs
+            profile,
+            recipe_argv(context_path, profile, environment, argv),
+            env=environment,
+            **kwargs,
         )
     except BaseException:
         release_process_temporary(profile.process_temporary)

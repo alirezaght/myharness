@@ -74,6 +74,22 @@
         "type": "object"
       }
     },
+    "reused_results": {
+      "description": "Checks whose result the action cache served (#26), each with the run where it originally executed (`reused_from`) and its cache key. Comparison packets only; the fresh packet shows the same origin on each evidence entry.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "area",
+          "status",
+          "argv",
+          "cwd",
+          "reused_from",
+          "key"
+        ]
+      }
+    },
     "fresh": {
       "type": "object"
     },

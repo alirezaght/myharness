@@ -37,18 +37,22 @@ KINDS = {
 }
 
 
-# COMPLEX requires a named hard part (#30): an algorithm, an invariant or a protocol. Breadth (files,
-# services, modules), and defect or finding counts are never reasons on their own.
+# COMPLEX requires a named hard part (#30): an algorithm, an invariant or a protocol.
+# Breadth (files, services, modules), and defect or finding counts are never reasons on their own.
 HARD_CLASSES = ("algorithm", "invariant", "protocol")
 _BREADTH = re.compile(
-    r"\b(\d+|many|several|multiple|numerous|lots of|all)\s+(files?|services?|modules?|packages?|components?|"
-    r"repos|repositories|defects?|bugs?|findings?|call[- ]?sites?|places|endpoints?|screens?|tests?)\b"
-    r"|\b(breadth|cross[- ]cutting|large (diff|change|refactor)|file count|defect count|many changes)\b",
+    r"\b(\d+|many|several|multiple|numerous|lots of|all)\s+"
+    r"(files?|services?|modules?|packages?|components?|"
+    r"repos|repositories|defects?|bugs?|findings?|call[- ]?sites?|places|"
+    r"endpoints?|screens?|tests?)\b"
+    r"|\b(breadth|cross[- ]cutting|large (diff|change|refactor)|"
+    r"file count|defect count|many changes)\b",
     re.I,
 )
 _HARD_WORDS = re.compile(
     r"algorithm|invariant|protocol|order|consisten|atomic|idempot|lock|race|concurren|transaction|"
-    r"handshake|coheren|exactly[- ]once|at[- ]least[- ]once|monoton|linearizab|serializab|state machine|"
+    r"handshake|coheren|exactly[- ]once|at[- ]least[- ]once|monoton|linearizab|serializab|"
+    r"state machine|"
     r"merge|schedul|recurs|graph|search|sort|hash|encrypt|sign|auth|quorum|leader|retry|backoff",
     re.I,
 )
@@ -70,8 +74,10 @@ def named_hard_part(value):
         )
     if breadth_only(name):
         raise ValueError(
-            "hard part " + repr(name) + " argues from breadth or a defect count; name the algorithm, "
-            "invariant or protocol instead (breadth, services and defect counts are not reasons)"
+            "hard part "
+            + repr(name)
+            + " argues from breadth or a defect count; name the algorithm, invariant or "
+            "protocol instead (breadth, services and defect counts are not reasons)"
         )
     return {"kind": kind, "name": name}
 
