@@ -16,6 +16,16 @@ def definitions(repo,files):
     return CI.inventory(repo,PATHS)
 
 
+def assert_release_only(obligations,name):
+    """A definite release/deploy job is kept as an UNRESOLVED obligation (since 4bd481d), never
+    dropped: it is never executable, never offers a local recipe and never counts as pipeline
+    verification of a service (#17)."""
+    job=[o for o in obligations if o['job']==name]
+    assert len(job)==1 and job[0]['applicability']=='UNRESOLVED' and job[0]['execution'] is None
+    assert 'local_recipe' not in job[0] and 'release/verification identity' in job[0]['reason']
+    assert CI.release_job(name,job[0]['definition_variants']) and not CI.pipeline_verified(job[0])
+
+
 def conditional(base,override,job='',repeat=False,condition='$OPTIONAL == "yes"'):
     root='include:\n  - local: ci/base.yml\n  - local: ci/controller.yml\n'
     if repeat:root+='  - local: ci/base.yml\n'
@@ -42,7 +52,7 @@ def conditional(base,override,job='',repeat=False,condition='$OPTIONAL == "yes"'
 def test_default_inherited_and_explicit_stage_classification(repo,job,stage,expected):
     text='.base:\n'+stage+'  script: echo checked\n'+job+':\n  extends: .base\n'
     jobs=definitions(repo,{'.gitlab-ci.yml':text})['obligations']
-    if expected is None:assert jobs==[]
+    if expected is None:assert len(jobs)==1;assert_release_only(jobs,job)
     else:assert len(jobs)==1 and jobs[0]['job']==job and jobs[0]['applicability']==expected
 
 
@@ -58,9 +68,12 @@ def test_default_inherited_and_explicit_stage_classification(repo,job,stage,expe
 def test_uncertain_job_override_precedes_all_exclusion_paths(repo,override):
     data=definitions(repo,conditional('verify:\n  script: echo checked\n',override))
     job=next(j for j in data['obligations'] if j['job']=='verify')
-    assert job['applicability']=='UNRESOLVED' and job['units']==['apps/admin','apps/web']
-    # An unresolved job's scope is the unit directories of the selected paths (compact, same coverage).
-    assert job['inputs']==['apps/admin','apps/web']
+    # Never erased. An override that only deselects leaves the job running in the world without
+    # the optional include, so it stays a required, executable check; any other override leaves
+    # its identity unresolved.
+    if override.startswith('verify:\n  rules:'):assert job['applicability']=='APPLICABLE' and job['execution']
+    else:assert job['applicability']=='UNRESOLVED'
+    assert job['units']==['apps/admin','apps/web'] and set(PATHS)<=set(job['inputs'])
     assert {d['path'] for d in job['dependencies']}=={'.gitlab-ci.yml','ci/base.yml','ci/controller.yml','ci/optional.yml'}
 
 
@@ -76,11 +89,14 @@ def test_transitive_hidden_template_or_reference_taint_is_retained(repo,mechanis
         base='.stage:\n  stage: test\nverify:\n  script: echo checked\n  stage: !reference [.stage, stage]\n'
         override='.stage:\n  stage: deploy\n'
     jobs=definitions(repo,conditional(base,override))['obligations']
-    assert len(jobs)==1 and jobs[0]['job']=='verify' and jobs[0]['applicability']=='UNRESOLVED'
-    assert jobs[0]['units']==['apps/admin','apps/web']
+    assert len(jobs)==1 and jobs[0]['job']=='verify'
+    if mechanism=='reference':
+        # The tainted rules only deselect: the job still runs, for apps/web, where the base selects it.
+        assert jobs[0]['applicability']=='APPLICABLE' and jobs[0]['execution'] and jobs[0]['units']==['apps/web']
+    else:assert jobs[0]['applicability']=='UNRESOLVED' and jobs[0]['units']==['apps/admin','apps/web']
 
 
-@pytest.mark.parametrize('condition,expected',[('false','APPLICABLE'),('true',None),('$OPTIONAL == "yes"','UNRESOLVED')])
+@pytest.mark.parametrize('condition,expected',[('false','APPLICABLE'),('true',None),('$OPTIONAL == "yes"','APPLICABLE')])
 def test_false_true_and_unknown_include_conditions_merge_honestly(repo,condition,expected):
     data=definitions(repo,conditional('verify:\n  script: echo checked\n','verify:\n  rules:\n    - when: never\n',condition=condition));jobs=data['obligations']
     if expected is None:assert jobs==[]
@@ -139,19 +155,25 @@ def test_default_test_stage_job_has_complete_public_approval_route(cli,repo,tmp_
 def test_explicit_environment_semantics_precede_default_or_test_stage(repo,stage,environment,expected):
     text='verify:\n'+stage+'  environment: '+environment+'\n  script: echo checked\n'
     jobs=definitions(repo,{'.gitlab-ci.yml':text})['obligations']
-    if expected is None:assert jobs==[]
+    if expected is None:assert len(jobs)==1;assert_release_only(jobs,'verify')
     else:assert len(jobs)==1 and jobs[0]['applicability']==expected
 
 
 def test_explicit_release_stage_precedes_verify_environment_but_invalid_stage_is_unknown(repo):
     text='release:deploy:\n  stage: deploy\n  environment: {name: staging, action: verify}\n  script: echo deploy\nverify:\n  stage: "$STAGE"\n  environment: staging\n  script: echo checked\n'
     jobs=definitions(repo,{'.gitlab-ci.yml':text})['obligations']
-    assert len(jobs)==1 and jobs[0]['job']=='verify' and jobs[0]['applicability']=='UNRESOLVED'
+    assert [j['job'] for j in jobs]==['release:deploy','verify'] and jobs[1]['applicability']=='UNRESOLVED'
+    assert_release_only(jobs,'release:deploy')
 
 
 def test_public_discovery_retains_verify_and_unknown_environment_but_excludes_deployment(cli,repo,tmp_path,state_file):
     text='deploy-default:\n  environment: staging\n  script: echo deploy\ndeploy-test:\n  stage: test\n  environment: {name: staging, action: stop}\n  script: echo deploy\nverify:\n  environment: {name: staging, action: verify}\n  script: echo checked\nunknown:\n  stage: test\n  environment: "$ENV"\n  script: echo unknown\n'
     m=setup(cli,repo,tmp_path,{'.gitlab-ci.yml':text},['svc/app.py'])
-    assert {g['source']['job'] for g in m['gates'] if g['category']=='ci'}=={'verify','unknown'}
+    gates={g['source']['job']:g for g in m['gates'] if g['category']=='ci'}
+    assert set(gates)=={'verify','unknown','deploy-default','deploy-test'}
+    # Deployments stay unresolved obligations and are never left to the pipeline as verification.
+    assert all(gates[j]['applicability']=='UNRESOLVED' for j in ('deploy-default','deploy-test'))
+    delegated=m['service_coverage']['semantic_requirements']['checks'].get('pipeline_verified') or []
+    assert not {j['job'] for d in delegated for j in d['jobs']}&{'deploy-default','deploy-test'}
     plan(cli,tmp_path,m);force_applicable_ci(m)
     before=state_file().read_bytes();plan(cli,tmp_path,m,ok=False);assert state_file().read_bytes()==before
