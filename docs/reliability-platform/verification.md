@@ -1,5 +1,21 @@
 # Reliability audit verification
 
+## Rebased integration status: 2026-11-25
+
+The remainder of this file records the earlier `2ad8bed9` audit and its original environment; it is historical and does not describe current-candidate verification. Current source-bound reports, manifest hashes, retained run history, and packaging observations are archived in [publication-20261125](publication-20261125/README.md).
+
+The integration candidate is based on main `fef2cd1ec5650c7fba5cf9f056302d105f5c64a5`; its clean core checkpoint before Builder support edits is `91d58709207fbb3b10c6546dbe6b73b6045bea65`. It has not been pushed. The original run `c82f62fb` stores an obsolete merge base, so it cannot serve as final whole-candidate review/publication proof. A separate current-main verification/publication run and independent review remain necessary.
+
+The locked runtime receipt for the current local setup reports Python 3.13.18 and SQLite 3.54.1. E18 recorded the SQLite capability check as PASS (6). E35 migration coverage passed 85 cases, including recognized-history upgrades, unknown-history refusal, manifest reproducibility, ledger/attachment/TEMP ownership guards, rollback after a completed relocation update, and successful concurrent retry. These records remain tied to their exact historical source trees; later edits do not automatically refresh their currency.
+
+Distribution evidence: E41 passed the pre-expansion single distribution test. E42 failed the expanded test due to a probe-result omission (`installer_origin` was asserted but not included in the JSON emitted by the probe); its other test passed. E43 passed both tests. The installed-wheel child used `python -I -S` from outside the checkout with only the installed target added to `sys.path`; it confirmed `harness` and `al.installer` origins, all 25 packaged SQL resource hashes and the packaged schema manifest, and a disposable database migrated to versions 1–25. It did not use the default or production database. The E42 external JUnit path may have been overwritten by E43; AL-managed logs preserve both records.
+
+E38 remains overall FAIL: 111 functional cases passed, with 34 timing-budget violations. The user accepted these current timings and explicitly requested no further optimization. The 5-second per-test and 60-second per-file policy was not changed; E38 is not relabeled or waived.
+
+E44 `publication-browser-focused` passed 11 registered Chrome cases covering incident intelligence, timeline, policy, attached-session history and investigation source-review/adoption journeys. Desktop 1280×800 and narrow 390×844 screenshots were visually inspected across those views and theme states. No major alignment defect or page-level overflow was observed; long narrow views wrap and scroll. The native Supporting and Contradicting evidence multi-select labels are clipped at both widths, a nonblocking UX limitation with the full incident details available by selecting an incident and opening its immutable fact, source provenance and investigation history. The exact run outputs and representative screenshot paths are recorded in [the publication archive](publication-20261125/README.md). This is focused browser evidence only, not full browser-suite approval.
+
+After the support-test and documentation edits, final runs E47 `publication-format` and E48 `publication-lint` passed (786 files already formatted; all lint checks passed). Both were executed through the managed AL ledger. The focused browser evidence remains E44; no browser repeat was needed for later documentation-only edits.
+
 > Status update: P1–P5 are now accepted as DEC-0048–DEC-0052. See [approved status and current evidence](approved-status.md); pending statements below describe the original audit checkpoint.
 This record verifies selected existing behavior at `2ad8bed9`, not the proposed reliability platform. No product code changed. Results use disposable fixture repositories/databases; no provider credentials or external databases were exercised.
 

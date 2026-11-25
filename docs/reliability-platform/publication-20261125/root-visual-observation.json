@@ -1,0 +1,49 @@
+{
+  "kind": "actual-root-preliminary-browser-visual-observation",
+  "functional_claim": false,
+  "formal_approval": false,
+  "viewed": [
+    {
+      "path": "/private/tmp/publication-browser-focused-001/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-editor-1280x800.png",
+      "sha256": "44aabd360c6535aeea4df0586fa5cda8b0df8bdfea815a803a543f91b0691ebf",
+      "bytes": 154292
+    },
+    {
+      "path": "/private/tmp/publication-browser-focused-001/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-editor-390x844.png",
+      "sha256": "73ac108bf86c9747777e1c50e79b8f03ad9f688326b9d436f63114b0180498d1",
+      "bytes": 80205
+    },
+    {
+      "path": "/private/tmp/publication-browser-focused-001/test_policy_flow_in_real_chrom1/policy-shots/policy-390x844-capabilities.png",
+      "sha256": "97aad96b0f5622c51719ca23d0b6e7a833fe9a81efeb5c35e002b013c55b6bd5",
+      "bytes": 66283
+    },
+    {
+      "path": "/private/tmp/publication-browser-focused-001/test_persisted_incident_intell1/screenshots-narrow/incident-intelligence-groups-390x844.png",
+      "sha256": "5784d927f22a42d31c400ef4fc00bfc3f6171a3963189fb865397434a154e5c6",
+      "bytes": 88800
+    },
+    {
+      "path": "/private/tmp/publication-browser-focused-001/test_persisted_incident_intell0/screenshots-desktop/incident-intelligence-outputs-verdict-1280x800.png",
+      "sha256": "11f18ecc8163be8769e264ddc760f0c7666e85d7173b4635dee05576941b5762",
+      "bytes": 197361
+    },
+    {
+      "path": "/private/tmp/publication-browser-focused-001/test_real_process_timeline_in_1/timeline-shots/timeline-390x844.png",
+      "sha256": "81ad6d674b4e05de89beb4b59e536144d5588c73c28e5a912963ca17a692d403",
+      "bytes": 80269
+    },
+    {
+      "path": "/private/tmp/hp25b/harness-interview-recovery-artifacts/outputs/investigation-diagram-1280-light-80c0676149.png",
+      "sha256": "6106fd7c39c34f2f19c3552166ffa17b6d7936b812f108e7c5b1d8e0734dab53",
+      "bytes": 118319
+    }
+  ],
+  "observations": [
+    "Independently opened all seven actual PNGs with view_image during the source-frozen Chrome run.",
+    "Observed desktop/narrow incident editor controls and labels remain aligned and within viewport; narrow textarea labels wrap; policy capability entries and timeline identifiers wrap within the screen. No obvious page-level horizontal overflow in these captures.",
+    "Evidence multi-select option strings are visibly clipped at the right edge on both desktop and narrow editor/output/group controls; full-detail/provenance path needs assessment, reported to Builder as a UX observation, not an inferred functional failure.",
+    "Desktop light diagram preview, zoom/fit controls and inspector are legible and aligned in the inspected capture.",
+    "This covers only these screenshots; browser functional results and remaining viewport/theme visual checks must come from their actual completed run and inspection."
+  ]
+}

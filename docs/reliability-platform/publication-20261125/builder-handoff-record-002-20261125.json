@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "kind": "agent-handoff-record-v1",
+  "role": "al-builder-correction",
+  "agent_id": "publication-support-001-correction-002",
+  "supersedes": {
+    "report": {
+      "path": "/private/tmp/reliability-publication-builder-report-20261125.md",
+      "sha256": "43f0d1299797f8e138baaa76a2d8b704d11cb08843e2bac02f94bad18d46892b"
+    },
+    "handoff_record": {
+      "path": "/private/tmp/reliability-publication-builder-handoff-record-20261125.json",
+      "sha256": "d5c8c757fba44751d3c7f6b9318b9ba389324763347907c7374d0d6c01cf48dd"
+    }
+  },
+  "corrections": [
+    {
+      "field": "R4 recovery status",
+      "incorrect_prior_claim": "R4's 2/2 automatic grants were spent.",
+      "corrected_claim": "Two of two returns were used; automatic authorizations/grants were zero. The Architect's RR1 allowance recommendation was not accepted, and runtime state was PROOF_ADMISSION_PENDING.",
+      "source": "Current Engineer report and root's verified runtime record; source-bound archive bytes are preserved."
+    },
+    {
+      "field": "current main base metadata",
+      "incorrect_prior_value": "fef2cd1ec5650c7fba5cf9f056302d105f5c64a5a",
+      "corrected_value": "fef2cd1ec5650c7fba5cf9f056302d105f5c64a5",
+      "source": "Root-verified current main commit OID; corrected in publication archive provenance metadata."
+    }
+  ],
+  "decisions": [
+    {
+      "decision": "Preserve the original Builder report and handoff record, and publish this correction as new append-only artifacts.",
+      "reason": "Maintain report history while ensuring current handoff documents do not repeat inaccurate recovery metadata."
+    },
+    {
+      "decision": "Do not rerun functional or browser checks for prose and metadata corrections.",
+      "reason": "No implementation or test behavior changed; E41-E48 evidence remains as recorded."
+    }
+  ],
+  "verified": [
+    {
+      "claim": "Final formatting and lint checks passed.",
+      "evidence_ids": ["E45", "E46", "E47", "E48"]
+    },
+    {
+      "claim": "Distribution E43 passed both artifact and installed-wheel checks; focused browser E44 passed 11 cases with visual inspection.",
+      "evidence_ids": ["E43", "E44"]
+    }
+  ],
+  "unverified": [
+    {
+      "claim": "Final current-base whole-candidate verification, independent review, publication, R5b-R11, and full mission or production readiness.",
+      "reason": "These remain root-owned or subsequent work; candidate has not been pushed."
+    }
+  ],
+  "risks": [
+    "E38 remains FAIL with 111 functional passes and 34 timing violations under the user's accepted no-optimization constraint.",
+    "E42 external JUnit path may have been overwritten by E43; immutable AL-managed logs retain both evidence records.",
+    "Incident native evidence-picker labels clip at desktop and narrow widths; detail, source provenance and investigation history provide the inspection route.",
+    "The current run does not establish full descendant settlement, hosted Linux containment, or provider/native qualification."
+  ],
+  "report_path": "/private/tmp/reliability-publication-builder-report-20261125-corrected.md"
+}

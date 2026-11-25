@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "purpose": "Immutable source-bound planning, correction, and implementation evidence for the 2026-11-25 rebased publication candidate.",
+  "repository": "/private/tmp/myharness-main-integration-20261125",
+  "branch": "codex/reliability-publication-rebase-20261125",
+  "base": "fef2cd1ec5650c7fba5cf9f056302d105f5c64a5",
+  "candidate_checkpoint": "91d58709207fbb3b10c6546dbe6b73b6045bea65",
+  "al_session": "reliability-publication-20261125",
+  "al_run": "c82f62fb",
+  "writer": "publication-support-001",
+  "records": [
+    {
+      "name": "architect-current.md",
+      "source": "/private/tmp/reliability-publication-architect-current-20261125.md",
+      "source_sha256": "64fbf3bb94e067d4da06e50cf520b36264c801a0c0363c0f4bac3d399adaf2e3",
+      "archive": "docs/reliability-platform/publication-20261125/architect-current.md",
+      "archive_sha256": "64fbf3bb94e067d4da06e50cf520b36264c801a0c0363c0f4bac3d399adaf2e3"
+    },
+    {
+      "name": "designer-recovered.md",
+      "source": "/private/tmp/reliability-publication-designer-recovered-20261125.md",
+      "source_sha256": "2e81c89131f7a482d9642e0f5b9acdeee6ce56bce231757aec3292d27478e080",
+      "archive": "docs/reliability-platform/publication-20261125/designer-recovered.md",
+      "archive_sha256": "2e81c89131f7a482d9642e0f5b9acdeee6ce56bce231757aec3292d27478e080"
+    },
+    {
+      "name": "designer-delta.md",
+      "source": "/private/tmp/reliability-publication-designer-delta-20261125.md",
+      "source_sha256": "9ba2a2a7346434c296fdda3b9df106c6e15adf7f4837343bb28f30e319e98c5b",
+      "archive": "docs/reliability-platform/publication-20261125/designer-delta.md",
+      "archive_sha256": "9ba2a2a7346434c296fdda3b9df106c6e15adf7f4837343bb28f30e319e98c5b"
+    },
+    {
+      "name": "review-base-repair.md",
+      "source": "/private/tmp/reliability-publication-review-base-repair-20261125.md",
+      "source_sha256": "b5d89fe215878c6d35ebfffddf1079447f1aec8cc6414ba8fdcffcda70298c2d",
+      "archive": "docs/reliability-platform/publication-20261125/review-base-repair.md",
+      "archive_sha256": "b5d89fe215878c6d35ebfffddf1079447f1aec8cc6414ba8fdcffcda70298c2d"
+    },
+    {
+      "name": "materialization-guidance.md",
+      "source": "/private/tmp/reliability-publication-materialization-guidance-20261125.md",
+      "source_sha256": "9325a172416093871484617584c6d79b9470f338b42cb81ddce97d91612df345",
+      "archive": "docs/reliability-platform/publication-20261125/materialization-guidance.md",
+      "archive_sha256": "9325a172416093871484617584c6d79b9470f338b42cb81ddce97d91612df345"
+    },
+    {
+      "name": "ledger-ownership-guidance.md",
+      "source": "/private/tmp/reliability-publication-ledger-ownership-guidance-20261125.md",
+      "source_sha256": "2dc1ff2b460989c4eadfcde2dacea77f32c5a9c962a31bf4877236a2c9bafaa8",
+      "archive": "docs/reliability-platform/publication-20261125/ledger-ownership-guidance.md",
+      "archive_sha256": "2dc1ff2b460989c4eadfcde2dacea77f32c5a9c962a31bf4877236a2c9bafaa8"
+    },
+    {
+      "name": "functional-custody-guidance.md",
+      "source": "/private/tmp/reliability-publication-functional-custody-guidance-20261125.md",
+      "source_sha256": "3d3cc6b1e6aca5872e1160d4686692d8033419df97f7f4dc09c3ee71423892c3",
+      "archive": "docs/reliability-platform/publication-20261125/functional-custody-guidance.md",
+      "archive_sha256": "3d3cc6b1e6aca5872e1160d4686692d8033419df97f7f4dc09c3ee71423892c3"
+    },
+    {
+      "name": "functional-evidence-guidance.md",
+      "source": "/private/tmp/reliability-publication-functional-evidence-guidance-20261125.md",
+      "source_sha256": "d450decfbbff6d5b1f16c90fd5f4027641f168f3f688a471ddec67b0f24aaa8a",
+      "archive": "docs/reliability-platform/publication-20261125/functional-evidence-guidance.md",
+      "archive_sha256": "d450decfbbff6d5b1f16c90fd5f4027641f168f3f688a471ddec67b0f24aaa8a"
+    },
+    {
+      "name": "timing-policy.md",
+      "source": "/private/tmp/reliability-publication-timing-policy-20261125.md",
+      "source_sha256": "bb10e1ce78e8428cf1005e94ab9282d93124b372dff0f4c0b4c4f3532d5fe04e",
+      "archive": "docs/reliability-platform/publication-20261125/timing-policy.md",
+      "archive_sha256": "bb10e1ce78e8428cf1005e94ab9282d93124b372dff0f4c0b4c4f3532d5fe04e"
+    },
+    {
+      "name": "timing-acceptance.json",
+      "source": "/private/tmp/reliability-publication-timing-acceptance-20261125.json",
+      "source_sha256": "8cdf41f2fb8582c37cab8fbb53bab7aebf571f76a30a18d623260eda48f797db",
+      "archive": "docs/reliability-platform/publication-20261125/timing-acceptance.json",
+      "archive_sha256": "8cdf41f2fb8582c37cab8fbb53bab7aebf571f76a30a18d623260eda48f797db"
+    },
+    {
+      "name": "engineer-report.md",
+      "source": "/private/tmp/reliability-publication-engineer-report-20261125.md",
+      "source_sha256": "14167a3f79a3a60efa11356a4e7d2e9e56f0bfbb8d833958653273cc37800484",
+      "archive": "docs/reliability-platform/publication-20261125/engineer-report.md",
+      "archive_sha256": "14167a3f79a3a60efa11356a4e7d2e9e56f0bfbb8d833958653273cc37800484"
+    },
+    {
+      "name": "engineer-handoff-record.json",
+      "source": "/private/tmp/reliability-publication-engineer-handoff-record-20261125.json",
+      "source_sha256": "0b798f6a32f5dda14395df397b511f4dd4c92229dc584d56a0929c2463bdb75b",
+      "archive": "docs/reliability-platform/publication-20261125/engineer-handoff-record.json",
+      "archive_sha256": "0b798f6a32f5dda14395df397b511f4dd4c92229dc584d56a0929c2463bdb75b"
+    },
+    {
+      "name": "core-source-manifest.json",
+      "source": "/private/tmp/reliability-publication-core-source-manifest-20261125.json",
+      "source_sha256": "007549aa3647f52a941780eeb6f891138112a86123f5709834762566d444e8dd",
+      "archive": "docs/reliability-platform/publication-20261125/core-source-manifest.json",
+      "archive_sha256": "007549aa3647f52a941780eeb6f891138112a86123f5709834762566d444e8dd"
+    },
+    {
+      "name": "core-evidence-manifest.json",
+      "source": "/private/tmp/reliability-publication-core-evidence-manifest-20261125.json",
+      "source_sha256": "6ee523ba16dda81894955706b4cfc02fe17bd5873345f6ada84ba708766026a7",
+      "archive": "docs/reliability-platform/publication-20261125/core-evidence-manifest.json",
+      "archive_sha256": "6ee523ba16dda81894955706b4cfc02fe17bd5873345f6ada84ba708766026a7"
+    },
+    {
+      "name": "core-status.txt",
+      "source": "/private/tmp/reliability-publication-core-status-20261125.txt",
+      "source_sha256": "a364aa78b3ba821f0861251e386881185d6edc2441e5438bc5197bef095a877e",
+      "archive": "docs/reliability-platform/publication-20261125/core-status.txt",
+      "archive_sha256": "a364aa78b3ba821f0861251e386881185d6edc2441e5438bc5197bef095a877e"
+    },
+    {
+      "name": "root-visual-observation.json",
+      "source": "/private/tmp/reliability-publication-root-visual-observation-20261125.json",
+      "source_sha256": "14ed56b73baf027ce1249a77200bd066bab84b0b76a627a6c3a62ef0f5a3a6fd",
+      "archive": "docs/reliability-platform/publication-20261125/root-visual-observation.json",
+      "archive_sha256": "14ed56b73baf027ce1249a77200bd066bab84b0b76a627a6c3a62ef0f5a3a6fd"
+    }
+  ],
+  "limits": [
+    "These archived reports and manifests preserve provenance; they do not make historical evidence current for a later publication run.",
+    "The original accepted task package and remaining task packages are immutable and are not rewritten here."
+  ]
+}

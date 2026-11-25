@@ -1,0 +1,45 @@
+ M al/claude/skills/al/scripts/al_planning.py
+ M al/claude/skills/al/scripts/al_planning_rebind.py
+ M al/claude/skills/al/scripts/al_snapshot.py
+ D al/claude/skills/al/tests/test_agent_contracts.py
+ D al/claude/skills/al/tests/test_incident_sources.py
+ M al/codex/skills/al/scripts/al_planning.py
+ M al/codex/skills/al/scripts/al_planning_rebind.py
+ M al/codex/skills/al/scripts/al_snapshot.py
+ M al/codex/skills/al/tests/test_planning_rebind.py
+ M al/codex/skills/al/tests/test_standalone_papercuts.py
+ M al/installer/runtime_service.py
+ M al/installer/source_materialization.py
+ M al/tests/conftest.py
+ M al/tests/test_runtime_service.py
+ M al/tests/test_runtime_service_unit.py
+ M al/tests/test_verification_runner.py
+ M al/tests/test_writer_start_progress.py
+ M al/verification_plan.py
+ M harness/db.py
+ M harness/execution_bootstrap.py
+ M harness/execution_check_channel.py
+ M harness/execution_operations.py
+ M harness/execution_processes.py
+ M harness/migration_compatibility.py
+ M harness/migration_schema.py
+ M harness/migration_schema_manifest.json
+ M harness/policy/control_git.py
+ M harness/policy/control_qualification.py
+ M harness/policy/control_sources_claude.py
+ M harness/policy/control_sources_codex.py
+ M harness/policy/control_sources_installer.py
+ M harness/policy/processes.py
+ M harness/policy/resources.py
+ M tests/test_agent_contracts_setup.py
+ M tests/test_guarded_check_channel.py
+ M tests/test_incident_catalog.py
+ M tests/test_knowledge_lessons.py
+ M tests/test_migration_compatibility.py
+ M tests/test_operation_isolation.py
+ M tests/test_policy_retry_control.py
+ M tests/test_task_check_recipes.py
+?? al/tests/test_source_materialization_ordinary.py
+?? harness/policy/control_launcher.py
+?? scripts/generate_migration_schema.py
+?? tests/test_check_policy_storage_integration.py

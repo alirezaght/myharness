@@ -1,0 +1,680 @@
+{
+  "kind": "retained-artifact-identities-not-proof",
+  "artifacts": [
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E1-publication-migrations-test.log",
+      "sha256": "5764db085c040013c23bc48edc5603086072cd9af0649559487a84946af2a614",
+      "bytes": 4659
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E10-publication-control-launcher-repro-test.log",
+      "sha256": "74298a304a7af3c9ddb4337e452ca8c5b33af884e95076b3586625075fbbc419",
+      "bytes": 936
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E11-publication-check-policy-storage-test.log",
+      "sha256": "7d9d35d8867469b61bfcccc868432597948149505429f528ba4dbcf326200785",
+      "bytes": 1039
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E12-publication-setup-session-test.log",
+      "sha256": "610a077f42063e570711c2fbe426523b5a6aad45d1cfa21dbb5393866df2edf2",
+      "bytes": 10658
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E13-publication-lint-lint.log",
+      "sha256": "b5529b7e258396d09dfa98bc899d07cedd9c165ba801e0478120205698d097e0",
+      "bytes": 1072
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E14-publication-lint-lint.log",
+      "sha256": "a0bb8a45fed421312f1f54e8ea4cc5f5ed8c53e40fb0d52e79469cbf62d63395",
+      "bytes": 629
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E15-publication-setup-focused-test.log",
+      "sha256": "a12e4ec27b2d424429b71d3bdbe7b9314420de2ccd2e5089bde7747e5dd13f26",
+      "bytes": 1138
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E16-publication-al-fast-test.log",
+      "sha256": "b01e2e7927a9af1e7e301e5fbfc58a58b5c91a87a4b9d403b35e96de18122a44",
+      "bytes": 56567
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E17-publication-format-lint.log",
+      "sha256": "8aae65dca15fc92ba5de35c79b0e109322e77e9cefa4b669b4598d7f1f6ff4a9",
+      "bytes": 1198
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E18-publication-sqlite-capabilities-test.log",
+      "sha256": "5c88395e3b29b634ea4c7c82fd080361402a6bbe89c04725989af247b3ed4c34",
+      "bytes": 1401
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E19-publication-format-lint.log",
+      "sha256": "c63b227173c9bb4fbf082561599afc381ad9075acd1e5528ff54df840adae0ec",
+      "bytes": 647
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E2-publication-lint-lint.log",
+      "sha256": "74bcb9addeb14e7fb19f5e4531d49047c0d09888ede2149b8f452785d5b33607",
+      "bytes": 7900
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E20-publication-al-fast-test.log",
+      "sha256": "200857dfe9e969c72b74325c9aa1871e6ffef3cd5f41e432c1f62740a765f825",
+      "bytes": 85652
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E21-publication-al-focused-repair-test.log",
+      "sha256": "c640593665a5a67a0c6cf7623cd05c36a231a13b37ae5905bc88d17d4e65226d",
+      "bytes": 42606
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E22-publication-al-focused-repair-test.log",
+      "sha256": "8ba9ab53b812c4b8e1ffbd7a94c4fd0bc80119720cfe9caa5cd42bc531e9c12f",
+      "bytes": 4819
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E23-publication-lint-lint.log",
+      "sha256": "987e6db3c19720da90850a19f6c0bba52e997fe6291cd5e5ab25d82e9abe9ba9",
+      "bytes": 632
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E24-publication-format-lint.log",
+      "sha256": "4ff43ccd140c00c4f7f15ddfb53efcd8b211477b993a2eb8c8c666ebc360cc30",
+      "bytes": 650
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E25-publication-al-focused-repair-test.log",
+      "sha256": "3915faea53b074f2173ebccae7b86203a91e2b04b6f99faf3c534cebbc9c8609",
+      "bytes": 5877
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E26-publication-control-launcher-repro-test.log",
+      "sha256": "2c29b9502e9a11489b4b645b63382d8f9626d5b3ab5201bac7e53501495c21dc",
+      "bytes": 937
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E27-publication-al-control-qualification-test.log",
+      "sha256": "54d87a4de1ef81e792768d2d01a7af31f09d6c641ff1d048daae66863c1178b8",
+      "bytes": 19804
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E28-publication-service-profile-test.log",
+      "sha256": "ccac5e9da2393bc909080ed296852b10b226af38fe5e0c001951c058623c4bba",
+      "bytes": 4235
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E29-publication-writer-progress-repro-test.log",
+      "sha256": "b4c584141b45d97138f1a92c8847a4d1bd9eb67c882b33a58569a1e11b6eabf6",
+      "bytes": 1405
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E3-publication-migrations-test.log",
+      "sha256": "f92913e6c102f713c20edbdbc77dbb48814d9a3cdc800103a2d73e1cdcf75db1",
+      "bytes": 8735
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E30-publication-runner-regressions-test.log",
+      "sha256": "f44329d5ed58160bb6cc5ec9923a917745e4ee72ace2b743859c09dc76b418bd",
+      "bytes": 3332
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E31-publication-runner-regressions-test.log",
+      "sha256": "2a1ec9cc329c3273c29926ea4e84416b93e1b198b40899e2278d03a1d9902458",
+      "bytes": 1464
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E32-publication-service-profile-test.log",
+      "sha256": "ffceddbb4d276c642952e798373466c9b11aba4f12e3980f5664f9eb51e65f11",
+      "bytes": 1705
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E33-publication-lint-lint.log",
+      "sha256": "f4601572301eb0ddbae61e59f1f91d2e391fe8a2573060238cb8991da254216f",
+      "bytes": 632
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E34-publication-migrations-test.log",
+      "sha256": "a4f7a9b600f238390119547af874e2769b494e07a0b4c3c3485482314e3ecb0a",
+      "bytes": 5888
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E35-publication-migrations-test.log",
+      "sha256": "2f0a7b2e31417156af5af4cd555cffbc09588848efebacfb3b702375c805c30d",
+      "bytes": 1003
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E36-publication-materialization-test.log",
+      "sha256": "f3bfef649b54b497478060eb318e9c438ddb473ab0f3123995ae38d789ff985b",
+      "bytes": 1300
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E37-publication-control-launcher-repro-test.log",
+      "sha256": "1a78cd082b36c88f7b5251663938119c963b0eda2b3b3eae5e492c48c9b3e3d3",
+      "bytes": 937
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E38-publication-al-focused-repair-test.log",
+      "sha256": "3a4c8586420029ce371b12141a4471c011422cb8e142358f7fc323132332e4fb",
+      "bytes": 5848
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E39-publication-lint-lint.log",
+      "sha256": "7a156cbca480434429e57ad74236bdd062186ff037c287d0ee7aeee8b309e95d",
+      "bytes": 631
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E4-publication-check-policy-storage-test.log",
+      "sha256": "18ce0fffa384bafb7f28160a7508b25274997b9d6fa4113aeb32d4e6feef6dc1",
+      "bytes": 75737
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E40-publication-format-lint.log",
+      "sha256": "9d2a35eeaca1f15b7fe93d0c6ce094c9959da820ea789876221514871a8c9734",
+      "bytes": 650
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E5-publication-migrations-test.log",
+      "sha256": "635eeb90ab23e875b655bad2e9cc245876ee89076e22dc706a031addc6923816",
+      "bytes": 1003
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E6-publication-lint-lint.log",
+      "sha256": "7778d3fc4d05b2e8bacd623d4aa5dbc503f139f33ad5b13b2c9b515e837d3825",
+      "bytes": 2975
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E7-publication-lint-lint.log",
+      "sha256": "2c7751c827e9c33346829b80799bcfd6a79a78e4ef0d77a71f588224aaace17b",
+      "bytes": 632
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E8-publication-check-policy-storage-test.log",
+      "sha256": "9ceb0f00c5c89f64af83e9139e78e2dedeccc6649bb85401091778aba6c583f8",
+      "bytes": 75738
+    },
+    {
+      "path": "/private/tmp/myharness-main-integration-20261125/.codex/al-runtime/reliability-publication-20261125/logs/c82f62fb-E9-publication-control-launcher-repro-test.log",
+      "sha256": "5246881d716e4c7cddcfd85749d6fe22bc23172d33a3da797b365d68b5f1fad7",
+      "bytes": 10419
+    },
+    {
+      "path": "/private/tmp/publication-al-focused-repair-004/report.json",
+      "sha256": "91c4103e1034895d4c65f11f2dc62e10b8ef5dc520f5bbe6d44b274c6524d0d4",
+      "bytes": 97881
+    },
+    {
+      "path": "/private/tmp/publication-materialization-001/report.json",
+      "sha256": "4140df4bccd6c8b6946b615b9b6d3dbc3476ae32fae90e70501b6ddb7b69c5dd",
+      "bytes": 57896
+    },
+    {
+      "path": "/private/tmp/reliability-publication-migrations-005.xml",
+      "sha256": "bfa255d1a465667ed3cbd2e36a9638320167dcb474eecf57ecf35013f2af3a1a",
+      "bytes": 11043
+    },
+    {
+      "path": "/private/tmp/publication-control-launcher-repro-004.xml",
+      "sha256": "f862caf129bb2d71f2cf678009e412300738b5859464243ebcc55c9c1da445f7",
+      "bytes": 402
+    },
+    {
+      "path": "/private/tmp/reliability-service-profile-source-E32.py",
+      "sha256": "0f473f80285bea7e73075a37aa8d0d6671e334a6403706564eefd3cb27240488",
+      "bytes": 17428
+    },
+    {
+      "path": "/private/tmp/reliability-publication-core-source-manifest-20261125.json",
+      "sha256": "007549aa3647f52a941780eeb6f891138112a86123f5709834762566d444e8dd",
+      "bytes": 399033
+    },
+    {
+      "path": "/private/tmp/reliability-publication-core-diff-20261125.patch",
+      "sha256": "0f6cb924ff62875c96ad870838d385140f18060137ef3ce4a1c169200148f09a",
+      "bytes": 11229579
+    }
+  ],
+  "E38_service_stage_artifacts": [
+    {
+      "path": "/Users/alirezaghiastabari/.local/share/harness/managed-storage/allocations/4317c7f1661da82575f1d80d3c8f9bbb/pytest-tmp/service0/stage-profile.jsonl",
+      "sha256": "818b10dfae7688f0418c94411689eb184bf8fb9992238c02749e61dca15f6380",
+      "rows": [
+        {
+          "stage": "source-copy",
+          "seconds": 13.015996041009203
+        },
+        {
+          "stage": "git-init",
+          "seconds": 0.2500033340184018
+        },
+        {
+          "stage": "git-add",
+          "seconds": 0.043113249994348735
+        },
+        {
+          "stage": "git-commit",
+          "seconds": 0.06333716702647507
+        },
+        {
+          "stage": "bootstrap",
+          "seconds": 24.403459042019676
+        },
+        {
+          "stage": "run-start-service",
+          "seconds": 19.535588958009612
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.2423520419979468
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5253077499801293
+        },
+        {
+          "stage": "service-stop",
+          "seconds": 0.5372787080123089
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.39003583398880437
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 1.7386831250041723
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.39221112499944866
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4615088330465369
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.401791374955792
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.5147076660068706
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4546230840496719
+        },
+        {
+          "stage": "service-stop",
+          "seconds": 0.529852292034775
+        }
+      ]
+    },
+    {
+      "path": "/Users/alirezaghiastabari/.local/share/harness/managed-storage/allocations/2477889e7d1e5d1e7933f0cf0e774786/pytest-tmp/service0/stage-profile.jsonl",
+      "sha256": "54d732681e0236bb48f16199f31207c3aba1d4919250eb53a3f60a5809dc9abf",
+      "rows": [
+        {
+          "stage": "source-copy",
+          "seconds": 12.688231708016247
+        },
+        {
+          "stage": "git-init",
+          "seconds": 0.32601191697176546
+        },
+        {
+          "stage": "git-add",
+          "seconds": 0.040777166024781764
+        },
+        {
+          "stage": "git-commit",
+          "seconds": 0.0657675419934094
+        },
+        {
+          "stage": "bootstrap",
+          "seconds": 24.694410625030287
+        },
+        {
+          "stage": "run-start-service",
+          "seconds": 19.92878550000023
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.2450719999615103
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.45676937501411885
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.3175740000442602
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4767528750235215
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.1719197080237791
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.6374559999676421
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.3676718749920838
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4028570830123499
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.1822791660088114
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.49629320797976106
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.14185220800573
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5793612080160528
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.17641970899421722
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5764367080410011
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.0191843750071712
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.42567008396144956
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.024146583979018
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4651270419708453
+        },
+        {
+          "stage": "run-bogus-op-in-process",
+          "seconds": 1.011248583032284
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.42304395796963945
+        },
+        {
+          "stage": "run-bogus-op-service",
+          "seconds": 0.19107850000727922
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.36445875000208616
+        },
+        {
+          "stage": "run-bogus-op-in-process",
+          "seconds": 1.059266124968417
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5026340410113335
+        },
+        {
+          "stage": "run-bogus-op-in-process",
+          "seconds": 0.9088177920202725
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.44382108305580914
+        },
+        {
+          "stage": "run-phase-in-process",
+          "seconds": 1.2164318750146776
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4665070839691907
+        },
+        {
+          "stage": "run-phase-service",
+          "seconds": 0.22749645897420123
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4534380420227535
+        },
+        {
+          "stage": "run-phase-in-process",
+          "seconds": 1.1323687909753062
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4629814999643713
+        },
+        {
+          "stage": "run-phase-in-process",
+          "seconds": 1.1777385419700295
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.37402845796896145
+        },
+        {
+          "stage": "service-stop",
+          "seconds": 0.42262479197233915
+        }
+      ]
+    },
+    {
+      "path": "/Users/alirezaghiastabari/.local/share/harness/managed-storage/allocations/6e0246d593d8910fa55b23aeaae2ace1/pytest-tmp/service0/stage-profile.jsonl",
+      "sha256": "48bb2e39d0933d9857ea709e34f58d12790a2b98053320a8eca30274a4876d5d",
+      "rows": [
+        {
+          "stage": "source-copy",
+          "seconds": 12.647652082960121
+        },
+        {
+          "stage": "git-init",
+          "seconds": 0.17173912504222244
+        },
+        {
+          "stage": "git-add",
+          "seconds": 0.0340846250182949
+        },
+        {
+          "stage": "git-commit",
+          "seconds": 0.05547133303480223
+        },
+        {
+          "stage": "bootstrap",
+          "seconds": 24.900432125024963
+        },
+        {
+          "stage": "run-start-service",
+          "seconds": 20.348588624969125
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.25256649998482317
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.46777720894897357
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.35879620898049325
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4787942909752019
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5285012500244193
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.609501792001538
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.46172129100887105
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.4333612500340678
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5132900419994257
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5050722910091281
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.5457063339999877
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 1.5217037920374423
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 1.018233541981317
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.3825950419995934
+        },
+        {
+          "stage": "bootstrap",
+          "seconds": 16.372166499961168
+        },
+        {
+          "stage": "run-start-service",
+          "seconds": 12.207306500000414
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.8894532079575583
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.16591912502190098
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.29399904201272875
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.31217633304186165
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.15395841602003202
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 0.7210690000210889
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.2712817499996163
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.28506758296862245
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.13595162495039403
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 0.9094046670361422
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.279894916980993
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 0.7753950410406105
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.9641729579889216
+        },
+        {
+          "stage": "service-stop",
+          "seconds": 0.24628362501971424
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.25132137502077967
+        },
+        {
+          "stage": "run-show-in-process",
+          "seconds": 0.7709832080290653
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.954657833033707
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.2766634590225294
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.2993745000567287
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.1605474169482477
+        },
+        {
+          "stage": "service-stop",
+          "seconds": 0.28303445799974725
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.28952991700498387
+        },
+        {
+          "stage": "run-show-service",
+          "seconds": 0.8773968339664862
+        },
+        {
+          "stage": "service-status",
+          "seconds": 0.2916505830362439
+        },
+        {
+          "stage": "service-stop",
+          "seconds": 0.2827689580153674
+        }
+      ]
+    }
+  ]
+}

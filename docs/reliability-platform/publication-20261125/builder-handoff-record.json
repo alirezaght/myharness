@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "kind": "agent-handoff-record-v1",
+  "role": "al-builder",
+  "agent_id": "publication-support-001",
+  "decisions": [
+    {
+      "decision": "Prove packaged migration resources from an installed wheel using an isolated -I -S child process outside the checkout.",
+      "reason": "The repository has an editable installation; a normal child interpreter could import source through site configuration and produce a false packaging result."
+    },
+    {
+      "decision": "Keep the current package configuration unchanged after inspecting the actual wheel.",
+      "reason": "E41 wheel inspection and E43 installed-wheel execution showed that module semantics already include the JSON schema manifest and all canonical migration SQL."
+    },
+    {
+      "decision": "Treat clipped native evidence-option labels as a documented nonblocking usability limitation.",
+      "reason": "Desktop/narrow visual inspection showed truncation, while selected IDs, saved hypothesis detail, immutable fact, source provenance, and investigation history provide a path to inspect full evidence; no component redesign was needed for this support scope."
+    }
+  ],
+  "assumptions": [
+    "Only an explicitly owned disposable SQLite database was used; no default or production database was opened.",
+    "This is a Builder handback, not formal final proof, independent approval, push completion, or completion of R5b-R11.",
+    "The user explicitly accepted the current E38 timing outcome and requested no further timing optimization."
+  ],
+  "files_touched": [
+    "tests/test_planning_session_distribution.py",
+    "docs/reliability-platform/remaining-features-handoff.md",
+    "docs/reliability-platform/verification.md",
+    "docs/reliability-platform/publication-20261125/README.md",
+    "docs/reliability-platform/publication-20261125/architect-current.md",
+    "docs/reliability-platform/publication-20261125/designer-recovered.md",
+    "docs/reliability-platform/publication-20261125/designer-delta.md",
+    "docs/reliability-platform/publication-20261125/review-base-repair.md",
+    "docs/reliability-platform/publication-20261125/materialization-guidance.md",
+    "docs/reliability-platform/publication-20261125/ledger-ownership-guidance.md",
+    "docs/reliability-platform/publication-20261125/functional-custody-guidance.md",
+    "docs/reliability-platform/publication-20261125/functional-evidence-guidance.md",
+    "docs/reliability-platform/publication-20261125/timing-policy.md",
+    "docs/reliability-platform/publication-20261125/timing-acceptance.json",
+    "docs/reliability-platform/publication-20261125/engineer-report.md",
+    "docs/reliability-platform/publication-20261125/engineer-handoff-record.json",
+    "docs/reliability-platform/publication-20261125/core-source-manifest.json",
+    "docs/reliability-platform/publication-20261125/core-evidence-manifest.json",
+    "docs/reliability-platform/publication-20261125/core-status.txt",
+    "docs/reliability-platform/publication-20261125/provenance.json",
+    "docs/reliability-platform/publication-20261125/root-visual-observation.json",
+    "docs/reliability-platform/publication-20261125/builder-handoff-record.json"
+  ],
+  "verified": [
+    {
+      "claim": "The expanded distribution suite passes both artifact and installed-wheel probes; installed imports resolve from the target outside the source checkout, packaged resource hashes match, and the owned disposable database reaches canonical migration versions 1-25.",
+      "evidence_ids": ["E43"]
+    },
+    {
+      "claim": "The registered focused Chrome suite passes 11 cases and desktop/narrow screenshots were inspected for functionality and visual/UX behavior.",
+      "evidence_ids": ["E44"]
+    },
+    {
+      "claim": "Current formatting and lint checks pass after support edits.",
+      "evidence_ids": ["E47", "E48"]
+    }
+  ],
+  "unverified": [
+    {
+      "claim": "Timing-budget compliance.",
+      "reason": "E38 remains overall FAIL with 111 functional passes and 34 timing-budget violations; the user accepted the current timing and requested no further optimization."
+    },
+    {
+      "claim": "Final whole-candidate verification, independent review, and main publication.",
+      "reason": "The current AL run stores an obsolete merge base; root must use a distinct run against current main after both writers settle. The candidate is not pushed."
+    },
+    {
+      "claim": "Completion of R5b-R11 or full mission/production readiness.",
+      "reason": "These approved stages remain subsequent work."
+    },
+    {
+      "claim": "Universal descendant settlement, hosted Linux containment, and provider/native qualification.",
+      "reason": "The selected evidence does not qualify these environments or guarantees."
+    }
+  ],
+  "open_questions": [],
+  "risks": [
+    "E42's external JUnit path was reused by E43 and may have been overwritten; immutable AL-managed logs preserve the failure history.",
+    "Native evidence picker labels are visibly clipped at desktop and narrow widths; the detail/provenance/history route is available and the limitation is recorded.",
+    "R4's two automatic grants remain spent with refusal pending; no authority was renewed."
+  ],
+  "report_path": "/private/tmp/reliability-publication-builder-report-20261125.md"
+}
