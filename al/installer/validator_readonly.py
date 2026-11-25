@@ -130,14 +130,17 @@ def _git_arguments(arguments):
         elif arg=='-C' and index+1<len(arguments) and Path(arguments[index+1]).is_absolute():index += 2
         elif arg=='-c' and index+1<len(arguments) and arguments[index+1] in {
             'diff.autoRefreshIndex=false','core.fsmonitor=false','core.hooksPath=/dev/null',
-            'core.excludesFile=/dev/null','core.untrackedCache=false'
+            'core.excludesFile=/dev/null','core.untrackedCache=false',
+            # al_snapshot's fixed prefix (#25); both only quiet or relax write-side checks.
+            'advice.addEmbeddedRepo=false','core.safecrlf=false'
         }:index += 2
         else:return False
     if index==len(arguments):return False
     command,values=arguments[index],arguments[index+1:]
     oid=lambda value:bool(re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}',value))
     revision=lambda value:value=='HEAD' or oid(value)
-    if command=='cat-file':return values==['--batch']
+    # cat-file -e only tests that a retained snapshot tree is still in the object store (#25).
+    if command=='cat-file':return values==['--batch'] or (len(values)==2 and values[0]=='-e' and values[1].endswith('^{tree}') and oid(values[1][:-7]))
     if command=='merge-base':return len(values)==2 and values[0]=='HEAD' and revision(values[1])
     if command=='rev-parse':
         if values in [['--show-toplevel'],['HEAD'],['--git-common-dir','--show-object-format'],['--show-toplevel','--git-dir','--git-common-dir']]:return True

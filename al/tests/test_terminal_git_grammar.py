@@ -9,6 +9,8 @@ from al.installer.validator_readonly import _git_arguments
     ['ls-files','--others','--ignored','--directory','--exclude-per-directory=.gitignore',
      '--exclude=node_modules/','--exclude=**/.venv/','-z'],
     ['ls-tree','-r','-l','-z','a'*40],
+    ['--no-optional-locks','-c','core.excludesFile=/dev/null','-c','advice.addEmbeddedRepo=false',
+     '-c','core.safecrlf=false','cat-file','-e','b'*40+'^{tree}'],
 ])
 def test_current_bounded_discovery_is_permitted(arguments):
     assert _git_arguments(arguments)
@@ -21,6 +23,9 @@ def test_current_bounded_discovery_is_permitted(arguments):
     ['ls-files','--exclude=unsafe\nvalue','-z'],
     ['ls-tree','-r','-l','-z','unverified-branch'],
     ['fetch','origin'],
+    ['cat-file','-e','HEAD^{tree}'],
+    ['cat-file','-p','b'*40+'^{tree}'],
+    ['-c','core.safecrlf=true','cat-file','-e','b'*40+'^{tree}'],
 ])
 def test_unapproved_grammars_still_refuse(arguments):
     assert not _git_arguments(arguments)
