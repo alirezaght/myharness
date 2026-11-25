@@ -1,7 +1,9 @@
 """Amendments supersede immutable recovery checkpoints without authorizing progress."""
+import copy
 import json
 from pathlib import Path
 import pytest
+import al_gate_recovery as GateRecovery
 import al_artifacts as A
 import al_task as T
 from hook_regression_helpers import invoke
@@ -34,8 +36,10 @@ def test_repeated_amendments_rebind_checkpoints_preserve_provenance_and_require_
         assert set(refs)<={r['id'] for r in st['checkpoints']}
         for previous in st['checkpoints']:
             if previous['id'] in refs:assert A.read(previous)==refs[previous['id']]
-        invoke(cli,'spec-gate','SPEC_READY');admit_planning(cli,expect_coverage_debt=number==1);before=state_file().read_bytes()
-        invoke(cli,'phase','IMPLEMENTATION',ok=False);assert state_file().read_bytes()==before
+        invoke(cli,'spec-gate','SPEC_READY');admit_planning(cli,expect_coverage_debt=number==1)
+        # Since b5735a9 the implementation edge would continue the recovery as debt; the review
+        # and approval guard still refuses until the rebound recovery has a current replacement.
+        with pytest.raises(SystemExit):GateRecovery.ready(copy.deepcopy(state(cli)))
         if number==1:
             import sys
             install_replacement(cli,tmp_path,repo,[sys.executable,'-c',"print('base pending')"])
@@ -43,8 +47,11 @@ def test_repeated_amendments_rebind_checkpoints_preserve_provenance_and_require_
     import sys
     install_replacement(cli,tmp_path,repo,[sys.executable,'-c',"print('base verified')"])
     invoke(cli,'gates','run','--stage','base');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
-    st=state(cli);assert 'gate_recovery' not in st and len(st['gate_recovery_supersessions'])==2
-    assert st['gate_recovery_history'][-1]['evidence']
+    st=state(cli);assert len(st['gate_recovery_supersessions'])==2
+    # The implementation edge continues the recovery; the review guard completes it with the base evidence.
+    assert st['gate_recovery']['continuation_phase']=='IMPLEMENTATION'
+    work=copy.deepcopy(st);GateRecovery.ready(work);GateRecovery.complete(work)
+    assert 'gate_recovery' not in work and work['gate_recovery_history'][-1]['evidence']
 
 
 @pytest.mark.parametrize('defect',['phase','checkpoint','artifact','identity','task','manifest','writer','check','empty'])

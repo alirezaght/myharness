@@ -1,4 +1,5 @@
 """Consumer obligations change independently of implementation body fingerprints."""
+import copy
 import json
 from pathlib import Path
 import pytest
@@ -21,6 +22,14 @@ def test_body_only_edit_keeps_rules_current_but_invalidates_candidate_evidence(c
     invoke(cli,'phase','VERIFICATION')
 
 
+def recovery_completes_at_review(st):
+    """Implementation edges continue a gate recovery (b5735a9); the review guard completes it."""
+    import al_gate_recovery as GateRecovery
+    assert st['gate_recovery']['continuation_phase']==st['phase']
+    work=copy.deepcopy(st);GateRecovery.ready(work);GateRecovery.complete(work)
+    assert 'gate_recovery' not in work and work['gate_recovery_history'][-1]['evidence']
+
+
 @pytest.mark.parametrize('change',['consumer','unknown','rule'])
 def test_changed_obligations_allow_guarded_replacement_without_fake_interruption(cli,repo,tmp_path,state_file,change):
     m=consumer_setup(cli,repo,tmp_path);old=state(cli);completed=old['completed_phases'][:]
@@ -31,14 +40,13 @@ def test_changed_obligations_allow_guarded_replacement_without_fake_interruption
         (repo/'packages/shared/src/common.py').write_text('def load(name):\n    return __import__(name)\n')
         (repo/'services/a/src/app.py').write_text('def load(name):\n    return __import__(name)\n')
     else:(repo/'Makefile').write_text('all:\n\ttrue # changed policy\n')
-    if change=='unknown':
-        # A content edit keeps currency; the full inventory (planning, review start) sees the change.
-        import al_artifacts as A
-        import al_gate_inventory as V
-        current=state(cli);assert C.check(current)['current'] and V.gaps(current,A.read_json(current['gate_manifests'][-1]))
-    else:
-        assert C.check(state(cli))['current'] is False
-        before=state_file().read_bytes();invoke(cli,'phase','VERIFICATION',ok=False);assert state_file().read_bytes()==before
+    # Each change makes the planned obligations stale (the 'unknown' edit also touches the
+    # consumer services/a, a unit the plan does not cover).
+    current=state(cli);currency=C.check(current);assert currency['current'] is False,currency
+    # Since #9 (6677112) and b5735a9 the implementation edge records stale obligations as debt
+    # instead of refusing; review-start and approval (require_admitted) still refuse.
+    from al_new_origin import require_admitted
+    with pytest.raises(SystemExit,match='replanning'):require_admitted(copy.deepcopy(current))
     m=resolved(state(cli),['packages/shared/src/common.py']);plan(cli,tmp_path,m)
     st=state(cli);assert st['phase']=='IMPLEMENTATION' and st['completed_phases']==completed
     assert st['gate_recovery']['superseded_manifest']==old['gate_manifests'][-1]['sha256']
@@ -59,10 +67,10 @@ def test_changed_obligations_allow_guarded_replacement_without_fake_interruption
                '--source','User explicitly approved the in-scope new consumer and its absent baseline check',
                '--reason','The new service is absent in the pinned base; retain failed base proof and verify the real candidate check.')
         invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate')
-        assert not state(cli).get('gate_recovery')
+        recovery_completes_at_review(state(cli))
     else:
         invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','VERIFICATION')
-        assert not state(cli).get('gate_recovery')
+        recovery_completes_at_review(state(cli))
 
 
 @pytest.mark.parametrize('phase',['IMPLEMENTATION','FINALIZATION'])

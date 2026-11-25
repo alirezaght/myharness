@@ -51,7 +51,7 @@ def _to_verification(cli, tmp_path):
     invoke(cli, "evidence", "run", "--area", "unit")
 
 
-def test_changed_sourced_rule_can_resume_and_replan(cli, repo, tmp_path, state_file):
+def test_changed_sourced_rule_refreshes_on_resume_and_requires_new_proof(cli, repo, tmp_path, state_file):
     makefile = repo / "Makefile"
     makefile.write_text("lint-imports:\n\ttrue\n")
     subprocess.run(["git", "add", "Makefile"], cwd=repo, check=True)
@@ -71,28 +71,42 @@ def test_changed_sourced_rule_can_resume_and_replan(cli, repo, tmp_path, state_f
     stop.write_text(json.dumps({"reason": "Wait for rule maintenance", "resume_instructions": "Revalidate gates."}))
     _, checkpoint, _ = invoke(cli, "interrupt", "--file", str(stop))
     makefile.write_text("lint-imports:\n\ttrue # reviewed revision\n")
+    superseded = json.loads(state_file().read_text())["gate_manifests"][-1]["sha256"]
     invoke(cli, "resume", "--checkpoint", checkpoint.strip())
     resumed = json.loads(state_file().read_text())
     assert resumed["status"] == "RUNNING"
-    assert resumed["phase"] == "PLANNING"
-    assert resumed["recovery_replans"][-1]["superseded"] == resumed["gate_manifests"][-1]
-    replacement = _manifest(resumed, rule=_source(repo, "Makefile"))
-    replacement_path = tmp_path / "replacement-gates.json"; replacement_path.write_text(json.dumps(replacement))
-    invoke(cli, "gates", "plan", "--file", str(replacement_path))
-    invoke(cli, "spec-gate", "SPEC_READY")
+    # Since a556bc4 (#32) a changed rule the manifest already sources is rediscovered on resume
+    # instead of demanding a replan: the run returns to VERIFICATION with the refresh recorded,
+    # and the reviewed proof is invalidated.
+    assert resumed["phase"] == "VERIFICATION" and resumed["review"] is None
+    assert resumed["gate_refreshes"][-1]["superseded"] == superseded
+    assert resumed["gate_refreshes"][-1]["manifest"] == resumed["gate_manifests"][-1]["sha256"]
+    assert not resumed.get("recovery_replans")
+    # Review still refuses until the candidate is proved again under the refreshed manifest.
+    before = state_file().read_bytes()
+    invoke(cli, "review-start", ok=False)
+    assert state_file().read_bytes() == before
     invoke(cli, "gates", "run", "--stage", "base")
-    admit_planning(cli)
-    invoke(cli, "phase", "IMPLEMENTATION")
+    invoke(cli, "gates", "run", "--stage", "candidate")
+    invoke(cli, "evidence", "run", "--area", "unit", "--fresh")
+    invoke(cli, "review-start")
 
 
 def test_amendment_requires_candidate_gate_to_be_reexecuted(cli, repo, tmp_path, state_file):
+    # The gate is sourced from a committed repository rule so the planned manifest stays current:
+    # since 0d8071a review admission rediscovers a manifest whose sources are not repository
+    # rules (svc/app.py is not one), which would replace the planned loc gate before review.
+    (repo / "Makefile").write_text("lint-imports:\n\ttrue\n")
+    subprocess.run(["git", "add", "Makefile"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=test", "-c", "user.email=test@example.invalid",
+                    "commit", "-m", "add sourced rule"], cwd=repo, check=True, capture_output=True)
+    rule = _source(repo, "Makefile")
     invoke(cli, "start", "--spec", "Revalidate gate evidence after the user amends this task.")
     invoke(cli, "spec-gate", "SPEC_READY")
     invoke(cli, "classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
     state = json.loads(cli("show")[1])
-    source = _source(repo, "svc/app.py")
     command = [sys.executable, "-c", "print('candidate gate passed')"]
-    path = tmp_path / "gates.json"; path.write_text(json.dumps(_manifest(state, source=source, active="loc", argv=command)))
+    path = tmp_path / "gates.json"; path.write_text(json.dumps(_manifest(state, rule=rule, source=rule, active="loc", argv=command)))
     invoke(cli, "gates", "plan", "--file", str(path))
     invoke(cli, "gates", "run", "--stage", "base")
     admit_planning(cli)

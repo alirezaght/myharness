@@ -176,12 +176,13 @@ def test_spec_blocked_resume_refuses_stale_foreign_or_corrupt_checkpoint(
     assert state_file().read_bytes() == before
 
 
-# A content edit inside planned paths returns to verification; new obligations it implies
-# (an unparsable source, an unknown import) are caught by the review-start inventory.
+# A content edit inside planned paths returns to verification. Since 4bd481d gate currency
+# compares the task's coverage-requirement projection: an edit that changes it (an unparsable
+# source, an unknown import) makes the planned gates stale, so the resume replans from PLANNING.
 @pytest.mark.parametrize(('body', 'expected'), [
     ('x = "changed while stopped"\n', 'VERIFICATION'),
-    ('changed while stopped\n', 'VERIFICATION'),
-    ('import unknown_new_dependency\nx = 2\n', 'VERIFICATION'),
+    ('changed while stopped\n', 'PLANNING'),
+    ('import unknown_new_dependency\nx = 2\n', 'PLANNING'),
 ])
 def test_changed_candidate_resume_invalidates_review_and_returns_to_verification(cli, state_file, tmp_path, repo, body, expected):
     begin(cli, tmp_path, repo, "Resume into verification if the reviewed candidate changes while stopped.")
@@ -196,3 +197,8 @@ def test_changed_candidate_resume_invalidates_review_and_returns_to_verification
     assert resumed["phase"] == expected
     assert resumed["review"] is None
     assert resumed["resumes"][-1]["changed"] is True
+    if expected == "PLANNING":
+        assert resumed["spec_status"] is None
+        assert "task coverage requirements changed; rediscover repository gates" in resumed["recovery_replans"][-1]["reasons"]
+    else:
+        assert not resumed.get("recovery_replans")
