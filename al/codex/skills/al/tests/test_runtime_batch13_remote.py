@@ -21,8 +21,8 @@ BAD=[
 # Representative end-to-end shapes; test_schema_rejects_malformed_fields covers every BAD shape.
 @pytest.mark.parametrize('stage',['base','candidate'])
 @pytest.mark.parametrize('path,value',[((),None),(('pipeline',),'missing'),(('id',),'9'),(('status',),'missing')])
-def test_malformed_shapes_finalize_infra_with_intact_raw_log(cli,repo,tmp_path,monkeypatch,stage,path,value):
-    data=body(start(cli,repo))
+def test_malformed_shapes_finalize_infra_with_intact_raw_log(cli,repo,tmp_path,monkeypatch,stage,path,value, run_state):
+    data=body(run_state('started',lambda:start(cli,repo)))
     if not path:data=value
     else:
         target=data
@@ -38,8 +38,8 @@ def test_malformed_shapes_finalize_infra_with_intact_raw_log(cli,repo,tmp_path,m
 
 @pytest.mark.parametrize('stage',['base','candidate'])
 @pytest.mark.parametrize('raw',[b'not json',b'\xff\xfe\x80',b'{'])
-def test_invalid_encoding_and_json_finalize_infra(cli,repo,tmp_path,monkeypatch,stage,raw):
-    start(cli,repo);stub(tmp_path,monkeypatch,raw)
+def test_invalid_encoding_and_json_finalize_infra(cli,repo,tmp_path,monkeypatch,stage,raw, run_state):
+    run_state('started',lambda:start(cli,repo));stub(tmp_path,monkeypatch,raw)
     manifest(cli,tmp_path,['glab','api','projects/42/jobs/9'],category='ci',remote=True)
     invoke(cli,'gates','run','--stage',stage,ok=False);entry,log=finished(cli,'INFRA')
     assert entry['exit']==126 and raw in log
@@ -53,16 +53,17 @@ def test_invalid_encoding_and_json_finalize_infra(cli,repo,tmp_path,monkeypatch,
  ({'pipeline':{'id':11}},'PASS'),({'pipeline':{'id':11,'project_id':None}},'PASS'),
  ({'pipeline':{'id':11,'project_id':'42'}},'INFRA'),({'web_url':'https://example.invalid/job'},'PASS'),
 ])
-def test_valid_remote_success_failure_and_provenance_controls(cli,repo,tmp_path,monkeypatch,stage,change,expected):
-    data=body(start(cli,repo));data.update(change);stub(tmp_path,monkeypatch,json.dumps(data).encode())
+def test_valid_remote_success_failure_and_provenance_controls(cli,repo,tmp_path,monkeypatch,stage,change,expected, run_state):
+    data=body(run_state('started',lambda:start(cli,repo)));data.update(change);stub(tmp_path,monkeypatch,json.dumps(data).encode())
     manifest(cli,tmp_path,['glab','api','projects/42/jobs/9'],category='ci',remote=True)
-    invoke(cli,'gates','run','--stage',stage,ok=expected=='PASS');entry,_=finished(cli,expected)
+    # A failing base gate is a pre-existing failure the candidate stage compares against (#13, 7ae23e6).
+    invoke(cli,'gates','run','--stage',stage,ok=expected=='PASS' or (stage,expected)==('base','FAIL'));entry,_=finished(cli,expected)
     assert entry['remote_provenance']['pipeline_id']==11 and entry['remote_provenance']['status']==data['status']
 
 
 @pytest.mark.parametrize('stage',['base','candidate'])
-def test_invalid_utf8_inside_otherwise_valid_job_is_not_lossily_accepted(cli,repo,tmp_path,monkeypatch,stage):
-    data=body(start(cli,repo));data['web_url']='https://bad'
+def test_invalid_utf8_inside_otherwise_valid_job_is_not_lossily_accepted(cli,repo,tmp_path,monkeypatch,stage, run_state):
+    data=body(run_state('started',lambda:start(cli,repo)));data['web_url']='https://bad'
     raw=json.dumps(data).encode().replace(b'https://bad',b'https://\xff')
     stub(tmp_path,monkeypatch,raw);manifest(cli,tmp_path,['glab','api','projects/42/jobs/9'],category='ci',remote=True)
     invoke(cli,'gates','run','--stage',stage,ok=False);entry,log=finished(cli,'INFRA')
