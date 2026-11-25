@@ -390,6 +390,25 @@ reported session/journal and backups before any manual recovery. Do not remove
 pending metadata or restore backups by hand unless the complete journal proves
 which exact preimage should be restored.
 
+### Stale run bindings
+
+A protected run binding whose repository root no longer exists (a deleted
+worktree or temporary repository) can never resume. Doctor lists it under
+`stale_runs` with a warning instead of failing, and it no longer blocks an
+update. Archive such bindings with:
+
+```sh
+alctl prune-stale-runs          # dry run: lists stale bindings and their records
+alctl prune-stale-runs --apply  # moves them into runtime-archive/<timestamp>/
+```
+
+Only bindings whose repository root path is missing qualify. `--apply` moves the
+binding, its initial successor, successor fence, initialization records and
+durable runtime directory into `runtime-archive/<timestamp>/` beside the registry
+and writes a `manifest.json` listing each `source` and `archived` path. Nothing
+is deleted; restore by moving each archived path back to its source. A binding
+whose lock is held is skipped.
+
 ### Resident service
 
 `alctl run` starts a resident AL service per repository and pinned runtime on first use;

@@ -44,6 +44,7 @@ def directory(transaction, storage, *, create=False):
 def discover(storage_root):
     """Enumerate only independently protected v3 bindings, never state-provided paths."""
     from .runtime_pin_transaction import key, read
+    from .runtime_stale_runs import is_stale
 
     root = safe(storage_root)
     runs = root / "runs"
@@ -63,6 +64,10 @@ def discover(storage_root):
                 or value.get("status") not in {"RESERVED", "ACTIVE"}
                 or not re.fullmatch(r"[0-9a-f]{8}", value.get("run_id", ""))):
             raise ValueError("durable activity protected transaction is invalid")
+        if is_stale(value):
+            # Its repository is gone, so the run cannot resume; doctor reports it as stale and
+            # `alctl prune-stale-runs` archives it (#37).
+            continue
         target = directory(value, root)
         if value["status"] == "RESERVED" or not (target / (value["session_id"] + ".json")).is_file():
             raise ValueError("durable run is reserved or its active state is unavailable")

@@ -7,6 +7,7 @@ from pathlib import Path
 from .engine import R
 from .guards import activity_roots, scan_activity
 from .operations import check_current
+from .runtime_stale_runs import stale_runs
 from .registry import legacy_records, namespace, read_json, records, reject_pending
 from .source import git_env
 from .payload_provenance import display_version
@@ -58,4 +59,13 @@ def doctor(selection=None, state_root=None, *, runtime_roots=(), invoking=None):
         errors.append(str(exc))
         activity = {'roots': [], 'blockers': [], 'limitation': 'Registry unreadable; activity coverage unavailable.'}
         legacy = []
-    return {'ok': not errors, 'checks': checks, 'errors': errors, 'legacy': legacy, 'activity': activity}
+    stale, warnings = [], []
+    try:
+        stale = stale_runs(state_root / 'al-run-pins') if (state_root / 'al-run-pins').exists() else []
+    except (ValueError, OSError) as exc:
+        warnings.append('stale run inventory unavailable: ' + str(exc))
+    if stale:
+        warnings.append(str(len(stale)) + ' stale run binding(s) whose repository no longer exists; '
+                        'archive them restorably with `alctl prune-stale-runs --apply`')
+    return {'ok': not errors, 'checks': checks, 'errors': errors, 'legacy': legacy, 'activity': activity,
+            'stale_runs': stale, 'warnings': warnings}
