@@ -24,6 +24,13 @@ def parser():
     pinned.add_argument('--session-directory', action='store_true')
     pinned.add_argument('--session', help='AL run id; inside a Claude conversation it may be omitted')
     pinned.add_argument('arguments', nargs=argparse.REMAINDER)
+    storage = sub.add_parser('storage', help='managed scratch storage shared with Harness (HARNESS_HOME/managed-storage)')
+    storage_actions = storage.add_subparsers(dest='storage_action', required=True)
+    prune = storage_actions.add_parser('prune', help='reclaim provably settled retained scratch (dry run unless --apply)')
+    prune.add_argument('--root', help='managed-storage namespace (default: HARNESS_HOME/managed-storage)')
+    prune.add_argument('--apply', action='store_true', help='delete; the default is a dry run')
+    prune.add_argument('--seconds', type=float, default=60.0, help='overall time budget')
+    prune.add_argument('--json', action='store_true')
     service = sub.add_parser('service', help='status or stop the resident AL services of this user')
     service.add_argument('action', choices=('status', 'stop'))
     service.add_argument('--repository', help='only the service of this repository')
@@ -102,6 +109,16 @@ def parser():
     return ap
 
 
+def storage_report(home=None, *, seconds=3.0):
+    """Doctor's bounded, read-only managed-storage summary (never fails doctor)."""
+    from .storage_inventory import retained_summary
+    from .storage_lifecycle import StorageManager, default_root
+    try:
+        return retained_summary(StorageManager(default_root(home), create=False), seconds=seconds)
+    except (OSError, ValueError) as exc:
+        return {'schema_version': 1, 'error': str(exc)}
+
+
 def _target(args, state_root):
     target = resolve_target(args.repo, args.home, (args.platform or 'codex,claude').split(','))
     enrolled = next((row for row in records(state_root) if row['target_id'] == target['target_id']), None)
@@ -145,6 +162,14 @@ def main(argv=None):
                 _, verified = distribution(args.platform)
                 result = {'distribution_identity': verified['manifest']['closure_digest']}
             print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == 'storage':
+            from .storage_lifecycle import StorageManager, default_root, describe_prune, prune
+            if not 0 < args.seconds <= 3600:
+                raise ValueError('--seconds must be in (0, 3600]')
+            root = Path(args.root).expanduser().absolute() if args.root else default_root()
+            result = prune(StorageManager(root, create=False), apply=args.apply, seconds=args.seconds)
+            print(json.dumps(result, indent=2, sort_keys=True) if args.json else '\n'.join(describe_prune(result)))
             return 0
         if args.command == 'service':
             from .runtime_pin_transaction import storage
@@ -195,6 +220,14 @@ def main(argv=None):
                 target = resolve_target(args.repo, args.home)
                 selection = {target['target_id']}
             result = doctor(selection, state_root, runtime_roots=args.runtime_root)
+            result['storage'] = storage_report(args.home)
+            if result['storage'].get('retained'):
+                storage = result['storage']
+                result['warnings'].append(
+                    f"{storage['retained']} managed scratch allocation(s) retained "
+                    f"({storage['retained_allocated_bytes_estimate']} bytes measured in "
+                    f"{storage['measured_retained']}; estimate {storage['estimated_retained_bytes']}); "
+                    'preview reclaimable ones with `alctl storage prune`')
         else:
             errors = prerequisites()
             if errors:

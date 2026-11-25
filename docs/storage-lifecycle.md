@@ -54,6 +54,47 @@ package initializer. This lifecycle does not claim to have fixed all Harness
 storage growth. Native evaluation storage and its diagnostic-retention
 contract are unchanged.
 
+## Later-proven settlement and expiry
+
+Retention at completion is not permanent. A retained allocation becomes
+reclaimable later, under the namespace lock and with a fresh record generation,
+when one bounded process observation (an `lsof +D` equivalent: libproc on
+macOS, `/proc` on Linux) shows that:
+
+- no visible process has its cwd, root, executable, mapped or open file inside
+  the allocation, and
+- the recorded owner leader is gone and nothing remains in its process group or
+  session.
+
+Two rules use that observation. `settlement_proven_later` applies to an
+allocation its owner finalized with a passed outcome and that was retained only
+as `descendant_settlement_unproven`, once its record is older than
+`HARNESS_STORAGE_SETTLEMENT_GRACE_SECONDS` (default 15 minutes).
+`retention_expired` applies to anything else retained or abandoned (failed
+outcomes, unfinalized allocations) after `HARNESS_STORAGE_RETENTION_SECONDS`
+(default 3 days, `0` disables it). Allocations with consumers, an open cleanup
+transaction, a live owner tree or a process inside them stay retained, and so
+does every candidate when the observation is unsupported, unavailable or
+incomplete (`settlement_undecidable`). The process observation cannot see
+other users' processes, and on macOS the kernel withholds the paths of
+data-vault-protected descriptors; neither can live in private user scratch.
+A late reclaim records a `REMOVED` receipt with the bytes it unlinked; a later
+finalization of the same allocation returns that receipt and never changes the
+evidence result.
+
+A bounded pass (2 seconds) runs before each new allocation, so every Harness
+check, AL evidence run and `verify_changed` run reclaims settled scratch first.
+The explicit command is a dry run unless `--apply` is given:
+
+```sh
+harness storage prune            # or: alctl storage prune
+harness storage prune --apply --seconds 300
+```
+
+`alctl doctor` reports retained allocation counts by reason and the retained
+bytes it could measure within its budget (with a labelled extrapolation when
+only part fits).
+
 ## Source materialization
 
 The source fixture, CLI snapshot, and runtime-pin paths now use a shared

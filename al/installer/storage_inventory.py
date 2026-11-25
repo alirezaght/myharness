@@ -83,6 +83,7 @@ def inspect(manager, *, limits=None, cursor=None, include_legacy=False):
         "allocations": [],
         "legacy": [],
         "retained_by_reason": {},
+        "retained_logical_bytes": 0,
         "logical_bytes": 0,
         "allocated_bytes_estimate": 0,
         "errors": [],
@@ -148,6 +149,7 @@ def inspect(manager, *, limits=None, cursor=None, include_legacy=False):
         if entry["state"] not in {"ELIGIBLE", "QUARANTINED", "REMOVED"}:
             reason = entry["retention_reason"] or "owner_unsettled"
             result["retained_by_reason"][reason] = result["retained_by_reason"].get(reason, 0) + 1
+            result["retained_logical_bytes"] += (row["measurement"] or {}).get("logical_bytes", 0)
         result["allocations"].append(row)
     if include_legacy:
         try:
@@ -229,3 +231,90 @@ def pressure_summary(value, policy):
         key: value.get(key)
         for key in ("free_bytes", "reserve_met", "warning", "measurement_complete")
     } | dict(policy)
+
+
+RETAINED_STATES = {"ALLOCATED", "RUNNING", "RETAINED"}
+
+
+def retained_summary(manager, *, seconds=3.0):
+    """Counts of every record plus retained bytes measured within a time budget.
+
+    Counts are complete unless the budget ends during the record pass. Bytes are
+    measured, never guessed; when only some retained allocations fit the budget,
+    ``estimated_retained_bytes`` extrapolates their mean and is labelled as such.
+    """
+    result = {
+        "schema_version": 1,
+        "root": str(manager.root),
+        "namespace": manager.namespace_identity is not None,
+        "records": 0,
+        "states": {},
+        "retained": 0,
+        "retained_by_reason": {},
+        "retained_logical_bytes": 0,
+        "retained_allocated_bytes_estimate": 0,
+        "measured_retained": 0,
+        "estimated_retained_bytes": None,
+        "complete": True,
+    }
+    if manager.namespace_identity is None:
+        return result
+    deadline = time.monotonic() + seconds
+    retained = []
+    with manager._locked() as directories:
+        with os.scandir(directories["records"]) as iterator:
+            names = [e.name for e in iterator if e.name.endswith(".json")]
+        for name in names:
+            if time.monotonic() >= deadline:
+                result["complete"] = False
+                break
+            try:
+                value = manager._record(directories, name[:-5])
+            except (OSError, StorageError):
+                result["states"]["UNREADABLE"] = result["states"].get("UNREADABLE", 0) + 1
+                continue
+            result["records"] += 1
+            result["states"][value["state"]] = result["states"].get(value["state"], 0) + 1
+            if value["state"] in RETAINED_STATES:
+                reason = value["retention_reason"] or "owner_unsettled"
+                result["retained_by_reason"][reason] = (
+                    result["retained_by_reason"].get(reason, 0) + 1
+                )
+                retained.append(value["allocation_id"])
+    result["retained"] = len(retained)
+    seen = set()
+    for allocation_id in retained:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            descriptor = _open_directory(manager.path(allocation_id))
+        except FileNotFoundError:
+            result["measured_retained"] += 1  # directory already gone: zero bytes
+            continue
+        except (OSError, StorageError):
+            continue
+        try:
+            measured = measure_tree(descriptor, limits={"seconds": min(remaining, 30)}, _seen=seen)
+        except (OSError, StorageError):
+            continue
+        finally:
+            os.close(descriptor)
+        if not measured["complete"]:
+            break
+        result["measured_retained"] += 1
+        result["retained_logical_bytes"] += measured["logical_bytes"]
+        if measured["allocated_bytes_estimate"] is None:
+            result["retained_allocated_bytes_estimate"] = None
+        elif result["retained_allocated_bytes_estimate"] is not None:
+            result["retained_allocated_bytes_estimate"] += measured["allocated_bytes_estimate"]
+    allocated = result["retained_allocated_bytes_estimate"]
+    if result["measured_retained"] < result["retained"]:
+        result["complete"] = False
+        if result["measured_retained"] and allocated is not None:
+            result["estimated_retained_bytes"] = (
+                allocated * result["retained"] // result["measured_retained"]
+            )
+    else:
+        result["estimated_retained_bytes"] = allocated
+    return result

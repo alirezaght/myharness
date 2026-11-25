@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import contextlib
+import ctypes
+import errno
 import hashlib
 import os
 import secrets
 import stat
+import sys
 import time
 from pathlib import Path
 
@@ -41,9 +44,17 @@ DEFAULT_POLICY = {
     # settlement on macOS, abandoned allocations) expires after this long
     # without a record change. 0 disables expiry.
     "retention_seconds": 3 * 24 * 3600,
+    # A passed, owner-finalized allocation retained only because descendant
+    # settlement was unproven at completion becomes reclaimable once a later
+    # process observation proves it settled and its record is this old.
+    "settlement_grace_seconds": 15 * 60,
 }
 EXPIRED = "retention_expired"
+SETTLED_LATER = "settlement_proven_later"
+LATE_REASONS = {EXPIRED, SETTLED_LATER}
+UNPROVEN = "descendant_settlement_unproven"
 EXPIRABLE_STATES = {"ALLOCATED", "RUNNING", "RETAINED"}
+OPPORTUNISTIC_SECONDS = 2.0
 
 
 def configured_policy(policy=None):
@@ -52,6 +63,7 @@ def configured_policy(policy=None):
         ("warning_bytes", "HARNESS_STORAGE_WARNING_BYTES"),
         ("minimum_free_bytes", "HARNESS_STORAGE_MINIMUM_FREE_BYTES"),
         ("retention_seconds", "HARNESS_STORAGE_RETENTION_SECONDS"),
+        ("settlement_grace_seconds", "HARNESS_STORAGE_SETTLEMENT_GRACE_SECONDS"),
     ):
         value = os.environ.get(name)
         if value is not None:
@@ -124,40 +136,307 @@ def _valid_owner(owner):
         return False
 
 
-def _owner_alive(value):
-    """True when the recorded owner process still exists (same pid and start time)."""
+class _BSDInfo(ctypes.Structure):
+    # sys/proc_info.h PROC_PIDTBSDINFO (struct proc_bsdinfo).
+    _fields_ = [
+        (name, ctypes.c_uint32)
+        for name in (
+            "flags",
+            "status",
+            "xstatus",
+            "pid",
+            "ppid",
+            "uid",
+            "gid",
+            "ruid",
+            "rgid",
+            "svuid",
+            "svgid",
+            "reserved",
+        )
+    ]
+    _fields_ += [("comm", ctypes.c_char * 16), ("name", ctypes.c_char * 32)]
+    _fields_ += [(name, ctypes.c_uint32) for name in ("nfiles", "pgid", "pjobc", "tdev", "tpgid")]
+    _fields_ += [
+        ("nice", ctypes.c_int32),
+        ("start_seconds", ctypes.c_uint64),
+        ("start_micros", ctypes.c_uint64),
+    ]
+
+
+class _FDInfo(ctypes.Structure):
+    _fields_ = [("fd", ctypes.c_int32), ("type", ctypes.c_uint32)]
+
+
+# struct vnode_info is 152 bytes; vnode_info_path appends a MAXPATHLEN path.
+_VNODE_INFO = 152
+_VNODE_PATH = _VNODE_INFO + 1024
+
+
+def _text(raw):
+    return raw.split(b"\0", 1)[0]
+
+
+def _darwin_processes(note, observed, deadline):
+    library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+    count = library.proc_listallpids(None, 0)
+    if count <= 0:
+        raise StorageError("process_observation_unavailable")
+    pids = (ctypes.c_int * (count + 512))()
+    count = library.proc_listallpids(pids, ctypes.sizeof(pids))
+    if count <= 0 or count >= len(pids):
+        raise StorageError("process_observation_unavailable")
+    uid = os.getuid()
+    paths = ctypes.create_string_buffer(2 * _VNODE_PATH)
+    descriptor = ctypes.create_string_buffer(24 + _VNODE_PATH)
+    executable = ctypes.create_string_buffer(4096)
+    for pid in pids[:count]:
+        if time.monotonic() >= deadline:
+            raise StorageError("process_observation_incomplete")
+        if pid <= 0:
+            continue
+        info = _BSDInfo()
+        ctypes.set_errno(0)
+        if library.proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info)) != (
+            ctypes.sizeof(info)
+        ):
+            code = ctypes.get_errno()
+            if code == errno.ESRCH:
+                continue
+            if code != errno.EPERM:
+                raise StorageError("process_observation_unavailable")
+            # EPERM: another user's process. It cannot be inspected (and cannot
+            # open a private 0700 namespace), but it is still a live pid/group.
+            observed["pids"].add(pid)
+            with contextlib.suppress(OSError):
+                observed["groups"].add(os.getpgid(pid))
+                observed["sessions"].add(os.getsid(pid))
+            continue
+        observed["pids"].add(pid)
+        observed["groups"].add(info.pgid)
+        with contextlib.suppress(OSError):
+            observed["sessions"].add(os.getsid(pid))
+        if info.uid != uid or info.status == 5:  # foreign or zombie: no open files
+            continue
+        ctypes.set_errno(0)
+        if library.proc_pidinfo(pid, 9, 0, paths, len(paths)) != len(paths):
+            if ctypes.get_errno() == errno.ESRCH:
+                continue
+            raise StorageError("process_observation_unavailable")
+        note(pid, _text(paths.raw[_VNODE_INFO:_VNODE_PATH]))  # cwd
+        note(pid, _text(paths.raw[_VNODE_PATH + _VNODE_INFO :]))  # root
+        if library.proc_pidpath(pid, executable, len(executable)) > 0:
+            note(pid, _text(executable.raw))
+        size = library.proc_pidinfo(pid, 1, 0, None, 0)
+        if size <= 0:
+            continue
+        table = (_FDInfo * (size // ctypes.sizeof(_FDInfo) + 64))()
+        ctypes.set_errno(0)
+        size = library.proc_pidinfo(pid, 1, 0, table, ctypes.sizeof(table))
+        if size <= 0:
+            if ctypes.get_errno() == errno.ESRCH:
+                continue
+            raise StorageError("process_observation_unavailable")
+        for entry in table[: size // ctypes.sizeof(_FDInfo)]:
+            if entry.type != 1:  # PROX_FDTYPE_VNODE
+                continue
+            ctypes.set_errno(0)
+            if library.proc_pidfdinfo(pid, entry.fd, 2, descriptor, len(descriptor)) == len(
+                descriptor
+            ):
+                note(pid, _text(descriptor.raw[24 + _VNODE_INFO :]))
+            elif ctypes.get_errno() == errno.EPERM:
+                # The kernel withholds paths of data-vault/protected files; those
+                # live in system-protected locations, never in user scratch.
+                observed["protected_descriptors"] += 1
+            elif ctypes.get_errno() not in {0, errno.ESRCH, errno.EBADF}:
+                raise StorageError("process_observation_unavailable")
+
+
+def _linux_processes(note, observed, deadline):
+    uid = os.getuid()
+    for name in os.listdir("/proc"):
+        if time.monotonic() >= deadline:
+            raise StorageError("process_observation_incomplete")
+        if not name.isdigit():
+            continue
+        base = "/proc/" + name
+        try:
+            with open(base + "/stat", "rb") as stream:
+                fields = stream.read().rsplit(b")", 1)[1].split()
+            owner = os.stat(base).st_uid
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        pid = int(name)
+        observed["pids"].add(pid)
+        observed["groups"].add(int(fields[2]))
+        observed["sessions"].add(int(fields[3]))
+        if owner != uid or fields[0] == b"Z":
+            continue
+        try:
+            for link in ("cwd", "root", "exe"):
+                with contextlib.suppress(FileNotFoundError):
+                    note(pid, os.readlink(base + "/" + link))
+            for fd in os.listdir(base + "/fd"):
+                with contextlib.suppress(FileNotFoundError):
+                    note(pid, os.readlink(base + "/fd/" + fd))
+            with open(base + "/maps", "rb") as stream:
+                for line in stream:
+                    parts = line.split(None, 5)
+                    if len(parts) == 6:
+                        note(pid, parts[5].strip())
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        except OSError:
+            raise StorageError("process_observation_unavailable") from None
+
+
+def observe_processes(directory, *, deadline):
+    """One bounded scan of every visible process (an ``lsof +D`` equivalent).
+
+    Returns the live pids, process groups and sessions, and for each direct
+    child name of ``directory`` the pids whose cwd, root, executable, mapped or
+    open file lies inside it. Raises StorageError when the observation is
+    unsupported, unavailable or incomplete: settlement is then undecidable.
+    """
+    prefix = os.path.realpath(directory) + os.sep
+    observed = {
+        "pids": set(),
+        "groups": set(),
+        "sessions": set(),
+        "users": {},
+        "protected_descriptors": 0,
+    }
+
+    def note(pid, path):
+        if isinstance(path, bytes):
+            path = os.fsdecode(path)
+        if path and path.startswith(prefix):
+            name = path[len(prefix) :].split(os.sep, 1)[0]
+            observed["users"].setdefault(name, set()).add(pid)
+
+    if sys.platform == "darwin":
+        _darwin_processes(note, observed, deadline)
+    elif sys.platform.startswith("linux"):
+        _linux_processes(note, observed, deadline)
+    else:
+        raise StorageError("process_observation_unsupported")
+    if os.getpid() not in observed["pids"]:
+        raise StorageError("process_observation_unavailable")
+    return observed
+
+
+def default_root(home=None):
+    """HARNESS_HOME/managed-storage, shared by Harness and AL."""
+    if os.environ.get("HARNESS_HOME"):
+        base = Path(os.environ["HARNESS_HOME"])
+    else:
+        base = Path(home or Path.home()) / ".local/share/harness"
+    return base.absolute() / "managed-storage"
+
+
+def prune(manager, *, apply=False, seconds=60.0):
+    """Explicit prune: dry run by default; applying repeats bounded passes until
+    the namespace is complete, a pass makes no progress, or time runs out."""
+    deadline = time.monotonic() + seconds
+    total = {
+        "schema_version": VERSION,
+        "apply": bool(apply),
+        "passes": 0,
+        "results": [],
+        "candidates": [],
+        "retained_by_reason": {},
+        "reclaimed": 0,
+        "reclaimed_logical_bytes": 0,
+        "reclaimed_allocated_bytes_estimate": 0,
+        "records": 0,
+        "complete": False,
+    }
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        current = manager.reclaim(
+            limits={"seconds": min(remaining, 30), "entries": 1000000, "records": 10000},
+            apply=apply,
+            measure=not apply,
+            max_records=1000000,
+        )
+        total["passes"] += 1
+        total["records"] = current["records"]
+        total["results"] += current["results"]
+        total["candidates"] += current["candidates"]
+        total["retained_by_reason"] = current["retained_by_reason"]
+        if "observation_error" in current:
+            total["observation_error"] = current["observation_error"]
+        total["reclaimed"] += sum(r.get("state") == "REMOVED" for r in current["results"])
+        total["reclaimed_logical_bytes"] += current["reclaimed_logical_bytes"]
+        allocated = current["reclaimed_allocated_bytes_estimate"]
+        if total["reclaimed_allocated_bytes_estimate"] is not None:
+            total["reclaimed_allocated_bytes_estimate"] = (
+                None
+                if allocated is None
+                else total["reclaimed_allocated_bytes_estimate"] + allocated
+            )
+        total["complete"] = current["complete"]
+        progressed = any(r.get("state") in {"REMOVED", "PARTIAL"} for r in current["results"])
+        if not apply or current["complete"] or not progressed:
+            break
+    if not apply:
+        measured = [c["measurement"] for c in total["candidates"] if c.get("measurement")]
+        total["measured_candidates"] = len(measured)
+        total["candidate_logical_bytes"] = sum(m["logical_bytes"] for m in measured)
+        total["candidate_allocated_bytes_estimate"] = (
+            None
+            if any(m["allocated_bytes_estimate"] is None for m in measured)
+            else sum(m["allocated_bytes_estimate"] for m in measured)
+        )
+    return total
+
+
+def describe_prune(result):
+    """Human-readable lines for a prune result."""
+    lines = []
+    if result["apply"]:
+        lines.append(
+            f"Reclaimed {result['reclaimed']} allocation(s): "
+            f"{result['reclaimed_logical_bytes']} logical bytes; allocated estimate "
+            f"{result['reclaimed_allocated_bytes_estimate']}"
+        )
+        for row in result["results"]:
+            if row.get("state") not in {"REMOVED", "PARTIAL"}:
+                lines.append(f"Not reclaimed: {row['allocation_id']} · {row.get('reason', '')}")
+    else:
+        rules = {}
+        for row in result["candidates"]:
+            rules[row["rule"]] = rules.get(row["rule"], 0) + 1
+        lines.append(
+            f"Would reclaim {len(result['candidates'])} allocation(s)"
+            + "".join(f"; {count} {rule}" for rule, count in sorted(rules.items()))
+        )
+        lines.append(
+            f"Measured {result['measured_candidates']} of them: "
+            f"{result['candidate_logical_bytes']} logical bytes; allocated estimate "
+            f"{result['candidate_allocated_bytes_estimate']}"
+        )
+    for reason, count in sorted(result["retained_by_reason"].items()):
+        lines.append(f"Retained: {count} · {reason}")
+    if result.get("observation_error"):
+        lines.append("Process observation unavailable: " + result["observation_error"])
+    if not result["complete"]:
+        lines.append("Pass is partial; run prune again to continue.")
+    if not result["apply"]:
+        lines.append("Dry run: nothing was deleted. Pass --apply to reclaim.")
+    return lines
+
+
+def _owner_present(value, observed):
+    """The recorded owner leader, or any process still in its group or session."""
     reference = value.get("owner_reference")
-    if not isinstance(reference, dict):
-        return False
-    pid = reference.get("pid")
+    pid = reference.get("pid") if isinstance(reference, dict) else None
     if type(pid) is not int or pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True
-    start = (reference.get("identity") or {}).get("start")
-    if not start:
-        return True
-    try:
-        import subprocess
-
-        observed = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-            timeout=2,
-            check=False,
-        ).stdout.strip()
-        if not observed:
-            return False
-        started = time.mktime(time.strptime(observed, "%a %b %d %H:%M:%S %Y"))
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return True
-    # pid reuse: a different process now owns the pid.
-    return abs(started - float(start[0])) < 2
+    return pid in observed["pids"] or pid in observed["groups"] or pid in observed["sessions"]
 
 
 def _valid_identity(value):
@@ -218,9 +497,11 @@ class StorageManager:
         verify_publication=None,
         protected_roots=(),
         create=True,
+        observe=None,
     ):
         self.root = Path(root).absolute()
         self.policy = configured_policy(policy)
+        self.observe = observe or observe_processes
         self.verify_owner = verify_owner
         self.verify_publication = verify_publication
         self.protected_roots = tuple(Path(p).absolute() for p in protected_roots)
@@ -389,9 +670,9 @@ class StorageManager:
                 "reason": "storage_observation_unavailable",
             }
         try:
-            # Bounded, best-effort: reclaim expired scratch before admitting new
-            # scratch so the namespace cannot grow without limit.
-            self.last_expiry = self.expire(limits={"seconds": 2.0})
+            # Bounded, best-effort: reclaim provably settled or expired scratch
+            # before admitting new scratch so the namespace cannot grow without limit.
+            self.last_expiry = self.reclaim(limits={"seconds": OPPORTUNISTIC_SECONDS})
         except (OSError, StorageError):
             self.last_expiry = None
         with self._locked() as directories:
@@ -599,6 +880,15 @@ class StorageManager:
                     "reason": "legacy_settlement_unproven",
                     "allocation_id": allocation_id,
                 }
+            if (
+                value["state"] in {"ELIGIBLE", "REMOVED", "QUARANTINED"}
+                and value["retention_reason"] in LATE_REASONS
+            ):
+                # Reclaimed later (proven settlement or expiry); cleanup is a
+                # separate receipt and never changes the evidence result.
+                if value["state"] == "REMOVED":
+                    return value["receipt"]
+                return self._cleanup(directories, value, _limits(limits))
             if value["state"] in {"REMOVED", "QUARANTINED"} and (
                 value["publication_reference"] != publication_reference
                 or value["completion_reference"] != completion_reference
@@ -805,61 +1095,180 @@ class StorageManager:
         return {"schema_version": VERSION, "results": results, "complete": complete}
 
     def expire(self, *, limits=None, now=None):
-        """Reclaim scratch whose record has been unchanged past the retention window.
+        """One bounded applying reclaim pass (kept for callers of the old name)."""
+        return self.reclaim(limits=limits, now=now, apply=True)
 
-        Retention (failed outcomes, unproven descendant settlement, abandoned
-        allocations) is a diagnostic grace period, not permanent storage.
-        Allocations with registered consumers or a live recorded owner process
-        are kept. Work is bounded; a partial removal continues on the next call.
+    def _reclaim_rule(self, value, age):
+        """(rule, blocker) for one record from metadata alone.
+
+        ``settlement_proven_later``: the owner finalized a passed result and only
+        descendant settlement was unproven; reclaimable after the grace period
+        once a process observation proves nothing still uses it.
+        ``retention_expired``: anything else retained or abandoned, after the
+        retention window and the same process observation.
+        """
+        if value["state"] in {"ELIGIBLE", "QUARANTINED"} and value["retention_reason"] in (
+            LATE_REASONS
+        ):
+            return "resume", None
+        if value["state"] not in EXPIRABLE_STATES:
+            return None, None
+        if value["transaction"] is not None:
+            return None, "cleanup_transaction_open"
+        if value["consumers"]:
+            return None, "active_consumer"
+        if (
+            value["state"] == "RETAINED"
+            and value["retention_reason"] == UNPROVEN
+            and value["terminal_outcome"] == "passed"
+            and value["completion_reference"] is not None
+            and value["schema_version"] == RECORD_VERSION
+        ):
+            if age >= self.policy["settlement_grace_seconds"]:
+                return SETTLED_LATER, None
+            blocker = "settlement_grace_period"
+        else:
+            blocker = (
+                "owner_unfinalized"
+                if value["state"] != "RETAINED"
+                else value["retention_reason"] or "owner_unsettled"
+            )
+        retention = self.policy["retention_seconds"]
+        if retention and age >= retention:
+            return EXPIRED, None
+        return None, blocker
+
+    def reclaim(self, *, limits=None, now=None, apply=True, measure=False, max_records=None):
+        """Bounded, idempotent reclaim of retained scratch that is provably settled.
+
+        A candidate (see ``_reclaim_rule``) is removed only when one process
+        observation, taken after the metadata pass, shows that neither its
+        recorded owner (leader, process group or session) nor any process with
+        its cwd, root, executable, mapped or open file inside the allocation is
+        alive. An unavailable or incomplete observation keeps every candidate
+        retained as ``settlement_undecidable``. With ``apply=False`` nothing is
+        changed: the result lists what would be reclaimed. Partial removal
+        continues on the next pass. ``max_records`` lets an explicit prune
+        examine more records than the per-call ``records`` limit.
         """
         bound = _limits(limits)
-        retention = self.policy["retention_seconds"]
-        result = {"schema_version": VERSION, "results": [], "complete": True}
-        if not retention or self.namespace_identity is None:
+        result = {
+            "schema_version": VERSION,
+            "apply": bool(apply),
+            "results": [],
+            "candidates": [],
+            "retained": [],
+            "retained_by_reason": {},
+            "examined": 0,
+            "records": 0,
+            "reclaimed_logical_bytes": 0,
+            "reclaimed_allocated_bytes_estimate": 0,
+            "complete": True,
+        }
+        if self.namespace_identity is None:
             return result
         now = time.time() if now is None else now
         deadline = time.monotonic() + bound["seconds"]
-        remaining = bound["entries"]
+
+        def keep(allocation_id, reason, listed=True):
+            result["retained_by_reason"][reason] = result["retained_by_reason"].get(reason, 0) + 1
+            if listed and len(result["retained"]) < 1000:
+                result["retained"].append({"allocation_id": allocation_id, "reason": reason})
+
+        candidates = []
         with self._locked() as directories:
-            names = []
             with os.scandir(directories["records"]) as iterator:
-                for entry in iterator:
-                    if len(names) >= bound["records"]:
-                        result["complete"] = False
-                        break
-                    names.append(entry.name)
-            for name in sorted(names):
-                if not name.endswith(".json") or not _identifier(name[:-5]):
-                    continue
-                if time.monotonic() >= deadline or remaining <= 0:
+                names = sorted(
+                    entry.name
+                    for entry in iterator
+                    if entry.name.endswith(".json") and _identifier(entry.name[:-5])
+                )
+            result["records"] = len(names)
+            if names:
+                # Rotate so a bounded pass over a large namespace is not stuck on
+                # the same first records.
+                start = secrets.randbelow(len(names))
+                names = names[start:] + names[:start]
+            cap = bound["records"] if max_records is None else max_records
+            if len(names) > cap:
+                names = names[:cap]
+                result["complete"] = False
+            for name in names:
+                if time.monotonic() >= deadline:
                     result["complete"] = False
                     break
+                result["examined"] += 1
                 try:
                     value = self._record(directories, name[:-5])
                     age = now - os.stat(name, dir_fd=directories["records"]).st_mtime
                 except (OSError, StorageError):
+                    keep(name[:-5], "record_unreadable")
                     continue
-                resumable = value["state"] in {"ELIGIBLE", "QUARANTINED"} and (
-                    value["retention_reason"] == EXPIRED
+                rule, blocker = self._reclaim_rule(value, age)
+                if rule is None:
+                    if blocker is not None:
+                        keep(value["allocation_id"], blocker, listed=False)
+                    continue
+                candidates.append((value["allocation_id"], value["generation"], rule))
+        if not candidates:
+            return result
+        observed, undecidable = None, None
+        if any(rule != "resume" for _, _, rule in candidates):
+            # The scan runs outside the namespace lock; decisions recheck the
+            # record generation under the lock afterwards.
+            try:
+                observed = self.observe(
+                    self.root / "allocations", deadline=max(deadline, time.monotonic() + 1.0)
                 )
-                if not resumable and (
-                    value["state"] not in EXPIRABLE_STATES
-                    or value["transaction"] is not None
-                    or value["consumers"]
-                    or age < retention
-                    or _owner_alive(value)
-                ):
+            except (OSError, StorageError) as error:
+                undecidable = "settlement_undecidable"
+                result["observation_error"] = getattr(error, "code", None) or type(error).__name__
+        remaining = bound["entries"]
+        with self._locked() as directories:
+            for allocation_id, generation, rule in candidates:
+                try:
+                    value = self._record(directories, allocation_id)
+                except (OSError, StorageError):
+                    keep(allocation_id, "record_unreadable")
+                    continue
+                if value["generation"] != generation:
+                    keep(allocation_id, "changed_during_reclaim")
+                    continue
+                if rule != "resume":
+                    if undecidable:
+                        keep(allocation_id, undecidable)
+                        continue
+                    if _owner_present(value, observed):
+                        keep(allocation_id, "owner_process_alive")
+                        continue
+                    if observed["users"].get(allocation_id):
+                        keep(allocation_id, "allocation_in_use")
+                        continue
+                if not apply:
+                    row = {
+                        "allocation_id": allocation_id,
+                        "state": value["state"],
+                        "retention_reason": value["retention_reason"],
+                        "rule": rule,
+                    }
+                    if measure:
+                        row["measurement"] = self._measure(value, deadline)
+                    result["candidates"].append(row)
+                    continue
+                if time.monotonic() >= deadline or remaining <= 0:
+                    result["complete"] = False
+                    keep(allocation_id, "work_limit")
                     continue
                 try:
-                    if not resumable:
+                    if rule != "resume":
                         value.update(
                             state="ELIGIBLE",
-                            retention_reason=EXPIRED,
+                            retention_reason=rule,
                             generation=value["generation"] + 1,
                         )
                         try:
                             os.stat(
-                                value["allocation_id"],
+                                allocation_id,
                                 dir_fd=directories["allocations"],
                                 follow_symlinks=False,
                             )
@@ -883,17 +1292,46 @@ class StorageManager:
                 except (OSError, StorageError) as error:
                     result["results"].append(
                         {
-                            "allocation_id": value["allocation_id"],
+                            "allocation_id": allocation_id,
                             "state": "RETAINED",
                             "reason": str(error) or type(error).__name__,
                         }
                     )
                     continue
                 remaining -= receipt.get("processed_entries", 0)
+                result["reclaimed_logical_bytes"] += receipt.get("logical_bytes") or 0
+                if result["reclaimed_allocated_bytes_estimate"] is not None:
+                    allocated = receipt.get("allocated_bytes_estimate")
+                    result["reclaimed_allocated_bytes_estimate"] = (
+                        None
+                        if allocated is None
+                        else result["reclaimed_allocated_bytes_estimate"] + allocated
+                    )
                 if receipt["state"] == "PARTIAL":
                     result["complete"] = False
                 result["results"].append(receipt)
         return result
+
+    def _measure(self, value, deadline):
+        from .storage_inventory import measure_tree
+
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            return None
+        try:
+            descriptor = _open_directory(self.path(value["allocation_id"]))
+        except (OSError, StorageError):
+            return None
+        try:
+            measured = measure_tree(descriptor, limits={"seconds": min(seconds, 30)})
+        except (OSError, StorageError):
+            return None
+        finally:
+            os.close(descriptor)
+        return {
+            k: measured[k]
+            for k in ("logical_bytes", "allocated_bytes_estimate", "entries", "complete")
+        }
 
     def resume_cleanup(self, allocation_id, *, transaction_id, limits=None):
         with self._locked() as directories:
@@ -905,7 +1343,9 @@ class StorageManager:
             return self._cleanup(directories, value, _limits(limits))
 
     def _cleanup(self, directories, value, bound):
-        expired = value["retention_reason"] == EXPIRED
+        # Late reclaim (proven settlement or expiry) has no publication attestation
+        # to recheck; its process observation was the precondition instead.
+        expired = value["retention_reason"] in LATE_REASONS
         if value["schema_version"] != RECORD_VERSION and not expired:
             raise StorageError("legacy_settlement_unproven")
         free_before = _free_bytes(directories["allocations"])
@@ -983,7 +1423,7 @@ class StorageManager:
                 raise StorageError("quarantine_replaced")
             os.rmdir(name, dir_fd=directories["quarantine"])
             os.fsync(directories["quarantine"])
-            return self._removed(directories, value, progress["entries"], free_before)
+            return self._removed(directories, value, progress["entries"], free_before, progress)
         receipt = {
             "schema_version": VERSION,
             "allocation_id": value["allocation_id"],
@@ -1002,14 +1442,20 @@ class StorageManager:
         self._save(directories, value)
         return receipt
 
-    def _removed(self, directories, value, processed, free_before=None):
+    def _removed(self, directories, value, processed, free_before=None, progress=None):
         receipt = {
             "schema_version": VERSION,
             "allocation_id": value["allocation_id"],
             "transaction_id": value["transaction"]["id"],
             "state": "REMOVED",
-            "reason": EXPIRED if value["retention_reason"] == EXPIRED else "settled_published",
+            "reason": value["retention_reason"]
+            if value["retention_reason"] in LATE_REASONS
+            else "settled_published",
             "processed_entries": processed,
+            # Bytes unlinked by this final step (earlier PARTIAL receipts carry
+            # their own); not a promise about recovered free space.
+            "logical_bytes": progress["logical_bytes"] if progress else 0,
+            "allocated_bytes_estimate": progress["allocated_bytes"] if progress else 0,
             "recovered_bytes": None,
             "filesystem_free_space": _space_observation(
                 free_before, _free_bytes(directories["allocations"])
