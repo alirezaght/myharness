@@ -13,7 +13,10 @@ import pytest
 from al.tests.verification_helpers import declarations, source
 from scripts import verify_al_functional as V
 
-AMENDMENT = Path("/private/tmp/reliability-publication-timing-acceptance-20261125.json")
+AMENDMENT = (
+    Path(__file__).resolve().parents[1]
+    / "docs/reliability-platform/publication-20261125/timing-acceptance.json"
+)
 PATHS = [
     "al/tests/test_a.py",
     "al/codex/skills/al/tests/test_a.py",
@@ -33,10 +36,18 @@ def workspace(tmp_path, body=None):
     return root
 
 
+def amendment_fixture(tmp_path):
+    raw = AMENDMENT.read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == V.AMENDMENT_SHA256
+    path = tmp_path / "timing-acceptance.json"
+    path.write_bytes(raw)
+    return path
+
+
 def invoke(tmp_path, body=None, *, timeout=60):
     root = workspace(tmp_path, body)
     output = tmp_path / "proof"
-    result = V.run(root, output, AMENDMENT, paths=PATHS, timeout=timeout)
+    result = V.run(root, output, amendment_fixture(tmp_path), paths=PATHS, timeout=timeout)
     request = json.loads((output / "invocation.json").read_text())
     return root, output, request, result
 
@@ -241,7 +252,7 @@ def test_preexisting_output_and_wrong_amendment_refuse_without_execution(bundle,
     root, output, _, _ = bundle
     before = (output / "raw.json").read_bytes()
     with pytest.raises(FileExistsError):
-        V.run(root, output, AMENDMENT, paths=PATHS)
+        V.run(root, output, amendment_fixture(tmp_path), paths=PATHS)
     wrong = tmp_path / "amendment.json"
     wrong.write_text("{}")
     with pytest.raises(ValueError, match="amendment"):
@@ -276,3 +287,20 @@ def test_nonregular_and_oversize_artifacts_refuse_without_blocking(tmp_path, kin
         timeout=5,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_public_adapter_uses_portable_amendment_without_workstation_file(tmp_path, monkeypatch):
+    capture = V.capture
+    unavailable = Path("/private/tmp/reliability-publication-timing-acceptance-20261125.json")
+
+    def clean_checkout(path, **kwargs):
+        if Path(path) == unavailable:
+            raise FileNotFoundError("workstation amendment is unavailable")
+        return capture(path, **kwargs)
+
+    monkeypatch.setattr(V, "capture", clean_checkout)
+    _, output, _, result = invoke(tmp_path)
+    assert result["functional_assertions"] == "PASS" and result["executed_passed"] == 3
+    assert Path(result["amendment"]["path"]).is_relative_to(tmp_path)
+    assert result["amendment"]["sha256"] == V.AMENDMENT_SHA256
+    assert (output / "functional.json").is_file()
