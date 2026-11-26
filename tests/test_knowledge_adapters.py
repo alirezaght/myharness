@@ -205,3 +205,82 @@ def test_effective_design_is_projected_with_existing_entry_identity(controller, 
     value = json.loads(design[0].raw)
     assert value["entry_id"] == effective.ref and value["binding"] == "fixed"
     assert b"Unapproved alternative" not in b"".join(s.raw for s in sources)
+
+
+def test_context_binding_marks_unbounded_requirement_versions_unavailable(conn, tmp_path):
+    controller = HarnessController(conn)
+    task = controller.create_task("Bound context requirements")
+    ws = controller.workspace(task.id)
+    accepted = {"requirements": {"criteria": [{"id": "AC-01"}], "invariants": []}}
+    ws.checkpoint("context_accepted", accepted)
+    root = tmp_path / "binding-repo"
+    root.mkdir()
+    scope = replace(operator_scope(root), task_id=task.id)
+    sources, _ = task_sources(controller, scope, task.id)
+    publish_snapshot(
+        conn,
+        PreparedSnapshot(
+            scope,
+            SourceInventory(sources, True, (), {}),
+            tuple(extract_source(s) for s in sources),
+            0,
+        ),
+        expected_active=None,
+    )
+    first = query(conn, scope, ContextRequest(entity_refs=(f"task:{task.id}",), stage="planning"))
+    binding = first.payload["context"]["binding"]
+    assert binding["source_versions"]["requirements"] is None
+    assert binding["requirements_unavailable"] == "registry-dependency-reads-not-bounded"
+    assert binding["source_versions"]["spec"] is None
+    ws.checkpoint("context_accepted", accepted)
+    changed = query(conn, scope, ContextRequest(entity_refs=(f"task:{task.id}",), stage="planning"))
+    # Missing registry versions are not represented as freshly validated current content.
+    assert changed.payload["context"]["binding"]["source_versions"]["requirements"] is None
+    assert changed.payload["staleness"]
+    assert not any(
+        c["locator"] == f"harness:requirements:{task.id}" for c in changed.payload["citations"]
+    )
+
+
+def test_changed_task_binding_cannot_publish_a_bundle(conn, tmp_path, monkeypatch):
+    import importlib
+
+    from harness.design_models import DesignSection
+
+    module = importlib.import_module("harness.knowledge.query")
+    controller = HarnessController(conn)
+    task = controller.create_task("Binding publication race")
+    ws = controller.workspace(task.id)
+    accepted = {"requirements": {"criteria": [{"id": "AC-01"}], "invariants": []}}
+    ws.checkpoint("context_accepted", accepted)
+    entry = ws.state_design(DesignSection.COMPONENTS, "Original component")
+    scope = replace(operator_scope(tmp_path), task_id=task.id)
+    sources, _ = task_sources(controller, scope, task.id)
+    publish_snapshot(
+        conn,
+        PreparedSnapshot(
+            scope,
+            SourceInventory(sources, True, (), {}),
+            tuple(extract_source(s) for s in sources),
+            0,
+        ),
+        expected_active=None,
+    )
+    original = module.derive_binding
+    observations = 0
+
+    def change_design(*args, **kwargs):
+        nonlocal observations
+        observations += 1
+        if observations == 2:
+            conn.execute(
+                "UPDATE design_entries SET statement=? WHERE id=?", ("Changed component", entry.id)
+            )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, "derive_binding", change_design)
+    with pytest.raises(PermissionError, match="binding changed"):
+        query(conn, scope, ContextRequest("AC-01", stage="planning"))
+    assert observations == 2
+    assert conn.execute("SELECT count(*) FROM knowledge_bundles").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM knowledge_receipts").fetchone()[0] == 0

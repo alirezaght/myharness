@@ -1,11 +1,25 @@
 """Partition-first, bounded lexical and typed relationship retrieval."""
 
 import json
-import re
 from collections import Counter, deque
 from time import monotonic
 
 from harness.db import transaction, utcnow
+from harness.knowledge.context_ranking import (
+    RANKING_VERSION,
+    fit_context,
+    ranked_candidates,
+)
+from harness.knowledge.context_ranking import (
+    tokens as context_tokens,
+)
+from harness.knowledge.context_request import (
+    candidate_context,
+    candidate_sources,
+    derive_binding,
+    preferences,
+    task_aware,
+)
 from harness.knowledge.identity import resolve
 from harness.knowledge.models import (
     MAX_REFRESH_BYTES,
@@ -308,7 +322,7 @@ def _head_observation(conn, scope, snapshot):
 
 def _candidates(conn, scope, request, exclusions):
     references, ambiguities = set(), []
-    for ref in request.entity_refs:
+    for ref in dict.fromkeys((*request.entity_refs, *request.affected_entities)):
         alternatives = resolve(conn, scope.project_id, ref)
         references.update(alternatives)
         if len(alternatives) != 1:
@@ -319,7 +333,7 @@ def _candidates(conn, scope, request, exclusions):
                     "alternatives": list(alternatives),
                 }
             )
-    tokens = sorted(set(re.findall(r"[\w.-]+", request.query.lower())))[:64]
+    tokens = context_tokens(request)
     ids = set()
     if tokens:
         expression = " OR ".join('"' + token.replace('"', '""') + '"' for token in tokens)
@@ -366,10 +380,16 @@ def _candidates(conn, scope, request, exclusions):
                 (scope.project_id, ref, scope.project_id, ref, CANDIDATE_CAP - len(explicit)),
             )
         )
+    source_explicit = set()
+    if task_aware(request):
+        source_explicit, guidance = candidate_sources(conn, request, CANDIDATE_CAP)
+        explicit.update(source_explicit | guidance)
     ids.update(explicit)
     if len(ids) >= CANDIDATE_CAP:
         exclusions["candidate-cap"] += 1
-    ids = [*sorted(explicit), *sorted(ids - explicit)][:CANDIDATE_CAP]
+    ids = [*sorted(source_explicit), *sorted(explicit - source_explicit), *sorted(ids - explicit)][
+        :CANDIDATE_CAP
+    ]
     rows = {}
     for aid in ids:
         row = conn.execute(_ROW + "WHERE a.assertion_id=?", (aid,)).fetchone()
@@ -386,6 +406,14 @@ def _candidates(conn, scope, request, exclusions):
             aid,
         ),
     )
+    if task_aware(request):
+        located = candidate_context(conn, rows, CANDIDATE_CAP)
+        for row in rows.values():
+            row["_resolved_reference"] = row["subject"] in references or row["object"] in references
+            row["_reference_definition"] = (
+                row["predicate"] == "defines" and row["object"] in references
+            )
+        ordered = ranked_candidates(rows, request, located, exclusions)
     return rows, ordered, ambiguities, references
 
 
@@ -400,7 +428,7 @@ def _path(row, entity):
     }
 
 
-def _expand(conn, rows, seeds, references, limits, exclusions, *, examined=0):
+def _expand(conn, rows, seeds, references, limits, exclusions, *, examined=0, per_hub=None):
     selected, paths = list(seeds), {}
     queue = deque()
     for aid in seeds:
@@ -429,13 +457,16 @@ def _expand(conn, rows, seeds, references, limits, exclusions, *, examined=0):
             remaining = limits.examined_edges - examined
             if not remaining:
                 break
+            allowance = min(remaining, per_hub) if per_hub else remaining
             edges = conn.execute(
                 _ROW + "WHERE (a.subject_id=? OR a.object_id=?) AND a.object_id IS NOT NULL "
                 "AND a.predicate IN (" + ",".join("?" for _ in _RELATIONS) + ") "
                 "ORDER BY a.assertion_id LIMIT ?",
-                (entity_id, entity_id, *sorted(_RELATIONS), remaining),
+                (entity_id, entity_id, *sorted(_RELATIONS), allowance),
             ).fetchall()
             examined += len(edges)
+            if per_hub and len(edges) == allowance:
+                exclusions["hub-edge-budget"] += 1
             for edge in edges:
                 other = edge["assertion_id"]
                 if other in selected:
@@ -478,13 +509,16 @@ def _expand(conn, rows, seeds, references, limits, exclusions, *, examined=0):
         if not remaining:
             exclusions["edge-budget"] += 1
             break
+        allowance = min(remaining, per_hub) if per_hub else remaining
         facts = conn.execute(
             _ROW + "WHERE a.subject_id=? AND a.object_id IS NULL ORDER BY a.assertion_id LIMIT ?",
-            (entity_id, remaining),
+            (entity_id, allowance),
         ).fetchall()
         examined += len(facts)
-        if len(facts) == remaining:
-            exclusions["edge-budget"] += 1
+        if len(facts) == allowance:
+            exclusions[
+                "hub-fact-budget" if per_hub and allowance < remaining else "edge-budget"
+            ] += 1
         for fact in facts:
             other = fact["assertion_id"]
             if other not in selected:
@@ -535,13 +569,17 @@ def _integrity(rows):
 def _bundle_size(payload):
     while True:
         size = len(canonical({"bundle_hash": "0" * 64, "receipt_id": "0" * 32, **payload}).encode())
+        if "estimated_tokens" in payload["budget"]:
+            payload["budget"]["estimated_tokens"] = (3 * size + 7) // 8
         if payload["budget"]["serialized_bytes"] == size:
             return size
         payload["budget"]["serialized_bytes"] = size
 
 
-def _fit(payload, limit, exclusions, units=None):
+def _fit(payload, limit, exclusions, units=None, refresh=None):
     while True:
+        if refresh is not None:
+            refresh()
         payload["exclusions"] = dict(sorted(exclusions.items()))
         payload["truncation"] = bool(exclusions)
         size = _bundle_size(payload)
@@ -550,6 +588,8 @@ def _fit(payload, limit, exclusions, units=None):
         # Preserve each integrity kind/count before evicting otherwise-fitting evidence.
         collapsed = False
         for field in ("coverage", "staleness", "conflicts", "ambiguities"):
+            if field in {"ambiguities", "conflicts"} and "request" in payload.get("context", {}):
+                continue
             observations = payload[field]
             if not observations or all(item.get("summarized") for item in observations):
                 continue
@@ -600,24 +640,33 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
         monotonic(),
         {"count": 0, "bytes": 0, "max_count": 40, "max_bytes": MAX_REFRESH_BYTES // 2},
     )
-    request.limits.validate()
-    if (
-        len(request.query.encode()) > 4096
-        or len(request.entity_refs) > 40
-        or any(len(ref.encode()) > 512 for ref in request.entity_refs)
-    ):
-        raise ValueError("knowledge request too large")
+    request_preferences = preferences(request)
     project = validate_scope(conn, scope)
     if scope.snapshot_id and request.as_of_snapshot not in {None, scope.snapshot_id}:
         raise PermissionError("review snapshot is pinned")
     snapshot = scope.snapshot_id or request.as_of_snapshot or project["active_snapshot_id"]
+    binding_enabled = task_aware(request)
+    bounded_snapshot = binding_enabled and scope.permitted_source_versions is None
     snap = conn.execute(
-        "SELECT * FROM knowledge_snapshots WHERE snapshot_id=? AND project_id=?",
-        (snapshot, scope.project_id),
+        "SELECT * FROM knowledge_snapshots WHERE snapshot_id=? AND project_id=?"
+        + (" AND length(CAST(observation_json AS BLOB))<=?" if bounded_snapshot else ""),
+        (snapshot, scope.project_id, (MAX_SOURCE_BYTES - 1024) // 6)
+        if bounded_snapshot
+        else (snapshot, scope.project_id),
     ).fetchone()
     if not snap:
         raise ValueError("no authorized knowledge snapshot; refresh first")
     _partition(conn, scope, snapshot)
+    binding = (
+        derive_binding(conn, scope, snapshot, reads, snapshot_observation=snap["observation_json"])
+        if binding_enabled
+        else None
+    )
+    if binding_enabled:
+        reads.update(
+            max_count=36 + reads["count"],
+            max_bytes=MAX_REFRESH_BYTES // 2 - 4 * 1024 * 1024 + reads["bytes"],
+        )
     exclusions = Counter()
     rows, ordered, ambiguities, references = _candidates(conn, scope, request, exclusions)
     seeds = ordered[: request.limits.assertions]
@@ -662,7 +711,14 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     for aid in seeds:
         discover_parents(aid)
     selected, paths, examined = _expand(
-        conn, rows, seeds, references, request.limits, exclusions, examined=examined
+        conn,
+        rows,
+        seeds,
+        references,
+        request.limits,
+        exclusions,
+        examined=examined,
+        per_hub=16 if task_aware(request) else None,
     )
     immutable = json.loads(snap["observation_json"]).get("mode") == "commit"
     historical = immutable or (
@@ -702,6 +758,26 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
         "notice": "Context grants no execution or approval authority; "
         "no result proves no dependency.",
     }
+    if task_aware(request):
+        payload["context"] = {
+            "request_identity": digest(canonical(request_preferences).encode()),
+            "binding_identity": binding.identity,
+            "ranking_version": RANKING_VERSION,
+            "request": request_preferences,
+            "binding": binding.to_dict(),
+        }
+        payload["budget"].update(
+            estimated_tokens=0,
+            max_estimated_tokens=request.estimated_tokens,
+            token_estimator="serialized-utf8-bytes-div4-plus50pct-margin-not-tokenizer-exact",
+            token_estimator_limits=(
+                "50% safety margin, not an upper bound; IDs, language and tokenizer can exceed it."
+            ),
+        )
+
+    def fit(units=None):
+        fit_context(payload, request, _fit, request.limits.bytes, exclusions, units)
+
     if scope.permitted_source_versions is not None:
         payload["coverage"] = [
             {"status": "packet-local", "whole_repository_coverage": "not-assessed"}
@@ -860,7 +936,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             return False
         if added:
             units.append(added)
-        _fit(payload, request.limits.bytes, exclusions, units)
+        fit(units)
         emitted.intersection_update(a["assertion_id"] for a in payload["assertions"])
         return bool(added & emitted)
 
@@ -880,11 +956,14 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
             pack(aid)
     if reads.get("limited"):
         exclusions["source-read-budget"] += 1
-    reads.update(max_count=80, max_bytes=MAX_REFRESH_BYTES)
+    reads.update(
+        max_count=76 if binding_enabled else 80,
+        max_bytes=MAX_REFRESH_BYTES - 4 * 1024 * 1024 if binding_enabled else MAX_REFRESH_BYTES,
+    )
     packed = {a["assertion_id"] for a in payload["assertions"]}
     payload["paths"] = [p for p in payload["paths"] if set(p["assertion_ids"]) <= packed]
     payload["budget"]["examined_edges"] = examined
-    _fit(payload, request.limits.bytes, exclusions, units)
+    fit(units)
     # A new read pass closes source edits during candidate selection and packing.
     final_cache = {}
     if (
@@ -907,7 +986,7 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
     if expired and expired[0]:
         # A new retrieval may issue new immutable bytes, never restore an expired row.
         payload["new_issuance"] = digest((bundle_hash + utcnow()).encode())
-        _fit(payload, request.limits.bytes, exclusions, units)
+        fit(units)
         encoded = canonical(payload)
         bundle_hash = digest(encoded.encode())
     with transaction(conn):
@@ -915,6 +994,10 @@ def query(conn, scope, request: ContextRequest = _DEFAULT_CONTEXT_REQUEST) -> Co
 
         ensure_project(conn, scope)
         current = validate_scope(conn, scope)
+        if binding_enabled:
+            reads.update(max_count=80, max_bytes=MAX_REFRESH_BYTES)
+            if derive_binding(conn, scope, snapshot, reads) != binding:
+                raise PermissionError("knowledge context binding changed before publication")
         if (
             not scope.snapshot_id
             and not request.as_of_snapshot
@@ -1035,6 +1118,21 @@ def _fit_explanation(result, limit):
         raise ValueError("knowledge explanation exceeds response budget")
 
 
+def _explanation_binding(conn, scope, payload, reads):
+    """Revalidate mutable task context without substituting an immutable bundle."""
+    context = payload["context"]
+    try:
+        stored = context["binding"]
+        identity = context["binding_identity"]
+        if not isinstance(stored, dict) or digest(canonical(stored).encode()) != identity:
+            raise ValueError("invalid binding identity")
+        current = derive_binding(conn, scope, payload["snapshot_id"], reads)
+        if current.identity != identity:
+            raise ValueError("binding changed")
+    except (KeyError, TypeError, ValueError, PermissionError):
+        raise PermissionError("stale knowledge context; issue a fresh query") from None
+
+
 def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidence=False) -> dict:
     started, reads = monotonic(), {"count": 0, "bytes": 0}
     validate_scope(conn, scope)
@@ -1058,6 +1156,14 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
     ):
         raise PermissionError("bundle unavailable to current scope")
     payload = json.loads(row["payload"])
+    binding_enabled = "context" in payload
+    if binding_enabled:
+        reads.update(max_count=4, max_bytes=4 * 1024 * 1024)
+        _explanation_binding(conn, scope, payload, reads)
+        reads.update(
+            max_count=reads["count"] + 72,
+            max_bytes=reads["bytes"] + MAX_REFRESH_BYTES - 8 * 1024 * 1024,
+        )
     _partition(conn, scope, payload["snapshot_id"])
     if any(
         not conn.execute(
@@ -1140,6 +1246,9 @@ def explain(conn, scope, bundle_hash: str, assertion_id: str, *, include_evidenc
             for item in payload["assertions"]
         ):
             raise PermissionError("bundle contains revoked or purged evidence")
+        if binding_enabled:
+            reads.update(max_count=80, max_bytes=MAX_REFRESH_BYTES)
+            _explanation_binding(conn, scope, payload, reads)
         receipt_id = record_receipt(conn, scope, payload, bundle_hash, reads, started)
     result["receipt_id"] = receipt_id
     return result

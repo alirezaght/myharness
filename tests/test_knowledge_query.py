@@ -449,3 +449,288 @@ def test_authored_prose_never_creates_derivation_edges(graph):
         result = explain(conn, scope, bundle.bundle_hash, assertion["assertion_id"])
         assert result["derivation"]["status"] == "complete"
         assert result["derivation"]["edges"] == []
+
+
+def test_task_aware_source_preferences_preserve_unresolved_graph_identity(graph):
+    conn, scope = graph
+    refresh(conn, scope)
+    request = ContextRequest("", stage="implementation", affected_entities=("file:service.py",))
+    bundle = query(conn, scope, request)
+    assert bundle.payload["assertions"]
+    assert any(c["locator"] == "service.py" for c in bundle.payload["citations"])
+    assert any(
+        a["reference"] == "file:service.py" and a["status"] == "unresolved-identity"
+        for a in bundle.payload["ambiguities"]
+    )
+    context = bundle.payload["context"]
+    assert context["binding"]["project_id"] == scope.project_id
+    assert context["binding"]["source_versions"]["spec"] is None
+    assert any(
+        "exact-affected-source" in selected["reasons"]
+        for selected in context["presentation"]["selection"]
+    )
+    assert not any(a["subject"] == "file:service.py" for a in bundle.payload["assertions"])
+
+
+def test_task_preferences_and_source_snapshot_change_bundle_identity(graph):
+    conn, scope = graph
+    refresh(conn, scope)
+    first = query(conn, scope, ContextRequest("service", stage="planning"))
+    implementation = query(conn, scope, ContextRequest("service", stage="implementation"))
+    assert first.bundle_hash != implementation.bundle_hash
+    (scope.repository / "service.py").write_text("def changed_interface():\n    return 2\n")
+    stale = query(conn, scope, ContextRequest("service", stage="implementation"))
+    assert not any(c["locator"] == "service.py" for c in stale.payload["citations"])
+    refresh(conn, scope)
+    current = query(conn, scope, ContextRequest("changed_interface", stage="implementation"))
+    assert (
+        current.payload["context"]["binding_identity"]
+        != first.payload["context"]["binding_identity"]
+    )
+    assert any("changed_interface" in a["text"] for a in current.payload["assertions"])
+
+
+def test_guidance_presentation_retains_scopes_conflicts_and_cited_bytes(graph):
+    conn, scope = graph
+    paths = {
+        "AGENTS.md": "Run relevant parser checks.\n",
+        "parser/AGENTS.md": "Run relevant parser checks.\n",
+        "unrelated/AGENTS.md": "Run relevant parser checks.\n",
+        "parser/api.py": "def parse(value):\n    return value\n",
+    }
+    for name, text in paths.items():
+        path = scope.repository / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    request = ContextRequest(
+        "parser guidance",
+        stage="implementation",
+        affected_entities=("file:parser/api.py",),
+        estimated_tokens=4096,
+    )
+    payload = query(conn, scope, request).payload
+    groups = payload["context"]["presentation"]["guidance_presentation"]
+    group = next(item for item in groups if len(item["members"]) == 2)
+    assert {name for member in group["members"] for name in member["locators"]} == {
+        "AGENTS.md",
+        "parser/AGENTS.md",
+    }
+    assert not any(
+        "unrelated/AGENTS.md" in member["locators"] for item in groups for member in item["members"]
+    )
+    for citation in payload["citations"]:
+        raw = (scope.repository / citation["locator"]).read_bytes()
+        assert digest(raw) == citation["content_sha256"]
+        assert digest(raw[citation["start_byte"] : citation["end_byte"]]) == citation["span_sha256"]
+    (scope.repository / "parser/AGENTS.md").write_text("A conflicting parser instruction.\n")
+    refresh(conn, scope)
+    changed = query(conn, scope, request).payload["context"]["presentation"]
+    assert len(changed["guidance_presentation"]) == 2
+    assert changed["uncertainty"]
+
+
+def test_task_aware_ambiguity_keeps_actual_alternatives_under_packing(graph):
+    from harness.knowledge.identity import record_alias
+
+    conn, scope = graph
+    refresh(conn, scope)
+    alternatives = []
+    for subject in ("module:service", "module:consumer"):
+        fact = conn.execute(
+            "SELECT a.assertion_id,a.subject_id FROM knowledge_assertions a "
+            "JOIN knowledge_entities n ON n.entity_id=a.subject_id WHERE n.scoped_key=? LIMIT 1",
+            (subject,),
+        ).fetchone()
+        record_alias(
+            conn, scope.project_id, "shared-interface", fact["subject_id"], fact["assertion_id"]
+        )
+        alternatives.append(subject)
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "service",
+            entity_refs=("shared-interface",),
+            stage="investigation",
+            limits=QueryLimits(bytes=8192),
+        ),
+    )
+    ambiguity = next(
+        a for a in bundle.payload["ambiguities"] if a.get("reference") == "shared-interface"
+    )
+    assert ambiguity["status"] == "ambiguous-identity"
+    assert ambiguity["alternatives"] == sorted(alternatives)
+    assert len(canonical(bundle.to_dict()).encode()) <= 8192
+
+
+def test_4096_estimated_tokens_keep_test_and_implementation_evidence(graph):
+    conn, scope = graph
+    (scope.repository / "service.py").write_text(
+        "def citation_current():\n    return 'stale citation validation'\n"
+    )
+    tests = scope.repository / "tests"
+    tests.mkdir()
+    (tests / "test_service.py").write_text(
+        "def test_stale_citation():\n    assert 'stale citation'\n"
+        "def test_stale_neighbor():\n    assert 'stale neighbor'\n"
+        "def test_citation_denial():\n    assert 'citation denial'\n"
+    )
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "stale citation neighbor",
+            stage="verification",
+            objective="find regression tests",
+            affected_entities=("file:service.py",),
+            estimated_tokens=4096,
+        ),
+    )
+    citations = {c["locator"] for c in bundle.payload["citations"]}
+    assert {"service.py", "tests/test_service.py"} <= citations
+    assert any(
+        a["object"] == "symbol:service:citation_current" for a in bundle.payload["assertions"]
+    )
+    assert any(
+        a["object"] == "symbol:tests.test_service:test_stale_citation"
+        for a in bundle.payload["assertions"]
+    )
+    assert all(a["verification"] == "source-backed" for a in bundle.payload["assertions"])
+    assert bundle.payload["budget"]["estimated_tokens"] <= 4096
+    assert len(canonical(bundle.to_dict()).encode()) <= 32768
+
+
+def test_4096_estimated_tokens_keep_both_ambiguous_definitions(graph):
+    from harness.knowledge.identity import record_alias
+
+    conn, scope = graph
+    (scope.repository / "service.py").write_text("def resolve(value):\n    return value\n")
+    (scope.repository / "consumer.py").write_text("def resolve(value):\n    return str(value)\n")
+    refresh(conn, scope)
+    expected = {"symbol:service:resolve", "symbol:consumer:resolve"}
+    for name in sorted(expected):
+        fact = conn.execute(
+            "SELECT a.assertion_id,a.object_id FROM knowledge_assertions a "
+            "JOIN knowledge_entities n ON n.entity_id=a.object_id WHERE n.scoped_key=?",
+            (name,),
+        ).fetchone()
+        record_alias(conn, scope.project_id, "resolve", fact["object_id"], fact["assertion_id"])
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "resolve",
+            entity_refs=("resolve",),
+            objective="identify resolver",
+            stage="planning",
+            estimated_tokens=4096,
+        ),
+    )
+    assert expected <= {a["object"] for a in bundle.payload["assertions"]}
+    ambiguity = next(a for a in bundle.payload["ambiguities"] if a["reference"] == "resolve")
+    assert set(ambiguity["alternatives"]) == expected
+    ids = {a["assertion_id"] for a in bundle.payload["assertions"] if a["object"] in expected}
+    assert ids <= {c["assertion_id"] for c in bundle.payload["citations"]}
+    assert bundle.payload["budget"]["estimated_tokens"] <= 4096
+
+
+def test_test_objective_prefers_named_definitions_over_matching_module_boilerplate(graph):
+    conn, scope = graph
+    boilerplate = "# " + "stale citation graph neighbor denied tests " * 45 + "\n"
+    (scope.repository / "service.py").write_text(
+        boilerplate + "def generic_helper():\n    return 'stale citation graph neighbor denied'\n"
+        "def citation_current():\n    return 'validate source'\n"
+    )
+    checks = scope.repository / "tests"
+    checks.mkdir()
+    (checks / "test_graph.py").write_text(
+        boilerplate + "def test_graph_neighbor_denials():\n    assert 'graph neighbor denied'\n"
+        "def test_graph_miscellaneous():\n    assert 'graph'\n"
+    )
+    (checks / "test_parent.py").write_text(
+        boilerplate + "def test_parent_denial_withholds_children():\n    assert 'denied withheld'\n"
+    )
+    (checks / "test_sources.py").write_text(
+        boilerplate + "def test_citations_revalidate():\n    assert 'citation'\n"
+    )
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    refresh(conn, scope)
+    bundle = query(
+        conn,
+        scope,
+        ContextRequest(
+            "tests stale citation graph neighbor denied",
+            stage="verification",
+            objective=(
+                "Find regression tests proving stale citations and graph neighbors are withheld."
+            ),
+            affected_entities=("file:service.py",),
+            estimated_tokens=4096,
+        ),
+    )
+    expected = {
+        "symbol:tests.test_graph:test_graph_neighbor_denials",
+        "symbol:tests.test_parent:test_parent_denial_withholds_children",
+        "symbol:tests.test_sources:test_citations_revalidate",
+        "symbol:service:citation_current",
+    }
+    assert expected <= {a["object"] for a in bundle.payload["assertions"]}
+    assertions = bundle.payload["assertions"]
+    definitions = [a for a in assertions if a["predicate"] == "defines"]
+    assert expected == {a["object"] for a in definitions[:4]}
+    last_required = max(index for index, a in enumerate(assertions) if a["object"] in expected)
+    assert not any(
+        a["predicate"] == "described-by" and a["subject"].startswith("module:")
+        for a in assertions[: last_required + 1]
+    )
+    imported = next(
+        a
+        for a in assertions
+        if a["subject"] == "module:consumer"
+        and a["predicate"] == "imports"
+        and a["object"] == "module:service"
+    )
+    assert any(
+        imported["assertion_id"] in path["assertion_ids"]
+        and any(
+            edge["assertion_id"] == imported["assertion_id"]
+            and edge["predicate"] == "imports"
+            and {edge["from"], edge["to"]} == {"module:consumer", "module:service"}
+            for edge in path["edges"]
+        )
+        for path in bundle.payload["paths"]
+    )
+    required = [a for a in assertions if a["object"] in expected] + [imported]
+    ids = {a["assertion_id"] for a in required}
+    citations = [c for c in bundle.payload["citations"] if c["assertion_id"] in ids]
+    assert ids == {c["assertion_id"] for c in citations}
+    for citation in citations:
+        raw = (scope.repository / citation["locator"]).read_bytes()
+        assert 0 <= citation["start_byte"] < citation["end_byte"] <= len(raw)
+        assert citation["content_sha256"] == digest(raw)
+        assert citation["span_sha256"] == digest(raw[citation["start_byte"] : citation["end_byte"]])
+    assert len(canonical(bundle.to_dict()).encode()) <= 10922
+    assert all(a["verification"] == "source-backed" for a in required)
+
+
+def test_legacy_query_does_not_bind_or_reconstruct_large_task_design_inventory(graph, monkeypatch):
+    import importlib
+
+    from harness.knowledge import adapters
+    from tests.test_knowledge_context_request import binding_setup
+
+    module = importlib.import_module("harness.knowledge.query")
+    conn, scope, _, _, _ = binding_setup(graph, designs=202)
+    monkeypatch.setattr(module, "derive_binding", lambda *_a, **_k: pytest.fail("legacy binding"))
+    monkeypatch.setattr(adapters, "registry", lambda *_a, **_k: pytest.fail("registry traversal"))
+    bundle = query(conn, scope, ContextRequest("service"))
+    assert bundle.payload["assertions"] and bundle.payload["citations"]
+    assert "context" not in bundle.payload
+    assert any(
+        a["subject"] == "module:consumer" and a["predicate"] == "imports"
+        for a in bundle.payload["assertions"]
+    )
