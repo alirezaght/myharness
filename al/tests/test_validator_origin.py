@@ -263,3 +263,91 @@ print(json.dumps(resources.binding_identity()))
     assert results[0]['origin_digest']!=results[1]['origin_digest']
     assert results[0]['physical_scripts_root']!=results[1]['physical_scripts_root']
     assert results[0]['platform']!=results[2]['platform']
+
+
+def package_less_origin(monkeypatch):
+    """Use the actual captured-byte bootstrap utility, before a package loader exists."""
+    from al.installer.validator_boot import BOOT
+
+    monkeypatch.setattr(sys, 'dont_write_bytecode', sys.dont_write_bytecode)
+    namespace = {}
+    exec(BOOT, namespace)
+    path = Path(V.__file__)
+    module = namespace['_utility']({
+        'snapshot': str(path.parents[1]),
+        'bytes': {'installer/validator_origin.py': path.read_bytes()},
+    }, 'validator_origin.py')
+    assert module.__package__ is None
+    return module
+
+
+@pytest.mark.parametrize('environment_markers', [False, True])
+def test_bootstrap_utility_ordinary_repository_identity_ignores_activation_markers(
+    tmp_path, monkeypatch, environment_markers
+):
+    root = tmp_path / 'repo'
+    root.mkdir()
+    subprocess.run(['/usr/bin/git', 'init', '-q', str(root)], check=True)
+    monkeypatch.delitem(sys.modules, '_al_retry_control_context', raising=False)
+    if environment_markers:
+        monkeypatch.setenv('HARNESS_RETRY_CONTROL_FD', '9999999')
+        monkeypatch.setenv('HARNESS_RETRY_CONTROL_NONCE', 'environment-alone-is-not-authority')
+        monkeypatch.setenv('GIT_DIR', str(tmp_path / 'foreign-git'))
+        monkeypatch.setenv('GIT_WORK_TREE', str(tmp_path / 'foreign-tree'))
+        monkeypatch.setenv('GIT_CONFIG_COUNT', '1')
+        monkeypatch.setenv('GIT_CONFIG_KEY_0', 'core.hooksPath')
+        monkeypatch.setenv('GIT_CONFIG_VALUE_0', str(tmp_path / 'foreign-hooks'))
+    module = package_less_origin(monkeypatch)
+    assert module.repository_identity(root) == {
+        'root': str(root.resolve()),
+        'git_dir': str((root / '.git').resolve()),
+        'common_dir': str((root / '.git').resolve()),
+    }
+    assert '_al_retry_control_context' not in sys.modules
+
+
+def test_bootstrap_utility_dispatches_to_installed_client_without_ordinary_git(tmp_path, monkeypatch):
+    """A stubbed client proves routing only, not sealed transport authorization."""
+    import types
+
+    root = tmp_path / 'repo'
+    root.mkdir()
+    calls = []
+
+    class Client:
+        def git(self, form, *, root):
+            calls.append((form, root))
+            return (str(root.resolve()) + '\n.git\n.git\n').encode()
+
+    client = Client()
+    monkeypatch.setitem(sys.modules, '_al_retry_control_context', types.SimpleNamespace(client=client))
+    module = package_less_origin(monkeypatch)
+    monkeypatch.setattr(module.subprocess, 'run', lambda *_a, **_k: pytest.fail('ordinary Git launched'))
+    assert module.repository_identity(root) == {
+        'root': str(root.resolve()),
+        'git_dir': str((root / '.git').resolve()),
+        'common_dir': str((root / '.git').resolve()),
+    }
+    assert calls == [('repository_identity', root)]
+
+
+@pytest.mark.parametrize('response', [b'one\ntwo\n', b'one\ntwo\nthree\nfour\n'])
+def test_bootstrap_utility_installed_client_keeps_three_line_refusal(tmp_path, monkeypatch, response):
+    """Malformed stub responses remain refused; no production client is fabricated."""
+    import types
+
+    root = tmp_path / 'repo'
+    root.mkdir()
+    calls = []
+
+    class Client:
+        def git(self, form, *, root):
+            calls.append((form, root))
+            return response
+
+    monkeypatch.setitem(sys.modules, '_al_retry_control_context', types.SimpleNamespace(client=Client()))
+    module = package_less_origin(monkeypatch)
+    monkeypatch.setattr(module.subprocess, 'run', lambda *_a, **_k: pytest.fail('ordinary Git fallback'))
+    with pytest.raises(ValueError, match='invalid sealed repository identity'):
+        module.repository_identity(root)
+    assert calls == [('repository_identity', root)]
