@@ -240,7 +240,7 @@ def test_managed_worker_spawn_failure_retains_no_spawn_evidence(
     assert "WORKER_PRIVATE_CANARY" not in json.dumps([result, logs])
 
 
-def seed_native_attempt(monkeypatch):
+def observe_native_attempt(monkeypatch):
     from harness import execution_worker
     from tests import test_execution_hosts
 
@@ -248,12 +248,13 @@ def seed_native_attempt(monkeypatch):
 
     def supervised(conn, eid, token):
         execution = get_execution(conn, eid)
-        conn.execute(
-            "INSERT INTO execution_attempts "
-            "(id,execution_id,token,mode,status,epoch_id,created_at,updated_at) "
-            "VALUES ('cleanup-attempt',?,?,'start','Reserved',?,'now','now')",
-            (eid, token, execution["epoch_id"]),
-        )
+        attempt = conn.execute(
+            "SELECT * FROM execution_attempts WHERE execution_id=? AND token=?",
+            (eid, token),
+        ).fetchone()
+        assert attempt is not None and attempt["epoch_id"] == execution["epoch_id"]
+        assert attempt["mode"] == "start" and attempt["status"] == "Reserved"
+        assert attempt["child_pid"] is None and attempt["dependency_launch_state"] == "unknown"
         return original(conn, eid, token)
 
     monkeypatch.setattr(test_execution_hosts, "supervise", supervised)
@@ -267,7 +268,7 @@ def test_cleanup_failures_do_not_skip_independent_disposal(
     from harness.native_diagnostics import NativeStageFailure
     from harness.native_runtime import NativeRuntime
 
-    seed_native_attempt(monkeypatch)
+    observe_native_attempt(monkeypatch)
     observed = []
     original_close = NativeRuntime.close
 
@@ -350,7 +351,7 @@ def test_callback_failure_releases_reader_and_supervisor(
     from harness import execution_worker
     from harness.execution_settlement import closed_context
 
-    seed_native_attempt(monkeypatch)
+    observe_native_attempt(monkeypatch)
     original = execution_worker._drain
     streams = []
 
@@ -410,7 +411,7 @@ def test_cleanup_cannot_publish_closure_after_ownership_loss(
     from harness.native_diagnostics import NativeStageFailure
     from harness.native_runtime import NativeRuntime
 
-    seed_native_attempt(monkeypatch)
+    observe_native_attempt(monkeypatch)
     original_close = NativeRuntime.close
 
     def close(runtime):
