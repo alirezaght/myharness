@@ -8,6 +8,17 @@ import pytest
 from harness.browser_capability import probe_capability
 from harness.browser_driver import BrowserDriver
 
+# Input and change listeners mirror the field into visible text, so a fill that does not
+# set the value or dispatch the events leaves the echo paragraphs at "empty".
+PAGE = b"""<h1>Hello</h1><input id="name">
+<p id="typed">empty</p><p id="changed">empty</p>
+<a href="/redirect" id="go">Go</a>
+<script>
+const field = document.getElementById("name");
+field.addEventListener("input", () => { typed.textContent = "typed:" + field.value; });
+field.addEventListener("change", () => { changed.textContent = "changed:" + field.value; });
+</script>"""
+
 
 @pytest.mark.browser
 def test_real_driver_and_interception(tmp_path):
@@ -26,7 +37,7 @@ def test_real_driver_and_interception(tmp_path):
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
-            self.wfile.write(b'<h1>Hello</h1><input id="name"><a href="/redirect" id="go">Go</a>')
+            self.wfile.write(PAGE)
 
         def log_message(self, *args):
             pass
@@ -52,11 +63,22 @@ def test_real_driver_and_interception(tmp_path):
                 "steps": [
                     {"op": "navigate", "url": target + "/allowed"},
                     {"op": "assert_text", "selector": "h1", "equals": "Hello"},
-                    {"op": "fill", "selector": "#name", "value": "test"},
+                    {"op": "assert_text", "selector": "#typed", "equals": "empty"},
+                    {"op": "fill", "selector": "#name", "value": "filled value"},
+                    {"op": "assert_text", "selector": "#typed", "equals": "typed:filled value"},
+                    {"op": "assert_text", "selector": "#changed", "equals": "changed:filled value"},
                 ]
             }
         )
         assert result["status"] == "passed", result
+        assert [o["op"] for o in result["observations"]] == [
+            "navigate",
+            "assert_text",
+            "assert_text",
+            "fill",
+            "assert_text",
+            "assert_text",
+        ]
         assert result["evidence"][0]["size"] > 0
         result = driver.run_criterion(
             {
@@ -76,6 +98,7 @@ def test_real_driver_and_interception(tmp_path):
 
 
 def test_pipe_descriptor_diagnostic():
+    """Chrome's CDP pipe contract: the child reads commands on fd 3 and replies on fd 4."""
     import os
     import subprocess
     import sys
@@ -84,16 +107,18 @@ def test_pipe_descriptor_diagnostic():
     parent_read, child_write = os.pipe()
     from harness.browser_cdp import pipe_command
 
+    echo = "import os\nrequest = os.read(3, 64)\nos.write(4, b'child-reply:' + request[::-1])\n"
     try:
+        os.write(parent_write, b"parent-command")
         result = subprocess.run(
-            pipe_command(
-                child_read, child_write, [sys.executable, "-c", "import os;os.fstat(3);os.fstat(4)"]
-            ),
+            pipe_command(child_read, child_write, [sys.executable, "-c", echo]),
             pass_fds=(child_read, child_write),
             capture_output=True,
             text=True,
+            timeout=20,
         )
         assert result.returncode == 0, result.stderr
+        assert os.read(parent_read, 64) == b"child-reply:dnammoc-tnerap"
     finally:
         for fd in (child_read, parent_write, parent_read, child_write):
             os.close(fd)

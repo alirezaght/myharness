@@ -146,7 +146,7 @@ def test_the_diagram_script_is_served_and_uses_no_unsafe_dom_api(db_path):
         status, headers, script = fetch(server, "/static/diagrams.js")
         page = fetch(server, "/")[2]
     assert status == 200 and headers["Content-Type"] == "text/javascript; charset=utf-8"
-    assert b"/api/diagrams" in script and b"createElementNS" in script
+    assert script == (STATIC_DIR / "diagrams.js").read_bytes()
     assert page.index(b'<script src="/static/diagrams.js" defer></script>') < page.index(
         b'<script src="/static/app.js" defer></script>'
     )

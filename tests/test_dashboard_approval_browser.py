@@ -346,3 +346,72 @@ def test_preview_scroll_survives_refresh_repaint_and_stays_task_scoped(
         assert observed["missingPreviewRepainted"] is True
         assert observed["taskId"] == task
         assert observed["documentWidth"] <= observed["viewportWidth"]
+
+
+HOSTILE_COMMENT = '<img src=x onerror="window.__pwned=1"> arrow points the wrong way'
+
+APPROVAL_STATE = """(() => {
+    const center = document.querySelector('#approve-button')?.closest('section');
+    if (!center) return null;
+    const button = document.querySelector('#approve-button');
+    return {
+        text: document.body.textContent,
+        centerText: center.innerText,
+        injected: document.querySelectorAll('img[src="x"], img[onerror]').length,
+        pwned: window.__pwned === undefined ? null : window.__pwned,
+        disabled: button.disabled,
+    };
+})()"""
+
+
+def _writes(requests: list[dict]) -> list[tuple[str, str]]:
+    return [(r["method"], r["url"]) for r in requests if r["method"] != "GET"]
+
+
+@needs_git
+def test_hostile_comment_text_stays_inert_and_only_approve_posts(db_path, sample_repo, tmp_path):
+    from urllib.parse import quote, urlparse
+
+    from tests.chrome_cdp import chrome_page
+
+    task_id = approval_task(db_path, sample_repo)
+
+    def hostile(controller):
+        service = CommentService(controller, task_id)
+        service.diagrams.sync()
+        return service.add(1, EDGE, "correction", HOSTILE_COMMENT)[0].id
+
+    comment = _with(db_path, hostile)
+    specs = tmp_path / "specs"
+    url = f"?task={quote(task_id)}&workspace=run&tab=history&details=records"
+    with serve(db_path, task_id, str(specs)) as server, chrome_page(tmp_path / "chrome") as page:
+        blocked = page.open(server.url + url, APPROVAL_STATE)
+        page.evaluate("document.querySelector('#approve-button').click(); true")
+        page.settle()
+        blocked_writes = _writes(page.requests)
+
+        def resolve(controller):
+            service = CommentService(controller, task_id)
+            service.address(comment, 1)
+            service.resolve(comment)
+
+        _with(db_path, resolve)
+        page.requests.clear()
+        page.open(server.url + url, f"({APPROVAL_STATE} || {{}}).disabled === false")
+        ready = page.evaluate(APPROVAL_STATE)
+        loaded_writes = _writes(page.requests)
+        page.evaluate("document.querySelector('#approve-button').click(); true")
+        page.wait_for("document.querySelector('#approve-button').textContent === 'Approved'")
+        page.settle()
+        approved = page.evaluate(APPROVAL_STATE)
+        approve_writes = _writes(page.requests)
+
+    for state in (blocked, ready, approved):
+        assert state["injected"] == 0 and state["pwned"] is None
+    assert HOSTILE_COMMENT in blocked["text"]
+    # A disabled Approve button issues nothing; loading the ready page issues nothing.
+    assert blocked["disabled"] is True and blocked_writes == []
+    assert loaded_writes == []
+    # One explicit click issues exactly one write, to the approve route only.
+    assert [(m, urlparse(u).path) for m, u in approve_writes] == [("POST", "/api/approve")]
+    assert approved["disabled"] is True and _count(db_path, "approvals") == 1

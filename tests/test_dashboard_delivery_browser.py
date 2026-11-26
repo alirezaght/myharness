@@ -138,3 +138,72 @@ def test_delivery_panel_fits_desktop_and_mobile_viewports(
             "<img src=x onerror=alert(1)>",
         ):
             assert content in panel["text"]
+
+
+HOSTILE = '<img src=x onerror="window.__pwned=1">'
+
+
+def test_hostile_delivery_text_and_urls_stay_inert_and_issue_only_reads(
+    controller, sample_repo, monkeypatch, db_path, tmp_path
+):
+    from urllib.parse import quote
+
+    from tests.chrome_cdp import chrome_page
+
+    task_id, execution_id = approved_execution(controller, sample_repo, monkeypatch)
+    _delivery_row(controller.conn, execution_id)
+    mr, snapshot = (
+        json.loads(value)
+        for value in controller.conn.execute(
+            "SELECT mr, snapshot FROM deliveries WHERE execution_id=?", (execution_id,)
+        ).fetchone()
+    )
+    mr["web_url"] = "javascript:window.__pwned=1"
+    snapshot["pipeline"]["web_url"] = "https://user:secret@ci.example.test/pipelines/5801"
+    snapshot["blockers"] = [HOSTILE + " blocker"]
+    controller.conn.execute(
+        "UPDATE deliveries SET mr=?, snapshot=? WHERE execution_id=?",
+        (json.dumps(mr), json.dumps(snapshot), execution_id),
+    )
+    controller.conn.commit()
+    before_runs = controller.conn.execute("SELECT COUNT(*) FROM browser_runs").fetchone()[0]
+
+    with serve(db_path, task_id) as server, chrome_page(tmp_path / "hostile") as page:
+        page.open(
+            f"{server.url}?task={quote(task_id)}&workspace=run&tab=delivery",
+            "Boolean(document.querySelector('#delivery'))",
+        )
+        # Open every disclosure the operator can open; none may trigger a request.
+        page.evaluate(
+            "for (const s of document.querySelectorAll('#delivery summary')) s.click(); true"
+        )
+        page.settle()
+        panel = page.evaluate(
+            """(() => {
+                const panel = document.querySelector('#delivery');
+                return {
+                    text: panel.textContent,
+                    markup: panel.querySelectorAll('img,script,iframe,object,embed').length,
+                    hrefs: [...panel.querySelectorAll('a')].map(a => [a.href, a.rel]),
+                    plainLabels: [...panel.querySelectorAll('span')].map(e => e.textContent)
+                        .filter(t => t.startsWith('Open ')),
+                    closed: panel.querySelectorAll('details:not([open])').length,
+                    pwned: window.__pwned === undefined ? null : window.__pwned,
+                };
+            })()"""
+        )
+        requests = list(page.requests)
+
+    assert HOSTILE + " blocker" in panel["text"] and panel["markup"] == 0
+    assert panel["pwned"] is None and panel["closed"] == 0
+    assert "Browser validation" in panel["text"] and "Investigation records" in panel["text"]
+    # A script URL and a credential-bearing URL are both refused: their labels stay
+    # plain text and no anchor exists. Safe https links rendering as anchors with
+    # noopener is proven by test_delivery_panel_fits_desktop_and_mobile_viewports.
+    assert panel["hrefs"] == []
+    assert {"Open review", "Open pipeline", "Open merge request"} <= set(panel["plainLabels"])
+    origin = server.url.rstrip("/")
+    assert requests and all(r["method"] == "GET" for r in requests), requests
+    assert all(r["url"].startswith(origin) for r in requests), requests
+    after_runs = controller.conn.execute("SELECT COUNT(*) FROM browser_runs").fetchone()[0]
+    assert before_runs == after_runs == 0

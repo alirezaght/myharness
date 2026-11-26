@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_delivery_dashboard_has_no_browser_effect_or_html_injection_surface():
+    # Static policy guard, kept alongside the runtime proof in test_dashboard_delivery_browser.py
+    # (test_hostile_delivery_text_and_urls_stay_inert_and_issue_only_reads): hostile text stays
+    # inert, unsafe links are refused and only same-origin GETs are issued.
     source = (ROOT / "harness/dashboard/static/delivery.js").read_text(encoding="utf-8")
     assert "innerHTML" not in source
     assert "insertAdjacentHTML" not in source
