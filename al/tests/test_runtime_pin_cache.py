@@ -392,15 +392,18 @@ def test_launcher_dispatch_uses_the_cache_and_old_pins_verify_in_full(
         assert markers.count('fixture-full-verifier') <= 1
         # Exercise the launcher-side run path as well as its generated child.
         # A warm unchanged pin must not acquire another full payload read there.
+        # Publish this private cache-control entry through the real managed bootstrap:
+        # run() must authenticate its issuer rather than accept a bare source import.
+        # The target pin's minimal one-host fixture is separate from the complete
+        # two-host source closure required by a managed issuer.
         driver = '''
 import sys,types
 from pathlib import Path
-sys.path.insert(0,sys.argv[1])
-context=types.ModuleType('_al_run_pin_context');context.storage=sys.argv[2]
+context=types.ModuleType('_al_run_pin_context');context.storage=sys.argv[1]
 sys.modules['_al_run_pin_context']=context
 from installer import runtime_pin,runtime_pin_cache,runtime_run
 import json
-binding=json.loads(sys.argv[3])
+binding=json.loads(sys.argv[2])
 runtime_pin_cache.RACY_NS=0  # Clock-window behavior has separate coverage.
 runtime_pin_cache.verify_pin_cached(Path(context.storage)/'pins',binding)
 def forbidden(*args,**kwargs):
@@ -411,11 +414,17 @@ except AssertionError as error:
     assert str(error)=='unexpected launcher full payload read'
     print('fixture-full-read-guard-live',flush=True)
 else:raise AssertionError('full-read negative control did not fail')
-runtime_run.run(sys.argv[4],'codex','dispatch-fixture',['start'])
+runtime_run.run(sys.argv[3],'codex','dispatch-fixture',['start'])
 '''
+        from al.tests.conftest import copy_al_source
+
+        issuer_source = copy_al_source(tmp_path / 'cache-issuer/al')
+        (issuer_source / 'alctl.py').write_text(driver)
+        launcher = home / 'bin/cache-dispatch'
+        issuer = bootstrap_cli(issuer_source, launcher, home / 'issuer')
+        verify_snapshot(Path(issuer['snapshot']), issuer['validator_binding'])
         launched = invoke(
-            [verified['manifest']['interpreter']['executable'], '-I', '-S', '-B',
-             '-c', driver, installer.parent, base, json.dumps(binding), repository],
+            [launcher, base, json.dumps(binding), repository],
             repository, dict(env, AL_SERVICE='0'),
         )
         assert launched.returncode == 0, launched.stderr

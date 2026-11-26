@@ -3,9 +3,10 @@
 import json
 import re
 
+import pytest
+
 from harness.controller import HarnessController
 from harness.dashboard.overview import AWAITING_ANSWER, AWAITING_APPROVAL, IN_PROGRESS
-from harness.dashboard.server import STATIC_DIR
 from harness.dashboard.view import NO_ACTIVE_TASK, dashboard_view
 from harness.db import connect
 from harness.phases import Phase
@@ -242,8 +243,59 @@ def test_an_unreadable_task_is_marked_in_the_list_only(db_path):
     assert status == 500 and set(json.loads(body)) == {"error"}
 
 
-def test_the_page_states_nothing_to_resume_like_the_cli():
-    assert f'"{NOTHING_TO_RESUME}"' in (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+RESUME_SECTION = """(() => {
+    const section = document.querySelector('#resume');
+    if (!section) return null;
+    const box = section.getBoundingClientRect();
+    return {
+        text: section.innerText,
+        visible: box.width > 0 && box.height > 0
+            && getComputedStyle(section).visibility !== 'hidden',
+        commands: [...section.querySelectorAll('code')].map(node => node.textContent),
+        actions: section.querySelectorAll('button,a[href],input,select,textarea').length,
+    };
+})()"""
+
+
+@pytest.mark.browser
+def test_the_page_states_nothing_to_resume_like_the_cli(
+    controller, sample_repo, monkeypatch, db_path, tmp_path
+):
+    from urllib.parse import quote
+
+    from tests.chrome_cdp import chrome_page
+    from tests.execution_helpers import approved_execution, started
+    from tests.test_dashboard_browser import CHROME
+
+    if CHROME is None:
+        pytest.skip("Chrome/Chromium not installed")
+    task_id, execution_id = approved_execution(controller, sample_repo, monkeypatch)
+    started(controller.conn, execution_id)
+    controller.conn.commit()
+    url_tail = f"?task={quote(task_id)}&workspace=run&tab=history&details=records"
+    with serve(db_path, task_id) as server, chrome_page(tmp_path / "resume") as page:
+        running_api = api(server, f"?task={task_id}")["task"]["resume"]
+        page.open(server.url + url_tail, RESUME_SECTION)
+        running = page.evaluate(RESUME_SECTION)
+        controller.conn.execute(
+            "UPDATE executions SET status='Completed' WHERE id=?", (execution_id,)
+        )
+        controller.conn.commit()
+        completed_api = api(server, f"?task={task_id}")["task"]["resume"]
+        page.open(
+            server.url + url_tail,
+            f"(document.querySelector('#resume')?.innerText || '').includes({NOTHING_TO_RESUME!r})",
+        )
+        completed = page.evaluate(RESUME_SECTION)
+    # While the run is live the section offers its next command, so the check below
+    # can tell an absent action from a section that never renders one.
+    assert running_api["next"] and running["commands"] == [running_api["next"]]
+    assert "next: " in running["text"] and NOTHING_TO_RESUME not in running["text"]
+    # Completed: the same guidance as the CLI, visible, with no command or control offered.
+    assert completed_api["next"] is None and completed_api["resumable"] is False
+    assert completed["visible"] and NOTHING_TO_RESUME in completed["text"]
+    assert "next: " not in completed["text"]
+    assert completed["commands"] == [] and completed["actions"] == 0
 
 
 def test_a_view_is_one_committed_snapshot(db_path, monkeypatch):

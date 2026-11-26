@@ -677,6 +677,8 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                 assert stale_spec_save["dirty"] and (
                     "newer edit typed while the prior save was pending" in stale_spec_save["value"]
                 ), stale_spec_save
+                # The rejection is on screen (the app handled the 409) before it is resolved.
+                wait(call, 'Boolean(document.querySelector(".authoring-conflict-recovery"))')
                 evaluate(
                     call,
                     "[...document.querySelectorAll('button')].find(node=>"
@@ -689,6 +691,17 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                     ".authoringBuffers['spec:working'].base)===JSON.stringify(workspaceStates.get("
                     + json.dumps(task_id)
                     + ").authoring.base)",
+                )
+                # Choosing to keep the text against the current revision resolves the
+                # rejection: its alert must not stay beside the rebased draft (#126).
+                assert not evaluate(
+                    call, 'Boolean(document.querySelector(".authoring-conflict-recovery"))'
+                )
+                assert evaluate(
+                    call,
+                    "[...document.querySelectorAll('.authoring-feedback')].some(node=>node."
+                    "textContent.includes('Your text now targets the current revision')) && "
+                    "!document.querySelector('.authoring-error')",
                 )
                 rebased_spec_state = evaluate(
                     call,
@@ -706,6 +719,10 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                     call,
                     "[...document.querySelectorAll('button')].find(node=>"
                     "node.textContent==='Save working specification').click(); true",
+                )
+                # While the new save is in flight no stale rejection is shown (#126).
+                assert not evaluate(
+                    call, 'Boolean(document.querySelector(".authoring-conflict-recovery"))'
                 )
                 wait(
                     call,
@@ -734,6 +751,14 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
                     "newer edit typed while the prior save was "
                     "pending')"
                 ),
+            )
+            # The previous save settles (its post-save refreshes finish) before the next step
+            # injects a one-shot read failure, so only the next save's refresh can consume it.
+            wait(
+                call,
+                "document.body.innerText.includes('Working specification saved.') && "
+                "!workspaceStates.get(new URLSearchParams(location.search).get('task'))"
+                ".authoringRequests?.['save-spec:working']",
             )
             evaluate(
                 call,

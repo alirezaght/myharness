@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -11,7 +12,7 @@ import al_check_setup as Setup
 from al_gate_process import Owner
 
 
-def test_real_locked_uv_setup_installs_local_dependency_and_preserves_inputs(tmp_path,monkeypatch):
+def test_real_locked_uv_setup_installs_local_dependency_and_preserves_inputs(tmp_path,monkeypatch,launcher):
     uv=shutil.which('uv')
     if not uv:pytest.skip('uv is required for real locked setup integration')
     root=tmp_path/'checkout';root.mkdir()
@@ -24,19 +25,29 @@ def test_real_locked_uv_setup_installs_local_dependency_and_preserves_inputs(tmp
         archive.writestr('pets_dep-1.0.dist-info/RECORD','')
     (root/'pyproject.toml').write_text('[project]\nname="setup-fixture"\nversion="0.1.0"\nrequires-python=">=3.13"\ndependencies=["pets-dep==1.0"]\n[tool.uv.sources]\npets-dep={path="pets_dep-1.0-py3-none-any.whl"}\n')
     (root/'.gitignore').write_text('.venv/\n')
-    env=dict(os.environ,UV_OFFLINE='1',UV_PYTHON_DOWNLOADS='never',UV_CACHE_DIR=str(tmp_path/'lock-cache'))
-    result=subprocess.run([uv,'lock','--offline'],cwd=root,env=env,capture_output=True)
+    interpreter=str(Path(sys.executable).resolve())
+    fixture_env={'UV_OFFLINE':'1','UV_PYTHON_DOWNLOADS':'never','UV_PYTHON':interpreter,
+                 'UV_PROJECT_ENVIRONMENT':str(root/'.venv'),'UV_CACHE_DIR':str(tmp_path/'uv-cache')}
+    env=dict(os.environ,**fixture_env);env.pop('VIRTUAL_ENV',None)
+    result=subprocess.run([uv,'lock','--offline','--python',interpreter],cwd=root,env=env,capture_output=True)
     assert result.returncode==0,result.stderr
     subprocess.run(['git','add','.'],cwd=root,check=True)
     before={p.name:p.read_bytes() for p in root.iterdir() if p.is_file()}
-    monkeypatch.setenv('UV_OFFLINE','1');monkeypatch.setenv('UV_PYTHON_DOWNLOADS','never')
+    for name,value in fixture_env.items():monkeypatch.setenv(name,value)
+    monkeypatch.delenv('VIRTUAL_ENV',raising=False)
     rows=[];log=tmp_path/'setup.log'
     with Owner(log) as owner:
         Setup.execute(root,'.',owner,log,30,rows)
-        result=owner.spawn([str(root/'.venv/bin/python'),'-I','-c','import pets_dep; assert pets_dep.VALUE == 42'],cwd=root)
-        assert result.wait(timeout=10)==0
-        from al_gate_process import stop
-        stop(result)
+        from al.installer.owned_process import OwnedProcess
+        validation=OwnedProcess(tmp_path/'validation-child','locked-setup-validation')
+        with log.open('ab') as output:
+            try:
+                result=validation.spawn([str(root/'.venv/bin/python'),'-I','-c','import pets_dep; assert pets_dep.VALUE == 42'],
+                                        cwd=root,env=dict(os.environ),output=output)
+                assert result.wait(timeout=10)==0
+            finally:
+                cleanup=validation.cleanup()
+                assert cleanup['complete'],cleanup
     assert rows[0]['status']=='PASS' and rows[0]['cleanup']['complete']
     assert all((root/name).read_bytes()==raw for name,raw in before.items())
     assert not (root/'.venv').is_symlink()

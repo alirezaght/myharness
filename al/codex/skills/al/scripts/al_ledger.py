@@ -166,13 +166,17 @@ def _prefixes(p):
 
 def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
     from al_analysis_cache import CURRENT
+    from al_environment_observation import DEFAULT_VERIFICATION_NAMES
     from al_profile import span
+    from al_verification_policy import execution_policy
+    policy=execution_policy()
+    env_names=sorted(set(env_names or ()) | DEFAULT_VERIFICATION_NAMES)
     context=CURRENT.get()
     with span('scope-hashing'):
         if context is None:return _scope_fingerprint(scope,env_names,sources,cwd)
         from al_environment_observation import value_digest
         environment={name:value_digest(name) for name in env_names}
-        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
+        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment,policy],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
 
 
 def _scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
@@ -283,8 +287,10 @@ def mutation_source(st, e):
 
 
 def _env_digest(h, env_names):
-    for name in sorted(env_names or ()):
-        from al_environment_observation import value_digest
+    from al_verification_policy import execution_policy
+    h.update(b'\0execution_policy:'+json.dumps(execution_policy(),sort_keys=True,separators=(',',':')).encode())
+    from al_environment_observation import DEFAULT_VERIFICATION_NAMES, value_digest
+    for name in sorted(set(env_names or ()) | DEFAULT_VERIFICATION_NAMES):
         digest = value_digest(name)
         h.update(f"\0env:{name}={digest}".encode())
     return h.hexdigest()[:16]
@@ -498,21 +504,14 @@ def latest(st, area, spec=None, kind=None):
     return None
 
 
-def _alive(pid):
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
 def assess(e):
     """(verdict, why). Only verdict VALID is evidence of a pass on today's tree."""
     if e["status"] == "RUNNING":
-        alive = _alive(e.get("owner_pid")) or _alive(e.get("pid"))
-        return ("RUNNING", "still running") if alive else ("INTERRUPTED", "run never finished")
+        import al_process_observation
+        observed = al_process_observation.observe(e)
+        if 'live' in observed.values():return 'RUNNING', 'still running'
+        if 'unknown' in observed.values():return 'UNCONFIRMED', 'original process ownership is unavailable'
+        return 'INTERRUPTED', 'run never finished'
     if not e.get("log") or not Path(e["log"]).is_file():
         return "LOG_MISSING", "the log file is gone — no proof of the result"
     try:

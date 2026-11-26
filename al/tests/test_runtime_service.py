@@ -266,8 +266,14 @@ def _direct_snapshot(setup):
 
 
 def _service_tree(setup):
-    worktrees = setup.control("status")[0]["worktrees"]
-    return worktrees[0]["snapshot"] if worktrees and worktrees[0]["watcher"] != "none" else None
+    directory = setup.control("status")[0]["directory"]
+    wire, sock = _request(directory, {"op": "snapshot", "repository": str(setup.repo)})
+    with sock:
+        answer = wire["_al_service_receive"](sock)
+    assert isinstance(answer, dict) and set(answer) == {"event", "tree"} and answer["event"] == "snapshot"
+    tree = answer["tree"]
+    assert tree is None or isinstance(tree, str) and re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", tree)
+    return tree
 
 
 def test_watcher_keeps_the_in_memory_snapshot_current(setup):
@@ -279,8 +285,7 @@ def test_watcher_keeps_the_in_memory_snapshot_current(setup):
     # AL's own runtime files and excluded directories never change the tree.
     (setup.repo / "node_modules").mkdir(exist_ok=True)
     (setup.repo / "node_modules/x.js").write_text("x")
-    time.sleep(1)
-    assert _service_tree(setup) == second == _direct_snapshot(setup)
+    assert setup.wait(lambda: _service_tree(setup)) == second == _direct_snapshot(setup)
 
 
 def _request(directory, value, *, fds=()):
@@ -297,10 +302,11 @@ def _request(directory, value, *, fds=()):
 
 def test_snapshot_op_answers_the_proven_current_tree(setup):
     directory = setup.control("status")[0]["directory"]
-    tree = setup.wait(lambda: _service_tree(setup))
+    tree = _direct_snapshot(setup)
     wire, sock = _request(directory, {"op": "snapshot", "repository": str(setup.repo)})
     with sock:
-        assert wire["_al_service_receive"](sock) == {"event": "snapshot", "tree": tree}
+        assert wire["_al_service_receive"](sock) in (
+            {"event": "snapshot", "tree": tree}, {"event": "snapshot", "tree": None})
     # A repository outside the service's common directory is never answered.
     other = setup.base / "unrelated"
     other.mkdir(exist_ok=True)

@@ -79,39 +79,42 @@ _SOURCE_IGNORED = ("__pycache__", ".pytest_cache", "*.pyc")
 _SOURCE_TEMPLATE = {}
 
 
-def _source_state(root):
-    """Cheap identity of the al/ tree (names, sizes, modes, inodes, mtimes); any edit changes it."""
+def _source_state(root, ignore_patterns=_SOURCE_IGNORED):
+    """Cheap identity of selected tree members, including directory metadata."""
     rows = []
+    ignore = shutil.ignore_patterns(*ignore_patterns)
     for directory, dirs, names in os.walk(root):
-        dirs[:] = sorted(name for name in dirs if name not in _SOURCE_IGNORED)
-        for name in sorted(names):
-            if not name.endswith(".pyc"):
-                info = os.lstat(os.path.join(directory, name))
-                rows.append((directory, name, info.st_size, info.st_mode, info.st_ino, info.st_mtime_ns))
+        excluded = ignore(directory, dirs + names)
+        dirs[:] = sorted(name for name in dirs if name not in excluded)
+        for name in sorted(dirs + [name for name in names if name not in excluded]):
+            info = os.lstat(os.path.join(directory, name))
+            rows.append((directory, name, info.st_size, info.st_mode, info.st_ino, info.st_mtime_ns))
     return tuple(rows)
 
 
-def copy_al_source(destination):
+def copy_al_source(destination, *, ignore_patterns=_SOURCE_IGNORED):
     """Give the caller its own private copy of al/.
 
     The reviewed materialization (`copy2`: no aliases, verified bytes, copy2-equivalent
     metadata) is slow, so it runs once per process and source state into a private
     template. Each call then clones that template with shutil.copy2, which reproduces
     the same bytes, modes, times and flags in a fresh tree owned by the caller.
+    The exclusion-pattern tuple binds both observed membership and the cache key.
     """
     root = Path(__file__).resolve().parents[1]
     Path(destination).parent.mkdir(parents=True, exist_ok=True)
-    state = _source_state(root)
-    template = _SOURCE_TEMPLATE.get(state)
+    state = _source_state(root, ignore_patterns)
+    key = (ignore_patterns, state)
+    template = _SOURCE_TEMPLATE.get(key)
     if template is None or not template.is_dir():
         base = Path(tempfile.mkdtemp(prefix="al-source-template-")).resolve()
         atexit.register(shutil.rmtree, base, True)
         template = base / "al"
-        shutil.copytree(root, template, ignore=shutil.ignore_patterns(*_SOURCE_IGNORED),
+        shutil.copytree(root, template, ignore=shutil.ignore_patterns(*ignore_patterns),
                         copy_function=partial(copy2, allow_clone=False))
-        if _source_state(root) != state:
+        if _source_state(root, ignore_patterns) != state:
             raise RuntimeError("al/ source changed while its test template was copied")
         _SOURCE_TEMPLATE.clear()
-        _SOURCE_TEMPLATE[state] = template
+        _SOURCE_TEMPLATE[key] = template
     shutil.copytree(template, destination, symlinks=True, copy_function=shutil.copy2)
     return Path(destination)

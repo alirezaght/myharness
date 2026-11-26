@@ -115,3 +115,78 @@ def test_new_capture_references_but_never_mutates_v1(tmp_path):
     path=Path(v2['root'])/'provenance.json';data['invocation']['execution_profile']['image']['path']='/foreign/python'
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError):verify_issuer(v2['root'],v2)
+
+
+def private_launch_resources(tmp_path, pinned):
+    # Structural profile fixture for resource admission only; never executable authority.
+    expected, profile = map(deepcopy, pinned)
+    target = tmp_path/'python-image'; target.write_bytes(b'private launcher'); target.chmod(0o755)
+    requested = tmp_path/'python'; requested.symlink_to(target)
+    image = tmp_path/'kernel-image'; image.write_bytes(b'private kernel image'); image.chmod(0o755)
+    expected.update(executable=str(requested), canonical_executable=str(target), **executable_state(target))
+    profile['requested_executable'] = profile['requested_argv0'] = str(requested)
+    profile['probe_argv'] = [str(requested),'-I','-S','-B','-c',execution.PROBE]
+    profile['image'].update(path=str(image), **executable_state(image))
+    profile['observation']['image'] = deepcopy(profile['image'])
+    profile['observation']['argv'] = list(profile['probe_argv'])
+    profile['response']['image'] = str(image)
+    profile['argv0_forms'] = sorted({str(requested),str(target)})
+    return expected, profile, requested, target, image
+
+
+def test_launch_resource_admission_does_not_compare_the_current_issuer(tmp_path, pinned, monkeypatch):
+    expected, profile, requested, _, _ = private_launch_resources(tmp_path, pinned)
+    def forbidden(*args): raise AssertionError('launch admission used live issuer/probe')
+    monkeypatch.setattr(execution, 'launcher', forbidden)
+    monkeypatch.setattr(execution.subprocess, 'Popen', forbidden)
+    execution.validate_launch(profile, expected, str(requested))
+
+
+@pytest.mark.parametrize('mutation', ['missing-launcher','rebound-launcher','launcher-bytes',
+    'launcher-mode','missing-image','rebound-image','image-bytes','image-mode','unbound-argument'])
+def test_pinned_launch_resource_changes_refuse_before_execution(tmp_path, pinned, monkeypatch, mutation):
+    expected, profile, requested, target, image = private_launch_resources(tmp_path, pinned)
+    argument = str(requested)
+    if mutation == 'missing-launcher': target.unlink()
+    elif mutation == 'rebound-launcher':
+        other = tmp_path/'other-launcher'; other.write_bytes(target.read_bytes()); other.chmod(0o755)
+        requested.unlink(); requested.symlink_to(other)
+    elif mutation == 'launcher-bytes': target.write_bytes(b'changed launcher')
+    elif mutation == 'launcher-mode': target.chmod(0o700)
+    elif mutation == 'missing-image': image.unlink()
+    elif mutation == 'rebound-image':
+        other = tmp_path/'other-image'; other.write_bytes(image.read_bytes()); other.chmod(0o755)
+        image.unlink(); image.symlink_to(other)
+    elif mutation == 'image-bytes': image.write_bytes(b'changed image')
+    elif mutation == 'image-mode': image.chmod(0o700)
+    else: argument = str(target)
+    def forbidden(*args, **kwargs): raise AssertionError('unbound resources executed a child')
+    monkeypatch.setattr(execution.subprocess, 'Popen', forbidden)
+    with pytest.raises(ValueError, match='resources unavailable or changed|unbound pinned interpreter'):
+        execution.validate_launch(profile, expected, argument)
+
+
+@pytest.mark.parametrize('mutation', ['missing-context','foreign-root','interpreter-binding','foreign-interpreter'])
+def test_managed_issuer_mismatch_refuses_before_pinned_delegation(monkeypatch, mutation):
+    from al.installer import runtime_run
+    expected = interpreter_identity()
+    root = Path(runtime_run.__file__).resolve().parents[1]
+    request = {'mode':'snapshot','root':str(root),'expected':{'controlled':'binding'},
+               'interpreter':expected['executable']}
+    if mutation == 'foreign-root': request['root'] = '/foreign/issuer'
+    elif mutation == 'interpreter-binding': request['interpreter'] = '/foreign/python'
+    elif mutation == 'foreign-interpreter': expected['version'] = [0,0,0]
+    if mutation == 'missing-context': monkeypatch.delitem(sys.modules,'_al_validator_context',raising=False)
+    else: monkeypatch.setitem(sys.modules,'_al_validator_context',SimpleNamespace(request=request))
+    # The snapshot verifier remains a separately tested boundary; this double supplies
+    # authenticated metadata to exercise issuer selection and the real launcher guard.
+    verified = []
+    def snapshot(path, binding):
+        verified.append((path,binding))
+        return {'origin':{'interpreter':expected}}
+    monkeypatch.setattr(runtime_run,'verify_snapshot',snapshot)
+    def forbidden(*args): raise AssertionError('foreign issuer delegated a command')
+    monkeypatch.setattr(runtime_run.os,'execv',forbidden)
+    with pytest.raises(ValueError, match='issuer|interpreter identity changed'):
+        runtime_run._managed_issuer()
+    assert bool(verified) is (mutation not in {'missing-context','foreign-root'})

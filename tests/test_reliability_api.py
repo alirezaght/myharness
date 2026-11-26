@@ -8,6 +8,7 @@ import pytest
 
 from harness.dashboard.reliability_view import read_incidents
 from harness.reliability import store
+from tests.database_snapshot import unchanged_database
 from tests.test_dashboard import fetch, serve
 from tests.test_reliability_store import observed, rows  # noqa: F401
 
@@ -33,8 +34,7 @@ def seed(observed, count=3):
 def test_http_list_detail_literal_search_pagination_and_no_writes(observed):
     operation, _, controller = observed
     seed(observed)
-    before = controller.conn.total_changes
-    with serve(operation.database, None) as server:
+    with unchanged_database(operation.database), serve(operation.database, None) as server:
         status, _, body = fetch(server, "/api/execution/incidents?" + query_for(observed, limit=2))
         data = json.loads(body)
         assert status == 200 and len(data["items"]) == 2 and len(data["pending"]) == 1
@@ -64,7 +64,6 @@ def test_http_list_detail_literal_search_pagination_and_no_writes(observed):
             "/api/execution/incidents?" + query_for(observed, q="Operation dispatch was rejected"),
         )
         assert status == 200 and len(json.loads(body)["items"]) == 3
-    assert controller.conn.total_changes == before
     assert len(rows(observed, "reliability_incidents")) == 3
 
 
@@ -142,3 +141,40 @@ def test_real_dispatch_private_arguments_results_exceptions_absent_from_scoped_h
             assert status == 200
             assert all(term not in detail.decode() for term in terms)
         assert all(term not in body.decode() for term in terms)
+
+
+def test_snapshot_detects_a_write_committed_through_the_handler_connection(observed, monkeypatch):
+    """The read-only proofs above must fail if a GET handler writes on its own connection."""
+    import sqlite3
+    from types import SimpleNamespace
+
+    from harness.dashboard import reliability_view
+    from harness.reliability import query
+
+    operation, _, controller = observed
+    seed(observed, 1)
+    real_scope = query.scope
+
+    def writable_connect(target, *args, **kwargs):
+        return sqlite3.connect(target.replace("?mode=ro", ""), *args, **kwargs)
+
+    def writing_scope(conn, *args):
+        conn.execute("PRAGMA query_only=OFF")
+        conn.execute("CREATE TABLE injected_handler_write(value TEXT)")
+        conn.execute("INSERT INTO injected_handler_write VALUES ('written by GET')")
+        conn.commit()
+        return real_scope(conn, *args)
+
+    monkeypatch.setattr(
+        reliability_view,
+        "sqlite3",
+        SimpleNamespace(connect=writable_connect, Row=sqlite3.Row, Error=sqlite3.Error),
+    )
+    monkeypatch.setattr(query, "scope", writing_scope)
+    before = controller.conn.total_changes
+    with pytest.raises(AssertionError, match="injected_handler_write"):
+        with unchanged_database(operation.database), serve(operation.database, None) as server:
+            status, _, _ = fetch(server, "/api/execution/incidents?" + query_for(observed))
+            assert status == 200
+    # The retired counter on the test's own connection stays blind to the same write.
+    assert controller.conn.total_changes == before

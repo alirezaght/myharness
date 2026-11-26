@@ -1,27 +1,80 @@
 """Keep each of the 30 V1 requirements tied to a concrete test location."""
 
+import ast
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_v1_acceptance_map_covers_all_criteria_with_resolvable_test_references():
-    document = (ROOT / "docs/v1-acceptance.md").read_text(encoding="utf-8")
-    rows = re.findall(r"^\|\s*(\d+)\s*\|.*?`(tests/[^`]+)`.*?\|\s*([^|]+)\|$", document, re.M)
-    assert len(rows) == 30
-    assert [int(row[0]) for row in rows] == list(range(1, 31))
-    for _, reference, _ in rows:
-        path, test_name = reference.split("::", maxsplit=1)
-        source = (ROOT / path).read_text(encoding="utf-8")
-        assert re.search(rf"\bdef\s+{re.escape(test_name)}\s*\(", source), reference
+def _acceptance_rows(document: str) -> list[tuple[int, list[str]]]:
+    """Each criterion row's number and every backticked test reference in its evidence."""
+    rows = []
+    for line in document.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) == 4 and cells[0].isdigit():
+            rows.append((int(cells[0]), re.findall(r"`(tests/[^`]+)`", cells[2])))
+    return rows
 
 
-def test_live_exit_and_browser_gaps_are_marked_outstanding():
-    document = (ROOT / "docs/v1-acceptance.md").read_text(encoding="utf-8")
-    assert "real staging run" in document
-    assert "remain outstanding" in document
-    assert "Fixture-provider HTTP tests" in document
+def _collectable_tests(path: Path) -> set[str]:
+    """Module-level test functions pytest collects: final binding, not a fixture."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    final = {}
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            fixture = any("fixture" in ast.unparse(d) for d in node.decorator_list)
+            final[node.name] = not fixture
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    final[target.id] = False
+    return {name for name, collectable in final.items() if collectable and name.startswith("test_")}
+
+
+def test_acceptance_rows_read_every_reference_in_the_evidence_cell():
+    document = (
+        "| # | V1 criterion | Specific evidence | Status |\n"
+        "|---:|---|---|---|\n"
+        "| 1 | One | `tests/test_a.py::test_x` | passed |\n"
+        "| 2 | Two | `tests/test_a.py::test_x` and `tests/test_b.py::test_y` | `tests/x` |\n"
+    )
+    assert _acceptance_rows(document) == [
+        (1, ["tests/test_a.py::test_x"]),
+        (2, ["tests/test_a.py::test_x", "tests/test_b.py::test_y"]),
+    ]
+
+
+def test_collectable_tests_follow_pytest_binding_rules(tmp_path):
+    module = tmp_path / "test_sample.py"
+    module.write_text(
+        "import pytest\n"
+        "def test_kept(): pass\n"
+        "@pytest.fixture\ndef test_fixture(): pass\n"
+        "def test_rebound(): pass\n"
+        "test_rebound = None\n"
+        "def helper(): pass\n",
+        encoding="utf-8",
+    )
+    assert _collectable_tests(module) == {"test_kept"}
+
+
+def test_v1_acceptance_map_references_resolve_to_collectable_tests():
+    """Traceability only: every cited test exists as a collectable test function.
+
+    This does not claim the tests passed or that acceptance was met; the map's Status column
+    records that evidence separately.
+    """
+    rows = _acceptance_rows((ROOT / "docs/v1-acceptance.md").read_text(encoding="utf-8"))
+    assert [number for number, _ in rows] == list(range(1, 31))
+    for number, references in rows:
+        assert references, f"criterion {number} cites no test"
+        for reference in references:
+            path, _, name = reference.partition("::")
+            module = ROOT / path
+            assert module.name.startswith("test_") and module.suffix == ".py", reference
+            assert module.is_file(), reference
+            assert name in _collectable_tests(module), reference
 
 
 def test_delivery_completion_summary_keeps_browser_status_and_currency(

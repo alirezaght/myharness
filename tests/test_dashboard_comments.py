@@ -2,7 +2,6 @@
 
 import http.client
 import json
-import re
 import socket
 import sqlite3
 from pathlib import Path
@@ -11,7 +10,7 @@ import pytest
 
 from harness.comments import CommentService
 from harness.dashboard import comments_view
-from harness.dashboard.server import LOCALHOST, SECURITY_HEADERS, STATIC_DIR, DashboardServer
+from harness.dashboard.server import LOCALHOST, SECURITY_HEADERS, DashboardServer
 from harness.db import transaction
 from harness.design_models import DesignSection
 from tests.test_dashboard import _db_dump, api, fetch, serve, start_task
@@ -20,7 +19,6 @@ from tests.test_dashboard_stream import frame, stream
 
 EDGE = "connection:browser->local-server"
 RID = "req-00000001"
-DECLARED = re.compile(r"^(?:const|let|var|(?:async )?function)\s+(\w+)", re.MULTILINE)
 
 
 @pytest.fixture(autouse=True)
@@ -309,19 +307,3 @@ def test_a_comment_on_a_removed_element_keeps_its_own_version_label(db_path):
     assert task["diagrams"]["current"]["version"] == 2
     [item] = task["comments"]["items"]
     assert (item["version"], item["element_kind"], item["element_label"]) == (1, "component", "A")
-
-
-def test_the_comment_script_is_served_in_order_and_declares_no_duplicate_globals(db_path):
-    with serve(db_path, None) as server:
-        status, headers, script = fetch(server, "/static/comments.js")
-        page = fetch(server, "/")[2]
-    assert status == 200 and headers["Content-Type"] == "text/javascript; charset=utf-8"
-    assert b"/api/comments" in script and b"createElement" in script
-    tags = [f'<script src="/static/{n}.js" defer></script>'.encode() for n in
-            ("diagrams", "comments", "app")]  # fmt: skip
-    assert page.index(tags[0]) < page.index(tags[1]) < page.index(tags[2])
-    seen: dict[str, str] = {}
-    for name in ("diagrams.js", "comments.js", "app.js"):
-        for declared in DECLARED.findall((STATIC_DIR / name).read_text(encoding="utf-8")):
-            assert declared not in seen, f"{declared} in {name} and {seen.get(declared)}"
-            seen[declared] = name

@@ -37,6 +37,7 @@ import time
 from pathlib import Path
 
 import al_store
+from al_verification_policy import execution_policy
 
 SCHEMA = 1
 STOREABLE = frozenset({'PASS', 'FAIL', 'EMPTY'})
@@ -228,7 +229,7 @@ def _env(names):
 
 
 def _execution_environment(names):
-    """The policy an execution receipt binds: declared names plus PATH, HOME, LANG, TZ, PYTHON* and LC_*.
+    """The policy an execution receipt binds: declared names plus CI, PATH, HOME, LANG, TZ, PYTHON* and LC_*.
 
     It is part of the key (a different interpreter setup is a miss) and is recorded on a hit, so a later
     reader (terminal validation) refuses the reused result when the caller's environment changed."""
@@ -272,6 +273,7 @@ def evidence_plan(st, spec, *, no_cache=False):
                'kind': spec.get('kind'), 'scope': sorted(spec['scope']), 'sources': spec.get('sources', []),
                'storage': storage, 'env': _env(spec.get('env')), 'env_policy': {'mode': 'inherited'},
                'execution_environment': _execution_environment(spec.get('env')),
+               'execution_policy': execution_policy(),
                'tool': tool_identity(spec['argv'], spec.get('cwd') or '.'), 'lockfiles': lockfiles(spec.get('cwd')),
                'inputs': {'paths': paths, 'tree': tree_of()}}
     except Uncacheable as exc:
@@ -305,6 +307,7 @@ def gate_plan(st, m, g, stage, *, no_cache=False):
                'scope': sorted(g['scope']), 'sources': g.get('sources', []), 'env': _env(g['env_names']),
                'env_policy': {'mode': 'scrubbed', 'removed_names': sorted(INSTALL_ENV), 'removed': scrubbed},
                'execution_environment': _execution_environment(g['env_names']),
+               'execution_policy': execution_policy(),
                'tool': tool_identity(g['argv'], g['cwd'], environment.get('PATH')), 'lockfiles': lockfiles(g['cwd']),
                'inputs': {'paths': paths, 'tree': tree_of()}}
     except Uncacheable as exc:

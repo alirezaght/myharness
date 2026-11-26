@@ -233,3 +233,42 @@ def test_reuse_environment_binds_declared_and_execution_variables_only(monkeypat
     monkeypatch.setenv('UNRELATED_SESSION_MARKER', 'x')
     assert I.environment_gaps(legacy) == ['execution ambient inputs differ']
     assert I.environment_gaps({'kind': 'future-v9'}) == ['unsupported execution environment policy']
+
+
+def test_ci_changes_invalidate_current_preparation_without_running_check(
+        cli, repo, run_state, monkeypatch):
+    run_state('implemented')
+    monkeypatch.delenv('CI', raising=False)
+    (repo / 'ci-verification-input.json').write_text('{"valid":true}\n')
+    invoke(cli, 'evidence', 'plan', '--area', 'ci-read', '--kind', 'check', '--scope', '.', '--',
+           sys.executable, '-I', '-m', 'json.tool', 'ci-verification-input.json')
+    invoke(cli, 'verification', 'prepare', '--area', 'ci-read')
+    st = json.loads(cli('show')[1])
+    ref = st['verification_preparations'][-1]
+    retained = open(ref['stored_path'], 'rb').read()
+    data = json.loads(retained)
+    assert data['environment_policy']['inputs']['CI'] == {'present': False, 'digest': None}
+    assert P.validate_preparation(st, ref) == []
+    before_entries = copy.deepcopy(st['evidence']['entries'])
+    monkeypatch.setenv('CI', 'true')
+    assert P.validate_preparation(st, ref)
+    assert open(ref['stored_path'], 'rb').read() == retained
+    assert json.loads(cli('show')[1])['evidence']['entries'] == before_entries
+
+
+def test_recorded_execution_policy_without_default_ci_is_stale(monkeypatch):
+    import al_action_cache as Cache
+    import al_verification_inputs as I
+
+    monkeypatch.delenv('CI', raising=False)
+    current = I.execution_environment([])
+    policy = {'kind': 'declared-execution-v1', 'declared_names': [], 'inputs': current}
+    assert I.environment_gaps(policy) == []
+    assert Cache.environment_gaps({'action_cache': {'environment': policy}}) == []
+    historical = copy.deepcopy(policy)
+    historical['inputs'].pop('CI', None)
+    assert I.environment_gaps(historical) == ['execution environment inputs differ']
+    assert Cache.environment_gaps({'action_cache': {'environment': historical}}) == [
+        'execution environment inputs differ']
+    monkeypatch.setenv('CI', '')
+    assert I.environment_gaps(policy) == ['execution environment inputs differ']

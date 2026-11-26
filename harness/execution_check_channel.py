@@ -11,7 +11,38 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
+
+EXECUTION_POLICY = {"version": 2, "default_stdin": "closed-pipe"}
+
+
+def selected_execution_policy(value):
+    if (
+        type(value) is not dict
+        or value != EXECUTION_POLICY
+        or type(value.get("version")) is not int
+    ):
+        raise ValueError("unsupported check execution policy")
+    return dict(EXECUTION_POLICY)
+
+
+@contextmanager
+def check_input(policy):
+    if policy is None:
+        yield subprocess.DEVNULL
+        return
+    reader, writer = os.pipe()
+    try:
+        os.close(writer)
+        writer = None
+        yield reader
+    finally:
+        try:
+            if writer is not None:
+                os.close(writer)
+        finally:
+            os.close(reader)
 
 
 def exact(stream, size):
@@ -25,7 +56,16 @@ def exact(stream, size):
 
 
 class CheckChannel:
-    def __init__(self, context_path, validate, *, storage=None, policy_attempt=None):
+    def __init__(
+        self,
+        context_path,
+        validate,
+        *,
+        storage=None,
+        policy_attempt=None,
+        ownership=None,
+        validate_allocation=None,
+    ):
         self.server, self.client = socket.socketpair()
         self.server.settimeout(1)
         self.context_path, self.validate = context_path, validate
@@ -35,6 +75,10 @@ class CheckChannel:
         self.closed = threading.Event()
         self.requesting_handle = None
         self.policy_attempt = policy_attempt
+        self.ownership = ownership
+        self.validate_allocation = validate_allocation
+        self.owner_ref = None
+        self.owner_ready = threading.Event()
         from harness.reliability.process_context import CURRENT
 
         self.process_context = CURRENT.get()
@@ -47,6 +91,12 @@ class CheckChannel:
 
     def spawned(self):
         self.client.close()
+
+    def bind_owner(self, process, observer):
+        try:
+            self.owner_ref = self.ownership.bind_owner(process, self.process_context, observer)
+        finally:
+            self.owner_ready.set()
 
     @property
     def identifier(self):
@@ -140,9 +190,58 @@ class CheckChannel:
 
     def request(self, value, descriptors):
         action = value.get("action")
-        self.requesting_handle = value.get("handle")
-        if action in {"start", "poll", "completion", "cancel", "acknowledge_publication"}:
+        self.requesting_handle = None
+        if action == "capabilities":
+            if (
+                set(value) != {"action", "schema_version"}
+                or type(value["schema_version"]) is not int
+                or value["schema_version"] != 1
+                or descriptors
+            ):
+                raise ValueError("invalid check capabilities request")
             self.validate()
+            return {"schema_version": 1, "execution_policy": dict(EXECUTION_POLICY)}
+        policy = None
+        if action == "start" and "execution_policy" in value:
+            policy = selected_execution_policy(value["execution_policy"])
+        self.requesting_handle = value.get("handle")
+        if action in {
+            "start",
+            "poll",
+            "completion",
+            "cancel",
+            "acknowledge_publication",
+            "register_owner",
+            "observe_owner",
+            "same_owner",
+        }:
+            self.validate()
+        if action in {"register_owner", "observe_owner", "same_owner"}:
+            if (
+                self.ownership is None
+                or not self.owner_ready.wait(timeout=5)
+                or self.owner_ref is None
+                or descriptors
+            ):
+                raise ValueError("check owner observation unavailable")
+            if action == "register_owner":
+                binding, coordinator = value.get("binding"), value.get("coordinator")
+                self.validate_allocation(binding, coordinator=coordinator)
+                return self.ownership.register(self.owner_ref, binding, coordinator=coordinator)
+            reference = value.get("reference")
+            if not isinstance(reference, dict):
+                raise ValueError("invalid check owner reference")
+            binding = {k: reference.get(k) for k in ("run", "id", "reservation")}
+            entry = self.validate_allocation(binding, coordinator=None)
+            if entry.get("process_observation") != reference:
+                raise ValueError("check observation reference changed")
+            observed = self.ownership.observe(reference, self.process_context)
+            if action == "same_owner":
+                return {
+                    "same_owner": observed["owner"] == "live"
+                    and reference.get("owner_ref") == self.owner_ref
+                }
+            return observed
         if action == "start":
             if self.process is not None and self.process.poll() is None:
                 raise ValueError("check channel already owns a running process")
@@ -211,6 +310,21 @@ class CheckChannel:
             }
             self.records[identifier] = record
             self.active_handle = identifier
+            if self.ownership is not None:
+                if not self.owner_ready.wait(timeout=5) or self.owner_ref is None:
+                    raise ValueError("original check owner unavailable")
+                reference = value.get("process_observation")
+                if not isinstance(reference, dict):
+                    raise ValueError("registered check allocation required")
+                entry = self.validate_allocation(
+                    {k: reference.get(k) for k in ("run", "id", "reservation")},
+                    coordinator=False,
+                )
+                if entry.get("process_observation") != reference:
+                    raise ValueError("check allocation reference changed")
+                self.ownership.attach(
+                    reference, self.owner_ref, self.process_context, identifier, record
+                )
             self.validate_templates(record)
             root = str(Path(__file__).resolve().parent.parent)
             program = (
@@ -251,16 +365,17 @@ class CheckChannel:
                         record["deadline"] = min(record["deadline"], bound)
                 if time.monotonic() >= record["deadline"]:
                     raise ValueError("BUDGET_EXHAUSTED")
-                record["process"] = subprocess.Popen(
-                    [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
-                    cwd=cwd,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=descriptors[0],
-                    stderr=descriptors[1],
-                    close_fds=True,
-                    start_new_session=True,
-                )
+                with check_input(policy) as stdin:
+                    record["process"] = subprocess.Popen(
+                        [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
+                        cwd=cwd,
+                        env=env,
+                        stdin=stdin,
+                        stdout=descriptors[0],
+                        stderr=descriptors[1],
+                        close_fds=True,
+                        start_new_session=True,
+                    )
                 if record["policy"]:
                     record["policy"].spawned(record["process"])
                 if record["observer"]:
@@ -274,6 +389,8 @@ class CheckChannel:
                     self.stop(identifier)
                 raise
             result = {"handle": identifier, "pid": record["process"].pid}
+            if policy is not None:
+                result["execution_policy"] = policy
             if managed is not None:
                 self.storage.started(identifier, record["process"].pid)
                 result["storage"] = managed

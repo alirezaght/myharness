@@ -464,6 +464,7 @@ async function load() {
 }
 
 async function refreshDashboard() {
+  if (typeof noteReliabilityRefresh === "function") noteReliabilityRefresh();
   try {
     const response = await fetch(API + query(), { cache: "no-store" });
     const data = await response.json().catch(() => ({}));

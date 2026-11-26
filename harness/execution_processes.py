@@ -133,6 +133,7 @@ class ProcessManager:
         report=None,
         lifecycle=None,
         correlation=None,
+        on_spawn=None,
     ):
         if type(timeout) is not int or not 1 <= timeout <= max_timeout:
             raise ValueError("operation timeout exceeds its capability limit")
@@ -230,6 +231,8 @@ class ProcessManager:
             self.launching -= 1
             self.records[handle] = record
         try:
+            if on_spawn is not None:
+                on_spawn(proc, observer)
             if policy:
                 policy.spawned(proc)
             self._notify(record, "process.started")

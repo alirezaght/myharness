@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -76,6 +77,293 @@ def retry(r, **extra):
             **extra,
         },
     )
+
+
+@pytest.fixture
+def finite_git_control(protected_policy_runtime):
+    """Actual qualified profile and authenticated transport; no synthetic completion receipt."""
+    from al.installer.runtime_retry_control import Client
+    from harness.policy.resources import prepare
+    from harness.reliability import store
+    from harness.reliability.process_context import dispatch_scope
+
+    r = protected_policy_runtime
+    repo = Path(r.operation.envelope["repository"])
+    root = repo / "qualification"
+    (root / "nested").mkdir(parents=True)
+    committed = {
+        ".gitignore": b"ignored.txt\nignored-dir/\n",
+        "nested/.gitignore": b"nested-ignored.txt\n",
+        "tracked.txt": b"original text\n",
+        "binary.dat": b"\x00original binary\n",
+        "space name.txt": b"space framed member\n",
+        "nested/tracked.txt": b"nested tracked member\n",
+    }
+    for name, raw in committed.items():
+        (root / name).write_bytes(raw)
+    git = fixture_git()
+
+    def command(*args):
+        return subprocess.check_output([git, *args], cwd=repo)
+
+    command("add", "qualification")
+    command(
+        "-c",
+        "user.name=fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-qm",
+        "Finite sealed Git qualification fixture",
+    )
+    head = command("rev-parse", "HEAD").strip()
+    tree = command("rev-parse", "HEAD^{tree}").strip()
+    (root / "tracked.txt").write_bytes(b"staged text\n")
+    command("add", "qualification/tracked.txt")
+    (root / "tracked.txt").write_bytes(b"unstaged text\n")
+    (root / "binary.dat").write_bytes(b"\x00changed binary\n")
+    loose = {"loose.txt", "nested/loose.txt", "node_modules/hidden.txt", "build/hidden.txt"}
+    ignored = {"ignored.txt", "ignored-dir/private.txt", "nested/nested-ignored.txt"}
+    for name in loose | ignored:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"private fixture untracked content\n")
+    setup_retry(r)
+    before = r.source.read_bytes()
+    arguments = ["retry", "al-engineer", "--reason", "Inspected the genuine failure."]
+    observation = store.begin(r.operation, r.principal, "al_command")
+    with dispatch_scope(r.operation, observation, r.principal["thread_id"]):
+        attempt = prepare(
+            r.operation,
+            r.controller,
+            r.principal,
+            "al_command",
+            {"arguments": arguments},
+            json.loads(before),
+        )
+    profile = attempt.control
+    assert profile is not None and profile.method == "sealed-al-retry-v1"
+    assert profile.git == fixture_git()
+
+    @contextmanager
+    def connect(*, pin=True):
+        channel = ControlChannel(attempt, profile)
+        client = Client(os.dup(channel.descriptor), channel.nonce)
+        try:
+            for stage in ("launcher", "pin") if pin else ("launcher",):
+                if stage == "pin":
+                    # Real exec starts a fresh client sequence on the same authenticated socket.
+                    client.stream.close()
+                    client = Client(os.dup(channel.descriptor), channel.nonce)
+                binding = client.request(
+                    "activate",
+                    {
+                        "stage": stage,
+                        "profile": profile.method,
+                        "repository": profile.repository,
+                        "platform": profile.platform,
+                        "session": r.operation.envelope["al_session_id"],
+                        "argv": list(profile.args),
+                        "pin": profile.pin if stage == "pin" else None,
+                    },
+                )
+                assert binding["protocol"] == "sealed-al-control-v1"
+                assert binding["repository"] == str(repo) and binding["profile"] == profile.method
+                assert binding["pin_identity"] == profile.pin
+                client.binding = binding
+            yield client
+        finally:
+            client.stream.close()
+            channel.close()
+            assert channel.closed and not channel.thread.is_alive()
+            assert channel.current_process is None
+
+    try:
+        yield r, connect, committed, loose, ignored, head, tree
+        assert r.source.read_bytes() == before
+        rows = list(
+            r.controller.conn.execute(
+                "SELECT method,state,pid,exit_code FROM policy_control_helpers WHERE attempt_id=?",
+                (attempt.intent.id,),
+            )
+        )
+        assert rows and all(row["state"] == "closed" and row["pid"] > 0 for row in rows)
+        assert (
+            r.controller.conn.execute("SELECT COUNT(*) FROM policy_control_receipts").fetchone()[0]
+            == 0
+        )
+    finally:
+        if not attempt.started:
+            attempt.release_unstarted()
+
+
+@pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
+@DARWIN_CONTROL
+def test_authenticated_finite_git_forms_preserve_actual_repository_semantics(finite_git_control):
+    from harness.policy.control_git import BYTE_LIMIT
+
+    r, connect, committed, loose, ignored, head, tree = finite_git_control
+    prefix = "qualification/"
+
+    def paths(raw):
+        assert len(raw) <= BYTE_LIMIT and (not raw or raw.endswith(b"\0"))
+        return {os.fsdecode(name) for name in raw.split(b"\0") if name}
+
+    def own(values):
+        return {value[len(prefix) :] for value in values if value.startswith(prefix)}
+
+    with connect() as client:
+
+        def read(method, **operands):
+            raw = client.git(method, operands)
+            assert len(raw) <= BYTE_LIMIT
+            return raw
+
+        binding = read("object_binding").splitlines()
+        assert len(binding) == 2 and binding[1] == (b"sha1" if len(head) == 40 else b"sha256")
+        directory = Path(os.fsdecode(binding[0]))
+        assert (Path(r.operation.envelope["repository"]) / directory).resolve() == Path(
+            r.operation.envelope["repository"]
+        ) / ".git"
+        assert read("head") == read("head_verify") == head + b"\n"
+        assert read("merge_base", revision="HEAD") == head + b"\n"
+        assert own(paths(read("cached"))) == set(committed)
+        assert own(paths(read("untracked"))) == loose
+        status = read("status")
+        assert status.endswith(b"\n")
+        status_rows = {os.fsdecode(line[3:]): line[:2] for line in status.splitlines()}
+        assert status_rows[prefix + "tracked.txt"] == b"MM"
+        assert status_rows[prefix + "binary.dat"] == b" M"
+        for method in ("long_tree", "inventory_tree"):
+            raw = read(method, revision="HEAD")
+            assert raw.endswith(b"\0")
+            rows = {}
+            for row in raw[:-1].split(b"\0"):
+                metadata, name = row.split(b"\t", 1)
+                fields = metadata.split()
+                assert len(fields) == 4
+                if os.fsdecode(name).startswith(prefix):
+                    rows[os.fsdecode(name)[len(prefix) :]] = fields
+            assert set(rows) == set(committed)
+            for name, value in committed.items():
+                mode, kind, oid, size = rows[name]
+                expected = (
+                    hashlib.new(
+                        "sha1" if len(head) == 40 else "sha256",
+                        b"blob " + str(len(value)).encode() + b"\0" + value,
+                    )
+                    .hexdigest()
+                    .encode()
+                )
+                assert (mode, kind, oid, int(size)) == (b"100644", b"blob", expected, len(value))
+        changed = {"tracked.txt", "binary.dat"}
+        assert own(paths(read("currency_diff", revision="HEAD"))) == changed
+        assert read("retained_tree", revision=os.fsdecode(tree)) == b""
+        for binary in (False, True):
+            for ignore in ("all", "none"):
+                raw = read("parent_diff", revision="HEAD", binary=binary, ignore=ignore)
+                if binary:
+                    assert b"GIT binary patch\n" in raw and b"+unstaged text\n" in raw
+                    assert b"-original text\n" in raw
+                else:
+                    assert own(paths(raw)) == changed
+        assert own(paths(read("inventory_untracked"))) == {"loose.txt", "nested/loose.txt"}
+        assert own(paths(read("inventory_ignores"))) == {".gitignore", "nested/.gitignore"}
+        expected_ignored = {
+            name if not name.startswith("ignored-dir/") else "ignored-dir/" for name in ignored
+        }
+        assert own(paths(read("inventory_ignored"))) == expected_ignored | {
+            "node_modules/",
+            "build/",
+        }
+        assert own(paths(read("inventory_scope", path="qualification/nested"))) == {
+            "nested/loose.txt",
+            "nested/nested-ignored.txt",
+        }
+        assert own(paths(read("ledger_tracked", path="qualification"))) == set(committed)
+        assert own(paths(read("ledger_tracked", path="."))) == set(committed)
+        assert own(paths(read("ledger_tracked", path="qualification/nested"))) == {
+            "nested/.gitignore",
+            "nested/tracked.txt",
+        }
+        assert set(read("ledger_tree", path="qualification").decode().splitlines()) == {
+            prefix + name for name in committed
+        }
+        assert own(set(read("ledger_tree", path=".").decode().splitlines())) == set(committed)
+        expected_scope = set(committed) | loose
+        assert own(paths(read("ledger_scope", paths=["."]))) == expected_scope
+        assert (
+            own(paths(read("ledger_scope", paths=["qualification", "qualification/nested"])))
+            == expected_scope
+        )
+        assert own(paths(read("ledger_scope", paths=["qualification/nested"]))) == {
+            "nested/.gitignore",
+            "nested/tracked.txt",
+            "nested/loose.txt",
+        }
+        assert own(paths(read("ledger_scope", paths=["qualification"] * 64))) == expected_scope
+        original = committed["tracked.txt"]
+        blob_oid = hashlib.new(
+            "sha1" if len(head) == 40 else "sha256",
+            b"blob " + str(len(original)).encode() + b"\0" + original,
+        ).hexdigest()
+        for invalid in ("0" * len(head), blob_oid):
+            # A missing tree and a blob object are actual Git refusals, not grammar mocks.
+            with pytest.raises(ValueError, match="sealed Git operation refused"):
+                read("retained_tree", revision=invalid)
+
+
+@pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
+@DARWIN_CONTROL
+def test_authenticated_finite_git_operands_and_blob_bounds_refuse(finite_git_control):
+    r, connect, committed, _, _, head, _ = finite_git_control
+    malformed = [
+        ("object_binding", {"extra": True}),
+        ("head_verify", {"revision": "HEAD"}),
+        ("merge_base", {"revision": "--upload-pack=bad"}),
+        ("parent_diff", {"revision": "HEAD", "binary": 1, "ignore": "none"}),
+        ("parent_diff", {"revision": "HEAD", "binary": False, "ignore": "bad"}),
+        ("retained_tree", {"revision": "HEAD"}),
+        ("inventory_scope", {"path": "../outside"}),
+        ("ledger_scope", {"paths": ["qualification"] * 65}),
+        ("ledger_tracked", {"path": "/absolute"}),
+        ("ledger_tree", {"path": "../outside"}),
+    ]
+    for method, operands in malformed:
+        with connect(pin=False) as client:
+            before = r.controller.conn.execute(
+                "SELECT COUNT(*) FROM policy_control_helpers"
+            ).fetchone()[0]
+            with pytest.raises((ValueError, EOFError, OSError)):
+                client.request(method, operands)
+            assert (
+                r.controller.conn.execute("SELECT COUNT(*) FROM policy_control_helpers").fetchone()[
+                    0
+                ]
+                == before
+            )
+    raw = committed["tracked.txt"]
+    oid = hashlib.new(
+        "sha1" if len(head) == 40 else "sha256", b"blob " + str(len(raw)).encode() + b"\0" + raw
+    ).hexdigest()
+    for maximum, per_file in ((len(raw) - 1, len(raw)), (len(raw), len(raw) - 1)):
+        with connect(pin=False) as client:
+            before = r.controller.conn.execute(
+                "SELECT COUNT(*) FROM policy_control_helpers"
+            ).fetchone()[0]
+            with pytest.raises((ValueError, EOFError, OSError)):
+                client.blobs(r.operation.envelope["repository"], [oid], maximum, per_file)
+            assert (
+                r.controller.conn.execute("SELECT COUNT(*) FROM policy_control_helpers").fetchone()[
+                    0
+                ]
+                == before + 1
+            )
+            row = r.controller.conn.execute(
+                "SELECT method,state,exit_code FROM policy_control_helpers "
+                "ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            assert tuple(row) == ("read_blobs", "closed", 0)
 
 
 @pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)

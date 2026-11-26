@@ -45,7 +45,10 @@ TOOL_HELP = {
         "before submitting output."
     ),
     "al_command": (
-        "Run guarded AL subcommands only: arguments=['show', '--panel']. Never include alctl, "
+        "Run the bounded Harness subset of guarded AL commands, e.g. "
+        "arguments=['show', '--panel']. "
+        "Standalone AL commands such as isolate are unavailable through this tool; hand those "
+        "operations back to the supervising host operator. Never include alctl, "
         "launcher paths, run or repository/session wrapper flags; Harness supplies the origin. "
         "Supervisor can plan/control without product writer authority; read-only children may "
         "only inspect AL. Long checks use background=true and poll_process until collected."
@@ -166,7 +169,9 @@ SCHEMAS = {
                 "items": STRING,
                 "maxItems": 100,
                 "description": (
-                    "AL subcommands only, e.g. ['show', '--panel']; no launcher or origin flags."
+                    "Bounded Harness command subset, e.g. ['show', '--panel']; "
+                    "standalone-only commands such as isolate are unavailable. "
+                    "No launcher or origin flags."
                 ),
             },
             "background": {"type": "boolean"},
@@ -185,6 +190,11 @@ SCHEMAS = {
 }
 
 
+def _within(spec, value, low, high):
+    """The field's own published bounds (#113), inside the generic outer bounds."""
+    return spec.get(low, float("-inf")) <= value <= spec.get(high, float("inf"))
+
+
 def validate_arguments(name, arguments):
     schema = SCHEMAS[name]
     if (
@@ -196,10 +206,16 @@ def validate_arguments(name, arguments):
     for key, value in arguments.items():
         spec = schema["properties"][key]
         if spec["type"] == "string" and (
-            not isinstance(value, str) or len(value) > spec.get("maxLength", 65536)
+            not isinstance(value, str)
+            or len(value) > spec.get("maxLength", 65536)
+            or len(value) < spec.get("minLength", 0)
         ):
             raise ValueError("bounded string required")
-        if spec["type"] == "integer" and (type(value) is not int or not 0 <= value <= 1048576):
+        if spec["type"] == "integer" and (
+            type(value) is not int
+            or not 0 <= value <= 1048576
+            or not _within(spec, value, "minimum", "maximum")
+        ):
             raise ValueError("bounded integer required")
         if spec["type"] == "boolean" and type(value) is not bool:
             raise ValueError("boolean required")
@@ -207,19 +223,33 @@ def validate_arguments(name, arguments):
             if (
                 not isinstance(value, list)
                 or len(value) > 20
+                or not _within(spec, len(value), "minItems", "maxItems")
                 or any(
                     not isinstance(v, dict)
                     or set(v) != {"artifact_id", "sha256"}
-                    or any(not isinstance(t, str) for t in v.values())
+                    or any(
+                        not isinstance(t, str)
+                        or not _within(
+                            spec["items"]["properties"][k], len(t), "minLength", "maxLength"
+                        )
+                        for k, t in v.items()
+                    )
                     for v in value
                 )
             ):
                 raise ValueError("closed execution artifact references required")
             continue
+        item = spec.get("items", {})
         if spec["type"] == "array" and (
             not isinstance(value, list)
             or len(value) > 100
-            or any(not isinstance(v, str) or len(v) > 65536 for v in value)
+            or not _within(spec, len(value), "minItems", "maxItems")
+            or any(
+                not isinstance(v, str)
+                or len(v) > 65536
+                or not _within(item, len(v), "minLength", "maxLength")
+                for v in value
+            )
         ):
             raise ValueError("bounded string array required")
         if spec["type"] == "object" and not isinstance(value, dict):

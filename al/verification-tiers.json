@@ -533,8 +533,29 @@
       "seconds": 86.5
     },
     "installer:al/tests/test_operator_update.py": {
-      "tests": 91,
-      "seconds": 4719.3
+      "tests": 4,
+      "seconds": 99.25,
+      "measurement_basis": "historical pre-split group allocation; not a post-split measurement"
+    },
+    "installer:al/tests/test_operator_update_barriers.py": {
+      "tests": 8,
+      "seconds": 93.96,
+      "measurement_basis": "historical pre-split group allocation; not a post-split measurement"
+    },
+    "installer:al/tests/test_operator_update_integrity.py": {
+      "tests": 51,
+      "seconds": 71.12,
+      "measurement_basis": "historical pre-split group allocation; not a post-split measurement"
+    },
+    "installer:al/tests/test_operator_update_metadata.py": {
+      "tests": 20,
+      "seconds": 96.94,
+      "measurement_basis": "historical pre-split group allocation; not a post-split measurement"
+    },
+    "installer:al/tests/test_operator_update_publication.py": {
+      "tests": 8,
+      "seconds": 67.82,
+      "measurement_basis": "historical pre-split group allocation; not a post-split measurement"
     },
     "installer:al/tests/test_pinned_terminal.py": {
       "tests": 2,

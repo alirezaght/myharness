@@ -265,3 +265,58 @@ def test_git_option_values_and_separator_are_harmless(command):
                                     'git diff --output','git log --grep','git show --output=written'])
 def test_git_output_and_missing_value_fail_closed(command):
     for policy in ('readonly','shared'):assert al_shell.check(command,policy)
+
+
+def test_full_fresh_collision_refuses_before_admission_and_same_attempt_can_approve(cli,repo,tmp_path,state_file,run_state):
+    from hook_regression_helpers import report_data
+    from launcher_context import upgrade_report
+    from pathlib import Path
+    resolution=run_state('second_round_unsaved_full',lambda:second_round(cli,tmp_path,repo,before_fresh=True))
+    before=state(cli);review=before['review'];assert review['mode']=='full' and review['stage']=='fresh'
+    packet=A.read_json(review['packets']['fresh'])
+    history=H.findings(before);assert len(history)==1 and history[0]['id']=='F-fresh'
+    authority=A.read_json(packet['verification_authority']['artifact'])
+    sources=[entry['id'] for entry in authority['criteria']]
+    assert len(sources)==2 and history[0]['source']==sources[0]
+    finding={'id':'F-fresh','source':sources[1],'severity':'NON_BLOCKING','description':'An independent observation on the second criterion.'}
+    data=upgrade_report(before,report_data(cli,'fresh','fresh-two',findings=[finding]));data['status']='APPROVED'
+    path=tmp_path/'collision-fresh.json';path.write_text(json.dumps(data))
+    artifacts=Path(review['packets']['fresh']['stored_path']).parent
+    artifact_bytes={p.name:p.read_bytes() for p in artifacts.iterdir() if p.is_file()}
+    state_bytes=state_file().read_bytes()
+    code,out,err=getattr(cli,'raw',cli)('review-fresh','--file',str(path))
+    if code==0:
+        # On the old runtime, retain the actual admission-to-comparison dead end.
+        assert state(cli)['review']['stage']=='fresh-saved'
+        report=comparison(cli,tmp_path,'compare-two',[resolution])
+        stranded=state_file().read_bytes()
+        compare_code,compare_out,compare_err=invoke(cli,'review-result','--file',str(report),ok=False)
+        assert 'historical finding changed source identity' in str(compare_code)+compare_out+compare_err
+        assert state_file().read_bytes()==stranded and state(cli)['review']['stage']=='comparison'
+        pytest.fail('incompatible fresh report was admitted, then comparison refused historical finding changed source identity')
+    assert code!=0,(out,err)
+    assert 'F-fresh' in str(code)+out+err and 'same issued attempt' in str(code)+out+err and 'unsaved fresh report' in str(code)+out+err
+    assert state_file().read_bytes()==state_bytes
+    assert {p.name:p.read_bytes() for p in artifacts.iterdir() if p.is_file()}==artifact_bytes
+    assert state(cli)['review']['stage']=='fresh' and 'fresh' not in state(cli)['review']
+    assert packet['reserved_finding_ids']==['F-fresh']
+    assert not {'prior_findings','fresh','approved_inputs','comparison_contents','delta'} & set(packet)
+    assert history[0]['description'] not in json.dumps(packet)
+    original=json.loads(path.read_text());data['findings'][0]['id']='R2-F1'
+    assert dict(data,findings=original['findings'])==original
+    path.write_text(json.dumps(data));invoke(cli,'review-fresh','--file',str(path))
+    saved=state(cli)['review'];assert saved['packets']['fresh']==review['packets']['fresh']
+    assert A.read_json(saved['fresh'])==data and saved['stage']=='fresh-saved'
+    # The earlier blocker is still unresolved; it did not contaminate the fresh verdict.
+    assert H.findings(state(cli))[0].get('resolution',{}).get('status')!='fixed'
+    assert A.read_json(saved['fresh'])['status']=='APPROVED'
+    immutable=state_file().read_bytes();invoke(cli,'review-fresh','--file',str(path),ok=False)
+    assert state_file().read_bytes()==immutable and A.read_json(saved['fresh'])==data
+    report=comparison(cli,tmp_path,'compare-two',[resolution]);invoke(cli,'review-result','--file',str(report))
+    invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
+    final=state(cli);assert final['status']=='APPROVED'
+    proof=A.read_json(final['review_history'][-1]['resolution_validation'])
+    assert proof['fresh_sha256']==saved['fresh']['sha256']
+    assert proof['validated_fixes'][0]['id']=='F-fresh'
+    assert proof['validated_fixes'][0]['resolution']['evidence']==resolution['evidence']
+    assert next(f for f in H.findings(final) if f['id']=='F-fresh')['resolution']['status']=='fixed'

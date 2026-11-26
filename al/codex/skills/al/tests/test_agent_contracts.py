@@ -12,6 +12,64 @@ from test_al_usability import state
 from test_writer_handoff import ready
 
 
+@pytest.mark.parametrize('defect', ['domain', 'denied', 'legacy', 'malformed', 'harness-missing'])
+def test_process_observation_never_uses_numeric_pid_alias_as_settlement(monkeypatch, defect):
+    import os
+    import al_process_observation as processes
+    monkeypatch.delenv('HARNESS_CHECK_CONTEXT', raising=False)
+    entry = {'run': 'run', 'id': 'E1', 'reservation': 'allocation', 'recipe': {'test': True},
+             'owner_pid': os.getpid(), 'pid': None}
+    entry['process_observation'] = processes.allocate(entry)
+    assert processes.observe(entry) == {'owner': 'live', 'checks': 'settled'}
+    if defect == 'domain':
+        entry['process_observation']['domain'] = {'platform': 'foreign'}
+    elif defect == 'denied':
+        def denied(pid):
+            raise PermissionError('test-owned identity denial')
+        monkeypatch.setattr(processes, 'identity', denied)
+    elif defect == 'legacy':
+        del entry['process_observation']
+    elif defect == 'malformed':
+        entry['process_observation']['owner'] = {'pid': os.getpid()}
+    else:
+        monkeypatch.setenv('HARNESS_CHECK_CONTEXT', 'test-owned-missing-channel')
+        monkeypatch.delenv('HARNESS_CHECK_FD', raising=False)
+    observed = processes.observe(entry)
+    assert observed['owner'] == 'unknown'
+    assert 'live' not in observed.values()
+
+
+def test_process_owner_reuse_and_exact_coordinator_relationship(monkeypatch):
+    import os
+    import al_process_observation as processes
+    monkeypatch.delenv('HARNESS_CHECK_CONTEXT', raising=False)
+    parent = {'run': 'run', 'id': 'E1', 'reservation': 'parent', 'recipe': {'test': True}}
+    parent['process_observation'] = processes.allocate(parent)
+    child = {'run': 'run', 'id': 'E2', 'reservation': 'child'}
+    child['process_observation'] = processes.allocate(child)
+    assert processes.same_owner(parent, child)
+    assert processes.same_owner(parent)
+    original = processes.identity(os.getpid())
+    changed = list(original['start'])
+    changed[0] += 1
+    monkeypatch.setattr(processes, 'identity', lambda pid: dict(original, start=changed))
+    assert processes.observe(parent)['owner'] == 'settled'
+    assert not processes.same_owner(parent, child)
+
+
+def test_host_process_reference_cannot_select_another_entries_allocation(monkeypatch):
+    import al_harness_process
+    import al_process_observation as processes
+    monkeypatch.setenv('HARNESS_CHECK_CONTEXT', 'test-owned-channel')
+    calls = []
+    monkeypatch.setattr(al_harness_process, 'request', lambda value: calls.append(value))
+    entry = {'run': 'run', 'id': 'E2', 'reservation': 'child', 'process_observation': {
+        'schema_version': 1, 'mode': 'harness', 'host_instance': 'instance', 'owner_ref': 'owner',
+        'run': 'run', 'id': 'E1', 'reservation': 'parent'}}
+    assert processes.observe(entry) == {'owner': 'unknown', 'checks': 'unknown'}
+    assert calls == []
+
+
 def test_public_generated_assignment_declares_immutable_typed_outputs(cli, tmp_path, repo):
     body = ready(cli, tmp_path, repo)
     invoke(cli, "writer", "handoff", "--id", "worker", "--body-file", str(body))

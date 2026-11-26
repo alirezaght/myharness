@@ -324,3 +324,112 @@ def test_review_without_a_plan_is_refused_from_planning(cli):
     cli("classify", "SMALL", "--designer", "no", "--implementers", "al-engineer")
     code, out, err = cli("review-start")
     assert code != 0 and str(code) == "al_state: review-start is not allowed from PLANNING"
+
+
+def test_public_ci_change_separates_cached_failure_and_success_across_sessions(
+        cli, run_state, state_file, monkeypatch, tmp_path):
+    run_state('implemented')
+    first_session = state_file().stem
+    marker = tmp_path / 'ci-check-executions'
+    area = 'ci-dependent-check'
+    command = [PY, '-c',
+               "import os,sys; " + f"open({str(marker)!r},'a').write('x'); " +
+               "print('SYNTHETIC_CI='+('absent' if 'CI' not in os.environ else os.environ['CI'])); " +
+               "sys.exit(0 if os.environ.get('CI')=='true' else 255)"]
+    monkeypatch.delenv('AL_ACTION_CACHE', raising=False)
+
+    def run(session, ci, *, start=False):
+        if ci is None:
+            monkeypatch.delenv('CI', raising=False)
+        else:
+            monkeypatch.setenv('CI', ci)
+        prefix = ('--session', session)
+        if start:
+            assert cli(*prefix, 'start', '--spec', 'Verify CI-dependent checks retain exact cache identity.')[0] == 0
+        assert cli(*prefix, 'evidence', 'plan', '--area', area, '--kind', 'check',
+                   '--scope', 'svc', '--', *command)[0] == 0
+        code, out, err = cli(*prefix, 'evidence', 'run', '--area', area)
+        entry = [e for e in entries(lambda: state_file(session)) if e['area'] == area][-1]
+        assert entry['counts'] == {} and entry['env'] == []
+        return code, entry, out, err
+
+    code, failed, _, _ = run(first_session, None)
+    assert code == 1 and (failed['status'], failed['exit']) == ('FAIL', 255)
+    assert marker.read_text() == 'x'
+    assert 'SYNTHETIC_CI=absent' in Path(failed['log']).read_text()
+    code, repeat, out, _ = run('ci-absent-repeat', None, start=True)
+    assert code == 1 and repeat['status'] == 'FAIL' and marker.read_text() == 'x'
+    assert repeat['action_cache']['origin']['entry'] == failed['id']
+    assert repeat['action_cache']['origin']['run'] == failed['run']
+    assert Path(repeat['log']).read_bytes() == Path(failed['log']).read_bytes()
+    assert 'reused from' in out
+    code, passed, _, _ = run('ci-true-current', 'true', start=True)
+    assert code == 0 and (passed['status'], passed['exit']) == ('PASS', 0)
+    assert marker.read_text() == 'xx' and not passed.get('action_cache')
+    assert 'SYNTHETIC_CI=true' in Path(passed['log']).read_text()
+    assert passed['fp_before'] != failed['fp_before']
+    code, reused, _, _ = run('ci-true-repeat', 'true', start=True)
+    assert code == 0 and marker.read_text() == 'xx'
+    assert reused['action_cache']['origin']['entry'] == passed['id']
+    assert reused['action_cache']['origin']['run'] == passed['run']
+    assert Path(reused['log']).read_bytes() == Path(passed['log']).read_bytes()
+    code, reverse, _, _ = run('ci-false-current', 'false', start=True)
+    assert code == 1 and (reverse['status'], reverse['exit']) == ('FAIL', 255)
+    assert marker.read_text() == 'xxx' and not reverse.get('action_cache')
+    assert 'SYNTHETIC_CI=false' in Path(reverse['log']).read_text()
+    code, restored, _, _ = run('ci-absent-restored', None, start=True)
+    assert code == 1 and restored['status'] == 'FAIL' and marker.read_text() == 'xxx'
+    assert restored['action_cache']['origin']['run'] == failed['run']
+    assert Path(restored['log']).read_bytes() == Path(failed['log']).read_bytes()
+    original = [e for e in entries(lambda: state_file(first_session)) if e['id'] == failed['id']][0]
+    assert original == failed  # Later successes never rewrite the original failure.
+
+
+def test_default_ci_stales_ordinary_pass_without_action_cache(
+        cli, run_state, state_file, monkeypatch, tmp_path):
+    run_state('implemented')
+    monkeypatch.setenv('AL_ACTION_CACHE', '0')
+    monkeypatch.delenv('CI', raising=False)
+    marker = tmp_path / 'ordinary-ci-pass-executions'
+    area = 'ordinary-ci-currentness'
+    assert cli('evidence', 'plan', '--area', area, '--scope', 'svc', '--',
+               *ok_cmd('1 passed', marker))[0] == 0
+    assert cli('evidence', 'run', '--area', area)[0] == 0
+    first = [e for e in entries(state_file) if e['area'] == area][-1]
+    assert cli('evidence', 'require', '--areas', area)[0] == 0
+    assert cli('evidence', 'run', '--area', area)[0] == 0
+    assert marker.read_text() == 'x'
+    assert [e for e in entries(state_file) if e['area'] == area][-1]['id'] == first['id']
+    monkeypatch.setenv('CI', 'true')
+    code, out, _ = cli('evidence', 'require', '--areas', area)
+    assert code == 13 and 'STALE' in out
+    assert cli('evidence', 'run', '--area', area)[0] == 0
+    current = [e for e in entries(state_file) if e['area'] == area][-1]
+    assert marker.read_text() == 'xx' and current['id'] != first['id']
+    assert current['fp_before'] != first['fp_before']
+    assert not current.get('action_cache') and current['status'] == 'PASS'
+
+
+def test_ci_declaration_and_literal_assignment_keep_existing_execution_semantics(
+        cli, run_state, state_file, monkeypatch, tmp_path):
+    run_state('implemented')
+    monkeypatch.setenv('AL_ACTION_CACHE', '0')
+    for mode in ('declared', 'literal-absent', 'literal-false'):
+        if mode == 'declared':
+            monkeypatch.setenv('CI', 'true')
+        elif mode == 'literal-false':
+            monkeypatch.setenv('CI', 'false')
+        else:
+            monkeypatch.delenv('CI', raising=False)
+        marker = tmp_path / ('ci-' + mode)
+        command = [PY, '-c', "import os; " + f"open({str(marker)!r},'a').write('x'); " +
+                   "assert os.environ['CI']=='true'; print('1 passed')"]
+        area = 'ci-' + mode
+        option = 'CI' if mode == 'declared' else 'CI=true'
+        assert cli('evidence', 'plan', '--area', area, '--scope', 'svc',
+                   '--env', option, '--', *command)[0] == 0
+        assert cli('evidence', 'run', '--area', area)[0] == 0
+        current = [e for e in entries(state_file) if e['area'] == area][-1]
+        assert marker.read_text() == 'x' and current['status'] == 'PASS'
+        assert current['env'] == (['CI'] if mode == 'declared' else [])
+        assert current['argv'] == (command if mode == 'declared' else ['env', 'CI=true', *command])

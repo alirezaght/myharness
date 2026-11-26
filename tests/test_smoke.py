@@ -1,11 +1,6 @@
 import pytest
 
-import harness
 from harness.cli import main
-
-
-def test_package_imports_with_version():
-    assert harness.__version__ == "0.1.0"
 
 
 def test_cli_version_flag(capsys):

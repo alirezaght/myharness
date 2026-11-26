@@ -392,3 +392,131 @@ def test_explicit_parent_project_is_not_erased_by_child_ownership(cli, repo, tmp
                for g in facts['enumeration']['gaps'])
     assert not any(e['path'] == 'services/render' and 'container' in e['reason']
                    for e in facts['enumeration']['exclusions'])
+
+
+def test_root_package_manifest_owns_literal_consumers_but_keeps_verification_debt(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    (repo/'pyproject.toml').unlink(); (repo/'svc/app.py').unlink()
+    put(repo,'package.json','{"name":"root-workers","scripts":{"test":"vitest run"}}')
+    put(repo,'contracts/shape.json','{"type":"object"}')
+    put(repo,'workers/admin/src/main.ts','const schema = "contracts/shape.json";\n')
+    put(repo,'tests/unit/main.test.ts','const schema = "contracts/shape.json";\n')
+    put(repo,'scripts/verify.mjs','const schema = "contracts/shape.json";\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['contracts/shape.json'],opaque=[])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert root['languages']==['javascript'] and root['provenance']==['package.json']
+    assert not any(g['code']=='unclassified-runtime-consumer' for g in facts['enumeration']['gaps'])
+    assert {c for row in facts['dependencies']['artifact_consumers'] for c in row['consumers']} >= {
+        'workers/admin/src/main.ts','tests/unit/main.test.ts','scripts/verify.mjs'}
+    assessment=Coverage.assess(facts)
+    assert '.' in assessment['potential_services'] and assessment['outcome']=='incomplete'
+    assert facts['checks']['gaps'] and not facts['checks']['bindings']
+
+
+def test_root_package_unit_keeps_deepest_child_and_opaque_ownership(repo):
+    import al_repository_facts as Facts
+    seed(repo)
+    put(repo,'package.json','{"name":"root-tooling"}')
+    put(repo,'tools/check.mjs','const source = "packages/shared/src/common.py";\n')
+    put(repo,'vendor/opaque/package.json','{"name":"not-parent-owned"}')
+    put(repo,'vendor/opaque/secret.py','VALUE=1\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['packages/shared/src/common.py'],opaque=['vendor/opaque'])
+    assert {u['id'] for u in facts['units']} >= {'.','packages/shared','services/a','services/b'}
+    rows=facts['dependencies']['source_membership']
+    assert any(row[1]=='packages/shared/src/common.py' and row[2]=='packages/shared' for row in rows)
+    assert not any(row[1].startswith('vendor/opaque/') for row in rows)
+    assert not any(u['path'].startswith('vendor/opaque') for u in facts['units'])
+
+
+
+def manifestless_root(repo):
+    for name in ('pyproject.toml','svc/app.py','web/app.js'):
+        (repo/name).unlink(missing_ok=True)
+    put(repo,'tools/pkg.py','VALUE=1\n')
+
+
+@pytest.mark.parametrize('extra', ['', 'src/unrelated.py'])
+def test_manifestless_root_uses_real_flat_source_witnesses(repo,extra):
+    import hashlib
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    manifestless_root(repo)
+    if extra: put(repo,extra,'OTHER=2\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['tools/pkg.py'],opaque=[])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert root['source_roots']==['.'] and root['module_contexts']==[
+        {'source_root':'.','local_dependencies':[]}]
+    assert root['external_distributions']==[] and root['python_requirement'] is None
+    assert 'pyproject.toml' not in root['provenance'] and 'package.json' not in root['provenance']
+    assert root['source_witnesses'] and len(root['source_witnesses'])<=8
+    for row in root['source_witnesses']:
+        assert row['snapshot']=='current'
+        assert row['sha256']==hashlib.sha256((repo/row['path']).read_bytes()).hexdigest()
+        assert row['path'] in root['provenance']
+    assert any(row[1]=='tools/pkg.py' and row[2:]==['.','tools.pkg']
+               for row in facts['dependencies']['source_membership'])
+    assert not any(g['code']=='missing-manifest' for g in facts['enumeration']['gaps'])
+    assessment=Coverage.assess(facts)
+    assert assessment['outcome']=='incomplete' and not assessment['required_bindings']
+    assert any(g['code']=='missing-verification-check' and g['path'] in root['provenance']
+               for g in assessment['gaps'])
+
+
+@pytest.mark.parametrize('source',['docs/readme.md','worker.js','tests/helper.py','test_root.py','conftest.py'])
+def test_non_application_inputs_do_not_infer_manifestless_python_root(repo,source):
+    import al_repository_facts as Facts
+    for name in ('pyproject.toml','svc/app.py','web/app.js'): (repo/name).unlink()
+    put(repo,source,'# owned private fixture\n')
+    facts=Facts.collect(repo,base_oid=None,paths=[source,'tools/not-created.py'],opaque=[])
+    assert not any(u['id']=='.' for u in facts['units'])
+
+
+def test_manifestless_mixed_children_package_manifest_and_opaque_keep_ownership(repo):
+    import al_repository_facts as Facts
+    seed(repo)
+    before=Facts.collect(repo,base_oid=None,paths=['services/a/src/app.py'],opaque=[])
+    assert not any(u['id']=='.' for u in before['units'])
+    put(repo,'tools/pkg.py','VALUE=1\n')
+    put(repo,'package.json','{"name":"root-tools"}')
+    put(repo,'opaque/hidden.py','VALUE=2\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['tools/pkg.py'],opaque=['opaque'])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert set(root['languages'])=={'python','javascript'} and 'package.json' in root['provenance']
+    assert all(not row['path'].startswith(('services/','packages/','opaque/'))
+               for row in root['source_witnesses'])
+    membership=facts['dependencies']['source_membership']
+    assert any(row[1]=='services/a/src/app.py' and row[2]=='services/a' for row in membership)
+    assert not any(row[1].startswith('opaque/') for row in membership)
+
+
+def test_deleted_manifestless_source_retains_real_base_provenance(repo):
+    from conftest import _git
+    import hashlib
+    import al_repository_facts as Facts
+    from test_coverage_streaming import base_oid
+    manifestless_root(repo)
+    raw=(repo/'tools/pkg.py').read_bytes()
+    _git(repo,'add','.');_git(repo,'commit','-qm','manifestless base source')
+    base=base_oid(repo);(repo/'tools/pkg.py').unlink()
+    facts=Facts.collect(repo,base_oid=base,paths=['tools/pkg.py'],opaque=[])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert root['source_witnesses']==[
+        {'path':'tools/pkg.py','snapshot':'base','sha256':hashlib.sha256(raw).hexdigest()}]
+    assert root['provenance']==['tools/pkg.py']
+    assert any(row[:3]==['base','tools/pkg.py','.'] for row in facts['dependencies']['source_membership'])
+
+
+def test_deleted_previously_present_manifest_keeps_layout_debt(repo):
+    from conftest import _git
+    import al_repository_facts as Facts
+    from test_coverage_streaming import base_oid
+    manifestless_root(repo)
+    put(repo,'pyproject.toml','[project]\nname="previously-declared"\n')
+    _git(repo,'add','.');_git(repo,'commit','-qm','real declared root')
+    base=base_oid(repo);(repo/'pyproject.toml').unlink()
+    facts=Facts.collect(repo,base_oid=base,paths=['tools/pkg.py','pyproject.toml'],opaque=[])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert not root.get('source_witnesses')
+    assert any(g['code']=='missing-manifest' and g['path']=='pyproject.toml'
+               for g in facts['enumeration']['gaps'])

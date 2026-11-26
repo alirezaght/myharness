@@ -19,7 +19,8 @@
     "verification_authority",
     "behavior",
     "rework_recovery_lineage",
-    "repository_review_rules"
+    "repository_review_rules",
+    "report_authoring_guidance"
   ],
   "properties": {
     "attempt": {
@@ -227,6 +228,59 @@
           "type": "array"
         }
       }
+    },
+    "reserved_finding_ids": {
+      "description": "Historical finding IDs only, reserved across review rounds. Use review-specific IDs for new findings; historical clearance belongs to comparison. Contains no historical finding bodies or verdicts.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "report_authoring_guidance": {
+      "description": "Runtime authoring rules, independent of plans and historical finding bodies. Dynamic authority, filesystem and evidence rules remain runtime-validated.",
+      "type": "object",
+      "required": [
+        "locations",
+        "artifact_references",
+        "rollout",
+        "ui",
+        "invariants",
+        "counterexamples",
+        "placeholders"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "locations": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_references": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rollout": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ui": {
+          "type": "string",
+          "minLength": 1
+        },
+        "invariants": {
+          "type": "string",
+          "minLength": 1
+        },
+        "counterexamples": {
+          "type": "string",
+          "minLength": 1
+        },
+        "placeholders": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
     }
   },
   "allOf": [
@@ -301,7 +355,10 @@
               ]
             }
           ]
-        }
+        },
+        "required": [
+          "reserved_finding_ids"
+        ]
       }
     }
   ],

@@ -108,6 +108,24 @@ def factual_evidence(st):
     ]
 
 
+def authoring_guidance():
+    return {'locations': 'Existing repo-relative bare file or file:line>0; no ranges. Non-code: '
+                  '{artifact,explanation}.',
+     'artifact_references': 'Hash-checked arrays of six-field refs: '
+                            'id,kind,sha256,stored_path,source,captured_at; id=sha256.',
+     'rollout': 'applicable,reason; if true: '
+                'expand_contract,deployment_order,aggregator_environment,consumer_deployment,dlq_redrive. '
+                'Each: status EVIDENCED|NOT_APPLICABLE,reason; EVIDENCED: nonempty artifacts refs.',
+     'ui': 'applicable,reason; if true: '
+           'browser,viewport,functional_checks,alignment_observations,ux_observations,artifacts refs; '
+           'all nonempty.',
+     'invariants': 'Only current authority IDs; empty registry => [].',
+     'counterexamples': 'found|blocked: unresolved ordinary BLOCKING finding on selected-obligation '
+                        'criterion + CHANGES_REQUIRED; cannot approve.',
+     'placeholders': 'Complete template placeholders; literal FILL: is allowed. See review.md and '
+                     'schemas.'}
+
+
 def packet(st, data):
     if not enabled(st):
         return data
@@ -125,6 +143,7 @@ def packet(st, data):
         task_hash=document_binding(st)["hash"],
         verification_authority=review["verification_authority"],
         behavior=O.behavior_packet(st),
+        report_authoring_guidance=authoring_guidance(),
     )
     if data["stage"] == "fresh":
         # Never expose notes, arbitrary ledger metadata, implementation plans or
@@ -154,6 +173,8 @@ def packet(st, data):
             "verification_authority",
             "behavior",
             "rework_recovery_lineage",
+            "reserved_finding_ids",
+            "report_authoring_guidance",
         }
         # Checks AL did not verify (#17) are reviewer-visible notes that never block.
         if set(data) - {"unverified"} != allowed:

@@ -33,8 +33,10 @@ def comparison(cli,tmp,invocation,resolutions=None):
     return save_report(cli,tmp,'compare',invocation,prior_resolutions=resolutions)
 
 
-def second_round(cli,tmp,repo):
-    begin(cli,tmp,repo)
+def second_round(cli,tmp,repo,before_fresh=False):
+    if before_fresh:
+        begin(cli,tmp,repo,spec='AC-01: Verify the source correction. AC-02: Verify independent review identity isolation.')
+    else:begin(cli,tmp,repo)
     finding={'id':'F-fresh','source':'AC-01','severity':'BLOCKING','description':'Source still requires a verified fix.'}
     invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
     fresh=save_report(cli,tmp,'fresh','fresh-one',findings=[finding]);invoke(cli,'review-fresh','--file',str(fresh))
@@ -44,7 +46,8 @@ def second_round(cli,tmp,repo):
     invoke(cli,'writer','start','--id','correction','--role','al-engineer','--files','svc/app.py')
     (repo/'svc/app.py').write_text('verified_fix = True\n');invoke(cli,'writer','finish','--id','correction','--outcome','success')
     invoke(cli,'phase','VERIFICATION');invoke(cli,'gates','run','--stage','candidate');invoke(cli,'evidence','run','--area','unit','--fresh')
-    invoke(cli,'review-start');invoke(cli,'review-packet','--stage','fresh')
-    fresh=save_report(cli,tmp,'fresh','fresh-two');invoke(cli,'review-fresh','--file',str(fresh))
+    invoke(cli,'review-start',*(['--mode','full'] if before_fresh else []));invoke(cli,'review-packet','--stage','fresh')
+    if not before_fresh:
+        fresh=save_report(cli,tmp,'fresh','fresh-two');invoke(cli,'review-fresh','--file',str(fresh))
     return {'id':'F-fresh','source':'AC-01','status':'fixed','rationale':'Verified source correction.',
             'locations':['svc/app.py:1'],'evidence':[state(cli)['evidence']['entries'][-1]['id']]}

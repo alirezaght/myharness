@@ -581,6 +581,7 @@ def cmd_run(a,sid):
                 owner_type=PrivateOwner;private_output=Capture()
             else:owner_type=Owner;private_output=None
             with owner_type(log) as owner:
+                owner.entry=entry
                 try:
                     package_preflight=None
                     if g.get('package_script'):

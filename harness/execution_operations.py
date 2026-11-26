@@ -95,6 +95,39 @@ def read_only(args):
     return bool(args) and args[0] in READ_COMMANDS and not (args[0] == "next" and "--do" in args)
 
 
+def _al_command_refusal(arguments):
+    command = arguments[0] if arguments else None
+    if not isinstance(command, str) or not command:
+        return "al_command requires a supported command, for example arguments=['show', '--panel']."
+    origin_flags = {
+        "--repository",
+        "--platform",
+        "--session",
+        "--handoff",
+        "--db",
+        "--existing-run",
+    }
+    if (
+        command in {"alctl", "alctl.py", "run"}
+        or "/" in command
+        or "\\" in command
+        or command.split("=", 1)[0] in origin_flags
+    ):
+        return (
+            "al_command does not accept launcher/origin wrapper syntax. "
+            "Use arguments=['show', '--panel']; omit alctl, launcher paths, run and "
+            "repository/session wrapper flags. AL origin is supplied by Harness."
+        )
+    name = json.dumps(command[:48], ensure_ascii=True)
+    if len(command) > 48:
+        name += " (truncated)"
+    return (
+        f"AL command {name} is unavailable through Harness al_command. "
+        "Use arguments=['show', '--panel'] for supported inspection. "
+        "Hand unavailable operations back to the supervising host operator."
+    )
+
+
 class OperationController:
     def __init__(self, database, execution, envelope, package, initialization, registry, directory):
         from harness.knowledge.delivery import AutomaticDeliveryPolicy
@@ -131,6 +164,9 @@ class OperationController:
         self.artifacts = ArtifactStore(self.directory / "drafts")
         self.processes = ProcessManager()
         self.check_channels = []
+        from harness.execution_check_ownership import CheckOwnership
+
+        self.check_ownership = CheckOwnership()
         self.al_service = None
         self.prepared_plan_pending = {}
         self.setup_pending = {}
@@ -1049,11 +1085,7 @@ class OperationController:
             raise ValueError("another manifest-producing operation is already active")
         args = list(original_arguments)
         if not args or args[0] not in COMMANDS:
-            raise ValueError(
-                "al_command requires only AL subcommands, for example "
-                "arguments=['show', '--panel']; omit alctl, launcher paths, run and "
-                "repository/session wrapper flags. AL origin is supplied by Harness."
-            )
+            raise ValueError(_al_command_refusal(args))
         if args[0] == "integration" and (
             len(args) < 2 or args[1] in {"decision", "delivery-correction"}
         ):
@@ -1250,7 +1282,7 @@ class OperationController:
             "protected_roots": list(profile.protected),
         }
 
-        def validate_storage_entry(binding, declaration, *, final):
+        def validate_storage_entry(binding, declaration, *, final, allocation=False):
             if (
                 not isinstance(binding, dict)
                 or set(binding) != {"run", "id", "reservation"}
@@ -1267,10 +1299,11 @@ class OperationController:
                 if (
                     entry is None
                     or any(entry.get(k) != v for k, v in binding.items())
-                    or entry.get("storage") != declaration
-                    or final
+                    or not allocation
+                    and entry.get("storage") != declaration
+                    or final is True
                     and entry["status"] not in {"PASS", "FAIL", "INFRA", "EMPTY", "TORN"}
-                    or not final
+                    or final is False
                     and entry["status"] != "RUNNING"
                 ):
                     raise ValueError("storage evidence reservation changed")
@@ -1293,11 +1326,21 @@ class OperationController:
                         parent is None
                         or not parent.get("recipe")
                         or any(parent.get(k) != v for k, v in recipe_assignment["parent"].items())
-                        or not final
+                        or final is False
                         and parent["status"] != "RUNNING"
                     ):
                         raise ValueError("recipe parent reservation is not current")
                 return entry
+
+        def validate_allocation(binding, *, coordinator):
+            entry = validate_storage_entry(
+                binding, None, final=None if coordinator is None else False, allocation=True
+            )
+            if coordinator is not None and (
+                type(coordinator) is not bool or bool(entry.get("recipe")) != coordinator
+            ):
+                raise ValueError("check coordinator allocation changed")
+            return entry
 
         storage = ExecutionStorage(storage_context, validate_storage_entry)
         from harness.policy.retry import prepare_retry
@@ -1321,7 +1364,12 @@ class OperationController:
             environment["HARNESS_RETRY_CONTROL_NONCE"] = control_channel.nonce
             self.check_channels.append(control_channel)
         channel = CheckChannel(
-            context_path, validate_check, storage=storage, policy_attempt=policy_attempt
+            context_path,
+            validate_check,
+            storage=storage,
+            policy_attempt=policy_attempt,
+            ownership=self.check_ownership,
+            validate_allocation=validate_allocation,
         )
         self.check_channels.append(channel)
         descriptors = (
@@ -1364,6 +1412,7 @@ class OperationController:
                     pass_fds=descriptors,
                     completion=close_channels,
                     report=report,
+                    on_spawn=channel.bind_owner,
                 )
             except (OSError, ValueError):
                 try:
@@ -1402,15 +1451,16 @@ class OperationController:
                 start_new_session=True,
                 pass_fds=descriptors,
             )
-            if policy:
-                try:
+            try:
+                channel.bind_owner(proc, observer)
+                if policy:
                     policy.spawned(proc)
-                except BaseException:
-                    ProcessManager._kill(proc)
-                    proc.wait(timeout=5)
-                    proc.stdout.close()
-                    proc.stderr.close()
-                    raise
+            except BaseException:
+                ProcessManager._kill(proc)
+                proc.wait(timeout=5)
+                proc.stdout.close()
+                proc.stderr.close()
+                raise
             if observer:
                 observer.notify("process.started")
             spawned_channels()

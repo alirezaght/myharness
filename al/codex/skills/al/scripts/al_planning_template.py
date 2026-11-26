@@ -7,6 +7,7 @@ import copy
 import json
 
 import al_proof_json as J
+import al_requirement_bindings as Q
 
 PLACEHOLDER = 'FILL:'
 
@@ -20,11 +21,8 @@ def _fill(what):
 
 
 def template(packet_ref, value, *, partially_built=False):
-    reference = value['task_package']
-    package = J.read(reference)
-    criteria = list(package.get('criteria', []))
-    registry = [{'id': name, 'artifact': reference, 'pointer': '/criteria/' + str(index),
-                 'value_sha256': J.digest(name)} for index, name in enumerate(criteria)]
+    registry = Q.accepted_criteria(value['task_package'], value['accepted_amendments'])
+    criteria = [entry['id'] for entry in registry]
     group = {
         'id': 'primary-behavior',
         'criterion_ids': criteria,

@@ -35,7 +35,7 @@
   ],
   "isolation_review": {
     "version": 1,
-    "reason": "Existing function-isolated repositories/runtimes and disposable installer homes; file groups preserve module/session fixture semantics. Worker envelope isolates HOME, native homes, runtime/distribution/harness state and temporary directories. Changed/unclassified files serialize; source, fixture and full outcome accounting remain mandatory. Phase 4 review: changed fixtures retain per-test repositories and per-worker homes/pins; local servers use unique loopback ports, native clients are synthetic or explicitly opt-in, and the existing reviewed template chunk boundaries are preserved. Recovery/integration review: current helpers keep source creation and commits before proof issuance, then use real public discovery/admission in per-test repositories. Supersession and acceptance tests use isolated runtime artifacts. Setup uses per-test disposable checkouts/caches and owned, reaped process groups; local wheel setup has no registry dependency. Output and routing tests restore function-scoped monkeypatches and own no services. New nodes keep whole-file grouping. Platform-specific native session/model adapters remain distinct. No cross-platform equivalence or test omission is introduced. AR2301 maintenance review: protected planning exports use per-test managed origins/repositories and fully reaped foreground proof children; nested read-set tests run only inside isolated validator processes. Activity/setup/Git grammar tests are data-only with no services. New file groups remain whole; no cross-platform equivalence or node omission is added. Harness maintenance tests use disposable databases, source trees and owned process groups; no application provider credentials are used. Final recovery regression review: fixture identity is configured only in disposable repositories; planning tests discover gates before requesting admission, explicitly pending fixtures use the raw public command, and refused current-coverage cases retain byte-for-byte state assertions. Ordinary module hashing owns no processes. Existing file-group isolation remains unchanged. Both runtime conftest updates configure Git author identity only in the disposable seed repository; fixture scope, per-test Git copies, per-process pins and owned-child behavior are unchanged. Reviewed file/fixture fingerprints are refreshed for the same groups, including the explicitly listed additional files. No unreviewed file is promoted and no test is omitted. Implementation-continuity review: existing per-file subprocess groups retain unchanged conftests and function-scoped repositories, private homes, sockets and owned process cleanup. Successor and epoch recovery tests use disposable managed origins, synthetic credentials and settled children; newly added files remain conservatively serialized. Existing file/fixture approvals are retained unchanged. Only the complete source closure is refreshed; no node classification, equivalence, selection or outcome requirement is relaxed. Per-file continuity and successor tests are now explicitly reviewed: their repositories, SQLite databases, socket pairs, synthetic credentials, managed registries and launchers belong to disposable function/session fixtures under each worker home. Foreground commands have bounded waits; intentional children use identity-bound cleanup/finally. No real provider, private user state, fixed listening port or shared mutable source is used. Existing execution fixture changes only declare typed business choices and genuine spec classification; documentation tests read the linked detailed guide. All node selection and outcome reconciliation remain unchanged. Final race correction retains fixture-private shared/exclusive lock files and settled owned processes; no action lock spans provider/network calls. Policy regressions now distinguish allowed implementation from refused proof, review and approval, with the same private repositories and no new shared resources. Literal Linux/macOS CI jobs preserve conventional adapter discovery. Existing reviewed file groups are refreshed without changing node selection.",
+    "reason": "Existing function-isolated repositories/runtimes and disposable installer homes; file groups preserve module/session fixture semantics. Worker envelope isolates HOME, native homes, runtime/distribution/harness state and temporary directories. Changed/unclassified files serialize; source, fixture and full outcome accounting remain mandatory. Phase 4 review: changed fixtures retain per-test repositories and per-worker homes/pins; local servers use unique loopback ports, native clients are synthetic or explicitly opt-in, and the existing reviewed template chunk boundaries are preserved. Recovery/integration review: current helpers keep source creation and commits before proof issuance, then use real public discovery/admission in per-test repositories. Supersession and acceptance tests use isolated runtime artifacts. Setup uses per-test disposable checkouts/caches and owned, reaped process groups; local wheel setup has no registry dependency. Output and routing tests restore function-scoped monkeypatches and own no services. New nodes keep whole-file grouping. Platform-specific native session/model adapters remain distinct. No cross-platform equivalence or test omission is introduced. AR2301 maintenance review: protected planning exports use per-test managed origins/repositories and fully reaped foreground proof children; nested read-set tests run only inside isolated validator processes. Activity/setup/Git grammar tests are data-only with no services. New file groups remain whole; no cross-platform equivalence or node omission is added. Harness maintenance tests use disposable databases, source trees and owned process groups; no application provider credentials are used. Final recovery regression review: fixture identity is configured only in disposable repositories; planning tests discover gates before requesting admission, explicitly pending fixtures use the raw public command, and refused current-coverage cases retain byte-for-byte state assertions. Ordinary module hashing owns no processes. Existing file-group isolation remains unchanged. Both runtime conftest updates configure Git author identity only in the disposable seed repository; fixture scope, per-test Git copies, per-process pins and owned-child behavior are unchanged. Reviewed file/fixture fingerprints are refreshed for the same groups, including the explicitly listed additional files. No unreviewed file is promoted and no test is omitted. Implementation-continuity review: existing per-file subprocess groups retain unchanged conftests and function-scoped repositories, private homes, sockets and owned process cleanup. Successor and epoch recovery tests use disposable managed origins, synthetic credentials and settled children; newly added files remain conservatively serialized. Existing file/fixture approvals are retained unchanged. Only the complete source closure is refreshed; no node classification, equivalence, selection or outcome requirement is relaxed. Per-file continuity and successor tests are now explicitly reviewed: their repositories, SQLite databases, socket pairs, synthetic credentials, managed registries and launchers belong to disposable function/session fixtures under each worker home. Foreground commands have bounded waits; intentional children use identity-bound cleanup/finally. No real provider, private user state, fixed listening port or shared mutable source is used. Existing execution fixture changes only declare typed business choices and genuine spec classification; documentation tests read the linked detailed guide. All node selection and outcome reconciliation remain unchanged. Final race correction retains fixture-private shared/exclusive lock files and settled owned processes; no action lock spans provider/network calls. Policy regressions now distinguish allowed implementation from refused proof, review and approval, with the same private repositories and no new shared resources. Literal Linux/macOS CI jobs preserve conventional adapter discovery. Existing reviewed file groups are refreshed without changing node selection. Operator-update split review (2026-11-26): only the five invariant-focused operator modules and their projection consumer are independently reviewed for concurrent execution, including unchanged common fixture/setup/process helpers and private per-worker resources. Preserve all unrelated stale test/conftest fingerprints. Owned-group settlement does not claim exhaustive escaped-descendant observation. Direct metadata validation review (2026-11-26): the same20node file keeps genuine private enrollment and seven native metadata cases plus all lock races; eight direct filesystem-validator cases use pre-damage passing controls and preserve historical/record bytes. No new shared resources or fake launcher context. The separate PR102 root-test delta affects no dependencies of these six AL groups. Only this test binding and current complete-source observation are renewed; all other entries remain unchanged. Runtime-pin source-template review (2026-11-26): exact default/runtime-pin exclusion policies share the existing genuine verified first construction and independent ordinary per-case copies. The unchanged runtime-pin subjects and eleven tiny-source helper cases use private temporary roots and restored patches, with no pin-result or authority cache. Independent delta review renews only these two groups and the six unchanged operator/projection consumers for the new conftest fingerprint; all other existing bindings remain unchanged and stale. Source-root metadata and conservative directory-triggered invalidation limits remain explicit.",
     "additional_reviewed_files": {
       "installer": [
         "al/tests/test_activity_operations.py",
@@ -93,7 +93,14 @@
         "al/tests/test_workspace_plan.py",
         "al/tests/test_workspace_process.py",
         "al/tests/test_workspace_provenance.py",
-        "al/tests/test_workspace_scope.py"
+        "al/tests/test_workspace_scope.py",
+        "al/tests/test_operator_update.py",
+        "al/tests/test_operator_update_integrity.py",
+        "al/tests/test_operator_update_metadata.py",
+        "al/tests/test_operator_update_barriers.py",
+        "al/tests/test_operator_update_publication.py",
+        "al/tests/test_operator_projection.py",
+        "al/tests/test_copy_al_source.py"
       ],
       "codex": [
         "tests/test_acceptance_states.py",
@@ -1268,9 +1275,9 @@
       }
     },
     "installer:al/tests/test_runtime_pin.py": {
-      "test": "4f5e8fccff51e1561c68fdabd1470f329796a587d2a5d6803e715c0f879146e2",
+      "test": "4d62c939c60632aba37aa0e7555c56829542f5e40d8bba6168eb14146f88f3cc",
       "fixtures": {
-        "sha256": "2062ab4aab3c44881f0bfc3a83190ed084db365bf687dce36f852b0e5f5d33c8",
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
         "mode": 420
       }
     },
@@ -1684,6 +1691,55 @@
       "test": "316172713a7c462e580d886e19be4fd0aef69482f92c8a89959c60b0175f96da",
       "fixtures": {
         "sha256": "0c596d2d4be941eaa308b0ce4258c004366ff850da076d679f4cda6338a9ed95",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_operator_update.py": {
+      "test": "35d2557c7e1c5510b0b048c13c8db171a660762f4eb4ddd44bba0a8725f0b55e",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_operator_update_integrity.py": {
+      "test": "cb793f75ea98e3e4bf739e62b900b0ac8228084bfc7070cf40796cbf3ac368df",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_operator_update_metadata.py": {
+      "test": "974b494228c3dff2fac3fca7848324b5a8dcd7295cfa34fb449bfd00938d2589",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_operator_update_barriers.py": {
+      "test": "ac9cc0bc9ab9e8f03cf684dd265bb7ed3fee73fb23907a62b69c1c5235093fed",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_operator_update_publication.py": {
+      "test": "ef80efcc989f305ba01d1efe3e72767ac465398a95062f3122c87153facd07b3",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_operator_projection.py": {
+      "test": "af20cee281a88250c18983061c3dd06607c21cc940e0b651b4760a97474620de",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
+        "mode": 420
+      }
+    },
+    "installer:al/tests/test_copy_al_source.py": {
+      "test": "ff1fc5054006b06c6571259e2c254e1f3ec19e51145e564c0df5c04cdd7f711e",
+      "fixtures": {
+        "sha256": "84515b0a1946c142b13162b16e0f9b417ee3bfab6bf0d9f076c8cd4fc9e41727",
         "mode": 420
       }
     }
@@ -4107,8 +4163,8 @@
   "isolation_closure": {
     "version": 1,
     "scope": "complete-source-except-obligations-v1",
-    "members": 1722,
-    "digest": "3ef38bd755130e3a298ed294ce904be67f80b178b37c7e0a76b351f7c8cbd7e4"
+    "members": 2248,
+    "digest": "2b71b4f89eeb067dbb5bb0f9b2374bb798af5df1e44cf8f33b6b8faac03b839d"
   },
   "acceptance": [
     "installer:al/tests/test_workspace_journey.py::*",

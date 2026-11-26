@@ -1,5 +1,19 @@
 # Evidence supersession and isolated setup
 
+Managed verification is noninteractive by default: ordinary evidence, gates, setup and
+version checks, remote checks, and managed-storage/recipe children receive EOF on stdin
+through a pipe whose writer is closed before launch. This does not set `CI`, add repository-specific flags, or reclassify
+command failures. An explicit standalone stdin pipe or file keeps its supplied input;
+input-descriptor transport through Harness is not qualified by this contract. Generic
+interactive/native process launchers retain their existing stdin behavior.
+
+Managed Harness checks negotiate the exact execution policy before allocating outputs or starting a child. Unsupported backends or explicit remote input are refused without fallback. New backends retain DEVNULL for historical clients that omit the policy; managed clients require the matching start acknowledgement.
+
+The versioned execution policy is separate from environment inputs. It binds action-cache
+keys and ledger fingerprints, including environment-only/preflight checks. Evidence from
+an older policy must be rerun even with the action cache disabled; immutable old pins and
+historical evidence are not rewritten.
+
 Register a check with AL options before the literal `--` separator and the
 program plus its arguments after it:
 
@@ -28,6 +42,21 @@ repository root. If any of those files changed, `evidence run` prints
 A change in another package keeps reuse. Validity is unchanged: a change outside
 the scope still does not make the earlier PASS STALE, it only stops it being
 reused. Declare cross-package dependencies in `--scope`, or pass `--fresh`.
+
+`CI` is an automatic verification dependency, even when absent or omitted from
+`--env`. Its presence and exact value are fingerprinted as hashes for ordinary
+evidence currentness, action-cache identity and verification preparation. A
+changed `CI` value invalidates evidence bound to the previous value. An existing
+cache entry may still be reused when its recorded environment matches the
+current inputs exactly; old policies that do not bind `CI` are stale. These
+fingerprints never assign environment values.
+
+`--env CI` declares an input; it does not set `CI` or broaden a managed execution
+environment. Use an approved explicit command assignment, such as `--env CI=true`
+(which records `env CI=true` in argv), when the check requires that value. The
+literal assignment controls the child's value; an ambient `CI` change can still
+conservatively invalidate its evidence. Other repository-specific environment
+inputs require explicit `--env` declarations.
 
 ## Action cache (reuse across runs, tasks and worktrees)
 
@@ -115,6 +144,20 @@ Preserve the exact tool target and flags, configuration, working directory, setu
 prerequisites, environment values, and whether each wrapper step is required or
 advisory. A CI wrapper such as `fc_step` executes the supplied command; it does
 not imply additional targets. Do not infer a broader command from a job name.
+
+Behavior observations also require the asserting test file to be inside the
+scope of selected executed evidence, alongside the implementation and dependency
+inputs. Passing a test path as a command argument does not add it to `--scope`.
+For example, `--scope src,tests -- python3 -m pytest -q tests` is suitable when
+those directories cover the actual inputs and assertion files; it is an example,
+not an automatic or universal scope. Add other relevant inputs explicitly.
+
+If an assertion is outside scope, retain the earlier execution and its recorded
+scope. Register the corrected scope with `evidence plan`, execute it with
+`evidence run --area AREA --fresh`, then resubmit the observation with the new
+evidence ID. Editing an observation or changing a plan cannot expand an earlier
+execution's scope, manufacture a rerun, or retrospectively credit its PASS.
+The behavior packet repeats this guidance outside submitted observation objects.
 
 Keep the command target separate from `--scope`: target arguments are passed to
 the tool, while scope lists every source, fixture, script, configuration,

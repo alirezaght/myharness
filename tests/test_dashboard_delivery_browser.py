@@ -138,3 +138,97 @@ def test_delivery_panel_fits_desktop_and_mobile_viewports(
             "<img src=x onerror=alert(1)>",
         ):
             assert content in panel["text"]
+
+
+HOSTILE = '<img src=x onerror="window.__pwned=1">'
+SAFE_URL = "https://gitlab.example.test/group/project/-/merge_requests/14"
+UNSAFE_URLS = {
+    "script": "javascript:window.__pwned=1",
+    "credentials": "https://user:secret@ci.example.test/pipelines/5801",
+}
+
+
+@pytest.mark.parametrize("width,height", [(1280, 800), (390, 844)])
+@pytest.mark.parametrize("unsafe", sorted(UNSAFE_URLS))
+def test_hostile_delivery_text_and_urls_stay_inert_and_issue_only_reads(
+    controller, sample_repo, monkeypatch, db_path, tmp_path, unsafe, width, height
+):
+    from urllib.parse import quote
+
+    from tests.chrome_cdp import chrome_page
+
+    task_id, execution_id = approved_execution(controller, sample_repo, monkeypatch)
+    _delivery_row(controller.conn, execution_id)
+    mr, snapshot = (
+        json.loads(value)
+        for value in controller.conn.execute(
+            "SELECT mr, snapshot FROM deliveries WHERE execution_id=?", (execution_id,)
+        ).fetchone()
+    )
+    # One refused URL next to one safe URL: the safe one is the positive control that
+    # anchors still render, so "no unsafe anchor" cannot pass by rendering no anchors.
+    mr["web_url"] = SAFE_URL
+    snapshot["pipeline"]["web_url"] = UNSAFE_URLS[unsafe]
+    snapshot["blockers"] = [HOSTILE + " blocker " + "unbroken-token-" * 12]
+    controller.conn.execute(
+        "UPDATE deliveries SET mr=?, snapshot=? WHERE execution_id=?",
+        (json.dumps(mr), json.dumps(snapshot), execution_id),
+    )
+    controller.conn.commit()
+    before_runs = controller.conn.execute("SELECT COUNT(*) FROM browser_runs").fetchone()[0]
+
+    with (
+        serve(db_path, task_id) as server,
+        chrome_page(tmp_path / "hostile", width, height) as page,
+    ):
+        page.open(
+            f"{server.url}?task={quote(task_id)}&workspace=run&tab=delivery",
+            "Boolean(document.querySelector('#delivery a[data-delivery-link]'))",
+        )
+        # Open every disclosure the operator can open; none may trigger a request.
+        page.evaluate(
+            "for (const s of document.querySelectorAll('#delivery summary')) s.click(); true"
+        )
+        # Focus on a delivery link survives a dashboard refresh repaint.
+        page.evaluate(
+            "document.querySelector('#delivery a[data-delivery-link]').focus();"
+            "refreshDashboard().then(() => true)"
+        )
+        page.settle(1.5)
+        panel = page.evaluate(
+            """(() => {
+                const panel = document.querySelector('#delivery');
+                return {
+                    text: panel.textContent,
+                    markup: panel.querySelectorAll('img,script,iframe,object,embed').length,
+                    anchors: [...panel.querySelectorAll('a')].map(a => ({
+                        href: a.getAttribute('href'), rel: a.rel, label: a.textContent})),
+                    plainLabels: [...panel.querySelectorAll('span')].map(e => e.textContent)
+                        .filter(t => t.startsWith('Open ')),
+                    disclosures: panel.querySelectorAll('details').length,
+                    closed: panel.querySelectorAll('details:not([open])').length,
+                    focused: document.activeElement.dataset.deliveryLink || null,
+                    pageWidth: document.documentElement.scrollWidth,
+                    panelRight: panel.getBoundingClientRect().right,
+                    pwned: window.__pwned === undefined ? null : window.__pwned,
+                };
+            })()"""
+        )
+        requests = list(page.requests)
+
+    assert HOSTILE + " blocker" in panel["text"] and panel["markup"] == 0
+    assert panel["pwned"] is None
+    assert panel["disclosures"] > 0 and panel["closed"] == 0
+    assert "Browser validation" in panel["text"] and "Investigation records" in panel["text"]
+    # Only the safe URL becomes a link, opened without opener access; the refused URL's
+    # label stays plain text.
+    assert panel["anchors"] and {a["href"] for a in panel["anchors"]} == {SAFE_URL}
+    assert all(a["rel"] == "noopener noreferrer" for a in panel["anchors"])
+    assert "Open pipeline" in panel["plainLabels"]
+    assert panel["focused"] == SAFE_URL
+    assert panel["pageWidth"] <= width and panel["panelRight"] <= width
+    origin = server.url.rstrip("/")
+    assert requests and all(r["method"] == "GET" for r in requests), requests
+    assert all(r["url"].startswith(origin) for r in requests), requests
+    after_runs = controller.conn.execute("SELECT COUNT(*) FROM browser_runs").fetchone()[0]
+    assert before_runs == after_runs == 0

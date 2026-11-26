@@ -176,3 +176,30 @@ for args, kwargs in [
     assert environment["PATH"] == caller_path
     assert "GIT_EXTERNAL_DIFF" not in environment
     assert os.environ["PATH"] == caller_path
+
+
+@pytest.mark.parametrize('caller_ci', [None, '', 'false', 'true'])
+def test_default_ci_uses_terminal_caller_hash_without_assigning_worker(monkeypatch, caller_ci):
+    import os
+
+    module = load()
+    value = profile()
+    if caller_ci is not None:
+        value['values']['CI'] = {
+            'present': True, 'digest': hashlib.sha256(caller_ci.encode()).hexdigest(),
+        }
+    monkeypatch.setenv('CI', 'different-controlled-worker-value')
+    monkeypatch.setenv('UNRELATED_PRIVATE_SENTINEL', 'private-not-a-default-dependency')
+    monkeypatch.setitem(sys.modules, '_al_validator_context', SimpleNamespace(request={
+        'caller_environment': value, 'run_pin_context': {'verified': 'fixture unit context'},
+    }))
+    monkeypatch.setitem(sys.modules, '_al_terminal_observation', SimpleNamespace(environment=value))
+    inputs = module.execution_environment([])
+    assert inputs['CI'] == {
+        'present': caller_ci is not None,
+        'digest': hashlib.sha256(caller_ci.encode()).hexdigest() if caller_ci is not None else None,
+    }
+    assert 'UNRELATED_PRIVATE_SENTINEL' not in inputs
+    assert 'UNSAFE_EXECUTION_FLAG' not in inputs
+    assert os.environ['CI'] == 'different-controlled-worker-value'
+    assert 'private-not-a-default-dependency' not in repr(inputs)

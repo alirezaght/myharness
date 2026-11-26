@@ -160,3 +160,38 @@ failure, or prevent an operator from cancelling the execution. Claude's own
 consecutive-stop-continuation cap remains enabled; normal polling tool calls reset
 that counter. An unresponsive or incapable native agent can still terminate and
 must be reported as interrupted rather than completed.
+
+
+## Sealed-control source inventory maintenance
+
+Sealed retry and writer-finish profiles authorize exact reviewed AL executable
+bytes. Their build-owned indexes are checked in root CI and by the AL fast/release
+consistency guard. Source correspondence is a prerequisite, not native qualification.
+Runtime, installer and ordinary build paths never regenerate these indexes.
+
+Run the offline, read-only check from the repository:
+
+```sh
+python3 scripts/control_source_inventory.py
+```
+
+A mismatch names changed, missing or uninspected executable sources. Review each
+actual changed/new source and its security consequences before proposing new hashes.
+After that review, explicitly render a deterministic candidate to a **new directory
+outside the repository**, whose parent already exists:
+
+```sh
+python3 scripts/control_source_inventory.py --candidate-output /private/tmp/control-source-candidate
+```
+
+Rendering leaves live indexes unchanged and grants no source approval or runtime
+qualification. Independently review candidate-to-source correspondence and the full
+source delta before promoting reviewed maps through a separate reviewed change.
+Then run the inventory tests and required AL fast checks, followed by actual native
+sealed-control positive flows and intended negative refusals, retaining exact source,
+interpreter, SQLite, Git, process-ownership and cleanup evidence. A hash refresh alone
+must never be used to turn a qualification refusal into permission.
+
+The provisional `.github/workflows/macos-control-qualification.yml` qualifies its
+exact Apple Git-155 candidate. Local Git-157 observations are separate evidence and
+do not establish that workflow candidate or release support.

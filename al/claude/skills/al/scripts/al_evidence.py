@@ -182,6 +182,11 @@ def _create(sid, expected_run, *, gate_context=None, own_writer=None, **fields):
         entry["inputs_before"] = L.inputs_fingerprint(entry)
         _SNAPSHOTS[entry["reservation"]] = L.scope_snapshot(entry["scope"])
         al_store.save(sid, st)
+    import al_process_observation
+    entry['process_observation'] = al_process_observation.allocate(entry)
+    _commit(sid, entry)
+    if entry.get('rejected'):
+        raise ValueError('check owner allocation was not committed')
     return entry
 
 
@@ -278,8 +283,11 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
                     prepared = al_evidence_storage.PreparedStorage(sid, entry)
                     proc = prepared.launch(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative, output=out, recipe_input=entry.get('recipe_assignment'))
                 else:
-                    proc = al_harness_process.popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
-                                            stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+                    proc = al_harness_process.verification_popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
+                                            stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
+                                            process_observation=entry.get('process_observation'))
+                import al_process_observation
+                al_process_observation.spawned(entry, proc)
                 entry['pid'] = proc.pid
                 entry['process'] = {'pid': proc.pid, 'pgid': proc.pid, 'ownership': 'live-Popen-start_new_session'}
                 if commit:
@@ -800,9 +808,11 @@ def cmd_evidence_validate(a, sid):
 
 
 def register(sub):
+    from al_behavior_observation_items import SCOPE_GUIDANCE
+
     def common(p):
         p.add_argument("--area", required=True); p.add_argument("--kind", default="test", choices=L.KINDS[:-1])
-        p.add_argument("--tier"); p.add_argument("--cwd"); p.add_argument("--scope")
+        p.add_argument("--tier"); p.add_argument("--cwd"); p.add_argument("--scope", help=SCOPE_GUIDANCE)
         p.add_argument("--sources-file")
         p.add_argument("--storage-file")
         p.add_argument("--recipe", choices=['harness-nonbrowser-v1'])

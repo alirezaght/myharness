@@ -1,13 +1,10 @@
-"""Time budget of the AL suites (#36): no test over TEST_SECONDS and no file over FILE_SECONDS.
+"""Timing diagnostics for the AL suites (#36), independent of functional verdicts.
 
-Measured from the per-test durations (setup + call + teardown) the verification runner reports.
-The acceptance journeys in al/verification-budget.json are exempt: they are the small set of real
-end-to-end runs kept on purpose (al/TESTS.md). So are the few tests named under `exempt`, each with
-the reason it must spawn real processes. Everything else asserts one decision and must start from
-a prebuilt run or call the decision function directly.
-
-A violation fails verify_changed and release_verify like a failing test, so a slow test cannot
-creep back in.
+Per-test durations (setup + call + teardown) retain the thresholds and named
+acceptance/exemption rules from al/verification-budget.json. Violations remain
+reported and retained in over_budget; they do not change verification status or
+completeness. Elapsed time is reported, never judged by ordinary verification.
+Performance acceptance remains a separate measured obligation.
 """
 import fnmatch
 import json

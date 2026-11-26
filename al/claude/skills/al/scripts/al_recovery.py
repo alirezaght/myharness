@@ -113,7 +113,10 @@ def cmd_reconcile(a,sid):
     e=next((x for x in st['evidence']['entries'] if x['id']==a.id),None)
     if not e or (e['status']!='RUNNING' and not e.get('interrupted')) or e.get('reconciliation'): refuse('check is not unresolved')
     import al_ledger as L
-    if L._alive(e.get('owner_pid')) or L._alive(e.get('pid')): refuse('cannot reconcile a living check')
+    import al_process_observation
+    observed=al_process_observation.observe(e)
+    if 'live' in observed.values():refuse('cannot reconcile a living check')
+    if 'unknown' in observed.values():refuse('cannot reconcile a check with unconfirmed original process ownership')
     from al_agent_exchange import consume_verification, produce
     from al_artifact_cli import read_input
     from types import SimpleNamespace

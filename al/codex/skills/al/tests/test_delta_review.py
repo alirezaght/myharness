@@ -10,8 +10,79 @@ def _packet_bytes(state, stage):
     return Path(state["review"]["packets"][stage]["stored_path"]).read_bytes()
 
 
+def _preserve_packet_profile(directory, state, mode):
+    import hashlib
+
+    destination = directory / "packet-byte-profile"
+    destination.mkdir(exist_ok=True)
+    profile_path = destination / "profile.json"
+    profile = json.loads(profile_path.read_text()) if profile_path.exists() else {}
+    for stage in ("fresh", "compare"):
+        raw = _packet_bytes(state, stage)
+        reference = state["review"]["packets"][stage]
+        assert hashlib.sha256(raw).hexdigest() == reference["sha256"]
+        name = mode + "-" + stage
+        (destination / (name + ".json")).write_bytes(raw)
+        content = json.loads(raw)
+        compact = json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
+        delivered = {"packet": reference, "content": content}
+        profile[name] = {
+            "review_id": content["review_id"], "sha256": reference["sha256"],
+            "stored_bytes": len(raw), "compact_stored_bytes": len(compact),
+            "cli_pretty_bytes": len(json.dumps(delivered, indent=2).encode()),
+            "cli_compact_bytes": len(json.dumps(delivered, sort_keys=True, separators=(",", ":")).encode()),
+            "field_value_bytes": {
+                key: {"default": len(json.dumps(value, sort_keys=True).encode()),
+                      "compact": len(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())}
+                for key, value in content.items()},
+        }
+    profile_path.write_text(json.dumps(profile, sort_keys=True, indent=2) + "\n")
+
+
+def _check_packet_transport(cli, state, state_file, directory, issued):
+    import hashlib
+
+    review = state["review"]
+    for stage in ("fresh", "compare"):
+        reference = review["packets"][stage]
+        raw = _packet_bytes(state, stage)
+        content = json.loads(raw)
+        output = issued[(review["id"], stage)]
+        delivered = json.loads(output)
+        assert delivered == {"packet": reference, "content": content}
+        assert hashlib.sha256(raw).hexdigest() == reference["sha256"]
+        if review["mode"] == "delta":
+            assert raw == json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
+            assert output == json.dumps(delivered, sort_keys=True, separators=(",", ":")) + "\n"
+        else:
+            assert raw == json.dumps(content, sort_keys=True).encode()
+            assert output == json.dumps(delivered, indent=2) + "\n"
+        destination = directory / (review["id"] + "-" + stage + "-packet.json")
+        code, cached, err = cli("review-packet", "--stage", stage, "--output", str(destination))
+        assert code == 0, (cached, err)
+        assert json.loads(cached) == delivered
+        assert destination.read_bytes() == raw == _packet_bytes(state, stage)
+        assert json.loads(state_file().read_bytes())["review"]["packets"][stage] == reference
+        cached_value = json.loads(cached)
+        if review["mode"] == "delta":
+            assert cached == output
+        else:
+            assert cached == json.dumps(cached_value, indent=2) + "\n"
+
+
 def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regression(cli, tmp_path, state_file, repo, run_state):
     run_state("implemented")
+    issued = {}
+    original_cli = cli
+
+    def capture(*args):
+        result = original_cli(*args)
+        if args[:1] == ("review-packet",) and result[0] == 0:
+            value = json.loads(result[1])["content"]
+            issued[(value["review_id"], value["stage"])] = result[1]
+        return result
+
+    cli = capture
     (repo / "svc" / "app.py").write_text("x = 1\n" + "".join(f"keep_{i} = {i}\n" for i in range(40)))
     assert plan_and_run_broad(cli) == 0
     assert cli("phase", "VERIFICATION")[0] == 0
@@ -19,6 +90,8 @@ def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regres
     first = json.loads(state_file().read_bytes())
     assert first["review"]["mode"] == "full" and first["review"]["snapshot"]
     full_input = sum(len(_packet_bytes(first, stage)) for stage in ("fresh", "compare"))
+    _preserve_packet_profile(tmp_path, first, "full")
+    _check_packet_transport(cli, first, state_file, tmp_path, issued)
 
     assert cli("correction", "--route", "al-engineer")[0] == 0
     assert cli("phase", "VERIFICATION")[0] == 0
@@ -33,6 +106,8 @@ def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regres
     fresh = json.loads(_packet_bytes(second, "fresh"))
     compare = json.loads(_packet_bytes(second, "compare"))
     delta_input = len(_packet_bytes(second, "fresh")) + len(_packet_bytes(second, "compare"))
+    _preserve_packet_profile(tmp_path, second, "delta")
+    _check_packet_transport(cli, second, state_file, tmp_path, issued)
     assert full_input >= 3 * delta_input, (full_input, delta_input)
 
     for packet in (fresh, compare):
@@ -56,6 +131,30 @@ def test_scripted_correction_loop_uses_a_small_delta_that_still_shows_the_regres
     validator = Draft202012Validator(json.loads((root / "review-packet.json").read_text()), registry=registry)
     errors = [e.message[:200] for packet in (fresh, compare) for e in validator.iter_errors(packet)]
     assert not errors, errors
+
+
+def test_legacy_spaced_delta_artifact_renders_compactly_without_rewriting(tmp_path):
+    import hashlib
+    import al_artifacts as Artifacts
+    import al_review as Review
+
+    content = {"review_mode": "delta", "literal": "Keep spaces: a, b: c", "stage": "fresh"}
+    raw = json.dumps(content, sort_keys=True).encode()
+    path = tmp_path / "legacy-delta-packet.json"
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    digest = hashlib.sha256(raw).hexdigest()
+    reference = {"id": digest, "sha256": digest, "kind": "review-packet",
+                 "stored_path": str(path), "source": "controlled format fixture", "captured_at": 0}
+    before = dict(reference)
+    decoded = Artifacts.read_json(reference)
+    rendered = Review._render_packet(reference, decoded)
+    assert json.loads(rendered) == {"packet": reference, "content": content}
+    assert rendered == json.dumps({"packet": reference, "content": content},
+                                  sort_keys=True, separators=(",", ":"))
+    assert raw != json.dumps(content, sort_keys=True, separators=(",", ":")).encode()
+    assert Artifacts.read(reference) == path.read_bytes() == raw
+    assert reference == before
 
 
 def test_full_review_requested_or_first_review_records_reasons(cli, tmp_path, state_file, run_state):

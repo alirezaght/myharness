@@ -62,38 +62,75 @@ class OwnedCheck:
         self.output_bytes = 0
         self.output_lock = threading.Lock()
         self.stdout = self.stderr = None
-        for name in ('stdout', 'stderr'):
-            target = kwargs.get(name)
-            if name == 'stderr' and target == subprocess.STDOUT:
-                descriptors.append(descriptors[0]);continue
-            if target == subprocess.PIPE:
-                reader, writer = os.pipe();setattr(self, name, os.fdopen(reader, 'rb'))
-                descriptors.append(writer);close.append(writer)
-            else:
-                destination = (target.fileno() if hasattr(target, 'fileno') else target
-                               if isinstance(target, int) and target >= 0 else 1 if name == 'stdout' else 2)
-                reader, writer = os.pipe()
-                relay = {'reader': reader, 'target': destination, 'bytes': 0, 'errors': [],
-                         'complete': False, 'stop': threading.Event(), 'thread': None}
-                self.relays.append(relay)
-                descriptors.append(writer);close.append(writer)
+        policy = kwargs.get('execution_policy')
+        if 'execution_policy' in kwargs:
+            from al_verification_policy import execution_policy
+            if (type(policy) is not dict or policy != execution_policy()
+                    or type(policy.get('version')) is not int or 'stdin' in kwargs):
+                raise OSError('unsupported managed verification input policy')
+            capabilities = self.rpc({'action':'capabilities', 'schema_version':1})
+            expected = {'schema_version':1, 'execution_policy':execution_policy()}
+            if (capabilities != expected or type(capabilities.get('schema_version')) is not int
+                    or type(capabilities['execution_policy'].get('version')) is not int):
+                raise OSError('Harness managed verification input policy unavailable')
         try:
+            for name in ('stdout', 'stderr'):
+                target = kwargs.get(name)
+                if name == 'stderr' and target == subprocess.STDOUT:
+                    descriptors.append(descriptors[0]);continue
+                destination = None
+                if target != subprocess.PIPE:
+                    destination = (target.fileno() if hasattr(target, 'fileno') else target
+                                   if isinstance(target, int) and target >= 0 else 1 if name == 'stdout' else 2)
+                reader, writer = os.pipe()
+                close.append(writer)
+                if target == subprocess.PIPE:
+                    try: stream = os.fdopen(reader, 'rb')
+                    except BaseException:
+                        os.close(reader);raise
+                    setattr(self, name, stream)
+                else:
+                    relay = {'reader': reader, 'target': destination, 'bytes': 0, 'errors': [],
+                             'complete': False, 'stop': threading.Event(), 'thread': None}
+                    self.relays.append(relay)
+                descriptors.append(writer)
             request = {'action':'start','argv':list(argv), 'cwd':str(kwargs.get('cwd') or os.getcwd())}
+            if policy is not None:request['execution_policy'] = policy
+            if kwargs.get('process_observation') is not None:request['process_observation'] = kwargs['process_observation']
             if kwargs.get('managed_storage') is not None:request['storage'] = kwargs['managed_storage']
             result = self.rpc(request, descriptors)
-            self.pid, self.handle = result['pid'], result['handle']
+            handle = result.get('handle')
+            if not isinstance(handle, str) or not handle:
+                raise OSError('invalid owned check start handle')
+            self.handle = handle
+            self.pid = result.get('pid')
+            if type(self.pid) is not int or self.pid <= 0:
+                raise OSError('invalid owned check start pid')
             self.storage = result.get('storage')
+            acknowledged = result.get('execution_policy')
+            if policy is not None and (type(acknowledged) is not dict or acknowledged != policy
+                                       or type(acknowledged.get('version')) is not int):
+                raise OSError('Harness managed verification input policy acknowledgement mismatch')
             if kwargs.get('managed_storage') is not None and not self.storage:
-                self.cancel()
                 raise OSError('managed check storage response unavailable')
             for relay in self.relays:
                 relay['thread'] = threading.Thread(target=self._relay, args=(relay,), daemon=False)
                 relay['thread'].start()
-        except BaseException:
+        except BaseException as exc:
+            cleanup_error = None
+            if hasattr(self, 'handle'):
+                try:self.cancel()
+                except BaseException as cleanup:cleanup_error = cleanup
             for relay in self.relays:
-                if relay['thread'] is None:os.close(relay['reader'])
+                thread = relay['thread']
+                if thread is None or thread.ident is None:os.close(relay['reader'])
+                else:relay['stop'].set()
+            self._settle_relays()
             for stream in (self.stdout, self.stderr):
                 if stream is not None:stream.close()
+            if cleanup_error is not None:
+                exc.add_note('Owned check launch cancellation failed; its handle is retained.')
+                raise exc from cleanup_error
             raise
         finally:
             for fd in close: os.close(fd)
@@ -129,7 +166,7 @@ class OwnedCheck:
     def _settle_relays(self):
         for relay in self.relays:
             thread = relay['thread']
-            if thread is None:continue
+            if thread is None or thread.ident is None:continue
             thread.join(timeout=2)
             if thread.is_alive():
                 relay['stop'].set()
@@ -208,8 +245,26 @@ class OwnedCheck:
         return bytes(outputs['stdout']),bytes(outputs['stderr'])
 
 
+def request(value):
+    client = object.__new__(OwnedCheck)
+    client.transport = _transport()
+    return client.rpc(value)
+
+
 def popen(argv, **kwargs):
     if os.environ.get('HARNESS_CHECK_CONTEXT'):
         if not os.environ.get('HARNESS_CHECK_FD'):raise OSError('private Harness check dispatch channel unavailable')
         return OwnedCheck(argv, kwargs)
+    kwargs.pop('process_observation', None)
     return subprocess.Popen(argv, **kwargs)
+
+
+def verification_popen(argv, **kwargs):
+    """Managed verification dispatch; generic popen keeps its interactive default."""
+    from al_verification_policy import execution_policy, verification_input
+    if os.environ.get('HARNESS_CHECK_CONTEXT'):
+        if 'stdin' in kwargs:
+            raise OSError('explicit managed Harness input is unsupported')
+        return popen(argv, **(kwargs | {'execution_policy':execution_policy()}))
+    with verification_input(kwargs) as inputs:
+        return popen(argv, **inputs)

@@ -21,6 +21,30 @@ def observation(scan):
     return {'units':[],'enumeration':{'boundaries':['.','services/*','packages/*'],'declarations':[], 'observed_members':[], 'absent_paths':[], 'exclusions':[], 'gaps':[]},'checks':{'obligations':[],'bindings':[],'gaps':[]},'policy_selection':[]}
 
 
+def source_witnesses(scan, children=()):
+    """Bounded ownership witnesses, not installed-package or check declarations."""
+    children=set(children)-{'.'}
+    for p in [*scan.members,*scan.base,*scan.paths]:
+        parts=PurePosixPath(p).parts
+        if len(parts)>=2 and parts[0] in {'services','packages','apps'} and (len(parts)>=3 or p.endswith('/')):
+            children.add('/'.join(parts[:2]))
+    for p in set(scan.files)|set(scan.base):
+        parent=PurePosixPath(p).parent.as_posix()
+        if parent!='.' and PurePosixPath(p).name in WORKSPACE_MANIFESTS:children.add(parent)
+    witnesses=[]
+    for snapshot,files in [('current',scan.files),('base',scan.base)]:
+        paths=[]
+        for p in files:
+            parts=PurePosixPath(p).parts;name=parts[-1]
+            if (not p.endswith('.py') or any(part in {'test','tests','__pycache__'} for part in parts)
+                    or name=='conftest.py' or name.startswith('test_') or name.endswith('_test.py')
+                    or any(within(root,p) for root in children|set(scan.opaque))):continue
+            paths.append(p)
+        for p in sorted(paths)[:4]:
+            witnesses.append({'path':p,'snapshot':snapshot,'sha256':digest_bytes(files[p])})
+    return witnesses
+
+
 def candidates(scan,nested=False):
     names=set()
     for p in [*scan.members,*scan.base,*scan.paths]:
@@ -28,7 +52,8 @@ def candidates(scan,nested=False):
         # A unit is a directory: a file directly under services/, packages/ or apps/ is not one.
         if len(parts)>=2 and parts[0] in {'services','packages','apps'} and (len(parts)>=3 or p.endswith('/')):names.add('/'.join(parts[:2]))
         if nested and len(parts)>2 and parts[0] in {'packages','apps'} and Path(p).name in {'pyproject.toml','package.json','go.mod'}:names.add(str(Path(p).parent))
-    if 'pyproject.toml' in scan.files or 'pyproject.toml' in scan.base:names.add('.')
+    if any(p in scan.files or p in scan.base for p in ('pyproject.toml','package.json')):names.add('.')
+    elif source_witnesses(scan,names):names.add('.')
     return {name for name in names if not any(within(o,name) for o in scan.opaque)}
 
 
@@ -94,10 +119,12 @@ def owned_children(scan,facts,path):
 def add_unit(scan,facts,path,role=None,language=None,*,children=()):
     safe(path);prefix='' if path=='.' else path+'/'
     config_path=prefix+'pyproject.toml';config=toml(scan,config_path)
+    witnesses=source_witnesses(scan,children) if path=='.' and config_path not in scan.files and config_path not in scan.base else []
+    inferred=bool(witnesses) and config_path not in scan.files and config_path not in scan.base
     files=[p for p in scan.files if within(path,p) and not any(within(child,p) for child in children)]
     languages=[]
     python_sources=sorted(p for p in files if p.endswith('.py') and '/tests/' not in '/'+p)
-    if python_sources or config:languages.append('python')
+    if python_sources or config or inferred:languages.append('python')
     if prefix+'package.json' in scan.files:languages.append('javascript');scan.rules.add(prefix+'package.json')
     if prefix+'go.mod' in scan.files:languages.append('go');scan.rules.add(prefix+'go.mod')
     if language and language not in languages:languages.append(language)
@@ -109,7 +136,7 @@ def add_unit(scan,facts,path,role=None,language=None,*,children=()):
         facts['enumeration']['gaps'].append(gap('unclassified-unit',path,'unit directory has no supported language/manifest',path));return
     roots=[];contexts=[];deps=[];external=[];packages=None
     if 'python' in languages:
-        if not config:
+        if not config and not inferred:
             reason='Python unit requires a literal source manifest'
             if python_sources:
                 witness=python_sources[0]
@@ -126,7 +153,7 @@ def add_unit(scan,facts,path,role=None,language=None,*,children=()):
         if declared is None:declared=list(setuptools.get('package-dir',{}).values()) or None
         if declared is None:
             build=uv.get('build-backend',{})
-            declared=[build.get('module-root','src' if prefix+'src/' in scan.members else '.')]
+            declared=['.'] if inferred else [build.get('module-root','src' if prefix+'src/' in scan.members else '.')]
         if not isinstance(declared,list) or not declared or any(not isinstance(r,str) or '*' in r or '$' in r for r in declared):
             facts['enumeration']['gaps'].append(gap('unsupported-source-root',config_path,'source roots must be finite literal paths',path));declared=[]
         if backend=='hatchling.build':
@@ -169,6 +196,9 @@ def add_unit(scan,facts,path,role=None,language=None,*,children=()):
             if source.get('registry') and name and external_source and any(isinstance(d,str) and compatible(d,name,package.get('version','')) for d in declared_deps):external.append(name)
         contexts=[{'source_root':r,'local_dependencies':sorted(deps)} for r in sorted(set(roots))]
     unit={'id':path,'path':path,'languages':sorted(languages),'source_roots':sorted(set(roots)), 'module_contexts':contexts,'provenance':[config_path] if config else [prefix+('go.mod' if 'go' in languages else 'package.json')], 'roles':[role] if role else [],'external_distributions':sorted(external),'python_requirement':config.get('project',{}).get('requires-python')}
+    if inferred:
+        unit['source_witnesses']=witnesses
+        unit['provenance']=sorted({w['path'] for w in witnesses}|{p for p in ('package.json','go.mod') if p in scan.files or p in scan.base})
     if packages is not None:unit['python_packages']=packages
     facts['units'].append(unit);facts['enumeration']['observed_members'].append(path)
     if config:facts['enumeration']['declarations'].append(config_path)
@@ -225,7 +255,8 @@ def checks(scan,facts,unit,config):
         declared_architecture=any(key in tool for key in ('importlinter',)) or 'architecture' in tool.get('al',{})
         id=('imports-' if declared_architecture else 'verification-')+unit['id'].replace('/','-').replace('.','root')
         facts['checks']['obligations'].append({'id':id,'category':'lint-imports' if declared_architecture else 'ci','units':[unit['id']]})
-        facts['checks']['gaps'].append(gap('missing-architecture-check' if declared_architecture else 'missing-verification-check',prefix+'pyproject.toml','declared architecture policy has no supported executable binding' if declared_architecture else 'service has no discoverable required verification check',unit['id'],'lint-imports'))
+        witness=unit.get('source_witnesses',[{'path':prefix+'pyproject.toml'}])[0]['path']
+        facts['checks']['gaps'].append(gap('missing-architecture-check' if declared_architecture else 'missing-verification-check',witness,'declared architecture policy has no supported executable binding' if declared_architecture else 'service has no discoverable required verification check',unit['id'],'lint-imports'))
 
 
 def workspace_members(scan,facts):

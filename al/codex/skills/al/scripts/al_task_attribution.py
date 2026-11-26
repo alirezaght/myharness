@@ -181,7 +181,7 @@ def _validate_conflict_records(rows):
             refuse('retained unmerged stage content differs')
 
 
-def _capture(st, ref):
+def _capture(st, ref, *, content_memo=None):
     value = _read(st, ref, 'task-content-capture-v1')
     rows = value.get('files')
     if not isinstance(rows, list) or any(not isinstance(r, dict) or not isinstance(r.get('path'), str) for r in rows):
@@ -206,10 +206,10 @@ def _capture(st, ref):
         retained = {p: w for p, w in retained.items() if p in contents}
     progress.report('attribution-history', count=0)
     for count,(path, work) in enumerate(retained.items(),1):
-        try:raw = A.read(contents[path])
+        try:actual = A.digest(A.read(contents[path])) if content_memo is None else content_memo.digest(contents[path])
         except (OSError, ValueError, KeyError, TypeError):refuse('unreadable retained attribution content')
         expected = hashlib.sha256(os.fsencode(work['text'])).hexdigest() if work['type'] == 'symlink' else work['sha256']
-        if A.digest(raw) != expected:refuse('retained attribution content differs')
+        if actual != expected:refuse('retained attribution content differs')
         progress.report('attribution-history', count=count)
     progress.report('attribution-history', count=len(retained), force=True)
     return value
@@ -313,7 +313,7 @@ def _cause(causes, path, cause, *writers):
         causes.setdefault(path, []).append({'cause': cause, 'writers': [w for w in writers if w]})
 
 
-def _replay(st, expected, owned, ambiguous, *, content_only=False, causes=None):
+def _replay(st, expected, owned, ambiguous, *, content_only=False, causes=None, content_memo=None):
     """Replay admitted contributions.
 
     Ownership compares content (worktree bytes/type, physical mode, gitlink child), never
@@ -323,7 +323,7 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False, causes=None):
     comparison = _content_changes if content_only else _changes
     seen = set()
     from al_task_reconciliation import Replay
-    replay = Replay(st, expected, owned, ambiguous)
+    replay = Replay(st, expected, owned, ambiguous, content_memo=content_memo)
     revisions = set(al_task.revision_hashes(st))
     last = {}
     progress.report('attribution-replay', count=0)
@@ -337,7 +337,8 @@ def _replay(st, expected, owned, ambiguous, *, content_only=False, causes=None):
         admission = _read(st, c['admission_ref'], 'task-contribution-admission-v1')
         if any(admission[k] != c[k] for k in ('writer_id', 'ownership_paths', 'task_hash')) or admission['capture_ref'] != c['before_capture_ref'] or c['ended_task_hash'] not in revisions:
             refuse('task contribution admission provenance differs')
-        before, after = _capture(st, c['before_capture_ref']), _capture(st, c['after_capture_ref'])
+        before, after = (_capture(st, c['before_capture_ref'], content_memo=content_memo),
+                         _capture(st, c['after_capture_ref'], content_memo=content_memo))
         changes = _contribution_changes(before, after)
         before, after = _map(before), _map(after)
         if changes != c['changed_records']:
@@ -431,11 +432,13 @@ def _classify(st, current_capture=None, causes=None):
                 'externally_changed': [], 'ambiguous': [], 'overlapping_or_ambiguous': [],
                 'limitations': ['historical run has no start attribution snapshot'],
                 'discovery_paths': S.changed_paths(st['identity']['merge_base'])}
+    from al_task_content_memo import ContentMemo
+    content_memo = ContentMemo()
     snapshot = _snapshot(st)
-    baseline = _map(_capture(st, snapshot['baseline_capture_ref']))
+    baseline = _map(_capture(st, snapshot['baseline_capture_ref'], content_memo=content_memo))
     expected = dict(baseline)
     owned, ambiguous = set(), set()
-    external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=causes)
+    external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=causes, content_memo=content_memo)
     current = _map(current_capture or observe(st))
     limitations = S.child_content_gaps({'files': list(current.values())}) + S.unresolved_index_gaps({'files': list(current.values())})
     children = {r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed')}
@@ -456,4 +459,5 @@ def _classify(st, current_capture=None, causes=None):
               'externally_changed': sorted(external - ambiguous), 'ambiguous': sorted(ambiguous),
               'overlapping_or_ambiguous': sorted(ambiguous), 'limitations': limitations}
     result['discovery_paths'] = sorted(owned | external | ambiguous)
+    content_memo.validate()
     return result

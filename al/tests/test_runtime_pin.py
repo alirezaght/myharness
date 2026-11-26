@@ -9,21 +9,15 @@ import pytest
 
 from al.installer.runtime_pin import prepare_pin, verify_pin
 from al.installer.runtime_pin_capture import stable_distribution
-from al.installer.source_materialization import copy2
-
-SOURCE = Path(__file__).resolve().parents[1]
+from al.tests.conftest import copy_al_source
 
 
 @pytest.fixture
 def distribution(tmp_path):
-    root = tmp_path / "distribution"
-    shutil.copytree(
-        SOURCE,
-        root,
-        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".ruff_cache"),
-        copy_function=copy2,
+    return copy_al_source(
+        tmp_path / "distribution",
+        ignore_patterns=("__pycache__", ".pytest_cache", ".ruff_cache"),
     )
-    return root
 
 
 @pytest.fixture

@@ -29,6 +29,7 @@ class Owner:
     def __init__(self,log):
         self.log=log;self.proc=None;self.reason=None;self.defer=False;self.stopped=False
         self.token=secrets.token_hex(32);self.spawned_at=None
+        self.entry=None;self.drain_cancelled_output=True
 
     def __enter__(self):
         self.previous={number:signal.signal(number,self.signal) for number in SIGNALS}
@@ -40,19 +41,44 @@ class Owner:
             self.defer=True;raise KeyboardInterrupt
 
     def spawn(self,*args,**kwargs):
-        self.defer=True
+        from al_verification_policy import verification_input
+        if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)
+        if self.proc is not None and not self.completion().get('complete'):
+            if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)
+            raise OSError('previous gate child cleanup is unresolved')
+        self.defer=True;self.stopped=False;self.proc=None
         try:
             self.spawned_at=time.time()
-            import al_harness_process
-            self.proc=al_harness_process.popen(*args,**kwargs,start_new_session=True)
+            if os.environ.get('HARNESS_CHECK_CONTEXT'):
+                import al_harness_process
+                if self.entry is not None:kwargs['process_observation']=self.entry.get('process_observation')
+                self.proc=al_harness_process.verification_popen(*args,**kwargs,start_new_session=True)
+            else:
+                from al_gate_owned_process import OwnedGateProcess
+                kwargs.pop('process_observation',None)
+                self.proc=OwnedGateProcess(self.log,self.token+'-'+secrets.token_hex(8))
+                with verification_input(kwargs) as inputs:
+                    self.proc.spawn(*args,**inputs,start_new_session=True)
+            if self.entry is not None:
+                import al_process_observation
+                al_process_observation.spawned(self.entry,self.proc)
+            if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)
+            return self.proc
+        except BaseException as exc:
+            try:self.cancel()
+            except BaseException as cleanup:
+                exc.add_note('Gate launch cleanup failed; its private ownership record is retained.')
+                raise exc from cleanup
+            raise
         finally:self.defer=False
-        if self.reason:raise KeyboardInterrupt
-        return self.proc
 
     def completion(self):
         """No reusable proof when any owned group member or inspection doubt remains."""
         if self.proc is not None and hasattr(self.proc, 'completion'):
-            return dict(self.proc.completion(), ownership='private-Harness-owned-Popen', token=self.token,
+            proof=self.proc.completion()
+            if proof.get('secondary_signals') and self.reason is None:self.reason=proof['secondary_signals'][0]
+            ownership='live-Popen-start_new_session' if hasattr(self.proc,'owner') else 'private-Harness-owned-Popen'
+            return dict(proof, ownership=ownership, token=self.token, complete=proof.get('complete') is True and not self.reason,
                         pid=self.proc.pid, pgid=self.proc.pid, owner_pid=os.getpid(),
                         spawned_at=self.spawned_at, observed_at=time.time())
         errors=[];absent=False
@@ -70,19 +96,36 @@ class Owner:
     def cancel(self):
         self.reason=self.reason or 'KeyboardInterrupt';self.defer=True
         if self.stopped:return
-        self.stopped=True
-        if self.proc is not None:
-            stop(self.proc)
-            if self.proc.stdout is not None or self.proc.stderr is not None:
-                try:stdout,stderr=self.proc.communicate(timeout=1)
-                except subprocess.TimeoutExpired as exc:
-                    stdout,stderr=exc.output,exc.stderr
-                    for pipe in (self.proc.stdout,self.proc.stderr):
-                        if pipe is not None:pipe.close()
-                with self.log.open('ab') as out:out.write(stdout or b'');out.write(stderr or b'')
-        with self.log.open('ab') as out:out.write(('\nGate cancelled: '+self.reason+'\n').encode())
+        self.stopped=True;failure=None
+        try:
+            if self.proc is not None:
+                stop(self.proc)
+                if self.drain_cancelled_output and (self.proc.stdout is not None or self.proc.stderr is not None):
+                    try:stdout,stderr=self.proc.communicate(timeout=1)
+                    except subprocess.TimeoutExpired as exc:
+                        stdout,stderr=exc.output,exc.stderr
+                        for pipe in (self.proc.stdout,self.proc.stderr):
+                            if pipe is not None:pipe.close()
+                    with self.log.open('ab') as out:out.write(stdout or b'');out.write(stderr or b'')
+        except BaseException as exc:failure=exc
+        finally:
+            if not self.drain_cancelled_output and self.proc is not None:
+                for pipe in (self.proc.stdout,self.proc.stderr):
+                    try:
+                        if pipe is not None and not pipe.closed:pipe.close()
+                    except BaseException as exc:
+                        if failure is None:failure=exc
+                        else:failure.add_note('Gate output pipe closure also failed.')
+            try:
+                with self.log.open('ab') as out:out.write(('\nGate cancelled: '+self.reason+'\n').encode())
+            except BaseException as exc:
+                if failure is None:failure=exc
+                else:failure.add_note('Gate cancellation metadata could not be written.')
+        if failure is not None:raise failure
 
     def pending(self):
+        if self.reason is None and getattr(self.proc,'secondary_signals',()):
+            self.reason=self.proc.secondary_signals[0]
         for number in SIGNALS & signal.sigpending():
             signal.sigwait({number})
             if self.reason is None:self.reason=signal.Signals(number).name

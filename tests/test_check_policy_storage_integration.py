@@ -253,3 +253,128 @@ def test_control_descriptor_presence_skips_service_only(tmp_path):
     exec(compile("if len" + guard, "<actual-service-guard>", "exec"), namespace)
     assert len(calls) == 1
     # Presence bypasses optimization; authenticated activation still rejects invalid descriptors.
+
+
+@pytest.mark.parametrize("policy", [None, {"version": 2, "default_stdin": "closed-pipe"}])
+def test_start_selects_owned_eof_pipe_or_retains_legacy_devnull(channel, monkeypatch, policy):
+    import os
+    import stat
+    import subprocess
+
+    channel, repo = channel
+    instrument(monkeypatch, channel)
+    backend = subprocess.Popen
+    observed = []
+
+    def capture(*args, **kwargs):
+        descriptor = kwargs["stdin"]
+        if policy is None:
+            assert descriptor == subprocess.DEVNULL
+        else:
+            assert stat.S_ISFIFO(os.fstat(descriptor).st_mode)
+            assert os.read(descriptor, 1) == b""
+            observed.append(descriptor)
+        return backend(*args, **kwargs)
+
+    monkeypatch.setattr("harness.execution_check_channel.subprocess.Popen", capture)
+    request = {"action": "start", "argv": ["controlled-check"], "cwd": str(repo)}
+    if policy is not None:
+        request["execution_policy"] = policy
+    result = channel.request(request, [1, 2])
+    assert result["handle"] in channel.records and result["pid"] == Process.pid
+    assert ("execution_policy" in result) is (policy is not None)
+    if policy is not None:
+        assert result["execution_policy"] == policy and len(observed) == 1
+        with pytest.raises(OSError):
+            os.fstat(observed[0])
+
+
+def test_capabilities_and_invalid_policy_do_not_observe_or_allocate(channel, monkeypatch):
+    channel, repo = channel
+    hooks, observers, allocated = instrument(monkeypatch, channel)
+    handle = start(channel, repo)
+    retained = channel.records[handle]
+    counts = (len(hooks), len(observers), len(allocated))
+
+    def forbidden(*args):
+        raise AssertionError("capability/policy request observed a check")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(channel, "observe", forbidden)
+        assert channel.request({"action": "capabilities", "schema_version": 1}, []) == {
+            "schema_version": 1,
+            "execution_policy": {"version": 2, "default_stdin": "closed-pipe"},
+        }
+        assert channel.requesting_handle is None
+        invalid = [
+            None,
+            {},
+            {"version": 1, "default_stdin": "devnull"},
+            {"version": 2.0, "default_stdin": "closed-pipe"},
+            {"version": 2, "default_stdin": "closed-pipe", "extra": True},
+        ]
+        for policy in invalid:
+            with pytest.raises(ValueError, match="execution policy"):
+                channel.request(
+                    {
+                        "action": "start",
+                        "execution_policy": policy,
+                        "argv": ["controlled-check"],
+                        "cwd": str(repo),
+                        "storage": {"unusable": True},
+                    },
+                    [1, 2],
+                )
+            assert channel.requesting_handle is None
+        for request, descriptors in [
+            ({"action": "capabilities", "schema_version": True}, []),
+            ({"action": "capabilities", "schema_version": 1, "handle": handle}, []),
+            ({"action": "capabilities", "schema_version": 1}, [1]),
+        ]:
+            with pytest.raises(ValueError, match="capabilities"):
+                channel.request(request, descriptors)
+        assert channel.active_handle == handle and channel.records == {handle: retained}
+        assert counts == (len(hooks), len(observers), len(allocated))
+
+
+def test_capabilities_still_validate_channel_authority(channel, monkeypatch):
+    channel, _ = channel
+
+    def denied():
+        raise ValueError("controlled authority loss")
+
+    monkeypatch.setattr(channel, "validate", denied)
+    with pytest.raises(ValueError, match="controlled authority loss"):
+        channel.request({"action": "capabilities", "schema_version": 1}, [])
+    assert not channel.records and channel.active_handle is None
+
+
+def test_spawn_failure_closes_backend_default_pipe(channel, monkeypatch):
+    import os
+    import stat
+
+    channel, repo = channel
+    _, _, allocated = instrument(monkeypatch, channel)
+    observed = []
+
+    def fail(*args, **kwargs):
+        descriptor = kwargs["stdin"]
+        observed.append(descriptor)
+        assert stat.S_ISFIFO(os.fstat(descriptor).st_mode)
+        assert os.read(descriptor, 1) == b""
+        raise OSError("controlled backend spawn refusal")
+
+    monkeypatch.setattr("harness.execution_check_channel.subprocess.Popen", fail)
+    with pytest.raises(OSError, match="controlled backend spawn refusal"):
+        channel.request(
+            {
+                "action": "start",
+                "argv": ["controlled-check"],
+                "cwd": str(repo),
+                "execution_policy": {"version": 2, "default_stdin": "closed-pipe"},
+            },
+            [1, 2],
+        )
+    assert len(observed) == 1 and len(allocated) == 1 and not allocated[0].exists()
+    with pytest.raises(OSError):
+        os.fstat(observed[0])

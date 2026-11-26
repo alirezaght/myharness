@@ -23,7 +23,7 @@ from tests.sample_design import add_sample_design
 from tests.sample_repo import make_sample_repo, tree_snapshot
 from tests.test_approval import _content_change, _pending_change
 from tests.test_dashboard import _db_dump, api, cli, fetch, needs_git, serve, start_task
-from tests.test_dashboard_comments import BAD_BODIES, DECLARED, EDGE, _json, post
+from tests.test_dashboard_comments import BAD_BODIES, EDGE, _json, post
 from tests.test_dashboard_diagrams import _state, _with
 from tests.test_dashboard_overview import _answered, _investigated, _propose, _with_controller
 
@@ -552,10 +552,10 @@ def test_a_locked_database_is_a_503_and_the_retry_approves_once(
         with serve(db_path, task_id, str(specs)) as server:
             tokens = _tokens(server, task_id)
             before = _state_of(db_path, specs)
-            monkeypatch.setattr(approve_module, "ApprovalGate", LockedOut)
-            status, data = _approve(server, tokens)
-            assert _state_of(db_path, specs) == before
-            monkeypatch.undo()
+            with monkeypatch.context() as locked_patch:
+                locked_patch.setattr(approve_module, "ApprovalGate", LockedOut)
+                status, data = _approve(server, tokens)
+                assert _state_of(db_path, specs) == before
             saved = _approve(server, tokens)
             again = _approve(server, tokens)
     finally:
@@ -565,14 +565,13 @@ def test_a_locked_database_is_a_503_and_the_retry_approves_once(
     assert len(_rows(db_path, "approvals")) == 1
 
 
-def test_the_approvals_script_is_dom_only_and_posts_only_to_approve(db_path):
+def test_the_approvals_script_is_served_verbatim_and_keeps_the_dom_policy(db_path):
+    # Inert hostile text and "one explicit click posts only to /api/approve" are proven
+    # at runtime by test_hostile_comment_text_stays_inert_and_only_approve_posts.
     with serve(db_path, None) as server:
         status, headers, script = fetch(server, "/static/approvals.js")
     assert status == 200 and headers["Content-Type"] == "text/javascript; charset=utf-8"
     source = script.decode("utf-8")
-    assert "innerHTML" not in source and "createElement" not in source  # built through el()
-    assert [line for line in source.splitlines() if '"/api/' in line] == [
-        'const APPROVE_API = "/api/approve";'
-    ]
-    assert "renderApprovalCenter" in DECLARED.findall(source)
     assert source == (STATIC_DIR / "approvals.js").read_text(encoding="utf-8")
+    # Intentional static policy: nodes are built through el(), never parsed from markup.
+    assert "innerHTML" not in source and "createElement" not in source

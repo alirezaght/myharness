@@ -72,7 +72,7 @@ function workspaceSpecPanel(task, state, inspector) {
         state.authoringConflict = { key: requestKey, bufferKey: key, message: error.message };
         workspacePersist(state);
       }
-      state.authoringMessage = { text: `${error.message} Your text and original base are retained.`, error: true };
+      state.authoringMessage = { text: `${error.message.replace(/[.\s]+$/, "")}. Your text and original base are retained.`, error: true };
     }
     workspaceRerender();
   });
@@ -85,6 +85,8 @@ function workspaceSpecPanel(task, state, inspector) {
   const rebase = workspaceButton("Keep my text and save against the current revision", () => {
     buffer.base = state.authoring.base; buffer.dirty = true;
     if (state.authoringRequests) delete state.authoringRequests["save-spec:working"];
+    authoringResolveConflict(state, "save-spec:working");
+    state.authoringMessage = { text: "Your text now targets the current revision. Save it to submit a new request." };
     authoringPersistBuffer(state, key, buffer); workspaceRerender();
   });
   if (changedBase) toolbar.append(rebase);
@@ -108,6 +110,8 @@ function workspaceSpecPanel(task, state, inspector) {
     toolbar.append(retry);
     if (buffer.value !== savedRequest.body) toolbar.append(workspaceButton("Save current text as a new revision", () => {
       delete state.authoringRequests["save-spec:working"];
+      authoringResolveConflict(state, "save-spec:working");
+      state.authoringMessage = { text: "Your text now targets the current revision. Save it to submit a new request." };
       buffer.base = state.authoring.base; buffer.dirty = true; authoringPersistBuffer(state, key, buffer); workspaceRerender();
     }));
   }

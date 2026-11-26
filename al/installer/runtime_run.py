@@ -8,8 +8,7 @@ import secrets
 import sys
 import time
 
-from .interpreter_execution import validate_live
-from .execution_process import observe
+from .interpreter_execution import launcher, validate_launch
 from .runtime_pin import _directory, prepare_pin
 from .runtime_pin_cache import verify_pin_cached
 from .runtime_pin_boot import program
@@ -51,6 +50,20 @@ def _writer_progress(started, message):
         pass
 
 
+def _managed_issuer():
+    root = Path(__file__).resolve().parents[1]
+    context = sys.modules.get('_al_validator_context')
+    if (context is None or context.request.get('mode') != 'snapshot'
+            or Path(context.request['root']) != root):
+        raise ValueError('run requires its protected managed issuer context')
+    trusted = verify_snapshot(root, context.request['expected'])
+    interpreter = trusted['origin']['interpreter']
+    if context.request['interpreter'] != interpreter['executable']:
+        raise ValueError('managed issuer interpreter binding changed')
+    launcher(interpreter)
+    return trusted
+
+
 def run(repository, platform, session, argv, *, existing_run=False, private_session=False):
     if not sys.flags.isolated or not sys.flags.no_site or not sys.dont_write_bytecode:
         raise ValueError("run requires the trusted isolated managed launcher")
@@ -65,6 +78,7 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
         raise ValueError("existing-run requires explicit initialized session and non-start operation")
     if private_session and (existing_run or argv[0] != "start" or "--handoff" not in argv):
         raise ValueError("session-directory applies only to new supervisor Harness starts")
+    trusted = _managed_issuer()
     progress_started = time.monotonic() if list(argv[:2]) == ["writer", "start"] else None
     _writer_progress(progress_started, "validating repository and authority")
     implicit = session is None
@@ -93,15 +107,6 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     if transaction is None:
         if argv[0] != "start":
             raise ValueError("no protected run binding; use the original issuer for legacy runs")
-        root = Path(__file__).resolve().parents[1]
-        context = sys.modules.get("_al_validator_context")
-        if context is not None:
-            request = context.request
-            if request["mode"] != "snapshot" or Path(request["root"]) != root:
-                raise ValueError("untrusted runtime distribution context")
-            trusted = verify_snapshot(root, request["expected"])
-        else:
-            raise ValueError("new runtime requires its protected managed launcher")
         pin = prepare_pin(Path(trusted["snapshot"]), platform, _directory(storage() / "pins"))
         harness_binding = None
         if private_session:
@@ -123,8 +128,9 @@ def run(repository, platform, session, argv, *, existing_run=False, private_sess
     verified = verify_pin_cached(storage(readonly=existing_run) / "pins", transaction["pin"],
                                  create=not existing_run and not control, write=not bool(control))
     manifest = verified["manifest"]
-    validate_live(
-        manifest["interpreter_execution_identity"], manifest["interpreter"], observe(os.getpid())
+    validate_launch(
+        manifest["interpreter_execution_identity"], manifest["interpreter"],
+        manifest["interpreter"]["executable"],
     )
     # Later commands of this run go to the resident service (#27) when its pin carries one;
     # this command still runs in process below.

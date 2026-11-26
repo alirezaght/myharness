@@ -145,6 +145,7 @@ def _prepare(operation, args, state, qualification_ref):
         [str(git), "--version"], env=environment(), capture_output=True, timeout=5, check=True
     )
     allowed = {
+        b"git version 2.50.1 (Apple Git-155)\n",
         b"git version 2.54.0 (Apple Git-157)\n",
         b"git version 2.50.1\n",
         b"git version 2.54.0\n",

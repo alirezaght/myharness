@@ -1,5 +1,19 @@
 # Sourced repository gates and CI context
 
+Managed verification is noninteractive by default: ordinary evidence, gates, setup and
+version checks, remote checks, and managed-storage/recipe children receive EOF on stdin
+through a pipe whose writer is closed before launch. This does not set `CI`, add repository-specific flags, or reclassify
+command failures. An explicit standalone stdin pipe or file keeps its supplied input;
+input-descriptor transport through Harness is not qualified by this contract. Generic
+interactive/native process launchers retain their existing stdin behavior.
+
+Managed Harness checks negotiate the exact execution policy before allocating outputs or starting a child. Unsupported backends or explicit remote input are refused without fallback. New backends retain DEVNULL for historical clients that omit the policy; managed clients require the matching start acknowledgement.
+
+The versioned execution policy is separate from environment inputs. It binds action-cache
+keys and ledger fingerprints, including environment-only/preflight checks. Evidence from
+an older policy must be rerun even with the action cache disabled; immutable old pins and
+historical evidence are not rewritten.
+
 ## Service coverage
 
 Before final proof and approval, AL must establish both affected-service coverage and required-check coverage. Scoped implementation may proceed while these facts are being discovered. The repository adapter supplies independently observed facts; the generic policy returns `identified`, `exhaustive`, or `incomplete`. `identified` runs checks for known affected services. `exhaustive` is allowed only when dependency uncertainty remains and both enumeration and check discovery are complete; it selects the whole potential-service universe. `incomplete` records specific verification gaps without blocking authorized scoped implementation. See [service-coverage.md](service-coverage.md) and its schema for the evidence fields and supported adapter boundaries.

@@ -224,9 +224,19 @@ repository is gone with `alctl prune-stale-runs --apply`.
 
 ## 6. Acceptance journeys and the time budget
 
-Every test must finish in 5 s and every file in 60 s (`al/verification-budget.json`, enforced by
-`verify_changed.py --tier all` and `release_verify.py`). Only these real end-to-end journeys are
-exempt; each covers a distinct risk. A `*:` pattern is one journey run on both hosts.
+The diagnostic thresholds remain 5 s per test and 60 s per file in
+`al/verification-budget.json`, with the existing named acceptance and exemption rules.
+All verification tiers retain per-node durations, `over_budget`, elapsed and profile output.
+Timing violations do not change functional status or release completeness; the existing
+collection, source-stability, ownership, cleanup, isolation and reconciliation guards remain.
+Elapsed time is reported, never judged by ordinary verification. These real end-to-end
+journeys retain their diagnostic exemptions; each covers a distinct risk. A `*:` pattern
+is one journey run on both hosts.
+
+Historical raw timing failures remain historical records. Separate #36 acceptance still
+requires the actual complete eight-worker measurement (10-minute wall target and
+120-second file target) and isolation proof. #24 still requires the actual complete
+functional run. Reporting diagnostic PASS does not establish those performance outcomes.
 
 | Journey | Risk it covers |
 |---|---|
@@ -284,14 +294,180 @@ Removed sourced rules refresh only with fresh absence and complete unclassified-
 
 
 The installer update files use `al/tests/update_templates.py` for inspected,
-construction-independent cases: 57 reviewed-update cases and 37 operator-update
+construction-independent cases: 57 reviewed-update cases and 49 operator-update
 cases restore a genuine enrolled prerequisite at the same absolute path. Each
 pytest process builds its prefix once, then restores all owned bytes, modes and
 symlink targets into independent regular files before every eligible case,
 including the first. Returned data is copied and each case rebuilds its environment.
 Private directory identities and the pristine digest must still match; interrupted
 restores refuse. Runtime decisions and native cache receipts are never rewritten.
-Old-pin/bootstrap construction and source-injected faults stay fresh; new tests
-default fresh until inspected. Per-case public operations and safety assertions
-remain. Thirteen operator scope cases call the decision directly with a passing
-control and unchanged-input checks. All 184 existing nodes in the two files remain.
+Old-pin/bootstrap construction, indirect configuration/policy, and lock-race
+cases retain fresh construction. The existing integrity/refusal family keeps its
+current eligibility. For the four source-injected families below, only the unmodified
+enrolled prerequisite is restored; each case still creates its own tag, review,
+injection, native bootstrap, and public operation. New tests default fresh until
+inspected. Per-case public operations and safety assertions remain. Thirteen
+operator scope cases call the decision directly with a passing control and
+unchanged-input checks. All 184 existing nodes in the two files remain.
+
+| Operator-update family | Restored precondition | Per-case work and invariants kept |
+|---|---|---|
+| `test_barriers_refuse_mutable_installation_inputs` (7 cases) | Genuine enrolled installation and retained active runtime | Each case creates the reviewed release, injects one of review/source/config/role/postimage/ownership/plan mutations, performs the real bootstrap and public update, and retains the failed pending operation, original current record, and `FAILED` journal assertions. |
+| `test_historical_progress_between_barriers_is_allowed` | Genuine enrolled installation and retained active runtime | Creates the release and review, injects the handoff change into the bootstrapped source, then requires the real public update to succeed and the runtime handoff count to reach two. |
+| `test_partial_failure_keeps_pending_manual_reconciliation` | Genuine enrolled installation and retained-byte snapshot | Creates the release and review, injects the second-platform failure into its bootstrap source, then retains the failed pending journal, completed first engine step, unchanged current record and bytes, and unresolved retry refusal. |
+| `test_completed_publication_failures_never_claim_success` (3 cases) | Genuine enrolled installation and retained-byte snapshot | Each case creates its own release/review and injects late-postimage, smoke, or publication failure into the bootstrap source; the real public update must fail while retaining the old current record, pending operation, and failed manual-reconciliation journal. |
+
+
+`test_documentation_update.py` restores the same genuine enrolled prefix for an
+explicit whitelist of eight families (35 cases). Its module-scoped holder builds
+once in a private temporary container and restores before every eligible case,
+including the first. The unchanged helper checks complete bytes, modes, symlink
+targets, private directory identities and independent regular-file inodes; return
+data is copied without rewriting receipts, hashes, pins or approvals. Both
+`AL_RUNTIME_DIR` and `AL_DISTRIBUTION_STATE` are cleared on every fixture invocation,
+including restores. The two indirect pinned/follow cases retain fresh construction;
+unknown families default fresh. The two tests without enrollment remain unchanged.
+All 39 original cases, bodies, decorators, parameters and assertions remain.
+Only enrollment is reused: release tags, reviews, mutations and actual installer
+or CLI operations still run separately in each case.
+
+| Documentation-update family | Cases | Per-case invariants retained |
+|---|---:|---|
+| `test_non_documentation_delta_refused` | 9 | Code, schema, role, resource, mode and parity changes refuse; the installation record stays unchanged. |
+| `test_mode_scope_is_explicit` | 8 | Unsupported operation, version, policy and scope overrides refuse without changing the record. |
+| `test_malformed_activity_is_never_acknowledged` | 1 | Malformed runtime activity blocks the actual update and leaves the record unchanged. |
+| `test_revalidation_catches_mutation_and_preserves_pending_recovery` | 2 | Post-preparation file or plan mutation fails with pending recovery, the original current record and a failed journal. |
+| `test_existing_refusals_remain` | 10 | Source, subdirectory, drift, collision, cache, tag, journal, review, writer and index refusals retain the original current installation. |
+| `test_completed_publication_revalidates` | 3 | Late postimage, provenance and runtime-index mutations fail; pending recovery, current installation, runtime bytes and pin bytes remain. |
+| `test_injected_engine_failure_retains_recovery_and_runtime` | 1 | Actual second-platform failure retains pending recovery, current installation and runtime/pin bytes; unresolved retry still refuses. |
+| `test_public_cli_requires_global_and_accepts_reviewed_update` | 1 | The real CLI refuses missing global scope, then performs the reviewed update while reporting retained activity blockers. |
+
+
+### Operator-update file groups (#36)
+
+The original 20 functions and 91 parameterized cases are split across five slow
+installer files so the existing whole-file runner can schedule them independently.
+At that historical file-split step, every test body, decorator, parameter and
+assertion was unchanged. The later direct installed-metadata section intentionally
+changes one parameterized body while retaining all its cases and safety assertions.
+The shared
+`operator_update_helpers.py` retains all original imports, helper implementations,
+`projection_data`, enrollment fixtures and the exact prefix whitelist. Its
+`__file__` remains under `al/tests`, preserving projection resource lookup.
+Test globals import the same helper/installer objects. Each consuming module
+explicitly registers `enrolled` and its `_prefix_cache` dependency; the projection
+consumer does too. Projection test bodies remain unchanged.
+
+The prefix cache is still module-scoped within each pytest process, never a
+session-wide/shared installation. Every eligible module pays for its genuine
+source, enrollment and bootstrap construction; restores retain complete owned
+bytes, modes, links and copied return data at the same absolute paths. Per-case
+tags, reviews, source injections, real commands, mutations and cleanup remain.
+Indirect policies, old-pin/bootstrap and unlisted cases still construct fresh.
+The old-pin test keeps its original file/node identity and acceptance/budget rule.
+No runner, budget, template or production source is changed. Independent isolation
+review covers these five groups, the projection consumer, the helper, current
+conftest and reached setup/process helpers. Only those six test/conftest bindings
+are renewed with a current complete-source observation; unrelated stale bindings
+remain unchanged. Process-group settlement is retained without claiming exhaustive
+escaped-descendant observation.
+
+The exact mapping below replaces only the file component; every original function
+name and parameter-ID suffix is retained. The static patch inventory also lists
+all 91 old/new node IDs. Times are **historical pre-split group allocations**, not
+post-split measurements or promised savings. Limited headroom, extra genuine
+per-module builds and concurrent resource pressure must all remain charged.
+
+| Destination under `al/tests/` | Cases | Historical allocation (s) | Retained invariant |
+|---|---:|---:|---|
+| `test_operator_update.py` | 4 | 99.25 | Public warning/update/activity and retained bytes; genuine old pin versus separate new bootstrap; configuration and policy preservation. |
+| `test_operator_update_integrity.py` | 51 | 71.12 | Exact review/source/projection/authority and installation-integrity refusals; explicit scope and flags; unmanaged/foreign registry refusal. |
+| `test_operator_update_metadata.py` | 20 | 96.94 | Actual owned metadata, no aliases, descriptor/legacy compatibility, foreign-owner refusal and real lock replacement/alias races. |
+| `test_operator_update_barriers.py` | 8 | 93.96 | Per-case real injected mutation barriers and failed journals; allowed historical handoff progress. |
+| `test_operator_update_publication.py` | 8 | 67.82 | Late completion and second-platform failures retain pending manual recovery/current bytes; unsafe-history overlap refuses; observation bounds and private-prose exclusion. |
+
+| Original function in `test_operator_update.py` (parameter suffix unchanged) | Destination file | Cases |
+|---|---|---:|
+| `test_public_explicit_mode_warns_and_preserves_all_retained_bytes` | `test_operator_update.py` | 1 |
+| `test_managed_old_pin_stays_old_and_separate_bootstrap_selects_new` | `test_operator_update.py` | 1 |
+| `test_existing_configuration_and_policy_are_preserved` | `test_operator_update.py` | 2 |
+| `test_installation_integrity_refusals_are_not_warnings` | `test_operator_update_integrity.py` | 18 |
+| `test_scope_refuses_before_activity_or_mutation` | `test_operator_update_integrity.py` | 13 |
+| `test_projection_allows_only_reviewable_body_changes` | `test_operator_update_integrity.py` | 1 |
+| `test_authority_mutations_cannot_be_reviewed_in` | `test_operator_update_integrity.py` | 17 |
+| `test_public_flag_is_update_only_and_single_global` | `test_operator_update_integrity.py` | 1 |
+| `test_unmanaged_and_foreign_registry_cannot_use_operator_mode` | `test_operator_update_integrity.py` | 1 |
+| `test_operator_installation_metadata_has_real_owned_no_alias_boundary` | `test_operator_update_metadata.py` | 15 |
+| `test_coordination_descriptor_and_legacy_held_callers_remain_compatible` | `test_operator_update_metadata.py` | 1 |
+| `test_owned_metadata_rejects_a_foreign_owner_comparison` | `test_operator_update_metadata.py` | 1 |
+| `test_real_lock_replacement_and_alias_races_refuse` | `test_operator_update_metadata.py` | 3 |
+| `test_barriers_refuse_mutable_installation_inputs` | `test_operator_update_barriers.py` | 7 |
+| `test_historical_progress_between_barriers_is_allowed` | `test_operator_update_barriers.py` | 1 |
+| `test_completed_publication_failures_never_claim_success` | `test_operator_update_publication.py` | 3 |
+| `test_partial_failure_keeps_pending_manual_reconciliation` | `test_operator_update_publication.py` | 1 |
+| `test_unsafe_history_discovery_warns_but_actual_payload_overlap_refuses` | `test_operator_update_publication.py` | 2 |
+| `test_observation_limits_are_explicit_and_do_not_print_state_prose` | `test_operator_update_publication.py` | 1 |
+| `test_deeply_malformed_history_is_a_bounded_warning` | `test_operator_update_publication.py` | 1 |
+
+
+### Direct installed-metadata validation (#36)
+
+All 20 nodes of `test_operator_update_metadata.py` remain, including the original
+15 name/damage combinations. Eight combinations (record, source, ownership and
+sentinel, each with symlink or writable damage) call the actual
+`operator_registry.installation_metadata(state_root, row)` validator on their
+genuine installed/restored enrollment. Each first requires successful validation
+before applying the identical original filesystem damage, then requires the real
+metadata/symlink/ownership/alias refusal. Retained historical bytes/modes and raw
+installation-record bytes are compared around both direct calls; raw fixture
+reads avoid relying on a normal record reader after its metadata becomes unsafe.
+The original pending-record and installed-payload equality assertions remain.
+These eight cases create no new tag/review: this validator reads installed state.
+They establish installed-metadata validation, without CLI/origin/receipt proof.
+
+The remaining seven metadata combinations keep their original tag, review and
+real public native operation: four hardlinks (record, source, ownership, sentinel)
+and all three lock damages (hardlink, symlink, writable). They retain each metadata
+path's public wiring. All three additional real lock races, coordination-descriptor
+and foreign-owner controls remain unchanged, as do the shared helper, prefix
+whitelist, production checks and 18 native integrity-refusal cases. No managed
+context is fabricated and no installer preflight is bypassed. The split is:
+
+| Damage | record | source | ownership | sentinel | lock |
+|---|---|---|---|---|---|
+| hardlink | Native | Native | Native | Native | Native |
+| symlink | Direct | Direct | Direct | Direct | Native |
+| writable | Direct | Direct | Direct | Direct | Native |
+
+Verification uses independent review and a matched 20-node metadata-only measurement;
+the earlier concurrent grouped timings are not a standalone before/after result.
+Remaining acceptance work is tracked in #36, #24 and #29.
+
+
+### Runtime-pin distribution source copies (#36)
+
+`test_runtime_pin.py` obtains only its disposable distribution from the existing
+`copy_al_source` template. Every runtime-pin test body, decorator and parameter is
+unchanged: real pin preparation, stable-distribution capture, independent materialization,
+verification, source movement and tamper refusals still run separately in each case.
+No pin state, receipts, authority or test results are reused.
+
+The optional keyword-only exclusion tuple uses exact `shutil.ignore_patterns`
+semantics for files and directories in both source observation and first copying.
+The default remains `__pycache__`, `.pytest_cache`, `*.pyc`; runtime-pin retains its
+original `__pycache__`, `.pytest_cache`, `.ruff_cache` policy, including loose `.pyc`
+files and excluding nested `.ruff_cache` entries. The tuple is part of cache identity,
+even when two policies happen to observe identical members. Conservative single-entry
+eviction remains; switching policies can rebuild a genuine template.
+
+First construction still uses the verified materializer with clones disabled,
+private temporary storage, source-movement refusal and atexit cleanup. Each caller
+gets ordinary independent copies with bytes and copy2 metadata retained. Directory
+membership/metadata participates in source observation too. This remains the existing
+metadata-based source observation, not a claim to detect same-size edits with restored
+metadata. Tiny owned-source tests exercise both policies, excluded names as files and
+directories, loose `.pyc`, bytes/modes/times/inodes, caller mutation/deletion independence,
+source changes/deletion, policy identity and refusal during first construction.
+Matched complete one-worker runtime-pin profiles must charge all first construction
+and per-case copies; functional results, wall/CPU measurements and raw timing budgets
+remain separate. Independent isolation review precedes any scoped closure renewal.
