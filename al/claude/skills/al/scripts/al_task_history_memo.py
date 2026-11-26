@@ -131,10 +131,14 @@ class HistoryMemo:
             except (OSError, ValueError, KeyError, TypeError):
                 refuse('unreadable historical attribution dependency')
             report('attribution-history-fence', count=count)
+        import al_snapshot
+        from pathlib import Path
         for tree in trees:
-            present = subprocess.run(['git', 'cat-file', '-e', tree + '^{tree}'], cwd=self.root,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if present.returncode != 0:
+            # AL's own git entry point: honours the private snapshot object store and sealed
+            # control, and bypasses al_attribution_tree's process-wide existence cache.
+            try:
+                al_snapshot._run(Path(self.root), ['cat-file', '-e', tree + '^{tree}'], timeout=30)
+            except (al_snapshot.Unavailable, OSError, subprocess.TimeoutExpired):
                 refuse('historical attribution snapshot tree is unavailable')
         report('attribution-history-fence', count=len(references), force=True)
         if self.state_key(st) != key:
@@ -169,9 +173,6 @@ def assessment():
     token = _OWNER.set(owner)
     try:
         yield owner
-    except BaseException:
-        owner.close()
-        raise
     finally:
         owner.close()
         _OWNER.reset(token)

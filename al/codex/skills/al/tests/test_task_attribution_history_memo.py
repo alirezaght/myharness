@@ -166,9 +166,54 @@ def test_public_readiness_reuses_history_and_a_refused_reuse_saves_nothing(histo
         return result
 
     monkeypatch.setattr(T, 'classify_changes', tamper_after_first)
-    monkeypatch.setattr(al_implementation, 'classify_changes', tamper_after_first, raising=False)
     state = copy.deepcopy(st)
     snapshot = copy.deepcopy(state)
     with pytest.raises(SystemExit):
         al_implementation.require_ready(state)
     assert state == snapshot
+
+
+def test_reuse_reflects_a_current_change_that_is_later_reverted(history, replays):
+    # The current part adds an external edit of a writer-owned path to `ambiguous`; the stored
+    # history must be the state before that, so reverting the edit is seen on reuse.
+    st, _, _ = history
+    path = al_store.REPO_ROOT / 'svc/app.py'
+    written = path.read_text()
+    with H.assessment() as owner:
+        path.write_text('x = 99\n')
+        edited = T.classify_changes(st)
+        path.write_text(written)
+        reverted = T.classify_changes(st)
+    assert owner.hits == 1 and len(replays) == 1
+    assert 'svc/app.py' in edited['ambiguous'] + edited['externally_changed']
+    assert reverted == uncached(st)
+    assert 'svc/app.py' not in reverted['ambiguous'] + reverted['externally_changed']
+
+
+def test_reuse_refuses_an_altered_task_package(history):
+    st, _, _ = history
+    with H.assessment():
+        T.classify_changes(st)
+        corrupt_same_size(st['task_package'])
+        with pytest.raises(SystemExit, match='immutable artifact was altered'):
+            T.classify_changes(st)
+
+
+def test_tree_backed_history_is_reused_with_a_private_snapshot_object_store(
+        run_state, cli, monkeypatch, replays):
+    # Real attribution-tree captures (no patched observation), created and reused with the
+    # private snapshot object store that Harness sets for AL commands.
+    from test_task_attribution import contribution
+    monkeypatch.setenv('AL_SNAPSHOT_OBJECTS', 'private')
+    run_state('implemented')
+    st = cli.state()
+    contribution(st, ['svc'], lambda: (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 2\n'))
+    expected = uncached(st)
+    replays.clear()
+    with H.assessment() as owner:
+        first = T._classify(st)
+        trees = [tree for tree in __import__('json').loads(owner.dependencies)[1]] if owner.dependencies else []
+        second = T._classify(st)
+    assert trees, 'the captures must be tree-backed for this test to mean anything'
+    assert owner.hits == 1 and len(replays) == 1
+    assert first == second == expected

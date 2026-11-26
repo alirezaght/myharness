@@ -462,9 +462,12 @@ def _classify(st, current_capture=None, causes=None):
         baseline_changed_paths = snapshot['baseline_changed_paths']
         if key is not None:
             # Serialized now: the current part below mutates these collections.
-            payload = H.encoded({'baseline': baseline, 'expected': expected, 'owned': sorted(owned),
-                                 'ambiguous': sorted(ambiguous), 'external': sorted(external_reconciled),
-                                 'baseline_changed_paths': baseline_changed_paths})
+            try:
+                payload = H.encoded({'baseline': baseline, 'expected': expected, 'owned': sorted(owned),
+                                     'ambiguous': sorted(ambiguous), 'external': sorted(external_reconciled),
+                                     'baseline_changed_paths': baseline_changed_paths})
+            except (TypeError, ValueError):
+                owner.close()  # Not reusable; the classification itself proceeds unchanged.
     current = _map(current_capture or observe(st))
     limitations = S.child_content_gaps({'files': list(current.values())}) + S.unresolved_index_gaps({'files': list(current.values())})
     children = {r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed')}
