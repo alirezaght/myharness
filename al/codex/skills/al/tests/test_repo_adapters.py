@@ -392,3 +392,38 @@ def test_explicit_parent_project_is_not_erased_by_child_ownership(cli, repo, tmp
                for g in facts['enumeration']['gaps'])
     assert not any(e['path'] == 'services/render' and 'container' in e['reason']
                    for e in facts['enumeration']['exclusions'])
+
+
+def test_root_package_manifest_owns_literal_consumers_but_keeps_verification_debt(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    (repo/'pyproject.toml').unlink(); (repo/'svc/app.py').unlink()
+    put(repo,'package.json','{"name":"root-workers","scripts":{"test":"vitest run"}}')
+    put(repo,'contracts/shape.json','{"type":"object"}')
+    put(repo,'workers/admin/src/main.ts','const schema = "contracts/shape.json";\n')
+    put(repo,'tests/unit/main.test.ts','const schema = "contracts/shape.json";\n')
+    put(repo,'scripts/verify.mjs','const schema = "contracts/shape.json";\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['contracts/shape.json'],opaque=[])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert root['languages']==['javascript'] and root['provenance']==['package.json']
+    assert not any(g['code']=='unclassified-runtime-consumer' for g in facts['enumeration']['gaps'])
+    assert {c for row in facts['dependencies']['artifact_consumers'] for c in row['consumers']} >= {
+        'workers/admin/src/main.ts','tests/unit/main.test.ts','scripts/verify.mjs'}
+    assessment=Coverage.assess(facts)
+    assert '.' in assessment['potential_services'] and assessment['outcome']=='incomplete'
+    assert facts['checks']['gaps'] and not facts['checks']['bindings']
+
+
+def test_root_package_unit_keeps_deepest_child_and_opaque_ownership(repo):
+    import al_repository_facts as Facts
+    seed(repo)
+    put(repo,'package.json','{"name":"root-tooling"}')
+    put(repo,'tools/check.mjs','const source = "packages/shared/src/common.py";\n')
+    put(repo,'vendor/opaque/package.json','{"name":"not-parent-owned"}')
+    put(repo,'vendor/opaque/secret.py','VALUE=1\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['packages/shared/src/common.py'],opaque=['vendor/opaque'])
+    assert {u['id'] for u in facts['units']} >= {'.','packages/shared','services/a','services/b'}
+    rows=facts['dependencies']['source_membership']
+    assert any(row[1]=='packages/shared/src/common.py' and row[2]=='packages/shared' for row in rows)
+    assert not any(row[1].startswith('vendor/opaque/') for row in rows)
+    assert not any(u['path'].startswith('vendor/opaque') for u in facts['units'])

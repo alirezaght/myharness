@@ -28,7 +28,7 @@ def candidates(scan,nested=False):
         # A unit is a directory: a file directly under services/, packages/ or apps/ is not one.
         if len(parts)>=2 and parts[0] in {'services','packages','apps'} and (len(parts)>=3 or p.endswith('/')):names.add('/'.join(parts[:2]))
         if nested and len(parts)>2 and parts[0] in {'packages','apps'} and Path(p).name in {'pyproject.toml','package.json','go.mod'}:names.add(str(Path(p).parent))
-    if 'pyproject.toml' in scan.files or 'pyproject.toml' in scan.base:names.add('.')
+    if any(p in scan.files or p in scan.base for p in ('pyproject.toml','package.json')):names.add('.')
     return {name for name in names if not any(within(o,name) for o in scan.opaque)}
 
 
