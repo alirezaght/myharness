@@ -67,6 +67,36 @@ known repository obligations stay executable or unresolved. See
 
 CI planning context is data-only and run-bound. A supervisor records the fixed profile selection; the read-only Architect does not choose it. It supplies no ambient CI variables or evidence. Unsupported sources and expressions remain unresolved; see `gates.md`.
 
+Newly issued packets include `report_authoring_guidance`. Replace every `FILL:`
+placeholder before submission. These rules describe authoring syntax; runtime
+still checks current authority, evidence, file existence, line bounds and hashes.
+
+Locations accept a repository-relative existing bare file (`svc/app.py`) or one
+positive line (`svc/app.py:1`). Line ranges are not supported. A non-code location
+is exactly `{"artifact": REF, "explanation": "why these bytes support the claim"}`.
+Create REF with `artifact record --file PATH --kind KIND` and copy all six fields:
+`id`, `kind`, `sha256`, `stored_path`, `source`, `captured_at`. `id` equals `sha256`
+and the stored bytes must match. Strings and partial reference dictionaries are
+invalid. Every artifact collection is an array of complete references.
+
+Optional report `invariants` entries use only IDs in the current verification
+authority's invariant registry. If it is empty, supply no invariant entries;
+repository instructions do not create new invariant IDs. For a fresh
+counterexample result `found` or `blocked`, include an unresolved ordinary
+`BLOCKING` finding whose source is a criterion ID from a selected obligation,
+and report `CHANGES_REQUIRED`. An invariant-only finding cannot satisfy this
+link, and such a counterexample cannot approve.
+
+Comparison `assessments` requires both `rollout` and `ui`, each with boolean
+`applicable` and a reason. Applicable rollout requires all five dimensions:
+`expand_contract`, `deployment_order`, `aggregator_environment`,
+`consumer_deployment`, `dlq_redrive`. Each dimension has a reason and status
+`EVIDENCED` or `NOT_APPLICABLE`; `EVIDENCED` requires a nonempty `artifacts`
+array of complete references. Applicable UI requires nonempty `browser`,
+`viewport`, `functional_checks`, `alignment_observations`, `ux_observations`
+and a nonempty `artifacts` array whose referenced contents are nonempty.
+Describe actual browser observations and simulation limits honestly.
+
 Reports are JSON artifacts submitted through `review-fresh --file` and
 `review-result --file`. Required report fields: schema version, review ID, stage,
 invocation ID, reviewer role, resolved model, task hash, candidate hash, packet
