@@ -445,6 +445,11 @@ def test_canonical_widened_discovery_report_is_published_as_stored(
     manifest = json.loads(stored.read_bytes())
     assert manifest["paths"] == ["apps/web", "apps/admin"]
     assert manifest["units"] == ["apps/web", "services/billing"]
+    with operation.artifacts.locked() as index:
+        published = [
+            r for r in index["records"].values() if r["source"] == "guarded-al-gate-manifest"
+        ]
+    assert [r["artifact_id"] for r in published] == [artifact["artifact_id"]]
 
 
 def test_normalized_discovery_scope_still_refuses_an_unrelated_report(
