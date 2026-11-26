@@ -216,7 +216,18 @@ def test_typed_paths_are_contiguous_when_expansion_branches_from_a_seed(graph):
         QueryLimits(),
         Counter(),
     )
-    assert examined <= 200
+    expected_branches = {
+        (("imports", "reverse", "module:service", "module:consumer"),),
+        (("defines", "forward", "module:service", "symbol:service:serve"),),
+    }
+    assert {
+        tuple(
+            (edge["predicate"], edge["direction"], edge["from"], edge["to"])
+            for edge in path["edges"]
+        )
+        for path in paths.values()
+    } == expected_branches
+    assert 0 < examined <= 200
     for path in paths.values():
         assert all(
             a["to"] == b["from"] for a, b in zip(path["edges"], path["edges"][1:], strict=False)
