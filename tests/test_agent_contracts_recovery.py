@@ -60,24 +60,76 @@ def test_public_harness_isolation_refuses_ungranted_command_before_child_creatio
     before_owners = set(operation.check_ownership.owners)
     before_allocations = set(operation.check_ownership.allocations)
     before_processes = set(operation.processes.records)
+
+    def profiles():
+        return {
+            path.name: {
+                name: (path / name).read_bytes() if (path / name).is_file() else None
+                for name in ("operation.sb", "check-context.json")
+            }
+            for path in operation.directory.glob("sandbox-*")
+        }
+
+    before_profiles = profiles()
     destination = tmp_path / "ungranted-isolation"
-    # This public API does not grant isolate at all; Git and check creation are unreachable.
-    with pytest.raises(ValueError, match="^al_command requires only AL subcommands,"):
-        operation.dispatch(
-            principal,
-            "al_command",
-            {"arguments": ["isolate", "--authorized", "--path", str(destination)]},
-        )
-    assert not destination.exists()
-    assert source.read_bytes() == before_source
-    assert ordinary_git_state() == before_git
-    assert candidate.read_text() == "unstaged candidate overlay\n"
-    assert tuple(operation.check_channels) == before_channels
-    assert set(operation.check_ownership.owners) == before_owners
-    assert set(operation.check_ownership.allocations) == before_allocations
-    assert set(operation.processes.records) == before_processes
-    current = get_execution(controller.conn, execution["id"])
-    assert {key: current[key] for key in approval_fields} == before_approval
+
+    def unchanged():
+        assert not destination.exists()
+        assert source.read_bytes() == before_source
+        assert ordinary_git_state() == before_git
+        assert candidate.read_text() == "unstaged candidate overlay\n"
+        assert tuple(operation.check_channels) == before_channels
+        assert set(operation.check_ownership.owners) == before_owners
+        assert set(operation.check_ownership.allocations) == before_allocations
+        assert set(operation.processes.records) == before_processes
+        assert profiles() == before_profiles
+        current = get_execution(controller.conn, execution["id"])
+        assert {key: current[key] for key in approval_fields} == before_approval
+
+    # These are genuine unavailable names, not malformed wrapper invocations.
+    unavailable = [
+        ["isolate", "--authorized", "--path", str(destination)],
+        ["unknown-command"],
+        ["unknown\n\x1b[31m\u202ename"],
+        ["x" * 512],
+    ]
+    private_argument = "do-not-render-other-command-arguments"
+    for arguments in unavailable:
+        with pytest.raises(ValueError) as error:
+            operation.dispatch(
+                principal, "al_command", {"arguments": arguments + [private_argument]}
+            )
+        message = str(error.value)
+        assert json.dumps(arguments[0][:48], ensure_ascii=True) in message
+        assert "unavailable through Harness al_command" in message
+        assert "supervising host operator" in message and "['show', '--panel']" in message
+        assert "wrapper syntax" not in message and private_argument not in message
+        assert len(message) < 1024 and all(char.isprintable() for char in message)
+        assert ("(truncated)" in message) == (len(arguments[0]) > 48)
+        unchanged()
+
+    wrappers = [
+        ["alctl", "run"],
+        [str(operation.package["launcher"]), "run"],
+        ["run", "--repository", str(repository)],
+        ["--repository=" + str(repository)],
+        ["--session", "not-a-session-override"],
+        ["--platform", "codex"],
+        ["--handoff", private_argument],
+        ["--db", private_argument],
+        ["--existing-run"],
+    ]
+    for arguments in wrappers:
+        with pytest.raises(ValueError) as error:
+            operation.dispatch(principal, "al_command", {"arguments": arguments})
+        message = str(error.value)
+        assert "launcher/origin wrapper syntax" in message
+        assert "AL origin is supplied by Harness" in message and "omit alctl" in message
+        assert "unavailable" not in message and private_argument not in message
+        unchanged()
+    with pytest.raises(ValueError, match="^al_command requires a supported command,"):
+        operation.dispatch(principal, "al_command", {"arguments": []})
+    unchanged()
 
 
 def proc_bytes(path, maximum):

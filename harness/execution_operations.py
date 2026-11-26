@@ -95,6 +95,39 @@ def read_only(args):
     return bool(args) and args[0] in READ_COMMANDS and not (args[0] == "next" and "--do" in args)
 
 
+def _al_command_refusal(arguments):
+    command = arguments[0] if arguments else None
+    if not isinstance(command, str) or not command:
+        return "al_command requires a supported command, for example arguments=['show', '--panel']."
+    origin_flags = {
+        "--repository",
+        "--platform",
+        "--session",
+        "--handoff",
+        "--db",
+        "--existing-run",
+    }
+    if (
+        command in {"alctl", "alctl.py", "run"}
+        or "/" in command
+        or "\\" in command
+        or command.split("=", 1)[0] in origin_flags
+    ):
+        return (
+            "al_command does not accept launcher/origin wrapper syntax. "
+            "Use arguments=['show', '--panel']; omit alctl, launcher paths, run and "
+            "repository/session wrapper flags. AL origin is supplied by Harness."
+        )
+    name = json.dumps(command[:48], ensure_ascii=True)
+    if len(command) > 48:
+        name += " (truncated)"
+    return (
+        f"AL command {name} is unavailable through Harness al_command. "
+        "Use arguments=['show', '--panel'] for supported inspection. "
+        "Hand unavailable operations back to the supervising host operator."
+    )
+
+
 class OperationController:
     def __init__(self, database, execution, envelope, package, initialization, registry, directory):
         self.database, self.execution_id = Path(database), execution["id"]
@@ -1030,11 +1063,7 @@ class OperationController:
             raise ValueError("another manifest-producing operation is already active")
         args = list(original_arguments)
         if not args or args[0] not in COMMANDS:
-            raise ValueError(
-                "al_command requires only AL subcommands, for example "
-                "arguments=['show', '--panel']; omit alctl, launcher paths, run and "
-                "repository/session wrapper flags. AL origin is supplied by Harness."
-            )
+            raise ValueError(_al_command_refusal(args))
         if args[0] == "integration" and (
             len(args) < 2 or args[1] in {"decision", "delivery-correction"}
         ):

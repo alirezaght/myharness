@@ -42,7 +42,10 @@ TOOL_HELP = {
         "Refresh before submitting output."
     ),
     "al_command": (
-        "Run guarded AL subcommands only: arguments=['show', '--panel']. Never include alctl, "
+        "Run the bounded Harness subset of guarded AL commands, e.g. "
+        "arguments=['show', '--panel']. "
+        "Standalone AL commands such as isolate are unavailable through this tool; hand those "
+        "operations back to the supervising host operator. Never include alctl, "
         "launcher paths, run or repository/session wrapper flags; Harness supplies the origin. "
         "Supervisor can plan/control without product writer authority; read-only children may "
         "only inspect AL. Long checks use background=true and poll_process until collected."
@@ -163,7 +166,9 @@ SCHEMAS = {
                 "items": STRING,
                 "maxItems": 100,
                 "description": (
-                    "AL subcommands only, e.g. ['show', '--panel']; no launcher or origin flags."
+                    "Bounded Harness command subset, e.g. ['show', '--panel']; "
+                    "standalone-only commands such as isolate are unavailable. "
+                    "No launcher or origin flags."
                 ),
             },
             "background": {"type": "boolean"},
