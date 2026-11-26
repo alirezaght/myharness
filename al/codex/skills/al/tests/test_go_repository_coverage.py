@@ -484,13 +484,24 @@ def test_missing_actual_go_is_infra_and_review_refuses_with_recorded_debt(
     import json
     import os
     import shutil
+    import subprocess
 
     from hook_regression_helpers import invoke
 
     cli = cli.raw
-    monkeypatch.setenv("PATH", os.defpath)
-    if shutil.which("go"):
-        pytest.skip("standard host PATH supplies Go; missing-tool fixture unavailable")
+    host_tools = {name: shutil.which(name) for name in ("git", "sh")}
+    assert all(host_tools.values()), "git and sh are required to construct the isolated fixture"
+    tool_bin = tmp_path / "go-free-bin"
+    tool_bin.mkdir()
+    for name, executable in host_tools.items():
+        (tool_bin / name).symlink_to(executable)
+    monkeypatch.setenv("PATH", str(tool_bin))
+    monkeypatch.delenv("AL_TEST_GO_EXECUTABLE", raising=False)
+    assert shutil.which("go") is None
+    assert shutil.which("git") == str(tool_bin / "git")
+    assert shutil.which("sh") == str(tool_bin / "sh")
+    subprocess.run(["git", "--version"], check=True, capture_output=True, text=True)
+    subprocess.run(["sh", "-c", "exit 0"], check=True)
     go_repository(repo)
     module(repo)
     put(repo, ".gitlab-ci.yml", "test:\n  script: go test ./...\n")

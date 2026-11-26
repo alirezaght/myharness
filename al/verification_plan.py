@@ -23,6 +23,26 @@ def environment(root, home, *, profile=False, cache_mode='cold'):
     for name in ('tmp', 'home', 'runtime', 'distribution', 'harness'):(home / name).mkdir(parents=True, exist_ok=True)
     allowed = ('PATH', 'SYSTEMROOT', 'COMSPEC', 'LANG', 'LC_ALL', 'SDKROOT')
     env = {name: os.environ[name] for name in allowed if name in os.environ}
+    go_executable = os.environ.get('AL_TEST_GO_EXECUTABLE')
+    if go_executable is not None:
+        valid = bool(go_executable) and len(os.fsencode(go_executable)) <= 4096
+        if valid:
+            path = Path(go_executable)
+            valid = path.is_absolute()
+            if valid:
+                try:
+                    info = path.stat()
+                except OSError:
+                    valid = False
+                else:
+                    valid = (
+                        stat.S_ISREG(info.st_mode)
+                        and bool(info.st_mode & 0o111)
+                        and os.access(path, os.X_OK)
+                    )
+        if not valid:
+            raise ValueError('invalid AL_TEST_GO_EXECUTABLE')
+        env['AL_TEST_GO_EXECUTABLE'] = go_executable
     env.update(HOME=str(home / 'home'), USERPROFILE=str(home / 'home'), TMPDIR=str(home / 'tmp'),
                TMP=str(home / 'tmp'), TEMP=str(home / 'tmp'), AL_RUNTIME_DIR=str(home / 'runtime'),
                AL_DISTRIBUTION_STATE=str(home / 'distribution'), HARNESS_HOME=str(home / 'harness'),

@@ -4,9 +4,54 @@ from pathlib import Path
 
 import pytest
 
-from al.verification_plan import build_plan, collect_suites
+from al.verification_plan import build_plan, collect_suites, environment
 from al.verification_profile import capture_source_binding
 from al.tests.verification_helpers import source, declarations, collected
+
+
+def test_environment_forwards_only_explicit_go_executable_override(tmp_path, monkeypatch):
+    executable = tmp_path / 'toolchain' / 'bin' / 'go'
+    executable.parent.mkdir(parents=True)
+    executable.write_text('#!/bin/sh\nexit 0\n')
+    executable.chmod(0o755)
+    monkeypatch.setenv('AL_TEST_GO_EXECUTABLE', str(executable))
+    inherited_names = (
+        'GOFLAGS', 'GOTOOLCHAIN', 'GOROOT', 'GOOS', 'GOARCH', 'GOENV', 'GOPATH',
+        'GOPROXY', 'GOSUMDB', 'CGO_ENABLED', 'PYTHONSTARTUP', 'PYTHONHOME',
+    )
+    for name in inherited_names:
+        monkeypatch.setenv(name, 'UNTRUSTED_' + name)
+
+    child_env = environment(tmp_path, tmp_path / 'private-home')
+
+    assert child_env['AL_TEST_GO_EXECUTABLE'] == str(executable)
+    assert all(name not in child_env for name in inherited_names)
+
+
+@pytest.mark.parametrize(
+    'setting', ['relative', 'missing', 'directory', 'non-executable', 'overlong']
+)
+def test_environment_refuses_invalid_go_executable_override(tmp_path, monkeypatch, setting):
+    if setting == 'relative':
+        value = 'toolchain/bin/go'
+    elif setting == 'missing':
+        value = str(tmp_path / 'missing-go')
+    elif setting == 'directory':
+        value = str(tmp_path)
+    elif setting == 'non-executable':
+        path = tmp_path / 'not-executable'
+        path.write_text('not executable\n')
+        path.chmod(0o644)
+        value = str(path)
+    else:
+        value = '/' + ('x' * 4096)
+    monkeypatch.setenv('AL_TEST_GO_EXECUTABLE', value)
+
+    with pytest.raises(ValueError) as failure:
+        environment(tmp_path, tmp_path / 'private-home')
+
+    assert str(failure.value) == 'invalid AL_TEST_GO_EXECUTABLE'
+    assert value not in str(failure.value)
 
 
 def test_complete_collection_ignores_inherited_selection_and_new_nodes_run(tmp_path, monkeypatch):
