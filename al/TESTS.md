@@ -337,7 +337,10 @@ or CLI operations still run separately in each case.
 
 The original 20 functions and 91 parameterized cases are split across five slow
 installer files so the existing whole-file runner can schedule them independently.
-Every test body, decorator, parameter and assertion is unchanged. The shared
+At that historical file-split step, every test body, decorator, parameter and
+assertion was unchanged. The later direct installed-metadata section intentionally
+changes one parameterized body while retaining all its cases and safety assertions.
+The shared
 `operator_update_helpers.py` retains all original imports, helper implementations,
 `projection_data`, enrollment fixtures and the exact prefix whitelist. Its
 `__file__` remains under `al/tests`, preserving projection resource lookup.
@@ -429,3 +432,32 @@ context is fabricated and no installer preflight is bypassed. The split is:
 Verification uses independent review and a matched 20-node metadata-only measurement;
 the earlier concurrent grouped timings are not a standalone before/after result.
 Remaining acceptance work is tracked in #36, #24 and #29.
+
+
+### Runtime-pin distribution source copies (#36)
+
+`test_runtime_pin.py` obtains only its disposable distribution from the existing
+`copy_al_source` template. Every runtime-pin test body, decorator and parameter is
+unchanged: real pin preparation, stable-distribution capture, independent materialization,
+verification, source movement and tamper refusals still run separately in each case.
+No pin state, receipts, authority or test results are reused.
+
+The optional keyword-only exclusion tuple uses exact `shutil.ignore_patterns`
+semantics for files and directories in both source observation and first copying.
+The default remains `__pycache__`, `.pytest_cache`, `*.pyc`; runtime-pin retains its
+original `__pycache__`, `.pytest_cache`, `.ruff_cache` policy, including loose `.pyc`
+files and excluding nested `.ruff_cache` entries. The tuple is part of cache identity,
+even when two policies happen to observe identical members. Conservative single-entry
+eviction remains; switching policies can rebuild a genuine template.
+
+First construction still uses the verified materializer with clones disabled,
+private temporary storage, source-movement refusal and atexit cleanup. Each caller
+gets ordinary independent copies with bytes and copy2 metadata retained. Directory
+membership/metadata participates in source observation too. This remains the existing
+metadata-based source observation, not a claim to detect same-size edits with restored
+metadata. Tiny owned-source tests exercise both policies, excluded names as files and
+directories, loose `.pyc`, bytes/modes/times/inodes, caller mutation/deletion independence,
+source changes/deletion, policy identity and refusal during first construction.
+Matched complete one-worker runtime-pin profiles must charge all first construction
+and per-case copies; functional results, wall/CPU measurements and raw timing budgets
+remain separate. Independent isolation review precedes any scoped closure renewal.
