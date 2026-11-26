@@ -5,13 +5,6 @@ import pytest
 from tests.planning_session_fixture import session as session
 
 
-def test_missing_caller_identity_refuses_without_inventing_session():
-    from harness.planning_session_identity import resolve_caller
-
-    with pytest.raises(ValueError, match="SESSION_IDENTITY_UNAVAILABLE"):
-        resolve_caller("codex", {})
-
-
 @pytest.mark.parametrize(
     "provider,environment,substitution",
     [("codex", {}, None), ("claude", {}, "${CLAUDE_SESSION_ID}"), ("other", {}, None)],

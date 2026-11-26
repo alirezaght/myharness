@@ -198,7 +198,7 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
 ):
     from harness.execution_planning_recovery import preview_planning, start_planning
 
-    _, _, controller, initialization, _, execution, _ = registered[0]
+    operation, principal, controller, initialization, _, execution, _ = registered[0]
     from harness.execution_store import bind_host
 
     bind_host(controller.conn, execution["id"], registered[0][0].registry.root, "test-owner")
@@ -206,6 +206,23 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
     original_native = execution["native_id"]
     assert original_native
     assert not Path(initialization["source"]).is_relative_to(Path(registered[0][-1]["repository"]))
+    from tests.test_execution_continuity import report as public_report
+
+    predecessor_task = "predecessor-work"
+    public_report(
+        operation,
+        principal,
+        "task-register",
+        {
+            "id": predecessor_task,
+            "title": "Genuine predecessor work whose admission cannot survive recovery",
+            "files": ["work"],
+            "criteria": ["AC-01"],
+            "dependencies": [],
+        },
+    )
+    predecessor = json.loads(Path(initialization["source"]).read_bytes())
+    assert predecessor["integration"]["tasks"][predecessor_task]["files"] == ["work"]
     if missing:
         Path(initialization["source"]).unlink()
     observed = preview_planning(
@@ -311,7 +328,11 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
     state = json.loads(al_source(current, read_handoff(current["handoff_path"])).read_bytes())
     assert state["phase"] == "PLANNING" and state["proof_admission"]["status"] == "pending"
     assert state["writers"] == {} and state["evidence"]["entries"] == []
+    assert state["evidence"]["plan"] == {}
+    assert state["review"] is None and state.get("approval") is None
+    assert state.get("gate_runs", []) == [] and state.get("gate_manifests", []) == []
     assert all(not state["integration"][key] for key in ("agents", "tasks", "deliveries"))
+    assert predecessor_task not in state["integration"]["tasks"]
     from harness.execution_epochs import get_epoch
 
     assert (
@@ -355,28 +376,50 @@ def test_missing_state_prepares_fresh_planning_without_inherited_authority(
 
     command("spec-gate", "SPEC_READY")
     command("classify", "SMALL", "--designer", "no", "--reason", "Current approved fixture scope.")
-    denied = command(
+    successor_source = al_source(current, read_handoff(current["handoff_path"]))
+    before_denied = successor_source.read_bytes()
+    writer_arguments = (
         "writer",
         "start",
         "--id",
         "before-current-plan",
         "--role",
         "al-engineer",
+        "--task",
+        predecessor_task,
         "--files",
         "work",
-        allowed=False,
     )
-    # Both successor paths are still PLANNING, so the phase guard refuses
-    # writer admission before the fresh-report preflight is reached.
-    assert "writer admission requires a writing phase" in denied.stderr
-    denied_state = json.loads(
-        al_source(current, read_handoff(current["handoff_path"])).read_bytes()
+    denied = command(*writer_arguments, allowed=False)
+    # Missing history first needs current authorship; intact history reaches task admission.
+    expected_refusal = (
+        "al_state: recovered planning needs a fresh current Architect planning report before "
+        "implementation; use planning packet, the actual Architect invocation, then planning report"
+        if missing
+        else "al_state: unknown execution task"
     )
+    assert denied.stderr.splitlines()[-1] == expected_refusal
+    assert successor_source.read_bytes() == before_denied
+    denied_state = json.loads(before_denied)
     assert denied_state["phase"] == "PLANNING" and denied_state["writers"] == {}
+    assert denied_state["proof_admission"]["status"] == "pending"
+    assert denied_state["integration"]["tasks"] == {}
+    assert denied_state["evidence"]["entries"] == [] and denied_state["evidence"]["plan"] == {}
+    assert denied_state["review"] is None and denied_state.get("approval") is None
+    assert denied_state.get("gate_runs", []) == [] and denied_state.get("gate_manifests", []) == []
+    assert (
+        get_execution(controller.conn, execution["id"])["approval_id"] == execution["approval_id"]
+    )
     packet = json.loads(command("planning", "packet").stdout)
     report = tmp_path / "fresh-current-scope.json"
     report.write_text(json.dumps(report_for(packet)))
     command("planning", "report", "--file", str(report))
+    if missing:
+        # Fresh authorship resolves missing history, never the predecessor task's authority.
+        after_report = successor_source.read_bytes()
+        denied = command(*writer_arguments, allowed=False)
+        assert denied.stderr.splitlines()[-1] == "al_state: unknown execution task"
+        assert successor_source.read_bytes() == after_report
     command("phase", "IMPLEMENTATION")
     refreshed = json.loads(al_source(current, read_handoff(current["handoff_path"])).read_bytes())
     assert refreshed["proof_admission"]["status"] == "pending"

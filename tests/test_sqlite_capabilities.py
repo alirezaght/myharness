@@ -38,19 +38,13 @@ def _is_wal_reset_fixed(version_info: tuple[int, ...]) -> bool:
 
 
 @pytest.fixture(autouse=True)
-def runtime_prerequisite_context():
-    """Include actual facts and repair guidance even when a real SQLite operation raises."""
-    print("SQLITE RUNTIME FACTS: " + _runtime_facts())
-
-
-def test_report_runtime_facts(capsys, record_property):
-    facts = _runtime_facts()
+def runtime_prerequisite_context(capsys, record_property):
+    """Report actual runtime facts for each real capability check, including failures."""
     record_property("sqlite_version", sqlite3.sqlite_version)
     record_property("python_version", sys.version.split()[0])
     record_property("platform", platform.platform())
     with capsys.disabled():
-        print(f"\nSQLITE RUNTIME FACTS: {facts}")
-    assert sqlite3.sqlite_version_info >= (3, 0, 0), facts
+        print("\nSQLITE RUNTIME FACTS: " + _runtime_facts())
 
 
 def test_fts5_is_usable(tmp_path):
