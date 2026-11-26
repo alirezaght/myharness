@@ -4,6 +4,7 @@ import re
 import time
 from pathlib import Path
 import al_artifacts as A
+import al_proof_json as J
 import al_store
 from al_schema import refuse, valid_id
 
@@ -59,15 +60,18 @@ def cmd_amend(a,sid):
     st=al_store.load(sid)
     if st['status']!='RUNNING': refuse('resume before amendment')
     if 'integration' in st: refuse('harness-bound amendments require an acknowledged scoped developer decision')
-    data=json.loads(Path(a.file).read_bytes())
+    raw=Path(a.file).read_bytes();data=J.loads(raw)
+    if not isinstance(data,dict):refuse('amendment must be an object')
     if not valid_id(data.get('id')) or any(x['id']==data['id'] for x in st['amendments']): refuse('invalid/duplicate amendment ID')
     if not substantive(data.get('text')) or not data.get('source'): refuse('amendment needs substantive user text and source')
-    criteria=A.read_json(st['task_package'])['criteria']
+    from al_requirement_bindings import registry,criterion_additions
+    criteria=[entry['id'] for entry in registry(st,'criteria')]
+    criterion_additions(data,criteria)
     affected=data.get('affected_criteria')
     if affected is not None and (not isinstance(affected,list) or any(x not in criteria for x in affected)): refuse('unknown affected criterion')
     from al_gate_recovery import amendment_binding,amend
     recovery=amendment_binding(st) if 'gate_recovery' in st else None
-    data.update(at=time.time(),artifact=A.snapshot_artifact(sid,Path(a.file),'user-amendment'))
+    data.update(at=time.time(),artifact=A.snapshot_bytes(sid,raw,'user-amendment',a.file))
     st['amendments'].append(data)
     from al_agent_exchange import refresh_analysis
     refresh_analysis(st)

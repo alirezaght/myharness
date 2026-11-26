@@ -125,3 +125,76 @@ def test_identical_report_resubmit_is_idempotent_and_a_different_one_is_refused(
     path.write_text(json.dumps(report))
     code, out, err = cli('planning', 'report', '--file', str(path))
     assert code != 0 and 'cannot be replaced' in str(code) + out + err
+
+
+def test_additive_amendment_routes_seed_exact_current_template_and_admitted_authority(
+        cli,repo,tmp_path,monkeypatch,state_file,run_state):
+    import copy
+    from pathlib import Path
+    import al_proof_json as J
+    from al_schema import refuse
+    from test_amendment_feedback import ok
+    run_state('implemented')
+    monkeypatch.setattr(launcher_context,'admit_planning',lambda *args,**kwargs:None)
+    initial=json.loads(state_file().read_bytes())
+    original_authority=initial['proof_admission']['authority']
+    expected=copy.deepcopy(J.read(original_authority)['criteria'])
+    original_package=copy.deepcopy(initial['task_package'])
+    old_report=None
+    routes=[{'criteria':['  Exact criterion α preserves spaces  ']},
+            {'supplemental_acceptance':['Exact supplemental β']},
+            {'criteria':['Exact criterion γ'],'supplemental_acceptance':['Exact supplemental δ']}]
+    for number,fields in enumerate(routes,1):
+        amendment=dict(id='AM-'+str(number),source='explicit user acceptance',
+                       text='Preserve prior accepted outcomes and add the following exact acceptance obligations.',**fields)
+        if number>1:amendment['affected_criteria']=[expected[-1]['id']]
+        path=tmp_path/'amendment.json';path.write_text(json.dumps(amendment,ensure_ascii=False))
+        raw=path.read_bytes();ok(cli,'task','amend','--file',str(path))
+        current=json.loads(state_file().read_bytes())
+        assert current['task_package']==original_package
+        assert current['proof_admission']['status']=='pending' and 'authority' not in current['proof_admission']
+        assert current['evidence']['invalidated_at'] and current['review'] is None and current['spec_status'] is None
+        ref=current['amendments'][-1]['artifact'];assert Path(ref['stored_path']).read_bytes()==raw
+        for field in ('criteria','supplemental_acceptance'):
+            expected.extend({'id':value,'artifact':ref,'pointer':'/'+field+'/'+str(index),'value_sha256':J.digest(value)}
+                            for index,value in enumerate(fields.get(field,[])))
+        ok(cli,'spec-gate','SPEC_READY')
+        packet=json.loads(ok(cli,'planning','packet')[1])
+        assert packet['content']['accepted_amendments']==[a['artifact'] for a in current['amendments']]
+        behavior=packet['report_template']['authored_obligations'];group=behavior['obligations'][0]
+        assert behavior['criteria_registry']==expected
+        assert group['criterion_ids']==[entry['id'] for entry in expected] and group['requirement_refs']==expected
+        # Generating from the issued packet cannot consult a newer mutable run.
+        import al_planning_template as T
+        import al_store
+        with monkeypatch.context() as context:
+            context.setattr(al_store,'load',lambda *args,**kwargs:refuse('template consulted mutable state'))
+            assert T.template(packet['packet'],packet['content'])['authored_obligations']['criteria_registry']==expected
+        if old_report:
+            before=state_file().read_bytes();code,out,err=cli('planning','report','--file',str(old_report))
+            assert code!=0,(out,err)
+            assert state_file().read_bytes()==before
+        old_report=tmp_path/('old-report-'+str(number)+'.json');old_report.write_text(json.dumps(_filled(packet)))
+    report=_filled(packet);artifacts=Path(packet['packet']['stored_path']).parent
+    for defect in ('omission','wrong-pointer','wrong-hash','invented'):
+        invalid=copy.deepcopy(report);behavior=invalid['authored_obligations'];group=behavior['obligations'][0]
+        if defect=='omission':
+            behavior['criteria_registry'].pop();group['criterion_ids'].pop();group['requirement_refs'].pop()
+        elif defect=='wrong-pointer':behavior['criteria_registry'][-1]['pointer']='/criteria/0'
+        elif defect=='wrong-hash':behavior['criteria_registry'][-1]['value_sha256']='0'*64
+        else:
+            entry={'id':amendment['text'],'artifact':ref,'pointer':'/text','value_sha256':J.digest(amendment['text'])}
+            behavior['criteria_registry'].append(entry);group['criterion_ids'].append(entry['id']);group['requirement_refs'].append(entry)
+        path=tmp_path/'invalid-report.json';path.write_text(json.dumps(invalid));before=state_file().read_bytes()
+        retained={p.name:p.read_bytes() for p in artifacts.iterdir() if p.is_file()}
+        code,out,err=cli('planning','report','--file',str(path));assert code!=0,(defect,out,err)
+        assert state_file().read_bytes()==before
+        assert {p.name:p.read_bytes() for p in artifacts.iterdir() if p.is_file()}==retained
+    path=tmp_path/'current-report.json';path.write_text(json.dumps(report))
+    materialized=json.loads(ok(cli,'planning','report','--file',str(path))[1])['materialized_obligations']
+    ok(cli,'planning','admit','--file',materialized['stored_path'])
+    final=json.loads(state_file().read_bytes());assert final['proof_admission']['status']=='admitted'
+    authority=J.read(final['proof_admission']['authority'])
+    assert authority['criteria']==expected and final['proof_admission']['authority']!=original_authority
+    assert authority['substantive_amendments']==packet['content']['accepted_amendments']
+    assert J.read(authority['behavior_obligations'])['criteria_registry']==expected
