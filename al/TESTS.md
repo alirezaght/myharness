@@ -306,3 +306,28 @@ unchanged-input checks. All 184 existing nodes in the two files remain.
 | `test_historical_progress_between_barriers_is_allowed` | Genuine enrolled installation and retained active runtime | Creates the release and review, injects the handoff change into the bootstrapped source, then requires the real public update to succeed and the runtime handoff count to reach two. |
 | `test_partial_failure_keeps_pending_manual_reconciliation` | Genuine enrolled installation and retained-byte snapshot | Creates the release and review, injects the second-platform failure into its bootstrap source, then retains the failed pending journal, completed first engine step, unchanged current record and bytes, and unresolved retry refusal. |
 | `test_completed_publication_failures_never_claim_success` (3 cases) | Genuine enrolled installation and retained-byte snapshot | Each case creates its own release/review and injects late-postimage, smoke, or publication failure into the bootstrap source; the real public update must fail while retaining the old current record, pending operation, and failed manual-reconciliation journal. |
+
+
+`test_documentation_update.py` restores the same genuine enrolled prefix for an
+explicit whitelist of eight families (35 cases). Its module-scoped holder builds
+once in a private temporary container and restores before every eligible case,
+including the first. The unchanged helper checks complete bytes, modes, symlink
+targets, private directory identities and independent regular-file inodes; return
+data is copied without rewriting receipts, hashes, pins or approvals. Both
+`AL_RUNTIME_DIR` and `AL_DISTRIBUTION_STATE` are cleared on every fixture invocation,
+including restores. The two indirect pinned/follow cases retain fresh construction;
+unknown families default fresh. The two tests without enrollment remain unchanged.
+All 39 original cases, bodies, decorators, parameters and assertions remain.
+Only enrollment is reused: release tags, reviews, mutations and actual installer
+or CLI operations still run separately in each case.
+
+| Documentation-update family | Cases | Per-case invariants retained |
+|---|---:|---|
+| `test_non_documentation_delta_refused` | 9 | Code, schema, role, resource, mode and parity changes refuse; the installation record stays unchanged. |
+| `test_mode_scope_is_explicit` | 8 | Unsupported operation, version, policy and scope overrides refuse without changing the record. |
+| `test_malformed_activity_is_never_acknowledged` | 1 | Malformed runtime activity blocks the actual update and leaves the record unchanged. |
+| `test_revalidation_catches_mutation_and_preserves_pending_recovery` | 2 | Post-preparation file or plan mutation fails with pending recovery, the original current record and a failed journal. |
+| `test_existing_refusals_remain` | 10 | Source, subdirectory, drift, collision, cache, tag, journal, review, writer and index refusals retain the original current installation. |
+| `test_completed_publication_revalidates` | 3 | Late postimage, provenance and runtime-index mutations fail; pending recovery, current installation, runtime bytes and pin bytes remain. |
+| `test_injected_engine_failure_retains_recovery_and_runtime` | 1 | Actual second-platform failure retains pending recovery, current installation and runtime/pin bytes; unresolved retry still refuses. |
+| `test_public_cli_requires_global_and_accepts_reviewed_update` | 1 | The real CLI refuses missing global scope, then performs the reviewed update while reporting retained activity blockers. |
