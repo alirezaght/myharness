@@ -552,10 +552,10 @@ def test_a_locked_database_is_a_503_and_the_retry_approves_once(
         with serve(db_path, task_id, str(specs)) as server:
             tokens = _tokens(server, task_id)
             before = _state_of(db_path, specs)
-            monkeypatch.setattr(approve_module, "ApprovalGate", LockedOut)
-            status, data = _approve(server, tokens)
-            assert _state_of(db_path, specs) == before
-            monkeypatch.undo()
+            with monkeypatch.context() as locked_patch:
+                locked_patch.setattr(approve_module, "ApprovalGate", LockedOut)
+                status, data = _approve(server, tokens)
+                assert _state_of(db_path, specs) == before
             saved = _approve(server, tokens)
             again = _approve(server, tokens)
     finally:
