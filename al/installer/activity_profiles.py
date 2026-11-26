@@ -30,7 +30,7 @@ runtime_origin proof_admission planning_authorship planning_history behavior_obs
 conflict_resolution conflict_resolution_history notes_triage publication_authorizations publication_records
 baseline_exceptions gate_retentions delivery_completion_history rework_recovery
 classification_assessment code_assessments business_acceptances
-implementation_readiness operational_issues'''.split())
+implementation_readiness operational_issues agent_contracts agent_contract_history'''.split())
 
 
 def decode(raw):
@@ -137,7 +137,7 @@ execution_stage setup'''.split()) | {
     'package_script_result', 'remote_provenance', 'recipe', 'recipe_assignment', 'recipe_context',
     'recipe_execution', 'recipe_log_copy', 'recipe_process', 'storage', 'storage_allocation',
     'storage_capture_state', 'storage_error', 'storage_operands', 'storage_outputs', 'storage_pressure',
-    'storage_publication', 'storage_settlement'}
+    'storage_publication', 'storage_settlement', 'purpose', 'process_observation'}
 WRITER_KEYS = {'id', 'role', 'files', 'commands', 'phase', 'started_at', 'ended_at', 'state',
                'outcome', 'reconciliation', 'task', 'agent', 'contribution_before'}
 
@@ -169,6 +169,12 @@ def _ledger(value, *, modern):
                 or entry['id'] in seen or entry.get('status') not in {'RUNNING', 'PASS', 'FAIL', 'EMPTY', 'INFRA', 'TORN'}
                 or not isinstance(entry.get('argv'), list)):
             raise ValueError('malformed historical evidence entry')
+        if 'purpose' in entry and (not isinstance(entry['purpose'], str) or entry['purpose'] not in
+                {'verification', 'unit', 'integration', 'security', 'ci', 'staging', 'build', 'lint'}):
+            raise ValueError('unsupported historical evidence purpose')
+        if 'process_observation' in entry:
+            from .activity_companions import validate_process_observation
+            validate_process_observation(entry['process_observation'], entry)
         seen.add(entry['id'])
         if modern and (entry.get('run') != value['run_id'] or not entry.get('reservation')):
             raise ValueError('foreign modern evidence reservation')
@@ -278,6 +284,8 @@ def _modern(value, path, provenance):
             raise ValueError('external supporting-source bytes/type changed')
         external.append(reference)
     _references(value, provenance['members'], Path(provenance['runtime_root']), external)
+    from .activity_companions import validate as validate_companions
+    validate_companions(value, provenance)
     from .activity_workflow import validate
     validate(value, provenance)
     return _ledger(value, modern=True)
