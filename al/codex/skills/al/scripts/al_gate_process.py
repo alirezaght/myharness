@@ -41,6 +41,8 @@ class Owner:
             self.defer=True;raise KeyboardInterrupt
 
     def spawn(self,*args,**kwargs):
+        from al_verification_policy import verification_kwargs
+        kwargs=verification_kwargs(kwargs)
         if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)
         if self.proc is not None and not self.completion().get('complete'):
             if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)

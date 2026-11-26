@@ -3,6 +3,7 @@
 import os
 import shutil
 import stat
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -120,7 +121,7 @@ class PreparedStorage:
         self.reconciliation_reference = None
         self.publication_root = ledger.log_dir(sid) / "storage"
 
-    def launch(self, argv, *, cwd, output, recipe_input=None):
+    def launch(self, argv, *, cwd, output, recipe_input=None, stdin=subprocess.DEVNULL):
         if recipe_input != self.recipe_input:
             raise ValueError("recipe input differs from protected evidence entry")
         try:
@@ -137,7 +138,7 @@ class PreparedStorage:
                     request["recipe_input"] = recipe_input
                 self.proc = OwnedCheck(
                     argv, {"cwd": cwd, "stdout": output, "stderr": -2, "managed_storage": request,
-                           "process_observation": self.entry.get("process_observation")}
+                           "process_observation": self.entry.get("process_observation"), "stdin": stdin}
                 )
                 self.allocation = self.proc.storage["allocation"]
                 self.temporary = Path(self.proc.storage["operation_directory"]) / "tmp"
@@ -218,7 +219,7 @@ class PreparedStorage:
                         launch_token=self.owner.token,
                         interpreter=sys.executable,
                     )
-                self.proc = self.owner.spawn(rendered, cwd=cwd, env=environment, output=output)
+                self.proc = self.owner.spawn(rendered, cwd=cwd, env=environment, output=output, stdin=stdin)
                 self.manager.mark_running(
                     self.allocation["allocation_id"],
                     generation=self.allocation["generation"],

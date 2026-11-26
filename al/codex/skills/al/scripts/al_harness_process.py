@@ -221,3 +221,9 @@ def popen(argv, **kwargs):
         return OwnedCheck(argv, kwargs)
     kwargs.pop('process_observation', None)
     return subprocess.Popen(argv, **kwargs)
+
+
+def verification_popen(argv, **kwargs):
+    """Managed verification dispatch; generic popen keeps its interactive default."""
+    from al_verification_policy import verification_kwargs
+    return popen(argv, **verification_kwargs(kwargs))

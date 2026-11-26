@@ -79,9 +79,9 @@ class OwnedProcess:
         self.launch_identity = None
         self.last_cleanup = None
 
-    def spawn(self, argv, *, cwd, env, output, pass_fds=()):
+    def spawn(self, argv, *, cwd, env, output, pass_fds=(), stdin=None):
         return self.spawn_streams(
-            argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT, pass_fds=pass_fds
+            argv, cwd=cwd, env=env, stdin=stdin, stdout=output, stderr=subprocess.STDOUT, pass_fds=pass_fds
         )
 
     def spawn_streams(
