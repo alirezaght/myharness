@@ -166,7 +166,9 @@ def _prefixes(p):
 
 def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
     from al_analysis_cache import CURRENT
+    from al_environment_observation import DEFAULT_VERIFICATION_NAMES
     from al_profile import span
+    env_names=sorted(set(env_names or ()) | DEFAULT_VERIFICATION_NAMES)
     context=CURRENT.get()
     with span('scope-hashing'):
         if context is None:return _scope_fingerprint(scope,env_names,sources,cwd)
@@ -283,8 +285,8 @@ def mutation_source(st, e):
 
 
 def _env_digest(h, env_names):
-    for name in sorted(env_names or ()):
-        from al_environment_observation import value_digest
+    from al_environment_observation import DEFAULT_VERIFICATION_NAMES, value_digest
+    for name in sorted(set(env_names or ()) | DEFAULT_VERIFICATION_NAMES):
         digest = value_digest(name)
         h.update(f"\0env:{name}={digest}".encode())
     return h.hexdigest()[:16]

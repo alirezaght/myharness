@@ -118,6 +118,12 @@ def cmd_review_start(a,sid):
     notes=coverage_notes(st)
     if notes:print('AL · '+str(len(notes))+" coverage gap(s) outside the change's reach recorded as verification notes, not blockers (`gates status` coverage_notes)")
 
+def _render_packet(ref,data):
+    value={'packet':ref,'content':data}
+    if data.get('review_mode')=='delta':
+        return json.dumps(value,sort_keys=True,separators=(',',':'))
+    return json.dumps(value,indent=2)
+
 def cmd_packet(a,sid):
     st=al_store.load(sid); r=st.get('review')
     if not r or st['phase']!='REVIEW': refuse('review not started')
@@ -127,7 +133,7 @@ def cmd_packet(a,sid):
     if not new:
         ref=r['packets'][a.stage];raw=A.read(ref);data=json.loads(raw)
         if a.output:Path(a.output).write_bytes(raw)
-        print(json.dumps({'packet':ref,'content':data},indent=2));return
+        print(_render_packet(ref,data));return
     data={'attempt':binding,'schema_version':1,'review_id':r['id'],'stage':a.stage,'candidate_hash':r['candidate']['fingerprint'],'task_hash':r['task_hash'],
           'task_package':A.read_json(st['task_package']),'amendments':st['amendments'],'candidate':r['candidate'],
           'evidence':st['evidence'],'gates':st.get('gate_manifests',[]),'escapes':st.get('escapes',[])}
@@ -151,10 +157,11 @@ def cmd_packet(a,sid):
     if r.get('mode')=='delta':
         import al_review_delta as Delta
         data=Delta.slim(st,data,r)
-    raw=json.dumps(data,sort_keys=True).encode(); ref=A.snapshot_bytes(sid,raw,'review-packet-'+a.stage+('-v2' if Behavior.enabled(st) else ''),'runtime')
+    raw=(json.dumps(data,sort_keys=True,separators=(',',':')) if data.get('review_mode')=='delta' else json.dumps(data,sort_keys=True)).encode()
+    ref=A.snapshot_bytes(sid,raw,'review-packet-'+a.stage+('-v2' if Behavior.enabled(st) else ''),'runtime')
     r['packets'][a.stage]=ref; al_store.save(sid,st)
     if a.output: Path(a.output).write_bytes(raw)
-    print(json.dumps({'packet':ref,'content':data},indent=2))
+    print(_render_packet(ref,data))
 
 def validate_report(st,report,stage):
     r=st['review']; packet=r['packets'].get(stage)
