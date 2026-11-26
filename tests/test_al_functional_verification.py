@@ -317,10 +317,13 @@ def test_installer_over_eight_nodes_retains_whole_file_fixture_lifecycle(tmp_pat
     raw = json.loads((output / 'raw.json').read_bytes())
     plan = json.loads(Path(raw['verification']['plan_path']).read_bytes())
     rows = [a for a in plan['execution_assignments'] if a['suite'] == 'installer']
-    assert [a['node']['nodeid'] for a in rows] == [f'al/tests/test_a.py::test_{i:02d}' for i in range(10)]
+    assert [a['node']['nodeid'] for a in rows] == [
+        f'al/tests/test_a.py::test_{i:02d}' for i in range(10)]
     assert {a['group'] for a in rows} == {'installer:al/tests/test_a.py'}
     shards = [s for s in raw['verification']['shards'] if s['assignment']['suite'] == 'installer']
     assert len(shards) == 1
     assert result['amendment']['sha256'] == V.AMENDMENT_SHA256
-    assert V.validate(root, output, request['source_binding'], sorted(PATHS), None,
-                      request['selection'], result['raw_runner_exit'])['raw_report'] == result['raw_report']
+    assert V.validate(
+        root, output, request['source_binding'], sorted(PATHS), None,
+        request['selection'], result['raw_runner_exit'],
+    )['raw_report'] == result['raw_report']

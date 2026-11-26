@@ -256,7 +256,10 @@ def expected_assignments(root, collections, binding, selection):
         assignments.append(
             row
             | {
-                "group": row["group"] if row["suite"] == "installer" else key + ":dev-chunk-" + str(0 if whole else offset // 8),
+                "group": (
+                    row["group"] if row["suite"] == "installer"
+                    else key + ":dev-chunk-" + str(0 if whole else offset // 8)
+                ),
                 "serialization_group": None,
             }
         )

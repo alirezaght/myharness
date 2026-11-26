@@ -114,7 +114,9 @@ def test_terminal_incident_failure_rolls_back_all_facts(observed, monkeypatch):
     hits = install_statement_fault(
         monkeypatch,
         store,
-        lambda sql, _parameters: "insert into reliability_incidents" in " ".join(sql.lower().split()),
+        lambda sql, _parameters: (
+            "insert into reliability_incidents" in " ".join(sql.lower().split())
+        ),
     )
     with pytest.raises(ValueError, match="Reliability recording unavailable"):
         store.finish(operation, oid, "DISPATCH_REJECTED")
@@ -129,7 +131,9 @@ def test_pending_failure_rolls_back_audit_and_prevents_dispatch(observed, monkey
     hits = install_statement_fault(
         monkeypatch,
         store,
-        lambda sql, _parameters: "insert into reliability_observations" in " ".join(sql.lower().split()),
+        lambda sql, _parameters: (
+            "insert into reliability_observations" in " ".join(sql.lower().split())
+        ),
     )
     effects = []
     monkeypatch.setattr(operation, "_dispatch", lambda *a: effects.append(True))

@@ -142,8 +142,8 @@ def test_post_effect_settlement_fault_retains_charge_and_never_replays(policy_ru
     import sqlite3
     from pathlib import Path
 
-    from tests.test_policy_admission import patch
     from harness.policy import claims
+    from tests.test_policy_admission import patch
 
     r = policy_runtime
     configure(r)
