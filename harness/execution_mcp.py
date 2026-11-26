@@ -224,7 +224,13 @@ def validate_arguments(name, arguments):
                 or any(
                     not isinstance(v, dict)
                     or set(v) != {"artifact_id", "sha256"}
-                    or any(not isinstance(t, str) for t in v.values())
+                    or any(
+                        not isinstance(t, str)
+                        or not _within(
+                            spec["items"]["properties"][k], len(t), "minLength", "maxLength"
+                        )
+                        for k, t in v.items()
+                    )
                     for v in value
                 )
             ):
