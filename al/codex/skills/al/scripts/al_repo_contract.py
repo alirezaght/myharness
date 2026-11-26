@@ -132,7 +132,8 @@ def observe(scan):
 
 def architecture(scan,facts,unit,check):
     path=unit['path'];name=path.split('/')[-1];suffix=check.get('unit_name',{}).get('strip_suffix','')
-    chain=[CONTRACT,*check['chain'],path+'/pyproject.toml',*[p for p in (path+'/uv.lock',) if p in scan.files]]
+    prefix='' if path=='.' else path+'/'
+    chain=[CONTRACT,*check['chain'],prefix+'pyproject.toml',*[p for p in (prefix+'uv.lock',) if p in scan.files]]
     present=all(scan.text(p,required=True,rule=True) for p in check['chain'])
     if suffix and not name.endswith(suffix):present=False
     # Unit names become argv values: an option-like or placeholder-like name is refused.

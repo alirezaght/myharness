@@ -89,6 +89,7 @@
   "test_review_state.py",
   "test_review_window.py",
   "test_risk_routing.py",
+  "test_root_architecture_contract.py",
   "test_runtime_batch10_ci.py",
   "test_runtime_batch11_distribution.py",
   "test_runtime_batch11_recovery.py",

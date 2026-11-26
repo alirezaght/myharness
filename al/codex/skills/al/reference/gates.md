@@ -68,6 +68,25 @@ When source rules or the derived obligation inventory become stale during an unf
 
 Prospective coverage is evaluated for the replacement request before deciding whether an extension is needed. Replacement is justified by stale sourced rules or a demonstrated gap in prospective paths/obligations, not by an unchanged manifest. Planning preserves the retained phase and completion history. Writer admission enforces actual scope, identity, ownership and containment; missing currency, coverage and base readiness remain verification obligations, with conservative selection and repair.
 
+## Root architecture checks without a Python manifest
+
+An existing `.al/repository.json` architecture contract can declare a Python unit
+at `.` and `service_roots: ["."]`. Its `architecture_check` supplies literal `argv`,
+`applies_to: "python-services"`, a `chain` of actual check/configuration files, and
+`env_names`. The check must enforce a real architectural obligation, such as an
+allowed-import policy. Include its supporting configuration and helpers in the
+reviewed chain. This route does not certify arbitrary unit suites or manual PASS
+receipts as architectural coverage.
+
+Commit the reviewed policy separately before starting the task: the current
+contract must match the pinned base. Then discover and plan the affected paths,
+and run the generated gate on base and candidate through the ordinary workflow.
+Use discovery's actual gate ID; root architecture checks use `imports-root`.
+A missing `pyproject.toml` remains a conservative scope dependency without being
+invented as a source file. Policy changes, missing chain files and changed check
+sources invalidate prior evidence; an unrelated passing check cannot replace it.
+All other planning, verification and review obligations still apply.
+
 ## Gitlink evidence capabilities
 
 Gate manifests may declare an optional `sources` array on each gate. Evidence planning and execution accept the same declarations through `--sources-file <json>`, where the file contains an array of `{ "path": "vendor/lib", "capability": "parent-entry" }` objects. Each path is normalized relative to the parent repository and identifies a gitlink boundary. Omission is equivalent to an empty array for ordinary scopes.
