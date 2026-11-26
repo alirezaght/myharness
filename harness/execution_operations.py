@@ -628,12 +628,13 @@ class OperationController:
             if isinstance(result, dict):
                 from harness.policy.source_dependencies import selected
 
+                source_coverage = None
                 if name == "submit_output" and arguments.get("contract") is not None:
                     from harness.agent_exchange import SNAPSHOT_COVERAGE
 
-                    result["coverage"] = dict(SNAPSHOT_COVERAGE)
+                    source_coverage = dict(SNAPSHOT_COVERAGE)
                 elif attempt and selected(attempt.intent.claims) and not attempt.legacy:
-                    result["coverage"] = {
+                    source_coverage = {
                         "immutable_snapshot_validated": None,
                         "mutable_source_not_checked": False,
                         "coordinated_source_consumption": True,
@@ -644,12 +645,16 @@ class OperationController:
                     and attempt.legacy
                     and attempt.intent.boundary == "unqualified_process_tree"
                 ):
-                    result["coverage"] = {
+                    source_coverage = {
                         "immutable_snapshot_validated": None,
                         "mutable_source_not_checked": True,
                         "coordinated_source_consumption": False,
                         "legacy_uncoordinated": True,
                     }
+                if source_coverage is not None:
+                    # Handler coverage describes its domain; source telemetry is independent.
+                    key = "source_coverage" if "coverage" in result else "coverage"
+                    result[key] = source_coverage
             result = redact_value(result)
             observations.finish(self, observation, "RETURNED", result)
             return result
