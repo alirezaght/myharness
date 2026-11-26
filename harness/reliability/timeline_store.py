@@ -115,7 +115,7 @@ def retrieval_link(operation, observation_id, returned, *, scope=None):
         return
     if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{32}", receipt_id):
         return
-    from harness.knowledge.policy import policy_digest, validate_scope
+    from harness.knowledge.policy import validate_scope
     from harness.reliability.store import _publication
 
     with _publication(operation) as (conn, execution):
@@ -138,32 +138,7 @@ def retrieval_link(operation, observation_id, returned, *, scope=None):
         ):
             raise ValueError("retrieval observation scope differs")
         # Resolve the issued pair within the same validated delivery scope, never a later row.
-        receipt = conn.execute(
-            "SELECT r.receipt_id,r.snapshot_id FROM knowledge_receipts r "
-            "JOIN knowledge_bundles b ON b.bundle_hash=r.bundle_hash "
-            "JOIN knowledge_snapshots s ON s.snapshot_id=r.snapshot_id "
-            "AND s.project_id=r.project_id "
-            "JOIN knowledge_bundle_scope k ON k.bundle_hash=b.bundle_hash "
-            "WHERE r.receipt_id=? AND r.bundle_hash=? AND r.project_id=? "
-            "AND b.project_id=r.project_id AND b.snapshot_id=r.snapshot_id "
-            "AND r.policy_digest=? AND b.policy_digest=r.policy_digest "
-            "AND r.purpose=? AND b.purpose=r.purpose AND k.purpose=r.purpose "
-            "AND k.principal_id=? AND k.execution_id=? AND k.policy_generation=? "
-            "AND k.packet_hash IS ? AND b.invalidated_at IS NULL AND b.payload!='' "
-            "AND NOT EXISTS (SELECT 1 FROM knowledge_bundle_state x "
-            "WHERE x.bundle_hash=b.bundle_hash)",
-            (
-                receipt_id,
-                bundle,
-                scope.project_id,
-                policy_digest(scope),
-                scope.purpose,
-                scope.principal_id,
-                scope.execution_id,
-                scope.policy_generation,
-                scope.packet_hash,
-            ),
-        ).fetchone()
+        receipt = _receipt(conn, scope, bundle, receipt_id)
         if receipt is not None and scope.snapshot_id not in {None, receipt["snapshot_id"]}:
             return
         if receipt is None:
@@ -183,21 +158,108 @@ def retrieval_link(operation, observation_id, returned, *, scope=None):
         )
 
 
+def _receipt(conn, scope, bundle, receipt_id):
+    from harness.knowledge.policy import policy_digest
+
+    return conn.execute(
+        "SELECT r.*,b.payload FROM knowledge_receipts r "
+        "JOIN knowledge_bundles b ON b.bundle_hash=r.bundle_hash "
+        "JOIN knowledge_snapshots s ON s.snapshot_id=r.snapshot_id "
+        "AND s.project_id=r.project_id "
+        "JOIN knowledge_bundle_scope k ON k.bundle_hash=b.bundle_hash "
+        "WHERE r.receipt_id=? AND r.bundle_hash=? AND r.project_id=? "
+        "AND b.project_id=r.project_id AND b.snapshot_id=r.snapshot_id "
+        "AND r.policy_digest=? AND b.policy_digest=r.policy_digest "
+        "AND r.purpose=? AND b.purpose=r.purpose AND k.purpose=r.purpose "
+        "AND k.principal_id=? AND k.execution_id=? AND k.policy_generation=? "
+        "AND k.packet_hash IS ? AND b.invalidated_at IS NULL AND b.payload!='' "
+        "AND NOT EXISTS (SELECT 1 FROM knowledge_bundle_state x "
+        "WHERE x.bundle_hash=b.bundle_hash)",
+        (
+            receipt_id,
+            bundle,
+            scope.project_id,
+            policy_digest(scope),
+            scope.purpose,
+            scope.principal_id,
+            scope.execution_id,
+            scope.policy_generation,
+            scope.packet_hash,
+        ),
+    ).fetchone()
+
+
 def assignment_link(operation, principal, returned):
+    """Final source reads need their own query policy Attempt after retrieval settles."""
+    from contextlib import closing
+    from pathlib import Path
+
+    from harness.controller import HarnessController
+    from harness.db import connect
+    from harness.knowledge.delivery import binding
+    from harness.knowledge.policy import derive_scope
+    from harness.policy.context import scope as policy_scope
+    from harness.policy.context import start_effect
+    from harness.policy.resources import prepare
+
+    with operation.lock, closing(connect(operation.database)) as conn:
+        controller = HarnessController(conn)
+        execution, state = operation.authority(controller, principal, operation="read")
+        scope = derive_scope(
+            controller,
+            execution,
+            principal,
+            state,
+            Path(operation.envelope["repository"]),
+            operation=operation,
+        )
+        expected = binding(operation, controller, principal)
+        attempt = prepare(operation, controller, principal, "knowledge_query", {}, state)
+        with policy_scope(attempt):
+            try:
+                start_effect()
+                _assignment_link(operation, principal, returned, scope, expected)
+            except BaseException:
+                if attempt:
+                    attempt.owner_finished(outcome="failed")
+                raise
+            else:
+                if attempt:
+                    attempt.owner_finished()
+
+
+def _assignment_link(operation, principal, returned, scope, expected):
+    """Record exact prepared server-return bytes, never transport receipt or model use."""
+    from harness.controller import HarnessController
+    from harness.knowledge.delivery import binding, size_estimate, validate_return
+    from harness.knowledge.models import canonical, digest
+    from harness.knowledge.policy import validate_scope
     from harness.reliability.identity import verified_principal
     from harness.reliability.store import _publication
 
     verified = verified_principal(operation, principal)
     if verified is None or returned.get("status") != "available":
-        return
+        raise ValueError("knowledge delivery requires a verified principal")
     with _publication(operation) as (conn, execution):
-        receipt = conn.execute(
-            "SELECT receipt_id,snapshot_id,bundle_hash FROM knowledge_receipts WHERE receipt_id=? "
-            "AND bundle_hash=?",
-            (returned["receipt_id"], returned["bundle_hash"]),
-        ).fetchone()
-        if receipt is None:
-            return
+        controller = HarnessController(conn)
+        structural = binding(operation, controller, principal, include_handoff=False)
+        if structural != {k: v for k, v in expected.items() if k != "handoff"}:
+            raise ValueError("knowledge assignment changed before publication")
+        project = validate_scope(conn, scope)
+        receipt = _receipt(conn, scope, returned["bundle_hash"], returned["receipt_id"])
+        if receipt is None or project["active_snapshot_id"] != receipt["snapshot_id"]:
+            raise ValueError("knowledge delivery receipt is stale or foreign")
+        validate_return(conn, scope, returned["context"], receipt)
+        raw = canonical(returned["context"]).encode()
+        meta = returned["presentation"]
+        import json
+
+        if (
+            meta["sha256"] != digest(raw)
+            or meta["size"] != len(raw)
+            or meta["size_estimate"] != size_estimate(json.loads(receipt["payload"]))
+        ):
+            raise ValueError("knowledge presentation identity differs")
         link(
             conn,
             execution,
@@ -206,7 +268,8 @@ def assignment_link(operation, principal, returned):
             event_kind="retrieval.bundle",
             provenance="runtime_observed",
             principal_id=verified["principal_id"],
-            bundle_hash=receipt["bundle_hash"],
+            bundle_hash=returned["bundle_hash"],
             snapshot_id=receipt["snapshot_id"],
             receipt_id=receipt["receipt_id"],
+            reference_id=f"await_assignment-return-prepared:sha256:{meta['sha256']}:bytes:{len(raw)}",
         )

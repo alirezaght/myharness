@@ -97,6 +97,9 @@ def read_only(args):
 
 class OperationController:
     def __init__(self, database, execution, envelope, package, initialization, registry, directory):
+        from harness.knowledge.delivery import AutomaticDeliveryPolicy
+
+        self.automatic_delivery_policy = AutomaticDeliveryPolicy.ENABLED
         self.database, self.execution_id = Path(database), execution["id"]
         self.epoch_id = execution.get("epoch_id", "legacy-0")
         self.authority_generation = execution.get("authority_generation", 0)
@@ -682,11 +685,19 @@ class OperationController:
                 scope = derive_scope(
                     controller, execution, principal, state, Path(root), operation=self
                 )
+                request = ContextRequest(a.get("query", ""), tuple(a.get("entity_refs", ())))
+                if name == "knowledge_query" and not a:
+                    from harness.knowledge.delivery import request_for
+                    from harness.knowledge.integration import knowledge_mode
+
+                    if knowledge_mode() == "off":
+                        raise ValueError("knowledge:disabled")
+                    request = request_for(controller, execution, principal, state, scope=scope)
                 result = (
                     query(
                         controller.conn,
                         scope,
-                        ContextRequest(a.get("query", ""), tuple(a.get("entity_refs", ()))),
+                        request,
                     ).to_dict()
                     if name == "knowledge_query"
                     else consumers(
@@ -699,6 +710,17 @@ class OperationController:
                     if name == "knowledge_consumers"
                     else explain(controller.conn, scope, a["bundle_hash"], a["assertion_id"])
                 )
+                if name == "knowledge_query" and not a:
+                    rendered = redact_value(result)
+                    if any(
+                        result[key] != rendered[key]
+                        for key in result
+                        if key not in {"context", "budget"}
+                    ):
+                        raise ValueError("knowledge:source-presentation-redacted")
+                    from harness.knowledge.delivery import size_estimate
+
+                    result["size_estimate"] = size_estimate(result)
                 current_execution, current_state = self.authority(
                     controller, principal, operation="read"
                 )
@@ -1566,6 +1588,10 @@ class OperationController:
     def await_assignment(self, principal, timeout):
         if type(timeout) is not int or not 1 <= timeout <= 30:
             raise ValueError("assignment wait must be between 1 and 30 seconds")
+        from harness.reliability.identity import verified_principal
+
+        if verified_principal(self, principal) is None:
+            raise ValueError("assignment requires a verified native principal")
         deadline = time.monotonic() + timeout
         while True:
             with self.lock, closing(connect(self.database)) as conn:
@@ -1578,13 +1604,15 @@ class OperationController:
                     "knowledge_contribution_contract": description(),
                 }
                 if principal["role"] == "orchestrator" or not principal["writable"]:
-                    return {
+                    response = {
                         **self.control_context(principal),
                         **observed,
                         "graph_revision": state["integration"]["graph_revision"],
                     }
+                else:
+                    response = None
                 value = self.assignments.get(principal["thread_id"])
-                if value:
+                if response is None and value:
                     from harness.assignment_handoff import descriptor
 
                     try:
@@ -1601,19 +1629,56 @@ class OperationController:
 
                             reject_assignment(self, principal, error)
                             handoff["contract_error"] = error.feedback
-                    context = {"status": "unavailable"}
-                    if handoff["status"] == "available":
-                        from harness.knowledge.integration import assignment_context
-
-                        context = assignment_context(self, HarnessController(conn), principal)
-                    return {
+                    response = {
                         "status": "Assigned",
                         **observed,
                         **value,
                         "graph_revision": state["integration"]["graph_revision"],
                         "handoff": handoff,
-                        "knowledge_context": context,
                     }
+                if response is not None:
+                    from harness.knowledge.delivery import (
+                        AutomaticDeliveryPolicy,
+                        binding,
+                        unavailable,
+                    )
+
+                    if self.automatic_delivery_policy is AutomaticDeliveryPolicy.EXPLICIT_ONLY:
+                        if response.get("status") == "Assigned":
+                            response["knowledge_context"] = unavailable(
+                                "automatic assignment context disabled by trusted controller policy"
+                            )
+                        return response
+
+                    eligible = response.get("handoff", {}).get("status") == "available" or (
+                        principal["role"] == "orchestrator"
+                        or observed["registered_assignment"]["status"] == "available"
+                        and not principal["writable"]
+                    )
+                    before = binding(self, HarnessController(conn), principal) if eligible else None
+            if response is not None:
+                if before is None:
+                    response["knowledge_context"] = unavailable(
+                        "current assignment context unavailable"
+                    )
+                    return response
+                from harness.knowledge.integration import assignment_context
+
+                context = assignment_context(self, None, principal)
+                with self.lock, closing(connect(self.database)) as conn:
+                    if binding(self, HarnessController(conn), principal) != before:
+                        raise ValueError("knowledge assignment changed before delivery")
+                    if context["status"] == "available":
+                        from harness.reliability.timeline_store import assignment_link
+
+                        try:
+                            assignment_link(self, principal, context)
+                        except ValueError as error:
+                            if str(error) != "knowledge:delivery-budget-unavailable":
+                                raise
+                            context = unavailable(str(error))
+                    response["knowledge_context"] = context
+                    return response
             if time.monotonic() >= deadline:
                 return {"status": "Pending", **observed}
             time.sleep(0.1)

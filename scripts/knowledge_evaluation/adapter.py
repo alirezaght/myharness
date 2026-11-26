@@ -55,6 +55,11 @@ class EvaluatorAdapter:
 
             self.budget = Budget(bool(stage and stage["action"] == "donor"))
         self.revalidate()
+        from harness.knowledge.delivery import AutomaticDeliveryPolicy
+
+        # Existing evaluator source/method receipts bind this setup for both arms.
+        # Explicit C queries retain their ordinary authenticated dispatch path.
+        operation.automatic_delivery_policy = AutomaticDeliveryPolicy.EXPLICIT_ONLY
 
     def revalidate(self):
         expected = {k: v for k, v in self.package["corpus"].items() if k != "root"}
