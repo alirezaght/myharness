@@ -236,11 +236,20 @@ function renderExecutionTimeline(execution) {
   form.addEventListener("submit", (event) => event.preventDefault());
   form.append(kindLabel, principalLabel); section.append(form);
   renderTimelineContent(execution, view, section);
-  if (reliabilityFetchDue(view, "list", execution, Boolean(view.error))) loadTimeline(execution, view, section);
-  if (view.spanId && !view.detailLoading && (view.detail || !view.detailError)
-    && (!view.detail || reliabilityFetchDue(view, "span", execution))) {
+  reliabilityRefetch(view, "list", execution, {
+    failed: Boolean(view.error),
+    busy: () => view.loading,
+    mounted: () => Boolean(timelineSection(execution, view)),
+    load: () => loadTimeline(execution, view, timelineSection(execution, view) || section),
+  });
+  if (view.spanId && !view.detailLoading && (view.detail || !view.detailError)) {
     const selected = view.items.find((item) => item.item_id === view.selectedId);
-    if (selected) loadTimelineSpan(execution, view, section, selected, { refresh: Boolean(view.detail) });
+    if (selected && !view.detail) loadTimelineSpan(execution, view, section, selected, { refresh: false });
+    else if (selected) reliabilityRefetch(view, "span", execution, {
+      busy: () => view.detailLoading,
+      mounted: () => Boolean(timelineSection(execution, view)),
+      load: () => loadTimelineSpan(execution, view, timelineSection(execution, view) || section, selected, { refresh: true }),
+    });
   }
   return section;
 }

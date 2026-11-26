@@ -223,10 +223,18 @@ function renderExecutionPolicy(execution) {
   paintPolicy(execution, view, section);
   setTimeout(() => {
     if (!policySection(execution, view)) return;
-    if (reliabilityFetchDue(view, "list", execution, Boolean(view.error))) loadPolicy(execution, view);
-    if (view.capAdvanced && reliabilityFetchDue(view, "capabilities", execution, Boolean(view.capError))) loadCapabilities(execution, view);
+    const mounted = () => Boolean(policySection(execution, view));
+    reliabilityRefetch(view, "list", execution, {
+      failed: Boolean(view.error), busy: () => view.loading, mounted, load: () => loadPolicy(execution, view),
+    });
+    if (view.capAdvanced) reliabilityRefetch(view, "capabilities", execution, {
+      failed: Boolean(view.capError), busy: () => view.capLoading, mounted, load: () => loadCapabilities(execution, view),
+    });
     const active = view.detail && ["reserved", "started", "unresolved"].includes(view.detail.attempt.state);
-    if (view.selected && (!view.detail || (active && reliabilityFetchDue(view, "detail", execution)))) loadPolicyDetail(execution, view, view.selected);
+    if (view.selected && !view.detail) loadPolicyDetail(execution, view, view.selected);
+    else if (view.selected && active) reliabilityRefetch(view, "detail", execution, {
+      busy: () => view.detailLoading, mounted, load: () => loadPolicyDetail(execution, view, view.selected),
+    });
   }, 0);
   return section;
 }

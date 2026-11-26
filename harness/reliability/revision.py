@@ -6,10 +6,18 @@ explicit refresh changes, instead of on every live repaint.
 
 The marker is derived from the schema rather than a hand-kept list, so a table added to the
 reliability, incident or policy families is covered without editing this module. For each
-table it records the row count and newest rowid (inserts and deletes) and, for columns that
-are updated in place, their non-null count and maximum. Tables with an ``execution_id``
-column are scoped to the execution; the rest (revision and membership tables keyed by an
-incident, group or policy) are counted globally, which can only cause an extra fetch.
+table it records the row count and newest rowid (inserts and deletes). For tables scoped by
+an ``execution_id`` column it also records, for columns updated in place, their non-null
+count, maximum and total length, and the sum of any ``revision`` column. Unscoped tables
+(revision, membership and incident tables keyed by an incident, group or policy) are counted
+globally, which can only cause an extra fetch, and get no per-column aggregates so the marker
+never scans a project-wide table.
+
+Limits, accepted because every current writer also inserts a row or sets a timestamp in the
+same transaction and the panels keep explicit Latest/refresh actions: an in-place update of
+an unscoped table, or an equal-length text change on a row that is not the maximum, is not
+seen. Task-mode incident intelligence lists every execution of the task, while the marker
+follows the task's latest execution.
 """
 
 import hashlib
@@ -47,11 +55,13 @@ def reliability_revision(conn: sqlite3.Connection, execution_id: str) -> str:
         aggregates = ["count(*)"]
         if has_rowid:
             aggregates.append("max(rowid)")
-        for column in mutable:
+        for column in mutable if scoped else ():
             quoted = _quoted(column)
             aggregates.append(f"count({quoted})")
             aggregates.append(f"max({quoted})")
             aggregates.append(f"total(length({quoted}))")
+            if column == "revision":
+                aggregates.append(f"total({quoted})")
         query = f"SELECT {', '.join(aggregates)} FROM {_quoted(name)}"
         params: tuple[str, ...] = ()
         if scoped:

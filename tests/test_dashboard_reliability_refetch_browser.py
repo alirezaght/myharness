@@ -7,11 +7,14 @@ incidents), and again on an explicit refresh, but not on repaints that change no
 show. Covers empty lists first, then non-empty ones.
 """
 
+from contextlib import closing
 from urllib.parse import quote
 
 import pytest
 
+from harness.db import connect
 from harness.reliability import store
+from harness.reliability.revision import reliability_revision
 from tests.chrome_cdp import chrome_page
 from tests.test_dashboard import serve
 from tests.test_dashboard_browser import CHROME
@@ -97,3 +100,84 @@ def test_repaints_reuse_reliability_lists_until_their_data_or_a_refresh_changes(
         refreshed = _reads(page)
         assert all(refreshed[r] - changed[r] == 1 for r in LISTS), (changed, refreshed)
         assert page.evaluate(INCIDENT_ROWS) == 1
+
+
+OPERATION_ROWS = "document.querySelectorAll('#operation-incidents .incident-item').length"
+
+
+def test_a_result_dropped_by_a_tab_switch_is_loaded_again_on_return(
+    observed,  # noqa: F811
+    tmp_path,
+):
+    operation, principal, _ = observed
+    task_id = operation.envelope["task_id"]
+    url_tail = f"?task={quote(task_id)}&workspace=run&tab=implementation"
+    with serve(operation.database, task_id) as server, chrome_page(tmp_path / "chrome") as page:
+        page.open(server.url + url_tail, READY)
+        page.settle(1.5)
+        assert page.evaluate(OPERATION_ROWS) == 0
+        # Hold operation-incident responses so the refetch is in flight during the switch.
+        page.evaluate(
+            """(() => {
+                const original = window.fetch;
+                window.fetch = async (input, options) => {
+                    const response = await original(input, options);
+                    if (String(input).includes('/api/execution/incidents?')) {
+                        await new Promise((resolve) => setTimeout(resolve, 2500));
+                    }
+                    return response;
+                };
+                return true;
+            })()"""
+        )
+        _record_incident(operation, principal)
+        with closing(connect(operation.database)) as conn:
+            final = reliability_revision(conn, operation.execution_id)
+        # Recording takes two commits; wait until the page holds the final marker and its
+        # (slowed) refetch is in flight, so no later frame can rescue a dropped result.
+        page.wait_for(
+            f"executionSnapshot?.reliability_revision === {final!r}"
+            " && [...INCIDENT_VIEWS.values()].some((view) => view.loading)",
+            timeout=15,
+        )
+        page.evaluate("document.getElementById('workspace-tab-checks').click(); true")
+        page.settle(3.5)  # the slowed result arrives while the panel is unmounted
+        page.evaluate("document.getElementById('workspace-tab-implementation').click(); true")
+        page.wait_for(f"{OPERATION_ROWS} === 1", timeout=10)
+
+
+def test_refreshes_keep_older_intelligence_pages_and_the_selection(
+    observed,  # noqa: F811
+    tmp_path,
+):
+    operation, principal, _ = observed
+    task_id = operation.envelope["task_id"]
+    for _ in range(30):
+        _record_incident(operation, principal)
+    url_tail = f"?task={quote(task_id)}&workspace=run&tab=implementation"
+    items = "document.querySelectorAll('.ii-item').length"
+    selected = "document.querySelectorAll('.ii-item [aria-pressed=\"true\"]').length"
+    with serve(operation.database, task_id) as server, chrome_page(tmp_path / "chrome") as page:
+        page.open(server.url + url_tail, f"{items} === 25")
+        page.evaluate("document.getElementById('ii-list-older').click(); true")
+        page.wait_for(f"{items} === 30")
+        oldest = page.evaluate(
+            "[...document.querySelectorAll('.ii-item')].at(-1).dataset.incidentId"
+        )
+        page.evaluate(f"document.getElementById('ii-select-{oldest}').click(); true")
+        page.wait_for(f"{selected} === 1")
+
+        # A new incident arrives: the window grows, older pages and the selection stay.
+        _record_incident(operation, principal)
+        page.wait_for(f"{items} === 31", timeout=15)
+        page.settle(1.0)
+        assert page.evaluate(selected) == 1
+        assert page.evaluate(
+            f"document.querySelector('.ii-item [aria-pressed=\"true\"]').closest('.ii-item')"
+            f".dataset.incidentId === {oldest!r}"
+        )
+
+        # An explicit refresh keeps them too.
+        page.evaluate("refreshDashboard().then(() => true)")
+        page.settle(1.0)
+        assert page.evaluate(items) == 31 and page.evaluate(selected) == 1

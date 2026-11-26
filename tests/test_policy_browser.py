@@ -341,6 +341,7 @@ document.querySelector('#policy-decision').dispatchEvent(new Event('input'));
 document.querySelector('#policy-decision').setSelectionRange(3,
 9);
 
+ noteReliabilityRefresh(); // An explicit refresh refetches lists on the next repaint (#110).
  repaintExecution();
 await waitFor('held refresh',
 ()=>waiting.length);
@@ -351,7 +352,9 @@ detailNode.dispatchEvent(new Event('toggle'));
 
  await fixture('complete');
 
- // Parent repaint refreshes mutable selected details while the list request remains blocked.
+ // A data-change repaint refreshes mutable selected details while the list request remains blocked.
+ // The next stream frame carries a changed reliability marker (#110).
+ executionSnapshot={...executionSnapshot, reliability_revision:'after-completion'};
  repaintExecution();
 await waitFor('live completion',
 ()=>state().detail?.attempt.state==='settled');
@@ -375,6 +378,7 @@ await painted();
  // Traverse bounded pages, then explicitly return to latest.
  const capSeen=new Set(state().capItems.map(item=>item.id));
  hold=true;
+ noteReliabilityRefresh();
  repaintExecution();
  await waitFor('capability test held list',()=>waiting.length);
  const capCursor=state().capCursor;
