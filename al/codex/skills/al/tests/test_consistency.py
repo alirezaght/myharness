@@ -67,3 +67,19 @@ def test_no_claude_harness_tokens_anywhere_in_the_codex_al_copy():
         if hits:
             offenders[str(path.relative_to(PACKAGE.parent))] = hits
     assert not offenders, offenders
+
+
+def test_harness_sealed_control_source_inventory_is_current():
+    import importlib.util
+    root = PACKAGE.parents[3]
+    if PACKAGE.relative_to(root).as_posix() != 'al/codex/skills/al':
+        return
+    if not (root/'harness').exists() and not (root/'pyproject.toml').exists():
+        return  # A standalone AL package has no Harness build-owned policy maps.
+    helper = root/'scripts/control_source_inventory.py'
+    assert (root/'harness/policy').is_dir() and helper.is_file(), 'Harness inventory checker missing'
+    spec = importlib.util.spec_from_file_location('_al_control_source_inventory',helper)
+    checker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(checker)
+    report = checker.check(root)
+    assert report['ok'], report
