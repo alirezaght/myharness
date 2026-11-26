@@ -90,26 +90,26 @@ task t-xxxxxxxx · phase investigation · complexity trivial (developer)
 $ harness investigate t-xxxxxxxx
 investigation of <demo>/repo (revision <rev>)
 request: [demo] Add a CSV export of items in app/export.py
+unresolved questions (2):
+  [dependencies] No dependency manifest found; how are dependencies managed?
+  [tests] No tests found; which framework and layout should new tests use?
 approved decisions (1):
   DEC-0001 v1 — [demo] Storage engine
-verified facts (12):
+request-relevant facts (10):
   [repository] 4 files enumerated via git ls-files — git ls-files
   [repository] revision <rev> — git rev-parse HEAD
   [repository] branch main — git rev-parse --abbrev-ref HEAD
   [repository] working tree clean — git status --porcelain
   [repository] 0 ahead and 0 behind refs/heads/main — local Git ref comparison; remote freshness unverified (no fetch)
-  [decisions] DEC-0001 v1 approved — [demo] Storage engine (scope: Persistence) — docs/decisions/DEC-0001-storage-engine.md
   [repository] 2 python files — file extensions
-  [components] `app/` is a Python package (2 source files) — app/__init__.py
   [files] `docs/decisions/DEC-0001-storage-engine.md` matches 3 request keywords (demo, export, app) — keyword match: demo, export, app
   [files] `app/export.py` matches 2 request keywords (export, app) — keyword match: export, app (path: export, app)
   [files] `app/__init__.py` matches 1 request keyword (app) — keyword match: app (path: app)
   [files] `README.md` matches 1 request keyword (demo) — keyword match: demo
 assumptions (1):
   primary language is python — basis: majority of source files
-unresolved questions (2):
-  [dependencies] No dependency manifest found; how are dependencies managed?
-  [tests] No tests found; which framework and layout should new tests use?
+repository inventory not shown: 2 facts (components 1, decisions 1)
+every fact: `harness investigate t-xxxxxxxx --full` (or --json)
 $ harness phase t-xxxxxxxx next
 task t-xxxxxxxx · phase interview · complexity trivial (developer)
 
