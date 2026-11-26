@@ -238,20 +238,77 @@ def test_unowned_runtime_source_under_docs_stays_conservative(repo):
     assert assessment['selected_services']==assessment['potential_services']
 
 
-def test_unattributed_runtime_consumer_does_not_become_a_docs_exclusion(repo):
+def test_unattributed_nonpython_consumer_does_not_become_a_docs_exclusion(repo):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    seed(repo)
+    put(repo,'docs/prompt.md','# Runtime prompt\n')
+    put(repo,'tooling/consumer.js','const PROMPT = "docs/prompt.md";\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
+    # The consumer is observed (never a silent docs exclusion) and stays a global
+    # diagnostic; an unreferenced leaf outside every unit is not this task's obligation.
+    assert any(g['code']=='unclassified-runtime-consumer' and g['path']=='tooling/consumer.js'
+               for g in facts['enumeration']['gaps'])
+    assessment=Coverage.assess(facts)
+    assert assessment['global_inventory']['status']=='incomplete'
+    assert not any(g['code']=='unclassified-runtime-consumer' for g in assessment['gaps'])
+    # A unit that literally references the consumer is selected through it.
+    put(repo,'services/b/src/tool.py','TOOL = "tooling/consumer.js"\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
+    assert 'services/b' in Coverage.assess(facts)['selected_services']
+
+
+
+def test_python_tooling_consumer_has_root_ownership_and_real_check_debt(repo):
     import al_repository_facts as Facts
     import al_service_coverage as Coverage
     seed(repo)
     put(repo,'docs/prompt.md','# Runtime prompt\n')
     put(repo,'tooling/consumer.py','PROMPT = "docs/prompt.md"\n')
     facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
-    # The consumer is observed (never a silent docs exclusion) and stays a global
-    # diagnostic; an unreferenced leaf outside every unit is not this task's obligation.
-    assert any(g['code']=='unclassified-runtime-consumer' for g in facts['enumeration']['gaps'])
+    root=next(u for u in facts['units'] if u['id']=='.')
+    assert any(row['path']=='tooling/consumer.py' for row in root['source_witnesses'])
+    assert any('tooling/consumer.py' in row['consumers'] for row in facts['dependencies']['artifact_consumers'])
     assessment=Coverage.assess(facts)
-    assert assessment['global_inventory']['status']=='incomplete'
-    assert not any(g['code']=='unclassified-runtime-consumer' for g in assessment['gaps'])
-    # A unit that literally references the consumer is selected through it.
-    put(repo,'services/b/src/tool.py','TOOL = "tooling/consumer.py"\n')
+    assert '.' in assessment['selected_services'] and assessment['outcome']=='incomplete'
+    assert any(g['code']=='missing-verification-check' and g['unit']=='.' for g in assessment['gaps'])
+    assert not any(e['path']=='docs/prompt.md' and 'irrelevant' in e['reason']
+                   for e in facts['enumeration']['exclusions'])
+    put(repo,'services/b/src/tool.py','import tooling.consumer\nTOOL = "tooling/consumer.py"\n')
     facts=Facts.collect(repo,base_oid=None,paths=['docs/prompt.md'],opaque=[])
-    assert 'services/b' in Coverage.assess(facts)['selected_services']
+    assert {'services/b','.'} <= set(Coverage.assess(facts)['selected_services'])
+
+
+def test_manifestless_setup_and_dynamic_imports_remain_unresolved(repo,tmp_path):
+    import al_repository_facts as Facts
+    import al_service_coverage as Coverage
+    from test_repo_adapters import manifestless_root
+    manifestless_root(repo)
+    marker=tmp_path/'setup-must-not-execute'
+    put(repo,'setup.py',f'open({str(marker)!r},"w").write("bad")\n')
+    put(repo,'tools/pkg.py','def load(name):\n    return __import__(name)\n')
+    facts=Facts.collect(repo,base_oid=None,paths=['tools/pkg.py','setup.py'],opaque=[])
+    assert not marker.exists()
+    assert any(g['code']=='executable-layout' and g['path']=='setup.py' for g in facts['enumeration']['gaps'])
+    assert facts['dependencies']['uncertainties'] and Coverage.assess(facts)['outcome']=='incomplete'
+
+
+def test_manifestless_witness_bytes_and_all_sources_are_independently_observed(repo):
+    import al_repository_facts as Facts
+    from test_repo_adapters import manifestless_root
+    manifestless_root(repo)
+    for i in range(8): put(repo,f'tools/mod{i:02}.py','VALUE=1\n')
+    before=Facts.collect(repo,base_oid=None,paths=['tools'],opaque=[])
+    put(repo,'tools/mod00.py','VALUE=2\n')
+    changed=Facts.collect(repo,base_oid=None,paths=['tools'],opaque=[])
+    unit=lambda facts:next(u for u in facts['units'] if u['id']=='.')
+    assert unit(before)['source_witnesses'] != unit(changed)['source_witnesses']
+    # Byte provenance moves; unchanged imports/module identities alone need not
+    # imply a different dependency requirement.
+    for key in ('edges','source_membership','potential_services'):
+        assert before['dependencies'][key]==changed['dependencies'][key]
+    put(repo,'tools/zz_new.py','VALUE=3\n')
+    after=Facts.collect(repo,base_oid=None,paths=['tools'],opaque=[])
+    assert unit(changed)['source_witnesses']==unit(after)['source_witnesses']
+    assert any(row[1]=='tools/zz_new.py' for row in after['dependencies']['source_membership'])
+    assert any(row['path']=='tools/zz_new.py' for row in after['scan_inputs'])
