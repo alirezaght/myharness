@@ -57,6 +57,11 @@ def test_closed_tool_arguments_are_enforced_on_real_requests():
         '{"dispatched": "knowledge_query"}',
     )
     assert _call(connection, "knowledge_query", {}) == (False, '{"dispatched": "knowledge_query"}')
+    longest = {"query": "q" * 4096}
+    assert _call(connection, "knowledge_query", longest) == (
+        False,
+        '{"dispatched": "knowledge_query"}',
+    )
     # Authority is server-assigned: a caller cannot select the task, and no field outside the
     # published schema reaches the dispatcher.
     for name, arguments in (
@@ -76,4 +81,5 @@ def test_closed_tool_arguments_are_enforced_on_real_requests():
     assert dispatched == [
         ("operator-principal", "knowledge_query", accepted),
         ("operator-principal", "knowledge_query", {}),
+        ("operator-principal", "knowledge_query", longest),
     ]

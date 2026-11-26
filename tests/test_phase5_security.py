@@ -77,7 +77,7 @@ def test_report_and_browser_status_are_read_only_and_print_the_stored_view(
     if argv == ("report",):
         assert json.loads(out)["merge_request"]["iid"] == 14  # the stored delivery, not a stub
     assert logical_contents(db_path) == before
-    # A foreign task is refused before any view is read.
+    # An execution named under another task is refused, prints nothing and writes nothing.
     code, out, err = _cli(db_path, capsys, *argv, "t-00000000", execution_id)
     assert code == 1 and out == "" and "another task" in err
     assert logical_contents(db_path) == before
