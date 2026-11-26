@@ -194,3 +194,54 @@ def test_profile_is_forwarded_and_reported_without_a_release_claim(tmp_path, mon
     assert value['release_claim'] is False and value['source_stable'] is True
     assert value['verification']['reconciliation']['executed_passed'] == 1
     assert 'development check, not a release result' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('condition', ['timing-only', 'failed', 'missing', 'source-movement', 'reconciliation-error'])
+def test_controlled_timing_report_preserves_functional_guards(tmp_path, monkeypatch, capsys, condition):
+    import al.verify_changed as verifier
+    import al.verification_plan as planning
+    import al.verification_runner as runner
+    from al.verification_profile import capture_source_binding
+
+    root = source(tmp_path)
+    temporary = tmp_path / 'tmp';temporary.mkdir()
+    monkeypatch.setattr('tempfile.tempdir', str(temporary))
+    node = 'installer:al/tests/test_a.py::test_a'
+    plan = {'execution_assignments': [{'id': node}], 'shared_equivalents': [],
+            'collected_obligations': [node], 'intentionally_unselected': [], 'complete_required': False}
+    binding = capture_source_binding(root)
+    monkeypatch.setattr(verifier, '_plan', lambda *a, **kw: (plan, binding))
+    log = tmp_path / 'controlled.log';log.write_text('controlled verification report\n')
+    durations = {node: 75.0}
+
+    def controlled_run(*args, **kwargs):
+        outcomes = {} if condition == 'missing' else {node: 'failed' if condition == 'failed' else 'passed'}
+        shard = {'outcomes': outcomes, 'durations': durations,
+                 'errors': ['controlled reconciliation failure'] if condition == 'reconciliation-error' else [],
+                 'log': str(log)}
+        if condition == 'source-movement':
+            (root / 'al/tests/test_a.py').write_text('def test_a():\n    assert False\n')
+        return {'shards': [shard], 'reconciliation': planning.reconcile(plan, [shard])}
+
+    monkeypatch.setattr(runner, 'run', controlled_run)
+    # This report-seam test makes no process-settlement claim.
+    monkeypatch.setattr(planning, 'finalize_verification_storage', lambda *a: {'complete': True})
+    report = tmp_path / 'reports/timing.json'
+    expected = condition == 'timing-only'
+    assert main(['--tier', 'all', '--path', 'al/tests/test_a.py', '--report', str(report)], root=root) == (0 if expected else 1)
+    value = json.loads(report.read_text())
+    assert value['status'] == ('PASS' if expected else 'FAIL')
+    assert value['release_claim'] is False
+    assert value['over_budget'] == [
+        'file 75.0 s > 60 s: installer:al/tests/test_a.py',
+        'test 75.0 s > 5 s: installer:al/tests/test_a.py::test_a',
+    ]
+    assert value['verification']['shards'][0]['durations'] == durations
+    assert value['source_stable'] is (condition != 'source-movement')
+    if condition == 'missing':
+        assert value['verification']['reconciliation']['missing'] == [node]
+    if condition == 'failed':
+        assert value['verification']['reconciliation']['failed'] == [node]
+    if condition == 'reconciliation-error':
+        assert value['verification']['reconciliation']['errors'] == ['controlled reconciliation failure']
+    assert 'reported only; functional status unchanged' in capsys.readouterr().out

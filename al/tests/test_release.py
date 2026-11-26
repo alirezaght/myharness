@@ -279,3 +279,47 @@ def test_full_failure_is_not_successful_verification(release_checkout, monkeypat
     assert verifier.main(['--full', '--version', '1.0.0']) == 1
     assert _report(capsys)['status'] == 'FAIL'
     assert len(calls) == 3
+
+
+@pytest.mark.parametrize('condition', ['timing-only', 'failed', 'missing', 'reconciliation-error', 'partial'])
+def test_controlled_release_timing_report_preserves_completeness(tmp_path, monkeypatch, capsys, condition):
+    import al.verification_plan as planning
+    from al.tests.verification_helpers import source
+
+    root = source(tmp_path)
+    monkeypatch.setattr(verifier, 'ROOT', root / 'al')
+    context = {'controlled-report-seam': True}
+    monkeypatch.setattr(verifier, '_full_context', lambda args: (context, None))
+    monkeypatch.setattr(verifier, '_workspace', lambda: context)
+    monkeypatch.setattr(verifier, 'check_layout', lambda: {'status': 'PASS'})
+    node = 'installer:al/tests/test_a.py::test_a'
+    plan = {'execution_assignments': [{'id': node}], 'shared_equivalents': [],
+            'collected_obligations': [node], 'intentionally_unselected': [],
+            'complete_required': condition != 'partial'}
+    durations = {node: 75.0}
+    outcomes = {} if condition == 'missing' else {node: 'failed' if condition == 'failed' else 'passed'}
+    shard = {'outcomes': outcomes, 'durations': durations,
+             'errors': ['controlled reconciliation failure'] if condition == 'reconciliation-error' else []}
+    report = tmp_path / 'release-timing.json'
+    suites = {'shards': [shard], 'reconciliation': planning.reconcile(plan, [shard]),
+              'collected_obligations': 1, 'equivalent_obligations': 0, 'report_path': str(report)}
+    monkeypatch.setattr(verifier, 'full', lambda **kw: suites)
+    # Controlled report wiring does not stand in for owned process cleanup proof.
+    monkeypatch.setattr(planning, 'finalize_verification_storage', lambda *a: {'complete': True})
+    args = ['--tier', 'fast'] if condition == 'partial' else ['--full']
+    success = condition in {'timing-only', 'partial'}
+    assert verifier.main([*args, '--report', str(report)]) == (0 if success else 1)
+    value = json.loads(report.read_text())
+    assert value['status'] == ('PASS' if success else 'FAIL')
+    assert value['complete'] is (condition == 'timing-only')
+    assert value['over_budget'] == [
+        'file 75.0 s > 60 s: installer:al/tests/test_a.py',
+        'test 75.0 s > 5 s: installer:al/tests/test_a.py::test_a',
+    ]
+    assert value['verification']['shards'][0]['durations'] == durations
+    if condition in {'missing', 'failed'}:
+        key = 'missing' if condition == 'missing' else 'failed'
+        assert value['verification']['reconciliation'][key] == [node]
+    if condition == 'reconciliation-error':
+        assert value['verification']['reconciliation']['errors'] == ['controlled reconciliation failure']
+    assert 'reported only; functional status unchanged' in capsys.readouterr().out

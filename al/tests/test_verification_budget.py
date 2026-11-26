@@ -1,4 +1,4 @@
-"""The suite time budget (#36): slow tests and files fail unless they are listed acceptance journeys."""
+"""Timing diagnostics retain thresholds and exemptions independently of functional verdicts."""
 import pytest
 
 from al.verification_budget import load, violations
@@ -43,3 +43,17 @@ def test_every_acceptance_journey_names_the_risk_it_covers():
     value = load()
     assert set(value['acceptance']) == set(value.get('acceptance_reasons', {}))
     assert all(reason.strip() for reason in value['acceptance_reasons'].values())
+
+
+def test_reported_durations_and_diagnostics_preserve_original_values():
+    from al.verification_budget import observed
+
+    durations = {'codex:tests/test_a.py::slow': 75.0,
+                 'installer:al/tests/test_journey.py::anything': 200.0}
+    result = {'shards': [{'durations': {**durations, 'unavailable': None}}]}
+    assert observed(result) == durations
+    assert violations(observed(result), BUDGET) == [
+        'file 75.0 s > 60 s: codex:tests/test_a.py',
+        'test 75.0 s > 5 s: codex:tests/test_a.py::slow',
+    ]
+    assert result['shards'][0]['durations'] == {**durations, 'unavailable': None}
