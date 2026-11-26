@@ -112,7 +112,11 @@ def require_ready(st, *, task_id=None, paths=()):
     owned = require_preflight(st, task_id=task_id, paths=paths)
     before = copy.deepcopy(st)
     observed = copy.deepcopy(before)
-    obligations = _assessment(observed, owned)
+    # One read-only assessment: its classifications of this exact state may reuse the replayed
+    # contribution history after a full fence (al_task_history_memo, #55).
+    from al_task_history_memo import assessment
+    with assessment():
+        obligations = _assessment(observed, owned)
     if observed != before or st != before:
         refuse('implementation state changed during read-only readiness assessment')
     previous = st.get('implementation_readiness', {})
