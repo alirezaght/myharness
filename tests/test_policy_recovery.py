@@ -172,9 +172,10 @@ def test_post_effect_settlement_fault_retains_charge_and_never_replays(policy_ru
     target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
     assert target.read_text() == "safe\n"
     assert r.controller.conn.execute("SELECT state FROM policy_attempts").fetchone()[0] == "started"
-    assert r.controller.conn.execute(
-        "SELECT state FROM policy_resource_claims"
-    ).fetchone()[0] != "closed"
+    assert (
+        r.controller.conn.execute("SELECT state FROM policy_resource_claims").fetchone()[0]
+        != "closed"
+    )
     assert r.controller.conn.execute("SELECT consumed,reserved FROM policy_pools").fetchone()[
         :
     ] == (1, 0)

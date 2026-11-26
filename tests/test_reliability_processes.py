@@ -161,6 +161,7 @@ def test_recording_failure_after_spawn_preserves_owned_process_without_replay(
     processes, boundary, monkeypatch
 ):
     operation, _, _ = processes
+
     def intended(sql, _parameters):
         normalized = " ".join(sql.lower().split())
         return (

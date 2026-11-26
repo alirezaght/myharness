@@ -39,8 +39,9 @@ def test_terminal_failure_after_effect_never_replays(observed, monkeypatch):
     hits = install_statement_fault(
         monkeypatch,
         store,
-        lambda sql, _parameters: "update reliability_observations set state="
-        in " ".join(sql.lower().split()),
+        lambda sql, _parameters: (
+            "update reliability_observations set state=" in " ".join(sql.lower().split())
+        ),
     )
     effects = []
     monkeypatch.setattr(operation, "_dispatch", lambda *a: effects.append(True) or {"ok": True})
