@@ -131,6 +131,15 @@ def test_pipe_descriptor_diagnostic():
 
 @pytest.mark.browser
 def test_chrome_direct_startup_control(tmp_path):
+    """Environment calibration, kept on purpose (issue #80, F17).
+
+    BrowserDriver starts Chrome behind the fd 3/4 pipe bootstrap with
+    --remote-debugging-pipe. This control starts the same executable with the same
+    headless profile flags but no pipe or CDP. When the driver cannot start, the pair
+    of this control and test_pipe_descriptor_diagnostic tells whether Chrome itself,
+    the descriptor mapping, or the CDP exchange is at fault (a Chrome-level startup
+    problem such as the macOS keychain prompt fixed in 34b697c fails here too).
+    """
     import subprocess
     import tempfile
 

@@ -141,15 +141,10 @@ def test_unknown_versions_tasks_and_hosts_are_refused(db_path, tmp_path):
         assert _diagrams(server, "version=1") == (404, {"error": NO_ACTIVE_TASK})
 
 
-def test_the_diagram_script_is_served_and_uses_no_unsafe_dom_api(db_path):
-    with serve(db_path, None) as server:
-        status, headers, script = fetch(server, "/static/diagrams.js")
-        page = fetch(server, "/")[2]
-    assert status == 200 and headers["Content-Type"] == "text/javascript; charset=utf-8"
-    assert script == (STATIC_DIR / "diagrams.js").read_bytes()
-    assert page.index(b'<script src="/static/diagrams.js" defer></script>') < page.index(
-        b'<script src="/static/app.js" defer></script>'
-    )
+def test_no_static_script_uses_an_unsafe_dom_api():
+    # Intentional static policy. Serving, MIME type and load order of diagrams.js are part of
+    # tests/test_dashboard_assets.py; inert rendering of hostile labels is proven in
+    # test_dashboard_diagrams_browser.py.
     for name in sorted(p.name for p in STATIC_DIR.iterdir() if p.name.endswith(".js")):
         assert not UNSAFE.search((STATIC_DIR / name).read_text(encoding="utf-8")), name
 
