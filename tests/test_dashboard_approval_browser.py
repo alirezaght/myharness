@@ -402,7 +402,9 @@ def test_hostile_comment_text_stays_inert_and_only_approve_posts(db_path, sample
         loaded_writes = _writes(page.requests)
         page.evaluate("document.querySelector('#approve-button').click(); true")
         page.wait_for("document.querySelector('#approve-button').textContent === 'Approved'")
-        page.settle()
+        # Requests are recorded until the last CDP call; keep listening long enough that a
+        # delayed follow-up write would be captured too.
+        page.settle(2)
         approved = page.evaluate(APPROVAL_STATE)
         approve_writes = _writes(page.requests)
 

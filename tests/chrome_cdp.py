@@ -58,7 +58,11 @@ class ChromePage:
     def wait_for(self, expression: str, timeout: float = 15):
         deadline = time.monotonic() + timeout
         while True:
-            value = self.evaluate(expression)
+            try:
+                value = self.evaluate(expression)
+            except RuntimeError:
+                # A navigation can destroy the execution context mid-evaluation.
+                value = None
             if value:
                 return value
             if time.monotonic() >= deadline:

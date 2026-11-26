@@ -118,10 +118,15 @@ def test_pipe_descriptor_diagnostic():
             timeout=20,
         )
         assert result.returncode == 0, result.stderr
+        # Close the parent's copy of the write end so a missing reply reads b"" and fails
+        # instead of blocking forever.
+        os.close(child_write)
+        child_write = None
         assert os.read(parent_read, 64) == b"child-reply:dnammoc-tnerap"
     finally:
         for fd in (child_read, parent_write, parent_read, child_write):
-            os.close(fd)
+            if fd is not None:
+                os.close(fd)
 
 
 @pytest.mark.browser
