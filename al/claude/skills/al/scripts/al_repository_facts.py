@@ -687,6 +687,15 @@ class Snapshot(CaptureMixin):
             except (ValueError,OSError) as exc:diagnostics.append(gap('base-unavailable','.',str(exc)))
         opaque_excluded=literal_opaque_exclusions(opaque_paths)
         excluded=[v for name in sorted(EXCLUDED) for v in ('--exclude='+name+'/','--exclude=**/'+name+'/')]+opaque_excluded
+        ignored=[];ignored_roots=[];ignore_available=True
+        try:
+            ignored=git_records(self.root,['ls-files','--others','--ignored','--directory','--exclude-per-directory=.gitignore',*excluded,'-z'],LIMITS)
+            for row in ignored:
+                p=row.decode().rstrip('/');safe(p)
+                if opaque_owner(opaque_paths,p) is None:ignored_roots.append(p)
+        except (OSError,ValueError,UnicodeError) as exc:
+            ignore_available=False
+            diagnostics.append(gap('membership-unavailable','.',str(exc)))
         try:
             for row in git_records(self.root,['ls-files','--others','--exclude-per-directory=.gitignore',*excluded,'-z'],LIMITS):add(row.decode())
             listed=[]
@@ -699,7 +708,14 @@ class Snapshot(CaptureMixin):
                     regular=stat.S_ISREG((self.root/scope).lstat().st_mode)
                 except (OSError,ValueError):regular=False
                 if not regular:listed.append(scope)
+            # Exact inputs were checked above. Only incidental descendants obey ignore rules;
+            # explicitly selected ignored/generated roots still retain their source contents.
+            ignored_members=PathScope(ignored_roots)
+            overrides={scope for scope in listed if not ignore_available
+                       or any(part in EXCLUDED for part in Path(scope).parts)
+                       or ignored_members.covers(scope)}
             for scope,p in self.untracked_under(listed,opaque_excluded):
+                if scope not in overrides and ignored_members.covers(p):continue
                 add(p,not any(part in EXCLUDED for part in Path(p).parts[len(Path(scope).parts):]))
         except (OSError,ValueError,UnicodeError) as exc:diagnostics.append(gap('file-limit' if 'limit' in str(exc) else 'membership-unavailable','.',str(exc)))
         # Bind repository ignore rules even when they exclude themselves.
@@ -707,13 +723,8 @@ class Snapshot(CaptureMixin):
             rules=git_records(self.root,['ls-files','--others','--cached','--exclude-per-directory=.gitignore',*excluded,'-z','--','.gitignore',':(glob)**/.gitignore'],LIMITS)
             for row in rules:add(row.decode(),True)
         except (OSError,ValueError) as exc:diagnostics.append(gap('membership-unavailable','.',str(exc)))
-        try:
-            ignored=git_records(self.root,['ls-files','--others','--ignored','--directory','--exclude-per-directory=.gitignore',*excluded,'-z'],LIMITS)
-            for row in ignored:
-                p=row.decode().rstrip('/');safe(p)
-                if opaque_owner(opaque_paths,p) is not None:continue
-                exclusions.append({'path':p,'reason':'repository ignore/generated output exclusion','provenance':sorted(v for v in result if Path(v).name=='.gitignore')+sorted(EXCLUDED)})
-        except (OSError,ValueError) as exc:diagnostics.append(gap('membership-unavailable','.',str(exc)))
+        for p in ignored_roots:
+            exclusions.append({'path':p,'reason':'repository ignore/generated output exclusion','provenance':sorted(v for v in result if Path(v).name=='.gitignore')+sorted(EXCLUDED)})
         exclusions.append({'path':'.','reason':'repository .gitignore and generated/cache directory exclusions','provenance':sorted(p for p in result if Path(p).name=='.gitignore')+sorted(EXCLUDED)})
         unique={digest(g):g for g in diagnostics}
         boundaries=[{'path':g['path'],'kind':g['code'],'observation':self.path_observation(g['path'])} for g in unique.values() if g['code'] in {'symlink-boundary','unsafe-boundary','gitlink-boundary'}]
@@ -782,8 +793,9 @@ class Snapshot(CaptureMixin):
         try:
             for row in sorted(self.base_rows,key=lambda row:(row.split(b'\t',1)[1].decode() not in self.priority_inputs,priority(row.split(b'\t',1)[1].decode()))):
                 meta,path=row.split(b'\t',1);mode,kind,oid,size=meta.split();p=path.decode()
-                if kind!=b'blob' or not self.relevant(p) or any(within(o,p) for o in self.opaque):continue
+                if kind!=b'blob' or any(within(o,p) for o in self.opaque):continue
                 if mode==b'120000':self.gaps.append(gap('base-symlink',p,'base source is a symlink'));continue
+                if not self.relevant(p):continue
                 if int(size)>LIMITS['file_bytes']:
                     self.gaps.append(gap('base-byte-limit',p,'base per-file content byte limit'));continue
                 self.base.records[p]={'oid':oid.decode(),'size':int(size)};self.base_modes[p]=mode.decode()

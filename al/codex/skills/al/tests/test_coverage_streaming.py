@@ -149,3 +149,57 @@ def test_streamed_base_payload_still_matches_captured_content_hash(repo,monkeypa
     monkeypatch.setattr(al_git_cache,'blobs',changed)
     with pytest.raises(ValueError,match='captured coverage content changed'):
         list(scan.base.items())
+
+
+def test_ignored_recursive_symlink_is_excluded_before_source_inspection(repo, tmp_path, monkeypatch):
+    seed(repo)
+    put(repo,'.gitignore','apps/front/generated/\n')
+    put(repo,'apps/front/package.json','{"name":"front"}')
+    outside=tmp_path/'private-target'; outside.mkdir()
+    put(outside,'hidden.py','raise RuntimeError("must not inspect")\n')
+    link='apps/front/generated/link'
+    (repo/link).parent.mkdir(parents=True); (repo/link).symlink_to(outside,target_is_directory=True)
+    original=facts.Snapshot.safe_file
+    def check(self,path):
+        assert path != link, 'incidental ignored symlink reached source inspection'
+        return original(self,path)
+    monkeypatch.setattr(facts.Snapshot,'safe_file',check)
+    observed=facts.collect(repo,base_oid=None,paths=['apps/front'],opaque=[])
+    assert not any(g['code']=='symlink-boundary' for g in observed['enumeration']['gaps'])
+    assert any(e['path']=='apps/front/generated' for e in observed['enumeration']['ignored_outputs'])
+    assert not any(p['path'].startswith('apps/front/generated/') for p in observed['scan_inputs'])
+
+
+@pytest.mark.parametrize('kind',['explicit','tracked','base','declared'])
+def test_ignored_symlink_still_blocks_when_it_is_a_protected_input(repo,tmp_path,kind):
+    seed(repo)
+    put(repo,'.gitignore','ignored/\n')
+    target=tmp_path/'private-target'; target.mkdir()
+    link='ignored/link'; (repo/link).parent.mkdir(); (repo/link).symlink_to(target,target_is_directory=True)
+    paths=['services/a/src/app.py']; base=None
+    if kind=='explicit': paths=[link]
+    elif kind in {'tracked','base'}:
+        _git(repo,'add','-f',link); _git(repo,'commit','-qm','protected symlink')
+        if kind=='base':
+            base=base_oid(repo); (repo/link).unlink()
+    else:
+        put(repo,'pyproject.toml','[tool.uv.workspace]\nmembers=["ignored/link"]\n')
+    observed=facts.collect(repo,base_oid=base,paths=paths,opaque=[])
+    assert any(g['path']==link and g['code'] in {'symlink-boundary','base-symlink'}
+               for g in observed['enumeration']['gaps'])
+
+
+@pytest.mark.parametrize('kind',['explicit','declared'])
+def test_selected_ignored_generated_source_root_retains_its_members(repo,kind):
+    seed(repo)
+    put(repo,'.gitignore','build/\n')
+    put(repo,'build/member/pyproject.toml','[project]\nname="generated-source"\n')
+    put(repo,'build/member/src/mod.py','VALUE=1\n')
+    paths=['build/member']
+    if kind=='declared':
+        put(repo,'pyproject.toml','[tool.uv.workspace]\nmembers=["build/member"]\n')
+        paths=['services/a/src/app.py']
+    snapshot=facts.Snapshot(repo,None,paths,[])
+    assert 'build/member/pyproject.toml' in snapshot.files
+    assert 'build/member/src/mod.py' in snapshot.files
+    assert snapshot.files['build/member/src/mod.py']==b'VALUE=1\n'
