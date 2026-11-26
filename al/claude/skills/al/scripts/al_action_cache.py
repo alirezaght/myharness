@@ -228,7 +228,7 @@ def _env(names):
 
 
 def _execution_environment(names):
-    """The policy an execution receipt binds: declared names plus PATH, HOME, LANG, TZ, PYTHON* and LC_*.
+    """The policy an execution receipt binds: declared names plus CI, PATH, HOME, LANG, TZ, PYTHON* and LC_*.
 
     It is part of the key (a different interpreter setup is a miss) and is recorded on a hit, so a later
     reader (terminal validation) refuses the reused result when the caller's environment changed."""

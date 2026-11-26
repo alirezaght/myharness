@@ -380,3 +380,53 @@ def test_the_review_packet_lists_reused_results_with_their_origin(cli, repo, sta
     assert [(row["area"], row["reused_from"]["run"], row["reused_from"]["entry"]) for row in packet["reused_results"]] \
         == [("svc", first["run"], first["id"])]
     assert Cache.annotate_packet(original, {}) == {}  # nothing reused, nothing added
+
+
+def test_default_ci_distinguishes_absent_empty_false_true_without_other_secrets(repo, monkeypatch):
+    import hashlib
+    import al_environment_observation as E
+
+    monkeypatch.setenv('AL_PRIVATE_UNRELATED_SECRET', 'not-a-default-input')
+    keys = []
+    for value in (None, '', 'false', 'true'):
+        if value is None:
+            monkeypatch.delenv('CI', raising=False)
+        else:
+            monkeypatch.setenv('CI', value)
+        observed = E.execution_environment([])
+        assert observed['CI'] == {
+            'present': value is not None,
+            'digest': hashlib.sha256(value.encode()).hexdigest() if value is not None else None,
+        }
+        assert 'AL_PRIVATE_UNRELATED_SECRET' not in observed
+        assert 'not-a-default-input' not in json.dumps(observed)
+        keys.append(_key())
+        assert _key() == keys[-1]
+    assert len(set(keys)) == 4
+    policy = Cache._execution_environment([])
+    assert policy['declared_names'] == [] and 'CI' in policy['inputs']
+    monkeypatch.setenv('AL_PRIVATE_UNRELATED_SECRET', 'another-private-value')
+    assert _key() == keys[-1]
+
+
+@pytest.mark.parametrize('scope', [[], ['svc']])
+def test_default_ci_refreshes_scope_fingerprint_inside_one_observation(repo, monkeypatch, scope):
+    import hashlib
+    import al_analysis_cache as A
+    import al_ledger as L
+
+    fingerprints = []
+    environment_only = []
+    with A.ObservationContext({'test': 'one bounded CI observation'}):
+        for value in (None, '', 'false', 'true'):
+            if value is None:
+                monkeypatch.delenv('CI', raising=False)
+            else:
+                monkeypatch.setenv('CI', value)
+            current = L.scope_fingerprint(scope)
+            assert current == L.scope_fingerprint(scope)
+            assert current == L.scope_fingerprint(scope, ['CI'])
+            fingerprints.append(current)
+            environment_only.append(L._env_digest(hashlib.sha256(), []))
+    assert len(set(fingerprints)) == 4
+    assert len(set(environment_only)) == 4

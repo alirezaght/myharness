@@ -45,7 +45,8 @@ def observed():
 
 
 # Variables that change what a verification command executes, beyond its declared names.
-EXECUTION_NAMES = frozenset({"PATH", "HOME", "LANG", "TZ"})
+DEFAULT_VERIFICATION_NAMES = frozenset({"CI"})
+EXECUTION_NAMES = frozenset({"PATH", "HOME", "LANG", "TZ"}) | DEFAULT_VERIFICATION_NAMES
 EXECUTION_PREFIXES = ("PYTHON", "LC_")
 
 

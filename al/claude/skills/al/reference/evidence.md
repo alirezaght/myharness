@@ -29,6 +29,21 @@ A change in another package keeps reuse. Validity is unchanged: a change outside
 the scope still does not make the earlier PASS STALE, it only stops it being
 reused. Declare cross-package dependencies in `--scope`, or pass `--fresh`.
 
+`CI` is an automatic verification dependency, even when absent or omitted from
+`--env`. Its presence and exact value are fingerprinted as hashes for ordinary
+evidence currentness, action-cache identity and verification preparation. A
+changed `CI` value invalidates evidence bound to the previous value. An existing
+cache entry may still be reused when its recorded environment matches the
+current inputs exactly; old policies that do not bind `CI` are stale. These
+fingerprints never assign environment values.
+
+`--env CI` declares an input; it does not set `CI` or broaden a managed execution
+environment. Use an approved explicit command assignment, such as `--env CI=true`
+(which records `env CI=true` in argv), when the check requires that value. The
+literal assignment controls the child's value; an ambient `CI` change can still
+conservatively invalidate its evidence. Other repository-specific environment
+inputs require explicit `--env` declarations.
+
 ## Action cache (reuse across runs, tasks and worktrees)
 
 When no PASS of this run can be reused, `evidence run` looks the check up in the
