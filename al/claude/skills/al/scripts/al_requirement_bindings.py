@@ -48,7 +48,37 @@ def validate(st, binding):
     return value
 
 
+def criterion_additions(data, existing):
+    """Validate additive fields without normalizing their authoritative strings."""
+    seen = set(existing)
+    additions = []
+    for field in ("criteria", "supplemental_acceptance"):
+        values = J.strings(data.get(field, []), "amendment " + field)
+        for index, value in enumerate(values):
+            if value in seen:
+                refuse("duplicate accepted criterion in amendment " + field + ": " + repr(value))
+            seen.add(value)
+            additions.append((field, index, value))
+    return additions
+
+
+def accepted_criteria(task_package, amendments):
+    """Enumerate exact original and additive bindings from accepted artifact references."""
+    package = J.read(task_package)
+    values = J.strings(package["criteria"], "original accepted criteria", nonempty=True)
+    result = [{"id": value, "artifact": task_package, "pointer": "/criteria/" + str(index),
+               "value_sha256": J.digest(value)} for index, value in enumerate(values)]
+    for artifact in amendments:
+        data = J.read(artifact)
+        for field, index, value in criterion_additions(data, [entry["id"] for entry in result]):
+            result.append({"id": value, "artifact": artifact, "pointer": "/" + field + "/" + str(index),
+                           "value_sha256": J.digest(value)})
+    return result
+
+
 def registry(st, field):
+    if field == "criteria":
+        return accepted_criteria(st["task_package"], sources(st)[1:])
     package = J.read(st["task_package"])
     result = []
     for index, value in enumerate(package[field]):
@@ -74,25 +104,12 @@ def criteria(st, entries):
         if not isinstance(value, str) or entry["id"] != value:
             refuse("criterion ID differs from exact authoritative value")
         ids.append(entry["id"])
-    if len(ids) != len(set(ids)) or not set(J.read(st["task_package"])["criteria"]) <= set(ids):
-        refuse("behavior criteria registry omits or duplicates accepted criteria")
-    result = {entry["id"]: entry for entry in entries}
     required = registry(st, "criteria")
-    for artifact in sources(st)[1:]:
-        data = J.read(artifact)
-        acceptance = data.get("supplemental_acceptance", [])
-        J.strings(acceptance, "accepted supplemental criteria")
-        required.extend(
-            {
-                "id": value,
-                "artifact": artifact,
-                "pointer": "/supplemental_acceptance/" + str(index),
-                "value_sha256": J.digest(value),
-            }
-            for index, value in enumerate(acceptance)
-        )
+    if len(ids) != len(set(ids)) or set(ids) != {entry["id"] for entry in required}:
+        refuse("behavior criteria registry omits, duplicates or invents accepted supplemental/amendment criteria")
+    result = {entry["id"]: entry for entry in entries}
     if any(result.get(entry["id"]) != entry for entry in required):
         refuse(
-            "behavior registry omits exact original or accepted supplemental requirement binding"
+            "behavior registry omits exact original or accepted supplemental/amendment requirement binding"
         )
     return result
