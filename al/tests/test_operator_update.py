@@ -18,13 +18,17 @@ from al.tests.conftest import installer_workspace as workspace_fixture
 from al.tests.test_manifest import git_test
 from al.tests.test_policy import session
 
-# Source-injected faults, construction subjects and unknown cases remain fresh.
+# Injected source/bootstrap work stays fresh after restoring its enrolled prerequisite.
 _PREFIX_CASES = frozenset({
     'test_public_explicit_mode_warns_and_preserves_all_retained_bytes',
     'test_installation_integrity_refusals_are_not_warnings',
     'test_unmanaged_and_foreign_registry_cannot_use_operator_mode',
     'test_operator_installation_metadata_has_real_owned_no_alias_boundary',
     'test_unsafe_history_discovery_warns_but_actual_payload_overlap_refuses',
+    'test_barriers_refuse_mutable_installation_inputs',
+    'test_historical_progress_between_barriers_is_allowed',
+    'test_partial_failure_keeps_pending_manual_reconciliation',
+    'test_completed_publication_failures_never_claim_success',
 })
 
 
