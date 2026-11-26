@@ -301,6 +301,17 @@ function authoringStatus(state, text, isError = false) {
   workspacePersist(state);
 }
 
+// When the user explicitly resolves a rejected request by moving its draft onto the current
+// revision (which drops the rejected request), the rejection alert no longer describes
+// anything: it must not stay beside the rebased draft or a later successful save. A new
+// rejection raises the conflict again through the normal catch path (#126).
+function authoringResolveConflict(state, key) {
+  if (key && state.authoringConflict?.key === key) {
+    state.authoringConflict = null;
+    workspacePersist(state);
+  }
+}
+
 function authoringButton(task, state, label, action, fields, opts = {}) {
   const button = workspaceButton(label, async () => {
     button.disabled = true;
