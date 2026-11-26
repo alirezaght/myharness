@@ -1,6 +1,8 @@
 """Real isolated public run dispatch through a disposable managed launcher."""
 
 import json
+import os
+from pathlib import Path
 import sys
 
 import pytest
@@ -215,3 +217,52 @@ def test_clear_puts_aside_a_run_whose_state_its_runtime_cannot_read(launched):
     result = public_run(launched, "codex", "clear")
     assert result.returncode == 0 and "AL state cleared" in result.stdout, (result.stdout, result.stderr)
     assert not pointer.exists() and state.exists()
+
+
+@pytest.mark.parametrize('platform', ['codex','claude'])
+def test_existing_pin_continues_after_launcher_interpreter_changes(launched, platform, tmp_path):
+    source, home, repo, launcher, environment = launched
+    environment = dict(environment, AL_SERVICE='0')
+    second = os.environ.get('AL_TEST_SECOND_INTERPRETER')
+    if not second:
+        # A private venv proves executable-identity switching; only an explicitly
+        # qualified second installation supplies actual cross-version evidence.
+        directory = tmp_path/'second-interpreter'
+        created = invoke([sys.executable,'-I','-S','-B','-m','venv','--without-pip',directory],
+                         repo,environment)
+        assert created.returncode == 0, (created.stdout,created.stderr)
+        second = str(directory/('Scripts/python.exe' if os.name == 'nt' else 'bin/python'))
+    assert Path(second).is_absolute() and Path(second).is_file()
+    started = public_run(launched, platform, 'start', '--spec',
+        'Continue the exact pinned interpreter after launcher replacement.', env=environment)
+    assert started.returncode == 0, (started.stdout, started.stderr)
+    checked = public_run(launched, platform, 'preflight', '--name', 'before-rebootstrap',
+        '--check', 'cmd:git', env=environment)
+    assert checked.returncode == 0, (checked.stdout, checked.stderr)
+    state_path = repo/('.'+platform)/'al-runtime/pin-flow.json'
+    before = state_path.read_bytes(); state = json.loads(before)
+    record_path, record = run_record(launched)
+    binding_before = record_path.read_bytes()
+    manifest_path = home/'installer/al-run-pins/pins'/record['pin']['pin_identity']/'manifest.json'
+    manifest_before = manifest_path.read_bytes(); manifest = json.loads(manifest_before)
+    prior = state['evidence']['entries']
+    assert prior and all(entry['status']=='PASS' for entry in prior)
+    boot = invoke([second,'-I','-S','-B',source/'alctl.py','bootstrap','--source-root',source,
+        '--destination',launcher,'--state-root',home/'installer'],repo,environment)
+    assert boot.returncode == 0, (boot.stdout,boot.stderr)
+    issuer = json.loads(boot.stdout)['receipt']['interpreter']
+    assert issuer != manifest['interpreter'], 'launcher interpreters must have distinct identities'
+    shown = public_run(launched,platform,'show','--json',env=environment)
+    assert shown.returncode == 0, (shown.stdout,shown.stderr)
+    assert json.loads(shown.stdout)['run_id'] == state['run_id']
+    assert state_path.read_bytes() == before and record_path.read_bytes() == binding_before
+    assert manifest_path.read_bytes() == manifest_before
+    continued = public_run(launched,platform,'preflight','--name','after-rebootstrap',
+        '--check','cmd:git',env=environment)
+    assert continued.returncode == 0, (continued.stdout,continued.stderr)
+    after = json.loads(state_path.read_bytes())
+    assert after['run_id'] == state['run_id'] and after['runtime_origin'] == state['runtime_origin']
+    assert after['evidence']['entries'][:len(prior)] == prior
+    assert len(after['evidence']['entries']) == len(prior)+1
+    assert after['evidence']['entries'][-1]['status'] == 'PASS'
+    assert manifest_path.read_bytes() == manifest_before and record_path.read_bytes() == binding_before

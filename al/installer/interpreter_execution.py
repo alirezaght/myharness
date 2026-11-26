@@ -112,6 +112,31 @@ def validate_profile(value,expected):
         raise ValueError('invalid protected interpreter argv framing')
 
 
+def validate_launch(profile, expected, requested):
+    """Check pinned launch resources without confusing them with the issuer process."""
+    validate_profile(profile, expected)
+    if requested != profile['requested_argv0'] or requested != profile['requested_executable']:
+        raise ValueError('unbound pinned interpreter executable spelling')
+    path = Path(requested)
+    try:
+        canonical_path = path.resolve(strict=True)
+        if (not path.is_absolute() or str(canonical_path) != expected['canonical_executable']
+                or executable_state(canonical_path) != {k:expected[k] for k in ('sha256','mode')}):
+            raise ValueError('pinned interpreter launcher changed')
+        image = profile['image']
+        image_path = Path(image['path'])
+        if (str(image_path.resolve(strict=True)) != image['path']
+                or executable_state(image_path) != {k:image[k] for k in ('sha256','mode')}):
+            raise ValueError('pinned interpreter kernel image resource changed')
+    except (OSError, ValueError) as exc:
+        raise ValueError(
+            'Pinned interpreter resources unavailable or changed: '+requested+'. '
+            'Preserve this run and its pin; use runtime-successor origin to inspect it. '
+            'Standalone in-place migration is unsupported; preserve accepted requirements '
+            'and revalidate evidence in a fresh run if the original interpreter cannot be retained.'
+        ) from exc
+
+
 def validate_live(profile,expected,observed):
     validate_profile(profile,expected);launcher(expected)
     metadata=executable_state(Path(profile['requested_executable']).resolve(strict=True))
