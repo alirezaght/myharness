@@ -395,3 +395,37 @@ per-module builds and concurrent resource pressure must all remain charged.
 | `test_unsafe_history_discovery_warns_but_actual_payload_overlap_refuses` | `test_operator_update_publication.py` | 2 |
 | `test_observation_limits_are_explicit_and_do_not_print_state_prose` | `test_operator_update_publication.py` | 1 |
 | `test_deeply_malformed_history_is_a_bounded_warning` | `test_operator_update_publication.py` | 1 |
+
+
+### Direct installed-metadata validation (#36)
+
+All 20 nodes of `test_operator_update_metadata.py` remain, including the original
+15 name/damage combinations. Eight combinations (record, source, ownership and
+sentinel, each with symlink or writable damage) call the actual
+`operator_registry.installation_metadata(state_root, row)` validator on their
+genuine installed/restored enrollment. Each first requires successful validation
+before applying the identical original filesystem damage, then requires the real
+metadata/symlink/ownership/alias refusal. Retained historical bytes/modes and raw
+installation-record bytes are compared around both direct calls; raw fixture
+reads avoid relying on a normal record reader after its metadata becomes unsafe.
+The original pending-record and installed-payload equality assertions remain.
+These eight cases create no new tag/review: this validator reads installed state.
+They establish installed-metadata validation, without CLI/origin/receipt proof.
+
+The remaining seven metadata combinations keep their original tag, review and
+real public native operation: four hardlinks (record, source, ownership, sentinel)
+and all three lock damages (hardlink, symlink, writable). They retain each metadata
+path's public wiring. All three additional real lock races, coordination-descriptor
+and foreign-owner controls remain unchanged, as do the shared helper, prefix
+whitelist, production checks and 18 native integrity-refusal cases. No managed
+context is fabricated and no installer preflight is bypassed. The split is:
+
+| Damage | record | source | ownership | sentinel | lock |
+|---|---|---|---|---|---|
+| hardlink | Native | Native | Native | Native | Native |
+| symlink | Direct | Direct | Direct | Direct | Native |
+| writable | Direct | Direct | Direct | Direct | Native |
+
+Verification uses independent review and a matched 20-node metadata-only measurement;
+the earlier concurrent grouped timings are not a standalone before/after result.
+Remaining acceptance work is tracked in #36, #24 and #29.
