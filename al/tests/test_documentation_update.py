@@ -9,6 +9,8 @@ from al.installer.manifest import build_manifest
 from al.installer.registry import digest, load_record, read_json, write_json
 from al.installer.source import resolve_release
 from al.installer.targets import package_path, resolve_target
+from al.tests import update_templates
+from al.tests.conftest import installer_workspace
 from al.tests.test_manifest import git_test
 from al.tests.test_policy import session
 
@@ -40,9 +42,39 @@ def review(workspace, old, new):
         'instruction_review': provenance, 'user_authorization': provenance}}
 
 
+# Only inspected construction-independent families share the enrolled prefix.
+_PREFIX_CASES = frozenset({
+    'test_non_documentation_delta_refused',
+    'test_mode_scope_is_explicit',
+    'test_malformed_activity_is_never_acknowledged',
+    'test_revalidation_catches_mutation_and_preserves_pending_recovery',
+    'test_existing_refusals_remain',
+    'test_completed_publication_revalidates',
+    'test_injected_engine_failure_retains_recovery_and_runtime',
+    'test_public_cli_requires_global_and_accepts_reviewed_update',
+})
+
+
+@pytest.fixture(scope='module')
+def _prefix_cache():
+    return {}
+
+
 @pytest.fixture
-def enrolled(installer_workspace, monkeypatch, request):
-    w = installer_workspace
+def enrolled(tmp_path, tmp_path_factory, monkeypatch, request, _prefix_cache):
+    monkeypatch.delenv('AL_RUNTIME_DIR', raising=False)
+    monkeypatch.delenv('AL_DISTRIBUTION_STATE', raising=False)
+    if request.node.originalname not in _PREFIX_CASES or hasattr(request, 'param'):
+        return _fresh_enrolled(tmp_path, monkeypatch, request)
+    if 'prefix' not in _prefix_cache:
+        container = tmp_path_factory.mktemp('documentation-update-prefix')
+        _prefix_cache['prefix'] = update_templates.build(
+            container, lambda root: _fresh_enrolled(root, monkeypatch, request))
+    return update_templates.restore(_prefix_cache['prefix'])
+
+
+def _fresh_enrolled(root, monkeypatch, request):
+    w = installer_workspace.__wrapped__(root, monkeypatch)
     target = resolve_target(home=w['home'])
     O.run_operation({'kind': 'install', 'target': target, 'source': str(w['source']),
                      'version': '1.0.0', 'policy': getattr(request, 'param', 'pinned'),
