@@ -284,14 +284,25 @@ Removed sourced rules refresh only with fresh absence and complete unclassified-
 
 
 The installer update files use `al/tests/update_templates.py` for inspected,
-construction-independent cases: 57 reviewed-update cases and 37 operator-update
+construction-independent cases: 57 reviewed-update cases and 49 operator-update
 cases restore a genuine enrolled prerequisite at the same absolute path. Each
 pytest process builds its prefix once, then restores all owned bytes, modes and
 symlink targets into independent regular files before every eligible case,
 including the first. Returned data is copied and each case rebuilds its environment.
 Private directory identities and the pristine digest must still match; interrupted
 restores refuse. Runtime decisions and native cache receipts are never rewritten.
-Old-pin/bootstrap construction and source-injected faults stay fresh; new tests
-default fresh until inspected. Per-case public operations and safety assertions
-remain. Thirteen operator scope cases call the decision directly with a passing
-control and unchanged-input checks. All 184 existing nodes in the two files remain.
+Old-pin/bootstrap construction, indirect configuration/policy, and lock-race
+cases retain fresh construction. The existing integrity/refusal family keeps its
+current eligibility. For the four source-injected families below, only the unmodified
+enrolled prerequisite is restored; each case still creates its own tag, review,
+injection, native bootstrap, and public operation. New tests default fresh until
+inspected. Per-case public operations and safety assertions remain. Thirteen
+operator scope cases call the decision directly with a passing control and
+unchanged-input checks. All 184 existing nodes in the two files remain.
+
+| Operator-update family | Restored precondition | Per-case work and invariants kept |
+|---|---|---|
+| `test_barriers_refuse_mutable_installation_inputs` (7 cases) | Genuine enrolled installation and retained active runtime | Each case creates the reviewed release, injects one of review/source/config/role/postimage/ownership/plan mutations, performs the real bootstrap and public update, and retains the failed pending operation, original current record, and `FAILED` journal assertions. |
+| `test_historical_progress_between_barriers_is_allowed` | Genuine enrolled installation and retained active runtime | Creates the release and review, injects the handoff change into the bootstrapped source, then requires the real public update to succeed and the runtime handoff count to reach two. |
+| `test_partial_failure_keeps_pending_manual_reconciliation` | Genuine enrolled installation and retained-byte snapshot | Creates the release and review, injects the second-platform failure into its bootstrap source, then retains the failed pending journal, completed first engine step, unchanged current record and bytes, and unresolved retry refusal. |
+| `test_completed_publication_failures_never_claim_success` (3 cases) | Genuine enrolled installation and retained-byte snapshot | Each case creates its own release/review and injects late-postimage, smoke, or publication failure into the bootstrap source; the real public update must fail while retaining the old current record, pending operation, and failed manual-reconciliation journal. |
