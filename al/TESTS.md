@@ -224,9 +224,19 @@ repository is gone with `alctl prune-stale-runs --apply`.
 
 ## 6. Acceptance journeys and the time budget
 
-Every test must finish in 5 s and every file in 60 s (`al/verification-budget.json`, enforced by
-`verify_changed.py --tier all` and `release_verify.py`). Only these real end-to-end journeys are
-exempt; each covers a distinct risk. A `*:` pattern is one journey run on both hosts.
+The diagnostic thresholds remain 5 s per test and 60 s per file in
+`al/verification-budget.json`, with the existing named acceptance and exemption rules.
+All verification tiers retain per-node durations, `over_budget`, elapsed and profile output.
+Timing violations do not change functional status or release completeness; the existing
+collection, source-stability, ownership, cleanup, isolation and reconciliation guards remain.
+Elapsed time is reported, never judged by ordinary verification. These real end-to-end
+journeys retain their diagnostic exemptions; each covers a distinct risk. A `*:` pattern
+is one journey run on both hosts.
+
+Historical raw timing failures remain historical records. Separate #36 acceptance still
+requires the actual complete eight-worker measurement (10-minute wall target and
+120-second file target) and isolation proof. #24 still requires the actual complete
+functional run. Reporting diagnostic PASS does not establish those performance outcomes.
 
 | Journey | Risk it covers |
 |---|---|

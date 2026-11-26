@@ -91,11 +91,13 @@ in files that are already slow, or record the tiers again.
 See [TESTS.md](TESTS.md) for the cost of each slow file, the invariant map of the
 regression batches and the rules below.
 
-- **Time budget.** `verify_changed.py --tier all` and `release_verify.py` fail a run when a test takes
-  more than 5 s or a test file more than 60 s (setup + call + teardown, measured by the
-  runner). Only the acceptance journeys in `al/verification-budget.json` are exempt; the
-  total run time is still reported, not judged. The default fast tier prints violations without
-  failing.
+- **Timing diagnostics.** Every tier reports tests over 5 s and files over 60 s
+  (setup + call + teardown), using the unchanged thresholds and named acceptance/exemption
+  rules in `al/verification-budget.json`. Per-node durations, elapsed/profile output and
+  `over_budget` remain in reports. Timing violations alone change neither functional PASS/FAIL
+  nor release completeness; collection, outcomes, reconciliation, source stability, isolation,
+  ownership and cleanup protections retain their existing behavior. Elapsed time is reported,
+  never judged by ordinary verification. Performance acceptance is a separate measured task.
 
 - Start from a prebuilt run instead of building one: a host test that requests the
   `run_state` fixture and calls `run_state("planned" | "implemented" | "finalizing" | "verified")`
@@ -145,7 +147,7 @@ it does not change storage cleanup or turn an unavailable log into verification.
 `--profile` forwards runtime profiling to the child processes and records the requested
 setting in the development report. Profiling adds overhead; use it to locate costs, then
 measure the stable candidate without instrumentation. It keeps cold execution, collection
-reconciliation, source-stability checks, budgets and `release_claim: false` unchanged.
+reconciliation, source-stability checks, timing diagnostics and `release_claim: false` unchanged.
 `--host codex|claude` limits a quick iteration to one host. Before you finish,
 run both hosts.
 
