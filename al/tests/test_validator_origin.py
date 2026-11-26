@@ -1,4 +1,5 @@
 """Protected snapshot identity and closed original-resource provenance."""
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -8,13 +9,40 @@ import pytest
 from al.installer import validator_origin as V
 from al.installer.bootstrap import bootstrap_cli
 from al.tests.conftest import copy_al_source
+from al.tests import update_templates
+
+
+# Only inspected bootstrap prerequisites are reused; new cases build fresh.
+_PREFIX_CASES = frozenset({
+    'test_snapshot_tampering_cannot_recertify_itself',
+    'test_original_resources_remain_data_with_exact_membership',
+    'test_closed_loader_has_no_target_or_environment_fallback',
+    'test_stdlib_optional_absence_is_precise_without_import_fallthrough',
+    'test_wrong_platform_mapping_is_not_authenticated_by_its_own_digest',
+    'test_actual_interpreter_mismatch_is_refused_after_origin_resources_match',
+})
+
+
+@pytest.fixture(scope='module')
+def _installed_prefix_cache():
+    return {}
 
 
 @pytest.fixture
-def installed(tmp_path):
-    source = copy_al_source(tmp_path/'source/al')
-    launcher = tmp_path/'bin/alctl'
-    result = bootstrap_cli(source, launcher, tmp_path/'state')
+def installed(tmp_path, tmp_path_factory, request, _installed_prefix_cache):
+    if request.node.originalname not in _PREFIX_CASES:
+        return _fresh_installed(tmp_path)
+    if 'prefix' not in _installed_prefix_cache:
+        container = tmp_path_factory.mktemp('validator-origin-prefix')
+        _installed_prefix_cache['prefix'] = update_templates.build(container, _fresh_installed)
+        return copy.deepcopy(_installed_prefix_cache['prefix'].value)
+    return update_templates.restore(_installed_prefix_cache['prefix'])
+
+
+def _fresh_installed(root):
+    source = copy_al_source(root/'source/al')
+    launcher = root/'bin/alctl'
+    result = bootstrap_cli(source, launcher, root/'state')
     return source,launcher,result
 
 
