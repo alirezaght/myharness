@@ -2,7 +2,7 @@
 import re
 import posixpath
 from pathlib import PurePosixPath
-import al_artifacts as A
+import al_proof_json as J
 from al_schema import refuse
 from al_ui_paths import rendered_path
 
@@ -16,6 +16,11 @@ def triggers(candidate):
     ui=any(rendered_path(p) for p in changed)
     return rollout,ui
 
+def artifact_bytes(refs,label,required=False):
+    if not isinstance(refs,list) or (required and not refs):refuse(label+' artifacts must be '+('a nonempty array' if required else 'an array'))
+    return [J.reference(ref) for ref in refs]
+
+
 def validate(report,candidate):
     rollout,ui=triggers(candidate)
     assessments=report.get('assessments')
@@ -24,17 +29,23 @@ def validate(report,candidate):
         item=assessments.get(name)
         if not isinstance(item,dict) or not item.get('reason'): refuse(name+' assessment needs applicability rationale')
         if type(item.get('applicable')) is not bool or (applicable and not item['applicable']): refuse('required '+name+' assessment omitted')
-        if not item['applicable']: continue
+        J.text(item['reason'],name+' assessment reason')
+        if not item['applicable']:
+            if name=='ui' and 'artifacts' in item:artifact_bytes(item['artifacts'],'rendered UI')
+            if name=='rollout':
+                for dimension in ROLLOUT:
+                    d=item.get(dimension)
+                    if isinstance(d,dict) and 'artifacts' in d:artifact_bytes(d['artifacts'],'rollout '+dimension)
+            continue
         if name=='rollout':
             for dimension in ROLLOUT:
                 d=item.get(dimension)
                 if not isinstance(d,dict) or not d.get('reason') or d.get('status') not in {'EVIDENCED','NOT_APPLICABLE'}: refuse('missing rollout dimension '+dimension)
+                J.text(d['reason'],'rollout '+dimension+' reason')
                 if d['status']=='EVIDENCED':
-                    if not d.get('artifacts'): refuse('rollout evidence missing '+dimension)
-                    for ref in d['artifacts']: A.read(ref)
+                    artifact_bytes(d.get('artifacts'),'rollout '+dimension,required=True)
+                elif 'artifacts' in d:artifact_bytes(d['artifacts'],'rollout '+dimension)
         else:
             if not item.get('browser') or not item.get('viewport') or not item.get('functional_checks') or not item.get('alignment_observations') or not item.get('ux_observations'): refuse('rendered UI metadata/checks missing')
-            if not item.get('artifacts'): refuse('rendered screenshot/artifact required')
-            for ref in item['artifacts']:
-                raw=A.read(ref)
+            for raw in artifact_bytes(item.get('artifacts'),'rendered UI',required=True):
                 if not raw: refuse('empty rendered artifact')

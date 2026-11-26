@@ -1,6 +1,7 @@
 """Validate review links against real artifacts, locations and ledger entries."""
 from pathlib import Path
 import al_artifacts as A
+import al_proof_json as J
 import al_ledger as L
 import al_store
 import al_scope as S
@@ -10,13 +11,18 @@ def locations(items):
     if not isinstance(items,list) or not items: refuse('missing concrete implementation/fix locations')
     for item in items:
         if isinstance(item,dict):
-            if not item.get('explanation') or not item.get('artifact'): refuse('non-code link requires hashed artifact and explanation')
-            A.read(item['artifact']); continue
+            J.closed(item,{'artifact','explanation'},'non-code location')
+            J.text(item['explanation'],'non-code location explanation')
+            J.reference(item['artifact']); continue
         if not isinstance(item,str): refuse('invalid location')
         path,sep,line=item.partition(':')
         p=Path(path)
         if p.is_absolute() or '..' in p.parts or not (al_store.REPO_ROOT/p).is_file(): refuse('dangling implementation location '+item)
-        if sep and (not line.isdigit() or not 1 <= int(line) <= len((al_store.REPO_ROOT/p).read_bytes().splitlines())): refuse('invalid line location '+item)
+        if sep:
+            if not line.isascii() or not line.isdecimal():refuse('invalid line location '+item)
+            try:number=int(line)
+            except ValueError:refuse('invalid line location '+item)
+            if not 1 <= number <= len((al_store.REPO_ROOT/p).read_bytes().splitlines()):refuse('invalid line location '+item)
 
 def evidence(st,ids):
     if not isinstance(ids,list) or not ids: refuse('traceability requires verification IDs')
