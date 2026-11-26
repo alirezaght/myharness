@@ -18,7 +18,12 @@ from harness.policy.control_channel import ControlChannel, receive, send
 from tests.test_policy_admission import configure, document
 from tests.test_policy_dispatch import operations, protected_policy_runtime  # noqa: F401
 from tests.test_policy_retry_control import (
+    DARWIN_CONTROL,
+    LINUX_REFUSAL,
     active_writer_fixture,
+    assert_linux_public_refusal,
+    linux_policy_facts,
+    linux_request,
     retry,
     setup_retry,
 )
@@ -224,6 +229,7 @@ def _warm_service(r, ownership):
 @pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
 @pytest.mark.parametrize("action", ["retry", "writer-finish"])
 @pytest.mark.parametrize("cache_mode", ["valid", "empty"])
+@DARWIN_CONTROL
 def test_sealed_control_runs_with_warm_service_without_cache_or_route_changes(
     protected_policy_runtime, monkeypatch, action, cache_mode
 ):
@@ -405,6 +411,7 @@ def test_service_cleanup_waits_for_owned_child_after_listener_and_leader_exit(tm
 
 @pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
 @pytest.mark.parametrize("attack", ["wrong-nonce", "replayed-sequence", "closed-channel"])
+@DARWIN_CONTROL
 def test_control_channel_rejects_wrong_nonce_replay_and_closed_requests(
     protected_policy_runtime, attack
 ):
@@ -488,3 +495,62 @@ def test_control_channel_rejects_wrong_nonce_replay_and_closed_requests(
         channel.close()
         if not policy_attempt.started:
             policy_attempt.release_unstarted()
+
+
+@LINUX_REFUSAL
+@pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
+@pytest.mark.parametrize("action", ["retry", "writer-finish"])
+@pytest.mark.parametrize("cache_mode", ["valid", "empty"])
+def test_linux_warm_service_refuses_sealed_control_without_cache_route_or_policy_changes(
+    protected_policy_runtime, monkeypatch, action, cache_mode
+):
+    monkeypatch.setenv("AL_SERVICE", "1")
+    r = protected_policy_runtime
+    _, _, pin, _, _ = _cache_binding(r)
+    ownership = {"started_attempted": False, "pid": None}
+    try:
+        service, pin_store, pin, cache_file, run_storage, _, _, _ = _warm_service(r, ownership)
+        arguments = linux_request(r, action)
+        from al.installer import runtime_pin_cache
+
+        if cache_mode == "empty":
+            assert cache_file.parent.exists()
+            assert all(path == cache_file for path in cache_file.parent.iterdir())
+            cache_file.unlink(missing_ok=True)
+            assert not list(cache_file.parent.iterdir())
+        else:
+            record = runtime_pin_cache._record(
+                pin_store,
+                pin,
+                json.loads(
+                    (Path(r.operation.initialization["pin_root"]) / "manifest.json").read_bytes()
+                ),
+            )
+            assert cache_file.is_file() and record is not None
+            assert record["quick_check"] == runtime_pin_cache.fingerprint(
+                Path(r.operation.initialization["pin_root"])
+            )
+        before_service = _wait_service(r, pin["pin_identity"])
+        assert before_service["pid"] == service["pid"]
+        before_cache = _cache_state(cache_file)
+        before_routes = _routes(r, run_storage)[2]
+        before_facts = linux_policy_facts(r)
+        before_state = r.source.read_bytes()
+        assert_linux_public_refusal(r, arguments)
+        after = _wait_service(r, pin["pin_identity"])
+        assert after["pid"] == before_service["pid"]
+        assert after["pin_identity"] == before_service["pin_identity"]
+        assert after["launcher_identity"] == before_service["launcher_identity"]
+        assert after["commands_served"] == before_service["commands_served"]
+        assert _routes(r, run_storage)[2] == before_routes
+        assert _cache_state(cache_file) == before_cache
+        assert linux_policy_facts(r) == before_facts
+        assert r.source.read_bytes() == before_state
+        ordinary = _public(r, "show", "--json")
+        assert ordinary.returncode == 0, ordinary.stderr
+        after_ordinary = _wait_service(r, pin["pin_identity"])
+        assert after_ordinary["pid"] == service["pid"]
+        assert after_ordinary["commands_served"] > after["commands_served"]
+    finally:
+        if ownership["started_attempted"]:
+            _stop_owned_service(r, pin["pin_identity"], ownership)

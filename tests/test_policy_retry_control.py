@@ -1,9 +1,12 @@
 # ruff: noqa: F811
 """Real sealed retry qualification and distinct helper/grant/save/closure facts."""
 
+import configparser
 import hashlib
 import json
+import os
 import subprocess
+import sys
 import traceback
 from pathlib import Path
 
@@ -17,6 +20,36 @@ from tests.test_policy_dispatch import (  # noqa: F401
     protected_policy_runtime,
     seed_protected_failure,
 )
+
+DARWIN_CONTROL = pytest.mark.skipif(
+    sys.platform != "darwin",
+    reason="sealed control requires the real Darwin no-descendant boundary",
+)
+LINUX_REFUSAL = pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="actual Linux sealed-control refusal"
+)
+
+
+def fixture_git():
+    """Fixture setup uses the same concrete platform path, without qualifying it."""
+    path = Path(
+        "/Library/Developer/CommandLineTools/usr/bin/git"
+        if sys.platform == "darwin"
+        else "/usr/bin/git"
+    ).resolve(strict=True)
+    assert path.is_file() and os.access(path, os.X_OK)
+    return str(path)
+
+
+def qualification_cause(error):
+    from harness.policy.contracts import qualification_diagnostic
+
+    text = str(error)
+    code, encoded = text.split(" ", 1)
+    diagnostic = json.loads(encoded)
+    assert code == "UNSUPPORTED_ENFORCEMENT_CAPABILITY" and len(text) < 512
+    assert diagnostic == qualification_diagnostic(diagnostic)
+    return diagnostic
 
 
 def setup_retry(r):
@@ -46,6 +79,7 @@ def retry(r, **extra):
 
 
 @pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
+@DARWIN_CONTROL
 def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(
     protected_policy_runtime, monkeypatch
 ):
@@ -66,7 +100,7 @@ def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(
     repo = Path(r.operation.envelope["repository"])
     canary = "opaque-helper-content-73119"
     (repo / "tracked.txt").write_text(canary)
-    git = "/Library/Developer/CommandLineTools/usr/bin/git"
+    git = fixture_git()
     for args in (
         ["add", "tracked.txt"],
         [
@@ -120,6 +154,7 @@ def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(
         '[remote "origin"]\npromisor = true\n',
     ],
 )
+@DARWIN_CONTROL
 def test_unsafe_config_refuses_before_grant_or_launch(protected_policy_runtime, configuration):
     r = protected_policy_runtime
     setup_retry(r)
@@ -142,13 +177,15 @@ def test_selected_pin_source_drift_cannot_self_qualify(protected_policy_runtime)
         Path(r.operation.initialization["pin_root"]) / "payload/installer/runtime_retry_control.py"
     )
     source.write_bytes(source.read_bytes() + b"\n# temporary fixture drift\n")
-    with pytest.raises(ValueError, match="UNSUPPORTED_ENFORCEMENT_CAPABILITY"):
+    with pytest.raises(ValueError, match="UNSUPPORTED_ENFORCEMENT_CAPABILITY") as refused:
         retry(r)
+    assert qualification_cause(refused.value)["cause"] == "source_bytes_mismatch"
     assert (
         r.controller.conn.execute("SELECT COUNT(*) FROM policy_control_helpers").fetchone()[0] == 0
     )
 
 
+@DARWIN_CONTROL
 def test_saved_grant_without_final_receipt_remains_fenced(protected_policy_runtime, monkeypatch):
     r = protected_policy_runtime
     setup_retry(r)
@@ -181,6 +218,7 @@ def test_saved_grant_without_final_receipt_remains_fenced(protected_policy_runti
         retry(r)
 
 
+@DARWIN_CONTROL
 def test_helper_timeout_does_not_fabricate_main_boundary_closure(
     protected_policy_runtime, monkeypatch
 ):
@@ -370,6 +408,7 @@ def active_writer_fixture(r):
 
 @pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
 @pytest.mark.parametrize("outcome", ["success", "failed", "abandoned"])
+@DARWIN_CONTROL
 def test_qualified_finish_keeps_attribution_and_prior_liability_under_exhausted_budget(
     protected_policy_runtime, outcome, monkeypatch
 ):
@@ -479,11 +518,13 @@ def test_modified_managed_startup_cannot_run_before_the_private_guard(
     payload = "open(" + repr(str(canary)) + ",'w').write('bad')\n"
     replacement = anchor + payload if position == "startup" else payload + anchor
     launcher.write_text(raw.replace(anchor, replacement, 1))
-    with pytest.raises(ValueError, match="UNSUPPORTED_ENFORCEMENT_CAPABILITY"):
+    with pytest.raises(ValueError, match="UNSUPPORTED_ENFORCEMENT_CAPABILITY") as refused:
         retry(r)
+    assert qualification_cause(refused.value)["cause"] == "launcher_bytes_mismatch"
     assert not canary.exists()
 
 
+@DARWIN_CONTROL
 def test_sealed_helper_environment_does_not_inherit_execution_overrides(
     protected_policy_runtime, monkeypatch
 ):
@@ -520,6 +561,7 @@ def test_sealed_helper_environment_does_not_inherit_execution_overrides(
     assert seen
 
 
+@DARWIN_CONTROL
 def test_tested_main_profile_drift_refuses_before_grant(protected_policy_runtime, monkeypatch):
     from harness.policy import control_qualification
 
@@ -542,11 +584,12 @@ def test_tested_main_profile_drift_refuses_before_grant(protected_policy_runtime
     )
 
 
+@DARWIN_CONTROL
 def test_gitlink_refuses_before_retry_grant(protected_policy_runtime):
     r = protected_policy_runtime
     setup_retry(r)
     repo = r.operation.envelope["repository"]
-    git = "/Library/Developer/CommandLineTools/usr/bin/git"
+    git = fixture_git()
     head = subprocess.check_output([git, "rev-parse", "HEAD"], cwd=repo).strip().decode()
     subprocess.run(
         [git, "update-index", "--add", "--cacheinfo", "160000," + head + ",child"],
@@ -562,10 +605,11 @@ def test_gitlink_refuses_before_retry_grant(protected_policy_runtime):
     )
 
 
+@DARWIN_CONTROL
 def test_missing_git_blob_never_fabricates_completion(protected_policy_runtime):
     r = protected_policy_runtime
     repo = Path(r.operation.envelope["repository"])
-    git = "/Library/Developer/CommandLineTools/usr/bin/git"
+    git = fixture_git()
     (repo / "lost-blob.txt").write_text("disposable missing object fixture")
     for args in (
         ["add", "lost-blob.txt"],
@@ -667,3 +711,160 @@ def test_qualification_diagnostic_reaches_real_mcp_and_audit(
     persisted = text + audit["outcome"]
     for private in ("private-reason-canary", str(manifest), str(r.operation.package["launcher"])):
         assert private not in persisted
+
+
+@pytest.mark.parametrize(
+    "configuration",
+    [
+        "[include]\npath = /private/no-executable-config\n",
+        "[core]\nfsmonitor = /private/no-fsmonitor\n",
+        '[filter "private"]\nsmudge = /private/no-filter\n',
+        '[remote "origin"]\npromisor = true\n',
+    ],
+)
+def test_real_configuration_predicate_rejects_unsafe_entries_portably(tmp_path, configuration):
+    from harness.policy.control_git import configuration as inspect_configuration
+
+    subprocess.run([fixture_git(), "init", "-q", str(tmp_path)], check=True, capture_output=True)
+    config = tmp_path / ".git/config"
+    assert inspect_configuration(tmp_path)["configuration"]["path"] == str(config.resolve())
+    parser = configparser.RawConfigParser(strict=True, interpolation=None)
+    parser.read_string(config.read_text())
+    addition = configparser.RawConfigParser(strict=True, interpolation=None)
+    addition.read_string(configuration)
+    for section in addition.sections():
+        if not parser.has_section(section):
+            parser.add_section(section)
+        for key, value in addition.items(section):
+            parser.set(section, key, value)
+    with config.open("w") as stream:
+        parser.write(stream)
+    before = config.read_bytes()
+    with pytest.raises(ValueError, match="^UNSUPPORTED_ENFORCEMENT_CAPABILITY$"):
+        inspect_configuration(tmp_path)
+    assert config.read_bytes() == before
+
+
+def linux_request(r, action):
+    """Prepare genuine public requests; ordinary patch authority is not sealed authority."""
+    if action == "retry":
+        setup_retry(r)
+        return ["retry", "al-engineer", "--reason", "Linux-refusal-private-reason"]
+    principal, revision = active_writer_fixture(r)
+    configure(r, document(r, maximum=20))
+    result = r.operation.dispatch(
+        principal,
+        "apply_patch",
+        {
+            "task_id": "finish-work",
+            "expected_revision": revision,
+            "patch": (
+                "*** Begin Patch\n*** Add File: release-owned/linux.txt\n+owned work\n*** End Patch"
+            ),
+        },
+    )
+    assert result["changed"] == ["release-owned/linux.txt"]
+    assert (
+        Path(r.operation.envelope["repository"]) / "release-owned/linux.txt"
+    ).read_text() == "owned work\n"
+    return ["writer", "finish", "--id", "owned-writer", "--outcome", "success"]
+
+
+def linux_policy_facts(r):
+    tables = (
+        "policy_attempts",
+        "policy_pools",
+        "policy_control_helpers",
+        "policy_control_receipts",
+        "policy_retry_claims",
+        "policy_reservations",
+        "policy_resource_claims",
+        "policy_processes",
+    )
+    return {
+        table: [
+            tuple(row)
+            for row in r.controller.conn.execute("SELECT * FROM " + table + " ORDER BY 1")
+        ]
+        for table in tables
+    }
+
+
+def assert_linux_public_refusal(r, arguments):
+    from harness.policy.control_git import environment
+
+    version = subprocess.run(
+        [fixture_git(), "--version"], env=environment(), capture_output=True, timeout=5, check=True
+    ).stdout
+    # Closed expected versions match the actual qualification predicate, never alter it.
+    allowed = {
+        b"git version 2.54.0 (Apple Git-157)\n",
+        b"git version 2.50.1\n",
+        b"git version 2.54.0\n",
+    }
+    expected = "platform_unsupported" if version in allowed else "git_version_unsupported"
+    before = linux_policy_facts(r)
+    protected = r.source.read_bytes()
+    processes = set(r.operation.processes.records)
+    with pytest.raises(ValueError, match="^UNSUPPORTED_ENFORCEMENT_CAPABILITY ") as refused:
+        r.operation.dispatch(r.principal, "al_command", {"arguments": arguments})
+    diagnostic = qualification_cause(refused.value)
+    assert diagnostic["cause"] == expected
+    assert "observation_id" in diagnostic
+    observation = r.controller.conn.execute(
+        "SELECT * FROM reliability_observations WHERE observation_id=?",
+        (diagnostic["observation_id"],),
+    ).fetchone()
+    assert observation["code"] == "DISPATCH_REJECTED"
+    audit = r.controller.conn.execute(
+        "SELECT outcome FROM operation_audit WHERE id=?", (observation["source_id"],)
+    ).fetchone()[0]
+    assert json.loads(audit)["diagnostic"] == diagnostic
+    assert linux_policy_facts(r) == before
+    assert r.source.read_bytes() == protected
+    assert set(r.operation.processes.records) == processes
+    persisted = str(refused.value) + audit
+    for private in (
+        "Linux-refusal-private-reason",
+        str(r.source),
+        str(r.operation.package["launcher"]),
+        r.operation.envelope["repository"],
+    ):
+        assert private not in persisted
+    return diagnostic
+
+
+@LINUX_REFUSAL
+@pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
+@pytest.mark.parametrize("action", ["retry", "writer-finish"])
+def test_linux_public_sealed_control_refuses_without_new_policy_effects(
+    protected_policy_runtime, action
+):
+    r = protected_policy_runtime
+    arguments = linux_request(r, action)
+    assert_linux_public_refusal(r, arguments)
+
+
+@LINUX_REFUSAL
+@pytest.mark.parametrize("main", [False, True])
+def test_linux_boundary_refuses_before_profile_or_probe(main):
+    from types import SimpleNamespace
+
+    from harness.policy.contracts import PolicyError
+    from harness.policy.control_boundary import prepare
+
+    calls = []
+
+    def forbidden_profile(*args, **kwargs):
+        calls.append((args, kwargs))
+        pytest.fail("unsupported platform attempted profile/probe creation")
+
+    with pytest.raises(PolicyError) as refused:
+        prepare(
+            SimpleNamespace(profile=forbidden_profile),
+            sys.executable,
+            al=main,
+            qualification_ref="1" * 32,
+        )
+    assert qualification_cause(refused.value)["cause"] == "platform_unsupported"
+    assert not calls
