@@ -17,11 +17,12 @@ def _unsupported(row):
 
 
 class Replay:
-    def __init__(self, st, expected, owned, ambiguous):
+    def __init__(self, st, expected, owned, ambiguous, *, content_memo=None):
         self.st, self.expected, self.owned, self.ambiguous = st, expected, owned, ambiguous
         self.refs = st['task_attribution'].get('reconciliations', [])
         self.position = 0
         self.external = set()
+        self.content_memo = content_memo
 
     def apply(self, count):
         import al_task_attribution as T
@@ -39,7 +40,7 @@ class Replay:
                     or data['snapshot_sha'] != self.st['task_attribution']['snapshot']['sha256']
                     or data['task_hash'] not in al_task.revision_hashes(self.st)):
                 refuse('attribution reconciliation observation differs')
-            current = T._map(T._capture(self.st, data['capture_ref']))
+            current = T._map(T._capture(self.st, data['capture_ref'], content_memo=self.content_memo))
             ambiguous = self.ambiguous | (set(T._changes(self.expected, current)) & self.owned)
             paths = data['paths']
             if (not isinstance(paths, list) or not paths or paths != sorted(set(paths)) or not set(paths) <= ambiguous

@@ -117,6 +117,7 @@
   "test_snapshot_relay.py",
   "test_standalone_papercuts.py",
   "test_storage_go_integration.py",
+  "test_task_attribution_content_memo.py",
   "test_unverified_policy.py",
   "test_verification_prepare.py",
   "test_verification_stdin.py",

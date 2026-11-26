@@ -166,6 +166,7 @@
     "al_sources.py",
     "al_task.py",
     "al_task_attribution.py",
+    "al_task_content_memo.py",
     "al_task_editorial.py",
     "al_task_reconciliation.py",
     "al_task_risk.py",
