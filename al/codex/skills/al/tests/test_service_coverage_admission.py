@@ -777,3 +777,138 @@ def test_versioned_schema_accepts_actual_v2_summary_and_retained_v1(cli,repo,tmp
     assert errors==[]
     hybrid=deepcopy(legacy);hybrid['schema_version']=2
     assert list(validator.iter_errors(hybrid))
+
+
+
+def manifestless_started(cli,repo,run_state):
+    from test_repo_adapters import manifestless_root
+    def build():
+        manifestless_root(repo)
+        put(repo,'tests/test_pkg.py','from tools.pkg import VALUE\n\ndef test_real_fixture():\n    assert VALUE==1\n')
+        _git(repo,'add','.');_git(repo,'commit','-qm','manifestless source fixture')
+        start(cli)
+    run_state('manifestless-owned-source',build)
+
+
+def test_literal_pytest_ci_binds_manifestless_root_through_public_planning(
+        cli,repo,tmp_path,run_state):
+    import al_service_coverage as Coverage
+    manifestless_started(cli,repo,run_state)
+    put(repo,'.gitlab-ci.yml','verify:\n  script: python3 -m pytest\n')
+    _,discovered=discover(cli,tmp_path,['tools/pkg.py'])
+    assessment=discovered['service_coverage']['assessment']
+    assert assessment['outcome']=='identified' and assessment['selected_services']==['.']
+    sourced=next(g for g in discovered['gates'] if 'verification-root' in g.get('obligation_ids',[]))
+    assert sourced['source']['path']=='.gitlab-ci.yml' and sourced['source']['job']=='verify'
+    assert sourced['execution_signature']
+    binding=next(b for b in assessment['required_bindings']
+                 if b['id']==sourced['id'] and b['execution_signature']==sourced['execution_signature'])
+    assert binding['conventional_verification']['satisfied']
+    planned=plan(cli,repo,tmp_path,['tools/pkg.py'])
+    assert planned['service_coverage']['assessment']['outcome']=='identified'
+    invoke(cli,'gates','run','--stage','base')
+    admit_planning(cli)
+    state=json.loads(cli('show')[1])
+    assert Currency.check(state)['current']
+    Coverage.require_ready(state,current=True)
+    assert not any('coverage incomplete' in item for item in state['implementation_readiness']['obligations'])
+
+
+@pytest.mark.parametrize('change',['new-module','ci-recipe'])
+def test_manifestless_source_membership_and_ci_recipe_stale_public_inventory(
+        cli,repo,tmp_path,run_state,change):
+    manifestless_started(cli,repo,run_state)
+    put(repo,'.gitlab-ci.yml','verify:\n  script: python3 -m pytest\n')
+    plan(cli,repo,tmp_path,['tools'])
+    state=json.loads(cli('show')[1])
+    assert Currency.check(state)['current']
+    if change=='new-module': put(repo,'tools/new_module.py','VALUE=2\n')
+    else: put(repo,'.gitlab-ci.yml','verify:\n  script: python3 -m compileall -q .\n')
+    assert not Currency.check(state)['current']
+    invoke(cli,'phase','IMPLEMENTATION')
+    assert json.loads(cli('show')[1])['implementation_readiness']['obligations']
+    invoke(cli,'review-start',ok=False)
+
+
+@pytest.mark.parametrize('kind',['missing','unknown','manual'])
+def test_manifestless_checks_need_source_authority_after_admission(
+        cli,repo,tmp_path,run_state,state_file,kind):
+    import sys
+    from hook_regression_helpers import manifest_for
+    manifestless_started(cli,repo,run_state)
+    if kind=='unknown':
+        put(repo,'.gitlab-ci.yml','verify:\n  script: python3 tools/pkg.py\n')
+    if kind=='manual':
+        state=json.loads(cli('show')[1])
+        manifest=manifest_for(state,repo,['tools/pkg.py'],category='ci',
+            argv=[sys.executable,'-I','-c',"print('manual command passed')"])
+        file=tmp_path/'manual-check.json';file.write_text(json.dumps(manifest))
+        invoke(cli,'gates','plan','--file',str(file))
+        invoke(cli,'gates','run','--stage','base','--id','ci')
+        entries=json.loads(cli('show')[1])['evidence']['entries']
+        assert any(e['area']=='gate-base-ci' and e['status']=='PASS' for e in entries)
+    else: manifest=plan(cli,repo,tmp_path,['tools/pkg.py'])
+    assessment=manifest['service_coverage']['assessment']
+    assert assessment['outcome']=='incomplete'
+    assert any(g['code'] in {'missing-verification-check','missing-check'} and g['unit']=='.'
+               for g in assessment['gaps'])
+    assert not any('verification-root' in g.get('obligation_ids',[]) for g in manifest['gates'])
+    admit_planning(cli,expect_coverage_debt=True)
+    state=json.loads(cli('show')[1])
+    assert state['proof_admission']['status']=='admitted'
+    invoke(cli,'writer','start','--id','root-source','--role','al-engineer','--files','tools/pkg.py')
+    invoke(cli,'writer','finish','--id','root-source','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
+    before=state_file().read_bytes()
+    code,out,err=invoke(cli,'review-start',ok=False)
+    message=str(code)+out+err
+    assert code and 'coverage incomplete: missing-check: .' in message
+    assert 'verification-root' in message
+    assert state_file().read_bytes()==before
+
+
+
+def test_deleted_manifestless_source_keeps_semantic_plan_without_candidate_pass(
+        cli,repo,tmp_path,run_state,state_file):
+    import al_gate_inventory as Inventory
+    import al_gates as Gates
+    import al_review as Review
+    manifestless_started(cli,repo,run_state)
+    put(repo,'.gitlab-ci.yml','verify:\n  script: python3 -m pytest\n')
+    plan(cli,repo,tmp_path,['tools'])
+    state=json.loads(cli('show')[1])
+    before=Inventory.inventory(state,['tools'])['repository_facts']
+    root_before=next(u for u in before['units'] if u['id']=='.')
+    base_witness=next(row for row in root_before['source_witnesses']
+                      if row['snapshot']=='base' and row['path']=='tools/pkg.py')
+    assert any(row['snapshot']=='current' and row['path']=='tools/pkg.py'
+               for row in root_before['source_witnesses'])
+    before_binding=next(b for b in Inventory.inventory(state,['tools'])['service_coverage']['required_bindings']
+                        if 'verification-root' in b['obligation_ids'])
+    (repo/'tools/pkg.py').unlink()
+    current=Inventory.inventory(state,['tools'])
+    after=current['repository_facts']
+    root_after=next(u for u in after['units'] if u['id']=='.')
+    assert after['capture']['observations_digest'] != before['capture']['observations_digest']
+    assert base_witness in root_after['source_witnesses']
+    assert not any(row['snapshot']=='current' and row['path']=='tools/pkg.py'
+                   for row in root_after['source_witnesses'])
+    membership=after['dependencies']['source_membership']
+    assert any(row[:3]==['base','tools/pkg.py','.'] for row in membership)
+    assert not any(row[:2]==['current','tools/pkg.py'] for row in membership)
+    assert Currency.check(state)['current']
+    binding=next(b for b in current['service_coverage']['required_bindings']
+                 if 'verification-root' in b['obligation_ids'])
+    assert binding['id']==before_binding['id']
+    assert binding['execution_signature']==before_binding['execution_signature']
+    assert binding['source_chain']==before_binding['source_chain']
+    assert binding['conventional_verification']['satisfied']
+    # A still-current requirement is no passing execution of this candidate.
+    assert not any(e.get('gate_stage')=='candidate' for e in state['evidence']['entries'])
+    missing=f"candidate gate {binding['id']} requires passing evidence"
+    status=json.loads(cli('gates','status')[1])
+    assert missing in status['candidate'] and missing in Gates.candidate_gaps(state)
+    assert missing in Review.approval_gaps(state)
+    unchanged=state_file().read_bytes()
+    invoke(cli,'approved',ok=False)
+    assert state_file().read_bytes()==unchanged
