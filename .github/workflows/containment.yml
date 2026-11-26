@@ -1,22 +1,57 @@
-name: Linux containment checks
+name: macOS Git qualification metadata probe
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: read
 
 jobs:
-  containment:
-    runs-on: ubuntu-latest
-    env:
-      HARNESS_REQUIRE_OPERATION_TESTS: "1"
+  selected-git-facts:
+    runs-on: macos-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - name: Observe the fixed qualification binary without changing policy
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, platform, subprocess
+          from pathlib import Path
+          directory = Path('qualification-facts')
+          directory.mkdir()
+          path = Path('/Library/Developer/CommandLineTools/usr/bin/git')
+          result = {'purpose': 'prerequisite metadata only; not sealed-control qualification',
+                    'source_commit': os.environ.get('GITHUB_SHA'),
+                    'platform': platform.platform(), 'requested_path': str(path),
+                    'image': {name: os.environ.get(name) for name in ('ImageOS', 'ImageVersion')},
+                    'qualification_source_sha256': hashlib.sha256(
+                        Path('harness/policy/control_qualification.py').read_bytes()).hexdigest()}
+          try:
+              before = path.stat()
+              raw = path.read_bytes()
+              after = path.stat()
+              identity = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_size,
+                                    s.st_mtime_ns, s.st_ctime_ns)
+              result.update(available=True, resolved_path=str(path.resolve()),
+                            stable_read=identity(before) == identity(after),
+                            sha256=hashlib.sha256(raw).hexdigest(),
+                            identity=dict(zip(('device', 'inode', 'mode', 'size', 'mtime_ns', 'ctime_ns'), identity(after))))
+              version = subprocess.run([str(path), '--version'], capture_output=True,
+                                       text=True, timeout=15,
+                                       env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
+              result.update(returncode=version.returncode, stdout=version.stdout[:4096],
+                            stderr=version.stderr[:4096])
+          except (OSError, subprocess.TimeoutExpired) as error:
+              result.update(available=False, error_type=type(error).__name__)
+          text = json.dumps(result, indent=2, sort_keys=True)
+          (directory / 'selected-git.json').write_text(text + '\n')
+          print(text)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          enable-cache: true
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
-      - run: uv python install
-      - run: uv sync --locked
-      - run: uv run pytest tests/test_operation_isolation.py tests/test_guarded_check_channel.py tests/test_private_runtime_operation.py tests/test_execution_operations.py
+          name: selected-macos-git-${{ github.run_id }}
+          path: qualification-facts/
+          retention-days: 7
+          if-no-files-found: error
