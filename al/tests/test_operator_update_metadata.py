@@ -2,6 +2,7 @@
 
 import pytest
 
+from al.installer import operator_registry as G
 from al.tests.operator_update_helpers import (
     O,
     Path,
@@ -12,6 +13,7 @@ from al.tests.operator_update_helpers import (
     load_record,
     package_path,
     public,
+    retained,
     tag,
 )
 
@@ -20,7 +22,16 @@ from al.tests.operator_update_helpers import (
 @pytest.mark.parametrize('damage', ['hardlink', 'symlink', 'writable'])
 def test_operator_installation_metadata_has_real_owned_no_alias_boundary(enrolled, name, damage):
     w, target, row, runtime = enrolled
-    req = artifact(enrolled, *tag(enrolled))
+    direct = name != 'lock' and damage in {'symlink', 'writable'}
+    if direct:
+        history_before = retained(enrolled)
+        record = O.record_path(w['state'], target['target_id'])
+        record_before = record.read_bytes()
+        assert G.installation_metadata(w['state'], row) is None
+        assert retained(enrolled) == history_before
+        assert record.read_bytes() == record_before
+    else:
+        req = artifact(enrolled, *tag(enrolled))
     path = {'record': O.record_path(w['state'], target['target_id']),
             'source': next((w['state'] / 'installer/sources').glob('*.json')),
             'ownership': Path(row['current']['packages']['codex']['path']),
@@ -30,9 +41,18 @@ def test_operator_installation_metadata_has_real_owned_no_alias_boundary(enrolle
     elif damage == 'symlink':
         saved = w['root'] / 'metadata-saved'; path.rename(saved); path.symlink_to(saved)
     else: path.chmod(0o666)
-    result = public(enrolled, req, '--allow-running')
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert any(word in result.data['error'] for word in ('metadata', 'symlink', 'ownership', 'alias'))
+    if direct:
+        history_before = retained(enrolled)
+        # Read this fixture's raw bytes even when its damaged record reader refuses.
+        record_before = record.read_bytes()
+        with pytest.raises(ValueError, match='metadata|symlink|ownership|alias'):
+            G.installation_metadata(w['state'], row)
+        assert retained(enrolled) == history_before
+        assert record.read_bytes() == record_before
+    else:
+        result = public(enrolled, req, '--allow-running')
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert any(word in result.data['error'] for word in ('metadata', 'symlink', 'ownership', 'alias'))
     assert not row['pending']
     # Reading unsafe metadata through normal APIs may itself refuse; resource payload stays old.
     assert (package_path(target, 'codex') / 'SKILL.md').read_bytes() == (
