@@ -15,16 +15,25 @@ from tests.sample_repo import APPROVED, make_sample_repo, tree_snapshot, write_f
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OWN_DECISIONS = REPO_ROOT / "docs" / "decisions"
-OWN_SNAPSHOT = tree_snapshot(OWN_DECISIONS)
 TASK_ID = re.compile(r"task (t-[0-9a-f]{8}) created")
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 
 
 @pytest.fixture
-def run(db_path, capsys):
+def run(db_path, capsys, monkeypatch):
+    """Run one CLI command and prove it left this repository's decision records alone.
+
+    Commands run from this repository's root, where a command that wrongly defaulted to
+    the current directory would write; every call checks the records before and after, so
+    each test proves isolation on its own, whatever the selection or order.
+    """
+    monkeypatch.chdir(REPO_ROOT)
+
     def _run(*argv: str) -> tuple[int, str, str]:
+        before = tree_snapshot(OWN_DECISIONS)
         code = main(["--db", str(db_path), *argv])
         captured = capsys.readouterr()
+        assert tree_snapshot(OWN_DECISIONS) == before, f"{argv} touched {OWN_DECISIONS}"
         return code, captured.out, captured.err
 
     return _run
@@ -304,7 +313,3 @@ def test_suggestions_never_apply(run, task, sample_repo, tmp_path, events):
     assert [s["id"] for s in data["suggestions"]] == ["DEC-0007", "DEC-0001"]
     assert (tree_snapshot(sample_repo), tree_snapshot(other), len(events(task))) == before
     assert run("decision", "suggest", task, "--from", str(tmp_path / "none"))[1].startswith("none")
-
-
-def test_decision_commands_never_touch_this_repository():
-    assert tree_snapshot(OWN_DECISIONS) == OWN_SNAPSHOT

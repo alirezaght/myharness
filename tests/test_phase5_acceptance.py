@@ -1,20 +1,51 @@
 """Keep each of the 30 V1 requirements tied to a concrete test location."""
 
+import ast
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_v1_acceptance_map_covers_all_criteria_with_resolvable_test_references():
+def _acceptance_rows() -> list[tuple[int, list[str]]]:
+    """Each criterion row's number and every backticked test reference in its evidence."""
     document = (ROOT / "docs/v1-acceptance.md").read_text(encoding="utf-8")
-    rows = re.findall(r"^\|\s*(\d+)\s*\|.*?`(tests/[^`]+)`.*?\|\s*([^|]+)\|$", document, re.M)
-    assert len(rows) == 30
-    assert [int(row[0]) for row in rows] == list(range(1, 31))
-    for _, reference, _ in rows:
-        path, test_name = reference.split("::", maxsplit=1)
-        source = (ROOT / path).read_text(encoding="utf-8")
-        assert re.search(rf"\bdef\s+{re.escape(test_name)}\s*\(", source), reference
+    rows = []
+    for line in document.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) == 4 and cells[0].isdigit():
+            rows.append((int(cells[0]), re.findall(r"`(tests/[^`]+)`", cells[2])))
+    return rows
+
+
+def _collectable_tests(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name.startswith("test_")
+    }
+
+
+def test_v1_acceptance_map_references_resolve_to_collectable_tests():
+    """Traceability only: every cited test exists as a collectable test function.
+
+    This does not claim the tests passed or that acceptance was met; the map's Status column
+    records that evidence separately.
+    """
+    rows = _acceptance_rows()
+    assert [number for number, _ in rows] == list(range(1, 31))
+    for number, references in rows:
+        assert references, f"criterion {number} cites no test"
+        for reference in references:
+            path, _, name = reference.partition("::")
+            module = ROOT / path
+            assert module.name.startswith("test_") and module.suffix == ".py", reference
+            assert module.is_file(), reference
+            assert name in _collectable_tests(module), reference
+    # Criterion 25 cites two tests; both are checked, not only the first.
+    assert len(dict(rows)[25]) == 2
 
 
 def test_delivery_completion_summary_keeps_browser_status_and_currency(
