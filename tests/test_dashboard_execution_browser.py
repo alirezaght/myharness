@@ -343,8 +343,8 @@ def _cdp_capture(
         } <= resource_files, resources
         # The run panels (incidents, incident intelligence, timeline, policy) belong to the
         # execution section. The delivery tab renders only the delivery panel, so it must not
-        # fetch run data it does not show; the other tabs load each list once (twice at most
-        # when the capture overlaps the driver's explicit refresh).
+        # fetch run data it does not show; the other tabs load each run list once (twice at
+        # most when the capture overlaps the driver's explicit refresh).
         run_lists = (
             "/api/execution/incidents?",
             "/api/execution/timeline?",
@@ -352,20 +352,19 @@ def _cdp_capture(
         )
         for route in run_lists:
             count = sum(route in url for url in resource_names)
-            assert count == 0 if delivery else 1 <= count <= 2, (route, resources)
+            assert (count == 0) if delivery else (1 <= count <= 2), (route, resources)
         if delivery:
             assert not [url for url in resource_names if "/api/reliability/" in url], resources
-        # No request loop or duplicate load: every resource is a served static asset, the
-        # favicon or an /api/ read, and none is requested more than twice.
+        # Every resource is a served static asset, the favicon or an /api/ read, and no static
+        # asset loads twice. Reads are bounded above (dashboard and run lists); other /api/
+        # reads may repeat on repaint, so their exact-URL count depends on sampling time.
         for url in resource_names:
             path = urlparse(url).path
             assert (
-                path in server_module.STATIC
-                or path == "/static/driver.js"
-                or path == "/favicon.ico"
-                or path.startswith("/api/")
+                path in server_module.STATIC or path == "/favicon.ico" or path.startswith("/api/")
             ), (url, resources)
-        repeated = {url: n for url, n in Counter(resource_names).items() if n > 2}
+        assets = [url for url in resource_names if urlparse(url).path.startswith("/static/")]
+        repeated = {url: n for url, n in Counter(assets).items() if n > 1}
         assert not repeated, (repeated, resources)
         capture = call(
             "Page.captureScreenshot",
