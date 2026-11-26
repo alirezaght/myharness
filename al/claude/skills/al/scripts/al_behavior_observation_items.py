@@ -10,6 +10,21 @@ import al_store
 from al_schema import refuse
 
 
+SCOPE_GUIDANCE = ('For behavior observations, --scope must cover the asserting test files as well as '
+ 'implementation and dependency inputs. Command arguments do not expand the declared scope. '
+ 'For example, --scope src,tests is appropriate only when those directories contain all actual '
+ 'inputs and assertions. If an assertion is outside a selected execution scope, register and '
+ 'execute a sufficiently scoped check, then resubmit using its new evidence ID. Changing an '
+ 'observation or plan cannot widen an earlier executed scope.')
+
+
+def scope_refusal(path,evidence_ids,reason):
+    refuse(reason+': '+path+'; selected evidence IDs: '+', '.join(evidence_ids)+
+           '. Register a check with `evidence plan --area AREA --scope IMPLEMENTATION,ASSERTING_TEST -- COMMAND`, '
+           'execute `evidence run --area AREA --fresh`, then resubmit with the new evidence ID. '
+           'Executed scopes are immutable; command arguments and observation edits do not expand them.')
+
+
 def references(values):
     if not isinstance(values, list):
         refuse("behavior artifact references must be an array")
@@ -149,7 +164,7 @@ def assertions(st, rows, required, evidence_ids):
             refuse("duplicate behavior assertion")
         seen.add(key)
         if not any(any(contains(scope, path) for scope in entry["scope"]) for entry in entries):
-            refuse("behavior assertion is outside executed evidence scope")
+            scope_refusal(path,evidence_ids,"behavior assertion is outside executed evidence scope")
         result.setdefault(identifier, []).append(path)
     if set(result) != required:
         refuse("behavior assertions omit declared scenario items")
@@ -181,6 +196,6 @@ def rows(st, values, expected, id_field, fields, all_evidence, source_assertions
                 if not any(
                     any(contains(scope, path) for scope in entry["scope"]) for entry in entries
                 ):
-                    refuse("scenario item evidence does not cover its assertions")
+                    scope_refusal(path,row["evidence_ids"],"scenario item evidence does not cover its assertions")
     if seen != set(expected):
         refuse("incomplete declared scenario observations: " + id_field)

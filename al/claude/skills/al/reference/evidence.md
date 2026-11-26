@@ -116,6 +116,20 @@ prerequisites, environment values, and whether each wrapper step is required or
 advisory. A CI wrapper such as `fc_step` executes the supplied command; it does
 not imply additional targets. Do not infer a broader command from a job name.
 
+Behavior observations also require the asserting test file to be inside the
+scope of selected executed evidence, alongside the implementation and dependency
+inputs. Passing a test path as a command argument does not add it to `--scope`.
+For example, `--scope src,tests -- python3 -m pytest -q tests` is suitable when
+those directories cover the actual inputs and assertion files; it is an example,
+not an automatic or universal scope. Add other relevant inputs explicitly.
+
+If an assertion is outside scope, retain the earlier execution and its recorded
+scope. Register the corrected scope with `evidence plan`, execute it with
+`evidence run --area AREA --fresh`, then resubmit the observation with the new
+evidence ID. Editing an observation or changing a plan cannot expand an earlier
+execution's scope, manufacture a rerun, or retrospectively credit its PASS.
+The behavior packet repeats this guidance outside submitted observation objects.
+
 Keep the command target separate from `--scope`: target arguments are passed to
 the tool, while scope lists every source, fixture, script, configuration,
 dependency manifest, and imported dependency that can affect reuse. Adding a

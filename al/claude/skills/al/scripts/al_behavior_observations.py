@@ -222,6 +222,7 @@ def behavior_packet(st):
         "document_hash": document_binding(st)["hash"],
         "candidate_fingerprint": S.capture_candidate(st)["fingerprint"],
         "observations": observations,
+        "evidence_scope_guidance": Items.SCOPE_GUIDANCE,
         "gaps": behavior_gaps(st),
     }
 

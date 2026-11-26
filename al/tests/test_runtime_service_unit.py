@@ -249,6 +249,45 @@ def test_change_sets_refuse_unknown_or_incomplete_history(watched):
     assert worktree.changes("") is None, "no cookie proof"
 
 
+@pytest.mark.parametrize("proof", ["synchronized", "unproven", "changed"])
+def test_snapshot_operation_requires_current_proof_despite_advertised_status(watched, proof):
+    import time
+
+    R = watched.R
+    worktree = watched.worktree
+    watched.feed((b"R", "fsevents"))
+    tree = "a" * 40
+    worktree.tree, worktree.tree_generation = tree, worktree.generation
+    service = R.Service.__new__(R.Service)
+    service.request = {"common_dir": worktree.common_dir, "launcher_identity": "fixture"}
+    service.pin, service.platform = {"pin_identity": "fixture"}, "codex"
+    service.started, service.last_active, service.idle = time.time(), time.monotonic(), 300
+    service.served, service.children, service.stopping, service.packs = 0, {}, False, {}
+    service.worktrees = {worktree.root: worktree}
+    located = (worktree.root, worktree.git_dir, worktree.common_dir)
+    service.location = lambda repository: located if repository == worktree.root else None
+    assert service.status()["worktrees"] == [
+        {"root": worktree.root, "watcher": "fsevents", "snapshot": tree}]
+    synchronized = []
+
+    def sync():
+        synchronized.append(proof)
+        if proof == "changed":
+            watched.feed((b"E", worktree.root + "/app.py"))
+        return proof != "unproven"
+
+    worktree.sync = sync
+    answer = service.snapshot_answer({"repository": worktree.root})
+    assert synchronized == [proof]
+    assert answer == {"event": "snapshot", "tree": tree if proof == "synchronized" else None}
+    if proof == "unproven":
+        assert service.status()["worktrees"][0]["snapshot"] == tree
+    elif proof == "changed":
+        assert service.status()["worktrees"][0]["snapshot"] is None
+    assert service.snapshot_answer({"repository": "/elsewhere"}) == {"event": "snapshot", "tree": None}
+    assert synchronized == [proof]
+
+
 def test_snapshot_channel_answers_trees_and_change_sets_in_order(watched):
     import json
     R = watched.R
