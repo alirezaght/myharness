@@ -181,3 +181,35 @@ def test_refreshes_keep_older_intelligence_pages_and_the_selection(
         page.evaluate("refreshDashboard().then(() => true)")
         page.settle(1.0)
         assert page.evaluate(items) == 31 and page.evaluate(selected) == 1
+
+
+def test_a_refresh_of_a_full_window_skips_no_incident(
+    observed,  # noqa: F811
+    tmp_path,
+):
+    operation, principal, _ = observed
+    task_id = operation.envelope["task_id"]
+    for _ in range(101):
+        _record_incident(operation, principal)
+    url_tail = f"?task={quote(task_id)}&workspace=run&tab=implementation"
+    items = "document.querySelectorAll('.ii-item').length"
+    shown = "[...document.querySelectorAll('.ii-item')].map((item) => item.dataset.incidentId)"
+    with serve(operation.database, task_id) as server, chrome_page(tmp_path / "chrome") as page:
+        page.open(server.url + url_tail, f"{items} === 25")
+        for expected in (50, 75, 100):
+            page.evaluate("document.getElementById('ii-list-older').click(); true")
+            page.wait_for(f"{items} === {expected}")
+        seen = set(page.evaluate(shown))
+        # A new incident arrives while the window is full: the window is kept whole and the
+        # newer incident is announced, rather than trimming the oldest row behind the cursor.
+        _record_incident(operation, principal)
+        page.wait_for(
+            "[...document.querySelectorAll('.ii-results p')].some((p) =>"
+            " p.textContent.includes('Newer incidents are available'))",
+            timeout=15,
+        )
+        assert set(page.evaluate(shown)) == seen
+        page.evaluate("document.getElementById('ii-list-older').click(); true")
+        page.wait_for(f"!document.getElementById('ii-list-older') && {items} === 100", timeout=15)
+        seen |= set(page.evaluate(shown))
+        assert len(seen) == 101  # every incident that existed before the refresh was shown

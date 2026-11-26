@@ -244,7 +244,10 @@ function renderExecutionTimeline(execution) {
   });
   if (view.spanId && !view.detailLoading && (view.detail || !view.detailError)) {
     const selected = view.items.find((item) => item.item_id === view.selectedId);
-    if (selected && !view.detail) loadTimelineSpan(execution, view, section, selected, { refresh: false });
+    if (selected && !view.detail) {
+      reliabilityMark(view, "span", execution);
+      loadTimelineSpan(execution, view, section, selected, { refresh: false });
+    }
     else if (selected) reliabilityRefetch(view, "span", execution, {
       busy: () => view.detailLoading,
       mounted: () => Boolean(timelineSection(execution, view)),

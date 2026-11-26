@@ -10,14 +10,14 @@ table it records the row count and newest rowid (inserts and deletes). For table
 an ``execution_id`` column it also records, for columns updated in place, their non-null
 count, maximum and total length, and the sum of any ``revision`` column. Unscoped tables
 (revision, membership and incident tables keyed by an incident, group or policy) are counted
-globally, which can only cause an extra fetch, and get no per-column aggregates so the marker
-never scans a project-wide table.
+globally, which can only cause an extra fetch; they get only the row count and newest rowid,
+never per-column aggregates over the whole project.
 
-Limits, accepted because every current writer also inserts a row or sets a timestamp in the
-same transaction and the panels keep explicit Latest/refresh actions: an in-place update of
-an unscoped table, or an equal-length text change on a row that is not the maximum, is not
-seen. Task-mode incident intelligence lists every execution of the task, while the marker
-follows the task's latest execution.
+Limits, accepted because the panels keep explicit Latest/refresh actions and the audited
+writers also insert a row or change a scoped row in the same transaction: an in-place update
+of an unscoped table (for example a policy pool's counters), or an equal-length text change
+on a scoped row that is not the maximum, is not seen. Task-mode incident intelligence lists
+every execution of the task, while the marker follows the task's latest execution.
 """
 
 import hashlib

@@ -16,6 +16,12 @@ function reliabilityKey(execution) {
   return `${execution.reliability_revision ?? "unknown"}|${reliabilityRefreshes}`;
 }
 
+function reliabilityMark(view, slot, execution) {
+  view.fetchedKeys ||= {};
+  view.fetchedKeys[slot] = reliabilityKey(execution);
+  return view.fetchedKeys[slot];
+}
+
 function reliabilityFetchDue(view, slot, execution, failed = false) {
   view.fetchedKeys ||= {};
   return failed || view.fetchedKeys[slot] !== reliabilityKey(execution);
@@ -35,8 +41,8 @@ function reliabilityRefetch(view, slot, execution, { failed = false, busy, mount
     }, 150);
     return;
   }
-  const key = reliabilityKey(execution);
-  view.fetchedKeys[slot] = key;
+  clearTimeout(view.retryTimers[slot]);
+  const key = reliabilityMark(view, slot, execution);
   Promise.resolve(load()).finally(() => {
     if (!mounted() && view.fetchedKeys[slot] === key) delete view.fetchedKeys[slot];
   });
@@ -1001,6 +1007,7 @@ async function iiLoadList(execution, view, section, { older = false, reset = fal
   if (view.loading && view.listOwner === section && iiIsCurrent(execution, view, section)) return;
   const request = ++view.listRequest;
   view.listOwner = section;
+  view.listOptions = { older, reset, refresh };
   if (reset) {
     view.detailRequest += 1;
     view.detailLoading = false;
@@ -1038,10 +1045,18 @@ async function iiLoadList(execution, view, section, { older = false, reset = fal
       // the window; a burst larger than one page is announced instead of dropping the window.
       const updated = new Map(incoming.map((item) => [item.incident_id, item]));
       const known = new Set(view.items.map((item) => item.incident_id));
-      const fresh = incoming.filter((item) => !known.has(item.incident_id));
+      const first = view.items[0];
+      // Keyset order is (created_at, incident_id) descending; only rows above the window's
+      // first row are new to it (a backdated row belongs further down and waits for Latest).
+      const newer = (item) => item.created_at > first.created_at
+        || (item.created_at === first.created_at && item.incident_id > first.incident_id);
+      const fresh = incoming.filter((item) => !known.has(item.incident_id) && newer(item));
       const retained = view.items.map((item) => updated.get(item.incident_id) || item);
-      if (fresh.length && fresh.length < incoming.length) {
-        view.items = fresh.concat(retained).slice(0, INCIDENT_INTELLIGENCE_LIMIT);
+      const connected = incoming.some((item) => known.has(item.incident_id));
+      if (fresh.length && connected
+        && fresh.length + retained.length <= INCIDENT_INTELLIGENCE_LIMIT) {
+        // Prepending keeps the oldest row, so the saved cursor stays valid.
+        view.items = fresh.concat(retained);
       } else {
         view.items = retained;
         if (fresh.length) view.newerOutsideWindow = true;
@@ -1484,13 +1499,14 @@ function renderIncidentIntelligence(execution, existingView = null) {
     outputs.append(iiEl("p", "Choose a selected execution and epoch to browse published output descriptors."));
   }
   iiRenderGroups(execution, view, section);
-  // A repaint during a load re-issues it for the new section, which owns the results.
-  if (view.loading) iiLoadList(execution, view, section, { refresh: view.items.length > 0 });
+  // A repaint during a load re-issues it, with the same options, for the new section, which
+  // owns the results.
+  if (view.loading) iiLoadList(execution, view, section, view.listOptions || {});
   else {
     reliabilityRefetch(view, "list", execution, {
       failed: Boolean(view.error),
       busy: () => view.loading,
-      mounted: () => iiIsCurrent(execution, view, section),
+      mounted: () => iiIsCurrent(execution, view, view.listOwner),
       load: () => iiLoadList(execution, view, section, { refresh: view.items.length > 0 }),
     });
   }

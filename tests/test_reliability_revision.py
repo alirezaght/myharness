@@ -75,3 +75,39 @@ def test_marker_reads_only_and_stays_cheap_for_a_large_history(observed):
         assert conn.total_changes == changes
     # Computed once per stream poll per open dashboard; record, do not gate, the timing.
     print(f"reliability_revision: {elapsed * 1000:.2f} ms with 300 observations")
+
+
+def _synthetic():
+    import sqlite3
+
+    conn = sqlite3.connect(":memory:")
+    conn.executescript(
+        """
+        CREATE TABLE policy_attempts(id TEXT, execution_id TEXT, revision INTEGER, state TEXT);
+        CREATE TABLE incident_investigation_revisions(id TEXT, revision INTEGER);
+        CREATE TABLE unrelated_rows(id TEXT, execution_id TEXT);
+        INSERT INTO policy_attempts VALUES
+            ('a1', 'exec-1', 1, 'started'), ('a2', 'exec-1', 5, 'settled'),
+            ('b1', 'exec-2', 1, 'started');
+        INSERT INTO incident_investigation_revisions VALUES ('r1', 1);
+        """
+    )
+    return conn
+
+
+def test_marker_is_scoped_by_execution_and_sums_revisions():
+    conn = _synthetic()
+    before = reliability_revision(conn, "exec-1")
+    # Another execution's scoped row does not change this execution's marker.
+    conn.execute("UPDATE policy_attempts SET revision=2, state='settled' WHERE id='b1'")
+    assert reliability_revision(conn, "exec-1") == before
+    # A revision bump on a scoped row that is not the maximum, with an equal-length state.
+    conn.execute("UPDATE policy_attempts SET revision=2 WHERE id='a1'")
+    bumped = reliability_revision(conn, "exec-1")
+    assert bumped != before
+    # Unscoped family tables count rows; tables outside the families are ignored.
+    conn.execute("INSERT INTO incident_investigation_revisions VALUES ('r2', 2)")
+    added = reliability_revision(conn, "exec-1")
+    assert added != bumped
+    conn.execute("INSERT INTO unrelated_rows VALUES ('u1', 'exec-1')")
+    assert reliability_revision(conn, "exec-1") == added
