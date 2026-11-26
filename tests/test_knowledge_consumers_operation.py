@@ -6,11 +6,12 @@ from pathlib import Path
 from harness.knowledge.policy import operator_scope
 from harness.knowledge.refresh import refresh
 from tests.al_facts_support import runner
+from tests.test_execution_operations import observed_principal
 from tests.test_execution_operations import operations as operations
 
 
 def test_consumers_tool_queries_the_execution_al_run(operations, tmp_path):
-    operation, supervisor, controller, _, _, _, _ = operations
+    operation, _, controller, _, _, _, _ = operations
     root = Path(operation.envelope["repository"])
     (root / "service.py").write_text("def run():\n    return 1\n")
     (root / "planning.py").write_text("import service\n")
@@ -26,7 +27,7 @@ def test_consumers_tool_queries_the_execution_al_run(operations, tmp_path):
         return facts
 
     operation.al_facts = al_facts
-    planner = supervisor | {"thread_id": "planning-scout", "role": "al-scout", "writable": False}
+    planner = observed_principal(operation, "planning-scout", "al-scout")
     result = operation.dispatch(planner, "knowledge_consumers", {"target": "service.py"})
     assert result["source"] == "al-facts" and result["status"] == "complete"
     assert [(c["locator"], c["relation"]) for c in result["consumers"]] == [

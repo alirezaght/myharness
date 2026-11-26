@@ -711,10 +711,10 @@ class OperationController:
                 from harness.reliability.timeline_store import retrieval_link
 
                 observed = CURRENT.get()
-                reference = (
-                    result if name == "knowledge_query" else {"bundle_hash": a["bundle_hash"]}
-                )
-                retrieval_link(self, observed.observation_id if observed else None, reference)
+                if name in {"knowledge_query", "knowledge_explain"}:
+                    retrieval_link(
+                        self, observed.observation_id if observed else None, result, scope=current
+                    )
                 return result
             except sqlite3.OperationalError:
                 raise ValueError("knowledge:busy-or-unavailable") from None

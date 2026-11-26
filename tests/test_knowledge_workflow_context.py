@@ -12,8 +12,48 @@ from harness.knowledge.models import ContextRequest, canonical, digest
 from harness.knowledge.policy import current_operator_scope
 from harness.knowledge.query import query
 from harness.knowledge.refresh import refresh
-from tests.test_execution_operations import generated_handoff_fixture
+from tests.test_execution_operations import generated_handoff_fixture, observed_principal
 from tests.test_execution_operations import operations as operations
+
+
+def submit_authored_output(operation, controller, principal, name, content):
+    """Submit a report using its current generated assignment exchange."""
+    from harness.agent_contracts import make
+    from harness.agent_exchange import context, specification
+
+    execution, state = operation.authority(controller, principal, operation="read")
+    writer = next(
+        writer
+        for writer in state["writers"].values()
+        if writer.get("agent") == principal["thread_id"] and writer.get("handoffs")
+    )
+    declared = writer["handoffs"][-1]["contract"]
+    output_name = next(
+        row["name"]
+        for row in declared["expected_outputs"]
+        if row["kind"] == "implementation-result"
+    )
+    contract = make(
+        "implementation-result",
+        context(execution, state, principal, writer["task"]),
+        specification(state),
+        output_name,
+        content,
+        status="authored",
+        inputs=declared["required_inputs"],
+        criteria=declared["acceptance_criteria"],
+        constraints=declared["constraints"],
+    )
+    return operation.dispatch(
+        principal,
+        "submit_output",
+        {
+            "name": name,
+            "content": content,
+            "expected_graph_revision": state["integration"]["graph_revision"],
+            "contract": contract,
+        },
+    )
 
 
 def seeded(operations):
@@ -28,7 +68,8 @@ def seeded(operations):
 
 def test_read_only_registration_is_own_observation_not_writer_admission(operations):
     operation, supervisor, _, initialization, _, execution, _ = operations
-    child, _ = generated_handoff_fixture(operations)
+    generated_handoff_fixture(operations)
+    readonly = observed_principal(operation, "readonly-scout", "al-scout")
     path = Path(initialization["source"])
     state = json.loads(path.read_bytes())
     state["integration"]["tasks"]["sibling-private"] = {
@@ -38,15 +79,23 @@ def test_read_only_registration_is_own_observation_not_writer_admission(operatio
         "revision": 99,
         "files": ["PRIVATE_CANARY"],
     }
+    state["integration"]["agents"][readonly["thread_id"]] = {
+        "id": readonly["thread_id"],
+        "name": "Observed read-only scout",
+        "task": "handoff-task",
+        "role": "al-scout",
+        "status": "Running",
+        "started_at": time.time(),
+        "registration": "fixture",
+    }
     path.write_text(json.dumps(state))
-    readonly = child | {"writable": False}
     result = operation.dispatch(readonly, "await_assignment", {"timeout": 1})
     assert result["status"] == "ReadOnly" and not result["writable"]
     assert not result["control_plane"]["al"]
     observed = result["registered_assignment"]
     assert observed == {
         "status": "available",
-        "agent_id": child["thread_id"],
+        "agent_id": readonly["thread_id"],
         "agent_status": "Running",
         "al_task_id": "handoff-task",
         "task_status": "Running",
@@ -76,7 +125,7 @@ def test_read_only_registration_is_own_observation_not_writer_admission(operatio
     assert (
         operation.dispatch(supervisor, "await_assignment", {"timeout": 1})["status"] == "Supervisor"
     )
-    unknown = supervisor | {"thread_id": "unregistered", "role": "al-scout"}
+    unknown = observed_principal(operation, "unregistered-scout", "al-scout")
     assert (
         operation.dispatch(unknown, "await_assignment", {"timeout": 1})["registered_assignment"][
             "status"
@@ -92,7 +141,7 @@ def test_knowledge_consumers_tool_answers_who_imports_a_module(operations):
     (root / "client.py").write_text("from service import serve\n")
     subprocess.run(["git", "-C", str(root), "add", "client.py"], check=True)
     seeded(operations)
-    reader = supervisor | {"thread_id": "consumer-reader", "role": "al-scout"}
+    reader = observed_principal(operation, "consumer-reader", "al-scout")
     result = operation.dispatch(reader, "knowledge_consumers", {"target": "service.py"})
     assert [c["locator"] for c in result["consumers"]] == ["client.py"]
     with pytest.raises(ValueError):
@@ -102,7 +151,7 @@ def test_knowledge_consumers_tool_answers_who_imports_a_module(operations):
 def test_dispatcher_receipts_identify_each_exact_query_and_explanation(operations):
     operation, supervisor, controller, _, _, _, _ = operations
     seeded(operations)
-    reader = supervisor | {"thread_id": "receipt-reader", "role": "al-scout"}
+    reader = observed_principal(operation, "receipt-reader", "al-scout")
     first = operation.dispatch(reader, "knowledge_query", {"query": "serve"})
     second = operation.dispatch(reader, "knowledge_query", {"query": "serve"})
     assert first["bundle_hash"] == second["bundle_hash"]
@@ -147,9 +196,7 @@ def test_invalid_original_and_corrected_output_preserve_bytes_and_provenance_gua
 
     def submit(name, document):
         text = json.dumps(document, indent=2)
-        result = operation.dispatch(
-            child, "submit_output", {"name": name, "content": text, "expected_graph_revision": 1}
-        )
+        result = submit_authored_output(operation, controller, child, name, text)
         resource = "artifact:" + result["artifact_id"] + ":" + result["sha256"]
         stored = operation.dispatch(supervisor, "read_file", {"path": resource})
         assert stored["text"] == text
@@ -211,14 +258,8 @@ def test_actual_al_completion_keeps_optional_knowledge_outcome_closed(
         if outcome == "invalid"
         else {"summary": "Completed authored sourced observation"}
     )
-    output = operation.dispatch(
-        child,
-        "submit_output",
-        {
-            "name": "final.json",
-            "content": json.dumps(document),
-            "expected_graph_revision": 1,
-        },
+    output = submit_authored_output(
+        operation, controller, child, "final.json", json.dumps(document)
     )
     resource = "artifact:" + output["artifact_id"] + ":" + output["sha256"]
     update = operation.dispatch(
@@ -422,14 +463,8 @@ def test_sealed_bridge_http_reaches_assignment_contribution_and_outbox(operation
             }
         ]
     }
-    output = operation.dispatch(
-        donor,
-        "submit_output",
-        {
-            "name": "sealed-donor.json",
-            "content": json.dumps(document),
-            "expected_graph_revision": 1,
-        },
+    output = submit_authored_output(
+        operation, controller, donor, "sealed-donor.json", json.dumps(document)
     )
     resource = "artifact:" + output["artifact_id"] + ":" + output["sha256"]
     path = Path(initialization["source"])
@@ -439,11 +474,7 @@ def test_sealed_bridge_http_reaches_assignment_contribution_and_outbox(operation
         ended_at=time.time(),
         latest_output=resource,
     )
-    recipient = supervisor | {
-        "thread_id": "sealed-recipient",
-        "role": "al-scout",
-        "writable": False,
-    }
+    recipient = observed_principal(operation, "sealed-recipient", "al-scout")
     state["integration"]["agents"][recipient["thread_id"]] = {
         "id": recipient["thread_id"],
         "name": "Sealed recipient",

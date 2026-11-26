@@ -16,8 +16,49 @@ from harness.knowledge.policy import current_operator_scope, derive_scope, opera
 from harness.knowledge.query import explain, query
 from harness.knowledge.refresh import refresh
 from harness.knowledge.review_projection import resolve
+from tests.test_execution_operations import observed_principal
 from tests.test_execution_operations import operations as operations
 from tests.test_knowledge_snapshots import graph as graph
+
+
+def submit_authored_output(operation, controller, principal, name, content):
+    """Submit a report against the exact current generated assignment exchange."""
+    from harness.agent_contracts import make
+    from harness.agent_exchange import context, specification
+
+    execution, state = operation.authority(controller, principal, operation="read")
+    writer = next(
+        writer
+        for writer in state["writers"].values()
+        if writer.get("agent") == principal["thread_id"] and writer.get("handoffs")
+    )
+    declared = writer["handoffs"][-1]["contract"]
+    output_name = next(
+        row["name"]
+        for row in declared["expected_outputs"]
+        if row["kind"] == "implementation-result"
+    )
+    contract = make(
+        "implementation-result",
+        context(execution, state, principal, writer["task"]),
+        specification(state),
+        output_name,
+        content,
+        status="authored",
+        inputs=declared["required_inputs"],
+        criteria=declared["acceptance_criteria"],
+        constraints=declared["constraints"],
+    )
+    return operation.dispatch(
+        principal,
+        "submit_output",
+        {
+            "name": name,
+            "content": content,
+            "expected_graph_revision": state["integration"]["graph_revision"],
+            "contract": contract,
+        },
+    )
 
 
 def packet_fixture(tmp_path, conn, scope, *, stage="fresh"):
@@ -293,7 +334,9 @@ def test_completed_outbox_contributions_are_unverified_idempotent_and_carrier_bo
         "SELECT assertion_id FROM knowledge_assertions LIMIT 1"
     ).fetchone()[0]
     child, _ = generated_handoff_fixture(operations)
-    report = operation.artifacts.submit_output(
+    report = submit_authored_output(
+        operation,
+        controller,
         child,
         "report.json",
         json.dumps(
@@ -310,8 +353,6 @@ def test_completed_outbox_contributions_are_unverified_idempotent_and_carrier_bo
                 ]
             }
         ),
-        1,
-        1,
     )
     resource = "artifact:" + report["artifact_id"] + ":" + report["sha256"]
     path = Path(initialization["source"])
@@ -350,7 +391,7 @@ def test_admitted_planning_tool_uses_closed_server_scope(operations):
     (root / "planning.py").write_text("import service\n")
     subprocess.run(["git", "-C", str(root), "add", "planning.py"], check=True)
     refresh(controller.conn, operator_scope(root))
-    planner = supervisor | {"thread_id": "planning-scout", "role": "al-scout", "writable": False}
+    planner = observed_principal(operation, "planning-scout", "al-scout")
     result = operation.dispatch(planner, "knowledge_query", {"query": "service"})
     assert result["purpose"] == "planning" and result["assertions"]
     before = controller.conn.execute("SELECT count(*) FROM knowledge_scope_issues").fetchone()[0]
@@ -403,10 +444,9 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
     from harness.cli_knowledge import inspect_knowledge
     from harness.db import connect
     from harness.knowledge.contributions import ingest
-    from tests.test_execution_operations import generated_handoff_fixture
     from tests.test_knowledge_lifecycle import git
 
-    operation, supervisor, controller, initialization, _, execution, _ = operations
+    operation, supervisor, controller, _, _, execution, _ = operations
     root = Path(operation.envelope["repository"])
     (root / "unsupported.sql").write_text("public limitation")
     (root / "private-malformed.py").write_text("{")
@@ -430,17 +470,9 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
         if commit
         else RefreshRequest(included_paths=("private-malformed.py",)),
     )
-    child, _ = generated_handoff_fixture(operations)
-    report = operation.artifacts.submit_output(
-        child, "report.json", json.dumps({"summary": "COMPLETED_REPORT_COVERAGE"}), 1, 1
+    child, resource, _ = completed_summary_report(
+        operations, {"summary": "COMPLETED_REPORT_COVERAGE"}
     )
-    resource = "artifact:" + report["artifact_id"] + ":" + report["sha256"]
-    path = Path(initialization["source"])
-    state = json.loads(path.read_bytes())
-    state["integration"]["agents"][child["thread_id"]].update(
-        status="Completed", ended_at=time.time(), latest_output=resource
-    )
-    path.write_text(json.dumps(state))
     ingest(operation, controller, supervisor, "handoff-task", resource)
     database = controller.conn.execute("PRAGMA database_list").fetchone()[2]
     with connect(Path(database)) as reopened:
@@ -481,10 +513,10 @@ def test_completed_report_retains_repository_memberships_and_coverage(operations
 def completed_summary_report(operations, document):
     from tests.test_execution_operations import generated_handoff_fixture
 
-    operation, _, _, initialization, _, _, _ = operations
+    operation, _, controller, initialization, _, _, _ = operations
     child, _ = generated_handoff_fixture(operations)
     raw = json.dumps(document)
-    report = operation.artifacts.submit_output(child, "report.json", raw, 1, 1)
+    report = submit_authored_output(operation, controller, child, "report.json", raw)
     resource = "artifact:" + report["artifact_id"] + ":" + report["sha256"]
     path = Path(initialization["source"])
     state = json.loads(path.read_bytes())
@@ -617,11 +649,7 @@ def test_parented_contribution_survives_saturated_graph(operations):
     assert (
         ingest(operation, controller, supervisor, "handoff-task", resource)["status"] == "published"
     )
-    recipient = supervisor | {
-        "thread_id": "later-planning-recipient",
-        "role": "al-scout",
-        "writable": False,
-    }
+    recipient = observed_principal(operation, "later-planning-recipient", "al-scout")
     result = operation.dispatch(
         recipient,
         "knowledge_query",
