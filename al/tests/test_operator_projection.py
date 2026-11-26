@@ -142,7 +142,13 @@ def test_configuration_projection_shape_is_checked(payload, field, value):
 
 
 # Imported fixture is genuinely bootstrapped by the existing installer harness.
-from al.tests.test_operator_update import enrolled, artifact, tag, public  # noqa: E402,F401
+from al.tests.operator_update_helpers import (  # noqa: E402,F401
+    _prefix_cache as _prefix_cache,
+    artifact,
+    enrolled as enrolled,
+    public,
+    tag,
+)
 
 
 def test_real_managed_update_preserves_legacy_unowned_statusline_and_reviews_dependency(enrolled):
