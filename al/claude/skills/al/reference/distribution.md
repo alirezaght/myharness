@@ -43,7 +43,13 @@ transaction completion.
 ## Existing runtime pins
 
 Installation and managed bootstrap select code for future runs. Existing runs
-keep their immutable pins. Protected `alctl runtime-successor origin` inspects
+keep their immutable pins and interpreter bindings. Updating the launcher does not
+select a replacement interpreter for an existing run: the current protected issuer
+validates the pinned executable and image resources, then the pinned child validates
+its own live identity before executing the command. The original interpreter must
+remain available with its exact bound path, bytes and mode. Missing or changed
+resources refuse continuation; do not edit the pin or state to select a replacement.
+Protected `alctl runtime-successor origin` inspects
 an existing origin; it does not migrate it. Standalone pin migration is
 unsupported. See [implementation-continuity.md](implementation-continuity.md#inspect-a-pin-and-choose-the-supported-route)
 for inspection and a fresh standalone run from preserved accepted requirements.
