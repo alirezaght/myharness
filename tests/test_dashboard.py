@@ -1,7 +1,6 @@
 """P2-01/P2-02: the dashboard server and read model over the CLI's own state DB and spec files."""
 
 import http.client
-import inspect
 import io
 import json
 import re
@@ -97,10 +96,17 @@ def _non_loopback_ipv4() -> str | None:
     return None if address.startswith("127.") or address == "0.0.0.0" else address
 
 
+@pytest.mark.parametrize("option", ["--host", "--bind", "--address", "--listen"])
+def test_launcher_offers_no_way_to_bind_another_address(option, capsys):
+    from harness.dashboard.launch import build_parser
+
+    with pytest.raises(SystemExit) as refused:
+        build_parser().parse_args([option, "0.0.0.0"])
+    assert refused.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
+
+
 def test_binds_loopback_only_on_a_free_port(db_path):
-    signature = inspect.signature(DashboardServer.__init__)
-    assert list(signature.parameters) == ["self", "db_path", "task_id", "specs", "project_root"]
-    assert signature.parameters["project_root"].kind is inspect.Parameter.KEYWORD_ONLY
     with serve(db_path, None) as first, serve(db_path, None) as second:
         assert first.server_address[0] == "127.0.0.1" and first.port > 0
         assert first.url == f"http://127.0.0.1:{first.port}/"

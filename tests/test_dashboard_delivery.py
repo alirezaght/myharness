@@ -3,6 +3,7 @@
 import http.client
 import json
 
+from harness.dashboard.server import STATIC_DIR
 from harness.execution_store import get_execution
 from tests.execution_helpers import approved_execution
 from tests.test_dashboard import api, serve
@@ -89,10 +90,10 @@ def test_dashboard_api_nests_delivery_projection_without_changing_delivery_state
     assert delivery["completion_summary"]["live_acceptance"] == "outstanding"
     assert delivery["retries"] == {"used": 1, "limit": 3}
     assert delivery["blockers"] == ["one approval remains"]
+    # Safe links, text-only rendering and focus are proven at runtime in
+    # test_dashboard_delivery_browser.py; here only the served bytes are checked.
     assert status == 200 and "text/javascript" in headers["Content-Type"]
-    assert b"safeDeliveryUrl" in body and b"textContent" in body
-    assert b"deliveryDisclosure" in body and b"withDeliveryFocus" in body
-    assert b"Browser validation" in body and b"Investigation records" in body
+    assert body == (STATIC_DIR / "delivery.js").read_bytes()
     after = controller.conn.execute(
         "SELECT * FROM deliveries WHERE execution_id=?", (execution_id,)
     ).fetchone()
