@@ -69,7 +69,12 @@ def test_every_documented_state_command_exists():
     choices = re.search(r"(?m)^\s+\{([a-z][a-z,-]+)\}\s*$", result.stdout)
     assert choices, result.stdout
     supported = set(choices.group(1).split(","))
-    for cmd in set(re.findall(r"\$STATE (?:--session \S+ )?([a-z][a-z-]+)", SKILL)):
+    documented = set(re.findall(
+        r'(?:\$STATE|\\?"\$\{STATE\[@\]\}\\?") (?:--session \S+ )?([a-z][a-z-]+)',
+        SKILL,
+    ))
+    assert documented, "No documented state command invocations were recognized"
+    for cmd in documented:
         assert cmd in supported, f"SKILL.md uses `$STATE {cmd}`, which al_state.py does not provide"
 
 
