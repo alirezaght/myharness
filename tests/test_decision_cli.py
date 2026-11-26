@@ -15,16 +15,31 @@ from tests.sample_repo import APPROVED, make_sample_repo, tree_snapshot, write_f
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OWN_DECISIONS = REPO_ROOT / "docs" / "decisions"
-OWN_SNAPSHOT = tree_snapshot(OWN_DECISIONS)
 TASK_ID = re.compile(r"task (t-[0-9a-f]{8}) created")
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 
 
 @pytest.fixture
-def run(db_path, capsys):
+def run(db_path, capsys, monkeypatch, tmp_path):
+    """Run one CLI command and prove it wrote no decision record where it must not.
+
+    Commands run from a throwaway Git repository, where a command that wrongly fell back to
+    the current repository would write; every call checks that repository's records and this
+    repository's own before and after, so each test proves isolation on its own, whatever the
+    selection or order, without a regression writing into this checkout.
+    """
+    cwd = tmp_path / "current-directory-repository"
+    (cwd / "docs" / "decisions").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(cwd)], check=True)
+    monkeypatch.chdir(cwd)
+    guarded = (OWN_DECISIONS, cwd / "docs" / "decisions")
+
     def _run(*argv: str) -> tuple[int, str, str]:
+        before = [tree_snapshot(root) for root in guarded]
         code = main(["--db", str(db_path), *argv])
         captured = capsys.readouterr()
+        for root, snapshot in zip(guarded, before, strict=True):
+            assert tree_snapshot(root) == snapshot, f"{argv} touched {root}"
         return code, captured.out, captured.err
 
     return _run
@@ -304,7 +319,3 @@ def test_suggestions_never_apply(run, task, sample_repo, tmp_path, events):
     assert [s["id"] for s in data["suggestions"]] == ["DEC-0007", "DEC-0001"]
     assert (tree_snapshot(sample_repo), tree_snapshot(other), len(events(task))) == before
     assert run("decision", "suggest", task, "--from", str(tmp_path / "none"))[1].startswith("none")
-
-
-def test_decision_commands_never_touch_this_repository():
-    assert tree_snapshot(OWN_DECISIONS) == OWN_SNAPSHOT
