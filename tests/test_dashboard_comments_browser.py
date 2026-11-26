@@ -248,3 +248,34 @@ def test_headless_chrome_shows_every_comment_state_and_old_version_comments(db_p
     assert "showing: version 1 (not current)" in old and 'id="comment-form"' not in old
     assert "comments can be added only on the current version" in old
     assert '<li data-status="open"><p>#1 · open · correction</p>' in old
+
+
+COMMENT_ACTIONS = """(() => {
+    const items = [...document.querySelectorAll('#comments li[data-status]')];
+    if (items.length < 3) return null;
+    const offered = {};
+    for (const item of items) {
+        offered[item.dataset.status] = [...item.querySelectorAll('button')]
+            .map(button => button.textContent.trim());
+    }
+    return offered;
+})()"""
+
+
+def test_each_comment_state_offers_only_its_legal_actions(db_path, tmp_path):
+    """The browser never offers Address (the harness addresses comments, not the operator)."""
+    from tests.chrome_cdp import chrome_page
+
+    task_id = _sample(db_path)
+    edge = quote("connection:browser->local-server", safe="")
+    with serve(db_path, task_id) as server:
+        api(server)
+        _comment_states(db_path, task_id)
+        with chrome_page(tmp_path / "actions") as page:
+            offered = page.open(
+                f"{server.url}?workspace=design&tab=diagram#element={edge}", COMMENT_ACTIONS
+            )
+            page.settle()
+            writes = [r for r in page.requests if r["method"] != "GET"]
+    assert offered == {"open": [], "addressed": ["Resolve", "Re-open"], "resolved": ["Re-open"]}
+    assert writes == []

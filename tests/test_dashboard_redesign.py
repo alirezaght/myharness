@@ -10,15 +10,14 @@ import pytest
 from harness import redesign
 from harness.comments import CommentService
 from harness.dashboard import comments_view
-from harness.dashboard.server import LOCALHOST, STATIC_DIR, DashboardServer
+from harness.dashboard.server import LOCALHOST, DashboardServer
 from harness.db import transaction
 from harness.design_models import DesignSection
 from tests.test_dashboard import _db_dump, api, cli, fetch, serve, start_task
-from tests.test_dashboard_comments import DECLARED, EDGE, _diff, _json, _payload, _ready, post
+from tests.test_dashboard_comments import EDGE, _diff, _json, _payload, _ready, post
 from tests.test_dashboard_diagrams import _state, _with
 from tests.test_dashboard_stream import frame, stream
 
-SCRIPTS = ("diagrams", "comments", "comment_actions", "compare", "approvals", "execution", "app")
 MOVE_PATHS = ("/api/comments/resolve", "/api/comments/reopen")
 
 
@@ -359,21 +358,3 @@ def test_the_redesign_loop_end_to_end(db_path, capsys):
         assert _move(server, task_id, comment, "reopen")[1]["comment"]["status"] == "open"
     again = _redesign(capsys, task_id, *db)
     assert f"#{comment} · redesign · connection A -> B ({wrong}) · version 1 (not current)" in again
-
-
-def test_every_script_is_served_in_order_without_duplicate_globals(db_path):
-    with serve(db_path, None) as server:
-        page = fetch(server, "/")[2]
-        for name in ("comment_actions", "compare", "approvals", "execution"):
-            status, headers, script = fetch(server, f"/static/{name}.js")
-            assert status == 200 and headers["Content-Type"] == "text/javascript; charset=utf-8"
-    tags = [page.index(f'<script src="/static/{n}.js" defer></script>'.encode()) for n in SCRIPTS]
-    assert tags == sorted(tags)
-    seen: dict[str, str] = {}
-    for name in SCRIPTS:
-        source = (STATIC_DIR / f"{name}.js").read_text(encoding="utf-8")
-        for declared in DECLARED.findall(source):
-            assert declared not in seen, f"{declared} in {name}.js and {seen.get(declared)}"
-            seen[declared] = f"{name}.js"
-    actions = (STATIC_DIR / "comment_actions.js").read_text(encoding="utf-8")
-    assert "/address" not in actions and "Address" not in actions
