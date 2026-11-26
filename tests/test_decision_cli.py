@@ -20,20 +20,26 @@ needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not inst
 
 
 @pytest.fixture
-def run(db_path, capsys, monkeypatch):
-    """Run one CLI command and prove it left this repository's decision records alone.
+def run(db_path, capsys, monkeypatch, tmp_path):
+    """Run one CLI command and prove it wrote no decision record where it must not.
 
-    Commands run from this repository's root, where a command that wrongly defaulted to
-    the current directory would write; every call checks the records before and after, so
-    each test proves isolation on its own, whatever the selection or order.
+    Commands run from a throwaway Git repository, where a command that wrongly fell back to
+    the current repository would write; every call checks that repository's records and this
+    repository's own before and after, so each test proves isolation on its own, whatever the
+    selection or order, without a regression writing into this checkout.
     """
-    monkeypatch.chdir(REPO_ROOT)
+    cwd = tmp_path / "current-directory-repository"
+    (cwd / "docs" / "decisions").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(cwd)], check=True)
+    monkeypatch.chdir(cwd)
+    guarded = (OWN_DECISIONS, cwd / "docs" / "decisions")
 
     def _run(*argv: str) -> tuple[int, str, str]:
-        before = tree_snapshot(OWN_DECISIONS)
+        before = [tree_snapshot(root) for root in guarded]
         code = main(["--db", str(db_path), *argv])
         captured = capsys.readouterr()
-        assert tree_snapshot(OWN_DECISIONS) == before, f"{argv} touched {OWN_DECISIONS}"
+        for root, snapshot in zip(guarded, before, strict=True):
+            assert tree_snapshot(root) == snapshot, f"{argv} touched {root}"
         return code, captured.out, captured.err
 
     return _run
