@@ -76,20 +76,45 @@ def compatible(requirement,name,version):
     return True
 
 
-def add_unit(scan,facts,path,role=None,language=None):
+def layout_clear(scan,facts,path):
+    """A manifest cannot prove ownership across an unresolved source boundary."""
+    if any(within(path,child) or within(child,path) for child in scan.opaque):return False
+    return not any(g.get('unit')==path or within(path,g.get('path') or '.')
+                   for g in [*facts['enumeration']['gaps'],*scan.gaps])
+
+
+def owned_children(scan,facts,path):
+    children=[]
+    for unit in facts['units']:
+        child=unit['path'];manifest=child+'/pyproject.toml'
+        if child!=path and within(path,child) and manifest in scan.files and manifest in unit['provenance'] and layout_clear(scan,facts,child):children.append(child)
+    return sorted(children)
+
+
+def add_unit(scan,facts,path,role=None,language=None,*,children=()):
     safe(path);prefix='' if path=='.' else path+'/'
     config_path=prefix+'pyproject.toml';config=toml(scan,config_path)
-    files=[p for p in scan.files if within(path,p)]
+    files=[p for p in scan.files if within(path,p) and not any(within(child,p) for child in children)]
     languages=[]
-    if any(p.endswith('.py') and '/tests/' not in '/'+p for p in files) or config:languages.append('python')
+    python_sources=sorted(p for p in files if p.endswith('.py') and '/tests/' not in '/'+p)
+    if python_sources or config:languages.append('python')
     if prefix+'package.json' in scan.files:languages.append('javascript');scan.rules.add(prefix+'package.json')
     if prefix+'go.mod' in scan.files:languages.append('go');scan.rules.add(prefix+'go.mod')
     if language and language not in languages:languages.append(language)
     if not languages:
+        declared=any(prefix+name in scan.files or prefix+name in scan.base for name in WORKSPACE_MANIFESTS)
+        if children and not declared and not any(p.endswith(SOURCE_SUFFIXES) for p in files) and layout_clear(scan,facts,path):
+            facts['enumeration']['exclusions'].append({'path':path,'reason':'manifested child source ownership container','provenance':[child+'/pyproject.toml' for child in children]})
+            return
         facts['enumeration']['gaps'].append(gap('unclassified-unit',path,'unit directory has no supported language/manifest',path));return
     roots=[];contexts=[];deps=[];external=[];packages=None
     if 'python' in languages:
-        if not config:facts['enumeration']['gaps'].append(gap('missing-manifest',config_path,'Python unit requires a literal source manifest',path))
+        if not config:
+            reason='Python unit requires a literal source manifest'
+            if python_sources:
+                witness=python_sources[0]
+                reason+='; observed Python source '+json.dumps(witness[:160])+(' (path truncated)' if len(witness)>160 else '')
+            facts['enumeration']['gaps'].append(gap('missing-manifest',config_path,reason,path))
         tool=config.get('tool',{});setuptools=tool.get('setuptools',{});uv=tool.get('uv',{})
         backend=config.get('build-system',{}).get('build-backend')
         if backend and backend not in {'setuptools.build_meta','setuptools.build_meta:__legacy__','uv_build','hatchling.build'}:
@@ -277,9 +302,12 @@ def observe(scan):
     # recorded exclusion per root, outside service coverage, instead of a gap per file.
     for root in sorted(tooling):
         facts['enumeration']['exclusions'].append({'path':root,'reason':'manifest-less tooling root outside service coverage','provenance':['repository layout']})
-    for path in sorted(names):
-        unit=add_unit(scan,facts,path)
+    # Only already admitted children with valid current manifests can own descendant bytes.
+    for path in sorted(names,key=lambda p:(-len(PurePosixPath(p).parts),p)):
+        unit=add_unit(scan,facts,path,children=owned_children(scan,facts,path))
         if path.startswith('apps/') and unit and 'python' in unit['languages'] and not supported_app_context(scan,facts,unit):facts['enumeration']['gaps'].append(gap('unsupported-unit-layout',path,'generic Python apps layout needs a bundled repository adapter',path))
+    facts['units'].sort(key=lambda unit:unit['id'])
+    facts['enumeration']['observed_members'].sort()
     unique=[]
     for item in facts['enumeration']['exclusions']:
         if item not in unique:unique.append(item)

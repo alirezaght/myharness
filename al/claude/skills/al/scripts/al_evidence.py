@@ -284,6 +284,8 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
                 entry['process'] = {'pid': proc.pid, 'pgid': proc.pid, 'ownership': 'live-Popen-start_new_session'}
                 if commit:
                     _commit(sid, entry)
+                import al_writer_progress
+                al_writer_progress.report('evidence-execution')
                 try:
                     code = proc.wait(timeout=timeout)
                     if prepared is not None:

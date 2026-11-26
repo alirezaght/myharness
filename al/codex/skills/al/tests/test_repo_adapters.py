@@ -299,3 +299,96 @@ def test_go_review_unsupported_consumer_in_both_snapshots_cannot_disappear(cli,r
 def test_go_review_literal_relative_replacements_and_excluded_versions(manifest):
     from al_repo_go import parse_mod
     assert parse_mod(manifest)['module']=='example.invalid/x'
+
+
+def nested_python_workspace(repo):
+    """Only a declared, manifested child can account for the parent's Python files."""
+    from conftest import _git
+
+    for path in ('pyproject.toml', 'svc/app.py', 'web/app.js'):
+        (repo / path).unlink(missing_ok=True)
+    unit(repo, 'services/render/contracts')
+    put(repo, 'services/render/contracts/src/contract_schema.py', 'VALUE=1\n')
+    unit(repo, 'services/consumer', 'from contract_schema import VALUE\n',
+         extra='[tool.uv.sources]\ncontracts={path="../render/contracts",editable=true}\n')
+    consumer_config = repo / 'services/consumer/pyproject.toml'
+    consumer_config.write_text(consumer_config.read_text().replace(
+        'dependencies=[]', 'dependencies=["contracts"]'))
+    put(repo, 'package.json', json.dumps({'private': True,
+        'workspaces': ['services/render/contracts']}))
+    _git(repo, 'add', '.')
+    _git(repo, 'commit', '-qm', 'declared child source ownership')
+
+
+def test_manifested_workspace_child_owns_python_without_phantom_parent(cli, repo, tmp_path):
+    nested_python_workspace(repo)
+    start(cli)
+    _, manifest = discover(cli, tmp_path, ['services/render/contracts/src/contract_schema.py'])
+    coverage = manifest['service_coverage']
+    facts = coverage['semantic_requirements']
+    units = {u['id']: u for u in facts['units']}
+    assert 'services/render/contracts' in units
+    assert units['services/render/contracts']['source_roots'] == ['services/render/contracts/src']
+    assert units['services/consumer']['module_contexts'] == [{
+        'source_root': 'services/consumer/src',
+        'local_dependencies': ['services/render/contracts'],
+    }]
+    assert 'services/render' not in units
+    assert any(e['path'] == 'services/render' and 'container' in e['reason']
+               for e in facts['enumeration']['exclusions'])
+    assert coverage['assessment']['outcome'] == 'identified', coverage['assessment']['gaps']
+    assert 'services/consumer' in coverage['assessment']['selected_services']
+    assert not any(g['code'] == 'missing-manifest' and g['path'] == 'services/render/pyproject.toml'
+                   for g in facts['enumeration']['gaps'])
+
+
+@pytest.mark.parametrize('defect', ['residual', 'residual-js', 'invalid', 'deleted', 'symlink'])
+def test_unproven_child_ownership_cannot_certify_parent_container(cli, repo, tmp_path, defect):
+    nested_python_workspace(repo)
+    config = repo / 'services/render/contracts/pyproject.toml'
+    changed = 'services/render/contracts/src/contract_schema.py'
+    if defect == 'residual':
+        changed = 'services/render/bootstrap.py'
+        put(repo, changed, 'VALUE=2\n')
+    elif defect == 'residual-js':
+        changed = 'services/render/bootstrap.js'
+        put(repo, changed, 'const value = 2;\n')
+    elif defect == 'invalid':
+        config.write_text('[project\n')
+    elif defect == 'deleted':
+        config.unlink()
+    else:
+        config.unlink()
+        outside = tmp_path / 'untrusted-manifest.toml'
+        outside.write_text('[project]\nname="not-owned"\n')
+        config.symlink_to(outside)
+    start(cli)
+    _, manifest = discover(cli, tmp_path, [changed])
+    coverage = manifest['service_coverage']
+    facts = coverage['semantic_requirements']
+    assert coverage['assessment']['outcome'] == 'incomplete'
+    assert not any(e['path'] == 'services/render' and 'container' in e['reason']
+                   for e in facts['enumeration']['exclusions'])
+    expected = {'residual': ('missing-manifest', 'services/render/pyproject.toml'),
+                'residual-js': ('unclassified-unit', 'services/render'),
+                'invalid': ('invalid-manifest', 'services/render/contracts/pyproject.toml'),
+                'deleted': ('missing-manifest', 'services/render/contracts/pyproject.toml'),
+                'symlink': ('symlink-boundary', 'services/render/contracts/pyproject.toml')}[defect]
+    assert any((g['code'], g['path']) == expected for g in facts['enumeration']['gaps'])
+
+
+
+def test_explicit_parent_project_is_not_erased_by_child_ownership(cli, repo, tmp_path):
+    nested_python_workspace(repo)
+    put(repo, 'services/render/pyproject.toml',
+        '[project]\nname="parent"\n[tool.setuptools.packages.find]\nwhere=["own-src"]\n')
+    start(cli)
+    _, manifest = discover(cli, tmp_path, ['services/render/pyproject.toml'])
+    facts = manifest['service_coverage']['semantic_requirements']
+    parent = next(u for u in facts['units'] if u['id'] == 'services/render')
+    assert 'python' in parent['languages']
+    assert parent['source_roots'] == ['services/render/own-src']
+    assert any(g['code'] == 'missing-source-root' and g['path'] == 'services/render/own-src'
+               for g in facts['enumeration']['gaps'])
+    assert not any(e['path'] == 'services/render' and 'container' in e['reason']
+                   for e in facts['enumeration']['exclusions'])
