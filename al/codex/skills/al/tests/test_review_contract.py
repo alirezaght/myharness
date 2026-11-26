@@ -39,6 +39,9 @@ def test_real_v2_fresh_and_comparison_schema_runtime_roundtrip(cli, tmp_path, st
         packet=json.loads(Path(st['review']['packets'][stage]['stored_path']).read_bytes())
         report=json.loads(Path(st['review'][field]['stored_path']).read_bytes())
         assert packet['schema_version']==report['schema_version']==2
+        if stage=='fresh':
+            assert packet['reserved_finding_ids']==[]
+            assert not {'prior_findings','fresh','approved_inputs','comparison_contents'} & set(packet)
         for name,value in [('review-packet',packet),('architect-report',report)]:
             validator=Draft202012Validator(json.loads((root/(name+'.json')).read_text()),registry=registry)
             errors.extend(stage+' '+name+': '+e.message[:300] for e in validator.iter_errors(value))
@@ -49,3 +52,13 @@ def test_modern_wrong_version_diagnostic_precedes_closed_shape():
     import al_review_behavior as B
     with pytest.raises(SystemExit,match="requires schema_version 2"):
         B.validate_report({'proof_admission':{}},{'schema_version':1},'fresh',{})
+
+
+def test_reserved_finding_ids_packet_schema_requires_identity_only_unique_strings():
+    root=Path(__file__).resolve().parents[1]/'reference/schemas'
+    schema=json.loads((root/'review-packet.json').read_text())
+    field=schema['properties']['reserved_finding_ids']
+    validator=Draft202012Validator(field)
+    assert not list(validator.iter_errors(['R1-F1','R2-F1']))
+    for value in [[{'id':'R1-F1','source':'AC-01'}],['R1-F1','R1-F1'],[''],[None]]:
+        assert list(validator.iter_errors(value)),value
