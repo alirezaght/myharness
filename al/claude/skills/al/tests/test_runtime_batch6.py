@@ -245,9 +245,9 @@ def test_explicit_git_execution_is_denied_by_policies_ownership_and_native_hook(
     invoke(cli,'start','--spec','Reject explicit executable Git overrides in ownership admission.')
     invoke(cli,'ownership','--engineer','svc/app.py','--builder','docs/notes.md','--engineer-commands',command,ok=False)
     hook=Path(__file__).resolve().parents[1]/'scripts/al_readonly_guard.py'
-    if hook.exists():
-        result=subprocess.run([sys.executable,str(hook)],input=json.dumps({'tool_name':'Bash','tool_input':{'command':command}}),capture_output=True,text=True)
-        assert result.returncode==2 and 'deny' in result.stdout
+    assert hook.is_file(), 'Claude native read-only hook is required'
+    result=subprocess.run([sys.executable,str(hook)],input=json.dumps({'tool_name':'Bash','tool_input':{'command':command}}),capture_output=True,text=True)
+    assert result.returncode==2 and 'deny' in result.stdout
 
 
 @pytest.mark.parametrize('command',["git -c user.name=test -cuser.email=test@example.invalid status",'git -c color.ui=never --no-pager log',

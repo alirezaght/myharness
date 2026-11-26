@@ -63,10 +63,14 @@ def test_workflow_docs_cover_sources_writers_gates_and_assessments():
 
 
 def test_every_documented_state_command_exists():
-    out = subprocess.run([sys.executable, str(AL / "scripts" / "al_state.py"), "--help"],
-                         capture_output=True, text=True).stdout
+    result = subprocess.run([sys.executable, str(AL / "scripts" / "al_state.py"), "--help"],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    choices = re.search(r"(?m)^\s+\{([a-z][a-z,-]+)\}\s*$", result.stdout)
+    assert choices, result.stdout
+    supported = set(choices.group(1).split(","))
     for cmd in set(re.findall(r"\$STATE (?:--session \S+ )?([a-z][a-z-]+)", SKILL)):
-        assert cmd in out, f"SKILL.md uses `$STATE {cmd}`, which al_state.py does not provide"
+        assert cmd in supported, f"SKILL.md uses `$STATE {cmd}`, which al_state.py does not provide"
 
 
 def test_entry_show_options_match_this_platform_cli():

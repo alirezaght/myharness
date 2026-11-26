@@ -114,7 +114,7 @@ def test_managed_isolated_no_site_bootstrap_ignores_startup_canaries(tmp_path):
     assert not canary.exists()
 
 
-def test_sealed_control_denies_all_bound_process_creation_paths(tmp_path):
+def test_sealed_control_qualifies_real_process_denial_profile(tmp_path):
     import pytest
     from types import SimpleNamespace
     from harness.execution_isolation import prepare_operation_isolation
