@@ -96,8 +96,9 @@ def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path
 
 def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_path):
     """Issue #18: a check under a Harness execution can bind AF_UNIX sockets in TMPDIR
-    (multiprocessing manager), may write only its own /tmp directory, and that
-    directory is removed once the check has settled."""
+    on Darwin (multiprocessing manager). Linux retains its new-Unix-socket denial
+    while permitting anonymous stream socketpairs. The check may write only its
+    own /tmp directory, which is removed once it has settled."""
     repo = tmp_path / "repo"
     repo.mkdir()
     handoff = tmp_path / "handoff"
@@ -128,11 +129,19 @@ def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_p
     )
     scripts = Path(__file__).resolve().parents[1] / "al/codex/skills/al/scripts"
     check = (
-        "import os,stat,secrets;from pathlib import Path\n"
+        "import os,stat,secrets,socket,sys;from pathlib import Path\n"
         "from multiprocessing.managers import SyncManager\n"
         "t=os.environ['TMPDIR'];assert os.environ['TMP']==t==os.environ['TEMP']\n"
         "info=os.stat(t);assert stat.S_IMODE(info.st_mode)==0o700 and info.st_uid==os.getuid()\n"
-        "m=SyncManager();m.start();m.shutdown()\n"
+        "if sys.platform.startswith('linux'):\n"
+        " try:socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+        " except PermissionError:pass\n"
+        " else:raise SystemExit('new Unix socket escaped Linux denial')\n"
+        " a,b=socket.socketpair(socket.AF_UNIX,socket.SOCK_STREAM)\n"
+        " try:a.sendall(b'private-ipc');assert b.recv(11)==b'private-ipc'\n"
+        " finally:a.close();b.close()\n"
+        "else:\n"
+        " m=SyncManager();m.start();m.shutdown()\n"
         "Path(t,'own').write_text('ok')\n"
         "try: Path('/tmp/h-escape-'+secrets.token_hex(6)).write_text('escape')\n"
         "except OSError: pass\n"

@@ -9,8 +9,140 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from tests.test_execution_continuity import command, prepare, state
 from tests.test_execution_operations import operations  # noqa: F401
+
+
+def proc_bytes(path, maximum):
+    with path.open("rb") as stream:
+        raw = stream.read(maximum + 1)
+    assert len(raw) <= maximum, "owned process observation exceeds bound"
+    return raw
+
+
+def linux_node(pid):
+    directory = Path("/proc") / str(pid)
+
+    def stat_identity():
+        raw = proc_bytes(directory / "stat", 4096)
+        fields = raw.rsplit(b")", 1)[1].split()
+        assert len(fields) >= 20 and fields[0] != b"Z", "owned process is unavailable"
+        return tuple(int(fields[index]) for index in (1, 2, 3, 19))
+
+    before = stat_identity()
+    namespace = (directory / "ns/pid").stat().st_ino
+    lines = proc_bytes(directory / "status", 65536).splitlines()
+    matches = [line.split()[1:] for line in lines if line.startswith(b"NSpid:")]
+    assert len(matches) == 1 and 1 <= len(matches[0]) <= 32, "PID namespace unavailable"
+    values = matches[0]
+    assert all(0 < len(v) <= 10 and v.isdigit() for v in values), "invalid namespace PID"
+    nspids = tuple(map(int, values))
+    assert nspids[0] == pid and all(0 < v <= 2147483647 for v in nspids)
+    assert before == stat_identity() and namespace == (directory / "ns/pid").stat().st_ino
+    return {
+        "pid": pid,
+        "ppid": before[0],
+        "start": before[3],
+        "group": before[1],
+        "session": before[2],
+        "namespace": namespace,
+        "nspids": nspids,
+    }
+
+
+def linux_owned_tree(process):
+    assert process.poll() is None, "owned wrapper is no longer live"
+    deadline = time.monotonic() + 2
+    nodes, pending = {}, [(process.pid, None, 0)]
+    while pending:
+        assert len(nodes) < 256 and time.monotonic() < deadline, "owned process traversal bound"
+        pid, parent, depth = pending.pop()
+        assert depth <= 64 and pid not in nodes, "ambiguous owned process ancestry"
+        node = linux_node(pid)
+        assert parent is None or node["ppid"] == parent, "owned child ancestry changed"
+        nodes[pid] = node
+        tasks = list((Path("/proc") / str(pid) / "task").iterdir())
+        assert len(tasks) <= 256, "owned thread observation exceeds bound"
+        children = set()
+        for task in tasks:
+            assert time.monotonic() < deadline, "owned process traversal deadline"
+            values = proc_bytes(task / "children", 4096).split()
+            assert all(0 < len(v) <= 10 and v.isdigit() for v in values)
+            children.update(map(int, values))
+        assert len(children) <= 256 and all(1 < child <= 2147483647 for child in children)
+        pending.extend((child, pid, depth + 1) for child in children)
+    assert process.poll() is None, "owned wrapper exited during observation"
+    return nodes
+
+
+def linux_runner_chain(nodes, wrapper, owner, *, expected=None):
+    assert wrapper in nodes, "missing owned wrapper identity"
+    matches = []
+    for node in nodes.values():
+        if node["namespace"] == nodes[wrapper]["namespace"] or node["nspids"][-1] != owner:
+            continue
+        chain, seen = [], set()
+        while True:
+            pid = node["pid"]
+            assert pid not in seen and len(chain) <= 64, "invalid owned ancestry"
+            seen.add(pid)
+            chain.append(node)
+            if pid == wrapper:
+                break
+            assert node["ppid"] in nodes, "missing owned ancestry"
+            node = nodes[node["ppid"]]
+        matches.append(chain)
+    assert len(matches) == 1, "owned verifier namespace identity is missing or ambiguous"
+    chain = matches[0]
+    assert expected is None or chain == expected, "owned verifier identity changed"
+    return chain
+
+
+def signal_linux_runner(process, owner):
+    initial = linux_runner_chain(linux_owned_tree(process), process.pid, owner)
+    descriptor = os.pidfd_open(initial[0]["pid"])
+    try:
+        linux_runner_chain(linux_owned_tree(process), process.pid, owner, expected=initial)
+        signal.pidfd_send_signal(descriptor, signal.SIGINT)
+    finally:
+        os.close(descriptor)
+
+
+@pytest.mark.parametrize("defect", ["ambiguous", "missing-owner", "missing-ancestor", "changed"])
+def test_linux_runner_mapping_refuses_unverified_identity(defect):
+    root = {
+        "pid": 100,
+        "ppid": 1,
+        "start": 10,
+        "group": 100,
+        "session": 100,
+        "namespace": 1,
+        "nspids": (100,),
+    }
+    child = {
+        "pid": 101,
+        "ppid": 100,
+        "start": 11,
+        "group": 100,
+        "session": 100,
+        "namespace": 2,
+        "nspids": (101, 2),
+    }
+    nodes = {100: root, 101: child}
+    expected = linux_runner_chain(nodes, 100, 2)
+    assert expected == [child, root]
+    if defect == "ambiguous":
+        nodes[102] = dict(child, pid=102, nspids=(102, 2))
+    elif defect == "missing-owner":
+        del nodes[100]
+    elif defect == "missing-ancestor":
+        nodes[101] = dict(child, ppid=999)
+    else:
+        nodes[101] = dict(child, start=12)
+    with pytest.raises(AssertionError):
+        linux_runner_chain(nodes, 100, 2, expected=expected)
 
 
 def test_interrupted_public_harness_check_reconciliation(operations):
@@ -45,26 +177,41 @@ def test_interrupted_public_harness_check_reconciliation(operations):
     )
     assert run.get("handle"), run
     record = operation.processes.records[run["handle"]]
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        entries = state(operation)["evidence"]["entries"]
-        if record["status"] != "Running":
-            raise AssertionError(record["output"])
-        if entries and entries[-1]["status"] == "RUNNING" and entries[-1].get("pid"):
-            runner = entries[-1]["owner_pid"]
-            assert os.getpgid(runner) == record["process"].pid
-            os.kill(runner, signal.SIGINT)
-            break
-        time.sleep(0.05)
-    else:
-        raise AssertionError("actual evidence child did not start")
-    deadline = time.monotonic() + 20
-    while time.monotonic() < deadline:
-        observed = operation.dispatch(principal, "poll_process", {"handle": run["handle"]})
-        if observed["status"] != "Running":
-            break
-        time.sleep(0.05)
-    assert observed["status"] != "Running", observed
+    try:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            entries = state(operation)["evidence"]["entries"]
+            if record["status"] != "Running":
+                raise AssertionError(record["output"])
+            if entries and entries[-1]["status"] == "RUNNING" and entries[-1].get("pid"):
+                entry = entries[-1]
+                assert all(type(entry[k]) is int and entry[k] > 0 for k in ("pid", "owner_pid"))
+                if sys.platform.startswith("linux"):
+                    signal_linux_runner(record["process"], entry["owner_pid"])
+                else:
+                    assert sys.platform == "darwin"
+                    runner = entry["owner_pid"]
+                    assert os.getpgid(runner) == record["process"].pid
+                    os.kill(runner, signal.SIGINT)
+                break
+            time.sleep(0.05)
+        else:
+            raise AssertionError("actual evidence child did not start")
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            observed = operation.dispatch(principal, "poll_process", {"handle": run["handle"]})
+            if observed["status"] != "Running":
+                break
+            time.sleep(0.05)
+        assert observed["status"] != "Running", observed
+    finally:
+        if record["status"] == "Running":
+            operation.dispatch(principal, "cancel_process", {"handle": run["handle"]})
+            deadline = time.monotonic() + 20
+            while record["status"] == "Running" and time.monotonic() < deadline:
+                operation.dispatch(principal, "poll_process", {"handle": run["handle"]})
+                time.sleep(0.05)
+            assert record["status"] != "Running", "owned interruption fixture did not settle"
     original = copy.deepcopy(state(operation)["evidence"]["entries"][-1])
     assert original["status"] == "INFRA" and original["interrupted"]
     companion = copy.deepcopy(
