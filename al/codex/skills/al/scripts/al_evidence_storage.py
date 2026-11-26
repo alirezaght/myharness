@@ -136,7 +136,8 @@ class PreparedStorage:
                     request["schema_version"] = 2
                     request["recipe_input"] = recipe_input
                 self.proc = OwnedCheck(
-                    argv, {"cwd": cwd, "stdout": output, "stderr": -2, "managed_storage": request}
+                    argv, {"cwd": cwd, "stdout": output, "stderr": -2, "managed_storage": request,
+                           "process_observation": self.entry.get("process_observation")}
                 )
                 self.allocation = self.proc.storage["allocation"]
                 self.temporary = Path(self.proc.storage["operation_directory"]) / "tmp"

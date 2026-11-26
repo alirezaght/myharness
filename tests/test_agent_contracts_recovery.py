@@ -5,14 +5,79 @@ import copy
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
 
 import pytest
 
+from harness.execution_store import get_execution
 from tests.test_execution_continuity import command, prepare, state
 from tests.test_execution_operations import operations  # noqa: F401
+
+
+def test_public_harness_isolation_refuses_ungranted_command_before_child_creation(
+    operations, tmp_path
+):
+    operation, principal, controller, _, _, execution, envelope = operations
+    command(operation, principal, "show")
+    assert state(operation)["phase"] == "PLANNING"
+    repository = Path(envelope["repository"])
+    candidate = repository / "work/isolation.txt"
+    candidate.parent.mkdir()
+    candidate.write_text("staged candidate\n")
+    subprocess.run(
+        ["git", "add", "--", "work/isolation.txt"], cwd=repository, check=True, capture_output=True
+    )
+    candidate.write_text("unstaged candidate overlay\n")
+
+    def git(*arguments):
+        return subprocess.check_output(["git", "--no-optional-locks", *arguments], cwd=repository)
+
+    index = Path(os.fsdecode(git("rev-parse", "--git-path", "index")).strip())
+    if not index.is_absolute():
+        index = repository / index
+
+    def ordinary_git_state():
+        return (
+            index.read_bytes(),
+            git("rev-parse", "HEAD"),
+            git("for-each-ref", "refs/heads", "refs/tags", "refs/remotes"),
+            git("ls-files", "--stage"),
+            git("diff", "--binary"),
+            git("diff", "--cached", "--binary"),
+            git("worktree", "list", "--porcelain"),
+        )
+
+    source = Path(operation.initialization["source"])
+    before_source = source.read_bytes()
+    before_git = ordinary_git_state()
+    approval_fields = ("approval_id", "binding", "epoch_id", "authority_generation", "status")
+    current = get_execution(controller.conn, execution["id"])
+    before_approval = {key: copy.deepcopy(current[key]) for key in approval_fields}
+    before_channels = tuple(operation.check_channels)
+    before_owners = set(operation.check_ownership.owners)
+    before_allocations = set(operation.check_ownership.allocations)
+    before_processes = set(operation.processes.records)
+    destination = tmp_path / "ungranted-isolation"
+    # This public API does not grant isolate at all; Git and check creation are unreachable.
+    with pytest.raises(ValueError, match="^al_command requires only AL subcommands,"):
+        operation.dispatch(
+            principal,
+            "al_command",
+            {"arguments": ["isolate", "--authorized", "--path", str(destination)]},
+        )
+    assert not destination.exists()
+    assert source.read_bytes() == before_source
+    assert ordinary_git_state() == before_git
+    assert candidate.read_text() == "unstaged candidate overlay\n"
+    assert tuple(operation.check_channels) == before_channels
+    assert set(operation.check_ownership.owners) == before_owners
+    assert set(operation.check_ownership.allocations) == before_allocations
+    assert set(operation.processes.records) == before_processes
+    current = get_execution(controller.conn, execution["id"])
+    assert {key: current[key] for key in approval_fields} == before_approval
 
 
 def proc_bytes(path, maximum):
@@ -186,6 +251,29 @@ def test_interrupted_public_harness_check_reconciliation(operations):
             if entries and entries[-1]["status"] == "RUNNING" and entries[-1].get("pid"):
                 entry = entries[-1]
                 assert all(type(entry[k]) is int and entry[k] > 0 for k in ("pid", "owner_pid"))
+                reference = entry["process_observation"]
+                assert set(reference) == {
+                    "schema_version",
+                    "mode",
+                    "host_instance",
+                    "owner_ref",
+                    "run",
+                    "id",
+                    "reservation",
+                }
+                assert reference["schema_version"] == 1 and reference["mode"] == "harness"
+                retained_owner = operation.check_ownership.owners[reference["owner_ref"]]
+                assert retained_owner["process"] is record["process"]
+                allocation = operation.check_ownership.allocations[
+                    tuple(entry[k] for k in ("run", "id", "reservation"))
+                ]
+                assert allocation["reference"] == reference
+                assert len(allocation["checks"]) == 1
+                assert next(iter(allocation["checks"].values()))["process"].pid == entry["pid"]
+                assert operation.check_ownership.observe(reference, retained_owner["context"]) == {
+                    "owner": "live",
+                    "checks": "live",
+                }
                 if sys.platform.startswith("linux"):
                     signal_linux_runner(record["process"], entry["owner_pid"])
                 else:
@@ -214,6 +302,11 @@ def test_interrupted_public_harness_check_reconciliation(operations):
             assert record["status"] != "Running", "owned interruption fixture did not settle"
     original = copy.deepcopy(state(operation)["evidence"]["entries"][-1])
     assert original["status"] == "INFRA" and original["interrupted"]
+    assert original["process_observation"] == reference
+    assert operation.check_ownership.observe(reference, retained_owner["context"]) == {
+        "owner": "settled",
+        "checks": "settled",
+    }
     companion = copy.deepcopy(
         state(operation)["agent_contracts"]["verification-result:" + original["id"]]
     )
@@ -237,6 +330,26 @@ def test_interrupted_public_harness_check_reconciliation(operations):
         },
     )
     resource = "artifact:" + proof["artifact_id"] + ":" + proof["sha256"]
+    source = Path(operation.initialization["source"])
+    before = source.read_bytes()
+    retained = operation.check_ownership.owners.pop(reference["owner_ref"])
+    try:
+        refused = command(
+            operation,
+            principal,
+            "check-reconcile",
+            "--id",
+            original["id"],
+            "--reason",
+            "A missing original host record cannot establish settlement.",
+            "--artifact",
+            resource,
+            success=False,
+        )
+        assert "unconfirmed original process ownership" in refused["stdout"] + refused["stderr"]
+        assert source.read_bytes() == before
+    finally:
+        operation.check_ownership.owners[reference["owner_ref"]] = retained
     command(
         operation,
         principal,

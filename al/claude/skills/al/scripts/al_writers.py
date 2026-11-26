@@ -88,6 +88,7 @@ def _check_effects(st, spec):
     if not spec.get('recipe') and not spec.get('recipe_assignment'):
         return al_parallel.shared_state_hits([shlex.join(spec['argv'])])
     import al_evidence_recipe
+    import al_process_observation
     view = dict(spec, run=spec.get('run', st['run_id']))
     try:
         al_evidence_recipe.validate_entry_recipe(view)
@@ -98,8 +99,7 @@ def _check_effects(st, spec):
             parent = next((e for e in st['evidence']['entries'] if e['id'] == binding['id']), None)
             if (parent is None or parent.get('status') != 'RUNNING' or not parent.get('recipe')
                     or any(parent.get(k) != v for k, v in binding.items())
-                    or parent.get('owner_pid') != view.get('owner_pid', os.getpid())
-                    or not L._alive(parent.get('owner_pid'))):
+                    or not al_process_observation.same_owner(parent, view if view.get('process_observation') else None)):
                 refuse('recipe child has no exact live coordinator reservation')
             al_evidence_recipe.validate_entry_recipe(parent)
             al_evidence_recipe.load_recipe(parent['recipe'])
@@ -124,7 +124,8 @@ def admit_check(st, spec, *, gate_context=None, own_writer=None):
     shared=_check_effects(st,spec)
     for e in st['evidence']['entries']:
         if e.get('reconciliation') or (e['status']!='RUNNING' and not e.get('interrupted')): continue
-        if e.get('interrupted') or not L._alive(e.get('owner_pid')): refuse('reconcile interrupted check '+e['id'])
+        import al_process_observation
+        if e.get('interrupted') or al_process_observation.observe(e)['owner'] != 'live': refuse('reconcile interrupted check '+e['id'])
         if shared or _check_effects(st,e): refuse('shared-state check overlap '+e['id'])
     # A base gate runs in a disposable checkout of the base commit: writers in the working tree
     # cannot affect it, nor it them.

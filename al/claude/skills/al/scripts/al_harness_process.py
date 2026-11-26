@@ -79,6 +79,7 @@ class OwnedCheck:
                 descriptors.append(writer);close.append(writer)
         try:
             request = {'action':'start','argv':list(argv), 'cwd':str(kwargs.get('cwd') or os.getcwd())}
+            if kwargs.get('process_observation') is not None:request['process_observation'] = kwargs['process_observation']
             if kwargs.get('managed_storage') is not None:request['storage'] = kwargs['managed_storage']
             result = self.rpc(request, descriptors)
             self.pid, self.handle = result['pid'], result['handle']
@@ -208,8 +209,15 @@ class OwnedCheck:
         return bytes(outputs['stdout']),bytes(outputs['stderr'])
 
 
+def request(value):
+    client = object.__new__(OwnedCheck)
+    client.transport = _transport()
+    return client.rpc(value)
+
+
 def popen(argv, **kwargs):
     if os.environ.get('HARNESS_CHECK_CONTEXT'):
         if not os.environ.get('HARNESS_CHECK_FD'):raise OSError('private Harness check dispatch channel unavailable')
         return OwnedCheck(argv, kwargs)
+    kwargs.pop('process_observation', None)
     return subprocess.Popen(argv, **kwargs)

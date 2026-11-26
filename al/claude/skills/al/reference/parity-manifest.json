@@ -103,6 +103,7 @@
     "al_planning_template.py",
     "al_policy_retry.py",
     "al_preflight.py",
+    "al_process_observation.py",
     "al_profile.py",
     "al_proof_json.py",
     "al_publication.py",

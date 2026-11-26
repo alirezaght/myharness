@@ -48,16 +48,24 @@ def operations(st):
         )
         if not uncertain and not unresolved:
             continue
+        import al_process_observation
+        process_state = al_process_observation.observe(entry)
         observed = {
             "entry": entry,
-            "owner_alive": L._alive(entry.get("owner_pid")),
-            "child_alive": L._alive(entry.get("pid")),
+            "owner_alive": None if process_state['owner'] == 'unknown' else process_state['owner'] == 'live',
+            "child_alive": None if process_state['checks'] == 'unknown' else process_state['checks'] == 'live',
+            "process_state": process_state,
         }
         if uncertain:
             recovery = supply(
                 "owned-cleanup-resolution",
                 "Provide positive owned-process cleanup proof; reconciliation alone cannot waive uncertainty."
                 + process_inspection_guidance(cleanup),
+            )
+        elif 'unknown' in process_state.values():
+            recovery = supply(
+                "owned-process-observation",
+                "Original process ownership is unavailable; obtain authenticated owned-process settlement before reconciliation.",
             )
         elif observed["owner_alive"] or observed["child_alive"]:
             recovery = supply(

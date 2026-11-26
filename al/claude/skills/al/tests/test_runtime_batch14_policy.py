@@ -33,9 +33,15 @@ def test_observations_and_quoted_command_data_remain_safe(command):
 
 
 def overlap_state(cli,repo,tmp):
+    import al_process_observation
+    import secrets
     setup(cli,repo,tmp,['svc/owned.py'])
     st=state(cli)
-    st['evidence']['entries'].append({'id':'active','status':'RUNNING','owner_pid':os.getpid(),'argv':['rg','git reset > cp --fix','docs/query.txt'],'scope':['docs/query.txt']})
+    active={'id':'active','status':'RUNNING','owner_pid':os.getpid(),'argv':['rg','git reset > cp --fix','docs/query.txt'],'scope':['docs/query.txt'],
+            'run':st['run_id'],'reservation':secrets.token_hex(16)}
+    # Decision unit: real current owner identity, without claiming a launched child.
+    active['process_observation']=al_process_observation.allocate(active)
+    st['evidence']['entries'].append(active)
     return st
 
 

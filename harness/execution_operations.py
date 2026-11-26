@@ -128,6 +128,9 @@ class OperationController:
         self.artifacts = ArtifactStore(self.directory / "drafts")
         self.processes = ProcessManager()
         self.check_channels = []
+        from harness.execution_check_ownership import CheckOwnership
+
+        self.check_ownership = CheckOwnership()
         self.al_service = None
         self.prepared_plan_pending = {}
         self.setup_pending = {}
@@ -1228,7 +1231,7 @@ class OperationController:
             "protected_roots": list(profile.protected),
         }
 
-        def validate_storage_entry(binding, declaration, *, final):
+        def validate_storage_entry(binding, declaration, *, final, allocation=False):
             if (
                 not isinstance(binding, dict)
                 or set(binding) != {"run", "id", "reservation"}
@@ -1245,10 +1248,11 @@ class OperationController:
                 if (
                     entry is None
                     or any(entry.get(k) != v for k, v in binding.items())
-                    or entry.get("storage") != declaration
-                    or final
+                    or not allocation
+                    and entry.get("storage") != declaration
+                    or final is True
                     and entry["status"] not in {"PASS", "FAIL", "INFRA", "EMPTY", "TORN"}
-                    or not final
+                    or final is False
                     and entry["status"] != "RUNNING"
                 ):
                     raise ValueError("storage evidence reservation changed")
@@ -1271,11 +1275,21 @@ class OperationController:
                         parent is None
                         or not parent.get("recipe")
                         or any(parent.get(k) != v for k, v in recipe_assignment["parent"].items())
-                        or not final
+                        or final is False
                         and parent["status"] != "RUNNING"
                     ):
                         raise ValueError("recipe parent reservation is not current")
                 return entry
+
+        def validate_allocation(binding, *, coordinator):
+            entry = validate_storage_entry(
+                binding, None, final=None if coordinator is None else False, allocation=True
+            )
+            if coordinator is not None and (
+                type(coordinator) is not bool or bool(entry.get("recipe")) != coordinator
+            ):
+                raise ValueError("check coordinator allocation changed")
+            return entry
 
         storage = ExecutionStorage(storage_context, validate_storage_entry)
         from harness.policy.retry import prepare_retry
@@ -1299,7 +1313,12 @@ class OperationController:
             environment["HARNESS_RETRY_CONTROL_NONCE"] = control_channel.nonce
             self.check_channels.append(control_channel)
         channel = CheckChannel(
-            context_path, validate_check, storage=storage, policy_attempt=policy_attempt
+            context_path,
+            validate_check,
+            storage=storage,
+            policy_attempt=policy_attempt,
+            ownership=self.check_ownership,
+            validate_allocation=validate_allocation,
         )
         self.check_channels.append(channel)
         descriptors = (
@@ -1342,6 +1361,7 @@ class OperationController:
                     pass_fds=descriptors,
                     completion=close_channels,
                     report=report,
+                    on_spawn=channel.bind_owner,
                 )
             except (OSError, ValueError):
                 try:
@@ -1380,15 +1400,16 @@ class OperationController:
                 start_new_session=True,
                 pass_fds=descriptors,
             )
-            if policy:
-                try:
+            try:
+                channel.bind_owner(proc, observer)
+                if policy:
                     policy.spawned(proc)
-                except BaseException:
-                    ProcessManager._kill(proc)
-                    proc.wait(timeout=5)
-                    proc.stdout.close()
-                    proc.stderr.close()
-                    raise
+            except BaseException:
+                ProcessManager._kill(proc)
+                proc.wait(timeout=5)
+                proc.stdout.close()
+                proc.stderr.close()
+                raise
             if observer:
                 observer.notify("process.started")
             spawned_channels()
