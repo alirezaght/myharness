@@ -1,14 +1,12 @@
 """Real read-only operation dispatch with no writer assignment."""
 
-import json
 import time
-import uuid
 from pathlib import Path
 
 import pytest
 
 from harness.command_safety import classify_command
-from tests.test_execution_operations import operations  # noqa: F401
+from tests.test_execution_operations import observed_principal, operations  # noqa: F401
 
 
 @pytest.mark.parametrize(
@@ -48,28 +46,7 @@ def test_discovery_rejects_symlink_and_environment(tmp_path):
 
 def test_readonly_real_dispatch_contains_secret_and_symlink(operations):  # noqa: F811
     operation, principal, _, _, _, _, _ = operations
-    native_root = operation.registry.native_root / "sessions" / "2026" / "10" / "28"
-    native_root.mkdir(parents=True)
-    child = str(uuid.uuid4())
-    for thread, source in [
-        (operation.registry.root, "exec"),
-        (
-            child,
-            {
-                "subagent": {
-                    "thread_spawn": {
-                        "parent_thread_id": operation.registry.root,
-                        "agent_role": "al-architect",
-                    }
-                }
-            },
-        ),
-    ]:
-        payload = {"id": thread, "session_id": thread, "cli_version": "0.164.0", "source": source}
-        (native_root / ("rollout-" + thread + ".jsonl")).write_text(
-            json.dumps({"type": "session_meta", "payload": payload}) + "\n"
-        )
-    principal = operation.registry.enroll(child)
+    principal = observed_principal(operation, "readonly-discovery", "al-architect")
     assert principal["role"] == "al-architect" and principal["writable"] is False
     assert operation.dispatch(principal, "await_assignment", {"timeout": 1})["status"] == "ReadOnly"
     root = Path(operation.envelope["repository"])

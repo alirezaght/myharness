@@ -223,6 +223,7 @@ def test_rework1b_schema17_dashboard_upgrade_through_http(tmp_path, monkeypatch)
     from tests.test_dashboard import api
 
     original = db._migrations
+    current_schema_version = 25
     path = tmp_path / "schema17-http.db"
     with monkeypatch.context() as patch:
         patch.setattr(db, "_migrations", lambda: [m for m in original() if m[0] <= 17])
@@ -248,7 +249,10 @@ def test_rework1b_schema17_dashboard_upgrade_through_http(tmp_path, monkeypatch)
             thread.join(timeout=10)
     connection = db.connect(path)
     try:
-        assert connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 20
+        assert (
+            connection.execute("SELECT max(version) FROM schema_migrations").fetchone()[0]
+            == current_schema_version
+        )
         assert connection.execute("SELECT count(*) FROM authoring_tasks").fetchone()[0] == 0
     finally:
         connection.close()

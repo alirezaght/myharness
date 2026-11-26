@@ -577,7 +577,7 @@ def test_new_unsettled_execution_fences_queued_publication(
 
 
 def test_actual_exited_fixture_child_teardown_allows_historical_refresh(
-    controller, sample_repo, native_fixture
+    controller, db_path, sample_repo, native_fixture
 ):
     import subprocess
     import sys
@@ -602,7 +602,12 @@ def test_actual_exited_fixture_child_teardown_allows_historical_refresh(
         execution,
         "history-token",
         child,
-        SimpleNamespace(operations=SimpleNamespace(processes=SimpleNamespace(records={}))),
+        SimpleNamespace(
+            operations=SimpleNamespace(
+                database=db_path,
+                processes=SimpleNamespace(records={}),
+            )
+        ),
     )
     service._refuse_execution()
     before = [tuple(r) for r in service.conn.execute("SELECT * FROM execution_attempts")]

@@ -21,7 +21,16 @@ def test_repo_decision_records_parse_and_are_approved():
     ids = [r.id for r in records]
     assert ids[:4] == ["DEC-0001", "DEC-0002", "DEC-0003", "DEC-0004"]
     assert len(ids) == len(set(ids))
-    assert all(r.status is DecisionStatus.APPROVED and r.version == 1 for r in records)
+    assert all(r.status is DecisionStatus.APPROVED for r in records)
+    assert {r.id: r.version for r in records} == {
+        identifier: 2 if identifier == "DEC-0048" else 1 for identifier in ids
+    }
+    [previous] = load_history(REPO_ROOT / "docs" / "decisions", "DEC-0048")
+    assert (previous.version, previous.status, previous.superseded_by) == (
+        1,
+        DecisionStatus.SUPERSEDED,
+        "DEC-0048 v2",
+    )
     first = records[0]
     assert first.title == "Runtime and language"
     assert first.supersedes is None
