@@ -8,11 +8,13 @@ import struct
 import subprocess
 import time
 import urllib.request
+from collections import Counter
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
 import pytest
 
+from harness.dashboard import server as server_module
 from harness.dashboard.server import DashboardServer
 from harness.execution_logs import append_log
 from harness.execution_projection import ingest_event
@@ -339,16 +341,31 @@ def _cdp_capture(
             "policy.js",
             "policy.css",
         } <= resource_files, resources
-        incident_requests = sum(
-            "/api/execution/incidents?" in resource for resource in resource_names
+        # The run panels (incidents, incident intelligence, timeline, policy) belong to the
+        # execution section. The delivery tab renders only the delivery panel, so it must not
+        # fetch run data it does not show; the other tabs load each run list once (twice at
+        # most when the capture overlaps the driver's explicit refresh).
+        run_lists = (
+            "/api/execution/incidents?",
+            "/api/execution/timeline?",
+            "/api/execution/policy?",
         )
-        assert 1 <= incident_requests <= 2, resources
-        timeline_requests = sum("/api/execution/timeline?" in url for url in resource_names)
-        assert 1 <= timeline_requests <= 2, resources
-        policy_requests = sum("/api/execution/policy?" in url for url in resource_names)
-        assert 1 <= policy_requests <= 2, resources
-        # Two policy assets and its scoped list add three measured resources.
-        assert len(resource_names) <= 33, resources
+        for route in run_lists:
+            count = sum(route in url for url in resource_names)
+            assert (count == 0) if delivery else (1 <= count <= 2), (route, resources)
+        if delivery:
+            assert not [url for url in resource_names if "/api/reliability/" in url], resources
+        # Every resource is a served static asset, the favicon or an /api/ read, and no static
+        # asset loads twice. Reads are bounded above (dashboard and run lists); other /api/
+        # reads may repeat on repaint, so their exact-URL count depends on sampling time.
+        for url in resource_names:
+            path = urlparse(url).path
+            assert (
+                path in server_module.STATIC or path == "/favicon.ico" or path.startswith("/api/")
+            ), (url, resources)
+        assets = [url for url in resource_names if urlparse(url).path.startswith("/static/")]
+        repeated = {url: n for url, n in Counter(assets).items() if n > 1}
+        assert not repeated, (repeated, resources)
         capture = call(
             "Page.captureScreenshot",
             {
