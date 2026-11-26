@@ -54,15 +54,16 @@ def test_actual_failure_read_correction_resolution_replay_and_readonly_get(obser
     ).fetchone()[0]
     original = [tuple(r) for r in controller.conn.execute("SELECT * FROM reliability_observations")]
     with serve(operation.database, None) as server:
-        status, _, raw = fetch(
-            server, "/api/reliability/incidents?" + urlencode({"task": scope["task"], "limit": 2})
-        )
-        page = json.loads(raw)
-        assert status == 200 and len(page["items"]) == 2 and page["next_cursor"]
         detail_url = "/api/reliability/detail?" + urlencode(
             {"task": scope["task"], "incident": iid}
         )
         with unchanged_database(operation.database):
+            status, _, raw = fetch(
+                server,
+                "/api/reliability/incidents?" + urlencode({"task": scope["task"], "limit": 2}),
+            )
+            page = json.loads(raw)
+            assert status == 200 and len(page["items"]) == 2 and page["next_cursor"]
             assert fetch(server, detail_url)[0] == 200
         body = {
             "schema_version": 1,
