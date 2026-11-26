@@ -1,6 +1,6 @@
 """Disposable SQLite startup atomicity and receipt replay."""
 
-import re
+import subprocess
 
 import pytest
 
@@ -96,18 +96,25 @@ def test_migration_17_upgrade_does_not_initialize_authoring(tmp_path, monkeypatc
 
 
 def test_uninvestigated_spec_projection_uses_configured_project(controller, tmp_path, monkeypatch):
+    from harness.cli_commands import task_repo_root
+    from harness.spec_record import parse_spec_text, split_body
+
     task = controller.create_task("Create project-scoped spec")
     project = tmp_path / "separate-project"
     project.mkdir()
-    # The process's own directory stands in for the default project: nothing may land there.
+    # The default project is where production falls back for an uninvestigated task: the
+    # git top of the current directory. Make that a real repository holding a sentinel draft.
     default = tmp_path / "default-project"
-    default.mkdir()
+    sentinel = default / "docs" / "specs" / task.id / "draft.md"
+    sentinel.parent.mkdir(parents=True)
+    sentinel.write_bytes(b"sentinel default draft\n")
+    subprocess.run(["git", "init", "-q", str(default)], check=True)
     monkeypatch.chdir(default)
+    assert task_repo_root(controller, task.id) == default.resolve()
+    body = "## Trusted project\n\nExports go to the configured project.\n\n- one\n- two\n"
     service = AuthoringService(controller, project, task.id)
     service.start(expected=service.store.base(), request_id="resume-12345", host="codex")
-    service.save_spec(
-        expected=service.store.base(), request_id="save-12345", body="## Trusted project\n"
-    )
+    service.save_spec(expected=service.store.base(), request_id="save-12345", body=body)
     revision = service.store.base()["working"]
     preview = service.reconcile_preview(revision)
     service.reconcile(
@@ -121,21 +128,17 @@ def test_uninvestigated_spec_projection_uses_configured_project(controller, tmp_
     )
     draft = service.manager().store.draft_path
     assert draft == project / "docs" / "specs" / task.id / "draft.md"
-    # The adopted body, byte for byte, under the projection header; only the timestamp varies.
-    header, body = draft.read_text(encoding="utf-8").split("\n\n## Trusted project\n")
-    assert body == ""
-    assert re.fullmatch(
-        "# Specification \u2014 Create project-scoped spec\n\n"
-        f"- \\*\\*Task:\\*\\* {task.id}\n"
-        "- \\*\\*Status:\\*\\* draft\n"
-        "- \\*\\*Version:\\*\\* draft\n"
-        "- \\*\\*Timestamp:\\*\\* \\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\+00:00\n"
-        "- \\*\\*Complexity:\\*\\* standard \\(proposed\\)\n"
-        "- \\*\\*Revision:\\*\\* none\n"
-        "- \\*\\*Working tree:\\*\\* unknown\n"
-        "- \\*\\*Supersedes:\\*\\* none",
-        header,
-    ), header
-    # No other specification was written: not in the default project, not anywhere else.
-    assert [path for path in tmp_path.rglob("*.md")] == [draft]
-    assert list(default.iterdir()) == []
+    # The adopted body byte for byte, under a draft record for this task.
+    text = draft.read_text(encoding="utf-8")
+    assert split_body(text)[1] == body
+    record = parse_spec_text(text, draft)
+    assert (record.task_id, record.title, str(record.status), record.version) == (
+        task.id,
+        "Create project-scoped spec",
+        "draft",
+        None,
+    )
+    # The default project's draft is untouched and no other specification was written.
+    assert sentinel.read_bytes() == b"sentinel default draft\n"
+    written = sorted([*project.rglob("*.md"), *default.rglob("*.md")])
+    assert written == sorted([draft, sentinel])

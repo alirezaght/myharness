@@ -33,23 +33,24 @@ def test_context_import_schema_needs_no_task_and_its_example_imports(capsys, con
 
 
 def test_assessment_schema_needs_no_task_and_its_example_assesses(capsys, tmp_path):
+    root = tmp_path / "repository"
     printed = _printed(capsys, ["classify", "--assessment-schema"])
     jsonschema.Draft202012Validator.check_schema(printed["json_schema"])
     example = printed["example"]
     jsonschema.validate(example, printed["json_schema"])
     assert printed["notes"]
     for row in example["evidence"]:
-        path = tmp_path / row["path"]
+        path = root / row["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("def retry_limit(): return 2\n")
         row["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
     # The example is a local change following an existing pattern with no new design: the
     # printed routing rule makes it SMALL.
-    assert assess(example, tmp_path) == "SMALL"
+    assert assess(example, root) == "SMALL"
     # The same evidence routes differently when the assessed facts differ, so a constant
     # answer cannot satisfy the example.
-    assert assess(example | {"scope": "feature"}, tmp_path) == "STANDARD"
-    assert assess(example | {"existing_pattern": False}, tmp_path) == "STANDARD"
+    assert assess(example | {"scope": "feature"}, root) == "STANDARD"
+    assert assess(example | {"existing_pattern": False}, root) == "STANDARD"
     hard = {
         "kind": "concurrency",
         "new_design": True,
@@ -59,17 +60,25 @@ def test_assessment_schema_needs_no_task_and_its_example_assesses(capsys, tmp_pa
         "hard_parts": [hard],
         "pseudocode_benefit": "Pseudocode pins down the lock order before any code is written.",
     }
-    assert assess(designed, tmp_path) == "COMPLEX"
+    assert assess(designed, root) == "COMPLEX"
     # Evidence that changed after inspection, or that does not name a repository file, is
     # refused rather than routed.
-    (tmp_path / example["evidence"][0]["path"]).write_text("def retry_limit(): return 3\n")
+    (root / example["evidence"][0]["path"]).write_text("def retry_limit(): return 3\n")
     with pytest.raises(ValueError, match="routing evidence changed"):
-        assess(example, tmp_path)
-    for source in ("../outside.py", "/etc/passwd", "src/export/missing.py"):
+        assess(example, root)
+    # Each refusal is checked by its own message, so removing one guard cannot be masked by a
+    # later one. The absolute and ../ paths name files that exist.
+    (tmp_path / "outside.py").write_text("outside\n")
+    refused = (
+        (str(root / example["evidence"][0]["path"]), "repository-relative"),
+        ("../outside.py", "repository-relative"),
+        ("src/export/missing.py", "unsafe or unavailable"),
+    )
+    for source, message in refused:
         moved = copy.deepcopy(example)
         moved["evidence"][0]["path"] = source
-        with pytest.raises(ValueError, match="repository-relative|unsafe or unavailable"):
-            assess(moved, tmp_path)
+        with pytest.raises(ValueError, match=message):
+            assess(moved, root)
 
 
 def test_schemas_reject_documents_the_validators_reject(capsys):
