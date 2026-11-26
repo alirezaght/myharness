@@ -11,6 +11,7 @@ from harness.execution_logs import read_log
 from harness.execution_projection import event_page, execution_view
 from harness.execution_recovery import reconcile_execution, reconnect_execution, resume_execution
 from harness.execution_store import get_execution, latest_execution
+from harness.reliability.revision import reliability_revision
 
 
 def task_execution(controller, task_id):
@@ -39,6 +40,8 @@ def task_execution(controller, task_id):
                 "ready": False,
                 "checks": [{"status": "BLOCKED", "reason": str(error)}],
             }
+    # Lets the reliability panels refetch only when their data may have changed (#110).
+    view["reliability_revision"] = reliability_revision(controller.conn, latest["id"])
     return view
 
 

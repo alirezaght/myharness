@@ -1,6 +1,52 @@
 "use strict";
 
 const INCIDENT_VIEWS = new Map();
+
+// Live repaints re-render the reliability panels on every dashboard change. A panel fetches
+// its scoped list again only when the execution's reliability marker (computed from the
+// reliability, incident and policy tables) or an explicit dashboard refresh changes, or when
+// its last load failed; filters, paging and "Latest" buttons still load directly (#110).
+let reliabilityRefreshes = 0;
+
+function noteReliabilityRefresh() {
+  reliabilityRefreshes += 1;
+}
+
+function reliabilityKey(execution) {
+  return `${execution.reliability_revision ?? "unknown"}|${reliabilityRefreshes}`;
+}
+
+function reliabilityMark(view, slot, execution) {
+  view.fetchedKeys ||= {};
+  view.fetchedKeys[slot] = reliabilityKey(execution);
+  return view.fetchedKeys[slot];
+}
+
+function reliabilityFetchDue(view, slot, execution, failed = false) {
+  view.fetchedKeys ||= {};
+  return failed || view.fetchedKeys[slot] !== reliabilityKey(execution);
+}
+
+// Run a render-triggered load when its data may have changed. The key is recorded only for
+// a load this function starts; while another load of the same panel is in flight it retries
+// once that settles, and a result that could not be shown (the panel was unmounted, e.g. by
+// a tab switch) forgets the key so the next render loads again.
+function reliabilityRefetch(view, slot, execution, { failed = false, busy, mounted, load }) {
+  if (!reliabilityFetchDue(view, slot, execution, failed)) return;
+  view.retryTimers ||= {};
+  if (busy()) {
+    clearTimeout(view.retryTimers[slot]);
+    view.retryTimers[slot] = setTimeout(() => {
+      if (mounted()) reliabilityRefetch(view, slot, execution, { failed, busy, mounted, load });
+    }, 150);
+    return;
+  }
+  clearTimeout(view.retryTimers[slot]);
+  const key = reliabilityMark(view, slot, execution);
+  Promise.resolve(load()).finally(() => {
+    if (!mounted() && view.fetchedKeys[slot] === key) delete view.fetchedKeys[slot];
+  });
+}
 const INCIDENT_HISTORY_LIMIT = 100;
 
 function incidentView(execution) {
@@ -325,7 +371,12 @@ function renderOperationIncidents(execution) {
   form.addEventListener("submit", (event) => event.preventDefault());
   section.append(form);
   renderIncidentContent(execution, view, section);
-  loadIncidentList(execution, view, section);
+  reliabilityRefetch(view, "list", execution, {
+    failed: Boolean(view.error),
+    busy: () => view.loading,
+    mounted: () => Boolean(currentIncidentSection(execution, view)),
+    load: () => loadIncidentList(execution, view, currentIncidentSection(execution, view) || section),
+  });
   if (view.detailId && !view.detail && !view.detailLoading && !view.detailError) {
     loadIncidentDetail(execution, view, section, view.detailId);
   }
@@ -352,7 +403,7 @@ function iiView(execution, mode) {
   if (!INCIDENT_INTELLIGENCE_VIEWS.has(key)) {
     INCIDENT_INTELLIGENCE_VIEWS.set(key, {
       key, mode, query: "", category: "", sourceKind: "", items: [], nextCursor: null,
-      listRequest: 0, loading: false, error: null, windowAdvanced: false,
+      listRequest: 0, loading: false, error: null, windowAdvanced: false, newerOutsideWindow: false,
       selectedId: null, detail: null, detailRequest: 0, detailLoading: false,
       detailError: null, history: [], historyCursor: null, historyRequest: 0,
       historyLoading: false, groups: [], groupsCursor: null, groupListRequest: 0,
@@ -737,7 +788,8 @@ function iiRenderList(execution, view, section) {
   if (view.nextCursor) fragment.append(iiButton("Older incidents", "ii-list-older", () => {
     iiLoadList(execution, view, section, { older: true });
   }));
-  if (view.windowAdvanced) fragment.append(iiButton("Latest incidents", "ii-list-latest", () => {
+  if (view.newerOutsideWindow) fragment.append(iiEl("p", "Newer incidents are available beyond this window."));
+  if (view.windowAdvanced || view.newerOutsideWindow) fragment.append(iiButton("Latest incidents", "ii-list-latest", () => {
     iiLoadList(execution, view, section, { reset: true });
   }));
   iiPreserveFocus(target, () => target.replaceChildren(fragment));
@@ -951,16 +1003,18 @@ function iiRenderEditor(execution, view, section) {
   return wrap;
 }
 
-async function iiLoadList(execution, view, section, { older = false, reset = false } = {}) {
+async function iiLoadList(execution, view, section, { older = false, reset = false, refresh = false } = {}) {
   if (view.loading && view.listOwner === section && iiIsCurrent(execution, view, section)) return;
   const request = ++view.listRequest;
   view.listOwner = section;
+  view.listOptions = { older, reset, refresh };
   if (reset) {
     view.detailRequest += 1;
     view.detailLoading = false;
     view.items = [];
     view.nextCursor = null;
     view.windowAdvanced = false;
+    view.newerOutsideWindow = false;
     view.selectedId = null;
     view.detail = null;
     view.history = [];
@@ -985,14 +1039,38 @@ async function iiLoadList(execution, view, section, { older = false, reset = fal
     });
     if (!iiIsCurrent(execution, view, section) || request !== view.listRequest) return;
     const incoming = data.items || [];
-    const merged = older ? view.items.concat(incoming) : incoming;
-    if (merged.length > INCIDENT_INTELLIGENCE_LIMIT) {
-      view.items = merged.slice(-INCIDENT_INTELLIGENCE_LIMIT);
-      view.windowAdvanced = true;
-    } else view.items = merged;
-    view.nextCursor = data.next_cursor || null;
-    if (view.selectedId && !view.items.some((item) => item.incident_id === view.selectedId)) {
-      view.selectedId = null; view.detail = null; view.history = [];
+    if (refresh && !older && !reset && view.items.length) {
+      // A data or explicit refresh keeps older pages, the cursor and the selection: rows on
+      // the latest page are updated in place and newer rows are added when they connect to
+      // the window; a burst larger than one page is announced instead of dropping the window.
+      const updated = new Map(incoming.map((item) => [item.incident_id, item]));
+      const known = new Set(view.items.map((item) => item.incident_id));
+      const first = view.items[0];
+      // Keyset order is (created_at, incident_id) descending; only rows above the window's
+      // first row are new to it (a backdated row belongs further down and waits for Latest).
+      const newer = (item) => item.created_at > first.created_at
+        || (item.created_at === first.created_at && item.incident_id > first.incident_id);
+      const fresh = incoming.filter((item) => !known.has(item.incident_id) && newer(item));
+      const retained = view.items.map((item) => updated.get(item.incident_id) || item);
+      const connected = incoming.some((item) => known.has(item.incident_id));
+      if (fresh.length && connected
+        && fresh.length + retained.length <= INCIDENT_INTELLIGENCE_LIMIT) {
+        // Prepending keeps the oldest row, so the saved cursor stays valid.
+        view.items = fresh.concat(retained);
+      } else {
+        view.items = retained;
+        if (fresh.length) view.newerOutsideWindow = true;
+      }
+    } else {
+      const merged = older ? view.items.concat(incoming) : incoming;
+      if (merged.length > INCIDENT_INTELLIGENCE_LIMIT) {
+        view.items = merged.slice(-INCIDENT_INTELLIGENCE_LIMIT);
+        view.windowAdvanced = true;
+      } else view.items = merged;
+      view.nextCursor = data.next_cursor || null;
+      if (view.selectedId && !view.items.some((item) => item.incident_id === view.selectedId)) {
+        view.selectedId = null; view.detail = null; view.history = [];
+      }
     }
   } catch (_error) {
     if (iiIsCurrent(execution, view, section) && request === view.listRequest) {
@@ -1421,7 +1499,17 @@ function renderIncidentIntelligence(execution, existingView = null) {
     outputs.append(iiEl("p", "Choose a selected execution and epoch to browse published output descriptors."));
   }
   iiRenderGroups(execution, view, section);
-  if (!view.items.length || view.loading) iiLoadList(execution, view, section);
+  // A repaint during a load re-issues it, with the same options, for the new section, which
+  // owns the results.
+  if (view.loading) iiLoadList(execution, view, section, view.listOptions || {});
+  else {
+    reliabilityRefetch(view, "list", execution, {
+      failed: Boolean(view.error),
+      busy: () => view.loading,
+      mounted: () => iiIsCurrent(execution, view, view.listOwner),
+      load: () => iiLoadList(execution, view, section, { refresh: view.items.length > 0 }),
+    });
+  }
   if (view.selectedId && (!view.detail || (view.detailLoading && view.detailOwner !== section))) {
     iiLoadDetail(execution, view, section, view.selectedId, true);
   }
