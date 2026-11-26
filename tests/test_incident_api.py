@@ -8,6 +8,7 @@ from urllib.parse import urlencode
 
 from harness.execution_store import get_execution
 from harness.reliability import store
+from tests.database_snapshot import unchanged_database
 from tests.test_agent_contracts import output_contract
 from tests.test_dashboard import fetch, serve
 from tests.test_execution_operations import generated_handoff_fixture, operations  # noqa: F401
@@ -53,17 +54,17 @@ def test_actual_failure_read_correction_resolution_replay_and_readonly_get(obser
     ).fetchone()[0]
     original = [tuple(r) for r in controller.conn.execute("SELECT * FROM reliability_observations")]
     with serve(operation.database, None) as server:
-        status, _, raw = fetch(
-            server, "/api/reliability/incidents?" + urlencode({"task": scope["task"], "limit": 2})
-        )
-        page = json.loads(raw)
-        assert status == 200 and len(page["items"]) == 2 and page["next_cursor"]
-        changes = controller.conn.total_changes
         detail_url = "/api/reliability/detail?" + urlencode(
             {"task": scope["task"], "incident": iid}
         )
-        assert fetch(server, detail_url)[0] == 200
-        assert controller.conn.total_changes == changes
+        with unchanged_database(operation.database):
+            status, _, raw = fetch(
+                server,
+                "/api/reliability/incidents?" + urlencode({"task": scope["task"], "limit": 2}),
+            )
+            page = json.loads(raw)
+            assert status == 200 and len(page["items"]) == 2 and page["next_cursor"]
+            assert fetch(server, detail_url)[0] == 200
         body = {
             "schema_version": 1,
             "scope": {"task": scope["task"]},
@@ -220,19 +221,19 @@ def test_real_published_output_operator_rejection_is_historical_and_idempotent(o
         retained = directory.with_name("retained-drafts-negative-fixture")
         directory.rename(retained)
         try:
-            changes = controller.conn.total_changes
-            assert (
-                fetch(
-                    server,
-                    "/api/reliability/detail?"
-                    + urlencode({"task": execution["task_id"], "incident": incident}),
-                )[0]
-                == 200
-            )
-            status, _, raw = fetch(server, "/api/reliability/outputs?" + urlencode(scope))
+            with unchanged_database(operation.database):
+                assert (
+                    fetch(
+                        server,
+                        "/api/reliability/detail?"
+                        + urlencode({"task": execution["task_id"], "incident": incident}),
+                    )[0]
+                    == 200
+                )
+                status, _, raw = fetch(server, "/api/reliability/outputs?" + urlencode(scope))
             missing = json.loads(raw)
             assert status == 200 and not missing["source_available"] and missing["items"] == []
-            assert not directory.exists() and controller.conn.total_changes == changes
+            assert not directory.exists()
         finally:
             retained.rename(directory)
     assert get_execution(controller.conn, execution["id"])["status"] == "Completed"
@@ -359,10 +360,8 @@ def test_missing_source_get_does_not_initialize_store_or_missing_database(observ
     oid = store.begin(operation, principal, "read_file")
     store.finish(operation, oid, "AUTHORITY_REJECTED")
     iid = controller.conn.execute("SELECT incident_id FROM reliability_incidents").fetchone()[0]
-    before = controller.conn.total_changes
-    original_database = list(controller.conn.iterdump())
     query = urlencode({"task": selected(observed)["task"], "incident": iid})
-    with serve(operation.database, None) as server:
+    with unchanged_database(operation.database), serve(operation.database, None) as server:
         assert fetch(server, "/api/reliability/detail?" + query)[0] == 200
         assert (
             fetch(
@@ -372,8 +371,6 @@ def test_missing_source_get_does_not_initialize_store_or_missing_database(observ
             )[0]
             == 404
         )
-    assert controller.conn.total_changes == before
-    assert list(controller.conn.iterdump()) == original_database
     missing = tmp_path / "missing-database-directory" / "state.db"
     assert read_catalog(missing, Path(operation.envelope["repository"]), query, "detail")[0] == 503
     assert not missing.parent.exists()

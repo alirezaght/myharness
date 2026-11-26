@@ -9,6 +9,7 @@ import pytest
 
 from harness.dashboard.reliability_view import read_timeline
 from harness.reliability import store
+from tests.database_snapshot import unchanged_database
 from tests.test_dashboard import fetch, serve
 from tests.test_reliability_processes import processes, settled, start_process  # noqa: F401
 from tests.test_reliability_store import observed  # noqa: F401
@@ -34,8 +35,7 @@ def test_real_http_process_detail_scope_pagination_and_privacy(processes):
     for _ in range(13):
         attempt = store.begin(operation, principal, "read_file")
         store.finish(operation, attempt, "DISPATCH_REJECTED")
-    changes = controller.conn.total_changes
-    with serve(operation.database, None) as server:
+    with unchanged_database(operation.database), serve(operation.database, None) as server:
         path = "/api/execution/timeline?" + query_for(processes, limit=10)
         seen = set()
         while path:
@@ -86,7 +86,6 @@ def test_real_http_process_detail_scope_pagination_and_privacy(processes):
                 else "/api/execution/timeline/span?" + query_for(processes, **extra),
             )
             assert status == 404 and json.loads(body) == {"error": "Timeline scope not found"}
-    assert controller.conn.total_changes == changes
 
 
 @pytest.mark.parametrize(
@@ -109,11 +108,10 @@ def test_strict_query_fields(processes, extra):
 def test_missing_historical_trace_does_not_write_or_backfill(processes):
     operation, _, controller = processes
     controller.conn.execute("DELETE FROM reliability_traces")
-    before = controller.conn.total_changes
-    status, data = read_timeline(operation.database, query_for(processes))
+    with unchanged_database(operation.database):
+        status, data = read_timeline(operation.database, query_for(processes))
     assert status == 200 and data["trace_id"] is None and data["items"] == []
     assert data["correlation_status"] == "historical_correlation_unavailable"
-    assert controller.conn.total_changes == before
     assert controller.conn.execute("SELECT COUNT(*) FROM reliability_traces").fetchone()[0] == 0
 
 
