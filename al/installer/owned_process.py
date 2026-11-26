@@ -80,8 +80,18 @@ class OwnedProcess:
         self.last_cleanup = None
 
     def spawn(self, argv, *, cwd, env, output, pass_fds=()):
+        return self.spawn_streams(
+            argv, cwd=cwd, env=env, stdout=output, stderr=subprocess.STDOUT, pass_fds=pass_fds
+        )
+
+    def spawn_streams(
+        self, argv, *, cwd=None, env=None, stdin=None, stdout=None, stderr=None, pass_fds=()
+    ):
+        """Launch through the same receipt bootstrap with explicit caller-owned streams."""
         child_env = dict(
-            env, AL_VERIFICATION_LAUNCH_TOKEN=self.token, AL_VERIFICATION_ASSIGNMENT=self.assignment
+            os.environ if env is None else env,
+            AL_VERIFICATION_LAUNCH_TOKEN=self.token,
+            AL_VERIFICATION_ASSIGNMENT=self.assignment,
         )
         from .owned_boot import command_for
 
@@ -91,8 +101,9 @@ class OwnedProcess:
                 command,
                 cwd=cwd,
                 env=child_env,
-                stdout=output,
-                stderr=subprocess.STDOUT,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
                 start_new_session=True,
                 pass_fds=pass_fds,
             )

@@ -114,6 +114,8 @@ def snapshot(source,revision,candidate=True):
 
 
 def execute(st,gate,stage,log,timeout,sid,entry,owner):
+    # A launch failure can cancel before get() receives its process handle.
+    owner.drain_cancelled_output=False
     hashes=[];deadline=time.monotonic()+min(timeout,120)
     log.write_text('Read-only GitHub quality evidence (provider output redacted).\n')
     try:

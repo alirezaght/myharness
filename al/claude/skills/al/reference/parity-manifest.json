@@ -66,6 +66,7 @@
     "al_gate_currency.py",
     "al_gate_discovery.py",
     "al_gate_inventory.py",
+    "al_gate_owned_process.py",
     "al_gate_process.py",
     "al_gate_recovery.py",
     "al_gate_refresh.py",

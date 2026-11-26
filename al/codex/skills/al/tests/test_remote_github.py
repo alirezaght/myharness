@@ -299,12 +299,13 @@ def test_absent_selection_is_remote_required_and_cannot_pass(repo,tmp_path,monke
 
 
 def test_interrupted_spawn_settles_without_raw_pipe_fallback(repo,tmp_path,monkeypatch):
-    import al_harness_process
+    import al_gate_owned_process as Owned
     gate=gate_for(repo);sha=Remote.S.git_bytes('rev-parse','HEAD').decode().strip()
-    children=[];popen=al_harness_process.popen
-    def tracked(*args,**kwargs):
-        proc=popen(*args,**kwargs);children.append(proc);return proc
-    monkeypatch.setattr(al_harness_process,'popen',tracked)
+    children=[];spawn=Owned.OwnedGateProcess.spawn
+    def tracked(process,*args,**kwargs):
+        spawn(process,*args,**kwargs);children.append(process)
+        raise KeyboardInterrupt
+    monkeypatch.setattr(Owned.OwnedGateProcess,'spawn',tracked)
     with pytest.raises(KeyboardInterrupt):execute(repo,tmp_path,monkeypatch,gate,fixtures(gate,sha),mode='interrupt')
     assert children and all(proc.poll() is not None and proc.stdout is None for proc in children)
     assert 'SECRET' not in (tmp_path/'remote.log').read_text()
