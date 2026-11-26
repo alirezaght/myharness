@@ -43,7 +43,33 @@ def test_assessment_schema_needs_no_task_and_its_example_assesses(capsys, tmp_pa
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("def retry_limit(): return 2\n")
         row["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
-    assert assess(example, tmp_path) in {"SMALL", "STANDARD", "COMPLEX"}
+    # The example is a local change following an existing pattern with no new design: the
+    # printed routing rule makes it SMALL.
+    assert assess(example, tmp_path) == "SMALL"
+    # The same evidence routes differently when the assessed facts differ, so a constant
+    # answer cannot satisfy the example.
+    assert assess(example | {"scope": "feature"}, tmp_path) == "STANDARD"
+    assert assess(example | {"existing_pattern": False}, tmp_path) == "STANDARD"
+    hard = {
+        "kind": "concurrency",
+        "new_design": True,
+        "description": "Writers must agree on one column order while both hold the lock.",
+    }
+    designed = example | {
+        "hard_parts": [hard],
+        "pseudocode_benefit": "Pseudocode pins down the lock order before any code is written.",
+    }
+    assert assess(designed, tmp_path) == "COMPLEX"
+    # Evidence that changed after inspection, or that does not name a repository file, is
+    # refused rather than routed.
+    (tmp_path / example["evidence"][0]["path"]).write_text("def retry_limit(): return 3\n")
+    with pytest.raises(ValueError, match="routing evidence changed"):
+        assess(example, tmp_path)
+    for source in ("../outside.py", "/etc/passwd", "src/export/missing.py"):
+        moved = copy.deepcopy(example)
+        moved["evidence"][0]["path"] = source
+        with pytest.raises(ValueError, match="repository-relative|unsafe or unavailable"):
+            assess(moved, tmp_path)
 
 
 def test_schemas_reject_documents_the_validators_reject(capsys):

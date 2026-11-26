@@ -1,5 +1,7 @@
 """Disposable SQLite startup atomicity and receipt replay."""
 
+import re
+
 import pytest
 
 from harness.authoring import AuthoringService
@@ -93,10 +95,14 @@ def test_migration_17_upgrade_does_not_initialize_authoring(tmp_path, monkeypatc
         conn.close()
 
 
-def test_uninvestigated_spec_projection_uses_configured_project(controller, tmp_path):
+def test_uninvestigated_spec_projection_uses_configured_project(controller, tmp_path, monkeypatch):
     task = controller.create_task("Create project-scoped spec")
     project = tmp_path / "separate-project"
     project.mkdir()
+    # The process's own directory stands in for the default project: nothing may land there.
+    default = tmp_path / "default-project"
+    default.mkdir()
+    monkeypatch.chdir(default)
     service = AuthoringService(controller, project, task.id)
     service.start(expected=service.store.base(), request_id="resume-12345", host="codex")
     service.save_spec(
@@ -113,5 +119,23 @@ def test_uninvestigated_spec_projection_uses_configured_project(controller, tmp_
         acknowledge=True,
         actions=[],
     )
-    assert service.manager().store.draft_path.is_relative_to(project)
-    assert service.manager().store.draft_path.is_file()
+    draft = service.manager().store.draft_path
+    assert draft == project / "docs" / "specs" / task.id / "draft.md"
+    # The adopted body, byte for byte, under the projection header; only the timestamp varies.
+    header, body = draft.read_text(encoding="utf-8").split("\n\n## Trusted project\n")
+    assert body == ""
+    assert re.fullmatch(
+        "# Specification \u2014 Create project-scoped spec\n\n"
+        f"- \\*\\*Task:\\*\\* {task.id}\n"
+        "- \\*\\*Status:\\*\\* draft\n"
+        "- \\*\\*Version:\\*\\* draft\n"
+        "- \\*\\*Timestamp:\\*\\* \\d{4}-\\d\\d-\\d\\dT\\d\\d:\\d\\d:\\d\\d\\+00:00\n"
+        "- \\*\\*Complexity:\\*\\* standard \\(proposed\\)\n"
+        "- \\*\\*Revision:\\*\\* none\n"
+        "- \\*\\*Working tree:\\*\\* unknown\n"
+        "- \\*\\*Supersedes:\\*\\* none",
+        header,
+    ), header
+    # No other specification was written: not in the default project, not anywhere else.
+    assert [path for path in tmp_path.rglob("*.md")] == [draft]
+    assert list(default.iterdir()) == []

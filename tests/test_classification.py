@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from harness.classification import (
@@ -6,15 +8,48 @@ from harness.classification import (
     classify_request,
     interview_depth,
 )
+from harness.interview_catalogue import catalogue_for
 
 
 def test_complexity_levels_in_order():
     assert [str(c) for c in Complexity] == ["trivial", "simple", "standard", "complex"]
 
 
+# docs/SPEC.md "Phase 2 — Requirements Interview" topic bullets and the topic each names.
+SPEC_TOPICS = {
+    "Business requirements": "business_requirements",
+    "Functional behavior": "functional_behavior",
+    "Expected inputs and outputs": "inputs_outputs",
+    "Edge cases": "edge_cases",
+    "Component responsibilities": "component_responsibilities",
+    "Component communication": "component_communication",
+    "Data schemas": "data_schemas",
+    "API contracts": "api_contracts",
+    "Configuration": "configuration",
+    "Error handling": "error_handling",
+    "Performance": "performance",
+    "Security": "security",
+    "Observability": "observability",
+    "Acceptance criteria": "acceptance_criteria",
+}
+
+
+def _spec_phase_two_bullets() -> list[str]:
+    spec = (Path(__file__).resolve().parents[1] / "docs" / "SPEC.md").read_text(encoding="utf-8")
+    section = spec.split("### Phase 2 — Requirements Interview", 1)[1]
+    listed = section.split("Topics include, when relevant:", 1)[1].split("\n\n", 2)[1]
+    return [line.removeprefix("- ") for line in listed.splitlines()]
+
+
 def test_interview_topics_cover_the_fourteen_spec_topics():
-    assert len(INTERVIEW_TOPICS) == 14
-    assert len(set(INTERVIEW_TOPICS)) == 14
+    # The SPEC's own list, in its order, names exactly these topics; dropping or renaming a
+    # required concern (security, error handling, ...) fails here, not only a count.
+    assert _spec_phase_two_bullets() == list(SPEC_TOPICS)
+    assert INTERVIEW_TOPICS == tuple(SPEC_TOPICS.values())
+    # A complex task's interview is generated for every one of them.
+    complex_topics = interview_depth(Complexity.COMPLEX).topics
+    assert complex_topics == INTERVIEW_TOPICS
+    assert {entry.topic for entry in catalogue_for(complex_topics)} == set(INTERVIEW_TOPICS)
 
 
 def test_interview_depth_is_strictly_nested_and_complex_covers_all():
