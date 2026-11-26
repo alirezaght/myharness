@@ -49,13 +49,17 @@ def test_cwd_is_part_of_the_key(repo):
 
 
 def test_declared_env_is_part_of_the_key(repo, monkeypatch):
+    monkeypatch.delenv("AL_CACHE_UNDECLARED", raising=False)
     monkeypatch.setenv("AL_CACHE_TEST_MODE", "one")
     first = _key(_spec(env=["AL_CACHE_TEST_MODE"]))
     monkeypatch.setenv("AL_CACHE_TEST_MODE", "two")
-    assert _key(_spec(env=["AL_CACHE_TEST_MODE"])) != first
+    second = _key(_spec(env=["AL_CACHE_TEST_MODE"]))
+    assert second != first
     # An undeclared variable is not part of the key (a non-hermetic check must say so).
     monkeypatch.setenv("AL_CACHE_UNDECLARED", "x")
-    assert _key(_spec(env=["AL_CACHE_TEST_MODE"])) == _key(_spec(env=["AL_CACHE_TEST_MODE"]))
+    assert _key(_spec(env=["AL_CACHE_TEST_MODE"])) == second
+    monkeypatch.setenv("AL_CACHE_UNDECLARED", "y")
+    assert _key(_spec(env=["AL_CACHE_TEST_MODE"])) == second
 
 
 def test_tool_content_is_part_of_the_key(repo, tmp_path, monkeypatch):

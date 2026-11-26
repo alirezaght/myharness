@@ -216,14 +216,17 @@ def _scan(values, reads):
     return type('Scan', (), {'files': _Files('current', values, reads), 'base': _Files('base', {}, reads)})
 
 
-def test_referencing_has_one_definition_and_excludes_the_artifact_itself(monkeypatch):
-    import inspect
+def test_referencing_reads_each_source_once_and_excludes_the_artifact_itself(monkeypatch):
+    from collections import Counter
+
     monkeypatch.setenv('AL_ANALYSIS_CACHE', '0')
-    source = inspect.getsource(imports)
-    assert source.count('def _referencing_many(') == 1
     reads = []
-    scan = _scan({'a/x.py': b'x.py and a/', 'b/y.py': b'import x.py'}, reads)
-    assert imports._referencing_many(scan, ['a/x.py']) == {'a/x.py': ['b/y.py']}
+    values = {'a/x.py': b'x.py and a/', 'b/y.py': b'import x.py and c/z.py',
+              'c/z.py': b'z.py'}
+    scan = _scan(values, reads)
+    assert imports._referencing_many(scan, ['a/x.py', 'c/z.py']) == {
+        'a/x.py': ['b/y.py'], 'c/z.py': ['b/y.py']}
+    assert Counter(reads) == Counter(values.keys())
 
 
 def test_a_later_command_reuses_references_for_identical_captured_sources():

@@ -146,11 +146,45 @@ def test_stdlib_preimports_skip_runtime_and_relative_imports():
     assert _stdlib_imports([code]) == {"json", "os.path"}
 
 
+_WATCHER_IMPORTS = {"ctypes", "ctypes.util", "json", "os", "select", "struct", "sys",
+                    "threading"}
+
+
+def _assert_watcher_imports_allowed(source):
+    import ast
+
+    imports = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0, "watcher must not import relative modules"
+            imports.add(node.module)
+    assert imports <= _WATCHER_IMPORTS, imports - _WATCHER_IMPORTS
+
+
 def test_watcher_source_has_no_runtime_imports():
     source = (Path(__file__).resolve().parents[1] / "installer/runtime_service_watch.py").read_text()
     code = compile(source, "watch", "exec")
-    assert _stdlib_imports([code]) <= {"ctypes", "ctypes.util", "json", "os", "select", "struct", "sys",
-                                       "threading"}
+    assert _stdlib_imports([code]) <= _WATCHER_IMPORTS
+    _assert_watcher_imports_allowed(source)
+
+
+@pytest.mark.parametrize("source", [
+    "import al_state",
+    "import installer.engine",
+    "def nested():\n    import requests",
+    "from . import al_state",
+    "def nested():\n    from ..installer import engine",
+    "import os, al_store",
+])
+def test_watcher_import_guard_rejects_runtime_relative_and_nested_imports(source):
+    with pytest.raises(AssertionError):
+        _assert_watcher_imports_allowed(source)
+
+
+def test_watcher_import_guard_allows_nested_standard_library_imports():
+    _assert_watcher_imports_allowed("import os\ndef nested():\n    from ctypes import util")
 
 
 class _Watched:
