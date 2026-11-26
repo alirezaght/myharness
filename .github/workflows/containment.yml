@@ -1,22 +1,160 @@
-name: Linux containment checks
+name: Provisional Apple Git-155 sealed-control qualification
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: read
 
 jobs:
-  containment:
-    runs-on: ubuntu-latest
-    env:
-      HARNESS_REQUIRE_OPERATION_TESTS: "1"
+  qualification:
+    runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - run: uv python install
       - run: uv sync --locked
-      - run: uv run pytest tests/test_operation_isolation.py tests/test_guarded_check_channel.py tests/test_private_runtime_operation.py tests/test_execution_operations.py
+      - name: Record and require the exact provisional candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/macos-control-qualification"
+          cat > "$RUNNER_TEMP/macos-control-qualification/metadata.py" <<'PY'
+          import hashlib
+          import json
+          import os
+          import platform
+          import re
+          import selectors
+          import sqlite3
+          import stat
+          import subprocess
+          import sys
+          import time
+          from pathlib import Path
+
+          root = Path(__file__).parent
+          phase = sys.argv[1]
+          assert phase in {'before', 'after'}
+          selected = Path('/Library/Developer/CommandLineTools/usr/bin/git')
+          expected_version = b'git version 2.50.1 (Apple Git-155)\n'
+          expected_sha = 'be4afb2b003904725826250de9fb76567bbacf82323457b5a1ec26706b66bcae'
+
+          def file_identity(path):
+              assert path.is_absolute() and not path.is_symlink()
+              before = path.stat()
+              assert stat.S_ISREG(before.st_mode) and before.st_size <= 128 * 1024 * 1024
+              digest = hashlib.sha256()
+              size = 0
+              with path.open('rb') as source:
+                  while raw := source.read(65536):
+                      size += len(raw)
+                      assert size <= 128 * 1024 * 1024
+                      digest.update(raw)
+              after = path.stat()
+              fields = ('st_dev', 'st_ino', 'st_mode', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+              assert all(getattr(before, key) == getattr(after, key) for key in fields)
+              return {'path': str(path), 'sha256': digest.hexdigest(),
+                      'identity': {key: getattr(after, key) for key in fields}}
+
+          def capture(arguments):
+              assert arguments in (['--version'], ['rev-parse', 'HEAD'])
+              environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
+                             'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': os.devnull,
+                             'GIT_CONFIG_SYSTEM': os.devnull, 'GIT_OPTIONAL_LOCKS': '0'}
+              process = subprocess.Popen([str(selected), *arguments], env=environment,
+                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+              deadline = time.monotonic() + 5
+              output, errors = bytearray(), bytearray()
+              try:
+                  with selectors.DefaultSelector() as selector:
+                      selector.register(process.stdout, selectors.EVENT_READ, output)
+                      selector.register(process.stderr, selectors.EVENT_READ, errors)
+                      while selector.get_map():
+                          remaining = deadline - time.monotonic()
+                          assert remaining > 0, 'metadata command deadline exceeded'
+                          for key, _ in selector.select(remaining):
+                              raw = os.read(key.fd, 4097)
+                              if raw:
+                                  key.data.extend(raw)
+                                  assert len(output) + len(errors) <= 4096, 'metadata output exceeds bound'
+                              else:
+                                  selector.unregister(key.fileobj)
+                  code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+                  assert code == 0 and not errors, 'metadata command failed'
+                  return bytes(output)
+              finally:
+                  if process.poll() is None:
+                      process.kill()
+                  process.wait(timeout=2)
+                  process.stdout.close()
+                  process.stderr.close()
+
+          partial = {'available': False, 'phase': phase, 'requested_path': str(selected)}
+          try:
+              assert selected.resolve(strict=True) == selected and os.access(selected, os.X_OK)
+              git = file_identity(selected)
+              partial['git'] = git
+              # Different bytes are a different candidate; do not execute an unqualified replacement.
+              assert git['sha256'] == expected_sha, 'selected Git is not the provisional candidate'
+              version = capture(['--version'])
+              assert file_identity(selected) == git, 'selected Git changed during observation'
+              commit = capture(['rev-parse', 'HEAD']).decode('ascii').strip()
+              assert file_identity(selected) == git, 'selected Git changed during observation'
+              assert re.fullmatch('[0-9a-f]{40}', commit) and commit == os.environ['GITHUB_SHA']
+              image = {key: os.environ.get(key, '') for key in ('ImageOS', 'ImageVersion')}
+              assert all(0 < len(value) <= 128 and value.isprintable() for value in image.values())
+              source_files = ('harness/policy/control_qualification.py',
+                              'tests/test_policy_retry_control.py',
+                              '.github/workflows/macos-control-qualification.yml')
+              assert len(sys.version) <= 1024 and len(platform.platform()) <= 512
+              value = {'available': True, 'candidate_commit': commit, 'image': image,
+                       'git': git | {'stdout': version.decode('ascii')},
+                       'python': file_identity(Path(sys.executable).resolve(strict=True))
+                                 | {'version': sys.version, 'sqlite': sqlite3.sqlite_version},
+                       'platform': platform.platform(),
+                       'sources': {name: file_identity(Path(name).resolve())['sha256']
+                                   for name in source_files},
+                       'purpose': 'exact-build qualification evidence; no release support claim'}
+              (root / (phase + '.json')).write_text(json.dumps(value, indent=2) + '\n')
+              print(json.dumps(value, sort_keys=True))
+              assert version == expected_version, 'selected Git version bytes differ'
+              if phase == 'after':
+                  assert value == json.loads((root / 'before.json').read_text()), 'qualification inputs changed'
+          except Exception as error:
+              (root / (phase + '-failure.json')).write_text(json.dumps(
+                  partial | {'failure_type': type(error).__name__}) + '\n')
+              raise
+          PY
+          uv run python "$RUNNER_TEMP/macos-control-qualification/metadata.py" before 2>&1 | tee "$RUNNER_TEMP/macos-control-qualification/before.log"
+      - name: Check SQLite runtime capabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pytest -q tests/test_sqlite_capabilities.py 2>&1 | tee "$RUNNER_TEMP/macos-control-qualification/sqlite.log"
+      - name: Exercise the real sealed-control qualification suite
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run pytest -q tests/test_policy_retry_control.py tests/test_policy_retry_control_warm.py tests/test_policy_dispatch.py tests/test_control_source_inventory.py --junitxml="$RUNNER_TEMP/macos-control-qualification/qualification.xml" 2>&1 | tee "$RUNNER_TEMP/macos-control-qualification/qualification.log"
+      - name: Recheck selected binary and qualification inputs
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/macos-control-qualification/metadata.py"
+          uv run python "$RUNNER_TEMP/macos-control-qualification/metadata.py" after 2>&1 | tee "$RUNNER_TEMP/macos-control-qualification/after.log"
+      - name: Retain raw results and exact-build metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-control-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/macos-control-qualification/
+          if-no-files-found: warn
+          retention-days: 14
