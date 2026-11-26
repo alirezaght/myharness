@@ -2,7 +2,7 @@
   "schema_version": 1,
   "policy": "Fast tier (default of al/verify_changed.py): affected test files not listed here plus the parity, consistency and docs guards; run after every change. Slow tier: the files below and the acceptance tier; run by release_verify.py --full (release) or nightly, never by default.",
   "rule": "a test file is slow when its mean measured test time exceeds 1.0 s",
-  "measured_files": 299,
+  "measured_files": 300,
   "slow": {
     "claude:tests/test_core_hardening.py": {
       "tests": 11,
@@ -351,6 +351,10 @@
     "codex:tests/test_risk_routing.py": {
       "tests": 2,
       "seconds": 2.7
+    },
+    "codex:tests/test_root_architecture_contract.py": {
+      "tests": 4,
+      "seconds": 23.5
     },
     "codex:tests/test_runtime_batch10_ci.py": {
       "tests": 35,
