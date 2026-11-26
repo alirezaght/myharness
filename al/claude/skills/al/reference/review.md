@@ -5,7 +5,18 @@ invocations. The runtime packet is the source of truth for each stage. A fresh
 invocation receives the original request and accepted proposal, criteria and
 invariants, full selected diff, repository constraints, pre-existing attribution,
 valid evidence/gates and escape leads. It excludes the plan, pseudocode and all
-implementer summaries. Save its structured report before comparison is unlocked.
+implementer summaries. Newly issued fresh packets include `reserved_finding_ids`,
+a sorted list of historical IDs only, without sources, severity, descriptions or
+resolutions. Use review-specific IDs (for example `R2-F1`) for new findings;
+comparison alone clears historical blockers. Reusing an ID cannot change its
+source identity. A conflicting fresh report is refused before it is saved:
+change only the new report's local ID and resubmit with the same unsaved issued
+attempt. Fresh verdicts are still derived from that fresh report alone.
+
+Save its structured report before comparison is unlocked. Comparison also checks
+history/fresh identity compatibility before capturing inputs. If that check finds
+an incompatible immutable saved report from an older execution, it refuses;
+it does not repair old pins, replace saved reports or rewrite history.
 Escape leads retain their recorded provenance: `user-reported` means the user
 described the class, not that the runtime independently reproduced an incident.
 Investigate them within scope and never treat them as current candidate evidence.

@@ -48,6 +48,20 @@ def prior_findings(st):
     return al_review_history.findings(st)
 
 
+def fresh_history_compatible(st,findings,saved=False):
+    prior=prior_findings(st)
+    try:
+        T.obligations(prior,findings,fresh=True)
+    except SystemExit:
+        sources={finding['id']:finding['source'] for finding in prior}
+        conflict=next((f['id'] for f in findings if f['id'] in sources and sources[f['id']]!=f['source']),None)
+        if conflict is not None:
+            if saved:
+                refuse('saved fresh finding ID '+conflict+' conflicts with historical source identity; comparison inputs were not captured; immutable saved reports and old pinned runs are not repaired by this check')
+            refuse('fresh finding ID '+conflict+' conflicts with historical source identity; change the new report local finding ID and resubmit the unsaved fresh report using the same issued attempt')
+        raise
+
+
 @S.decision
 def _review_inputs(st):
     """The review's read-only completeness checks and its candidate, from one stability-checked
@@ -124,6 +138,8 @@ def cmd_packet(a,sid):
     # Results reused from the action cache, each with the run where it originally executed.
     from al_action_cache import annotate_packet
     data=annotate_packet(st,data)
+    if a.stage=='fresh':
+        data['reserved_finding_ids']=sorted({finding['id'] for finding in prior_findings(st)})
     if a.stage=='compare':
         data.update(fresh=A.read_json(r['fresh']),prior_findings=prior_findings(st),comparison_artifacts=st.get('comparison_artifacts',[]),approved_inputs=al_comparison.packet(st))
         data['comparison_contents'] = [{'artifact':ref,'content':A.read(ref).decode(errors='replace')} for ref in data['comparison_artifacts']]
@@ -159,7 +175,9 @@ def validate_report(st,report,stage):
         required=set(al_comparison.required(st))
         if not required.issubset(set(report.get('inspected_artifacts',[]))):refuse('comparison did not inspect required approved input hashes')
         if not isinstance(report.get('plan_defects'),list): refuse('comparison must explicitly assess plan defects')
-    return T.validate(st,report,() if stage=='fresh' else T.obligations(prior_findings(st),A.read_json(r['fresh'])['findings'],fresh=True))
+    counts=T.validate(st,report,() if stage=='fresh' else T.obligations(prior_findings(st),A.read_json(r['fresh'])['findings'],fresh=True))
+    if stage=='fresh':fresh_history_compatible(st,report['findings'])
+    return counts
 
 def cmd_report(a,sid):
     st=al_store.load(sid); r=st.get('review')
@@ -192,6 +210,7 @@ def cmd_compare(a,sid):
     if r['candidate']['fingerprint']!=S.capture_candidate(st)['fingerprint']: refuse('candidate changed')
     A.read(r['fresh'])
     Behavior.validate_review_lineage(st,r,A.read_json(r['packets']['fresh']))
+    fresh_history_compatible(st,A.read_json(r['fresh'])['findings'],saved=True)
     if r.get('mode')=='delta':
         import al_review_delta as Delta
         Delta.compare_inputs(st,a)

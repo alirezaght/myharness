@@ -154,6 +154,7 @@ def packet(st, data):
             "verification_authority",
             "behavior",
             "rework_recovery_lineage",
+            "reserved_finding_ids",
         }
         # Checks AL did not verify (#17) are reviewer-visible notes that never block.
         if set(data) - {"unverified"} != allowed:

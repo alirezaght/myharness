@@ -227,6 +227,15 @@
           "type": "array"
         }
       }
+    },
+    "reserved_finding_ids": {
+      "description": "Historical finding IDs only, reserved across review rounds. Use review-specific IDs for new findings; historical clearance belongs to comparison. Contains no historical finding bodies or verdicts.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     }
   },
   "allOf": [
@@ -301,7 +310,10 @@
               ]
             }
           ]
-        }
+        },
+        "required": [
+          "reserved_finding_ids"
+        ]
       }
     }
   ],
