@@ -10,6 +10,7 @@ from tests.test_knowledge_native_eval import metadata_fixture
 
 
 def usage_fixture(tmp_path, role="al-architect"):
+    """Synthetic parser corpus; current disabled observers refuse before reading it."""
     native, root, child, files = metadata_fixture(tmp_path, role=role)
     path = files / ("rollout-" + child + ".jsonl")
     rows = [json.loads(line) for line in path.read_text().splitlines()]
@@ -35,7 +36,8 @@ def usage_fixture(tmp_path, role="al-architect"):
     return native, root, child, path, rows
 
 
-def test_native_usage_refuses_previously_accepted_cumulative_metadata(tmp_path):
+def test_disabled_usage_observer_blanket_refuses_cumulative_metadata_corpus(tmp_path):
+    """This preserves the prior metadata case without claiming it reaches a parser."""
     native, root, child, _, _ = usage_fixture(tmp_path)
     with pytest.raises(ValueError, match="^qualified native observer unavailable$"):
         observe_usage(
@@ -58,7 +60,8 @@ def test_native_usage_refuses_previously_accepted_cumulative_metadata(tmp_path):
         "role",
     ],
 )
-def test_invalid_usage_is_unavailable_not_zero(tmp_path, fault):
+def test_disabled_usage_observer_blanket_refuses_invalid_metadata_corpus(tmp_path, fault):
+    """Fault variants are retained as deferred parser corpus, not parser validation coverage."""
     native, root, child, path, rows = usage_fixture(tmp_path)
     if fault in {"negative", "bool", "reset", "baseline"}:
         info = rows[-2]["payload"]["info"]
@@ -97,7 +100,8 @@ def test_invalid_usage_is_unavailable_not_zero(tmp_path, fault):
 
 
 @pytest.mark.parametrize("fault", ["foreign-profile", "prose-object"])
-def test_review_repro_untrusted_context_is_not_persisted(tmp_path, fault):
+def test_unavailable_usage_receipt_omits_untrusted_context_corpus(tmp_path, fault):
+    """The synthetic transcript is not read; only the receipt's safe projection is asserted."""
     from types import SimpleNamespace
 
     from scripts.knowledge_evaluation.method import contract
@@ -128,7 +132,8 @@ def test_review_repro_untrusted_context_is_not_persisted(tmp_path, fault):
 
 
 @pytest.mark.parametrize("role", ["al-architect", "al-engineer"])
-def test_declared_profile_cannot_qualify_native_usage_or_return(tmp_path, role):
+def test_disabled_observers_remain_unavailable_for_declared_profiles(tmp_path, role):
+    """A declared profile cannot lift the unconditional observer refusal."""
     from scripts.knowledge_evaluation.observer import observe_return
 
     native, root, child, _, _ = usage_fixture(tmp_path, role)
@@ -161,7 +166,8 @@ def test_declared_profile_cannot_qualify_native_usage_or_return(tmp_path, role):
         ("turn_id", "PUBLIC_SENTINEL_DO_NOT_PERSIST with prose"),
     ],
 )
-def test_usage_and_m2_native_return_reject_malformed_or_mismatched_context(tmp_path, field, value):
+def test_disabled_observers_blanket_refuse_malformed_context_corpus(tmp_path, field, value):
+    """Retained cases document deferred parsing; both observers stop before inspecting them."""
     from scripts.knowledge_evaluation.observer import observe_return
 
     native, root, child, path, rows = usage_fixture(tmp_path)
@@ -175,7 +181,8 @@ def test_usage_and_m2_native_return_reject_malformed_or_mismatched_context(tmp_p
     assert "PUBLIC_SENTINEL" not in str(usage_error.value) + str(return_error.value)
 
 
-def test_root_context_is_separate_from_declared_child_profile(tmp_path):
+def test_usage_receipt_reports_root_and_child_as_unavailable(tmp_path):
+    """Synthetic root/child records are not read by the disabled usage receipt path."""
     import uuid
     from types import SimpleNamespace
 

@@ -484,7 +484,8 @@ def metadata_fixture(directory, *, parent=None, role="al-architect", terminal=Tr
     return native, root, child, files
 
 
-def test_observer_refuses_previously_accepted_terminal_metadata(tmp_path):
+def test_disabled_return_observer_blanket_refuses_terminal_metadata_corpus(tmp_path):
+    """The synthetic metadata is retained; the disabled observer does not parse it."""
     from scripts.knowledge_evaluation.observer import observe_return
 
     native, root, child, _ = metadata_fixture(tmp_path)
@@ -495,7 +496,8 @@ def test_observer_refuses_previously_accepted_terminal_metadata(tmp_path):
 @pytest.mark.parametrize(
     "fault", ["parent", "role", "terminal", "wait", "turn", "partial", "alias", "oversized"]
 )
-def test_observer_refuses_unproven_return(tmp_path, fault):
+def test_disabled_return_observer_blanket_refuses_unproven_metadata_corpus(tmp_path, fault):
+    """Fault variants document the deferred parser corpus, not parser validation coverage."""
     import uuid
 
     from scripts.knowledge_evaluation.observer import observe_return
