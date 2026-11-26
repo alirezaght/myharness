@@ -11,8 +11,10 @@ import re
 
 from harness.dashboard.server import STATIC_DIR
 from tests.test_dashboard import fetch, serve
-from tests.test_dashboard_comments import DECLARED
 
+# Top-level declarations of a classic script; they all share the page's global scope.
+DECLARED = re.compile(r"^(?:const|let|var|class|(?:async )?function)\s+(\w+)", re.MULTILINE)
+ANY_STATIC = re.compile(r'(?:src|href)="/static/([^"]+)"')
 SCRIPT_TAG = re.compile(r'<script src="/static/([\w.]+\.js)" defer></script>')
 STYLE_TAG = re.compile(r'<link rel="stylesheet" href="/static/([\w.]+\.css)">')
 MIME = {".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
@@ -35,6 +37,10 @@ def test_every_page_asset_is_served_verbatim_in_order_without_duplicate_globals(
         styles = STYLE_TAG.findall(page)
         served = {name: fetch(server, f"/static/{name}") for name in [*scripts, *styles]}
 
+    # Every /static/ reference must be one of the two recognised tag forms, so an asset
+    # cannot drop out of this inventory by being written differently.
+    assert sorted(ANY_STATIC.findall(page)) == sorted([*scripts, *styles])
+    assert scripts and styles
     assert len(scripts) == len(set(scripts)) and len(styles) == len(set(styles))
     assert set(ORDERED) <= set(scripts), sorted(set(ORDERED) - set(scripts))
     assert [name for name in scripts if name in ORDERED] == list(ORDERED)

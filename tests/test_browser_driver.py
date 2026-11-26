@@ -134,9 +134,11 @@ def test_chrome_direct_startup_control(tmp_path):
     """Environment calibration, kept on purpose (issue #80, F17).
 
     BrowserDriver starts Chrome behind the fd 3/4 pipe bootstrap with
-    --remote-debugging-pipe. This control starts the same executable with the same
-    headless profile flags but no pipe or CDP. When the driver cannot start, the pair
-    of this control and test_pipe_descriptor_diagnostic tells whether Chrome itself,
+    --remote-debugging-pipe. This control starts the same executable with similar
+    headless flags (fresh profile, mock keychain) but no pipe or CDP; its flag set is not
+    identical to the driver's, so it isolates Chrome startup, not every driver flag.
+    When the driver cannot start, the pair of this control and
+    test_pipe_descriptor_diagnostic tells whether Chrome itself,
     the descriptor mapping, or the CDP exchange is at fault (a Chrome-level startup
     problem such as the macOS keychain prompt fixed in 34b697c fails here too).
     """

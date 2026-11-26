@@ -2,7 +2,6 @@
 
 import http.client
 import json
-import re
 import socket
 import sqlite3
 from pathlib import Path
@@ -20,7 +19,6 @@ from tests.test_dashboard_stream import frame, stream
 
 EDGE = "connection:browser->local-server"
 RID = "req-00000001"
-DECLARED = re.compile(r"^(?:const|let|var|(?:async )?function)\s+(\w+)", re.MULTILINE)
 
 
 @pytest.fixture(autouse=True)
