@@ -331,3 +331,67 @@ or CLI operations still run separately in each case.
 | `test_completed_publication_revalidates` | 3 | Late postimage, provenance and runtime-index mutations fail; pending recovery, current installation, runtime bytes and pin bytes remain. |
 | `test_injected_engine_failure_retains_recovery_and_runtime` | 1 | Actual second-platform failure retains pending recovery, current installation and runtime/pin bytes; unresolved retry still refuses. |
 | `test_public_cli_requires_global_and_accepts_reviewed_update` | 1 | The real CLI refuses missing global scope, then performs the reviewed update while reporting retained activity blockers. |
+
+
+### Operator-update file groups (#36)
+
+The original 20 functions and 91 parameterized cases are split across five slow
+installer files so the existing whole-file runner can schedule them independently.
+Every test body, decorator, parameter and assertion is unchanged. The shared
+`operator_update_helpers.py` retains all original imports, helper implementations,
+`projection_data`, enrollment fixtures and the exact prefix whitelist. Its
+`__file__` remains under `al/tests`, preserving projection resource lookup.
+Test globals import the same helper/installer objects. Each consuming module
+explicitly registers `enrolled` and its `_prefix_cache` dependency; the projection
+consumer does too. Projection test bodies remain unchanged.
+
+The prefix cache is still module-scoped within each pytest process, never a
+session-wide/shared installation. Every eligible module pays for its genuine
+source, enrollment and bootstrap construction; restores retain complete owned
+bytes, modes, links and copied return data at the same absolute paths. Per-case
+tags, reviews, source injections, real commands, mutations and cleanup remain.
+Indirect policies, old-pin/bootstrap and unlisted cases still construct fresh.
+The old-pin test keeps its original file/node identity and acceptance/budget rule.
+No runner, budget, template or production source is changed. Independent isolation
+review covers these five groups, the projection consumer, the helper, current
+conftest and reached setup/process helpers. Only those six test/conftest bindings
+are renewed with a current complete-source observation; unrelated stale bindings
+remain unchanged. Process-group settlement is retained without claiming exhaustive
+escaped-descendant observation.
+
+The exact mapping below replaces only the file component; every original function
+name and parameter-ID suffix is retained. The static patch inventory also lists
+all 91 old/new node IDs. Times are **historical pre-split group allocations**, not
+post-split measurements or promised savings. Limited headroom, extra genuine
+per-module builds and concurrent resource pressure must all remain charged.
+
+| Destination under `al/tests/` | Cases | Historical allocation (s) | Retained invariant |
+|---|---:|---:|---|
+| `test_operator_update.py` | 4 | 99.25 | Public warning/update/activity and retained bytes; genuine old pin versus separate new bootstrap; configuration and policy preservation. |
+| `test_operator_update_integrity.py` | 51 | 71.12 | Exact review/source/projection/authority and installation-integrity refusals; explicit scope and flags; unmanaged/foreign registry refusal. |
+| `test_operator_update_metadata.py` | 20 | 96.94 | Actual owned metadata, no aliases, descriptor/legacy compatibility, foreign-owner refusal and real lock replacement/alias races. |
+| `test_operator_update_barriers.py` | 8 | 93.96 | Per-case real injected mutation barriers and failed journals; allowed historical handoff progress. |
+| `test_operator_update_publication.py` | 8 | 67.82 | Late completion and second-platform failures retain pending manual recovery/current bytes; unsafe-history overlap refuses; observation bounds and private-prose exclusion. |
+
+| Original function in `test_operator_update.py` (parameter suffix unchanged) | Destination file | Cases |
+|---|---|---:|
+| `test_public_explicit_mode_warns_and_preserves_all_retained_bytes` | `test_operator_update.py` | 1 |
+| `test_managed_old_pin_stays_old_and_separate_bootstrap_selects_new` | `test_operator_update.py` | 1 |
+| `test_existing_configuration_and_policy_are_preserved` | `test_operator_update.py` | 2 |
+| `test_installation_integrity_refusals_are_not_warnings` | `test_operator_update_integrity.py` | 18 |
+| `test_scope_refuses_before_activity_or_mutation` | `test_operator_update_integrity.py` | 13 |
+| `test_projection_allows_only_reviewable_body_changes` | `test_operator_update_integrity.py` | 1 |
+| `test_authority_mutations_cannot_be_reviewed_in` | `test_operator_update_integrity.py` | 17 |
+| `test_public_flag_is_update_only_and_single_global` | `test_operator_update_integrity.py` | 1 |
+| `test_unmanaged_and_foreign_registry_cannot_use_operator_mode` | `test_operator_update_integrity.py` | 1 |
+| `test_operator_installation_metadata_has_real_owned_no_alias_boundary` | `test_operator_update_metadata.py` | 15 |
+| `test_coordination_descriptor_and_legacy_held_callers_remain_compatible` | `test_operator_update_metadata.py` | 1 |
+| `test_owned_metadata_rejects_a_foreign_owner_comparison` | `test_operator_update_metadata.py` | 1 |
+| `test_real_lock_replacement_and_alias_races_refuse` | `test_operator_update_metadata.py` | 3 |
+| `test_barriers_refuse_mutable_installation_inputs` | `test_operator_update_barriers.py` | 7 |
+| `test_historical_progress_between_barriers_is_allowed` | `test_operator_update_barriers.py` | 1 |
+| `test_completed_publication_failures_never_claim_success` | `test_operator_update_publication.py` | 3 |
+| `test_partial_failure_keeps_pending_manual_reconciliation` | `test_operator_update_publication.py` | 1 |
+| `test_unsafe_history_discovery_warns_but_actual_payload_overlap_refuses` | `test_operator_update_publication.py` | 2 |
+| `test_observation_limits_are_explicit_and_do_not_print_state_prose` | `test_operator_update_publication.py` | 1 |
+| `test_deeply_malformed_history_is_a_bounded_warning` | `test_operator_update_publication.py` | 1 |
