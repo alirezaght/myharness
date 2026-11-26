@@ -405,8 +405,31 @@ def test_partial_spool_creation_failure_cleans_owned_files(operations, monkeypat
 
 
 def test_discovery_scope_matches_pinned_path_normalization(operations, monkeypatch):  # noqa: F811
-    _, _, page = run_report(operations, monkeypatch, scope="apps/web/")
+    operation, _, page = run_report(operations, monkeypatch, scope="apps/web/")
     assert page["status"] == "Exited" and page["result"]["artifact"]
+    # The published, immutable report covers exactly the normalized requested scope.
+    artifact = page["result"]["artifact"]
+    stored = operation.artifacts.resolve(artifact["artifact_id"], artifact["sha256"])
+    assert digest(stored.read_bytes()) == artifact["sha256"]
+    manifest = json.loads(stored.read_bytes())
+    assert manifest["paths"] == ["apps/web"] and manifest["units"] == ["apps/web"]
+    with operation.artifacts.locked() as index:
+        published = [
+            r for r in index["records"].values() if r["source"] == "guarded-al-gate-manifest"
+        ]
+    assert [r["artifact_id"] for r in published] == [artifact["artifact_id"]]
+
+
+def test_normalized_discovery_scope_still_refuses_an_unrelated_report(
+    operations,  # noqa: F811
+    monkeypatch,
+):
+    # The same trailing-slash request is compared, not waved through: a report whose paths
+    # leave the requested scope is not published.
+    operation, _, page = run_report(operations, monkeypatch, scope="apps/web/", failure="scope")
+    assert page["status"] == "Failed" and page["result"] is None
+    with operation.artifacts.locked() as index:
+        assert all(r["source"] != "guarded-al-gate-manifest" for r in index["records"].values())
 
 
 def gate_provenance(raw):
