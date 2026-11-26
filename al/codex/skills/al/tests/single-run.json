@@ -54,6 +54,7 @@
   "test_gate_refresh.py",
   "test_gate_refresh_rule_sources.py",
   "test_gate_resume.py",
+  "test_gate_spawn_cleanup.py",
   "test_generated_gitlab_coverage.py",
   "test_git_memo.py",
   "test_git_observation.py",

@@ -1,10 +1,8 @@
 """Public gates own descendants and cancellation through durable association."""
 import os
 import signal
-import subprocess
 import pytest
 import al_evidence as E
-import al_gate_process as P
 import al_store
 from hook_regression_helpers import invoke
 from batch13_helpers import assert_incomplete_admission
@@ -51,13 +49,14 @@ def test_keyboard_interrupt_and_signal_seams_cannot_leave_late_pass(cli,repo,tmp
             return original(sid,entry)
         monkeypatch.setattr(E,'_commit',commit)
     elif seam=='spawn-signal':
-        original=subprocess.Popen
-        def spawn(command,*args,**kwargs):
-            proc=original(command,*args,**kwargs)
-            if command==argv:owned.append(proc.pid)
+        import al_gate_owned_process as Owned
+        original=Owned.OwnedGateProcess.spawn
+        def spawn(process,command,*args,**kwargs):
+            proc=original(process,command,*args,**kwargs)
+            if command==argv:owned.append(process.pid)
             if command==argv and not fired:fired.append(True);os.kill(os.getpid(),signal.SIGTERM)
             return proc
-        monkeypatch.setattr(P.subprocess,'Popen',spawn)
+        monkeypatch.setattr(Owned.OwnedGateProcess,'spawn',spawn)
     else:
         original=al_store.save
         def save(sid,st):
