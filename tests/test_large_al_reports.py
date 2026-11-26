@@ -83,6 +83,10 @@ if LARGE: m.update(padding='x'*(17*1024*1024),large_array=[0]*500000)
 # own base and scope checks (not the stored/stdout comparison) must refuse them.
 if FAILURE=='base':m['base_oid']='wrong'
 if FAILURE=='scope':m['paths']=['foreign']
+# A legitimately widened report (#117): discovery adds paths and units beyond the request.
+if FAILURE=='widened':
+ m['paths']=['apps/web','apps/admin']
+ m['units']=['apps/web','services/billing']
 raw=json.dumps(m,sort_keys=True).encode();sha=hashlib.sha256(raw).hexdigest()
 target=source.parent/s['session_id']/'artifacts'/sha
 target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(raw)
@@ -411,12 +415,36 @@ def test_discovery_scope_matches_pinned_path_normalization(operations, monkeypat
     assert page["status"] == "Exited" and page["result"]["artifact"]
     # The published, immutable report is the canonical stored manifest, and the trailing-slash
     # request matched its normalized paths. (The producer is synthetic and always reports
-    # apps/web; whether the harness should refuse extra paths or units is #117.)
+    # apps/web; per #117 discovery may widen, see the widened-report control below.)
     artifact = page["result"]["artifact"]
     stored = operation.artifacts.resolve(artifact["artifact_id"], artifact["sha256"])
     assert digest(stored.read_bytes()) == artifact["sha256"]
     manifest = json.loads(stored.read_bytes())
     assert manifest["paths"] == ["apps/web"] and manifest["units"] == ["apps/web"]
+    with operation.artifacts.locked() as index:
+        published = [
+            r for r in index["records"].values() if r["source"] == "guarded-al-gate-manifest"
+        ]
+    assert [r["artifact_id"] for r in published] == [artifact["artifact_id"]]
+
+
+def test_canonical_widened_discovery_report_is_published_as_stored(
+    operations,  # noqa: F811
+    monkeypatch,
+):
+    # #117: discovery may legitimately widen beyond the requested paths (task changes,
+    # prior manifests, dependency consumers). The transport publishes the canonical stored
+    # manifest as long as it covers the normalized request; relevance of the extra units is
+    # AL's producer boundary (al/*/skills/al/tests/test_service_coverage.py), not a
+    # transport guard.
+    operation, _, page = run_report(operations, monkeypatch, scope="apps/web/", failure="widened")
+    assert page["status"] == "Exited" and page["result"]["artifact"]
+    artifact = page["result"]["artifact"]
+    stored = operation.artifacts.resolve(artifact["artifact_id"], artifact["sha256"])
+    assert digest(stored.read_bytes()) == artifact["sha256"]
+    manifest = json.loads(stored.read_bytes())
+    assert manifest["paths"] == ["apps/web", "apps/admin"]
+    assert manifest["units"] == ["apps/web", "services/billing"]
     with operation.artifacts.locked() as index:
         published = [
             r for r in index["records"].values() if r["source"] == "guarded-al-gate-manifest"
