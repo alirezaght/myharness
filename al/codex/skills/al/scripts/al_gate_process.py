@@ -41,8 +41,7 @@ class Owner:
             self.defer=True;raise KeyboardInterrupt
 
     def spawn(self,*args,**kwargs):
-        from al_verification_policy import verification_kwargs
-        kwargs=verification_kwargs(kwargs)
+        from al_verification_policy import verification_input
         if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)
         if self.proc is not None and not self.completion().get('complete'):
             if self.reason:raise KeyboardInterrupt('gate cancelled: '+self.reason)
@@ -53,12 +52,13 @@ class Owner:
             if os.environ.get('HARNESS_CHECK_CONTEXT'):
                 import al_harness_process
                 if self.entry is not None:kwargs['process_observation']=self.entry.get('process_observation')
-                self.proc=al_harness_process.popen(*args,**kwargs,start_new_session=True)
+                self.proc=al_harness_process.verification_popen(*args,**kwargs,start_new_session=True)
             else:
                 from al_gate_owned_process import OwnedGateProcess
                 kwargs.pop('process_observation',None)
                 self.proc=OwnedGateProcess(self.log,self.token+'-'+secrets.token_hex(8))
-                self.proc.spawn(*args,**kwargs,start_new_session=True)
+                with verification_input(kwargs) as inputs:
+                    self.proc.spawn(*args,**inputs,start_new_session=True)
             if self.entry is not None:
                 import al_process_observation
                 al_process_observation.spawned(self.entry,self.proc)

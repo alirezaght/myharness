@@ -1,4 +1,5 @@
 """Managed scratch is optional historical metadata, never arbitrary-path cleanup."""
+from al_verification_policy import DEFAULT_STDIN
 
 import os
 import shutil
@@ -121,12 +122,14 @@ class PreparedStorage:
         self.reconciliation_reference = None
         self.publication_root = ledger.log_dir(sid) / "storage"
 
-    def launch(self, argv, *, cwd, output, recipe_input=None, stdin=subprocess.DEVNULL):
+    def launch(self, argv, *, cwd, output, recipe_input=None, stdin=DEFAULT_STDIN):
+        from al_verification_policy import verification_input
+        input_kwargs = {} if stdin is DEFAULT_STDIN else {"stdin": stdin}
         if recipe_input != self.recipe_input:
             raise ValueError("recipe input differs from protected evidence entry")
         try:
             if self.remote:
-                from al_harness_process import OwnedCheck
+                from al_harness_process import verification_popen
 
                 request = {
                     "schema_version": 1,
@@ -136,9 +139,9 @@ class PreparedStorage:
                 if recipe_input is not None:
                     request["schema_version"] = 2
                     request["recipe_input"] = recipe_input
-                self.proc = OwnedCheck(
-                    argv, {"cwd": cwd, "stdout": output, "stderr": -2, "managed_storage": request,
-                           "process_observation": self.entry.get("process_observation"), "stdin": stdin}
+                self.proc = verification_popen(
+                    argv, cwd=cwd, stdout=output, stderr=-2, managed_storage=request,
+                    process_observation=self.entry.get("process_observation"), **input_kwargs
                 )
                 self.allocation = self.proc.storage["allocation"]
                 self.temporary = Path(self.proc.storage["operation_directory"]) / "tmp"
@@ -219,7 +222,8 @@ class PreparedStorage:
                         launch_token=self.owner.token,
                         interpreter=sys.executable,
                     )
-                self.proc = self.owner.spawn(rendered, cwd=cwd, env=environment, output=output, stdin=stdin)
+                with verification_input(input_kwargs) as inputs:
+                    self.proc = self.owner.spawn(rendered, cwd=cwd, env=environment, output=output, **inputs)
                 self.manager.mark_running(
                     self.allocation["allocation_id"],
                     generation=self.allocation["generation"],
