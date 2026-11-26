@@ -108,11 +108,39 @@ def cmd_checkpoint(a,sid):
         print(ref['id'])
     al_store.save(sid,st)
 
+def _issue96_reconcile_observation(entry, ledger):
+    """Diagnostic branch only: bounded identity facts, never a liveness exemption."""
+    import os
+    import sys
+
+    def pid(value):
+        return value if type(value) is int and 0 < value <= 2147483647 else None
+
+    namespace = {"status": "unavailable"}
+    try:
+        info = Path('/proc/self/ns/pid').stat()
+        namespace = {"status": "observed", "device": info.st_dev, "inode": info.st_ino}
+    except OSError:
+        pass
+    owner, child = pid(entry.get('owner_pid')), pid(entry.get('pid'))
+    value = {
+        "diagnostic": "issue96-check-reconcile",
+        "current_pid": os.getpid(),
+        "current_pid_namespace": namespace,
+        "saved_owner_pid": owner,
+        "saved_check_pid": child,
+        "owner_alive_local": ledger._alive(owner) if owner is not None else "unknown",
+        "check_alive_local": ledger._alive(child) if child is not None else "unknown",
+    }
+    print(json.dumps(value, sort_keys=True), file=sys.stderr, flush=True)
+
+
 def cmd_reconcile(a,sid):
     st=al_store.load(sid)
     e=next((x for x in st['evidence']['entries'] if x['id']==a.id),None)
     if not e or (e['status']!='RUNNING' and not e.get('interrupted')) or e.get('reconciliation'): refuse('check is not unresolved')
     import al_ledger as L
+    _issue96_reconcile_observation(e, L)
     if L._alive(e.get('owner_pid')) or L._alive(e.get('pid')): refuse('cannot reconcile a living check')
     from al_agent_exchange import consume_verification, produce
     from al_artifact_cli import read_input
