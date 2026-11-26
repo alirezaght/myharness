@@ -146,11 +146,45 @@ def test_stdlib_preimports_skip_runtime_and_relative_imports():
     assert _stdlib_imports([code]) == {"json", "os.path"}
 
 
+_WATCHER_IMPORTS = {"ctypes", "ctypes.util", "json", "os", "select", "struct", "sys",
+                    "threading"}
+
+
+def _assert_watcher_imports_allowed(source):
+    import ast
+
+    imports = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            assert node.level == 0, "watcher must not import relative modules"
+            imports.add(node.module)
+    assert imports <= _WATCHER_IMPORTS, imports - _WATCHER_IMPORTS
+
+
 def test_watcher_source_has_no_runtime_imports():
     source = (Path(__file__).resolve().parents[1] / "installer/runtime_service_watch.py").read_text()
     code = compile(source, "watch", "exec")
-    assert _stdlib_imports([code]) <= {"ctypes", "ctypes.util", "json", "os", "select", "struct", "sys",
-                                       "threading"}
+    assert _stdlib_imports([code]) <= _WATCHER_IMPORTS
+    _assert_watcher_imports_allowed(source)
+
+
+@pytest.mark.parametrize("source", [
+    "import al_state",
+    "import installer.engine",
+    "def nested():\n    import requests",
+    "from . import al_state",
+    "def nested():\n    from ..installer import engine",
+    "import os, al_store",
+])
+def test_watcher_import_guard_rejects_runtime_relative_and_nested_imports(source):
+    with pytest.raises(AssertionError):
+        _assert_watcher_imports_allowed(source)
+
+
+def test_watcher_import_guard_allows_nested_standard_library_imports():
+    _assert_watcher_imports_allowed("import os\ndef nested():\n    from ctypes import util")
 
 
 class _Watched:
@@ -266,3 +300,42 @@ def test_child_asker_parses_answers_and_refuses_other_roots():
     finally:
         parent.close()
         child.close()
+
+
+@pytest.mark.parametrize("exception", ["PermissionError", "ValueError"])
+def test_command_tail_permission_failure_has_recovery_without_replay(tmp_path, exception):
+    import subprocess
+    import sys
+
+    marker = tmp_path / "executions"
+    program = r"""
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from installer import runtime_service as R
+service = R.Service.__new__(R.Service)
+service.child_text = 'request=REQUEST'
+service.tail = compile("with Path(sys.argv[2]).open('a') as stream: stream.write('once\\n')\nraise " + sys.argv[3] + "('controlled command failure')", '<string>', 'exec')
+service.base = Path(sys.argv[2]).parent
+service.manifest = {}
+service.captured = {'bytes': {}}
+service.payload = service.prefix = service.base
+service.platform = 'codex'
+prepared = {'request': {}, 'transaction': {}, 'run_context': {}, 'value': {}, 'functions': {}}
+raise SystemExit(service.execute(prepared))
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", "-B", "-c", program,
+         str(Path(__file__).resolve().parents[1]), str(marker), exception],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 1
+    assert marker.read_text() == "once\n"
+    assert exception + ": controlled command failure" in result.stderr
+    assert "Traceback (most recent call last)" in result.stderr
+    hint = "AL resident service permission failure:"
+    assert (hint in result.stderr) == (exception == "PermissionError")
+    if exception == "PermissionError":
+        assert "AL_SERVICE=0" in result.stderr and "normal host permission review" in result.stderr
+        assert "No command was automatically replayed" in result.stderr
+        assert "possible partial effects" in result.stderr

@@ -230,6 +230,127 @@ def test_0016_is_additive_schema_only(tmp_path):
     conn.close()
 
 
+def test_populated_pre_index_graph_survives_0016_and_current_query(graph, tmp_path, monkeypatch):
+    from contextlib import closing
+
+    from harness import db as db_module
+    from harness.knowledge.models import ContextRequest, digest
+    from harness.knowledge.query import query
+    from tests.test_migration_compatibility import old_database
+
+    donor, scope = graph
+    historical_snapshot = refresh(donor, scope).snapshot_id
+    path = tmp_path / "pre-index.db"
+    with closing(old_database(path, common=15)) as conn:
+        # Copy only the actual 0015 tables into real pre-0016 SQL. The owned public
+        # refresh supplies valid source/citation records, not invented native authority.
+        tables = [
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_schema WHERE type='table' AND name LIKE 'knowledge_%' "
+                "ORDER BY rowid"
+            )
+        ]
+        for table in tables:
+            rows = donor.execute(f'SELECT * FROM "{table}"').fetchall()
+            if rows:
+                placeholders = ",".join("?" for _ in rows[0])
+                conn.executemany(f'INSERT INTO "{table}" VALUES ({placeholders})', rows)
+        conn.execute(
+            "INSERT INTO tasks VALUES ('t-pre-index','Preserve populated history',"
+            "'simple','proposed','design','original-created','original-updated')"
+        )
+        tables.append("tasks")
+
+        def contents(connection):
+            return {
+                table: sorted(
+                    (tuple(row) for row in connection.execute(f'SELECT * FROM "{table}"')),
+                    key=repr,
+                )
+                for table in tables
+            }
+
+        before = contents(conn)
+        assert before["tasks"] and before["knowledge_assertions"] and before["knowledge_evidence"]
+        assert len(before["knowledge_sources"]) == 2
+        assert conn.execute("SELECT max(version) FROM schema_migrations").fetchone()[0] == 15
+        assert (
+            conn.execute(
+                "SELECT 1 FROM sqlite_schema WHERE name='knowledge_extraction_cache'"
+            ).fetchone()
+            is None
+        )
+        original_ledger = [tuple(row) for row in conn.execute("SELECT * FROM schema_migrations")]
+        migrations = db_module._migrations()
+        with monkeypatch.context() as patch:
+            patch.setattr(db_module, "_migrations", lambda: [m for m in migrations if m[0] <= 16])
+            assert db_module.apply_migrations(conn) == ["0016_knowledge_index.sql"]
+            assert contents(conn) == before
+            assert [
+                tuple(row)
+                for row in conn.execute("SELECT * FROM schema_migrations WHERE version<=15")
+            ] == original_ledger
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+            assert db_module.apply_migrations(conn) == []
+
+    # Apply remaining real migrations through connect, retaining the original
+    # restart test and generic migration-history coverage separately.
+    conn = connect(path)
+    try:
+        assert contents(conn) == before
+        assert db_module.apply_migrations(conn) == []
+        retained = refresh(conn, scope)
+        assert retained.status == "unchanged" and retained.snapshot_id == historical_snapshot
+        # Unchanged legacy sources need no publication. A real source edit then
+        # exercises the new extraction cache and current query/receipt tables.
+        (scope.repository / "service.py").write_text("def serve():\n    return 2\n")
+        updated = refresh(conn, scope)
+        assert updated.status == "published" and updated.snapshot_id != historical_snapshot
+        first = query(conn, scope, ContextRequest("service"))
+        second = query(conn, scope, ContextRequest("service"))
+        assert first.payload["assertions"] and first.payload["citations"]
+        assert first.bundle_hash == second.bundle_hash
+        assert first.receipt_id and second.receipt_id and first.receipt_id != second.receipt_id
+        for table in (
+            "knowledge_extraction_cache",
+            "knowledge_extraction_members",
+            "knowledge_bundles",
+            "knowledge_receipts",
+        ):
+            assert conn.execute(f'SELECT count(*) FROM "{table}"').fetchone()[0] > 0
+        for citation in first.payload["citations"]:
+            source = conn.execute(
+                "SELECT s.locator,v.content_sha256 FROM knowledge_source_versions v "
+                "JOIN knowledge_sources s USING(source_id) WHERE v.version_id=?",
+                (citation["version_id"],),
+            ).fetchone()
+            raw = (scope.repository / source["locator"]).read_bytes()
+            assert digest(raw) == source["content_sha256"]
+            span = raw[citation["start_byte"] : citation["end_byte"]]
+            assert digest(span) == citation["span_sha256"]
+        assert conn.execute(
+            "SELECT count(*) FROM knowledge_snapshot_assertions WHERE snapshot_id=?",
+            (historical_snapshot,),
+        ).fetchone()[0] == len(before["knowledge_snapshot_assertions"])
+        for table in ("knowledge_assertions", "knowledge_evidence", "knowledge_snapshots"):
+            assert set(before[table]) <= set(contents(conn)[table])
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        observed_receipts = [tuple(row) for row in conn.execute("SELECT * FROM knowledge_receipts")]
+    finally:
+        conn.close()
+    conn = connect(path)
+    try:
+        assert db_module.apply_migrations(conn) == []
+        assert [tuple(row) for row in conn.execute("SELECT * FROM knowledge_receipts")] == (
+            observed_receipts
+        )
+        assert [tuple(row) for row in conn.execute("SELECT * FROM tasks")] == before["tasks"]
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        conn.close()
+
+
 def test_hash_only_source_changed_during_refresh_is_revalidated(graph, monkeypatch):
     """A cached (hash-only) source edited after inventory fails lstat and is fully re-read."""
     refresh_module = import_module("harness.knowledge.refresh")

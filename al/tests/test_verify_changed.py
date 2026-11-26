@@ -137,17 +137,19 @@ def test_runs_selected_files_in_parallel_and_reports_failures(tmp_path, capsys, 
     assert code == 0 and '1 passed, 0 failed' in out and out.rstrip().splitlines()[-1].startswith('PASS')
 
 
-def test_split_runs_one_file_as_several_fresh_processes(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize('suite,groups', [('installer', 1), ('codex', 3)])
+def test_split_preserves_installer_whole_files_and_splits_ordinary_host_files(tmp_path, monkeypatch, capsys, suite, groups):
     monkeypatch.setattr('tempfile.tempdir', str(tmp_path / 'tmp'))
     (tmp_path / 'tmp').mkdir()
     body = 'import os\nPID = os.getpid()\n' + ''.join(f'def test_{i}():\n    assert PID == os.getpid()\n' for i in range(5))
-    root = source(tmp_path, {'installer': body})
+    root = source(tmp_path, {suite: body})
+    changed = 'al/tests/test_a.py' if suite == 'installer' else HOST + '/tests/test_a.py'
     report = tmp_path / 'reports' / 'report.json'
-    assert main(['--path', 'al/tests/test_a.py', '--split', '2', '--report', str(report)], root=root) == 0
+    assert main(['--path', changed, '--split', '2', '--report', str(report)], root=root) == 0
     value = json.loads(report.read_text())
-    assert len(value['verification']['assignments']) == 3
+    assert len(value['verification']['assignments']) == groups
     assert value['verification']['reconciliation']['executed_passed'] == 5
-    assert main(['--path', 'al/tests/test_a.py', '--split', '0', '--report', str(tmp_path / 'whole' / 'r.json')], root=root) == 0
+    assert main(['--path', changed, '--split', '0', '--report', str(tmp_path / 'whole' / 'r.json')], root=root) == 0
     assert len(json.loads((tmp_path / 'whole' / 'r.json').read_text())['verification']['assignments']) == 1
     capsys.readouterr()
 
@@ -169,3 +171,26 @@ def test_fast_tier_defers_slow_files_and_always_runs_the_guards(tmp_path, capsys
     assert 'claude:tests/test_parity.py' in capsys.readouterr().out
     assert main(['--path', HOST + '/scripts/al_base.py', '--list', '--tier', 'all'], root=root) == 0
     assert 'codex:tests/test_user.py' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('profile', [False, True])
+def test_profile_is_forwarded_and_reported_without_a_release_claim(tmp_path, monkeypatch, capsys, profile):
+    import al.verification_runner as runner
+    root = source(tmp_path)
+    observed = []
+    original = runner.run
+    def run(*args, **kwargs):
+        observed.append(kwargs.copy())
+        return original(*args, **kwargs)
+    monkeypatch.setattr(runner, 'run', run)
+    report = tmp_path / 'reports' / 'profile.json'
+    args = ['--path', 'al/tests/test_a.py', '--report', str(report)]
+    if profile:args.append('--profile')
+    assert main(args, root=root) == 0
+    value = json.loads(report.read_text())
+    assert observed[0]['profile'] is profile
+    assert observed[0]['cache_mode'] == 'cold'
+    assert value['profile'] is profile
+    assert value['release_claim'] is False and value['source_stable'] is True
+    assert value['verification']['reconciliation']['executed_passed'] == 1
+    assert 'development check, not a release result' in capsys.readouterr().out

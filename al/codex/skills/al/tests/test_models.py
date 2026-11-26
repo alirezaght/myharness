@@ -83,9 +83,25 @@ def test_latched_model_is_never_re_resolved_or_re_switched():
 def test_render_models_lists_every_role_label():
     st = al_models.initial_state()
     out = al_models.render_models(st)
-    assert "Astra / MEDIUM" in out
-    assert "Sol / MEDIUM" in out
-    assert "Luna / MEDIUM" in out
+    assert out.splitlines() == [
+        "Models used:", "",
+        "* AL-Architect — Astra / MEDIUM (not used)",
+        "* AL-Designer — Astra / LOW (not used)",
+        "* AL-Engineer — Sol / MEDIUM (not used)",
+        "* AL-Builder — Luna / MEDIUM (not used)",
+    ]
+    st['roles_run'] = ['al-architect', 'al-engineer']
+    st['skipped_phases'] = ['PSEUDOCODE', 'FINALIZATION']
+    al_models.mark_unavailable(st, 'astra', 'provider unavailable')
+    st['aux_runs'] = [{'role': 'al-scout', 'count': 2}]
+    assert al_models.render_models(st).splitlines() == [
+        "Models used:", "",
+        "* AL-Architect — Sol / HIGH (Astra unavailable)",
+        "* AL-Designer — Sol / MEDIUM (Astra unavailable, skipped)",
+        "* AL-Engineer — Sol / MEDIUM",
+        "* AL-Builder — Luna / MEDIUM (skipped)",
+        "* AL-Scout — Luna / LOW (read-only helper, 2 workers in 1 fan-out; no authority)",
+    ]
 
 
 def test_spawn_args_pairs_model_and_effort_for_every_policy_slot():

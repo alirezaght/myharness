@@ -29,6 +29,7 @@ class Owner:
     def __init__(self,log):
         self.log=log;self.proc=None;self.reason=None;self.defer=False;self.stopped=False
         self.token=secrets.token_hex(32);self.spawned_at=None
+        self.entry=None
 
     def __enter__(self):
         self.previous={number:signal.signal(number,self.signal) for number in SIGNALS}
@@ -44,7 +45,11 @@ class Owner:
         try:
             self.spawned_at=time.time()
             import al_harness_process
+            if self.entry is not None:kwargs['process_observation']=self.entry.get('process_observation')
             self.proc=al_harness_process.popen(*args,**kwargs,start_new_session=True)
+            if self.entry is not None:
+                import al_process_observation
+                al_process_observation.spawned(self.entry,self.proc)
         finally:self.defer=False
         if self.reason:raise KeyboardInterrupt
         return self.proc

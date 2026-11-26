@@ -50,7 +50,7 @@ def coordinator(tmp_path, monkeypatch):
     manifest = {'interpreter': {'executable': '/fixture/python'}, 'interpreter_execution_identity': {}}
     def verify(*args, **kwargs):
         assert kwargs == {'create': True, 'write': True}
-        events.append(('verify', stderr.getvalue()))
+        events.append(('verify', kwargs, stderr.getvalue()))
         return {'manifest': manifest}
     monkeypatch.setattr(R, 'verify_pin_cached', verify)
     monkeypatch.setattr(R, 'validate_live', lambda *args: None)
@@ -85,7 +85,8 @@ def test_writer_start_reports_real_boundaries_and_keeps_exec_contract(coordinato
     assert 'verifying immutable runtime resources' in lines[2]
     assert 'delegating to pinned runtime' in lines[3]
     assert 'acquiring protected admission lock' in coordinator.events[0][1]
-    assert 'verifying immutable runtime resources' in coordinator.events[1][1]
+    assert coordinator.events[1][1] == {'create': True, 'write': True}
+    assert 'verifying immutable runtime resources' in coordinator.events[1][2]
     assert 'private-' not in coordinator.stderr.getvalue()
     assert str(coordinator.root) not in coordinator.stderr.getvalue()
     assert capsys.readouterr().out == ''

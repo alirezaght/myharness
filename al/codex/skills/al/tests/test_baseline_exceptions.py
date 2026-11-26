@@ -23,7 +23,11 @@ def failing_base(cli, repo, tmp_path, *, second=False, env_names=()):
         other.update(applicability='APPLICABLE', required=True, argv=FAIL, source=loc['source'], reason='second failing job')
     path = tmp_path / 'manifest.json';path.write_text(json.dumps(m))
     invoke(cli, 'gates', 'plan', '--file', str(path))
-    invoke(cli, 'gates', 'run', '--stage', 'base', ok=False)
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    state = json.loads(cli('show')[1])
+    run = [item for item in state['gate_runs'] if item['gate'] == 'loc' and item['stage'] == 'base'][-1]
+    entry = next(item for item in state['evidence']['entries'] if item['id'] == run['evidence'])
+    assert entry['status'] == 'FAIL'
     return path
 
 
@@ -47,7 +51,8 @@ def loc_entry(cli):
 
 def test_exception_admits_implementation_keeps_fail_and_shows_separately(cli, repo, tmp_path):
     failing_base(cli, repo, tmp_path)
-    assert any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['base'] == []
+    assert loc_entry(cli)[1]['status'] == 'FAIL'
     except_loc(cli)
     current = status(cli)
     assert not any('loc' in g for g in current['base'])
@@ -76,14 +81,33 @@ def test_exception_admits_implementation_keeps_fail_and_shows_separately(cli, re
 
 
 def test_exception_on_one_failure_cannot_satisfy_other_gates(cli, repo, tmp_path):
-    failing_base(cli, repo, tmp_path, second=True)
+    path=failing_base(cli, repo, tmp_path, second=True)
+    manifest=json.loads(path.read_text())
+    precommit=next(g for g in manifest['gates'] if g['id']=='pre-commit')
+    precommit.update(applicability='APPLICABLE',required=True,
+                     argv=[sys.executable,'-c',"from pathlib import Path; import sys; sys.exit(Path('svc/app.py').read_text() == 'new candidate failure\\n')"],
+                     source=next(g for g in manifest['gates'] if g['id']=='loc')['source'])
+    precommit.pop('reason',None)
+    path.write_text(json.dumps(manifest));invoke(cli,'gates','plan','--file',str(path))
+    # Replanning invalidates earlier bindings; establish fresh base FAIL evidence for both gates.
+    invoke(cli, 'gates', 'run', '--stage', 'base')
     except_loc(cli)
-    invoke(cli, 'gates', 'run', '--stage', 'base', '--resume', ok=False)
-    gaps = status(cli)['base']
-    assert not any('gate loc ' in g for g in gaps) and any('gate contracts ' in g for g in gaps)
-    # The uncovered contracts failure holds back review (workflow_gaps), not implementation.
-    import al_transitions
-    assert any('gate contracts ' in g for g in al_transitions.workflow_gaps(json.loads(cli('show')[1])))
+    invoke(cli, 'gates', 'run', '--stage', 'base', '--resume')
+    state = json.loads(cli('show')[1])
+    assert sum(item['status'] == 'FAIL' for item in state['evidence']['entries']) >= 2
+    assert any(item['gate'] == 'loc' and item['stage'] == 'base' for item in state['gate_runs'])
+    assert any(item['gate'] == 'contracts' and item['stage'] == 'base' for item in state['gate_runs'])
+    exceptions=status(cli)['baseline_exceptions']
+    assert len(exceptions)==1 and exceptions[0]['gate']=='loc' and exceptions[0]['status']=='current'
+    # A genuinely new candidate-only failure in the touched unit still blocks the stage.
+    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'writer','start','--id','engineer','--role','al-engineer','--files','svc/app.py')
+    (repo/'svc/app.py').write_text('new candidate failure\n')
+    invoke(cli,'writer','finish','--id','engineer','--outcome','success');invoke(cli,'phase','VERIFICATION')
+    invoke(cli,'gates','run','--stage','candidate',ok=False)
+    state=json.loads(cli('show')[1]);run=next(item for item in reversed(state['gate_runs']) if item['gate']=='pre-commit' and item['stage']=='candidate')
+    assert next(item for item in state['evidence']['entries'] if item['id']==run['evidence'])['status']=='FAIL'
+    assert any('pre-commit' in gap for gap in status(cli)['candidate'])
 
 
 def test_tampered_log_or_replanned_manifest_makes_the_exception_stale(cli, repo, tmp_path):
@@ -92,21 +116,20 @@ def test_tampered_log_or_replanned_manifest_makes_the_exception_stale(cli, repo,
     _, entry = loc_entry(cli)
     log = Path(entry['log']);original = log.read_bytes()
     log.write_bytes(original + b'forged\n')
-    assert any('loc' in g for g in status(cli)['base'])
     assert status(cli)['baseline_exceptions'][0]['status'] == 'stale'
     log.write_bytes(original)
-    assert not any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'current'
     invoke(cli, 'gates', 'plan', '--file', str(path))
-    assert any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'stale'
 
 
 def test_changed_declared_environment_makes_the_exception_stale(cli, repo, tmp_path, monkeypatch):
     monkeypatch.setenv('AL_UI_BROWSER', 'chromium')
     failing_base(cli, repo, tmp_path, env_names=('AL_UI_BROWSER',))
     except_loc(cli)
-    assert not any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'current'
     monkeypatch.setenv('AL_UI_BROWSER', 'webkit')
-    assert any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'stale'
 
 
 def test_exception_requires_exact_current_failure_and_authorization(cli, repo, tmp_path, state_file):
@@ -131,15 +154,15 @@ def test_forged_exception_artifact_is_refused(cli, repo, tmp_path):
     stored = Path(state['baseline_exceptions'][-1]['artifact']['stored_path'])
     value = json.loads(stored.read_bytes());value['binding']['evidence'] = 'E999'
     stored.write_text(json.dumps(value, sort_keys=True))
-    assert any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'stale'
 
 
 def test_rerunning_the_base_gate_makes_the_exception_stale(cli, repo, tmp_path):
     failing_base(cli, repo, tmp_path)
     except_loc(cli)
-    assert not any('loc' in g for g in status(cli)['base'])
-    invoke(cli, 'gates', 'run', '--stage', 'base', '--id', 'loc', ok=False)
-    assert any('loc' in g for g in status(cli)['base'])
+    assert status(cli)['baseline_exceptions'][0]['status'] == 'current'
+    invoke(cli, 'gates', 'run', '--stage', 'base', '--id', 'loc')
+    assert loc_entry(cli)[1]['status'] == 'FAIL'
     assert status(cli)['baseline_exceptions'][0]['status'] == 'stale'
 
 

@@ -92,17 +92,26 @@ def _audit_fixture(r, *, role_only=False):
     return root
 
 
-def _unresolved_public_producer(r, kind):
+def _unresolved_public_producer(r, kind, monkeypatch):
     import sqlite3
 
     from harness.execution_artifacts import ArtifactStore
+    from harness.policy import claims
 
-    r.controller.conn.execute(
-        "CREATE TRIGGER review_repro_settlement BEFORE UPDATE OF state ON policy_attempts "
-        "WHEN NEW.state IN ('settled','unresolved') BEGIN SELECT "
-        "RAISE(ABORT,'review fixture settlement fault'); END"
-    )
-    try:
+    transition = claims.transition
+    faulted = []
+
+    def fail_terminal(conn, attempt_id, state):
+        row = conn.execute(
+            "SELECT operation,state FROM policy_attempts WHERE id=?", (attempt_id,)
+        ).fetchone()
+        if row["state"] == "started" and state in {"closed", "unresolved"}:
+            faulted.append(attempt_id)
+            raise sqlite3.IntegrityError("review fixture settlement fault")
+        return transition(conn, attempt_id, state)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(claims, "transition", fail_terminal)
         with pytest.raises(sqlite3.IntegrityError, match="review fixture settlement fault"):
             if kind == "overlap":
                 r.operation.dispatch(r.principal, "apply_patch", patch(r, "svc/producer.py"))
@@ -117,8 +126,7 @@ def _unresolved_public_producer(r, kind):
                         "expected_graph_revision": r.state["integration"]["graph_revision"],
                     },
                 )
-    finally:
-        r.controller.conn.execute("DROP TRIGGER review_repro_settlement")
+    assert len(faulted) == 1
     row = r.controller.conn.execute(
         "SELECT a.state,c.claim,c.state FROM policy_attempts a "
         "JOIN policy_resource_claims c ON c.attempt_id=a.id"
@@ -137,7 +145,7 @@ def test_repository_audit_refuses_unresolved_source_before_traversal(
 
     r = policy_runtime
     _audit_fixture(r)
-    _unresolved_public_producer(r, producer)
+    _unresolved_public_producer(r, producer, monkeypatch)
     traversed, texts = [], []
     original_inventory, original_text = repository_audit.inventory, repository_audit._text
 
@@ -243,7 +251,7 @@ def test_live_audit_has_no_unmatched_or_removed_policy_fallback(
 
     r = policy_runtime
     _audit_fixture(r, role_only=selection == "unmatched-role")
-    _unresolved_public_producer(r, "overlap")
+    _unresolved_public_producer(r, "overlap", monkeypatch)
     if selection == "removed-binding":
         r.controller.conn.execute("DELETE FROM policy_bindings")
     original = repository_audit.inventory
@@ -277,11 +285,13 @@ def _descriptor_route(r, route):
 
 @pytest.mark.parametrize("route", ["fallback", "source", "log", "config"])
 @pytest.mark.parametrize("selection", ["selected", "unmatched-role", "removed-binding"])
-def test_descriptor_backed_routes_do_not_skip_known_liability(policy_runtime, route, selection):
+def test_descriptor_backed_routes_do_not_skip_known_liability(
+    policy_runtime, monkeypatch, route, selection
+):
     r = policy_runtime
     target, name, request = _descriptor_route(r, route)
     _audit_fixture(r, role_only=selection == "unmatched-role")
-    _unresolved_public_producer(r, "unknown")
+    _unresolved_public_producer(r, "unknown", monkeypatch)
     if selection == "removed-binding":
         r.controller.conn.execute("DELETE FROM policy_bindings")
     # This genuinely metadata-only diagnostic still has no repository byte dependency.

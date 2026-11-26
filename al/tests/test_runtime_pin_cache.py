@@ -12,19 +12,52 @@ from al.installer import runtime_pin, runtime_pin_cache
 from al.installer.runtime_pin import prepare_pin, verify_pin
 from al.installer.runtime_pin_cache import record_path, verify_pin_cached
 from al.installer.validator_origin import canonical, digest
-from al.tests.conftest import copy_al_source
-from al.tests.runtime_run_helpers import launched  # noqa: F401
+from al.installer.bootstrap import bootstrap_cli
+from al.installer.validator_origin import capture_canonical, verify_snapshot
+from al.tests.runtime_run_helpers import _environment, invoke
 
 MEMBER = "codex/skills/al/scripts/al_state.py"
 _PIN = {}
 
 
+def _distribution(root):
+    """Small distribution for payload/cache decisions; no application code is executed."""
+    layout = {
+        "schema_version": 1,
+        "platforms": ["codex"],
+        "package": "skills/al",
+        "package_roots": ["SKILL.md", "scripts", "reference"],
+        "roles": ["al-engineer"],
+        "required_scripts": ["al_state.py"],
+        "required_claude_scripts": [],
+        "exclude_parts": ["__pycache__"],
+        "exclude_suffixes": [".pyc"],
+        "prerequisites": {"python": "3.11", "git": "2.30"},
+        "runtime_schema": 2,
+    }
+    files = {
+        "release-layout.json": json.dumps(layout),
+        "alctl.py": '"""Synthetic bootstrap resource."""\n',
+        "installer/fixture.py": "VALUE = 1\n",
+        "codex/agents/al-engineer.toml": 'name = "al-engineer"\n',
+        "codex/skills/al/SKILL.md": "# Synthetic pin decision fixture\n",
+        "codex/skills/al/reference/guide.md": "# Reference resource\n",
+        MEMBER: "VALUE = 1\n",
+        "codex/skills/al/scripts/nested/helper.py": "VALUE = 2\n",
+    }
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return root
+
+
 @pytest.fixture
 def pinned(tmp_path_factory, tmp_path, monkeypatch):
-    """A private copy of one real runtime pin (prepared once per process) and a payload counter."""
+    """A private copy of a genuinely prepared small pin and a payload counter."""
     if "template" not in _PIN:
         base = tmp_path_factory.mktemp("pin-cache-template")
-        distribution = copy_al_source(base / "distribution")
+        distribution = _distribution(base / "distribution")
         storage = base / "al-run-pins/pins"
         storage.parent.mkdir(mode=0o700)
         binding = prepare_pin(distribution, "codex", storage)
@@ -288,17 +321,140 @@ def test_install_update_rollback_and_doctor_paths_never_consult_the_cache(pinned
     assert users == ["runtime_pin_boot.py", "runtime_run.py"]
 
 
-def test_launcher_dispatch_uses_the_cache_and_old_pins_verify_in_full():
-    from al.installer.runtime_pin_boot import CHILD
+@pytest.mark.parametrize('cache_capable', [True, False])
+def test_launcher_dispatch_uses_the_cache_and_old_pins_verify_in_full(
+    tmp_path, monkeypatch, cache_capable
+):
+    from al.installer import runtime_pin_transaction as transactions
+    from al.installer.engine import MODULES
+    from al.installer.runtime_pin_boot import program
 
-    assert "if 'installer/runtime_pin_cache.py' in captured:" in CHILD
-    assert "verify_pin_cached(base/'pins',pin,captured=captured,write=False)" in CHILD
-    assert "else:verified=verify_pin(base/'pins',pin)" in CHILD
-    run = (Path(runtime_pin.__file__).parent / "runtime_run.py").read_text()
-    assert "verify_pin(" not in run.replace("verify_pin_cached(", "")
+    distribution = _distribution(tmp_path / 'distribution')
+    installer = Path(runtime_pin.__file__).parent
+    for source in installer.glob('*.py'):
+        shutil.copyfile(source, distribution / 'installer' / source.name)
+    scripts = distribution / 'codex/skills/al/scripts'
+    for name in (*MODULES, 'al_runtime_resources'):
+        shutil.copyfile(installer.parent / f'codex/skills/al/scripts/{name}.py',
+                        scripts / f'{name}.py')
+    (scripts / 'al_state.py').write_text(
+        "def main():\n    print('fixture-application-dispatched', flush=True)\n"
+    )
+    # Instrument private source before preparing its real content-addressed pin.
+    # Both entry points delegate to the genuine verifier, including its failures.
+    for name, function, marker in (
+        ('runtime_pin.py', 'verify_pin', 'fixture-full-verifier'),
+        ('runtime_pin_cache.py', 'verify_pin_cached', 'fixture-cache-verifier'),
+    ):
+        path = distribution / 'installer' / name
+        with path.open('a') as stream:
+            stream.write(
+                f'\n_fixture_original = {function}\n'
+                f'def {function}(*args, **kwargs):\n'
+                f'    print({marker!r}, flush=True)\n'
+                '    return _fixture_original(*args, **kwargs)\n'
+            )
+    if not cache_capable:
+        (distribution / 'installer/runtime_pin_cache.py').unlink()
+
+    base = tmp_path / 'al-run-pins'
+    base.mkdir(mode=0o700)
+    binding = prepare_pin(distribution, 'codex', base / 'pins')
+    verified = verify_pin(base / 'pins', binding)
+    assert ('installer/runtime_pin_cache.py' in verified['bytes']) is cache_capable
+    repository = tmp_path / 'repository'
+    repository.mkdir()
+    home = tmp_path / 'home'
+    home.mkdir()
+    env = _environment(home)
+    for name in ('HARNESS_RETRY_CONTROL_FD', 'HARNESS_RETRY_CONTROL_NONCE'):
+        env.pop(name, None)
+    for args in (('init', '-q'), ('commit', '--allow-empty', '-qm', 'initial')):
+        result = invoke(['git', *args], repository, env)
+        assert result.returncode == 0, result.stderr
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(transactions, 'storage', lambda **kwargs: base)
+    transaction = transactions.reserve(
+        transactions.subject(repository, 'codex', 'dispatch-fixture'), binding
+    )
+    request = {'transaction': transaction, 'storage': str(base), 'argv': ['start']}
+    command = [verified['manifest']['interpreter']['executable'], '-I', '-S', '-B',
+               '-c', program(request)]
+    result = invoke(command, repository, env)
+    assert result.returncode == 0, result.stderr
+    markers = [line for line in result.stdout.splitlines() if line.startswith('fixture-')]
+    expected = 'fixture-cache-verifier' if cache_capable else 'fixture-full-verifier'
+    assert markers[0] == expected, result.stdout
+    assert markers.count(expected) == 1
+    assert markers[-1] == 'fixture-application-dispatched', result.stdout
+    if cache_capable:
+        # A cold cached entry may legitimately delegate to full verification.
+        assert markers.count('fixture-full-verifier') <= 1
+        # Exercise the launcher-side run path as well as its generated child.
+        # A warm unchanged pin must not acquire another full payload read there.
+        driver = '''
+import sys,types
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+context=types.ModuleType('_al_run_pin_context');context.storage=sys.argv[2]
+sys.modules['_al_run_pin_context']=context
+from installer import runtime_pin,runtime_pin_cache,runtime_run
+import json
+binding=json.loads(sys.argv[3])
+runtime_pin_cache.RACY_NS=0  # Clock-window behavior has separate coverage.
+runtime_pin_cache.verify_pin_cached(Path(context.storage)/'pins',binding)
+def forbidden(*args,**kwargs):
+    raise AssertionError('unexpected launcher full payload read')
+runtime_pin.verify_payload=forbidden
+try:runtime_pin.verify_pin(Path(context.storage)/'pins',binding)
+except AssertionError as error:
+    assert str(error)=='unexpected launcher full payload read'
+    print('fixture-full-read-guard-live',flush=True)
+else:raise AssertionError('full-read negative control did not fail')
+runtime_run.run(sys.argv[4],'codex','dispatch-fixture',['start'])
+'''
+        launched = invoke(
+            [verified['manifest']['interpreter']['executable'], '-I', '-S', '-B',
+             '-c', driver, installer.parent, base, json.dumps(binding), repository],
+            repository, dict(env, AL_SERVICE='0'),
+        )
+        assert launched.returncode == 0, launched.stderr
+        assert 'fixture-full-read-guard-live' in launched.stdout
+        assert 'fixture-application-dispatched' in launched.stdout
+    else:
+        assert 'fixture-cache-verifier' not in markers
+        member = _member(base / 'pins', binding)
+        mode = member.stat().st_mode & 0o777
+        member.chmod(0o600)
+        member.write_bytes(member.read_bytes() + b'\n# corrupt old pin\n')
+        member.chmod(mode)
+        refused = invoke(command, repository, env)
+        assert refused.returncode != 0
+        assert 'runtime pin member changed' in refused.stdout + refused.stderr
+        assert 'fixture-application-dispatched' not in refused.stdout
 
 
-def test_public_commands_reuse_the_record_and_refuse_a_changed_pin(launched):
+@pytest.fixture
+def readonly_launched(tmp_path):
+    source = Path(__file__).resolve().parents[1]
+    before = capture_canonical(source)["origin"]["closure"]
+    home, repo = tmp_path / "readonly-home", tmp_path / "readonly-repo"
+    home.mkdir(); repo.mkdir()
+    env = _environment(home)
+    for args in [("init", "-q"), ("-c", "user.name=fixture", "-c", "user.email=f@invalid", "commit", "--allow-empty", "-qm", "initial")]:
+        result = invoke(["git", *args], repo, env)
+        assert result.returncode == 0, result.stderr
+    launcher = home / "bin/alctl"
+    boot = bootstrap_cli(source, launcher, home / "installer")
+    snapshot = Path(boot["snapshot"])
+    verify_snapshot(snapshot, boot["validator_binding"])
+    yield snapshot, home, repo, launcher, env
+    assert capture_canonical(source)["origin"]["closure"] == before
+    verify_snapshot(snapshot, boot["validator_binding"])
+
+
+def test_public_commands_reuse_the_record_and_refuse_a_changed_pin(readonly_launched):
+    launched = readonly_launched
     from al.tests.runtime_run_helpers import public_run, run_record, start
 
     start(launched)

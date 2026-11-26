@@ -262,3 +262,124 @@ def extract_record(source):
     else:
         raise ValueError("unsupported structured source")
     return Extraction(tuple(assertions))
+
+
+BINDING_READS = 4
+BINDING_BYTES = 4 * 1024 * 1024
+
+
+def binding_record(conn, table, fields, where, args, reads, meter, *, supplied=None):
+    """Bounded internal SQL projections; IDs never substitute for body validation."""
+    size_sql = "+".join(f"coalesce(length(CAST({field} AS BLOB)),0)" for field in fields.values())
+    size = conn.execute(f"SELECT {size_sql} FROM {table} WHERE {where}", args).fetchone()
+    if size is None:
+        return None, "absent"
+    remaining = min(
+        MAX_SOURCE_BYTES, BINDING_BYTES - meter["bytes"], reads["max_bytes"] - reads["bytes"]
+    )
+    if meter["count"] >= BINDING_READS or reads["count"] >= reads["max_count"]:
+        return None, "binding-read-budget"
+    meter["count"] += 1
+    reads["count"] += 1
+    # JSON escaping can expand each UTF-8 byte sixfold; leave room for keys/numbers.
+    if size[0] * 6 + 1024 > remaining:
+        return None, "binding-byte-budget"
+    if supplied is None:
+        columns = ",".join(f"{field} AS {name}" for name, field in fields.items())
+        row = conn.execute(
+            f"SELECT {columns} FROM {table} WHERE {where} AND ({size_sql})<=?",
+            (*args, (remaining - 1024) // 6),
+        ).fetchone()
+        if row is None:
+            return None, "binding-source-changed"
+        value = dict(row)
+    else:
+        value = supplied
+    raw = canonical(value).encode()
+    # Also guard supplied observations and the exact serialized projection.
+    if len(raw) > remaining:
+        return None, "binding-byte-budget"
+    reads["bytes"] += len(raw)
+    meter["bytes"] += len(raw)
+    if _SECRET.search(raw.decode()):
+        return None, "sensitive-binding-source"
+    return value, None
+
+
+def context_versions(conn, scope, reads, meter):
+    """A freshly validated bounded subset, never a complete task decision inventory."""
+    unavailable = {"requirements": None, "design": None, "spec": None}
+    if not scope.task_id or scope.permitted_source_versions is not None:
+        return unavailable
+    metadata = conn.execute(
+        "SELECT id FROM design_entries WHERE task_id=? "
+        "AND status IN ('stated','accepted','modified') ORDER BY id LIMIT 3",
+        (scope.task_id,),
+    ).fetchall()
+    selected = [row[0] for row in metadata[:2]]
+    design = {
+        "selected_ids": selected,
+        "overflow": len(metadata) > 2,
+        "complete": len(metadata) <= 2,
+        "selection_ids": [row[0] for row in metadata],
+        "versions": [],
+        "unavailable": [],
+    }
+    spec_id = conn.execute(
+        "SELECT id FROM spec_versions WHERE task_id=? ORDER BY version DESC LIMIT 1",
+        (scope.task_id,),
+    ).fetchone()
+    spec = None
+    if spec_id:
+        value, reason = binding_record(
+            conn,
+            "spec_versions s LEFT JOIN approvals a ON a.task_id=s.task_id "
+            "AND a.spec_version=s.version",
+            {
+                "version": "s.version",
+                "content_hash": "s.content_hash",
+                "status": "s.status",
+                "revision": "s.revision",
+                "approval_id": "a.id",
+            },
+            "s.task_id=? AND s.id=?",
+            (scope.task_id, spec_id[0]),
+            reads,
+            meter,
+        )
+        spec = {
+            "selected_id": spec_id[0],
+            "content_version": digest(canonical(value).encode()) if value is not None else None,
+            "unavailable": reason,
+        }
+        if value is not None:
+            spec.update(value, approval_state="recorded-reference-not-execution-authority")
+    for entry_id in selected:
+        value, reason = binding_record(
+            conn,
+            "design_entries",
+            {
+                name: name
+                for name in (
+                    "task_id",
+                    "section",
+                    "binding",
+                    "status",
+                    "statement",
+                    "response",
+                    "rationale",
+                )
+            },
+            "task_id=? AND id=? AND status IN ('stated','accepted','modified')",
+            (scope.task_id, entry_id),
+            reads,
+            meter,
+        )
+        if reason:
+            design["complete"] = False
+            design["unavailable"].append({"id": entry_id, "reason": reason})
+        else:
+            design["versions"].append(
+                {"id": entry_id, "content_version": digest(canonical(value).encode())}
+            )
+    return {"requirements": None, "design": design if metadata else None, "spec": spec}

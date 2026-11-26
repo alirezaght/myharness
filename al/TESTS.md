@@ -192,7 +192,7 @@ has. Per file:
 
 ## 5. Host-neutral tests run once
 
-`al/codex/skills/al/tests/single-run.json` lists 116 test files that exercise only shared
+`al/codex/skills/al/tests/single-run.json` lists 120 test files that exercise only shared
 scripts through the host-adapter fixtures (`cli`, `cli_process`, `state_file`, `launcher`,
 `run_state`; each host's `conftest.py` defines them for its own runtime layout). They run once,
 in the Codex suite; their Claude copies were removed. The shared scripts they exercise are
@@ -247,3 +247,51 @@ exempt; each covers a distinct risk. A `*:` pattern is one journey run on both h
 A handful of tooling tests that must spawn real runners or interpreters are listed under `exempt`
 with their reason. Everything else starts from `run_state(...)` (a built-in state or a module state,
 `run_state("name", build)`, built once per process) or calls the decision function directly.
+
+
+## Fixture-only performance repairs (issues #24/#36)
+
+All existing test nodes and safety assertions remain. Named `run_state` templates capture only
+pre-operation state and restore private mutable copies; they never substitute warmed results.
+
+| File | Reused prefix | Operations and invariant retained |
+|---|---|---|
+| `test_parallel_writers.py` | implementation before either writer starts | Real writer starts/finishes, concurrent edits, attribution, overlap and provisional evidence refusals |
+| `test_review_window.py` | ready-for-review state including broad evidence and behavior | Spies installed after restore; real review-start and second-evaluation mutation/loaded-state assertions |
+| `test_standalone_papercuts.py` | separate pending, prepared and started states | Reapply admission spy per test; actual writer movement, rebind/report stamping, shard aggregation and failed retry; malformed start stays real |
+| `test_action_cache.py` | initial run before evidence | Direct key tests unchanged; distinct subsequent sessions and command marker writes still establish cross-run reuse/misses |
+| `test_advisory_gates.py` | identical seeded/start prefix in two public routes | Actual discovery, base/candidate gates and later-gates-after-failure assertions remain |
+| `test_incremental_inventory.py` | base/ignore repository and initial run before first inventory | Restore precedes spies and inventory; cold comparisons, structural invalidation and capture drift remain real |
+
+`test_runtime_service.py` retains its module-scoped launcher and all 17 cases. Destructive cases
+settle owned services and restore actual pin bytes/mode before warming s1 through the real
+launcher; the complete status list must name exactly s1's bound pin. Read-only integration
+fixtures bootstrap the canonical source into private verified snapshots. A separate source
+variant is materialized from the verified closure for the two-runtime case; neither the working
+checkout nor the sealed snapshot is edited. Canonical closure and original snapshot are checked
+afterward. The pin-cache public integration has its own read-only fixture; generic `launched`
+remains available unchanged for source-mutating consumers, and all 24 pin-cache cases remain.
+
+`WorkspaceJourney(..., workspace_profile_dir=...)` optionally profiles the actual workspace
+installer argv with `python -I -S -B -m cProfile -o ...` before its script path. Outputs have
+fresh private names beneath the journey artifacts and outside the repository; their hashes
+enter the settled transcript. Wiring spies are not performance proof. Real paired diagnostics
+and a stable uninstrumented complete baseline remain separate obligations.
+
+`test_import_events.py` runs once in Codex: exact ordered imports/uncertainties, alias and scope taint, container/lambda escapes, the 100000 occurrence boundary (including shared AST nodes), and deep binding recursion. Shared script parity covers Claude.
+
+Removed sourced rules refresh only with fresh absence and complete unclassified-path provenance; exact projection and full binding comparison preserve runner/source hashes. `test_gate_refresh_rule_sources` covers provenance and adjacent refusals; both hosts' `runtime_batch6` retain public untracked and tracked deletion, normal rediscovery and post-refresh currency.
+
+
+The installer update files use `al/tests/update_templates.py` for inspected,
+construction-independent cases: 57 reviewed-update cases and 37 operator-update
+cases restore a genuine enrolled prerequisite at the same absolute path. Each
+pytest process builds its prefix once, then restores all owned bytes, modes and
+symlink targets into independent regular files before every eligible case,
+including the first. Returned data is copied and each case rebuilds its environment.
+Private directory identities and the pristine digest must still match; interrupted
+restores refuse. Runtime decisions and native cache receipts are never rewritten.
+Old-pin/bootstrap construction and source-injected faults stay fresh; new tests
+default fresh until inspected. Per-case public operations and safety assertions
+remain. Thirteen operator scope cases call the decision directly with a passing
+control and unchanged-input checks. All 184 existing nodes in the two files remain.

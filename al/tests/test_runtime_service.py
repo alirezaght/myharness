@@ -6,6 +6,7 @@ command is compared with the in-process path (`AL_SERVICE=0`) byte for byte."""
 import json
 import re
 import os
+import signal
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,7 +17,9 @@ import pytest
 
 from al.installer.runtime_pin_boot import CHILD
 from al.installer.runtime_service_boot import program
-from al.tests.conftest import copy_al_source
+from al.installer.bootstrap import bootstrap_cli
+from al.installer.source_materialization import write_captured
+from al.installer.validator_origin import capture_canonical, verify_snapshot
 
 pytestmark = pytest.mark.skipif(sys.platform not in ("darwin", "linux"), reason="POSIX service")
 
@@ -34,12 +37,43 @@ def git(cwd, *args):
     return result.stdout.decode().strip()
 
 
+def service_identity(pid):
+    from al.installer.activity_process import identity
+
+    observed = identity(pid)
+    assert observed is not None and not observed["zombie"], "service exited before identity capture"
+    assert observed["pgid"] == observed["sid"] == pid, "service has no private session"
+    return observed
+
+
+def wait_service_exit(expected, seconds=20):
+    from al.installer.activity_process import identity
+    from al.installer.owned_process import group_members
+
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        current = identity(expected["pid"])
+        if current is not None:
+            assert {k: v for k, v in current.items() if k != "zombie"} == {
+                k: v for k, v in expected.items() if k != "zombie"
+            }, "owned service process identity changed"
+        members = group_members(expected["pgid"])
+        assert all(row["sid"] == expected["sid"] and row["start"] >= expected["start"]
+                   for row in members), "foreign process in owned service group"
+        if (current is None or current["zombie"]) and not any(not row["zombie"] for row in members):
+            return
+        time.sleep(0.05)
+    raise AssertionError("owned service or command/watch children have not settled")
+
+
 class Setup:
     def __init__(self, base):
         self.base = base
         self.base.mkdir(parents=True, exist_ok=True)
         self.profile_count = 0
-        self.source = self.measured('source-copy', lambda: copy_al_source(base / "source/al"))
+        self.owned_services = {}
+        self.source = Path(__file__).resolve().parents[1]
+        self.source_files = self.measured('source-capture', lambda: capture_canonical(self.source))["origin"]["closure"]
         self.home = base / "home"
         self.home.mkdir()
         self.repo = base / "repo"
@@ -71,11 +105,33 @@ class Setup:
                 with (self.base / 'stage-profile.jsonl').open('a') as output:
                     output.write(json.dumps({'truncated': True}) + '\n')
 
-    def bootstrap(self):
-        result = self.measured('bootstrap', lambda: invoke([sys.executable, "-I", "-S", "-B", self.source / "alctl.py", "bootstrap", "--source-root",
-                         self.source, "--destination", self.launcher, "--state-root", self.home / "installer"],
-                        self.repo, self.env))
-        assert result.returncode == 0, result.stderr[-2000:]
+    def bootstrap(self, source=None):
+        boot = self.measured('bootstrap', lambda: bootstrap_cli(source or self.source, self.launcher, self.home / "installer"))
+        verified = self.measured('snapshot-verify', lambda: verify_snapshot(Path(boot["snapshot"]), boot["validator_binding"]))
+        if source is None:
+            self.boot, self.snapshot = boot, Path(boot["snapshot"])
+        return verified
+
+    def variant(self):
+        verified = verify_snapshot(self.snapshot, self.boot["validator_binding"])
+        root = self.base / "variant"
+        root.mkdir(mode=0o700)
+        for name, raw in verified["bytes"].items():
+            write_captured(self.snapshot / name, root / name, raw,
+                           verified["origin"]["closure"][name]["mode"])
+        return root
+
+    def restore_service(self):
+        self.stop_services()
+        code, out, err = self.run("s1", "show", "--json")
+        assert code == 0, (out[-2000:], err[-2000:])
+        rows = self.wait(lambda: self.control("status"))
+        assert [row["pin_identity"] for row in rows] == [self.pin_of("s1")["pin_identity"]]
+        before = self.served()
+        code, out, err = self.run("s1", "show", "--json")
+        assert code == 0, (out[-2000:], err[-2000:])
+        assert self.served() == before + 1
+
 
     def run(self, session, *argv, repo=None, service=True, env=None):
         repo = repo or self.repo
@@ -90,7 +146,30 @@ class Setup:
         stage = 'service-' + action if action in {'status', 'stop'} else 'service-control'
         result = self.measured(stage, lambda: invoke([self.launcher, "service", action], self.repo, self.env))
         assert result.returncode == 0, result.stdout + result.stderr
-        return json.loads(result.stdout)["services"]
+        rows = json.loads(result.stdout)["services"]
+        from al.installer.activity_process import identity
+        from al.installer.owned_process import group_members
+        for row in rows:
+            assert Path(row["directory"]).parent == self.services
+            current = identity(row["pid"])
+            if current is None:
+                assert row["pid"] in self.owned_services or not group_members(row["pid"]), \
+                    "unobserved service identity leaves child settlement unproven"
+                continue
+            assert current["pgid"] == current["sid"] == row["pid"], "service has no private session"
+            observed = current
+            previous = self.owned_services.get(row["pid"])
+            assert previous is None or previous["start"] == observed["start"], \
+                "owned service PID was reused"
+            self.owned_services[row["pid"]] = observed
+        return rows
+
+    def stop_services(self):
+        self.control("status")
+        self.control("stop")
+        for observed in self.owned_services.values():
+            wait_service_exit(observed)
+        self.owned_services.clear()
 
     def wait(self, predicate, seconds=20):
         deadline = time.monotonic() + seconds
@@ -124,9 +203,28 @@ def setup(tmp_path_factory):
     value.wait(lambda: value.control("status"))
     yield value
     try:
-        value.control("stop")
+        assert capture_canonical(value.source)["origin"]["closure"] == value.source_files
+        verify_snapshot(value.snapshot, value.boot["validator_binding"])
     finally:
-        subprocess.run(["pkill", "-f", str(value.home / "installer/al-run-pins")], capture_output=True)
+        value.stop_services()
+
+
+@pytest.fixture
+def restored_service(setup):
+    yield
+    setup.restore_service()
+
+
+@pytest.fixture
+def restored_pin(setup, restored_service):
+    pin = setup.pin_of("s1")
+    member = setup.home / "installer/al-run-pins/pins" / pin["pin_identity"] / "payload/codex/skills/al/scripts/al_state.py"
+    original, mode = member.read_bytes(), member.stat().st_mode & 0o777
+    yield
+    setup.stop_services()
+    member.chmod(0o600)
+    member.write_bytes(original)
+    member.chmod(mode)
 
 
 def _timeless(result):
@@ -157,7 +255,7 @@ def test_status_names_the_run_pin_and_watches_the_worktree(setup):
 
 
 def _direct_snapshot(setup):
-    scripts = setup.source / "codex/skills/al/scripts"
+    scripts = setup.snapshot / "codex/skills/al/scripts"
     code = f"import sys;sys.path.insert(0,{str(scripts)!r});import al_snapshot;print(al_snapshot.snapshot())"
     for _ in range(50):
         result = invoke([sys.executable, "-c", code], setup.repo, setup.env)
@@ -237,9 +335,12 @@ def test_harness_contained_command_never_runs_in_the_service(setup):
     assert setup.served() == before
 
 
-def test_runs_pinned_to_different_runtimes_are_isolated(setup):
+def test_runs_pinned_to_different_runtimes_are_isolated(setup, restored_service, request):
     # A new AL release: the launcher changes and a new run gets a new pin.
-    changed = setup.source / "codex/skills/al/reference/performance.md"
+    variant = setup.variant()
+    changed = variant / "codex/skills/al/reference/performance.md"
+    original = changed.read_bytes()
+    request.addfinalizer(lambda: changed.write_bytes(original))
     with changed.open("a") as handle:
         handle.write("\n<!-- release 2 -->\n")
     # The first read after a write moves the access time (relatime), and the installer's
@@ -250,7 +351,7 @@ def test_runs_pinned_to_different_runtimes_are_isolated(setup):
     os.utime(changed, ns=(info.st_mtime_ns + 10**9, info.st_mtime_ns))
     changed.read_bytes()
     assert changed.stat().st_atime_ns == info.st_mtime_ns + 10**9
-    setup.bootstrap()
+    setup.bootstrap(variant)
     worktree = setup.base / "second"
     git(setup.repo, "worktree", "add", "-q", str(worktree), "-b", "second")
     code, out, err = setup.run("s2", "start", "--spec", SPEC, repo=worktree)
@@ -300,7 +401,7 @@ def test_stop_falls_back_then_restarts(setup):
     assert setup.run("s1", "show", "--json") == expected
 
 
-def test_idle_service_exits(setup):
+def test_idle_service_exits(setup, restored_service):
     setup.control("stop")
     setup.wait(lambda: not setup.control("status"))
     env = dict(setup.env, AL_SERVICE_IDLE_SECONDS="1")
@@ -311,14 +412,15 @@ def test_idle_service_exits(setup):
     setup.wait(lambda: not setup.control("status"))
 
 
-def test_tampered_pin_is_detected(setup):
-    """Last in the module: it damages run 1's pin."""
+def test_tampered_pin_is_detected(setup, restored_pin):
+    """Damage run 1's pin, then restore its real bytes before the next case."""
     setup.control("stop")
     setup.wait(lambda: not setup.control("status"))
     assert setup.run("s1", "show", "--json")[0] == 0
     service = Path(setup.wait(lambda: setup.control("status"))[0]["directory"])
     pin = setup.pin_of("s1")
     member = setup.home / "installer/al-run-pins/pins" / pin["pin_identity"] / "payload/codex/skills/al/scripts/al_state.py"
+    assert setup.control("status")[0]["pin_identity"] == pin["pin_identity"]
     mode = member.stat().st_mode
     member.chmod(0o600)
     with member.open("a") as handle:
@@ -328,7 +430,11 @@ def test_tampered_pin_is_detected(setup):
     # can take long on a loaded machine, so wait for the service's own record of it (the event),
     # with a bound far above its cost, before expecting it gone.
     log = service / "log"
-    setup.wait(lambda: log.is_file() and "failed verification" in log.read_text(), seconds=180)
+    try:
+        setup.wait(lambda: log.is_file() and "failed verification" in log.read_text(), seconds=180)
+    except AssertionError as exc:
+        raise AssertionError({"service": str(service), "pin": pin, "status": setup.control("status"),
+                              "service_log": log.read_text() if log.is_file() else "missing"}) from exc
     setup.wait(lambda: not setup.control("status"), seconds=60)
     # A service started on the tampered pin refuses before it listens.
     directory = setup.base / "manual"
@@ -347,3 +453,47 @@ def test_tampered_pin_is_detected(setup):
     time.sleep(1)
     assert not setup.control("status")
     shutil.rmtree(directory)
+
+
+def test_stop_services_waits_for_live_child_after_status_is_empty(tmp_path):
+    from al.installer.activity_process import identity
+
+    launcher = tmp_path / "alctl"
+    launcher.write_text("#!/bin/sh\nprintf '%s\\n' '{\"services\":[]}'\n")
+    launcher.chmod(0o700)
+    child_code = "import time; time.sleep(0.8)"
+    parent_code = (
+        "import subprocess,sys; child=subprocess.Popen([sys.executable,'-c',"
+        + repr(child_code) + "]); print(child.pid,flush=True); sys.stdin.read(1)"
+    )
+    parent = subprocess.Popen([sys.executable, "-c", parent_code], start_new_session=True,
+                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+    child = None
+    try:
+        child_pid = int(parent.stdout.readline())
+        expected = service_identity(parent.pid)
+        child = identity(child_pid)
+        assert child is not None and child["pgid"] == expected["pgid"]
+        parent.stdin.close()
+        parent.wait(timeout=3)
+        current = identity(child_pid)
+        assert current is not None and not current["zombie"]
+        setup = object.__new__(Setup)
+        setup.base, setup.repo, setup.launcher = tmp_path, tmp_path, launcher
+        setup.env, setup.profile_count = dict(os.environ), 0
+        setup.services = tmp_path / "al-services"
+        setup.owned_services = {parent.pid: expected}
+        setup.stop_services()
+        settled = identity(child_pid)
+        assert settled is None or settled["zombie"]
+    finally:
+        if parent.poll() is None:
+            parent.kill()
+            parent.wait(timeout=3)
+        if child is not None:
+            current = identity(child["pid"])
+            if current is not None and current["start"] == child["start"] and not current["zombie"]:
+                os.kill(child["pid"], signal.SIGKILL)
+        if parent.stdin is not None and not parent.stdin.closed:
+            parent.stdin.close()
+        parent.stdout.close()

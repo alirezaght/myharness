@@ -355,13 +355,22 @@ def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
     for path in sorted(names):observed_rule(path)
     hooks=[path for path in HOOKS if observed_rule(path)]
     loc=observed_rule(LOC_CHECKER)
-    contracts=False
-    for unit in units|{'.'}:
+    contract_declarations=[]
+    for unit in sorted(units|{'.'}):
         path=(Path(unit)/'package.json').as_posix()
-        if observed_rule(path):
-            try:scripts=json.loads(scan.text(path)).get('scripts',{})
-            except (ValueError,AttributeError):contracts=True;continue
-            contracts|=any('contract' in key and ('gen' in key or 'build' in key) for key in scripts)
+        if not observed_rule(path):continue
+        reason=None;keys=[]
+        try:
+            data=json.loads(scan.text(path))
+            if not isinstance(data,dict):raise ValueError('package manifest must be an object')
+            scripts=data.get('scripts',{})
+            if not isinstance(scripts,dict):raise ValueError('package scripts must be an object of strings')
+            keys=sorted(key for key in scripts if 'contract' in key and ('gen' in key or 'build' in key))
+            if any(not isinstance(value,str) for value in scripts.values()):raise ValueError('package scripts must be an object of strings')
+        except (ValueError,AttributeError) as error:reason='Unresolved contract declaration: '+str(error)
+        if keys or reason:
+            contract_declarations.append({'path':path,'sha256':scan.files.records[path]['sha256'],'scripts':keys,'reason':reason})
+    contracts=bool(contract_declarations)
     dependencies=sorted(set(dependencies)|names)
     universe={p['path'] for p in facts['scan_inputs'] if p['snapshot']=='current'}|{p['path'] for p in facts['rule_sources']}
     # Discovery inputs are evidence dependencies for every service execution.
@@ -384,7 +393,7 @@ def _inventory_attempt(st,paths,context,opaque,scan,*,bounded=False):
     return {'paths':paths,'units':sorted(units),'rules':[{'path':path,'job':None,'sha256':scan.files.records[path]['sha256']} for path in sorted(names) if path in scan.files],
             'services':services,'import_dependencies':dependencies,'ci':ci,'repository_facts':facts,
             'service_coverage':assessment,'relevance_projection':projection,'global_diagnostics':projection['records'],
-            'auxiliary':{'loc':loc,'hook':hooks[0] if hooks else None,'contracts':contracts,'other_ci':sorted(other_ci)}}
+            'auxiliary':{'loc':loc,'hook':hooks[0] if hooks else None,'contracts':contracts,'contract_declarations':contract_declarations,'other_ci':sorted(other_ci)}}
 
 
 def pipeline_verification(facts,services,ci,projection):

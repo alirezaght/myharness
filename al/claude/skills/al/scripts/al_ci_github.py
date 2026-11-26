@@ -197,4 +197,7 @@ def github_inventory(root,paths,context=None,opaque=(),*,directories=(),capture=
         if exe and exe.get('remote_source'):
             exe['verification_chain']['source_chain']=sorted(obligation['dependencies'],key=lambda d:d['path'])
             exe['remote_source']['source_sha256']=hashlib.sha256(json.dumps(exe['verification_chain'],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            if exe['remote_source'].get('pytest_guard_status')=='UNAVAILABLE' and any('pytest_profile' in r for r in exe['verification_chain'].get('requirements',[])):
+                obligation['unavailable_verification']={'remote_source':exe['remote_source'],'verification_chain':exe['verification_chain']}
+                obligation.update(execution=None,applicability='UNRESOLVED',reason='Recognized GitHub quality job; guarded pytest qualification is unavailable; pipeline verification required')
     return {'obligations':obligations,'deferred':deferred,'dependencies':list(dependencies.values())}

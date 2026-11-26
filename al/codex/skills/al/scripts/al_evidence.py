@@ -32,6 +32,16 @@ import al_writers
 import secrets
 
 
+def process_inspection_guidance(cleanup):
+    errors=' '.join(str(error) for error in cleanup.get('errors',[])).lower()
+    if not (('/bin/ps' in errors or 'process inspection' in errors)
+            and any(text in errors for text in ('operation not permitted','permission denied','errno 1','errno 13'))):return ''
+    return (' Process inspection was denied. Request the host’s reviewed process-inspection permission '
+            '(Codex: require_escalated is a host execution option, not an AL CLI flag). '
+            'Establish positive owned-process settlement and satisfy cleanup obligations, then retry the same protected evidence invocation '
+            'with process inspection available. Keep this historical INFRA result; leader exit alone is not cleanup proof.')
+
+
 def _split(raw):
     values = raw if isinstance(raw, (list, tuple)) else [raw]
     names = []
@@ -172,6 +182,11 @@ def _create(sid, expected_run, *, gate_context=None, own_writer=None, **fields):
         entry["inputs_before"] = L.inputs_fingerprint(entry)
         _SNAPSHOTS[entry["reservation"]] = L.scope_snapshot(entry["scope"])
         al_store.save(sid, st)
+    import al_process_observation
+    entry['process_observation'] = al_process_observation.allocate(entry)
+    _commit(sid, entry)
+    if entry.get('rejected'):
+        raise ValueError('check owner allocation was not committed')
     return entry
 
 
@@ -269,11 +284,16 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
                     proc = prepared.launch(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative, output=out, recipe_input=entry.get('recipe_assignment'))
                 else:
                     proc = al_harness_process.popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
-                                            stdout=out, stderr=subprocess.STDOUT, start_new_session=True)
+                                            stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
+                                            process_observation=entry.get('process_observation'))
+                import al_process_observation
+                al_process_observation.spawned(entry, proc)
                 entry['pid'] = proc.pid
                 entry['process'] = {'pid': proc.pid, 'pgid': proc.pid, 'ownership': 'live-Popen-start_new_session'}
                 if commit:
                     _commit(sid, entry)
+                import al_writer_progress
+                al_writer_progress.report('evidence-execution')
                 try:
                     code = proc.wait(timeout=timeout)
                     if prepared is not None:
@@ -332,7 +352,7 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
         entry['cleanup'] = cleanup
         if cleanup['unresolved'] or cleanup['errors']:
             status = 'INFRA'
-            note = (note + '; ' if note else '') + 'owned-process cleanup uncertain'
+            note = (note + '; ' if note else '') + 'owned-process cleanup uncertain' + process_inspection_guidance(cleanup)
     if failure or entry.get('fingerprint_error'):
         status = 'INFRA'
         note = (note + '; ' if note else '') + str(failure or entry['fingerprint_error'])

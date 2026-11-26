@@ -26,7 +26,10 @@ def command(r, code):
 
 
 def test_untouched_legacy_timeout_remains_best_effort_without_strict_claims(policy_runtime):
+    from pathlib import Path
+
     r = policy_runtime
+    (Path(r.operation.envelope["repository"]) / "svc").mkdir(exist_ok=True)
     request = command(r, "import time;time.sleep(3)") | {"timeout": 1}
     result = r.operation.dispatch(r.principal, "run_command", request)
     record = r.operation.processes._owned(r.principal["thread_id"], result["handle"])
@@ -219,6 +222,9 @@ def seed_protected_failure(r):
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin", reason="positive sealed retry requires qualified Darwin control"
+)
 @pytest.mark.parametrize("background", [False, True])
 def test_actual_protected_al_retry_is_one_shared_charge_and_saves_grant(
     protected_policy_runtime, background
@@ -276,6 +282,9 @@ def test_actual_protected_al_retry_is_one_shared_charge_and_saves_grant(
 from tests.test_execution_operations import operations  # noqa: E402,F401
 
 
+@pytest.mark.skipif(
+    sys.platform != "darwin", reason="escaped-session proof requires Darwin process boundary"
+)
 def test_escaped_session_is_not_cleared_by_initial_group_absence(policy_runtime):
     import json
     import os
@@ -325,6 +334,88 @@ def test_escaped_session_is_not_cleared_by_initial_group_absence(policy_runtime)
             pass
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="Linux PID namespace containment proof"
+)
+def test_linux_pid_namespace_prevents_session_child_survival(policy_runtime):
+    import json
+    import time
+    from pathlib import Path
+
+    r = policy_runtime
+    root = Path(r.operation.envelope["repository"])
+    service = root / "svc"
+    service.mkdir(exist_ok=True)
+    ready = service / "session-child-ready.json"
+    pending = service / "session-child-ready.tmp"
+    canary = service / "session-child-late-canary"
+    ready.unlink(missing_ok=True)
+    pending.unlink(missing_ok=True)
+    canary.unlink(missing_ok=True)
+    child = (
+        "import json,os,time\n"
+        "pending=" + repr(str(pending)) + "\n"
+        "ready=" + repr(str(ready)) + "\n"
+        "with open(pending,'w') as stream:\n"
+        " json.dump({'pid':os.getpid(),'ppid':os.getppid(),'sid':os.getsid(0)},stream)\n"
+        "os.replace(pending,ready)\n"
+        "time.sleep(3.5)\n"
+        "with open(" + repr(str(canary)) + ",'w') as stream:stream.write('survived')\n"
+    )
+    parent = (
+        "import json,pathlib,subprocess,sys,time\n"
+        "p=subprocess.Popen([sys.executable,'-c',"
+        + repr(child)
+        + "],start_new_session=True,stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+        "stderr=subprocess.DEVNULL)\n"
+        "deadline=time.monotonic()+3\n"
+        "ready=pathlib.Path(" + repr(str(ready)) + ")\n"
+        "identity=None\n"
+        "while time.monotonic()<deadline:\n"
+        " try:\n"
+        "  candidate=json.loads(ready.read_text())\n"
+        "  if (all(type(candidate.get(key)) is int and candidate[key]>0 for key in "
+        "('pid','ppid','sid')) and candidate['pid']==candidate['sid'] and "
+        "candidate['pid']!=candidate['ppid']):\n"
+        "   identity=candidate\n"
+        "   break\n"
+        " except (FileNotFoundError,json.JSONDecodeError):\n"
+        "  pass\n"
+        " time.sleep(.01)\n"
+        "raise SystemExit(0 if identity is not None else 31)\n"
+    )
+    result = r.operation.dispatch(r.principal, "run_command", command(r, parent))
+    record = r.operation.processes._owned(r.principal["thread_id"], result["handle"])
+    try:
+        record["thread"].join(8)
+        assert not record["thread"].is_alive()
+        completed = r.operation.dispatch(r.principal, "poll_process", {"handle": result["handle"]})
+        assert completed["status"] == "Exited"
+        assert record["process"].returncode == 0
+        child_identity = json.loads(ready.read_text())
+        assert all(
+            type(child_identity[key]) is int and child_identity[key] > 0
+            for key in ("pid", "ppid", "sid")
+        )
+        assert child_identity["pid"] == child_identity["sid"]
+        assert child_identity["pid"] != child_identity["ppid"]
+        # Observe beyond the child's delayed-write deadline without reading its PID as a host PID.
+        deadline = time.monotonic() + 5
+        while not canary.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not canary.exists()
+        row = r.controller.conn.execute("SELECT * FROM policy_processes").fetchone()
+        assert row["parent_reaped"] and row["boundary_closed"] == 0
+        assert r.controller.conn.execute("SELECT legacy FROM policy_attempts").fetchone()[0] == 1
+    finally:
+        if record["thread"].is_alive():
+            r.operation.dispatch(r.principal, "cancel_process", {"handle": result["handle"]})
+            record["thread"].join(8)
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin", reason="positive sealed retry requires qualified Darwin control"
+)
 def test_actual_post_grant_checkpoint_drift_retains_charge_without_recovery(
     protected_policy_runtime, monkeypatch
 ):

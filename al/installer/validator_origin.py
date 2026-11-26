@@ -90,8 +90,7 @@ def interpreter_identity():
 
 
 def repository_identity(root):
-    from .runtime_retry_control import current
-    control=current()
+    control=getattr(sys.modules.get('_al_retry_control_context'),'client',None)
     if control:
         raw=control.git("repository_identity",root=root)
         lines=raw.decode().splitlines()

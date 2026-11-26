@@ -151,7 +151,13 @@ def test_typed_effect_adapter_rejects_forgery_foreign_parent_other_check_and_wri
         launcher.run(repo, session, False, lambda: result.append(function()))
         return result[0]
 
-    assert guarded(lambda: al_writers._check_effects(state, child)) == []
+    def current_owner_effects():
+        import al_process_observation
+        parent['process_observation'] = al_process_observation.allocate(parent)
+        child['process_observation'] = al_process_observation.allocate(child)
+        return al_writers._check_effects(state, child)
+
+    assert guarded(current_owner_effects) == []
     forged = copy.deepcopy(parent)
     forged["argv"] = ["python", "-c", "open('unowned','w').write('x')"]
     with pytest.raises(SystemExit, match="invalid typed recipe"):
@@ -190,13 +196,25 @@ def test_typed_effect_adapter_rejects_forgery_foreign_parent_other_check_and_wri
     assert cli.state() == actual
 
 
-def test_public_recipe_over_actual_private_harness_channel(cli, repo, tmp_path, monkeypatch):
-    import sys
+def test_public_recipe_over_actual_private_harness_channel(
+    cli, launcher, repo, tmp_path, monkeypatch
+):
+    """Exercise private recipe storage/transport through a protected AL child.
 
+    The process-context IDs below are fixture metadata for this channel protocol test, not
+    evidence of native Harness enrollment or a genuine observed principal.
+    """
+    import os
+    import sys
+    import tempfile
+
+    from al.installer.owned_process import OwnedProcess
     from harness.execution_check_channel import CheckChannel
+    from harness.execution_check_ownership import CheckOwnership
     from harness.execution_contract import digest
     from harness.storage import ExecutionStorage
     from harness.task_tooling import TaskTooling
+    from harness.reliability.process_context import CURRENT, ProcessContext
     from tests.native_model_fixture import operation_sandbox_unavailable
 
     if operation_sandbox_unavailable():
@@ -246,22 +264,86 @@ def test_public_recipe_over_actual_private_harness_channel(cli, repo, tmp_path, 
     context_path = operations / "context.json"
     context_path.write_text(json.dumps(context))
 
-    def validate(binding, declaration, *, final):
+    def validate(binding, declaration, *, final, allocation=False):
         current = cli.state()
         assert current["run_id"] == initial["run_id"] and current["status"] == "RUNNING"
         entry = next(e for e in current["evidence"]["entries"] if e["id"] == binding["id"])
-        assert (
-            all(entry[k] == v for k, v in binding.items()) and entry.get("storage") == declaration
+        assert all(entry[k] == v for k, v in binding.items())
+        if not allocation:
+            assert entry.get("storage") == declaration
+        if final is False:
+            assert entry["status"] == "RUNNING"
+        elif final is True:
+            assert entry["status"] != "RUNNING"
+        else:
+            assert entry["status"] == "RUNNING"
+        return entry
+
+    ownership = CheckOwnership()
+
+    def validate_allocation(binding, *, coordinator):
+        entry = validate(
+            binding,
+            None,
+            final=None if coordinator is None else False,
+            allocation=True,
         )
-        assert entry["status"] != "RUNNING" if final else entry["status"] == "RUNNING"
+        if coordinator is not None:
+            assert type(coordinator) is bool
+            assert bool(entry.get("recipe")) == coordinator
         return entry
 
     storage = ExecutionStorage(context, validate)
-    channel = CheckChannel(context_path, lambda: None, storage=storage)
+    # Keep the ProcessContext scoped to channel construction. Its identity fields are controlled
+    # fixture values and the observer is None, so no native principal or database event is claimed.
+    process_context = ProcessContext(
+        database=Path(context["manager_root"]) / "unused-fixture-observer.sqlite",
+        execution_id=context["execution"],
+        epoch_id=context["epoch"],
+        authority_generation=int(context["authority_generation"]),
+        observation_id="fixture-only-not-native-observation",
+        principal_id=context["principal"],
+    )
+    context_token = CURRENT.set(process_context)
+    try:
+        channel = CheckChannel(
+            context_path,
+            lambda: None,
+            storage=storage,
+            ownership=ownership,
+            validate_allocation=validate_allocation,
+        )
+    finally:
+        CURRENT.reset(context_token)
     monkeypatch.setenv("HARNESS_CHECK_CONTEXT", str(context_path))
     monkeypatch.setenv("HARNESS_CHECK_FD", str(channel.descriptor))
+    owned = OwnedProcess(tmp_path / "owned-recipe-runner", "private-recipe-channel-test")
+    output = tempfile.TemporaryFile()
+    cleanup = None
     try:
-        result = cli("evidence", "run", "--area", "harness-recipe")
+        argv = launcher.child_argv(
+            repo,
+            initial["session_id"],
+            False,
+            ["evidence", "run", "--area", "harness-recipe"],
+        )
+        process = owned.spawn(
+            argv,
+            cwd=repo,
+            env=os.environ.copy(),
+            output=output,
+            pass_fds=(channel.descriptor,),
+        )
+        channel.bind_owner(process, observer=None)
+        assert channel.owner_ready.wait(timeout=5), "actual AL child owner binding was not ready"
+        channel.spawned()
+        try:
+            process.wait(timeout=240)
+        finally:
+            cleanup = owned.cleanup()
+        output.seek(0)
+        stdout = output.read().decode("utf-8", errors="replace")
+        result = (process.returncode, stdout, "")
         assert result[0] == 1, result
         state = cli.state()
         parent = next(e for e in state["evidence"]["entries"] if e.get("recipe"))
@@ -282,4 +364,12 @@ def test_public_recipe_over_actual_private_harness_channel(cli, repo, tmp_path, 
             assert child["storage_settlement"]["descendants_settled"] is None
             assert Path(child["storage_outputs"]["junit"]["path"]).is_file()
     finally:
-        channel.close()
+        try:
+            if cleanup is None:
+                cleanup = owned.cleanup()
+        finally:
+            try:
+                channel.close()
+            finally:
+                output.close()
+        assert cleanup["complete"], cleanup

@@ -79,7 +79,7 @@ def test_explicit_id_can_retry_failure_but_does_not_claim_unexecuted_stage(cli, 
 
 def test_baseline_fix_decision_is_preserved_without_synthesizing_pass(cli, repo, tmp_path):
     markers, _ = prepare(cli, repo, tmp_path)
-    invoke(cli, 'gates', 'run', '--stage', 'base', ok=False)
+    invoke(cli, 'gates', 'run', '--stage', 'base')
     invoke(cli, 'gates', 'decision', '--id', 'middle', '--action', 'fix',
            '--reason', 'The developer explicitly includes repairing this demonstrated baseline failure.',
            '--source', 'Synthetic developer baseline-fix decision')
@@ -177,7 +177,7 @@ def test_resume_other_checks_never_approves_around_actual_architecture_failure(c
     manifest(cli, tmp_path, argv)
     value=Gates.manifest(cli.state())
     architecture=next(g['id'] for g in value['gates'] if g['category']=='lint-imports' and g['applicability']=='APPLICABLE')
-    invoke(cli, 'gates', 'run', '--stage', 'base', ok=False)
+    invoke(cli, 'gates', 'run', '--stage', 'base')
     invoke(cli, 'gates', 'decision', '--id', architecture, '--action', 'fix',
            '--reason', 'The developer explicitly includes the demonstrated forbidden dependency repair.',
            '--source', 'Synthetic developer baseline-fix decision')
@@ -203,3 +203,41 @@ def test_resume_other_checks_never_approves_around_actual_architecture_failure(c
     assert 'candidate gate '+architecture+' requires passing evidence' in str(code)+out+err
     assert state_file().read_bytes()==before
     invoke(cli, 'approved', ok=False)
+
+
+def test_stale_fix_after_public_replan_and_base_rerun_has_no_authority(cli, repo, tmp_path):
+    prepare(cli, repo, tmp_path)
+    (repo/'svc/app.py').write_text('x = 2\n')
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    invoke(cli, 'gates', 'decision', '--id', 'middle', '--action', 'fix',
+           '--source', 'Explicit fixture developer instruction', '--reason', 'Fix this exact failure')
+    invoke(cli, 'gates', 'run', '--stage', 'candidate', ok=False)
+    prior = cli.state()
+    gate=next(g for g in Gates.manifest(prior)['gates'] if g['id']=='middle')
+    candidate_run=next(r for r in reversed(prior['gate_runs']) if r['gate']=='middle' and r['stage']=='candidate')
+    assert Gates.gate_result(prior,Gates.manifest(prior),gate,'candidate',candidate_run['fingerprint'])=='failed'
+    for field in ('manifest','base_oid','evidence'):
+        stale=copy.deepcopy(prior);stale['gate_decisions']['middle'][field]='stale'
+        assert Gates.gate_result(stale,Gates.manifest(stale),gate,'candidate',candidate_run['fingerprint'])=='accepted-existing-failure'
+    stale_environment=copy.deepcopy(prior)
+    next(r for r in reversed(stale_environment['gate_runs']) if r['gate']=='middle' and r['stage']=='base')['env_fingerprint']='changed'
+    assert Gates.gate_result(stale_environment,Gates.manifest(stale_environment),gate,'candidate',candidate_run['fingerprint'])=='failed'
+    new_failure=copy.deepcopy(prior);new_failure['gate_decisions']['middle']['manifest']='stale'
+    failed=next(e for e in reversed(new_failure['evidence']['entries']) if e['area']=='gate-candidate-middle')
+    log=tmp_path/'new-candidate-failure.log';log.write_text('new.py:1: error newly introduced violation\n')
+    failed.update(log=str(log),log_sha256=Gates.L.file_sha(log))
+    assert Gates.gate_result(new_failure,Gates.manifest(new_failure),gate,'candidate',candidate_run['fingerprint'])=='failed'
+    decision = copy.deepcopy(prior['gate_decisions']['middle'])
+    replacement = Gates.manifest(prior)
+    path = tmp_path/'replanned.json';path.write_text(json.dumps(replacement))
+    invoke(cli, 'gates', 'plan', '--file', str(path))
+    invoke(cli, 'gates', 'run', '--stage', 'base')
+    current = cli.state()
+    assert current['gate_decisions']['middle'] == decision
+    assert current['gate_manifests'][-1]['sha256'] != decision['manifest']
+    base = [e for e in current['evidence']['entries'] if e['area']=='gate-base-middle']
+    assert len(base)==2 and all(e['status']=='FAIL' for e in base)
+    assert base[-1]['id'] != decision['evidence']
+    invoke(cli, 'gates', 'run', '--stage', 'candidate')
+    assert cli.state()['gate_decisions']['middle'] == decision
+    assert not Gates.candidate_gaps(cli.state())

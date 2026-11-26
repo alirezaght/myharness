@@ -498,21 +498,14 @@ def latest(st, area, spec=None, kind=None):
     return None
 
 
-def _alive(pid):
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
 def assess(e):
     """(verdict, why). Only verdict VALID is evidence of a pass on today's tree."""
     if e["status"] == "RUNNING":
-        alive = _alive(e.get("owner_pid")) or _alive(e.get("pid"))
-        return ("RUNNING", "still running") if alive else ("INTERRUPTED", "run never finished")
+        import al_process_observation
+        observed = al_process_observation.observe(e)
+        if 'live' in observed.values():return 'RUNNING', 'still running'
+        if 'unknown' in observed.values():return 'UNCONFIRMED', 'original process ownership is unavailable'
+        return 'INTERRUPTED', 'run never finished'
     if not e.get("log") or not Path(e["log"]).is_file():
         return "LOG_MISSING", "the log file is gone — no proof of the result"
     try:

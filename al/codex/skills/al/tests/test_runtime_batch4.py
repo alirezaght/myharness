@@ -33,7 +33,10 @@ def comparison(cli,tmp_path,invocation='compare',**kwargs):
 def test_changed_resume_preserves_each_unfinished_preverification_phase(cli,repo,tmp_path,state_file,phase):
     invoke(cli,'start','--spec','Preserve unfinished work and actual completion proof when the candidate changes.')
     if phase!='PLANNING':
-        invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','COMPLEX' if phase=='PSEUDOCODE' else 'SMALL','--designer','yes' if phase=='PSEUDOCODE' else 'no','--implementers','al-engineer')
+        invoke(cli,'spec-gate','SPEC_READY')
+        classification=['classify','COMPLEX' if phase=='PSEUDOCODE' else 'SMALL','--designer','yes' if phase=='PSEUDOCODE' else 'no','--implementers','al-engineer']
+        if phase=='PSEUDOCODE':classification += ['--hard-part','protocol:typed-pseudocode-comparison']
+        invoke(cli,*classification)
         gate_plan(cli,tmp_path,repo);invoke(cli,'phase',phase)
     p=tmp_path/'interrupt-proof.json';p.write_text(json.dumps({'reason':'Interrupted unfinished work','resume_instructions':'Finish the current phase.'}))
     _,out,_=invoke(cli,'interrupt','--file',str(p));(repo/'svc/app.py').write_text('changed after checkpoint')
@@ -107,11 +110,17 @@ def test_new_manifest_needs_base_obligations_at_review_and_approval(cli, repo, t
 
 def test_baseline_fix_decision_is_bound_to_manifest_and_failed_evidence(cli,repo,tmp_path):
     invoke(cli,'start','--spec','Only a specific failed baseline execution can be acknowledged by the user.')
-    gate_plan(cli,tmp_path,repo,required=True);invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
+    gate_plan(cli,tmp_path,repo,required=True);invoke(cli,'gates','run','--stage','base','--id','loc')
+    st=json.loads(cli('show')[1]);run=next(item for item in reversed(st['gate_runs']) if item['gate']=='loc' and item['stage']=='base')
+    assert next(item for item in st['evidence']['entries'] if item['id']==run['evidence'])['status']=='FAIL'
     invoke(cli,'gates','decision','--id','loc','--action','fix','--source','User approved in-scope baseline fix','--reason','Fix this recorded baseline failure.')
     st=json.loads(cli('show')[1]);assert not al_gates.base_gaps(st)
-    gate_plan(cli,tmp_path,repo,required=True);invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
-    st=json.loads(cli('show')[1]);assert al_gates.base_gaps(st)
+    gate_plan(cli,tmp_path,repo,required=True);invoke(cli,'gates','run','--stage','base','--id','loc')
+    st=json.loads(cli('show')[1]);run=next(item for item in reversed(st['gate_runs']) if item['gate']=='loc' and item['stage']=='base')
+    assert next(item for item in st['evidence']['entries'] if item['id']==run['evidence'])['status']=='FAIL'
+    st=json.loads(cli('show')[1])
+    assert next(item for item in st['evidence']['entries'] if item['id']==run['evidence'])['status']=='FAIL'
+    assert st['gate_decisions']['loc']['manifest'] != st['gate_manifests'][-1]['sha256']
 
 
 def test_wrappers_normalize_paths_and_refuse_unknown_options():
@@ -124,9 +133,9 @@ def test_wrappers_normalize_paths_and_refuse_unknown_options():
 
 
 def test_designer_comparison_requires_pseudocode_and_inspected_typed_hashes(cli,repo,tmp_path,state_file):
-    invoke(cli,'start','--spec','Complete Designer work and inspect its approved pseudocode before comparison.')
-    invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','COMPLEX','--designer','yes','--implementers','al-engineer,al-builder')
-    gate_plan(cli,tmp_path,repo);invoke(cli,'phase','PSEUDOCODE');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'start','--spec','Complete the protected comparison protocol: bind inspected pseudocode hashes to the approved plan before comparison.')
+    invoke(cli,'spec-gate','SPEC_READY');invoke(cli,'classify','COMPLEX','--designer','yes','--implementers','al-engineer,al-builder','--hard-part','protocol:typed-pseudocode-comparison')
+    gate_plan(cli,tmp_path,repo);invoke(cli,'gates','run','--stage','base');invoke(cli,'phase','PSEUDOCODE');admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
     invoke(cli,'phase','FINALIZATION');invoke(cli,'phase','VERIFICATION')
     invoke(cli,'evidence','plan','--area','unit','--tier','broad','--kind','check','--scope','svc/app.py','--',sys.executable,'-c',"print('verified')")
     invoke(cli,'evidence','run','--area','unit');fresh_review(cli,tmp_path)

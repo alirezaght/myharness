@@ -1,5 +1,6 @@
 """Final-batch safety proofs and complete successful public routes."""
 import json
+import copy
 import os
 import subprocess
 import sys
@@ -37,12 +38,33 @@ def test_new_unplanned_units_require_planning(cli,repo,tmp_path,run_state):
     assert state(cli)['phase']=='PLANNING' and state(cli)['recovery_replans'][-1]['reasons']
 
 
-def test_removed_planned_rule_refreshes_without_replanning(cli,repo,tmp_path,run_state):
-    run_state('ruled',lambda:ruled(cli,tmp_path,repo));checkpoint=pause(cli,tmp_path)
+@pytest.mark.parametrize('tracked',[False,True])
+def test_removed_planned_rule_refreshes_without_replanning(cli,repo,tmp_path,run_state,tracked):
+    def setup():
+        if tracked:
+            (repo/'Makefile').write_text('lint-imports:\n\ttrue\n')
+            for args in [('add','Makefile'),('-c','user.name=t','-c','user.email=t@t','commit','-qm','rule')]:
+                subprocess.run(['git',*args],cwd=repo,check=True,capture_output=True)
+        ruled(cli,tmp_path,repo)
+    run_state('tracked-rule' if tracked else 'ruled',setup);checkpoint=pause(cli,tmp_path)
     (repo/'Makefile').unlink()
+    import al_gate_currency as Currency
+    import al_gate_inventory as Inventory
+    import al_coverage_relevance as Relevance
+    prior=state(cli);manifest=A.read_json(prior['gate_manifests'][-1])
+    observed=Inventory.inventory(prior,manifest['paths'])
+    planned=Relevance.semantic_projection(manifest['service_coverage']['projection'])
+    current=Relevance.semantic_projection(observed['relevance_projection'])
+    diagnostic={'currency':Currency.check(prior), 'planned_question':planned['question'],
+                'current_question':current['question'],
+                'projection_deltas':{k:[planned.get(k),current.get(k)] for k in set(planned)|set(current) if planned.get(k)!=current.get(k)},
+                'planned_bindings':manifest['service_coverage']['assessment']['required_bindings'],
+                'current_bindings':observed['service_coverage']['required_bindings']}
     invoke(cli,'resume','--checkpoint',checkpoint)
     s=state(cli)
+    assert s.get('gate_refreshes'), json.dumps(diagnostic,sort_keys=True)
     assert 'source rule missing: Makefile' in s['gate_refreshes'][-1]['reasons'] and not s.get('recovery_replans')
+    assert Currency.check(s)['current']
 
 
 @pytest.mark.parametrize('artifact',['manifest','checkpoint'])
@@ -66,13 +88,108 @@ def test_manifest_corrupt_metadata_is_not_ordinary_rule_drift(cli,repo,tmp_path,
 def test_candidate_gate_requires_full_ledger_and_execution_identity(cli,repo,tmp_path,state_file,defect,run_state):
     run_state('gated',lambda:gated(cli,tmp_path,repo));s=state(cli)
     entry=next(e for e in reversed(s['evidence']['entries']) if e['area']=='gate-candidate-loc')
+    original=copy.deepcopy(entry)
+    contract=copy.deepcopy(s['agent_contracts']['verification-result:'+entry['id']])
+    # Typed metadata mutations must be observable through a real review packet after
+    # a replacement PASS; an external-log fault instead follows the recovery path.
+    if defect!='log':
+        invoke(cli,'review-start')
+        s=state(cli)
+        entry=next(e for e in reversed(s['evidence']['entries']) if e['id']==entry['id'])
+        original=copy.deepcopy(entry)
+        contract=copy.deepcopy(s['agent_contracts']['verification-result:'+entry['id']])
     if defect=='log':Path(entry['log']).write_text('altered log')
     elif defect=='prerequisite':entry['needs']=['not-verified'];state_file().write_text(json.dumps(s))
     else:entry['gate_stage']='base';state_file().write_text(json.dumps(s))
-    before=state_file().read_bytes();assert G.candidate_gaps(state(cli))
-    invoke(cli,'review-start',ok=False);assert state_file().read_bytes()==before
-    invoke(cli,'gates','run','--stage','candidate','--id','loc');finish_review(cli,tmp_path)
+    before=state_file().read_bytes()
+    if defect=='log':
+        gaps=G.candidate_gaps(state(cli));assert gaps
+        invoke(cli,'review-start',ok=False)
+        assert state_file().read_bytes()==before
+    else:
+        if defect=='prerequisite':
+            from al_agent_contracts import ContractError
+            with pytest.raises(ContractError) as refused:
+                G.candidate_gaps(state(cli))
+            assert refused.value.feedback['field_pointer']=='/payload'
+        else:
+            assert 'candidate gate loc requires passing evidence' in G.candidate_gaps(state(cli))
+        assert state_file().read_bytes()==before
+        corrupted=copy.deepcopy(next(e for e in state(cli)['evidence']['entries'] if e['id']==entry['id']))
+        code,out,err=cli('gates','run','--stage','candidate','--id','loc','--no-cache')
+        assert code and 'checks cannot start in this state' in str(code)+out+err
+        assert state_file().read_bytes()==before
+        before_packet=state_file().read_bytes()
+        code,out,err=invoke(cli,'review-packet','--stage','fresh',ok=False)
+        refusal=str(code)+out+err
+        assert ('/payload' in refusal if defect=='prerequisite' else code)
+        assert state_file().read_bytes()==before_packet
+        invoke(cli,'approved',ok=False)
+        assert state_file().read_bytes()==before_packet
+        current=state(cli)
+        assert next(e for e in current['evidence']['entries'] if e['id']==entry['id'])==corrupted
+        assert current['agent_contracts']['verification-result:'+entry['id']]==contract
+        return
+    invoke(cli,'gates','run','--stage','candidate','--id','loc')
+    current=state(cli);run=next(r for r in reversed(current['gate_runs']) if r['gate']=='loc' and r['stage']=='candidate')
+    replacement=next(e for e in current['evidence']['entries'] if e['id']==run['evidence'])
+    assert replacement['id']!=entry['id'] and replacement['status']=='PASS'
+    assert next(e for e in current['evidence']['entries'] if e['id']==entry['id'])==original
+    assert current['agent_contracts']['verification-result:'+entry['id']]==contract
+    finish_review(cli,tmp_path)
     invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved');assert state(cli)['status']=='APPROVED'
+
+
+def test_untampered_gate_rerun_supports_full_review_and_approval(cli,repo,tmp_path,state_file,run_state):
+    run_state('gated',lambda:gated(cli,tmp_path,repo));st=state(cli)
+    prior=next(e for e in reversed(st['evidence']['entries']) if e['area']=='gate-candidate-loc')
+    prior_row=copy.deepcopy(prior)
+    prior_contract=copy.deepcopy(st['agent_contracts']['verification-result:'+prior['id']])
+    invoke(cli,'gates','run','--stage','candidate','--id','loc','--no-cache')
+    current=state(cli);run=next(r for r in reversed(current['gate_runs']) if r['gate']=='loc' and r['stage']=='candidate')
+    replacement=next(e for e in current['evidence']['entries'] if e['id']==run['evidence'])
+    assert replacement['id']!=prior['id'] and replacement['status']=='PASS'
+    assert next(e for e in current['evidence']['entries'] if e['id']==prior['id'])==prior_row
+    assert current['agent_contracts']['verification-result:'+prior['id']]==prior_contract
+    finish_review(cli,tmp_path)
+    invoke(cli,'phase','FINAL_VERIFICATION');invoke(cli,'approved')
+    assert state(cli)['status']=='APPROVED'
+
+
+def test_unmet_evidence_needs_refuses_before_execution_and_state_change(cli,repo,tmp_path,state_file,run_state):
+    run_state('gated',lambda:gated(cli,tmp_path,repo))
+    marker=tmp_path/'unmet-needs-executed'
+    before=state_file().read_bytes()
+    code,out,err=cli('evidence','run','--area','unmet-needs','--scope','svc',
+                     '--needs','missing-prerequisite','--',sys.executable,'-c',
+                     'from pathlib import Path; Path('+repr(str(marker))+').write_text("ran")')
+    assert code==15 and 'missing-prerequisite' in str(out)+str(err)
+    assert not marker.exists() and state_file().read_bytes()==before
+
+
+def test_replacement_pass_does_not_authenticate_corrupted_historical_row(cli,repo,tmp_path,state_file,run_state):
+    run_state('gated',lambda:gated(cli,tmp_path,repo));st=state(cli)
+    old=next(e for e in reversed(st['evidence']['entries']) if e['area']=='gate-candidate-loc')
+    old_id=old['id'];typed=copy.deepcopy(st['agent_contracts']['verification-result:'+old_id])
+    invoke(cli,'gates','run','--stage','candidate','--id','loc','--no-cache')
+    current=state(cli);run=next(r for r in reversed(current['gate_runs']) if r['gate']=='loc' and r['stage']=='candidate')
+    newest=next(e for e in current['evidence']['entries'] if e['id']==run['evidence'])
+    assert newest['id']!=old_id and newest['status']=='PASS'
+    newest_row=copy.deepcopy(newest)
+    invoke(cli,'review-start')
+    current=state(cli);historical=next(e for e in current['evidence']['entries'] if e['id']==old_id)
+    historical['needs']=['not-verified']
+    state_file().write_text(json.dumps(current))
+    corrupted=copy.deepcopy(next(e for e in state(cli)['evidence']['entries'] if e['id']==old_id))
+    before=state_file().read_bytes()
+    code,out,err=invoke(cli,'review-packet','--stage','fresh',ok=False)
+    assert '/payload' in str(code)+out+err and state_file().read_bytes()==before
+    invoke(cli,'approved',ok=False)
+    assert state_file().read_bytes()==before
+    current=state(cli)
+    assert next(e for e in current['evidence']['entries'] if e['id']==old_id)==corrupted
+    assert current['agent_contracts']['verification-result:'+old_id]==typed
+    assert next(e for e in current['evidence']['entries'] if e['id']==newest_row['id'])==newest_row
 
 
 @pytest.mark.parametrize('linked',['absent','fixed'])
@@ -128,9 +245,9 @@ def test_explicit_git_execution_is_denied_by_policies_ownership_and_native_hook(
     invoke(cli,'start','--spec','Reject explicit executable Git overrides in ownership admission.')
     invoke(cli,'ownership','--engineer','svc/app.py','--builder','docs/notes.md','--engineer-commands',command,ok=False)
     hook=Path(__file__).resolve().parents[1]/'scripts/al_readonly_guard.py'
-    if hook.exists():
-        result=subprocess.run([sys.executable,str(hook)],input=json.dumps({'tool_name':'Bash','tool_input':{'command':command}}),capture_output=True,text=True)
-        assert result.returncode==2 and 'deny' in result.stdout
+    assert hook.is_file(), 'Claude native read-only hook is required'
+    result=subprocess.run([sys.executable,str(hook)],input=json.dumps({'tool_name':'Bash','tool_input':{'command':command}}),capture_output=True,text=True)
+    assert result.returncode==2 and 'deny' in result.stdout
 
 
 @pytest.mark.parametrize('command',["git -c user.name=test -cuser.email=test@example.invalid status",'git -c color.ui=never --no-pager log',

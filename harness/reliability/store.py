@@ -1,5 +1,6 @@
 """Short current-epoch publications; no replay or historical append writer."""
 
+import json
 import secrets
 import sqlite3
 from contextlib import closing, contextmanager
@@ -106,11 +107,19 @@ def _outcome(state, code, result):
     return canonical(outcome)
 
 
-def finish(operation, observation_id, code, result=None, *, rejection=None):
+def finish(operation, observation_id, code, result=None, *, rejection=None, diagnostic=None):
+    if diagnostic is not None:
+        from harness.policy.contracts import qualification_diagnostic
+
+        diagnostic = qualification_diagnostic(diagnostic)
+        if code != "DISPATCH_REJECTED" or diagnostic.get("observation_id") != observation_id:
+            raise ValueError("invalid qualification diagnostic correlation")
     if observation_id is None:
         return
     state = TERMINALS[code]
     outcome = _outcome(state, code, result)
+    if diagnostic is not None:
+        outcome = canonical({**json.loads(outcome), "diagnostic": diagnostic})
     with _publication(operation) as (conn, execution):
         row = conn.execute(
             "SELECT * FROM reliability_observations WHERE observation_id=? AND execution_id=? "

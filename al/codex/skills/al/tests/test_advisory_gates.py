@@ -230,15 +230,14 @@ def test_generic_findings_ignore_order_and_size_counters_but_count_new_occurrenc
 
 def test_touched_gate_with_identical_lint_failure_is_reported_not_blocking(tmp_path, monkeypatch):
     import al_gates as G
-    import al_ledger as L
     runs = {'B': _log(tmp_path, 'B', LINT.format(files=120, line=12)), 'C': _log(tmp_path, 'C', LINT.format(files=120, line=14)),
             'N': _log(tmp_path, 'N', LINT.format(files=120, line=12) + '- app.x -> app.api.y (l.1)\n')}
-    monkeypatch.setattr(L, 'find', lambda st, eid: runs.get(eid))
+    from test_change_reach import comparison_fixture
     monkeypatch.setattr(G, 'touched_units', lambda st, m: {'services/a'})
-    st = {'gate_runs': [{'gate': 'g', 'stage': 'base', 'manifest': 'm', 'evidence': 'B'}]}
-    run, gate = {'fingerprint': 'f', 'manifest': 'm'}, {'id': 'g', 'units': ['services/a']}
-    assert 'pre-existing' in G.accepted_failure(st, {}, gate, 'candidate', runs['C'], run, 'f')
-    assert G.accepted_failure(st, {}, gate, 'candidate', runs['N'], run, 'f') is None
+    st, manifest, gate, runs, records = comparison_fixture(
+        {'id':'g','units':['services/a']}, runs, 'B')
+    assert 'pre-existing' in G.accepted_failure(st, manifest, gate, 'candidate', runs['C'], records['C'], 'CAND')
+    assert G.accepted_failure(st, manifest, gate, 'candidate', runs['N'], records['N'], 'CAND') is None
 
 
 def test_gate_environment_scrubs_undeclared_installation_switches(monkeypatch):
@@ -337,8 +336,15 @@ def test_identical_pre_existing_candidate_failure_does_not_block(cli, repo, tmp_
     assert 'pre-existing' in note['reason'] and 'baseline exception' in note['reason']
 
 
-def test_candidate_stage_runs_every_gate_after_a_blocking_failure(cli, repo, tmp_path):
-    seed(repo);start(cli)
+def _seeded_start(cli, repo, run_state):
+    def build():
+        seed(repo)
+        return start(cli)
+    return run_state("advisory-seeded-start", build)
+
+
+def test_candidate_stage_runs_every_gate_after_a_blocking_failure(cli, repo, tmp_path, run_state):
+    _seeded_start(cli, repo, run_state)
     _, m = discover(cli, tmp_path, ['services/a/src/app.py', 'services/b/src/app.py'])
     path = tmp_path / 'plan.json';path.write_text(json.dumps(m))
     invoke(cli, 'gates', 'plan', '--file', str(path))
@@ -357,8 +363,8 @@ def test_candidate_stage_runs_every_gate_after_a_blocking_failure(cli, repo, tmp
         assert 'gate-candidate-' + gate in out, gate + ' did not run after the blocking failure'
 
 
-def test_verification_only_route_is_named_and_needs_no_writer(cli, repo, tmp_path):
-    seed(repo);start(cli)
+def test_verification_only_route_is_named_and_needs_no_writer(cli, repo, tmp_path, run_state):
+    _seeded_start(cli, repo, run_state)
     _, m = discover(cli, tmp_path, ['services/a/src/app.py'])
     path = tmp_path / 'plan.json';path.write_text(json.dumps(m))
     invoke(cli, 'gates', 'plan', '--file', str(path))

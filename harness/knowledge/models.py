@@ -177,6 +177,11 @@ class ContextRequest:
     entity_refs: tuple[str, ...] = ()
     as_of_snapshot: str | None = None
     limits: QueryLimits = field(default_factory=QueryLimits)
+    request_version: int = field(default=1, kw_only=True)
+    objective: str = field(default="", kw_only=True)
+    stage: str | None = field(default=None, kw_only=True)
+    affected_entities: tuple[str, ...] = field(default=(), kw_only=True)
+    estimated_tokens: int | None = field(default=None, kw_only=True)
 
 
 @dataclass(frozen=True)

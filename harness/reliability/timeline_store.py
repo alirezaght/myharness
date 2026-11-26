@@ -106,15 +106,20 @@ def semantic_link(conn, execution, event):
     )
 
 
-def retrieval_link(operation, observation_id, returned):
-    if observation_id is None or not isinstance(returned, dict):
+def retrieval_link(operation, observation_id, returned, *, scope=None):
+    if observation_id is None or scope is None or not isinstance(returned, dict):
         return
     bundle = returned.get("bundle_hash")
+    receipt_id = returned.get("receipt_id")
     if not isinstance(bundle, str) or not re.fullmatch(r"[0-9a-f]{64}", bundle):
         return
+    if not isinstance(receipt_id, str) or not re.fullmatch(r"[0-9a-f]{32}", receipt_id):
+        return
+    from harness.knowledge.policy import policy_digest, validate_scope
     from harness.reliability.store import _publication
 
     with _publication(operation) as (conn, execution):
+        validate_scope(conn, scope)
         parent = conn.execute(
             "SELECT principal_id FROM reliability_observations WHERE observation_id=? "
             "AND execution_id=? AND epoch_id=? AND authority_generation=?",
@@ -125,14 +130,42 @@ def retrieval_link(operation, observation_id, returned):
                 execution["authority_generation"],
             ),
         ).fetchone()
-        if parent is None:
+        if parent is None or (
+            scope.principal_id != parent["principal_id"]
+            or scope.execution_id != execution["id"]
+            or scope.epoch_id != execution["epoch_id"]
+            or scope.authority_generation != execution["authority_generation"]
+        ):
             raise ValueError("retrieval observation scope differs")
-        # Only references actually issued by the authorized query are eligible.
+        # Resolve the issued pair within the same validated delivery scope, never a later row.
         receipt = conn.execute(
-            "SELECT receipt_id,snapshot_id FROM knowledge_receipts WHERE bundle_hash=? "
-            "ORDER BY rowid DESC LIMIT 1",
-            (bundle,),
+            "SELECT r.receipt_id,r.snapshot_id FROM knowledge_receipts r "
+            "JOIN knowledge_bundles b ON b.bundle_hash=r.bundle_hash "
+            "JOIN knowledge_snapshots s ON s.snapshot_id=r.snapshot_id "
+            "AND s.project_id=r.project_id "
+            "JOIN knowledge_bundle_scope k ON k.bundle_hash=b.bundle_hash "
+            "WHERE r.receipt_id=? AND r.bundle_hash=? AND r.project_id=? "
+            "AND b.project_id=r.project_id AND b.snapshot_id=r.snapshot_id "
+            "AND r.policy_digest=? AND b.policy_digest=r.policy_digest "
+            "AND r.purpose=? AND b.purpose=r.purpose AND k.purpose=r.purpose "
+            "AND k.principal_id=? AND k.execution_id=? AND k.policy_generation=? "
+            "AND k.packet_hash IS ? AND b.invalidated_at IS NULL AND b.payload!='' "
+            "AND NOT EXISTS (SELECT 1 FROM knowledge_bundle_state x "
+            "WHERE x.bundle_hash=b.bundle_hash)",
+            (
+                receipt_id,
+                bundle,
+                scope.project_id,
+                policy_digest(scope),
+                scope.purpose,
+                scope.principal_id,
+                scope.execution_id,
+                scope.policy_generation,
+                scope.packet_hash,
+            ),
         ).fetchone()
+        if receipt is not None and scope.snapshot_id not in {None, receipt["snapshot_id"]}:
+            return
         if receipt is None:
             return
         link(

@@ -3,23 +3,30 @@ import base64
 import copy
 import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import sys
 import zlib
+from pathlib import Path
 
 import pytest
 
-from al.installer.cli import parser
 from al.installer import operations as O
+from al.installer.cli import parser
 from al.installer.manifest import build_manifest
 from al.installer.registry import canonical, digest, load_record, read_json, write_json
-from al.installer.runtime_pin_transaction import key as subject_key, layout_fields
-from al.installer.reviewed_runtime_update import (ACCEPTED_LIMITS, APPROVED, approved_delta,
-                                                 release_identity, validate_request)
+from al.installer.reviewed_runtime_update import (
+    ACCEPTED_LIMITS,
+    APPROVED,
+    approved_delta,
+    release_identity,
+    validate_request,
+)
+from al.installer.runtime_pin_transaction import key as subject_key
+from al.installer.runtime_pin_transaction import layout_fields
 from al.installer.source import resolve_release
 from al.installer.targets import package_path
+from al.tests import update_templates
 from al.tests.conftest import copy_al_source
 from al.tests.test_manifest import git_test
 
@@ -85,8 +92,47 @@ def invoke(argv, cwd, env):
     return result
 
 
+
+# Only cases whose construction is not the subject reuse this genuine prefix.
+# Unknown/new cases stay fresh until their setup requirements are inspected.
+_PREFIX_CASES = frozenset({
+    'test_existing_refusals_are_not_overridden',
+    'test_supported_private_layout_metadata_is_covered_with_real_pin',
+    'test_v2_unresolved_writer_cannot_disappear_from_flat_root_scan',
+    'test_v3_reserved_and_missing_state_remain_refusals',
+    'test_superseded_is_bookkeeping_noncapability_without_epoch_or_bridge_authority',
+    'test_superseded_corruption_or_ambiguous_chain_is_never_ignored',
+    'test_superseded_reads_never_select_mutating_storage',
+})
+
+
+def _environment(home):
+    env = dict(os.environ, HOME=str(home), PYTHONDONTWRITEBYTECODE='1')
+    for name in ('AL_RUNTIME_DIR', 'AL_DISTRIBUTION_STATE', 'PYTHONPATH', 'PYTHONHOME',
+                 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_PROJECT_DIR'):
+        env.pop(name, None)
+    return env
+
+
+@pytest.fixture(scope='module')
+def _prefix_cache():
+    return {}
+
+
 @pytest.fixture
-def enrolled(tmp_path, monkeypatch, request):
+def enrolled(tmp_path, tmp_path_factory, request, _prefix_cache):
+    if request.node.originalname not in _PREFIX_CASES or hasattr(request, 'param'):
+        return _fresh_enrolled(tmp_path, request)
+    if 'prefix' not in _prefix_cache:
+        container = tmp_path_factory.mktemp('reviewed-update-prefix')
+        _prefix_cache['prefix'] = update_templates.build(
+            container, lambda root: _fresh_enrolled(root, request))
+    value = update_templates.restore(_prefix_cache['prefix'])
+    value['env'] = _environment(value['home'])
+    return value
+
+
+def _fresh_enrolled(tmp_path, request):
     """Real old payload pin, genuine managed updater and exact local immutable tags."""
     source = tmp_path / 'tagged-source.git'
     git_test(tmp_path, 'init', '--bare', str(source))
@@ -109,10 +155,7 @@ def enrolled(tmp_path, monkeypatch, request):
     home.mkdir();repo.mkdir()
     git_test(repo, 'init', '-q');git_test(repo, 'commit', '--allow-empty', '-qm', 'fixture')
     state, launcher = home / 'registry', home / 'bin/alctl'
-    env = dict(os.environ, HOME=str(home), PYTHONDONTWRITEBYTECODE='1')
-    for name in ('AL_RUNTIME_DIR', 'AL_DISTRIBUTION_STATE', 'PYTHONPATH', 'PYTHONHOME',
-                 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_PROJECT_DIR'):
-        env.pop(name, None)
+    env = _environment(home)
     def boot(distribution):
         result = invoke([sys.executable, '-I', '-S', '-B', distribution / 'alctl.py', 'bootstrap',
                          '--source-root', distribution, '--destination', launcher, '--state-root', state], repo, env)

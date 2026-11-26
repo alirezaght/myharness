@@ -99,7 +99,12 @@ def _discover_captured(st,inventory,ci_context):
             gates[-1]['env_names']=sorted(set(gates[-1]['env_names']+execution['env_names']))
             gates[-1]['execution_kind']=execution['execution_kind']
             if execution.get('remote_source'):gates[-1]['remote_source']=execution['remote_source']
-    if inventory['auxiliary']['contracts']:gate('contracts','contracts',[],paths,rules[-1] if rules else None,reason='Resolve the exact contract generation/drift check from sourced rules')
+    if inventory['auxiliary']['contracts']:
+        declarations=inventory['auxiliary']['contract_declarations']
+        primary=declarations[0]
+        details='; '.join(row['path']+': '+(row['reason'] or ', '.join('scripts.'+key for key in row['scripts'])) for row in declarations)
+        scope=sorted(set(paths+[row['path'] for row in declarations]))
+        gate('contracts','contracts',[],scope,source(primary['path']),reason='Resolve the exact contract generation/drift check from sourced rules; '+details)
     else:not_applicable('contracts','contracts','No package script generates or builds contracts')
     if not inventory['ci']['obligations']:
         other=inventory['auxiliary']['other_ci']

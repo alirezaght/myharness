@@ -554,24 +554,54 @@ def test_check_channel_rejects_drift_and_releases_owned_process(registered):
     from harness.execution_check_channel import CheckChannel
 
     data, reference, _ = registered
-    operation, _, _, _, _, _, envelope = data
-    context = operation.directory / "synthetic-channel-context.json"
-    context.write_text("{}")
+    operation, _, _, initial, _, execution, envelope = data
+    parent = operation.profile(al=True)
+    context = Path(parent.policy).parent / "check-channel-context.json"
+    root = Path(envelope["repository"])
+    context.write_text(
+        canonical(
+            {
+                "handoff": execution["handoff_path"],
+                "repository": str(root),
+                "temporary": parent.temporary,
+                "al_session": str(Path(initial["source"]).parent),
+                "protected": list(parent.protected),
+                "hidden": list(parent.hidden),
+                "classification": reference,
+            }
+        )
+    )
     template = Path(envelope["repository"]) / "app/.env.example"
     channel = CheckChannel(context, lambda: None)
-    channel.classification = reference
-    channel.classification_root = Path(envelope["repository"])
-    channel.process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
-    channel.process.wait(timeout=10)
-    template.chmod(0o600)
+    stdout = os.open(os.devnull, os.O_WRONLY)
+    stderr = os.open(os.devnull, os.O_WRONLY)
+    handle = None
     try:
+        started = channel.request(
+            {
+                "action": "start",
+                "argv": [sys.executable, "-c", "pass"],
+                "cwd": str(root),
+            },
+            [stdout, stderr],
+        )
+        handle = started["handle"]
+        process = channel.process
+        assert process is channel.records[handle]["process"]
+        assert process.wait(timeout=10) == 0
+        template.chmod(0o600)
         with pytest.raises(ValueError, match="template classification policy refused"):
-            channel.observe()
-        assert channel.settled
+            channel.observe(handle)
+        assert channel.records[handle]["settled"]
     finally:
         template.chmod(0o644)
-        with pytest.raises(ValueError, match="template classification policy refused"):
+        os.close(stdout)
+        os.close(stderr)
+        if handle is None:
             channel.close()
+        else:
+            with pytest.raises(ValueError, match="template classification policy refused"):
+                channel.close()
 
 
 def test_unclassified_check_keeps_nonrepository_scratch_support(operations):

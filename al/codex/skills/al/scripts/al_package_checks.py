@@ -100,7 +100,7 @@ def manager(scan,unit):
             for pattern in declaration:
                 if not isinstance(pattern,str) or pattern.startswith('!'):reasons.append('unsupported workspace selection closure');continue
                 full=joined(parent,pattern)
-                try:members.update(expand_members(full,scan.files) if '*' in full else [full])
+                try:members.update((member for member in expand_members(full,scan.files) if joined(member,'package.json') in scan.files) if '*' in full else [full])
                 except ValueError:reasons.append('unsupported workspace selection closure')
             if unit not in members:reasons.append('member absent from declared workspace')
             for member in sorted(members):

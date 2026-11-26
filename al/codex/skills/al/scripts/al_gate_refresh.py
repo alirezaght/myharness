@@ -34,7 +34,7 @@ def refreshable(st,currency):
     # Rediscovering the planned paths is deterministic, so a changed or removed rule the plan
     # already sources refreshes too; only a new rule outside the planned paths needs a plan.
     if not all(declared(p) or p in known for p in currency['paths']):return False
-    if not currency.get('pathless'):return True
+    if not currency.get('pathless') or currency.get('removed_sourced_rules') is True:return True
     # An edited sourced rule outside the planned paths also joins the task's changed paths. When
     # that is the only other change, the refresh adds exactly those rule files to the planned paths.
     other=[r for r in currency['reasons'] if not r.startswith(SUBJECT)]

@@ -154,11 +154,27 @@ def test_nonstate_requires_real_matching_immutable_reference_not_filename(tmp_pa
     assert not inventory_activity(case['roots'], invoking_run=case['invoking'])['stable']
 
 
-def test_modern_artifact_corruption_and_unknown_operation_fields_remain_blocking(tmp_path, monkeypatch):
+def test_modern_immutable_task_artifact_corruption_remains_blocking(tmp_path, monkeypatch):
     case = scenario(tmp_path, monkeypatch)
     state = json.loads(case['current_path'].read_text())
     Path(state['task_package']['stored_path']).write_text('corrupt immutable task')
     assert not inventory_activity(case['roots'], invoking_run=case['invoking'])['stable']
+
+
+def test_modern_unknown_writer_operation_field_remains_blocking(tmp_path, monkeypatch):
+    case = scenario(tmp_path, monkeypatch)
+    state = json.loads(case['current_path'].read_text())
+    state['writers']['finished'] = {'id': 'finished', 'state': 'FINISHED'}
+    write_state(case['runtime'], state)
+    assert inventory_activity(case['roots'], invoking_run=case['invoking'])['stable']
+    state['writers']['finished']['future_cleanup_operation'] = {'state': 'ACTIVE'}
+    write_state(case['runtime'], state)
+    inventory = inventory_activity(case['roots'], invoking_run=case['invoking'])
+    assert not inventory['stable']
+    record = next(r for r in inventory['roots'][0]['records']
+                  if r['identity']['state_path'] == str(case['current_path']))
+    assert record['classification'] == 'unknown'
+    assert any('malformed modern writer' in error for error in record['errors'])
 
 
 def test_held_lock_capability_cannot_be_replayed_after_context_exit(tmp_path, monkeypatch):

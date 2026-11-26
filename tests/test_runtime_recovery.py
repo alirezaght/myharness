@@ -751,14 +751,3 @@ def test_successor_initialization_replay_refuses_tampering(
         activate_runtime(controller, current["id"], **arguments)
     after = _successor_initialization_row(controller, current)
     assert (dict(after) if after else None) == before
-
-
-@pytest.mark.parametrize("missing", [False, True])
-def test_successor_initialization_pre_spawn_repeated_planning(
-    registered, monkeypatch, tmp_path, missing
-):
-    from tests.test_planning_recovery import (
-        test_missing_state_prepares_fresh_planning_without_inherited_authority as scenario,
-    )
-
-    scenario(registered, monkeypatch, missing, tmp_path)

@@ -244,17 +244,29 @@ def test_process_temporary_is_the_only_writable_tmp_directory(tmp_path):
     sibling = Path(tempfile.mkdtemp(prefix="h-", dir="/tmp"))
     code = """import os,socket,sys;from pathlib import Path
 from multiprocessing.managers import SyncManager
-m=SyncManager();m.start();m.shutdown()
+if sys.platform.startswith('linux'):
+    try:socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    except PermissionError:pass
+    else:raise SystemExit('new Unix socket escaped Linux denial')
+    a,b=socket.socketpair(socket.AF_UNIX,socket.SOCK_STREAM)
+    try:
+        a.sendall(b'private-ipc');assert b.recv(11)==b'private-ipc'
+    finally:a.close();b.close()
+else:
+    m=SyncManager();m.start();m.shutdown()
 Path(os.environ['TMPDIR'],'own').write_text('ok')
 for target in sys.argv[1:]:
     try:Path(target).write_text('escape')
     except OSError:pass
     else:raise SystemExit('wrote '+target)
-    s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
-    try:s.bind(target+'.sock')
+    s=None
+    try:
+        s=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        s.bind(target+'.sock')
     except OSError:pass
     else:raise SystemExit('bound a socket at '+target)
-    finally:s.close()
+    finally:
+        if s is not None:s.close()
 """
     targets = [f"/tmp/h-escape-{secrets.token_hex(6)}", str(sibling / "escape")]
     try:

@@ -59,18 +59,19 @@ def test_actual_git_read_has_no_patch_or_secret_output(sample_repo):
         git_read(sample_repo, ["log", "-p", "HEAD"])
 
 
-def test_actual_readonly_architect_can_inspect_range(operations, tmp_path):  # noqa: F811
+def test_actual_readonly_architect_can_inspect_range(operations, tmp_path, launched):  # noqa: F811
     operation, _, _, _, _, _, _ = operations
     root = Path(operation.envelope["repository"])
     # This is the disposable fixture repository, never a user/source checkout.
-    assert root == tmp_path / "repo"
+    assert root == launched[2]
+    assert root.is_relative_to(tmp_path.parent)
     subprocess.run(
         ["git", "-C", str(root), "update-ref", "refs/remotes/origin/main", "HEAD"],
         check=True,
         capture_output=True,
     )
     native = operation.registry.native_root / "sessions" / "2026" / "10" / "29"
-    native.mkdir(parents=True)
+    native.mkdir(parents=True, exist_ok=True)
     child = str(uuid.uuid4())
     for thread, source in [
         (operation.registry.root, "exec"),

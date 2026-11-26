@@ -1086,6 +1086,17 @@ class Service:
         except BaseException as exc:
             sys.excepthook(type(exc), exc, exc.__traceback__.tb_next if exc.__traceback__ else None)
             code = 1
+            if isinstance(exc, PermissionError):
+                try:
+                    sys.stderr.write(
+                        'AL resident service permission failure: the service retains its launch access context; '
+                        'elevating the launcher does not elevate an existing service. '
+                        'Inspect possible partial effects and settle owned work before retrying. '
+                        'AL_SERVICE=0 runs the same protected command in the invoking context, subject to normal '
+                        'host permission review; alternatively stop and restart the owned service through '
+                        'alctl service. No command was automatically replayed.\n')
+                except (OSError, ValueError):
+                    pass
             if isinstance(exc, KeyboardInterrupt):
                 code = -signal.SIGINT
         try:

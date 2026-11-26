@@ -68,6 +68,42 @@ def _widened(now,planned):
     return added
 
 
+def _removed_rules(manifest,current,reasons):
+    """Exact causal witness for rediscovery of independently absent sourced rules."""
+    import copy
+    import al_coverage_relevance as R
+    missing={r.removeprefix('source rule missing: ') for r in reasons if r.startswith('source rule missing: ')}
+    if not missing:return False
+    known={s['path'] for s in manifest['rules']+[g['source'] for g in manifest['gates'] if g.get('source')]}
+    facts=current['repository_facts'];assessment=current['service_coverage']
+    if not missing<=known or not all(recognised_rule_file(p) for p in missing):return False
+    if not missing<=set(facts['enumeration'].get('absent_paths',[])) or assessment['gaps']:return False
+    allowed={'source rule missing: '+p for p in missing}|{REQUIREMENTS,'sourced execution requirements changed; rediscover repository gates'}
+    if not set(reasons)<=allowed:return False
+    old=R.semantic_projection(manifest['service_coverage']['projection']);new=R.semantic_projection(current['relevance_projection'])
+    if set(old['governing_sources'])-missing!=set(new['governing_sources']) or not missing<=set(old['governing_sources']):return False
+    old=copy.deepcopy(old);new=copy.deepcopy(new)
+    old_paths=set(old['question']['changed_paths']);new_paths=set(new['question']['changed_paths'])
+    if not old_paths<=new_paths or not new_paths-old_paths<=missing:return False
+    old['question']['changed_paths']=new['question']['changed_paths']
+    old['governing_sources']=new['governing_sources']
+    gained=set(new['relevant_uncertainty_ids'])-set(old['relevant_uncertainty_ids'])
+    if gained:
+        paths=facts['dependencies'].get('unclassified_artifact_paths')
+        if not isinstance(paths,list) or not paths or any(not isinstance(p,str) or p not in missing for p in paths):return False
+        witnesses={R.record_id(u) for u in facts['dependencies']['uncertainties'] if u['code']=='uncertain-artifact-classification' and u.get('unit') is None and u.get('target') is None and u.get('path')==('.' if len(current['paths'])!=1 else current['paths'][0])}
+        if len(gained)!=1 or gained!=witnesses:return False
+        old['relevant_uncertainty_ids']=sorted(set(old['relevant_uncertainty_ids'])|gained)
+    if old!=new:return False
+    before=copy.deepcopy(manifest['service_coverage']['assessment']['required_bindings'])
+    after=copy.deepcopy(assessment['required_bindings'])
+    for row in before:
+        row.pop('execution_signature',None)
+        row['required_scope']=[p for p in row['required_scope'] if p not in missing]
+    for row in after:row.pop('execution_signature',None)
+    return before==after
+
+
 def _own_bytes_current(source):
     """A gate source the plan cites that the inventory does not list as a rule file is current
     while its own bytes are those planned: `gates plan` admits any existing repository file as a
@@ -150,4 +186,5 @@ def _current(st,manifest,declaration,ref,inputs):
         reasons.append('new touched unit requires replanning: '+unit);pathless=True
     return {'current':not reasons,'reasons':sorted(set(reasons)),'superseded':ref,
             'paths':sorted(set(subjects)),'pathless':pathless,'coverage_gaps':assessment['gaps'],
+            **({'removed_sourced_rules':True} if _removed_rules(manifest,current,reasons) else {}),
             **({'widened_paths':widened} if widened else {})}

@@ -128,6 +128,9 @@ class OperationController:
         self.artifacts = ArtifactStore(self.directory / "drafts")
         self.processes = ProcessManager()
         self.check_channels = []
+        from harness.execution_check_ownership import CheckOwnership
+
+        self.check_ownership = CheckOwnership()
         self.al_service = None
         self.prepared_plan_pending = {}
         self.setup_pending = {}
@@ -604,12 +607,22 @@ class OperationController:
                     else "DISPATCH_REJECTED"
                 )
                 from harness.agent_contracts import ContractError
+                from harness.policy.contracts import PolicyError, qualification_diagnostic
 
+                diagnostic = None
+                if isinstance(error, PolicyError) and error.diagnostic is not None:
+                    diagnostic = qualification_diagnostic(error.diagnostic)
+                    # Correlation comes only from this dispatch, never the error producer.
+                    diagnostic.pop("observation_id", None)
+                    if observation is not None:
+                        diagnostic["observation_id"] = observation
+                    error = PolicyError(error.code, diagnostic=diagnostic)
                 observations.finish(
                     self,
                     observation,
                     code,
                     rejection=error if isinstance(error, ContractError) else None,
+                    diagnostic=diagnostic,
                 )
                 raise ValueError(str(error)) from None
             except Exception:
@@ -618,12 +631,13 @@ class OperationController:
             if isinstance(result, dict):
                 from harness.policy.source_dependencies import selected
 
+                source_coverage = None
                 if name == "submit_output" and arguments.get("contract") is not None:
                     from harness.agent_exchange import SNAPSHOT_COVERAGE
 
-                    result["coverage"] = dict(SNAPSHOT_COVERAGE)
+                    source_coverage = dict(SNAPSHOT_COVERAGE)
                 elif attempt and selected(attempt.intent.claims) and not attempt.legacy:
-                    result["coverage"] = {
+                    source_coverage = {
                         "immutable_snapshot_validated": None,
                         "mutable_source_not_checked": False,
                         "coordinated_source_consumption": True,
@@ -634,12 +648,16 @@ class OperationController:
                     and attempt.legacy
                     and attempt.intent.boundary == "unqualified_process_tree"
                 ):
-                    result["coverage"] = {
+                    source_coverage = {
                         "immutable_snapshot_validated": None,
                         "mutable_source_not_checked": True,
                         "coordinated_source_consumption": False,
                         "legacy_uncoordinated": True,
                     }
+                if source_coverage is not None:
+                    # Handler coverage describes its domain; source telemetry is independent.
+                    key = "source_coverage" if "coverage" in result else "coverage"
+                    result[key] = source_coverage
             result = redact_value(result)
             observations.finish(self, observation, "RETURNED", result)
             return result
@@ -701,10 +719,10 @@ class OperationController:
                 from harness.reliability.timeline_store import retrieval_link
 
                 observed = CURRENT.get()
-                reference = (
-                    result if name == "knowledge_query" else {"bundle_hash": a["bundle_hash"]}
-                )
-                retrieval_link(self, observed.observation_id if observed else None, reference)
+                if name in {"knowledge_query", "knowledge_explain"}:
+                    retrieval_link(
+                        self, observed.observation_id if observed else None, result, scope=current
+                    )
                 return result
             except sqlite3.OperationalError:
                 raise ValueError("knowledge:busy-or-unavailable") from None
@@ -1213,7 +1231,7 @@ class OperationController:
             "protected_roots": list(profile.protected),
         }
 
-        def validate_storage_entry(binding, declaration, *, final):
+        def validate_storage_entry(binding, declaration, *, final, allocation=False):
             if (
                 not isinstance(binding, dict)
                 or set(binding) != {"run", "id", "reservation"}
@@ -1230,10 +1248,11 @@ class OperationController:
                 if (
                     entry is None
                     or any(entry.get(k) != v for k, v in binding.items())
-                    or entry.get("storage") != declaration
-                    or final
+                    or not allocation
+                    and entry.get("storage") != declaration
+                    or final is True
                     and entry["status"] not in {"PASS", "FAIL", "INFRA", "EMPTY", "TORN"}
-                    or not final
+                    or final is False
                     and entry["status"] != "RUNNING"
                 ):
                     raise ValueError("storage evidence reservation changed")
@@ -1256,11 +1275,21 @@ class OperationController:
                         parent is None
                         or not parent.get("recipe")
                         or any(parent.get(k) != v for k, v in recipe_assignment["parent"].items())
-                        or not final
+                        or final is False
                         and parent["status"] != "RUNNING"
                     ):
                         raise ValueError("recipe parent reservation is not current")
                 return entry
+
+        def validate_allocation(binding, *, coordinator):
+            entry = validate_storage_entry(
+                binding, None, final=None if coordinator is None else False, allocation=True
+            )
+            if coordinator is not None and (
+                type(coordinator) is not bool or bool(entry.get("recipe")) != coordinator
+            ):
+                raise ValueError("check coordinator allocation changed")
+            return entry
 
         storage = ExecutionStorage(storage_context, validate_storage_entry)
         from harness.policy.retry import prepare_retry
@@ -1284,7 +1313,12 @@ class OperationController:
             environment["HARNESS_RETRY_CONTROL_NONCE"] = control_channel.nonce
             self.check_channels.append(control_channel)
         channel = CheckChannel(
-            context_path, validate_check, storage=storage, policy_attempt=policy_attempt
+            context_path,
+            validate_check,
+            storage=storage,
+            policy_attempt=policy_attempt,
+            ownership=self.check_ownership,
+            validate_allocation=validate_allocation,
         )
         self.check_channels.append(channel)
         descriptors = (
@@ -1327,6 +1361,7 @@ class OperationController:
                     pass_fds=descriptors,
                     completion=close_channels,
                     report=report,
+                    on_spawn=channel.bind_owner,
                 )
             except (OSError, ValueError):
                 try:
@@ -1365,15 +1400,16 @@ class OperationController:
                 start_new_session=True,
                 pass_fds=descriptors,
             )
-            if policy:
-                try:
+            try:
+                channel.bind_owner(proc, observer)
+                if policy:
                     policy.spawned(proc)
-                except BaseException:
-                    ProcessManager._kill(proc)
-                    proc.wait(timeout=5)
-                    proc.stdout.close()
-                    proc.stderr.close()
-                    raise
+            except BaseException:
+                ProcessManager._kill(proc)
+                proc.wait(timeout=5)
+                proc.stdout.close()
+                proc.stderr.close()
+                raise
             if observer:
                 observer.notify("process.started")
             spawned_channels()

@@ -204,7 +204,7 @@ def test_actual_macos_clone_in_private_temp_root_when_metadata_allows():
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Darwin metadata observer is macOS-specific")
-def test_actual_darwin_metadata_observer_returns_complete_known_acl_state(tmp_path):
+def test_actual_darwin_metadata_observer_returns_complete_known_acl_state(tmp_path, monkeypatch):
     source = _file(tmp_path, payload=b"observer-owned fixture", mode=0o640)
     library = M._system()
     assert library is not None
@@ -216,6 +216,7 @@ def test_actual_darwin_metadata_observer_returns_complete_known_acl_state(tmp_pa
     assert observed.security[5].state in {"ABSENT", "PRESENT"}
     assert isinstance(observed.security[4], tuple)
     assert observed.times[0][1] < 1_000_000_000
+    _real_native_bridge_read_between_samples(tmp_path / "between-samples", monkeypatch)
 
 
 @pytest.mark.parametrize("mutation", ["write", "truncate", "chmod", "unlink"])
@@ -841,3 +842,119 @@ def test_public_acl_zero_payload_malformed_cannot_materialize(tmp_path, monkeypa
         M.write_captured(source, destination, source.read_bytes(), 0o640)
     assert not destination.exists()
     assert not list(tmp_path.glob(".materialization-*"))
+
+
+def _controlled_bridge(tmp_path, monkeypatch, defect):
+    from types import SimpleNamespace
+
+    source = _file(tmp_path)
+    original = source.stat()
+    values = {name: getattr(original, name) for name in dir(original) if name.startswith("st_")}
+    before, after = SimpleNamespace(**values), SimpleNamespace(**values)
+    if defect == "atime":
+        after.st_atime_ns += 1_000_000
+    native = N.DarwinStat()
+    for field, name in [
+        ("dev", "st_dev"),
+        ("ino", "st_ino"),
+        ("mode", "st_mode"),
+        ("uid", "st_uid"),
+        ("gid", "st_gid"),
+        ("nlink", "st_nlink"),
+        ("size", "st_size"),
+        ("flags", "st_flags"),
+    ]:
+        setattr(native, field, getattr(original, name, 0))
+    for field in ("atime", "mtime", "ctime"):
+        value = getattr(original, "st_" + field + "_ns")
+        setattr(native, field, N.Timespec(*divmod(value, 10**9)))
+    native.birth = N.Timespec(100, 3)
+    if defect == "identity":
+        native.ino += 1
+    if defect == "birth":
+        native.birth.nanoseconds += 1
+    if defect == "range":
+        native.atime.nanoseconds = 10**9
+    security = bytearray(44)
+    struct.pack_into("=I", security, 0, 0x012CC16D if defect != "security" else 0)
+    struct.pack_into("=II", security, 36, 0xFFFFFFFF, 0)
+    samples = iter((before, after))
+    monkeypatch.setattr(N.os, "fstat", lambda fd: next(samples))
+    monkeypatch.setattr(N, "_extended_security", lambda *args: None)
+    monkeypatch.setattr(N, "read_birthtime", lambda *args: (100, 3))
+
+    def extended(fd, info, buffer, length):
+        if defect == "operational":
+            ctypes.set_errno(errno.EIO)
+            return -1
+        ctypes.memmove(info, ctypes.byref(native), ctypes.sizeof(native))
+        ctypes.memmove(buffer, bytes(security), len(security))
+        ctypes.cast(length, ctypes.POINTER(ctypes.c_size_t))[0] = 43 if defect == "extent" else 44
+        return 0
+
+    monkeypatch.setattr(N, "_bind", lambda *args, **kwargs: extended)
+    return N._bridge_acl(123, object())
+
+
+@pytest.mark.parametrize("defect", ["stable", "atime"])
+def test_native_bridge_accepts_access_time_movement_only(tmp_path, monkeypatch, defect):
+    assert _controlled_bridge(tmp_path, monkeypatch, defect) == N.ACLObservation("ABSENT")
+
+
+@pytest.mark.parametrize(
+    "defect,message",
+    [
+        ("identity", "identity changed"),
+        ("birth", "creation time changed"),
+        ("range", "invalid native timestamp"),
+        ("extent", "incomplete extended security"),
+        ("security", "invalid native security"),
+    ],
+)
+def test_native_bridge_still_rejects_invalid_identity_and_metadata(
+    tmp_path, monkeypatch, defect, message
+):
+    with pytest.raises(ValueError, match=message):
+        _controlled_bridge(tmp_path, monkeypatch, defect)
+
+
+def test_native_bridge_operational_failure_is_not_unsupported(tmp_path, monkeypatch):
+    with pytest.raises(OSError) as failure:
+        _controlled_bridge(tmp_path, monkeypatch, "operational")
+    assert failure.value.errno == errno.EIO
+
+
+def _real_native_bridge_read_between_samples(tmp_path, monkeypatch):
+    tmp_path.mkdir()
+    source = _file(tmp_path, payload=b"owned atime race fixture")
+    old = source.stat()
+    os.utime(source, ns=(old.st_atime_ns - 3600 * 10**9, old.st_mtime_ns))
+    library = M._system()
+    assert library is not None
+    bind = N._bind
+    moved = []
+
+    def bound(lib, name, *args, **kwargs):
+        function = bind(lib, name, *args, **kwargs)
+        if name != "__fstat64_extended":
+            return function
+
+        def read_after_capture(fd, *arguments):
+            before = os.fstat(fd)
+            result = function(fd, *arguments)
+            assert os.pread(fd, 1, 0) == b"o"
+            after = os.fstat(fd)
+            assert N._stamp(before) == N._stamp(after)
+            moved.append(after.st_atime_ns != before.st_atime_ns)
+            return result
+
+        return read_after_capture
+
+    monkeypatch.setattr(N, "_bind", bound)
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        observed = N._bridge_acl(descriptor, library)
+    finally:
+        os.close(descriptor)
+    assert moved == [True], "filesystem did not expose the controlled access-time movement"
+    assert observed.state in {"ABSENT", "PRESENT"}

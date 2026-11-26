@@ -95,8 +95,11 @@ completed phase occurrence: only the successful completion edge records
 design/conflict, implementation, finalization or correction work and complete it
 before entering verification.
 
-Use the exact AL run ID printed by start for every `--session` command; the
-native conversation ID is attribution only. The
+Use the exact AL session identifier supplied by the generated launcher handoff
+for every `--session` command. It may differ from the short AL ledger run ID
+shown in the EVIDENCE block; that ledger ID is for evidence attribution only.
+Native conversation IDs are attribution only and must never replace the session
+identifier. The
 run pins repository root and current working directory; a mismatch is a runtime
 guard, not a reason to change its expected path. Use the approved gate manifest,
 register writer ownership for your production files, and leave global installs,

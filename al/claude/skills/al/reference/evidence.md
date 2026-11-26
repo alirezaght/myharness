@@ -292,6 +292,8 @@ an unsupported context produces a fixed diagnostic and INFRA preflight outcome.
 Container recipe observations remain unqualified and independent of host Go or
 host environment settings, pending their separately authorized execution route.
 
+When cleanup records denied process inspection (for example `/bin/ps: Operation not permitted`), the result remains `INFRA`. Request the host’s reviewed permission for process inspection; in Codex, `require_escalated` is a host execution option, not an AL CLI flag. Establish positive owned-process settlement and satisfy existing cleanup obligations, then retry the same protected evidence invocation with inspection available. Keep the original INFRA entry as history. A reaped leader, missing PID, reconciliation or successful check output alone does not prove descendant settlement.
+
 ## Testing standards
 
 Apply these standards whenever authoring, changing, consolidating, or reviewing a test. Before changing a test, inspect the production path and understand the observable contract and risk it protects. Start from the specification and realistic regressions, not from the implementation's current shape.

@@ -557,6 +557,8 @@ class Snapshot(CaptureMixin):
             if replay is not None:
                 if replay:exclusions.append(dict(replay))
                 return
+            parts=path_parts(p)
+            if not protected and any(part in EXCLUDED for part in parts):return
             boundary=opaque_owner(opaque_paths,p)
             if boundary is not None:
                 diagnostics.append(gap('opaque-boundary',boundary,'supplied opaque source boundary'));return
@@ -568,7 +570,6 @@ class Snapshot(CaptureMixin):
                 # The same errors Path.exists() reports as absent.
                 if exc.errno in _ABSENT_ERRNOS:return
                 raise
-            parts=path_parts(p)
             if any(part in EXCLUDED for part in parts):
                 if not protected:return
                 exclusions.append({'path':p,'reason':'protected membership overrides generated exclusion','provenance':['tracked/base/explicit/declaration']})

@@ -216,7 +216,18 @@ def test_typed_paths_are_contiguous_when_expansion_branches_from_a_seed(graph):
         QueryLimits(),
         Counter(),
     )
-    assert examined <= 200
+    expected_branches = {
+        (("imports", "reverse", "module:service", "module:consumer"),),
+        (("defines", "forward", "module:service", "symbol:service:serve"),),
+    }
+    assert {
+        tuple(
+            (edge["predicate"], edge["direction"], edge["from"], edge["to"])
+            for edge in path["edges"]
+        )
+        for path in paths.values()
+    } == expected_branches
+    assert 0 < examined <= 200
     for path in paths.values():
         assert all(
             a["to"] == b["from"] for a, b in zip(path["edges"], path["edges"][1:], strict=False)
@@ -557,3 +568,50 @@ def test_deep_failed_seed_does_not_poison_shorter_parent_closure(graph):
     assert a not in returned
     assert len(returned) <= 3
     assert returned == {ref["assertion_id"] for ref in bundle.payload["citations"]}
+
+
+def test_secondary_estimate_counts_complete_serialized_bundle(graph):
+    conn, scope = graph
+    refresh(conn, scope)
+    bundle = query(
+        conn, scope, ContextRequest("service", stage="verification", estimated_tokens=4096)
+    )
+    size = len(canonical(bundle.to_dict()).encode())
+    assert size <= 10922
+    assert bundle.payload["budget"]["estimated_tokens"] == (3 * size + 7) // 8
+    assert bundle.payload["budget"]["estimated_tokens"] <= 4096
+    assert bundle.payload["budget"]["effective_max_bytes"] == 10922
+    assert "not an upper bound" in bundle.payload["budget"]["token_estimator_limits"]
+    assert bundle.payload["budget"]["serialized_bytes"] == size
+    assert "not-tokenizer-exact" in bundle.payload["budget"]["token_estimator"]
+    assert {a["assertion_id"] for a in bundle.payload["assertions"]} == {
+        c["assertion_id"] for c in bundle.payload["citations"]
+    }
+
+
+def test_binding_passes_share_receipt_accounting_under_citation_pressure(graph):
+    import subprocess
+
+    from tests.test_knowledge_context_request import binding_setup
+
+    conn, scope, _, _, _ = binding_setup(graph, designs=3)
+    for index in range(45):
+        (scope.repository / f"candidate_{index}.py").write_text(f"needle = {index}\n")
+    subprocess.run(["git", "-C", str(scope.repository), "add", "."], check=True)
+    # Index files without triggering structured task ingestion; bind the actual task only at query.
+    refresh(conn, replace(scope, task_id=None))
+    bundle = query(conn, scope, ContextRequest("needle", stage="implementation"))
+    receipt = conn.execute(
+        "SELECT * FROM knowledge_receipts WHERE receipt_id=?", (bundle.receipt_id,)
+    ).fetchone()
+    sources = {c["version_id"] for c in bundle.payload["citations"]}
+    details = json.loads(receipt["integrity_json"])
+    assert bundle.payload["exclusions"]["source-read-budget"]
+    # Both snapshot and two chosen-design projections are freshly charged in each pass.
+    assert receipt["source_reads"] >= 6 + 2 * len(sources)
+    assert receipt["source_reads"] <= 80
+    assert 0 < details["source_bytes"] <= 64 * 1024 * 1024
+    assert bundle.payload["context"]["binding"]["source_versions"]["design"]["overflow"]
+    assert {a["assertion_id"] for a in bundle.payload["assertions"]} == {
+        c["assertion_id"] for c in bundle.payload["citations"]
+    }

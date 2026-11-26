@@ -106,12 +106,21 @@ def import_events(data, module, package):
         tree = parse(data)
     except (SyntaxError, UnicodeError, ValueError, RecursionError):
         issue(ast.Pass(), None, 'source AST unavailable');return events
-    if sum(1 for _ in ast.walk(tree)) > 100000:
-        issue(tree, None, 'source AST complexity limit');return events
+    children = {};pending = [tree];occurrences = 0
+    while pending:
+        node = pending.pop();occurrences += 1
+        if occurrences > 100000:
+            issue(tree, None, 'source AST complexity limit');return events
+        # Shared ctx/operator nodes still count at every occurrence.
+        if node not in children:children[node] = tuple(ast.iter_child_nodes(node))
+        pending.extend(children[node])
 
     class Visitor(ast.NodeVisitor):
         def __init__(self):
             self.aliases = {};self.tainted = set()
+
+        def generic_visit(self, node):
+            for child in children[node]:self.visit(child)
 
         def scope(self, node):
             saved = self.aliases, self.tainted;self.aliases = dict(self.aliases);self.tainted = set(self.tainted)
@@ -163,7 +172,7 @@ def import_events(data, module, package):
                         writes[n.value.id] += 2
                     if conditional and isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)):
                         writes[n.id] += 2
-                    bindings(list(ast.iter_child_nodes(n)), conditional or isinstance(n, (ast.If, ast.Try, ast.For, ast.While, ast.With, ast.Match)))
+                    bindings(children[n], conditional or isinstance(n, (ast.If, ast.Try, ast.For, ast.While, ast.With, ast.Match)))
             bindings(body)
             if hasattr(node, 'args'):
                 for arg in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:

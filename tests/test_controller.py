@@ -130,7 +130,7 @@ def test_state_survives_reconnect(db_path):
         second.close()
 
 
-def test_two_connections_cannot_double_advance(db_path):
+def test_two_connections_observe_each_committed_advance(db_path):
     a, b = connect(db_path), connect(db_path)
     try:
         task = HarnessController(a).create_task("Add CSV export")
@@ -167,6 +167,11 @@ def test_migrations_are_tracked_and_idempotent(conn):
         (18, "0018_authoring.sql"),
         (19, "0019_investigation_sources.sql"),
         (20, "0020_planning_sessions.sql"),
+        (21, "0021_reliability_observations.sql"),
+        (22, "0022_reliability_timeline.sql"),
+        (23, "0023_runtime_policy.sql"),
+        (24, "0024_dependency_launch_fencing.sql"),
+        (25, "0025_incident_catalog.sql"),
     ]
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -196,6 +201,11 @@ def test_fresh_connect_reports_applied_migration(tmp_path):
             "0018_authoring.sql",
             "0019_investigation_sources.sql",
             "0020_planning_sessions.sql",
+            "0021_reliability_observations.sql",
+            "0022_reliability_timeline.sql",
+            "0023_runtime_policy.sql",
+            "0024_dependency_launch_fencing.sql",
+            "0025_incident_catalog.sql",
         ]
         assert apply_migrations(raw) == []
     finally:

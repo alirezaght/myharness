@@ -309,3 +309,45 @@ def test_moved_base_ref_names_the_pinned_sha_and_the_rerun(cli, repo, tmp_path):
     assert f'Re-run: gates discover --paths-file {paths} --base {pinned}' in message
     code, out, err = cli('gates', 'discover', '--paths-file', str(paths), '--base', 'no-such-ref')
     assert code != 0 and 'does not resolve to a commit' in str(code) + out + err
+
+
+def test_active_registered_writer_can_observe_but_cannot_admit_manifest(
+        cli, tmp_path, state_file, run_state):
+    run_state('implemented')
+    invoke(cli, 'writer', 'start', '--id', 'editing', '--role', 'al-engineer', '--files', 'svc/app.py')
+    before = state_file().read_bytes()
+    paths = _paths(tmp_path, ['svc/app.py'])
+    output = tmp_path / 'observed gates.json'
+    _, _, err = invoke(cli, 'gates', 'discover', '--paths-file', str(paths), '--bounded',
+                       '--output', str(output))
+    observed = json.loads(output.read_text())
+    assert 'svc/app.py' in observed['paths']
+    assert 'manifest not admitted' in err and 'editing' in err
+    assert state_file().read_bytes() == before
+    invoke(cli, 'gates', 'plan', '--file', str(output), ok=False)
+    assert state_file().read_bytes() == before
+    invoke(cli, 'writer', 'finish', '--id', 'editing', '--outcome', 'success', '--evidence', 'none')
+    invoke(cli, 'phase', 'VERIFICATION')
+    invoke(cli, 'gates', 'plan', '--file', str(output))
+    after = json.loads(state_file().read_text())
+    assert len(after['gate_manifests']) == len(json.loads(before)['gate_manifests']) + 1
+    assert A.read_json(after['gate_manifests'][-1])['paths'] == observed['paths']
+
+
+@pytest.mark.parametrize('problem', ['unresolved-writer', 'running-check', 'interrupted-check', 'cleanup'])
+def test_observational_discovery_still_refuses_unsettled_operations(problem):
+    import al_gates as G
+    st = {'writers': {'editing': {'id': 'editing', 'state': 'ACTIVE'}},
+          'evidence': {'entries': []}}
+    if problem == 'unresolved-writer':
+        st['writers']['editing']['state'] = 'UNRESOLVED'
+    else:
+        entry = {'id': 'E1', 'status': 'PASS'}
+        if problem == 'running-check': entry['status'] = 'RUNNING'
+        elif problem == 'interrupted-check': entry['interrupted'] = True
+        else: entry['cleanup'] = {'complete': False}
+        st['evidence']['entries'].append(entry)
+    before = json.dumps(st, sort_keys=True)
+    with pytest.raises(SystemExit, match='gates discover blocked:'):
+        G._discovery_active_writers(st)
+    assert json.dumps(st, sort_keys=True) == before

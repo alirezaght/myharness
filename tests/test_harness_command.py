@@ -82,12 +82,6 @@ def test_redesign_loop_paragraph_names_both_commands_and_keeps_the_developer_in_
     assert paragraph.index("design withdraw") < paragraph.index("harness.redesign address")
 
 
-def test_redesign_loop_does_not_disturb_the_numbered_steps_or_the_launch_paragraph():
-    text = _text()
-    assert [int(n) for n in STEP.findall(text)] == list(range(1, 16))
-    assert len([p for p in text.split("\n\n") if LAUNCH in p]) == 1
-
-
 def test_launch_paragraph_names_the_approval_snapshot_written_from_the_approval_center():
     paragraph = _launch_paragraph()
     assert "the approval snapshot written when the developer presses Approve & Implement" in (

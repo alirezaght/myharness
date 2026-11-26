@@ -110,10 +110,11 @@ def test_actual_authorized_query_links_only_returned_bundle_receipt(observed):
     row = controller.conn.execute(
         "SELECT * FROM reliability_timeline_links WHERE event_kind='retrieval.bundle'"
     ).fetchone()
-    assert row["bundle_hash"] == result["bundle_hash"] and row["receipt_id"]
+    assert row["bundle_hash"] == result["bundle_hash"]
+    assert row["receipt_id"] == result["receipt_id"]
     assert "private_context_canary" not in str(dict(row))
     assert row["principal_id"] == principal["thread_id"]
-    operation.dispatch(
+    explanation = operation.dispatch(
         principal,
         "knowledge_explain",
         {
@@ -127,6 +128,14 @@ def test_actual_authorized_query_links_only_returned_bundle_receipt(observed):
         ).fetchone()[0]
         == 2
     )
+    receipts = {
+        r[0]
+        for r in controller.conn.execute(
+            "SELECT receipt_id FROM reliability_timeline_links WHERE event_kind='retrieval.bundle'"
+        )
+    }
+    assert receipts == {result["receipt_id"], explanation["receipt_id"]}
+    assert len(receipts) == 2
 
 
 def test_trace_survives_launch_failure_and_recorded_cancellation(observed, monkeypatch):
@@ -134,7 +143,9 @@ def test_trace_survives_launch_failure_and_recorded_cancellation(observed, monke
 
     operation, _, controller = observed
     old = controller.conn.execute("SELECT trace_id FROM reliability_traces").fetchone()[0]
-    monkeypatch.setattr("harness.launch_readiness.require_launch_ready", lambda *a: None)
+    monkeypatch.setattr(
+        "harness.launch_readiness.require_launch_ready", lambda *a, **k: {"checks": []}
+    )
 
     def refuse(*a, **k):
         raise OSError("disposable fixture launch unavailable")
@@ -375,3 +386,235 @@ def test_semantic_privacy_only_validated_kind_reference_is_projected(observed, k
     changed["payload"]["legacy_extra"] = "different"
     with pytest.raises(ValueError, match="duplicate"):
         ingest_event(controller.conn, operation.execution_id, changed)
+
+
+@pytest.mark.parametrize("kind", ["query", "explain"])
+def test_actual_retrieval_interleaving_links_exact_returned_receipt(observed, monkeypatch, kind):
+    import importlib
+    import subprocess
+    from pathlib import Path
+
+    from harness.knowledge.policy import operator_scope
+    from harness.knowledge.refresh import refresh
+    from tests.test_reliability_timeline_fencing import child_principal
+
+    module = importlib.import_module("harness.knowledge.query")
+    operation, _, controller = observed
+    principal = child_principal(operation)
+    root = Path(operation.envelope["repository"])
+    (root / "context.py").write_text("import interleaving_private_canary\n")
+    subprocess.run(["git", "-C", str(root), "add", "context.py"], check=True)
+    refresh(controller.conn, operator_scope(root))
+    operation.state = lambda execution: {
+        "run_id": execution["al_run_id"],
+        "phase": "PLANNING",
+        "integration": {"agents": {}},
+    }
+    arguments = {"query": "interleaving_private_canary"}
+    if kind == "explain":
+        seed = operation.dispatch(principal, "knowledge_query", arguments)
+        arguments = {
+            "bundle_hash": seed["bundle_hash"],
+            "assertion_id": seed["assertions"][0]["assertion_id"],
+        }
+    original = getattr(module, kind)
+    retained = {}
+
+    def interleaved(*args, **kwargs):
+        first = original(*args, **kwargs)
+        first_value = first.to_dict() if kind == "query" else first
+        retained["receipt"] = tuple(
+            controller.conn.execute(
+                "SELECT * FROM knowledge_receipts WHERE receipt_id=?",
+                (first_value["receipt_id"],),
+            ).fetchone()
+        )
+        retained["bundle"] = tuple(
+            controller.conn.execute(
+                "SELECT * FROM knowledge_bundles WHERE bundle_hash=?",
+                (first_value["bundle_hash"],),
+            ).fetchone()
+        )
+        second = original(*args, **kwargs)
+        second_value = second.to_dict() if kind == "query" else second
+        assert first_value["bundle_hash"] == second_value["bundle_hash"]
+        assert first_value["receipt_id"] != second_value["receipt_id"]
+        retained["later_receipt"] = second_value["receipt_id"]
+        return first
+
+    monkeypatch.setattr(module, kind, interleaved)
+    returned = operation.dispatch(principal, "knowledge_" + kind, arguments)
+    observation = controller.conn.execute(
+        "SELECT observation_id FROM reliability_observations WHERE tool=? "
+        "ORDER BY rowid DESC LIMIT 1",
+        ("knowledge_" + kind,),
+    ).fetchone()[0]
+    linked = controller.conn.execute(
+        "SELECT * FROM reliability_timeline_links WHERE parent_observation_id=? "
+        "AND event_kind='retrieval.bundle'",
+        (observation,),
+    ).fetchone()
+    assert linked["receipt_id"] == returned["receipt_id"]
+    assert linked["receipt_id"] != retained["later_receipt"]
+    assert linked["bundle_hash"] == returned["bundle_hash"]
+    assert linked["principal_id"] == principal["thread_id"]
+    assert "interleaving_private_canary" not in str(dict(linked))
+    assert retained["receipt"] == tuple(
+        controller.conn.execute(
+            "SELECT * FROM knowledge_receipts WHERE receipt_id=?",
+            (returned["receipt_id"],),
+        ).fetchone()
+    )
+    assert retained["bundle"] == tuple(
+        controller.conn.execute(
+            "SELECT * FROM knowledge_bundles WHERE bundle_hash=?",
+            (returned["bundle_hash"],),
+        ).fetchone()
+    )
+
+
+def test_retrieval_reference_scope_refusals_never_select_a_later_receipt(observed, tmp_path):
+    import subprocess
+    from dataclasses import replace
+    from pathlib import Path
+
+    from harness.knowledge.models import ContextRequest
+    from harness.knowledge.policy import derive_scope, operator_scope
+    from harness.knowledge.query import query
+    from harness.knowledge.refresh import refresh
+    from harness.reliability import store
+    from harness.reliability.timeline_store import retrieval_link
+    from tests.test_reliability_timeline_fencing import child_principal
+
+    operation, _, controller = observed
+    conn = controller.conn
+    principal = child_principal(operation)
+    root = Path(operation.envelope["repository"])
+    (root / "scope.py").write_text("import receipt_scope_private_canary\n")
+    subprocess.run(["git", "-C", str(root), "add", "scope.py"], check=True)
+    refresh(conn, operator_scope(root))
+    operation.state = lambda execution: {
+        "run_id": execution["al_run_id"],
+        "phase": "PLANNING",
+        "integration": {"agents": {}},
+    }
+    execution = get_execution(conn, operation.execution_id)
+    scope = derive_scope(
+        controller, execution, principal, operation.state(execution), root, operation=operation
+    )
+    first = query(conn, scope, ContextRequest("receipt_scope_private_canary")).to_dict()
+    later = query(conn, scope, ContextRequest("receipt_scope_private_canary")).to_dict()
+    assert first["bundle_hash"] == later["bundle_hash"]
+    assert first["receipt_id"] != later["receipt_id"]
+    original_receipt = tuple(
+        conn.execute(
+            "SELECT * FROM knowledge_receipts WHERE receipt_id=?",
+            (first["receipt_id"],),
+        ).fetchone()
+    )
+    original_bundle = tuple(
+        conn.execute(
+            "SELECT * FROM knowledge_bundles WHERE bundle_hash=?",
+            (first["bundle_hash"],),
+        ).fetchone()
+    )
+    other_principal = child_principal(operation)
+    other_scope = derive_scope(
+        controller,
+        execution,
+        other_principal,
+        operation.state(execution),
+        root,
+        operation=operation,
+    )
+    foreign_principal = query(
+        conn, other_scope, ContextRequest("receipt_scope_private_canary")
+    ).to_dict()
+    other_root = tmp_path / "other-project"
+    other_root.mkdir()
+    subprocess.run(["git", "init", "-q", str(other_root)], check=True)
+    (other_root / "foreign.py").write_text("foreign_receipt_canary = 1\n")
+    subprocess.run(["git", "-C", str(other_root), "add", "."], check=True)
+    foreign_scope = operator_scope(other_root)
+    refresh(conn, foreign_scope)
+    foreign_project = query(conn, foreign_scope, ContextRequest("foreign_receipt_canary")).to_dict()
+
+    def no_link(reference, *, current_scope=scope, error=None):
+        observation = store.begin(operation, principal, "knowledge_query")
+        if error:
+            with pytest.raises(ValueError, match=error):
+                retrieval_link(operation, observation, reference, scope=current_scope)
+        else:
+            retrieval_link(operation, observation, reference, scope=current_scope)
+        assert not conn.execute(
+            "SELECT 1 FROM reliability_timeline_links WHERE parent_observation_id=?",
+            (observation,),
+        ).fetchone()
+        store.finish(operation, observation, "RETURNED", {"status": "no-link"})
+
+    for reference in (
+        None,
+        {},
+        {"bundle_hash": first["bundle_hash"]},
+        first | {"receipt_id": None},
+        first | {"receipt_id": []},
+        first | {"receipt_id": "f" * 33},
+        first | {"receipt_id": "F" * 32},
+        first | {"receipt_id": "f" * 32},
+        first | {"bundle_hash": "f" * 64},
+        first | {"receipt_id": foreign_project["receipt_id"]},
+        foreign_project,
+        foreign_principal,
+    ):
+        no_link(reference)
+    no_link(first, current_scope=None)
+    no_link(
+        first,
+        current_scope=replace(scope, principal_id=other_principal["thread_id"]),
+        error="observation scope differs",
+    )
+    # Corrupt only the later receipt in this disposable database, restoring each field.
+    # The original returned receipt and bundle must remain byte-for-byte unchanged.
+    for field, changed in (
+        ("project_id", foreign_scope.project_id),
+        ("snapshot_id", foreign_project["snapshot_id"]),
+        ("policy_digest", foreign_project["policy_digest"]),
+        ("purpose", "operator"),
+    ):
+        previous = conn.execute(
+            f"SELECT {field} FROM knowledge_receipts WHERE receipt_id=?", (later["receipt_id"],)
+        ).fetchone()[0]
+        conn.execute(
+            f"UPDATE knowledge_receipts SET {field}=? WHERE receipt_id=?",
+            (changed, later["receipt_id"]),
+        )
+        try:
+            no_link(later)
+        finally:
+            conn.execute(
+                f"UPDATE knowledge_receipts SET {field}=? WHERE receipt_id=?",
+                (previous, later["receipt_id"]),
+            )
+    observation = store.begin(operation, principal, "knowledge_query")
+    retrieval_link(operation, observation, first, scope=scope)
+    store.finish(operation, observation, "RETURNED", {"status": "linked"})
+    linked = conn.execute(
+        "SELECT * FROM reliability_timeline_links WHERE parent_observation_id=?", (observation,)
+    ).fetchone()
+    assert linked["receipt_id"] == first["receipt_id"]
+    assert linked["bundle_hash"] == first["bundle_hash"]
+    assert linked["snapshot_id"] == first["snapshot_id"]
+    assert "private_canary" not in str(dict(linked))
+    assert "foreign_receipt_canary" not in str(dict(linked))
+    assert original_receipt == tuple(
+        conn.execute(
+            "SELECT * FROM knowledge_receipts WHERE receipt_id=?",
+            (first["receipt_id"],),
+        ).fetchone()
+    )
+    assert original_bundle == tuple(
+        conn.execute(
+            "SELECT * FROM knowledge_bundles WHERE bundle_hash=?",
+            (first["bundle_hash"],),
+        ).fetchone()
+    )

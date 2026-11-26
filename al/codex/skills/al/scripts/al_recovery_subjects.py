@@ -1,6 +1,7 @@
 """Observed recovery subjects; guidance names no unsupported operation."""
 
 import al_ledger as L
+from al_evidence import process_inspection_guidance
 from al_schema import refuse
 
 
@@ -47,15 +48,24 @@ def operations(st):
         )
         if not uncertain and not unresolved:
             continue
+        import al_process_observation
+        process_state = al_process_observation.observe(entry)
         observed = {
             "entry": entry,
-            "owner_alive": L._alive(entry.get("owner_pid")),
-            "child_alive": L._alive(entry.get("pid")),
+            "owner_alive": None if process_state['owner'] == 'unknown' else process_state['owner'] == 'live',
+            "child_alive": None if process_state['checks'] == 'unknown' else process_state['checks'] == 'live',
+            "process_state": process_state,
         }
         if uncertain:
             recovery = supply(
                 "owned-cleanup-resolution",
-                "Provide positive owned-process cleanup proof; reconciliation alone cannot waive uncertainty.",
+                "Provide positive owned-process cleanup proof; reconciliation alone cannot waive uncertainty."
+                + process_inspection_guidance(cleanup),
+            )
+        elif 'unknown' in process_state.values():
+            recovery = supply(
+                "owned-process-observation",
+                "Original process ownership is unavailable; obtain authenticated owned-process settlement before reconciliation.",
             )
         elif observed["owner_alive"] or observed["child_alive"]:
             recovery = supply(
@@ -263,6 +273,14 @@ def issues(st, *, prerequisite=None):
         return [issue('REWORK_RECOVERY_STOPPED','rework-recovery',recovery['stop']['occurrence_id'],
                       recovery['stop']['reason'],supply('rework-continuation-input',
                       'Inspect the latest stopping checkpoint; use rework-recovery continue --file PATH with explicit user authorization.'),recovery['stop'])]
+    if st['status']=='STOPPED_WITH_BLOCKERS':
+        from al_recovery import gate_decision_checkpoint
+        ref=gate_decision_checkpoint(st)
+        if ref is not None:
+            return [issue('GATE_DECISION_STOPPED','run',st['run_id'],
+                          'An explicit gate decision stopped this run.',
+                          supply('gate-decision-resume','Run `resume --checkpoint '+ref['id']+'` to continue; baseline failures ordinarily need no defer decision.',
+                                 'resume',{'checkpoint':ref['id']}),ref)]
     if st["status"] != "RUNNING":
         return [
             issue(
@@ -272,7 +290,7 @@ def issues(st, *, prerequisite=None):
                 "The run requires its ordinary explicit recovery edge.",
                 supply(
                     "run-recovery-input",
-                    "Inspect the stopping checkpoint and agent-failure obligations before using guarded resume/retry.",
+                    "Inspect the stopping checkpoint and agent-failure obligations before using guarded resume/retry. A legacy gate stop without an immutable bound stopping checkpoint is unresolved; no resume authority can be inferred.",
                 ),
                 {
                     "status": st["status"],

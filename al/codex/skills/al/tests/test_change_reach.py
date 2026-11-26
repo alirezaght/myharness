@@ -107,18 +107,18 @@ def test_a_base_failure_is_the_baseline_and_an_identical_candidate_failure_is_pr
     st = _state(tmp_path, monkeypatch, [base])
     # The base stage no longer asks for a decision: the failure is the comparison point.
     assert G.gate_result(st, {'base_oid': 'BASE'}, GATE, 'base', 'BASE') in G.ACCEPTED
-    assert 'baseline failure' in G.accepted_failure(st, {}, GATE, 'base', base[0], base[1], 'BASE')
+    assert 'baseline failure' in G.accepted_failure(st, {'base_oid': 'BASE'}, GATE, 'base', base[0], base[1], 'BASE')
     # The same gate failing again at candidate, in a member the change does not touch, is pre-existing.
     candidate = _run(tmp_path, monkeypatch, GATE, 'candidate', 'FAIL')
     st = _state(tmp_path, monkeypatch, [base, candidate])
-    assert 'pre-existing' in G.accepted_failure(st, {}, GATE, 'candidate', candidate[0], candidate[1], 'CAND')
+    assert 'pre-existing' in G.accepted_failure(st, {'base_oid': 'BASE'}, GATE, 'candidate', candidate[0], candidate[1], 'CAND')
 
 
 def test_only_a_finished_base_failure_of_this_runs_command_is_the_baseline(tmp_path, monkeypatch):
     for status, extra in (('INFRA', {}), ('TORN', {}), ('FAIL', {'run': 'older-run'}), ('FAIL', {'argv': ['other']})):
         base = _run(tmp_path, monkeypatch, GATE, 'base', status, **extra)
         st = _state(tmp_path, monkeypatch, [base])
-        assert G.accepted_failure(st, {}, GATE, 'base', base[0], base[1], 'BASE') is None, (status, extra)
+        assert G.accepted_failure(st, {'base_oid': 'BASE'}, GATE, 'base', base[0], base[1], 'BASE') is None, (status, extra)
         assert G.gate_result(st, {'base_oid': 'BASE'}, GATE, 'base', 'BASE') not in G.ACCEPTED, (status, extra)
 
 
@@ -127,4 +127,29 @@ def test_a_new_candidate_failure_still_blocks(tmp_path, monkeypatch):
     base = _run(tmp_path, monkeypatch, GATE, 'base', 'PASS')
     candidate = _run(tmp_path, monkeypatch, GATE, 'candidate', 'FAIL')
     st = _state(tmp_path, monkeypatch, [base, candidate])
-    assert G.accepted_failure(st, {}, GATE, 'candidate', candidate[0], candidate[1], 'CAND') is None
+    assert G.accepted_failure(st, {'base_oid': 'BASE'}, GATE, 'candidate', candidate[0], candidate[1], 'CAND') is None
+
+
+
+def comparison_fixture(gate, entries, base_id):
+    """Real retained log/ledger bindings for pure base/candidate comparison controls."""
+    gate = dict(GATE, **gate)
+    gate['scope'] = list(gate['units'])
+    manifest = {'base_oid': 'BASE'}
+    state = {'run_id': 'comparison-run', 'gate_manifests': [{'sha256': 'M'}],
+             'gate_decisions': {}, 'gate_runs': [],
+             'evidence': {'seq': len(entries), 'entries': [], 'plan': {}}}
+    records = {}
+    for identifier, entry in entries.items():
+        stage = 'base' if identifier == base_id else 'candidate'
+        entry = dict(entry, run=state['run_id'], argv=gate['argv'], cwd=gate['cwd'],
+                     scope=gate['scope'], sources=gate['sources'], env=sorted(gate['env_names']),
+                     log_sha256=L.file_sha(entry['log']), kind='check',
+                     area='gate-'+stage+'-'+gate['id'], gate_stage=stage, gate_manifest='M')
+        record = {'gate': gate['id'], 'stage': stage, 'manifest': 'M',
+                  'fingerprint': 'BASE' if stage == 'base' else 'CAND', 'evidence': identifier,
+                  'execution_kind': gate['execution_kind'], 'sources': gate['sources'],
+                  'env_fingerprint': L.scope_fingerprint([], gate['env_names'])}
+        state['evidence']['entries'].append(entry);state['gate_runs'].append(record)
+        records[identifier] = record
+    return state, manifest, gate, {e['id']: e for e in state['evidence']['entries']}, records

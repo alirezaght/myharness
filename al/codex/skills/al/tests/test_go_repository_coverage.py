@@ -484,13 +484,24 @@ def test_missing_actual_go_is_infra_and_review_refuses_with_recorded_debt(
     import json
     import os
     import shutil
+    import subprocess
 
     from hook_regression_helpers import invoke
 
     cli = cli.raw
-    monkeypatch.setenv("PATH", os.defpath)
-    if shutil.which("go"):
-        pytest.skip("standard host PATH supplies Go; missing-tool fixture unavailable")
+    host_tools = {name: shutil.which(name) for name in ("git", "sh")}
+    assert all(host_tools.values()), "git and sh are required to construct the isolated fixture"
+    tool_bin = tmp_path / "go-free-bin"
+    tool_bin.mkdir()
+    for name, executable in host_tools.items():
+        (tool_bin / name).symlink_to(executable)
+    monkeypatch.setenv("PATH", str(tool_bin))
+    monkeypatch.delenv("AL_TEST_GO_EXECUTABLE", raising=False)
+    assert shutil.which("go") is None
+    assert shutil.which("git") == str(tool_bin / "git")
+    assert shutil.which("sh") == str(tool_bin / "sh")
+    subprocess.run(["git", "--version"], check=True, capture_output=True, text=True)
+    subprocess.run(["sh", "-c", "exit 0"], check=True)
     go_repository(repo)
     module(repo)
     put(repo, ".gitlab-ci.yml", "test:\n  script: go test ./...\n")
@@ -906,3 +917,36 @@ def supported_go_environment(monkeypatch):
 @pytest.fixture(autouse=True)
 def go_environment(monkeypatch):
     supported_go_environment(monkeypatch)
+
+
+@pytest.mark.parametrize("python_helper", [False, True])
+def test_sql_go_reach_does_not_erase_a_real_unmanifested_python_witness(
+    cli, repo, tmp_path, python_helper
+):
+    go_repository(repo)
+    module(repo, "services/sql-worker")
+    put(repo, "services/sql-worker/main.go",
+        'package main\nconst migration="migrations/001.sql"\nfunc main(){}\n')
+    put(repo, "services/sql-worker/migrations/001.sql", "SELECT 1;\n")
+    put(repo, ".gitlab-ci.yml", "test:\n  script: cd services/sql-worker && go test ./...\n")
+    if python_helper:
+        put(repo, "services/sql-worker/migrate.py", "def migrate():\n    return 1\n")
+    pinned(repo)
+    start(cli)
+    _, manifest = discover(cli, tmp_path, ["services/sql-worker/migrations/001.sql"])
+    coverage = manifest["service_coverage"]
+    facts = coverage["semantic_requirements"]
+    worker = next(u for u in facts["units"] if u["id"] == "services/sql-worker")
+    assert "go" in worker["languages"]
+    assert ("python" in worker["languages"]) is python_helper
+    assert "services/sql-worker" in coverage["assessment"]["selected_services"]
+    assert any(j["job"] == "test" for j in facts["ci_observations"]["obligations"])
+    missing = [g for g in facts["enumeration"]["gaps"] if g["code"] == "missing-manifest"
+               and g["path"] == "services/sql-worker/pyproject.toml"]
+    assert bool(missing) is python_helper
+    if python_helper:
+        assert coverage["assessment"]["outcome"] == "incomplete"
+        assert "services/sql-worker/migrate.py" in missing[0]["reason"]
+    else:
+        assert not any(g["category"] == "lint-imports" and g["applicability"] != "NOT_APPLICABLE"
+                       for g in manifest["gates"])

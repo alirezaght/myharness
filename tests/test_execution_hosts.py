@@ -8,7 +8,7 @@ import pytest
 
 from harness.execution_hosts import native_identity, resume_argv, start_argv
 from harness.execution_store import get_execution
-from harness.execution_worker import supervise
+from harness.execution_worker import launch_worker, supervise
 from harness.native_diagnostics import message
 from tests.execution_helpers import approved_execution
 
@@ -127,10 +127,18 @@ def test_real_external_host_exit_zero_is_incomplete(
         monkeypatch.setattr(subprocess, "Popen", capture_child)
         monkeypatch.setattr(os, "killpg", exited_fixture_group)
     monkeypatch.setenv("PATH", str(binary) + os.pathsep + os.environ["PATH"])
-    controller.conn.execute(
-        "UPDATE executions SET status='WorkerOwned',worker_token='owner' WHERE id=?", (eid,)
-    )
-    supervise(controller.conn, eid, "owner")
+    # Reserve through the real authority API; supervise the native host in this process.
+    with monkeypatch.context() as admission:
+        admission.setattr("harness.execution_worker._spawn_worker", lambda *_a, **_k: None)
+        reservation = launch_worker(controller.conn, eid)
+    execution = get_execution(controller.conn, eid)
+    attempt = controller.conn.execute(
+        "SELECT * FROM execution_attempts WHERE id=?", (reservation["attempt_id"],)
+    ).fetchone()
+    assert attempt["status"] == "Reserved" and attempt["child_pid"] is None
+    assert attempt["epoch_id"] == execution["epoch_id"]
+    assert attempt["token"] == execution["worker_token"]
+    supervise(controller.conn, eid, execution["worker_token"])
     saved = get_execution(controller.conn, eid)
     assert saved["status"] == "Interrupted" and saved["result"] is None
     assert expected_error in saved["error"]

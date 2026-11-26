@@ -8,7 +8,9 @@ import hashlib
 import json
 import os
 import re
+import selectors
 import subprocess
+import time
 import tomllib
 from pathlib import Path, PurePosixPath
 
@@ -74,26 +76,129 @@ def _text(root, relative):
         return None
 
 
-def inventory(root):
-    files = []
-    complete = True
-    for current, directories, names in os.walk(root, followlinks=False):
-        base = Path(current)
-        directories[:] = sorted(
-            d
-            for d in directories
-            if d not in EXCLUDED
-            and not (base / d).is_symlink()
-            and not d.endswith((".egg-info", ".dist-info"))
+def _git_members(root, diagnostics):
+    """Read NUL-framed names without text stripping or unbounded subprocess output."""
+    rows = []
+    pending = b""
+    total = 0
+    proc = None
+    try:
+        proc = subprocess.Popen(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=root,
+            env=dict(os.environ, GIT_OPTIONAL_LOCKS="0"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
         )
+        deadline = time.monotonic() + 10
+        with selectors.DefaultSelector() as poll:
+            poll.register(proc.stdout, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("Git membership timeout")
+                if not poll.select(remaining):
+                    raise ValueError("Git membership timeout")
+                block = os.read(proc.stdout.fileno(), 65536)
+                if not block:
+                    break
+                total += len(block)
+                if total > MAX_FILES * 512:
+                    raise ValueError("Git membership byte limit")
+                fields = (pending + block).split(b"\0")
+                pending = fields.pop()
+                for field in fields:
+                    if len(rows) >= MAX_FILES:
+                        raise ValueError("Git membership file limit")
+                    rows.append(os.fsdecode(field))
+        if pending or proc.wait(timeout=max(0.01, deadline - time.monotonic())) != 0:
+            raise ValueError("Git membership failed or had incomplete NUL framing")
+        return rows, True
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        diagnostics.append("inventory incomplete: " + str(exc))
+        return rows, False
+    finally:
+        if proc is not None:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+            proc.stdout.close()
+
+
+def _source_member(root, name, diagnostics):
+    path = PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts or not name or path.as_posix() != name:
+        diagnostics.append("unsafe inventory path: " + name)
+        return False
+    if ".git" in path.parts:
+        return False
+    current = root
+    try:
+        for part in path.parts:
+            current = current / part
+            if current.is_symlink():
+                diagnostics.append(
+                    "symlink source boundary: " + current.relative_to(root).as_posix()
+                )
+                return False
+            if current.is_dir() and (os.path.lexists(current / ".git")):
+                diagnostics.append(
+                    "nested repository boundary: " + current.relative_to(root).as_posix()
+                )
+                return False
+        return current.is_file()
+    except OSError as exc:
+        diagnostics.append("inventory inspection unavailable: " + name + ": " + str(exc))
+        return False
+
+
+def inventory(root, *, diagnostics=None):
+    diagnostics = diagnostics if diagnostics is not None else []
+    root = Path(root).resolve()
+    initial = len(diagnostics)
+    inside = _git(root, "rev-parse", "--is-inside-work-tree")
+    if inside == "true":
+        rows, complete = _git_members(root, diagnostics)
+        files = sorted(
+            {p.rstrip("/") for p in rows if _source_member(root, p.rstrip("/"), diagnostics)}
+        )
+        return files, complete and len(diagnostics) == initial
+    if any(os.path.lexists(p / ".git") for p in [root, *root.parents]):
+        diagnostics.append(
+            "inventory incomplete: Git membership unavailable; no filesystem fallback"
+        )
+        return [], False
+    diagnostics.append(
+        "inventory incomplete: bounded non-Git filesystem fallback has no Git source boundary"
+    )
+    files = []
+    visited = 0
+    for current, directories, names in os.walk(root, followlinks=False):
+        visited += 1
+        if visited > MAX_FILES:
+            diagnostics.append("inventory incomplete: directory limit")
+            break
+        base = Path(current)
+        selected = []
+        for name in sorted(directories):
+            directory = base / name
+            if name in EXCLUDED or name.endswith((".egg-info", ".dist-info")):
+                continue
+            if directory.is_symlink() or os.path.lexists(directory / ".git"):
+                diagnostics.append(
+                    "unsupported source boundary: " + directory.relative_to(root).as_posix()
+                )
+                continue
+            selected.append(name)
+        directories[:] = selected
         for name in sorted(names):
-            path = base / name
-            if not path.is_symlink() and path.is_file():
-                files.append(path.relative_to(root).as_posix())
-                if len(files) == MAX_FILES:
-                    complete = False
-                    return sorted(files), complete
-    return sorted(files), complete
+            relative = (base / name).relative_to(root).as_posix()
+            if _source_member(root, relative, diagnostics):
+                files.append(relative)
+                if len(files) >= MAX_FILES:
+                    diagnostics.append("inventory incomplete: file limit")
+                    return sorted(files), False
+    return sorted(files), False
 
 
 def _named(text, name):
@@ -104,15 +209,25 @@ def audit(root, request, *, files=None):
     root = Path(root).resolve(strict=True)
     if not root.is_dir() or not isinstance(request, str) or not request.strip():
         raise ValueError("repository directory and material request required")
+    diagnostics = []
     if files is None:
-        files, complete = inventory(root)
+        files, complete = inventory(root, diagnostics=diagnostics)
     else:
-        files = sorted(str(p) for p in files if not EXCLUDED.intersection(PurePosixPath(p).parts))
-        complete = len(files) <= MAX_FILES
-        files = files[:MAX_FILES]
+        # Supplied provider membership is authoritative; validate it without another walk.
+        supplied = []
+        complete = True
+        for index, path in enumerate(files):
+            if index >= MAX_FILES:
+                diagnostics.append("inventory incomplete: supplied file limit")
+                complete = False
+                break
+            name = str(path)
+            if _source_member(root, name, diagnostics):
+                supplied.append(name)
+        files = sorted(set(supplied))
+        complete = complete and not diagnostics
     texts = {}
     units = []
-    diagnostics = []
     for name in files:
         path = PurePosixPath(name)
         if path.name not in MANIFESTS:

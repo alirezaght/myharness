@@ -21,6 +21,44 @@ def test_run_records_argv_cwd_exit_log_counts_and_fingerprint(cli, state_file):
     assert e["fp_before"] == e["fp_after"] and e["fp_after"]
 
 
+def test_running_check_reports_execution_after_reservation_without_caller_values(
+        cli, run_state, state_file, monkeypatch, capsys, repo):
+    import al_evidence_storage
+
+    run_state("implemented")
+    observed = []
+    original_launch = al_evidence_storage.PreparedStorage.launch
+
+    def launch(storage, *args, **kwargs):
+        process = original_launch(storage, *args, **kwargs)
+        original_wait = process.wait
+
+        def wait(*args, **kwargs):
+            # Observe the actual terminal before delegating to the genuine owned child.
+            observed.append(capsys.readouterr().err)
+            return original_wait(*args, **kwargs)
+
+        process.wait = wait
+        return process
+
+    monkeypatch.setattr(al_evidence_storage.PreparedStorage, "launch", launch)
+    private = "private-progress-canary"
+    code, out, err = cli("evidence", "run", "--area", private, "--scope", "svc",
+                         "--", PY, "-c", "print('3 passed') # " + private)
+    assert code == 0, (out, err)
+    assert observed
+    waiting = observed[0]
+    assert "running registered check" in waiting
+    assert waiting.rfind("guarded run state saved") < waiting.rfind("running registered check")
+    assert private not in waiting and str(repo) not in waiting
+    matches = [entry for entry in entries(state_file) if entry['area'] == private]
+    assert len(matches) == 1
+    entry = matches[0]
+    assert entry["status"] == "PASS" and entry["exit"] == 0
+    assert entry["counts"] == {"passed": 3}
+    assert entry["cleanup"]["complete"] and entry["cleanup"]["leader_reaped"]
+
+
 def test_unchanged_inputs_reuse_the_run(cli, repo, state_file):
     cli("start", "--spec", "Verify the candidate task preserves repository state while recording evidence for its implementation.")
     plan_both(cli)

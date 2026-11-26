@@ -82,6 +82,11 @@ use `eval`, enable `SH_WORD_SPLIT`, or change global shell options to split argv
 The writer command still requires normal admission; the example grants no scope
 or execution authority.
 
+Writer ownership must name explicit repository-relative files or directories, for
+example `--files 'src,tests,README.md'`. Root `.` is refused for writers. A gate
+manifest or evidence scope may use `.` for repository coverage; that coverage does
+not grant a writer ownership of the repository root.
+
 ## Constants
 
 - `MAX_CORRECTION_ITERATIONS = 6` (also enforced mechanically: `"${STATE[@]}" correction` exit 3).
@@ -478,6 +483,24 @@ successor run whose anchors are inherited, in a Harness execution (its projectio
 receipts bind the identity), after a recovery checkpoint was recorded, during an active
 gate recovery, and while a check or writer is unresolved. Start a new run in those
 cases.
+
+Settle any authorized rebase and the intended review target/base before admitting
+implementation writers. Discover and plan gates and admit the planning proof against
+that settled identity, then register writers. Do not rebase underneath their recorded
+contributions.
+
+If the candidate must be rebased after any writer was registered, retain the old run
+and its contributions, failures, recovery records and unresolved obligations. Settle
+its active or unresolved writer/check operations before proceeding. Perform only the
+authorized repository synchronization, resolve the candidate, and freeze it. Start a
+genuinely fresh verification/publication run against the correct target and merge
+base; carry forward the original specification and explicitly enumerate every old
+obligation and its disposition. Rediscover and plan gates, admit a fresh planning
+proof, rerun required evidence and gates, and obtain a fresh independent review for
+that frozen candidate before publication. Prior implementation evidence is retained
+history, not post-rebase verification. `retarget`, runtime rebinding and successor
+runs do not repair the old contribution anchors; do not relax their guards or claim
+a successor inherited anchor represents the rebased base.
 
 Substantive legacy `--spec`/`--spec-file` input is accepted only with an explicit
 source and explicit ticket absence. Run `spec-gate` and `classify` from the
@@ -1100,3 +1123,12 @@ continuation where applicable; the diagnostic itself grants no phase transition,
 writer, proof or recovery credit. A saved recovery descriptor is bound to its
 observed state. Obtain current guidance after planning changes and retain stale
 binding refusals. Clearing one prerequisite never approves review or final work.
+
+
+When a normal scoped writer is ACTIVE, `gates discover` may publish a validated
+observation to stdout or `--output`; it explicitly reports that the manifest is
+not admitted and leaves the run's manifest, phase and recovery state unchanged.
+After writers settle, `gates plan --file <saved-manifest.json>` revalidates and
+admits it through the usual guards. UNRESOLVED writers, unreconciled checks and
+uncertain cleanup still refuse discovery; moving source inputs still require a
+fresh observation.

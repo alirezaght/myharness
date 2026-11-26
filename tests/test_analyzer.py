@@ -2,7 +2,7 @@ import json
 import os
 import shutil
 import subprocess
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -175,13 +175,27 @@ def test_missing_git_binary_falls_back_to_walk(tmp_path, monkeypatch):
     assert any("via directory walk" in t for t in _facts(report, FactCategory.REPOSITORY))
 
 
-def test_symlinked_file_outside_root_is_not_read(tmp_path):
+def test_symlinked_file_outside_root_is_not_read(tmp_path, monkeypatch):
     outside = tmp_path / "outside.txt"
-    outside.write_text("quokka")
+    outside.write_text("quokka OUTSIDE_CONTENT_CANARY")
     root = write_files(tmp_path / "r", {"app.py": "x = 1\n"})
     (root / "link.txt").symlink_to(outside)
+    original_open = Path.open
+    opened = []
+
+    def confined_open(path, *args, **kwargs):
+        assert path.resolve() != outside.resolve(), "opened an outside symlink target"
+        opened.append(path.resolve())
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", confined_open)
     report = analyze(root, "quokka")
-    assert _facts(report, FactCategory.FILES) == []
+    assert root / "app.py" in opened
+    assert _facts(report, FactCategory.FILES) == [
+        "Repository inventory reached its bound; ownership and coverage remain uncertain."
+    ]
+    assert "OUTSIDE_CONTENT_CANARY" not in json.dumps(report.to_dict())
+    assert "link.txt" not in "\n".join(f.text for f in report.facts)
 
 
 def test_missing_tests_several_packages_and_bad_pyproject(tmp_path):

@@ -352,8 +352,9 @@ valid evidence IDs. Record reviewer role, resolved model, task and candidate
 hashes, packet hash, and a unique invocation ID. Derive status from the findings:
 APPROVED and CHANGES_REQUIRED with zero blockers are both possible; never submit
 contradictory status/counts.
-Use the AL run ID printed by `"${STATE[@]}" start` for every explicit `--session`;
-native conversation IDs are attribution only and never identify an AL run.
+Use the exact AL session identifier supplied by the generated launcher handoff
+for every explicit `--session`. It may differ from the short AL ledger run ID;
+native conversation IDs are attribution only and never identify a session.
 
 Only after that report is saved may the supervisor start a separate comparison
 invocation with `review-compare-start --plan <approved-plan-file>` and, when the

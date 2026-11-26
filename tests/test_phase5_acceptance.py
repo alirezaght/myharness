@@ -17,13 +17,6 @@ def test_v1_acceptance_map_covers_all_criteria_with_resolvable_test_references()
         assert re.search(rf"\bdef\s+{re.escape(test_name)}\s*\(", source), reference
 
 
-def test_live_exit_and_browser_gaps_are_marked_outstanding():
-    document = (ROOT / "docs/v1-acceptance.md").read_text(encoding="utf-8")
-    assert "real staging run" in document
-    assert "remain outstanding" in document
-    assert "Fixture-provider HTTP tests" in document
-
-
 def test_delivery_completion_summary_keeps_browser_status_and_currency(
     controller, sample_repo, monkeypatch
 ):

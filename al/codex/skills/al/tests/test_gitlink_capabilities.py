@@ -208,3 +208,60 @@ def test_canonical_cwd_planned_alias_retarget_cannot_reuse_or_launch(cli,repo,tm
     result=cli('evidence','run','--area','planned-cwd',*(['--fresh'] if fresh else []))
     assert result[0]!=0 and not marker.exists() and 'reused' not in result[1]
     assert len(entries(state_file))==1
+
+
+@pytest.mark.parametrize('declarations', ['single', 'multiple', 'malformed'])
+def test_contract_obligation_binds_declaring_manifests_not_last_rule(
+    cli, repo, tmp_path, gitlink, declarations
+):
+    import hashlib
+
+    import al_gate_discovery as D
+    import al_gate_inventory as V
+    from evidence_helpers import git
+
+    root = {'scripts': {'contracts:gen': 'generate'}}
+    paths = ['svc']
+    expected = {'package.json': ['contracts:gen']}
+    if declarations == 'multiple':
+        root['scripts']['contracts:build'] = 'build'
+        child = repo / 'services/generator'
+        child.mkdir(parents=True)
+        (child / 'package.json').write_text(json.dumps({'scripts': {'contracts:gen': 'generate'}}))
+        (child / 'gen.js').write_text('const generated = 1;\n')
+        paths.append('services/generator/gen.js')
+        expected['package.json'] = ['contracts:build', 'contracts:gen']
+        expected['services/generator/package.json'] = ['contracts:gen']
+    elif declarations == 'malformed':
+        root['scripts'] = ['contracts:gen']
+        expected['package.json'] = []
+    (repo / 'package.json').write_text(json.dumps(root))
+    # A later unrelated rule must never become the declaration's provenance.
+    (repo / 'uv.lock').write_text('version=1\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-qm', 'literal contract declarations')
+    state = start(cli, repo)
+    inventory = V.inventory(state, paths)
+    assert inventory['auxiliary']['contracts'] is True
+    manifest = D.discover(state, paths)
+    gate = next(g for g in manifest['gates'] if g['id'] == 'contracts')
+    assert gate['source']['path'] == sorted(expected)[0]
+    assert gate['source']['sha256'] == hashlib.sha256(
+        (repo / sorted(expected)[0]).read_bytes()
+    ).hexdigest()
+    assert set(expected) <= set(gate['scope'])
+    recorded = inventory['auxiliary']['contract_declarations']
+    assert [row['path'] for row in recorded] == sorted(expected)
+    for row in recorded:
+        assert row['sha256'] == hashlib.sha256((repo / row['path']).read_bytes()).hexdigest()
+        assert row['scripts'] == expected[row['path']]
+    if declarations == 'malformed':
+        assert recorded[0]['reason']
+    rules = {row['path']: row['sha256'] for row in manifest['rules']}
+    assert all(rules[row['path']] == row['sha256'] for row in recorded)
+    assert gate['applicability'] == 'UNRESOLVED' and gate['argv'] == [] and gate['reason']
+    assert gate['sources'] == PARENT
+    before = L.scope_fingerprint(gate['scope'], sources=gate['sources'])
+    edited = repo / sorted(expected)[-1]
+    edited.write_text(edited.read_text() + '\n')
+    assert L.scope_fingerprint(gate['scope'], sources=gate['sources']) != before

@@ -1,6 +1,9 @@
 """Real guarded old-issuer authority approves a disposable full installer source."""
 
 import json
+import os
+import stat
+import uuid
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,7 +17,7 @@ from al.tests.old_issuer_workflow import ROOT, Workflow
 
 
 class WorkspaceJourney(Workflow):
-    def __init__(self, directory, platform):
+    def __init__(self, directory, platform, *, workspace_profile_dir=None):
         super().__init__(directory, platform)
         # Source approval is queried by the actual candidate copied into this repository.
         self.boot = bootstrap_cli(
@@ -25,6 +28,33 @@ class WorkspaceJourney(Workflow):
         self.global_home = directory / "global-home"
         self.global_home.mkdir()
         self.global_state = directory / "global-state"
+        self.workspace_profile_dir = None
+        if workspace_profile_dir is not None:
+            self.workspace_profile_dir = self._profile_directory(workspace_profile_dir)
+
+    def _profile_directory(self, directory):
+        directory = Path(directory).absolute()
+        if (directory.resolve() != directory
+                or any(p.is_symlink() for p in [directory, *directory.parents])
+                or not directory.is_relative_to(self.artifacts.resolve())
+                or directory == self.artifacts.resolve()
+                or directory.is_relative_to(self.repo.resolve())):
+            raise ValueError("workspace profile directory must be nonsymlink, beneath artifacts and outside repository")
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        for path in [directory, *directory.parents]:
+            if path == self.artifacts.resolve():break
+            info = path.stat()
+            if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                raise ValueError("workspace profile directory must be private and owned")
+        return directory
+
+    def _new_profile(self):
+        if self.workspace_profile_dir is None:return None
+        directory = self._profile_directory(self.workspace_profile_dir)
+        profile = directory / (uuid.uuid4().hex + ".prof")
+        fd = os.open(profile, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        os.close(fd)
+        return profile
 
     def create_project(self):
         super().create_project()
@@ -104,6 +134,9 @@ testpaths = ["tests"]
                 ],
             )
         )
+        profile = self._new_profile()
+        if profile is not None:
+            argv[4:4] = ["-m", "cProfile", "-o", str(profile)]
         directory = self.artifacts / ("workspace-" + command)
         directory.mkdir()
         log = directory / "output.log"
@@ -122,8 +155,13 @@ testpaths = ["tests"]
         journal = read_json(directory / "ownership/process-journal.json")
         assert journal["status"] == "FINISHED" and journal["cleanup"]["complete"]
         result = subprocess.CompletedProcess(argv, owner.process.returncode, log.read_text(), "")
+        profile_record = {}
+        if profile is not None and result.returncode == 0:
+            assert not profile.is_symlink() and profile.is_file() and profile.stat().st_size, "workspace profile output missing"
+            profile_record = {"profile": str(profile), "profile_sha256": digest(profile.read_bytes())}
         self.transcript.append(
             {
+                **profile_record,
                 "argv": argv,
                 "exit": result.returncode,
                 "stdout": str(log),

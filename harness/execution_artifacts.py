@@ -26,6 +26,29 @@ def presentation_page(text):
     return 0, ""
 
 
+def artifact_limit(record):
+    """Only a canonical, guarded gate report receives the dedicated capture bound."""
+    if record.get("source") != "guarded-al-gate-manifest":
+        return 16 * 1024 * 1024
+    from harness.execution_al_reports import REPORT_LIMIT
+
+    provenance = record.get("provenance")
+    reference = provenance.get("canonical_reference") if isinstance(provenance, dict) else None
+    if (
+        record.get("name") != "gate-manifest.json"
+        or not isinstance(reference, dict)
+        or not isinstance(provenance.get("operation_id"), str)
+        or not re.fullmatch(r"al-report-[0-9a-f]{32}", provenance["operation_id"])
+        or reference.get("kind") != "gate-manifest"
+        or not isinstance(reference.get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", reference["sha256"])
+        or reference.get("id") != reference["sha256"]
+        or record.get("sha256") != "sha256:" + reference["sha256"]
+    ):
+        raise ValueError("invalid guarded gate manifest provenance")
+    return REPORT_LIMIT
+
+
 class ArtifactStore:
     def __init__(self, directory, *, create=True):
         self.directory = Path(directory).resolve()
@@ -224,6 +247,7 @@ class ArtifactStore:
             record = index["records"].get(artifact_id)
             if not record or record["sha256"] != expected_sha256:
                 raise ValueError("execution artifact hash/identity differs")
+            maximum = artifact_limit(record)
             path = Path(record["path"])
             if path.parent != self.directory:
                 raise ValueError("execution artifact path/link identity differs")
@@ -234,13 +258,13 @@ class ArtifactStore:
                 if (
                     not stat.S_ISREG(before.st_mode)
                     or before.st_nlink != 1
-                    or not 0 <= before.st_size <= 16 * 1024 * 1024
+                    or not 0 <= before.st_size <= maximum
                 ):
                     raise ValueError("bounded ordinary execution artifact required")
                 chunks, size = [], 0
-                while size <= 16 * 1024 * 1024:
+                while size <= maximum:
                     check_deadline()
-                    chunk = os.read(fd, min(65536, 16 * 1024 * 1024 + 1 - size))
+                    chunk = os.read(fd, min(65536, maximum + 1 - size))
                     check_deadline()
                     if not chunk:
                         break
@@ -263,7 +287,8 @@ class ArtifactStore:
 
             raw = b"".join(chunks)
             if (
-                version(before) != version(after)
+                len(raw) > maximum
+                or version(before) != version(after)
                 or version(after) != version(named)
                 or digest(raw) != record["sha256"]
                 or len(raw) != record["size"]

@@ -25,7 +25,10 @@ def cmd_isolate(a,sid):
     log=L.log_dir(sid)/(entry['id']+'-isolation.log')
     with log.open('wb') as out:
         import al_harness_process
-        proc=al_harness_process.popen(entry['argv'],cwd=al_store.REPO_ROOT,stdout=out,stderr=subprocess.STDOUT,start_new_session=True)
+        proc=al_harness_process.popen(entry['argv'],cwd=al_store.REPO_ROOT,stdout=out,stderr=subprocess.STDOUT,start_new_session=True,
+                                      process_observation=entry.get('process_observation'))
+        import al_process_observation
+        al_process_observation.spawned(entry,proc)
         entry['pid']=proc.pid;E._commit(sid,entry)
         try:code=proc.wait(timeout=a.timeout)
         except subprocess.TimeoutExpired:code=E._stop(proc)

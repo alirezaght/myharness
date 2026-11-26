@@ -79,9 +79,11 @@ unavailable because native metadata cannot establish absence of inherited contex
 An older bridge that loses compatible knowledge access retains its existing
 execution authority; do not silently upgrade its pin.
 
-The ID in an EVIDENCE block is the immutable AL run ID the supervisor chose for
-`"${STATE[@]}" start` and passes to the launcher on every call. Native harness or
-conversation IDs are attribution only and must never be passed as `--session`.
+Use the exact AL session identifier supplied by the generated launcher handoff
+for every `--session` command. It may differ from the short AL ledger run ID
+shown in the EVIDENCE block; that ledger ID is for evidence attribution, not a
+replacement session value. Native harness or conversation IDs are attribution
+only and must never be passed as `--session`.
 
 Claude's native `start` inspects an existing run only to validate its pointer,
 schema, attribution and repository identity; it never resumes that run. A new

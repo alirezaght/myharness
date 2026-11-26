@@ -12,6 +12,7 @@ _STAGES = {
     'state-load': 'loading guarded run state',
     'state-save': 'validating and saving guarded run state',
     'state-saved': 'guarded run state saved',
+    'evidence-execution': 'running registered check',
     'state-lock': 'acquiring run admission lock',
     'state-locked': 'run admission lock acquired',
     'candidate-fingerprint': 'hashing current candidate identity',

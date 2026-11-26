@@ -3,6 +3,7 @@
 import json
 import uuid
 from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 
@@ -10,6 +11,7 @@ from harness import execution_worker as worker
 from harness.execution_models import ExecutionConflict
 from harness.execution_store import get_execution
 from harness.native_diagnostics import message
+from harness.policy.contracts import PolicyError
 from tests.execution_helpers import approved_execution, started
 
 
@@ -43,6 +45,11 @@ def add_attempt(conn, eid, name, token, *, status="Reserved", mode="reconnect", 
 
 def attempts(conn):
     return {row["id"]: dict(row) for row in conn.execute("SELECT * FROM execution_attempts")}
+
+
+def settlement_files(conn, eid):
+    directory = Path(get_execution(conn, eid)["handoff_path"]).parent / "settlements"
+    return {path.name: path.read_bytes() for path in directory.glob("*.json")}
 
 
 def test_replay_settles_only_its_matching_attempt(reconnect):
@@ -124,27 +131,34 @@ def test_unowned_or_unprocessed_paths_do_not_settle(reconnect, monkeypatch, path
 
 
 @pytest.mark.parametrize(
-    "state,mode,child",
+    "state,mode,child,code",
     [
-        ("Reconciled", "reconnect", None),
-        ("Reserved", "resume", None),
-        ("Running", "reconnect", 123456),
+        ("Reconciled", "reconnect", None, "ATTEMPT_NOT_EXECUTABLE"),
+        ("Reserved", "resume", None, "AUTHORITY_STALE"),
+        ("Running", "reconnect", 123456, "ATTEMPT_NOT_EXECUTABLE"),
     ],
 )
-def test_ineligible_attempt_is_not_overwritten(reconnect, state, mode, child):
+def test_ineligible_attempt_is_not_overwritten(reconnect, state, mode, child, code):
     controller, eid = reconnect
     controller.conn.execute(
         "UPDATE execution_attempts SET status=?,mode=?,child_pid=? WHERE id='current'",
         (state, mode, child),
     )
     before = attempts(controller.conn)
-    worker.supervise(controller.conn, eid, "test-owner", mode="reconnect")
+    settlements = settlement_files(controller.conn, eid)
+    token = get_execution(controller.conn, eid)["worker_token"]
+    with pytest.raises(PolicyError) as error:
+        worker.supervise(controller.conn, eid, "test-owner", mode="reconnect")
+    assert error.value.code == code
     assert attempts(controller.conn) == before
+    assert settlement_files(controller.conn, eid) == settlements
+    assert get_execution(controller.conn, eid)["worker_token"] == token
 
 
 def test_lost_token_during_processing_does_not_settle(reconnect, monkeypatch):
     controller, eid = reconnect
     before = attempts(controller.conn)
+    settlements = settlement_files(controller.conn, eid)
 
     def replace(*args):
         controller.conn.execute(
@@ -153,8 +167,12 @@ def test_lost_token_during_processing_does_not_settle(reconnect, monkeypatch):
         return True
 
     monkeypatch.setattr(worker, "replay_source", replace)
-    worker.supervise(controller.conn, eid, "test-owner", mode="reconnect")
+    with pytest.raises(PolicyError) as error:
+        worker.supervise(controller.conn, eid, "test-owner", mode="reconnect")
+    assert error.value.code == "AUTHORITY_STALE"
     assert attempts(controller.conn) == before
+    assert settlement_files(controller.conn, eid) == settlements
+    assert get_execution(controller.conn, eid)["worker_token"] == "replacement"
 
 
 def test_settled_reconnect_passes_real_upgrade_attempt_guard(reconnect, monkeypatch, tmp_path):
