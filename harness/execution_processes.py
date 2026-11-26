@@ -1,6 +1,7 @@
 """Owned, bounded operation subprocesses; native credentials never enter them."""
 
 import codecs
+import errno
 import os
 import secrets
 import selectors
@@ -16,6 +17,97 @@ from harness.execution_isolation import (
     release_process_temporary,
 )
 from harness.execution_logs import MAX_TEXT, StreamRedactor
+
+_CENSUS_ARGV = ("/bin/ps", "-axo", "pid=,pgid=,stat=")
+
+
+def _capture_census():
+    inspection = subprocess.Popen(
+        _CENSUS_ARGV,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=safe_environment(),
+    )
+    deadline, output = time.monotonic() + 1, bytearray()
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(inspection.stdout, selectors.EVENT_READ)
+            selector.register(inspection.stderr, selectors.EVENT_READ)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired("process census", 1)
+                for key, _ in selector.select(remaining):
+                    raw = os.read(key.fd, min(65536, 1048577 - len(output)))
+                    if not raw:
+                        selector.unregister(key.fileobj)
+                    elif key.fileobj is inspection.stderr or len(output) + len(raw) > 1048576:
+                        return None
+                    else:
+                        output.extend(raw)
+        if inspection.wait(timeout=max(0, deadline - time.monotonic())) != 0:
+            return None
+        return bytes(output)
+    finally:
+        try:
+            if inspection.poll() is None:
+                try:
+                    inspection.kill()
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    # Inspection still refuses; only actual completion settles its child.
+                    inspection.wait(timeout=1)
+            inspection.wait(timeout=1)
+        finally:
+            inspection.stdout.close()
+            inspection.stderr.close()
+
+
+def _group_has_no_live_members(group):
+    output = _capture_census()
+    if not output or len(output) > 1048576 or not output.endswith(b"\n"):
+        return False
+    rows = output.split(b"\n")[:-1]
+    if len(rows) > 10000:
+        return False
+    seen, live = set(), False
+    for row in rows:
+        fields = row.split()
+        if len(fields) != 3 or any(len(value) > 10 or not value.isdigit() for value in fields[:2]):
+            return False
+        pid, member_group = map(int, fields[:2])
+        status = fields[2]
+        if (
+            pid in seen
+            or max(pid, member_group) > 2147483647
+            or status[0] not in b"DRSTtUWIXxZ"
+            or any(flag not in b"<NLSsl+AEVXW" for flag in status[1:])
+        ):
+            return False
+        seen.add(pid)
+        live |= member_group == group and not status.startswith(b"Z")
+    return not live
+
+
+def _passively_settled(proc):
+    if (
+        not isinstance(proc, subprocess.Popen)
+        or not getattr(proc, "_child_created", False)
+        or type(proc.pid) is not int
+        or proc.pid <= 1
+    ):
+        return False
+    try:
+        completed = proc.wait(timeout=1)
+        return (
+            type(completed) is int
+            and proc.returncode == completed
+            and _group_has_no_live_members(proc.pid)
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
 
 
 class ProcessManager:
@@ -171,6 +263,9 @@ class ProcessManager:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        except PermissionError as error:
+            if error.errno != errno.EPERM or not _passively_settled(proc):
+                raise
 
     def _drain(self, record, timeout):
         proc, size = record["process"], 0

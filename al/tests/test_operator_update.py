@@ -12,14 +12,42 @@ from al.installer.operator_projection import projection
 from al.installer.registry import digest, load_record, read_json, write_json
 from al.installer.source import resolve_release
 from al.installer.targets import package_path, resolve_target
-from al.tests.conftest import run_alctl, copy_al_source
+from al.tests import update_templates
+from al.tests.conftest import copy_al_source, run_alctl
+from al.tests.conftest import installer_workspace as workspace_fixture
 from al.tests.test_manifest import git_test
 from al.tests.test_policy import session
 
+# Source-injected faults, construction subjects and unknown cases remain fresh.
+_PREFIX_CASES = frozenset({
+    'test_public_explicit_mode_warns_and_preserves_all_retained_bytes',
+    'test_installation_integrity_refusals_are_not_warnings',
+    'test_unmanaged_and_foreign_registry_cannot_use_operator_mode',
+    'test_operator_installation_metadata_has_real_owned_no_alias_boundary',
+    'test_unsafe_history_discovery_warns_but_actual_payload_overlap_refuses',
+})
+
+
+@pytest.fixture(scope='module')
+def _prefix_cache():
+    return {}
+
 
 @pytest.fixture
-def enrolled(installer_workspace, request):
-    w = installer_workspace
+def enrolled(tmp_path, tmp_path_factory, monkeypatch, request, _prefix_cache):
+    monkeypatch.delenv('AL_RUNTIME_DIR', raising=False)
+    monkeypatch.delenv('AL_DISTRIBUTION_STATE', raising=False)
+    if request.node.originalname not in _PREFIX_CASES or hasattr(request, 'param'):
+        return _fresh_enrolled(tmp_path, monkeypatch, request)
+    if 'prefix' not in _prefix_cache:
+        container = tmp_path_factory.mktemp('operator-update-prefix')
+        _prefix_cache['prefix'] = update_templates.build(
+            container, lambda root: _fresh_enrolled(root, monkeypatch, request))
+    return update_templates.restore(_prefix_cache['prefix'])
+
+
+def _fresh_enrolled(root, monkeypatch, request):
+    w = workspace_fixture.__wrapped__(root, monkeypatch)
     target = resolve_target(home=w['home'])
     O.run_operation({'kind': 'install', 'target': target, 'source': str(w['source']),
                      'version': '1.0.0', 'policy': 'follow' if getattr(request, 'param', None) == 'follow' else 'pinned',
@@ -152,12 +180,16 @@ def test_public_explicit_mode_warns_and_preserves_all_retained_bytes(enrolled):
     {'all': True}, {'adoption': {'reviewed': True}}, {'status_line': True},
     {'documentation_only': True}, {'reviewed_runtime_update': True}, {'operator_review_artifact': None},
 ])
-def test_scope_refuses_before_activity_or_mutation(enrolled, overrides):
-    w, target, row, runtime = enrolled
-    req = artifact(enrolled, *tag(enrolled))
+def test_scope_refuses_before_activity_or_mutation(overrides):
+    target = {'scope': 'global'}
+    row = {'target': target, 'current': {'release': {}}}
+    req = {'kind': 'update', 'target': target, 'version': '1.1.0', 'allow_running': True,
+           'operator_review_artifact': {'path': '/unused/reviews.json', 'sha256': '0' * 64}}
+    before = copy.deepcopy((req, row))
+    U.validate_request(req, row)
     with pytest.raises(ValueError):
         U.validate_request(dict(req, **overrides), row)
-    assert load_record(w['state'], target['target_id']) == row
+    assert (req, row) == before
 
 
 def inject(enrolled, statements, needle="            D.apply(engine_manifest, backup)\n", *, after=True):
@@ -347,6 +379,7 @@ def test_managed_old_pin_stays_old_and_separate_bootstrap_selects_new(enrolled):
     import os
     import shutil
     import sys
+
     from al.tests.conftest import copy_al_source
     from al.tests.runtime_run_helpers import invoke as invoke_raw
 

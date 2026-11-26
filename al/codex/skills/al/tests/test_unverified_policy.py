@@ -107,26 +107,28 @@ def _run(tmp_path, name, status, exit_code, text):
 
 def test_pre_existing_failures_are_distinct_from_unavailable_setup(tmp_path, monkeypatch):
     import al_gates as G
-    import al_ledger as L
+    from test_change_reach import comparison_fixture
     runs = {'E1': _run(tmp_path, 'E1', 'FAIL', 1, 'broken contract'), 'E2': _run(tmp_path, 'E2', 'FAIL', 1, 'broken contract'),
             'E3': _run(tmp_path, 'E3', 'FAIL', 1, 'turbo: command not found'), 'E4': _run(tmp_path, 'E4', 'FAIL', 1, 'turbo: command not found'),
             'E5': _run(tmp_path, 'E5', 'PASS', 0, 'ok'), 'E6': _run(tmp_path, 'E6', 'FAIL', 127, '')}
-    monkeypatch.setattr(L, 'find', lambda st, eid: runs.get(eid))
     monkeypatch.setattr(G, 'touched_units', lambda st, m: {'services/touched'})
-    def st(base_evidence):
-        return {'gate_runs': [{'gate': 'g', 'stage': 'base', 'manifest': 'm', 'evidence': base_evidence}]}
-    run = {'fingerprint': 'f', 'manifest': 'm'}
     untouched, touched = {'id': 'g', 'units': ['services/other']}, {'id': 'g', 'units': ['services/touched']}
-    assert 'pre-existing' in G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], run, 'f')
+    def verdict(base, gate, candidate, *, stale=False):
+        st, manifest, gate, entries, records = comparison_fixture(gate, runs, base)
+        record = dict(records[candidate], fingerprint='old') if stale else records[candidate]
+        return G.accepted_failure(st, manifest, gate, 'candidate', entries[candidate], record, 'CAND')
+    assert 'pre-existing' in verdict('E1', untouched, 'E2')
     # A touched gate failing exactly as base (same exit code and output) is pre-existing too (#13).
-    assert 'pre-existing' in G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E2'], run, 'f')
-    assert G.accepted_failure(st('E5'), {}, untouched, 'candidate', runs['E2'], run, 'f') is None
-    assert 'pre-existing' in G.accepted_failure(st('E3'), {}, touched, 'candidate', runs['E4'], run, 'f')
-    assert G.accepted_failure(st('E1'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
+    assert 'pre-existing' in verdict('E1', touched, 'E2')
+    assert verdict('E5', untouched, 'E2') is None
+    assert 'pre-existing' in verdict('E3', touched, 'E4')
+    assert verdict('E1', touched, 'E4') is None
     # Log text and old FAIL entries cannot waive required verification.
-    assert G.accepted_failure(st('E5'), {}, touched, 'candidate', runs['E4'], run, 'f') is None
-    assert G.accepted_failure(st('E6'), {}, touched, 'base', runs['E6'], run, 'f') is None
-    assert G.accepted_failure(st('E1'), {}, untouched, 'candidate', runs['E2'], dict(run, fingerprint='old'), 'f') is None
+    assert verdict('E5', touched, 'E4') is None
+    st, manifest, gate, _, records = comparison_fixture(touched, runs, 'E1')
+    # This bare exit-127 log has no authenticated execution binding.
+    assert G.accepted_failure(st, manifest, gate, 'base', runs['E6'], records['E6'], 'CAND') is None
+    assert verdict('E1', untouched, 'E2', stale=True) is None
 
 
 def test_disposable_checkout_refuses_borrowed_working_tree_dependencies(tmp_path, monkeypatch):
@@ -148,20 +150,25 @@ def test_disposable_checkout_refuses_borrowed_working_tree_dependencies(tmp_path
 
 
 def test_a_touched_gate_reports_only_failures_the_base_did_not_already_have(tmp_path, monkeypatch):
+    import copy
     import al_gates as G
-    import al_ledger as L
+    from test_change_reach import comparison_fixture
     base = 'FAILED tests/test_a.py::test_old - AssertionError\n1 failed in 2.31s'
     runs = {'B': _run(tmp_path, 'B', 'FAIL', 1, base),
             'same': _run(tmp_path, 'same', 'FAIL', 1, base.replace('2.31s', '9.02s')),
             'new': _run(tmp_path, 'new', 'FAIL', 1, base + '\nFAILED tests/test_b.py::test_new - KeyError')}
-    monkeypatch.setattr(L, 'find', lambda st, eid: runs.get(eid))
     monkeypatch.setattr(G, 'touched_units', lambda st, m: {'.'})
-    st = {'gate_runs': [{'gate': 'g', 'stage': 'base', 'manifest': 'm', 'evidence': 'B'}]}
-    run, gate = {'fingerprint': 'f', 'manifest': 'm'}, {'id': 'g', 'units': ['.']}
-    assert 'every failure' in G.accepted_failure(st, {}, gate, 'candidate', runs['same'], run, 'f')
-    assert G.accepted_failure(st, {}, gate, 'candidate', runs['new'], run, 'f') is None
-    st['gate_decisions'] = {'g': {'action': 'fix'}}
-    assert G.accepted_failure(st, {}, gate, 'candidate', runs['same'], run, 'f') is None
+    st, manifest, gate, runs, records = comparison_fixture({'id':'g','units':['.']}, runs, 'B')
+    assert 'every failure' in G.accepted_failure(st, manifest, gate, 'candidate', runs['same'], records['same'], 'CAND')
+    assert G.accepted_failure(st, manifest, gate, 'candidate', runs['new'], records['new'], 'CAND') is None
+    st['gate_decisions'] = {'g': {'action': 'fix', 'manifest':'M', 'base_oid':'BASE', 'evidence':'B'}}
+    before=copy.deepcopy(st)
+    assert G.accepted_failure(st, manifest, gate, 'candidate', runs['same'], records['same'], 'CAND') is None
+    assert st==before
+    for key in ['manifest','base_oid','evidence']:
+        stale=copy.deepcopy(st);stale['gate_decisions']['g'][key]='old';before=copy.deepcopy(stale)
+        assert 'every failure' in G.accepted_failure(stale, manifest, gate, 'candidate', runs['same'], records['same'], 'CAND')
+        assert stale==before
 
 
 @pytest.mark.parametrize('text,gap', [

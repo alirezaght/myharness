@@ -158,8 +158,11 @@ Reconcile every outstanding writer/check and prove a parallel peer's state with
 `agent-peer-reconcile --reason TEXT --artifact FILE` before the matching guarded
 retry. Generic resume and peer status labels cannot satisfy this requirement.
 
-Use the exact AL run ID printed by start for every `--session` command; the
-native conversation ID is attribution only. Keep the pinned repository/current
+Use the exact AL session identifier supplied by the generated launcher handoff
+for every `--session` command. It may differ from the short AL ledger run ID
+shown in the EVIDENCE block; that ledger ID is for evidence attribution only.
+Native conversation IDs are attribution only and must never replace the session
+identifier. Keep the pinned repository/current
 working directory from the handoff. Do not bypass the runtime guard when a
 process runs in another checkout.
 Preserve the approved sourced gate manifest and writer reservations; broad

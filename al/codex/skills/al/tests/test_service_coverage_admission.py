@@ -546,7 +546,10 @@ def test_formerly_unrelated_consumer_invalidates_currency_and_admission(cli, rep
     assert not currency['current'] and currency['pathless']
     _, manifest = discover(cli, tmp_path, ['docs/readme.md'])
     assert 'services/b' in manifest['service_coverage']['assessment']['selected_services']
-    assert manifest['service_coverage']['assessment']['outcome'] == 'incomplete'
+    assessment=manifest['service_coverage']['assessment']
+    assert assessment['outcome'] == 'identified' and assessment['gaps']==[]
+    assert assessment['global_inventory']['status']=='incomplete'
+    assert assessment['coverage_notes']==[]
     import al_service_coverage as Coverage
     with pytest.raises(SystemExit,match='coverage'):Coverage.require_ready(previous,current=True)
     assert json.loads(cli('show')[1])['proof_admission']['status']=='admitted'
@@ -565,9 +568,8 @@ def test_formerly_unrelated_consumer_invalidates_currency_and_admission(cli, rep
     invoke(cli, 'planning', 'admit', '--file', response['materialized_obligations']['stored_path'])
     current = json.loads(cli('show')[1])
     assert current['proof_admission']['status'] == 'admitted'
-    assert any(o.startswith('coverage incomplete') for o in current['implementation_readiness']['obligations'])
-    with pytest.raises(SystemExit, match='coverage'):
-        Coverage.require_ready(current, current=True)
+    assert not any(o.startswith('coverage incomplete') for o in current['implementation_readiness']['obligations'])
+    Coverage.require_ready(current, current=True)
 
 
 def test_v1_document_fallback_stays_v1_and_requires_v2_replanning(cli, repo, tmp_path, monkeypatch, state_file):

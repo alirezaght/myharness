@@ -137,26 +137,44 @@ def test_concurrent_start_and_proven_unstarted_release_have_one_winner(policy_ru
     assert (state, counters) in [("started", (1, 0)), ("released_proven_not_started", (0, 0))]
 
 
-def test_post_effect_settlement_fault_retains_charge_and_never_replays(policy_runtime):
+def test_post_effect_settlement_fault_retains_charge_and_never_replays(policy_runtime, monkeypatch):
     import hashlib
     import sqlite3
     from pathlib import Path
 
     from tests.test_policy_admission import patch
+    from harness.policy import claims
 
     r = policy_runtime
     configure(r)
     canary = "settlement-private-fault-4751"
-    r.controller.conn.execute(
-        "CREATE TRIGGER reject_policy_settlement BEFORE UPDATE OF state ON policy_attempts "
-        "WHEN NEW.state IN ('settled','unresolved') BEGIN SELECT "
-        "RAISE(ABORT,'settlement-private-fault-4751'); END"
-    )
-    with pytest.raises(sqlite3.IntegrityError):
-        r.operation.dispatch(r.principal, "apply_patch", patch(r))
+    transition = claims.transition
+    faulted = []
+
+    def fail_terminal(conn, attempt_id, state):
+        row = conn.execute(
+            "SELECT operation,state FROM policy_attempts WHERE id=?", (attempt_id,)
+        ).fetchone()
+        if (
+            row["operation"] == "apply_patch"
+            and row["state"] == "started"
+            and state in {"closed", "unresolved"}
+        ):
+            faulted.append(attempt_id)
+            raise sqlite3.IntegrityError("settlement-private-fault-4751")
+        return transition(conn, attempt_id, state)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(claims, "transition", fail_terminal)
+        with pytest.raises(sqlite3.IntegrityError, match="settlement-private-fault-4751"):
+            r.operation.dispatch(r.principal, "apply_patch", patch(r))
+    assert len(faulted) == 1
     target = Path(r.operation.envelope["repository"]) / "svc/new.txt"
     assert target.read_text() == "safe\n"
     assert r.controller.conn.execute("SELECT state FROM policy_attempts").fetchone()[0] == "started"
+    assert r.controller.conn.execute(
+        "SELECT state FROM policy_resource_claims"
+    ).fetchone()[0] != "closed"
     assert r.controller.conn.execute("SELECT consumed,reserved FROM policy_pools").fetchone()[
         :
     ] == (1, 0)

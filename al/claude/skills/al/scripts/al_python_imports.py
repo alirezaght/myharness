@@ -52,7 +52,7 @@ def _analyze(facts,scan):
         found={}
         for prefix in ['.',*('/'.join(parts[:i]) for i in range(1,len(parts)+1))]:
             for u in by_root.get(prefix,()):
-                if within(u['path'],path):found[u['id']]=u
+                if within(u['path'],path) and ('python_packages' not in u or any(within(p,path) for p in u['python_packages'])):found[u['id']]=u
         if not found:return None
         return max(sorted(found.values(),key=lambda u:order[u['id']]),key=lambda u:depth[u['id']])
     for snapshot,files in [('base',scan.base),('current',scan.files)]:
@@ -107,7 +107,8 @@ def _analyze(facts,scan):
     progress.report('inventory-analysis',count=len(records),force=True)
     affected={p for _,p in records if scope.overlaps(p)}
     changed_sources=set(affected)
-    artifacts,unclassified=artifact_consumers(scan,records,units)
+    unclassified_paths=set()
+    artifacts,unclassified=artifact_consumers(scan,records,units,unclassified_paths=unclassified_paths)
     if unclassified:
         uncertainties.append({'code':'uncertain-artifact-classification','unit':None,'path':scan.paths[0] if len(scan.paths)==1 else '.', 'location':None,'target':None,'reason':'changed runtime source/data has no complete consumer classification'})
     for row in artifacts:
@@ -195,7 +196,7 @@ def _analyze(facts,scan):
     order=lambda u:(u['path'],u['location'] or 0,str(u['target']),u['reason'])
     return {'edges':[list(edge) for edge in sorted(edges)],'known_affected':sorted(known),'potential_services':potential,
             'uncertainties':sorted(uncertainties,key=order),'deferred_uncertainties':sorted(deferred,key=order),'artifact_consumers':artifacts, 'resolved_dynamic':[list(r) for r in sorted(resolved)],'import_targets_digest':_targets_digest(import_targets),'import_targets_count':len(import_targets),'task_import_targets_digest':_targets_digest({row for row in import_targets if row[1] in affected or records[(row[0],row[1])]['unit'] in (set(potential) if uncertainties else known|set(facts.get('policy_selection',[])))}),'affected_source_paths':sorted(affected|{consumer for row in artifacts for consumer in row['consumers']}),'source_membership':[[snapshot,path,r['unit'],r['module']] for (snapshot,path),r in sorted(records.items())],'policy_selection':facts.pop('policy_selection',[]),
-            'runtime_consumer_dependents':outside_dependents,
+            'unclassified_artifact_paths':sorted(unclassified_paths),'runtime_consumer_dependents':outside_dependents,
             'runtime_consumer_reach':{c:literal[c] for c in outside},
             'change_reach':change_reach}
 
@@ -415,7 +416,7 @@ def _referencing(scan,path,exclude):
 MANIFESTS=frozenset({'package.json','package-lock.json','tsconfig.json','composer.json','pnpm-lock.yaml','pnpm-workspace.yaml'})
 
 
-def artifact_consumers(scan,records,units):
+def artifact_consumers(scan,records,units,*,unclassified_paths=None):
     """Changed data artifacts and the source files that literally reference them.
 
     A literal path or file-name reference identifies a consumer (over-approximating on
@@ -447,7 +448,9 @@ def artifact_consumers(scan,records,units):
         if policy and kind is None:kind='runtime-source'
         if kind is None:
             # A changed non-module file of no supported artifact class keeps the exhaustive fallback.
-            unclassified=unclassified or not path.endswith(SOURCE_SUFFIXES) or not owners
+            if not path.endswith(SOURCE_SUFFIXES) or not owners:
+                unclassified=True
+                if unclassified_paths is not None:unclassified_paths.add(path)
             continue
         if kind=='generated-code':
             header=b'\n'.join(data.splitlines()[:8])
@@ -462,7 +465,9 @@ def artifact_consumers(scan,records,units):
     for path in scan.paths:
         parts=PurePosixPath(path).parts
         if path=='.' or captured.contained(path) or any(part.startswith('.') for part in parts):continue
-        if not path.endswith(DOCUMENT_SUFFIXES) and not (path in scan.rules):unclassified=True
+        if not path.endswith(DOCUMENT_SUFFIXES) and not (path in scan.rules):
+            unclassified=True
+            if unclassified_paths is not None:unclassified_paths.add(path)
     return rows,unclassified
 
 

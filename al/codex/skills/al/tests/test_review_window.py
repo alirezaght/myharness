@@ -6,13 +6,17 @@ from evidence_helpers import plan_and_run_broad, start_implementation
 from launcher_context import observe_behavior
 
 
-def _ready_for_review(cli, tmp_path):
+def _build_ready(cli, tmp_path):
     start_implementation(cli, tmp_path)
     assert plan_and_run_broad(cli) == 0
     assert cli('phase', 'VERIFICATION')[0] == 0
     result, out, err = cli('gates', 'run', '--stage', 'candidate')
     assert result == 0, out + err
     observe_behavior(cli, directory=tmp_path)
+
+
+def _ready_for_review(cli, tmp_path, run_state):
+    run_state("review-window-ready", lambda: _build_ready(cli, tmp_path))
 
 
 def _windows(monkeypatch):
@@ -27,8 +31,8 @@ def _windows(monkeypatch):
     return opened
 
 
-def test_review_start_admits_and_checks_in_one_window(cli, tmp_path, state_file, monkeypatch):
-    _ready_for_review(cli, tmp_path)
+def test_review_start_admits_and_checks_in_one_window(cli, tmp_path, state_file, monkeypatch, run_state):
+    _ready_for_review(cli, tmp_path, run_state)
     opened = _windows(monkeypatch)
     result, out, err = cli('review-start')
     assert result == 0, out + err
@@ -39,8 +43,8 @@ def test_review_start_admits_and_checks_in_one_window(cli, tmp_path, state_file,
     assert st['phase'] == 'REVIEW' and st['review']['stage'] == 'fresh'
 
 
-def test_a_window_evaluated_again_starts_from_the_loaded_state(cli, tmp_path, state_file, repo, monkeypatch):
-    _ready_for_review(cli, tmp_path)
+def test_a_window_evaluated_again_starts_from_the_loaded_state(cli, tmp_path, state_file, repo, monkeypatch, run_state):
+    _ready_for_review(cli, tmp_path, run_state)
     import al_review
     original = al_review.require_transition
     seen = []

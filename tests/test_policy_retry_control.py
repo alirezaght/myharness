@@ -45,6 +45,7 @@ def retry(r, **extra):
     )
 
 
+@pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
 def test_real_helpers_cover_bootstrap_blobs_and_normal_completion(
     protected_policy_runtime, monkeypatch
 ):
@@ -171,6 +172,7 @@ def test_saved_grant_without_final_receipt_remains_fenced(protected_policy_runti
     assert (
         r.controller.conn.execute("SELECT COUNT(*) FROM policy_control_receipts").fetchone()[0] == 0
     )
+
     assert all(
         row[0] == "unresolved"
         for row in r.controller.conn.execute("SELECT state FROM policy_resource_claims")
@@ -369,33 +371,49 @@ def active_writer_fixture(r):
 @pytest.mark.parametrize("operations", ["codex", "claude"], indirect=True)
 @pytest.mark.parametrize("outcome", ["success", "failed", "abandoned"])
 def test_qualified_finish_keeps_attribution_and_prior_liability_under_exhausted_budget(
-    protected_policy_runtime, outcome
+    protected_policy_runtime, outcome, monkeypatch
 ):
     import sqlite3
 
     r = protected_policy_runtime
     principal, revision = active_writer_fixture(r)
     configure(r, document(r, maximum=1))
-    r.controller.conn.execute(
-        "CREATE TRIGGER retain_unsettled_policy BEFORE UPDATE OF state ON policy_attempts "
-        "WHEN NEW.state IN ('settled','unresolved') BEGIN SELECT "
-        "RAISE(ABORT,'fixture settlement fault'); END"
-    )
-    with pytest.raises(sqlite3.IntegrityError):
-        r.operation.dispatch(
-            principal,
-            "apply_patch",
-            {
-                "task_id": "finish-work",
-                "expected_revision": revision,
-                "patch": (
-                    "*** Begin Patch\n*** Add File: release-owned/after.txt\n"
-                    "+observed contribution\n*** End Patch"
-                ),
-            },
-        )
-    r.controller.conn.execute("DROP TRIGGER retain_unsettled_policy")
+    from harness.policy import claims
+
+    transition = claims.transition
+    faulted = []
+
+    def fail_settlement(conn, attempt_id, state):
+        row = conn.execute(
+            "SELECT operation,state FROM policy_attempts WHERE id=?", (attempt_id,)
+        ).fetchone()
+        if row["operation"] == "apply_patch" and row["state"] == "started" and state == "closed":
+            faulted.append(attempt_id)
+            raise sqlite3.IntegrityError("fixture settlement fault")
+        return transition(conn, attempt_id, state)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(claims, "transition", fail_settlement)
+        with pytest.raises(sqlite3.IntegrityError):
+            r.operation.dispatch(
+                principal,
+                "apply_patch",
+                {
+                    "task_id": "finish-work",
+                    "expected_revision": revision,
+                    "patch": (
+                        "*** Begin Patch\n*** Add File: release-owned/after.txt\n"
+                        "+observed contribution\n*** End Patch"
+                    ),
+                },
+            )
+
     prior = r.controller.conn.execute("SELECT id,state FROM policy_attempts").fetchone()
+    assert faulted == [prior["id"]]
+    assert (
+        Path(r.operation.envelope["repository"]) / "release-owned/after.txt"
+    ).read_text() == "observed contribution\n"
+    assert prior["state"] == "started"
     result = r.operation.dispatch(
         r.principal,
         "al_command",
@@ -578,3 +596,74 @@ def test_missing_git_blob_never_fabricates_completion(protected_policy_runtime):
     assert (
         r.controller.conn.execute("SELECT COUNT(*) FROM policy_control_receipts").fetchone()[0] == 0
     )
+
+
+@pytest.mark.parametrize("failure", ["source_inventory_mismatch", "launcher_bytes_mismatch"])
+def test_qualification_diagnostic_reaches_real_mcp_and_audit(
+    protected_policy_runtime, monkeypatch, failure
+):
+    from harness.execution_mcp import MCPConnection
+
+    r = protected_policy_runtime
+    setup_retry(r)
+    effects = []
+    monkeypatch.setattr(r.operation, "_dispatch", lambda *args: effects.append(True))
+    manifest = Path(r.operation.initialization["pin_root"]) / "manifest.json"
+    original = manifest.read_bytes()
+    launcher = Path(r.operation.package["launcher"])
+    launcher_original = launcher.read_bytes()
+    protected_before = r.source.read_bytes()
+    # Change and restore only the disposable fixture; all earlier predicates run.
+    try:
+        if failure == "source_inventory_mismatch":
+            value = json.loads(original)
+            del value["complete_file_manifest"]["installer/runtime_retry_control.py"]
+            manifest.write_text(json.dumps(value))
+        else:
+            launcher.write_bytes(launcher_original + b"\n# controlled launcher drift\n")
+        mcp = MCPConnection(lambda meta: r.principal, r.operation.dispatch)
+        mcp.request({"jsonrpc": "2.0", "method": "initialize"})
+        result = mcp.request(
+            {
+                "jsonrpc": "2.0",
+                "method": "tools/call",
+                "params": {
+                    "name": "al_command",
+                    "arguments": {
+                        "arguments": ["retry", "al-engineer", "--reason", "private-reason-canary"],
+                    },
+                },
+            }
+        )
+    finally:
+        manifest.write_bytes(original)
+        launcher.write_bytes(launcher_original)
+    assert result["isError"] is True
+    text = result["content"][0]["text"]
+    code, encoded = text.split(" ", 1)
+    diagnostic = json.loads(encoded)
+    assert code == "UNSUPPORTED_ENFORCEMENT_CAPABILITY" and len(text) < 512
+    assert diagnostic["cause"] == failure
+    observation = r.controller.conn.execute(
+        "SELECT * FROM reliability_observations WHERE observation_id=?",
+        (diagnostic["observation_id"],),
+    ).fetchone()
+    assert observation["code"] == "DISPATCH_REJECTED"
+    audit = r.controller.conn.execute(
+        "SELECT outcome FROM operation_audit WHERE id=?", (observation["source_id"],)
+    ).fetchone()
+    assert json.loads(audit["outcome"])["diagnostic"] == diagnostic
+    assert not effects and not r.operation.processes.records
+    for table in (
+        "policy_attempts",
+        "policy_retry_claims",
+        "policy_control_helpers",
+        "policy_control_receipts",
+        "policy_reservations",
+        "policy_resource_claims",
+    ):
+        assert r.controller.conn.execute("SELECT COUNT(*) FROM " + table).fetchone()[0] == 0
+    assert r.source.read_bytes() == protected_before
+    persisted = text + audit["outcome"]
+    for private in ("private-reason-canary", str(manifest), str(r.operation.package["launcher"])):
+        assert private not in persisted

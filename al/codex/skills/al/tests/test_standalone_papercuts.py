@@ -9,11 +9,26 @@ import pytest
 import al_proof_json as J
 import al_store
 from launcher_context import _reports
-from test_planning_authoring import ok, pending, retain, start_writer
-from test_planning_rebind import prepared
+from test_planning_authoring import ok, pending as _pending, retain, start_writer
+from test_planning_rebind import prepared as _prepared
 
 
 AL = Path(__file__).resolve().parent.parent
+
+
+def pending(cli, repo, tmp_path, monkeypatch, run_state):
+    import launcher_context
+    result = run_state("papercuts-pending", lambda: _pending(cli, repo, tmp_path, monkeypatch))
+    monkeypatch.setattr(launcher_context, "admit_planning", lambda *args, **kwargs: None)
+    return result
+
+
+def prepared(cli, repo, tmp_path, monkeypatch, run_state):
+    import launcher_context
+    result = run_state("papercuts-prepared", lambda: _prepared(cli, repo, tmp_path, monkeypatch))
+    monkeypatch.setattr(launcher_context, "admit_planning", lambda *args, **kwargs: None)
+    return result
+
 
 
 def test_task_package_schema_requires_content_for_a_present_ticket():
@@ -38,8 +53,8 @@ def test_package_without_ticket_content_names_the_field(cli, tmp_path):
     assert result[0] != 0 and "ticket.content" in "".join(map(str, result))
 
 
-def test_overlapping_report_is_admitted_after_the_writer_finishes_its_own_files(cli, repo, tmp_path, monkeypatch):
-    sid = pending(cli, repo, tmp_path, monkeypatch)
+def test_overlapping_report_is_admitted_after_the_writer_finishes_its_own_files(cli, repo, tmp_path, monkeypatch, run_state):
+    sid = pending(cli, repo, tmp_path, monkeypatch, run_state)
     start_writer(cli, tmp_path)
     packet = json.loads(ok(cli, "planning", "packet")[1])
     (repo / "svc/app.py").write_text("written_by_registered_writer = 1\n")
@@ -53,8 +68,8 @@ def test_overlapping_report_is_admitted_after_the_writer_finishes_its_own_files(
 
 
 @pytest.mark.parametrize("edit", ["after-finish", "outside-owned", "failed-writer"])
-def test_unattributed_movement_still_needs_a_new_packet(cli, repo, tmp_path, monkeypatch, edit):
-    sid = pending(cli, repo, tmp_path, monkeypatch)
+def test_unattributed_movement_still_needs_a_new_packet(cli, repo, tmp_path, monkeypatch, edit, run_state):
+    sid = pending(cli, repo, tmp_path, monkeypatch, run_state)
     start_writer(cli, tmp_path)
     packet = json.loads(ok(cli, "planning", "packet")[1])
     (repo / "svc/app.py").write_text("written_by_registered_writer = 1\n")
@@ -76,8 +91,8 @@ def test_unattributed_movement_still_needs_a_new_packet(cli, repo, tmp_path, mon
 
 
 @pytest.mark.parametrize("form", ["printed", "sha256-file", "sha256-argument"])
-def test_rebind_accepts_the_printed_packet_or_its_hash(cli, repo, tmp_path, monkeypatch, form):
-    previous, _, _, old_report, _ = prepared(cli, repo, tmp_path, monkeypatch)
+def test_rebind_accepts_the_printed_packet_or_its_hash(cli, repo, tmp_path, monkeypatch, form, run_state):
+    previous, _, _, old_report, _ = prepared(cli, repo, tmp_path, monkeypatch, run_state)
     supplied = tmp_path / "supplied-packet.json"
     if form == "printed":
         supplied.write_text(json.dumps(previous))
@@ -94,8 +109,8 @@ def test_rebind_accepts_the_printed_packet_or_its_hash(cli, repo, tmp_path, monk
     assert J.read(result["receipt"])["original_packet"] == previous["packet"]
 
 
-def test_rebind_refusal_lists_retained_packets(cli, repo, tmp_path, monkeypatch):
-    previous, _, _, old_report, fresh = prepared(cli, repo, tmp_path, monkeypatch)
+def test_rebind_refusal_lists_retained_packets(cli, repo, tmp_path, monkeypatch, run_state):
+    previous, _, _, old_report, fresh = prepared(cli, repo, tmp_path, monkeypatch, run_state)
     result = cli("planning", "rebind", "--from-packet", "0" * 64, "--from-report", str(old_report))
     text = "".join(map(str, result))
     assert result[0] != 0 and previous["packet"]["sha256"] in text and fresh["packet"]["sha256"] in text
@@ -106,8 +121,8 @@ def test_rebind_refusal_lists_retained_packets(cli, repo, tmp_path, monkeypatch)
     assert result[0] != 0 and "content differs" in "".join(map(str, result))
 
 
-def test_supervisor_stamps_the_architect_invocation_id(cli, repo, tmp_path, monkeypatch):
-    sid = pending(cli, repo, tmp_path, monkeypatch)
+def test_supervisor_stamps_the_architect_invocation_id(cli, repo, tmp_path, monkeypatch, run_state):
+    sid = pending(cli, repo, tmp_path, monkeypatch, run_state)
     packet = json.loads(ok(cli, "planning", "packet")[1])
     assert packet["report_template"]["invocation_id"].startswith("FILL:")
     report = _reports().report_for(packet)
@@ -128,8 +143,8 @@ def test_supervisor_stamps_the_architect_invocation_id(cli, repo, tmp_path, monk
 
 
 @pytest.fixture
-def started(cli):
-    result = cli("start", "--spec", "Plan sharded evidence areas and show superseded failures clearly.")
+def started(cli, run_state):
+    result = run_state("papercuts-started", lambda: cli("start", "--spec", "Plan sharded evidence areas and show superseded failures clearly."))
     assert result[0] == 0, result
     return cli
 

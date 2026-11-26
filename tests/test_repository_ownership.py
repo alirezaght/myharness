@@ -82,3 +82,97 @@ def test_known_main_divergence_is_read_only_and_does_not_claim_remote_freshness(
     assert {r["behind"] for r in result["main_comparisons"]} == {1}
     assert result["remote_freshness"] == "UNVERIFIED_NO_FETCH"
     assert tree_snapshot(root) == before
+
+
+def test_git_membership_excludes_ignored_worktrees_and_keeps_tracked_generated_source(tmp_path):
+    from harness.repository_audit import inventory
+
+    root = write_files(
+        tmp_path / "repo", {".gitignore": ".worktrees/\ndist/\n", "current.py": "needle=1\n"}
+    )
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    write_files(
+        root,
+        {
+            "dist/authored.py": "needle=2\n",
+            ".worktrees/old/pkg/pyproject.toml": '[project]\nname="old"',
+            ".worktrees/old/old.py": "needle=0",
+        },
+    )
+    subprocess.run(["git", "add", "-f", "dist/authored.py"], cwd=root, check=True)
+    for name in [" leading.py", "trailing.py ", "line\nbreak.py"]:
+        (root / name).write_text("needle=3\n")
+    files, complete = inventory(root)
+    assert complete
+    assert {
+        "dist/authored.py",
+        "current.py",
+        " leading.py",
+        "trailing.py ",
+        "line\nbreak.py",
+    } <= set(files)
+    assert not any(p.startswith(".worktrees/") for p in files)
+    result = audit(root, "Fix needle")
+    assert result["inventory_complete"]
+    assert "current.py" in {r["path"] for r in result["existing_implementation_leads"]}
+    assert not any(u["name"] == "old" for u in result["units"])
+
+
+def test_nested_git_directory_file_and_symlink_boundaries_are_truthful(tmp_path):
+    root = write_files(
+        tmp_path / "repo",
+        {"outer.py": "needle=1", "nested_dir/app.py": "needle=0", "nested_file/app.py": "needle=0"},
+    )
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True)
+    (root / "nested_dir/.git").mkdir()
+    (root / "nested_file/.git").write_text("gitdir: /unavailable/worktree")
+    (root / "linked.py").symlink_to("outer.py")
+    result = audit(root, "Fix needle")
+    assert not result["inventory_complete"]
+    assert {r["path"] for r in result["existing_implementation_leads"]} == {"outer.py"}
+    assert any("nested repository boundary: nested_dir" in d for d in result["diagnostics"])
+    assert any("nested repository boundary: nested_file" in d for d in result["diagnostics"])
+    assert any("symlink source boundary: linked.py" in d for d in result["diagnostics"])
+
+
+def test_git_failure_and_limits_do_not_become_complete_filesystem_walks(tmp_path, monkeypatch):
+    import harness.repository_audit as module
+
+    root = write_files(tmp_path / "repo", {"one.py": "needle=1", "two.py": "needle=2"})
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    monkeypatch.setattr(module, "MAX_FILES", 1)
+    result = module.audit(root, "Fix needle")
+    assert not result["inventory_complete"]
+    assert any("limit" in d for d in result["diagnostics"])
+    monkeypatch.setattr(module, "_git", lambda *args: None)
+    result = module.audit(root, "Fix needle")
+    assert not result["inventory_complete"] and not result["existing_implementation_leads"]
+    assert any("no filesystem fallback" in d for d in result["diagnostics"])
+
+
+def test_supplied_inventory_is_validated_without_another_walk(tmp_path, monkeypatch):
+    import harness.repository_audit as module
+
+    root = write_files(tmp_path / "repo", {"dist/authored.py": "needle=1", "other.py": "needle=2"})
+    monkeypatch.setattr(
+        module,
+        "inventory",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected walk")),
+    )
+    result = module.audit(root, "Fix needle", files=["dist/authored.py"])
+    assert result["inventory_complete"]
+    assert [r["path"] for r in result["existing_implementation_leads"]] == ["dist/authored.py"]
+    result = module.audit(root, "Fix needle", files=["../outside.py"])
+    assert not result["inventory_complete"]
+
+
+def test_non_git_fallback_does_not_descend_into_nested_checkout(tmp_path):
+    root = write_files(
+        tmp_path / "repo",
+        {"outer.py": "needle=1", "nested/app.py": "needle=0", "nested/.git": "gitdir: elsewhere"},
+    )
+    result = audit(root, "Fix needle")
+    assert not result["inventory_complete"]
+    assert {r["path"] for r in result["existing_implementation_leads"]} == {"outer.py"}
+    assert any("non-Git" in d for d in result["diagnostics"])

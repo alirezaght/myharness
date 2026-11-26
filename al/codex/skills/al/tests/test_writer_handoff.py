@@ -109,3 +109,22 @@ def test_storage_failure_cannot_publish_success(cli, tmp_path, repo, monkeypatch
     monkeypatch.setattr(H.al_store, 'save', fail)
     with pytest.raises(OSError, match='storage unavailable'):
         cli('writer', 'handoff', '--id', 'worker', '--body-file', str(body))
+
+
+@pytest.mark.parametrize('platform', ['codex', 'claude'])
+def test_permission_recovery_keeps_protected_command_and_host_scope(monkeypatch, platform):
+    import al_writer_handoff as H
+    monkeypatch.setattr(H, '__file__', '/r/al/' + platform + '/skills/al/scripts/al_writer_handoff.py')
+    st = {'identity': {'root': '/repository with spaces'}, 'run_id': 'ledger-id',
+          'writers': {'worker': {'role': 'al-engineer', 'phase': 'IMPLEMENTATION', 'files': ['app.py']}},
+          'evidence': {'plan': {'unit': {'tier': 'focused'}}}, 'integration': {}}
+    block = H.evidence_block(st, 'launcher-session', 'worker', ['unit'])
+    commands = [shlex.split(line) for line in block.splitlines() if line.startswith('alctl ')]
+    assert commands == [['alctl', 'run', '--repository', '/repository with spaces', '--platform',
+                         platform, '--session', 'launcher-session', '--existing-run', '--',
+                         'evidence', 'run', '--writer', 'worker', '--area', 'unit']]
+    assert 'al_command ["evidence", "run", "--area", "unit"]' in block
+    assert ('sandbox_permissions=require_escalated' in block) == (platform == 'codex')
+    if platform == 'codex':
+        assert 'Honor a rejected request' in block and 'owned-process settlement' in block
+        assert 'user-level registry/run locks' in block

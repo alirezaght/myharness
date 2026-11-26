@@ -17,6 +17,36 @@ from harness.reliability import store
 from tests.execution_helpers import approved_execution
 
 
+class _FaultingConnection:
+    """Delegate to a real connection and fail only a selected real statement."""
+
+    def __init__(self, connection, predicate, hits):
+        self._connection = connection
+        self._predicate = predicate
+        self._hits = hits
+
+    def execute(self, sql, parameters=()):
+        if self._predicate(sql, parameters):
+            self._hits.append((sql, parameters))
+            raise __import__("sqlite3").IntegrityError("injected publication failure")
+        return self._connection.execute(sql, parameters)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
+def install_statement_fault(monkeypatch, owner, predicate):
+    """Inject at a statement on the actual publication connection, without schema edits."""
+    original = owner.connect
+    hits = []
+
+    def connect(*args, **kwargs):
+        return _FaultingConnection(original(*args, **kwargs), predicate, hits)
+
+    monkeypatch.setattr(owner, "connect", connect)
+    return hits
+
+
 @pytest.fixture
 def observed(controller, sample_repo, monkeypatch, tmp_path, db_path):
     _, eid = approved_execution(controller, sample_repo, monkeypatch, host="codex", legacy=True)
@@ -78,15 +108,17 @@ def test_atomic_terminal_idempotence_and_conflict(observed):
         )
 
 
-def test_terminal_incident_failure_rolls_back_all_facts(observed):
-    operation, principal, controller = observed
+def test_terminal_incident_failure_rolls_back_all_facts(observed, monkeypatch):
+    operation, principal, _ = observed
     oid = store.begin(operation, principal, "run_command")
-    controller.conn.execute(
-        "CREATE TRIGGER fail_incident BEFORE INSERT ON reliability_incidents "
-        "BEGIN SELECT RAISE(ABORT,'injected'); END"
+    hits = install_statement_fault(
+        monkeypatch,
+        store,
+        lambda sql, _parameters: "insert into reliability_incidents" in " ".join(sql.lower().split()),
     )
     with pytest.raises(ValueError, match="Reliability recording unavailable"):
         store.finish(operation, oid, "DISPATCH_REJECTED")
+    assert len(hits) == 1
     assert rows(observed)[0]["state"] == "pending"
     assert rows(observed, "operation_audit")[0]["outcome"] is None
     assert not rows(observed, "reliability_incidents")
@@ -94,14 +126,16 @@ def test_terminal_incident_failure_rolls_back_all_facts(observed):
 
 def test_pending_failure_rolls_back_audit_and_prevents_dispatch(observed, monkeypatch):
     operation, principal, controller = observed
-    controller.conn.execute(
-        "CREATE TRIGGER fail_pending BEFORE INSERT ON reliability_observations "
-        "BEGIN SELECT RAISE(ABORT,'injected'); END"
+    hits = install_statement_fault(
+        monkeypatch,
+        store,
+        lambda sql, _parameters: "insert into reliability_observations" in " ".join(sql.lower().split()),
     )
     effects = []
     monkeypatch.setattr(operation, "_dispatch", lambda *a: effects.append(True))
     with pytest.raises(ValueError, match="Reliability recording unavailable"):
         operation.dispatch(principal, "run_command", {})
+    assert len(hits) == 1
     assert not effects and not rows(observed) and not rows(observed, "operation_audit")
 
 

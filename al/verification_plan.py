@@ -4,6 +4,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -35,6 +36,39 @@ def pytest_argv(cwd):
     return [sys.executable, '-m', 'pytest', '-q', '--rootdir', str(cwd), '-o', 'addopts=', '-p', 'no:cacheprovider', '-p', 'al.verification_pytest']
 
 
+COLLECTION_LOG_BYTES = 4096
+COLLECTION_LOG_CHARS = 8192
+
+
+def _display_safe(text, limit, *, multiline=True):
+    parts=[];size=0
+    for char in text:
+        rendered=char if (multiline and char=='\n') or char.isprintable() else (f'\\x{ord(char):02x}' if ord(char)<256 else f'\\u{ord(char):04x}')
+        if size+len(rendered)>limit:return ''.join(parts),True
+        parts.append(rendered);size+=len(rendered)
+    return ''.join(parts),False
+
+
+def _collection_error(suite, category, log):
+    """Carry owned output into the parent error before private scratch is settled."""
+    location,cut=_display_safe(str(log),512,multiline=False)
+    label,_=_display_safe(category+': '+suite,256,multiline=False)
+    message=label+'; log='+location+(' [location truncated]' if cut else '')
+    try:
+        if log.is_symlink():raise OSError('symlink collection log refused')
+        fd=os.open(log,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0)|getattr(os,'O_NONBLOCK',0))
+        with os.fdopen(fd,'rb') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):raise OSError('nonregular collection log refused')
+            raw=stream.read(COLLECTION_LOG_BYTES+1)
+    except OSError as exc:
+        detail,_=_display_safe(type(exc).__name__+': '+str(exc),256,multiline=False)
+        return ValueError(message+'\ncollection.log unavailable: '+detail)
+    excerpt,display_cut=_display_safe(raw[:COLLECTION_LOG_BYTES].decode('utf-8',errors='replace'),COLLECTION_LOG_CHARS)
+    truncated=len(raw)>COLLECTION_LOG_BYTES or display_cut
+    return ValueError(message+'\ncollection.log excerpt (utf-8 errors=replace; bounded bytes='+str(COLLECTION_LOG_BYTES)
+                      +', chars='+str(COLLECTION_LOG_CHARS)+'; truncated='+str(truncated).lower()+'):\n'+excerpt)
+
+
 def collect_suites(root, context):
     root = Path(root).resolve()
     artifact_root = Path(context['artifact_root'])
@@ -50,12 +84,19 @@ def collect_suites(root, context):
             from al.verification_process import execute
             owner = execute(argv, cwd=cwd, env=environment(root, storage_binding["allocation"]["path"]), output=output, directory=directory, assignment='collection:'+suite, timeout=120)
             process = owner.process
-        if not report.is_file():raise ValueError('missing collection report: ' + suite + '; log=' + str(log))
-        value = read_json(report)
-        if value.get('launch_token') != owner.token:raise ValueError('collection launch token mismatch')
+        if not report.is_file():raise _collection_error(suite,'missing collection report',log)
+        try:value = read_json(report)
+        except (OSError,ValueError) as exc:
+            raise _collection_error(suite,'invalid collection report ('+type(exc).__name__+')',log) from exc
+        if not isinstance(value,dict):raise _collection_error(suite,'invalid collection report shape',log)
+        if value.get('launch_token') != owner.token:raise _collection_error(suite,'collection launch token mismatch',log)
         if process.returncode or value.get('exitstatus') != 0 or value.get('errors') or value.get('deselected') or not value.get('nodes') or value.get('finalized') is not True:
-            raise ValueError('incomplete/unfiltered collection: ' + suite + '; log=' + str(log))
-        if len({n['nodeid'] for n in value['nodes']}) != len(value['nodes']):raise ValueError('duplicate collection identity')
+            raise _collection_error(suite,'incomplete/unfiltered collection',log)
+        if not isinstance(value['nodes'],list) or any(not isinstance(n,dict) or not isinstance(n.get('nodeid'),str) for n in value['nodes']):
+            raise _collection_error(suite,'invalid collection node shape',log)
+        if 'effective_config' not in value or 'pytest_version' not in value:
+            raise _collection_error(suite,'missing collection metadata',log)
+        if len({n['nodeid'] for n in value['nodes']}) != len(value['nodes']):raise _collection_error(suite,'duplicate collection identity',log)
         storage_result = record_verification_storage(directory, storage_manager, storage_binding, owner,
             success=True, complete=True, artifacts=[report, log, directory / 'process-journal.json'])
         collections[suite] = {'storage_result': storage_result, 'suite': suite, 'cwd': str(cwd), 'relative': relative, 'nodes': value['nodes'],
@@ -191,6 +232,18 @@ def reconcile(plan, reports):
             'extra': extra, 'failed': failed, 'unaccounted': unaccounted, 'errors': errors}
 
 
+def _storage_permission_error(error, root, stage):
+    """Keep the original failure while naming the descriptor-relative namespace."""
+    message = (
+        'verification storage ' + stage + ' denied at namespace ' + str(Path(root).absolute())
+        + '; original operation: ' + str(error)
+        + '. Use a host-reviewed execution context with write access to this namespace. '
+        'Keep existing results and owned-process cleanup obligations; no automatic retry occurred. '
+        'If uv fails before the verifier starts, use an owned writable UV_CACHE_DIR.'
+    )
+    return PermissionError(error.errno, message, error.filename)
+
+
 # Storage is deliberately finalized by the CLI only after its source/report recheck.
 def verification_storage_manager():
     from al.installer.storage_lifecycle import StorageManager
@@ -207,10 +260,14 @@ def verification_storage_manager():
         return value
 
     base = Path(os.environ["HARNESS_HOME"]) if os.environ.get("HARNESS_HOME") else Path.home() / ".local/share/harness"
-    return StorageManager(base.absolute() / "managed-storage",
-        verify_owner=lambda record, reference: load(record, reference)["completion"],
-        verify_publication=lambda record, reference: {
-            "binding": load(record, reference)["binding"], "artifacts": load(record, reference)["artifacts"]})
+    root = base.absolute() / "managed-storage"
+    try:
+        return StorageManager(root,
+            verify_owner=lambda record, reference: load(record, reference)["completion"],
+            verify_publication=lambda record, reference: {
+                "binding": load(record, reference)["binding"], "artifacts": load(record, reference)["artifacts"]})
+    except PermissionError as exc:
+        raise _storage_permission_error(exc, root, 'namespace initialization') from exc
 
 
 def allocate_verification_storage(directory, assignment):
@@ -218,9 +275,12 @@ def allocate_verification_storage(directory, assignment):
 
     directory = Path(directory).absolute()
     manager = verification_storage_manager()
-    allocation = manager.allocate(owner={"adapter_kind": "release", "identity": str(directory),
-        "reservation": assignment}, allocation_class="verification-fixtures",
-        declaration_digest=digest({"schema_version": 1, "assignment": assignment}))
+    try:
+        allocation = manager.allocate(owner={"adapter_kind": "release", "identity": str(directory),
+            "reservation": assignment}, allocation_class="verification-fixtures",
+            declaration_digest=digest({"schema_version": 1, "assignment": assignment}))
+    except PermissionError as exc:
+        raise _storage_permission_error(exc, manager.root, 'allocation') from exc
     binding = {"schema_version": 1, "manager": str(manager.root), "allocation": allocation,
                "assignment": assignment}
     publish_json(directory / "storage-binding.json", binding)

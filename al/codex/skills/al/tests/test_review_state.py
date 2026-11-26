@@ -65,7 +65,7 @@ def test_an_undeclared_single_hook_state_location_is_removed_and_noted(cli, repo
 ])
 def test_undeclared_metadata_writes_still_fail_scratch_integrity(cli, repo, tmp_path, target, declaration):
     invoke(cli, 'gates', 'plan', '--file', str(planned(cli, repo, tmp_path, target, declaration)))
-    invoke(cli, 'gates', 'run', '--stage', 'base', ok=False)
+    invoke(cli, 'gates', 'run', '--stage', 'base')
     _, entry = base_entry(cli)
     assert entry['status'] != 'PASS'
 

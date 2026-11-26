@@ -43,29 +43,50 @@ def test_real_base_candidate_and_admission(cli,repo,tmp_path,action,script):
     ('python3 -m compileall -q svc','invalid python !\n','svc/app.py'),
     ('python3 -m json.tool svc/data.json','not json\n','svc/data.json'),
 ])
-def test_invalid_inputs_fail_real_required_check(cli,repo,tmp_path,script,body,path):
+def test_invalid_inputs_fail_real_required_check(cli,repo,tmp_path,state_file,script,body,path):
     from ci_environment_helpers import job,planned,run,required_ci,entries,state
     from hook_regression_helpers import invoke
-    put(repo,path,body);manifest=planned(cli,repo,tmp_path,{'.gitlab-ci.yml':job(script=script)})
+    if path == 'svc/data.json': put(repo,path,'{"valid":true}\n')
+    manifest=planned(cli,repo,tmp_path,{'.gitlab-ci.yml':job(script=script)})
     gate=required_ci(manifest)
-    cli('gates','run','--stage','base','--id',gate['id'])
-    assert any(e['status']=='FAIL' for e in entries(cli,gate['id']))
-    # The failed required check holds back review (workflow_gaps), not implementation.
-    import al_transitions
-    assert any('base gate '+gate['id'] in g for g in al_transitions.workflow_gaps(state(cli)))
+    assert run(cli,'base')[0]==0
+    base=entries(cli,gate['id']);assert base and all(e['status']=='PASS' for e in base)
+    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'writer','start','--id','candidate','--role','al-engineer','--files',path)
+    put(repo,path,body)
+    invoke(cli,'writer','finish','--id','candidate','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
+    assert run(cli,'candidate')[0] != 0
+    candidate=[e for e in entries(cli,gate['id']) if e.get('gate_stage')=='candidate']
+    assert candidate and candidate[-1]['status']=='FAIL'
+    assert base[-1]['status']=='PASS' and state(cli)['status'] != 'APPROVED'
+    before=state_file().read_bytes()
+    invoke(cli,'review-start',ok=False)
+    assert state_file().read_bytes()==before
 
 
-def test_architecture_failure_remains_blocking(cli,repo,tmp_path):
+def test_architecture_failure_remains_blocking(cli,repo,tmp_path,state_file):
     from ci_environment_helpers import job,planned,run,required_ci,entries,state
     from hook_regression_helpers import invoke
-    put(repo,'svc/app.py','import forbidden_dependency\n')
     manifest=planned(cli,repo,tmp_path,{'.gitlab-ci.yml':job()});gate=required_ci(manifest)
-    invoke(cli,'gates','run','--stage','base','--id',gate['id'])
+    assert run(cli,'base')[0]==0
     assert entries(cli,gate['id']) and all(e['status']=='PASS' for e in entries(cli,gate['id']))
-    run(cli,'base')
-    assert any(e['status']=='FAIL' for e in state(cli)['evidence']['entries'] if e['area'].startswith('gate-base-imports'))
-    import al_transitions
-    assert any('base gate imports' in g for g in al_transitions.workflow_gaps(state(cli)))
+    admit_planning(cli);invoke(cli,'phase','IMPLEMENTATION')
+    invoke(cli,'writer','start','--id','architecture','--role','al-engineer','--files','svc/app.py')
+    put(repo,'svc/app.py','import forbidden_dependency\n')
+    invoke(cli,'writer','finish','--id','architecture','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
+    assert run(cli,'candidate')[0] != 0
+    current=state(cli)
+    failed=next(e for e in reversed(current['evidence']['entries'])
+                if e['status']=='FAIL' and e['area'].startswith('gate-candidate-imports'))
+    run=next(row for row in reversed(current['gate_runs']) if row['evidence']==failed['id'])
+    import al_gates as Gates
+    assert any('candidate gate '+run['gate']+' requires passing evidence'
+               in gap for gap in Gates.candidate_gaps(current))
+    before=state_file().read_bytes();invoke(cli,'review-start',ok=False)
+    invoke(cli,'approved',ok=False)
+    assert state_file().read_bytes()==before
 
 
 @pytest.mark.parametrize('script',[

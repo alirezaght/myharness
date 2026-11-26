@@ -304,3 +304,23 @@ def test_public_adapter_uses_portable_amendment_without_workstation_file(tmp_pat
     assert Path(result["amendment"]["path"]).is_relative_to(tmp_path)
     assert result["amendment"]["sha256"] == V.AMENDMENT_SHA256
     assert (output / "functional.json").is_file()
+
+
+def test_installer_over_eight_nodes_retains_whole_file_fixture_lifecycle(tmp_path):
+    body = "import pytest\n@pytest.fixture(scope='module')\ndef seen():\n    return []\n"
+    body += ''.join(
+        f"def test_{i:02d}(seen):\n    assert seen == list(range({i}))\n    seen.append({i})\n"
+        for i in range(10)
+    )
+    root, output, request, result = invoke(tmp_path, body)
+    assert result['functional_assertions'] == 'PASS' and result['executed_passed'] == 12
+    raw = json.loads((output / 'raw.json').read_bytes())
+    plan = json.loads(Path(raw['verification']['plan_path']).read_bytes())
+    rows = [a for a in plan['execution_assignments'] if a['suite'] == 'installer']
+    assert [a['node']['nodeid'] for a in rows] == [f'al/tests/test_a.py::test_{i:02d}' for i in range(10)]
+    assert {a['group'] for a in rows} == {'installer:al/tests/test_a.py'}
+    shards = [s for s in raw['verification']['shards'] if s['assignment']['suite'] == 'installer']
+    assert len(shards) == 1
+    assert result['amendment']['sha256'] == V.AMENDMENT_SHA256
+    assert V.validate(root, output, request['source_binding'], sorted(PATHS), None,
+                      request['selection'], result['raw_runner_exit'])['raw_report'] == result['raw_report']

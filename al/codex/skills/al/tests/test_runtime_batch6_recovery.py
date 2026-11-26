@@ -50,16 +50,32 @@ def test_recovered_unfinished_phase_replaces_gates_before_review(cli,tmp_path,re
 
 
 def test_failed_base_admits_writer_but_holds_review(cli,tmp_path,repo,state_file):
+    from pathlib import Path
+
     changed_recovery(cli,tmp_path,repo,'IMPLEMENTATION')
-    install_replacement(cli,tmp_path,repo,[sys.executable,'-c','import sys;sys.exit(1)'])
-    invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
-    # A failed base gate no longer blocks the writer; review requires a passing run or a decision.
+    command=[sys.executable,'-c',
+             "from pathlib import Path; import sys; print(Path('svc/app.py').read_text()); sys.exit(1)"]
+    install_replacement(cli,tmp_path,repo,command)
+    invoke(cli,'gates','run','--stage','base','--id','loc')
+    base_run=next(row for row in reversed(state(cli)['gate_runs']) if row['gate']=='loc' and row['stage']=='base')
+    base_entry=next(e for e in state(cli)['evidence']['entries'] if e['id']==base_run['evidence'])
+    assert base_entry['status']=='FAIL'
+    # A retained baseline failure does not block implementation; a new candidate failure does.
     invoke(cli,'writer','start','--id','writer','--role','al-engineer','--files','svc/app.py')
     st=state(cli);assert st['writers']['writer']['state']=='ACTIVE'
     # The recovery stays open until review (b5735a9); its replacement is the current manifest.
     assert st['gate_recovery']['replacement_manifest']==st['gate_manifests'][-1]['sha256']
-    import al_transitions
-    assert any('base gate loc' in gap for gap in al_transitions.workflow_gaps(state(cli)))
+    (repo/'svc/app.py').write_text('candidate content differs from the pinned base\n')
+    invoke(cli,'writer','finish','--id','writer','--outcome','success')
+    invoke(cli,'phase','VERIFICATION')
+    invoke(cli,'gates','run','--stage','candidate','--id','loc',ok=False)
+    candidate_run=next(row for row in reversed(state(cli)['gate_runs']) if row['gate']=='loc' and row['stage']=='candidate')
+    candidate_entry=next(e for e in state(cli)['evidence']['entries'] if e['id']==candidate_run['evidence'])
+    assert candidate_entry['status']=='FAIL'
+    assert candidate_entry['id']!=base_entry['id']
+    assert Path(candidate_entry['log']).read_bytes()!=Path(base_entry['log']).read_bytes()
+    before=state_file().read_bytes();invoke(cli,'review-start',ok=False);invoke(cli,'approved',ok=False)
+    assert state_file().read_bytes()==before
 
 
 @pytest.mark.parametrize('phase',['PSEUDOCODE','IMPLEMENTATION'])

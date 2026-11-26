@@ -29,8 +29,9 @@ For comparison, the supervisor uses `review-compare-start --plan FILE` and also
 in the comparison packet and list the packet and required input hashes in the
 comparison report's `inspected_artifacts`. Fresh reports contain no prior review
 history; only evidenced `fixed` comparison resolutions clear prior blockers.
-Use the AL run ID printed by `"${STATE[@]}" start` for every explicit `--session`;
-native conversation IDs are attribution only and never identify an AL run.
+Use the exact AL session identifier supplied by the generated launcher handoff
+for every explicit `--session`. It may differ from the short AL ledger run ID;
+native conversation IDs are attribution only and never identify a session.
 
 Each review packet carries an immutable stage attempt. Match the report's
 required `model` to that attempt and include its `packet_hash`; do not infer or

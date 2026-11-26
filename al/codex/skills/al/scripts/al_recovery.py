@@ -12,11 +12,12 @@ from al_writers import operation_gaps
 def require_running(st):
     if st['status']!='RUNNING' or st['phase']=='DONE':refuse('command requires a nonterminal RUNNING run')
 
-def checkpoint(st,sid,reason,instructions,recipient=None,artifact=None):
+def checkpoint(st,sid,reason,instructions,recipient=None,artifact=None,gate_decision=None):
     data={'schema_version':1,'run_id':st['run_id'],'identity':st['identity'],'task_hash':al_task.task_hash(st),
           'candidate_hash':S.candidate_fingerprint(st),'prior_phase':st['phase'],
           'phase_occurrence':len(st['phase_occurrences'])-1,
           'outstanding':operation_gaps(st),'reason':reason,'resume_instructions':instructions,'recipient':recipient,'transfer_artifact':artifact,'at':time.time()}
+    if gate_decision is not None:data['gate_decision']=gate_decision
     ref=A.snapshot_bytes(sid,json.dumps(data,sort_keys=True).encode(),'checkpoint','runtime')
     st.setdefault('checkpoints',[]).append(ref)
     return ref
@@ -61,6 +62,21 @@ def apply_checkpoint(st,data,checkpoint_id,*,restoration,rework_continuation=Non
     return changed
 
 
+def gate_decision_checkpoint(st):
+    """Only an immutable, still-bound gate stop grants ordinary stopped-run resume."""
+    if st['status']!='STOPPED_WITH_BLOCKERS' or (st.get('rework_recovery') or {}).get('stop'):return None
+    ref=next((r for r in st.get('checkpoints',[]) if r['id']==st.get('stopping_checkpoint')),None)
+    if ref is None:return None
+    data=A.read_json(ref);binding=data.get('gate_decision')
+    if not isinstance(binding,dict) or binding.get('kind')!='gate-decision-stop':return None
+    decision=st.get('gate_decisions',{}).get(binding.get('gate'))
+    if not isinstance(decision,dict) or decision.get('checkpoint')!=ref['id'] or decision.get('action') not in {'stop','defer'}:return None
+    if {k:v for k,v in decision.items() if k!='checkpoint'}!=binding.get('decision'):return None
+    if (data['run_id']!=st['run_id'] or data['identity']!=st['identity'] or data['task_hash']!=al_task.task_hash(st)
+            or data['reason']!=st.get('stop_reason')):return None
+    return ref
+
+
 def cmd_checkpoint(a,sid):
     st=al_store.load(sid)
     if a.cmd=='resume':
@@ -69,7 +85,7 @@ def cmd_checkpoint(a,sid):
         resumable = {
             'WAITING_FOR_USER', 'INTERRUPTED', 'TRANSFERRED', 'AGENT_FAILED', 'SPEC_BLOCKED'
         }
-        if st['status'] not in resumable:
+        if st['status'] not in resumable and gate_decision_checkpoint(st) is None:
             refuse('run is not resumably stopped')
         if operation_gaps(st): refuse('reconcile outstanding operations before resume')
         if st.get('failure'): refuse('pending agent failure requires guarded retry, not resume')

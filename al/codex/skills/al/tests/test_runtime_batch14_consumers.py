@@ -60,9 +60,9 @@ def test_changed_obligations_allow_guarded_replacement_without_fake_interruption
         assert 'nonliteral dynamic import' in Path(failed[-1]['log']).read_text()
         invoke(cli,'review-start',ok=False);invoke(cli,'approved',ok=False)
     elif change=='consumer':
-        invoke(cli,'gates','run','--stage','base',ok=False)
+        invoke(cli,'gates','run','--stage','base')
         failed=[e for e in state(cli)['evidence']['entries'] if e['area']=='gate-base-imports-services-new-consumer']
-        assert failed[-1]['status']=='FAIL'
+        assert failed[-1]['status']=='FAIL' and failed[-1]['gate_stage']=='base'
         invoke(cli,'gates','decision','--id','imports-services-new-consumer','--action','fix',
                '--source','User explicitly approved the in-scope new consumer and its absent baseline check',
                '--reason','The new service is absent in the pinned base; retain failed base proof and verify the real candidate check.')

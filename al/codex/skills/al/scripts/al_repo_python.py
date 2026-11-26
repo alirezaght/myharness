@@ -87,14 +87,14 @@ def add_unit(scan,facts,path,role=None,language=None):
     if language and language not in languages:languages.append(language)
     if not languages:
         facts['enumeration']['gaps'].append(gap('unclassified-unit',path,'unit directory has no supported language/manifest',path));return
-    roots=[];contexts=[];deps=[];external=[]
+    roots=[];contexts=[];deps=[];external=[];packages=None
     if 'python' in languages:
         if not config:facts['enumeration']['gaps'].append(gap('missing-manifest',config_path,'Python unit requires a literal source manifest',path))
         tool=config.get('tool',{});setuptools=tool.get('setuptools',{});uv=tool.get('uv',{})
         backend=config.get('build-system',{}).get('build-backend')
-        if backend and backend not in {'setuptools.build_meta','setuptools.build_meta:__legacy__','uv_build'}:
+        if backend and backend not in {'setuptools.build_meta','setuptools.build_meta:__legacy__','uv_build','hatchling.build'}:
             facts['enumeration']['gaps'].append(gap('unsupported-build-layout',config_path,'unsupported build/source declaration: '+str(backend),path))
-        if any(key in tool for key in ('hatch','poetry','pdm','flit')):
+        if any(key in tool for key in ('poetry','pdm','flit')) or ('hatch' in tool and backend!='hatchling.build'):
             facts['enumeration']['gaps'].append(gap('unsupported-source-declaration',config_path,'build-specific source declarations require a bundled adapter',path))
         raw=setuptools.get('packages',{});find=raw.get('find',{}) if isinstance(raw,dict) else {}
         declared=find.get('where')
@@ -104,6 +104,9 @@ def add_unit(scan,facts,path,role=None,language=None):
             declared=[build.get('module-root','src' if prefix+'src/' in scan.members else '.')]
         if not isinstance(declared,list) or not declared or any(not isinstance(r,str) or '*' in r or '$' in r for r in declared):
             facts['enumeration']['gaps'].append(gap('unsupported-source-root',config_path,'source roots must be finite literal paths',path));declared=[]
+        if backend=='hatchling.build':
+            from al_repo_hatch import packages as hatch_packages
+            roots,packages=hatch_packages(scan,facts,path,config);declared=[]
         for r in declared:
             try:root=PurePosixPath(prefix,r).as_posix();safe(root)
             except (ValueError,TypeError):facts['enumeration']['gaps'].append(gap('unsafe-source-root',config_path,'source root escapes repository',path));continue
@@ -114,11 +117,11 @@ def add_unit(scan,facts,path,role=None,language=None):
         outside=set()
         for p in files:
             if path=='.' and p.startswith(('services/','packages/','apps/')):continue
-            if not p.endswith('.py') or any(within(r,p) for r in roots):continue
+            if not p.endswith('.py') or any(within(r,p) for r in (packages if packages is not None else roots)):continue
             relative=p[len(prefix):];top=relative.split('/')[0]
             if top=='tests':
                 facts['enumeration']['exclusions'].append({'path':prefix+'tests','reason':'test input; not installed Python source','provenance':[config_path]})
-            elif top not in {'setup.py'}:outside.add(prefix+top)
+            elif top not in {'setup.py'}:outside.add(p if packages is not None else prefix+top)
         # Migrations, scripts and entry points beside a service's package are its tooling.
         for p in sorted(outside):facts['enumeration']['exclusions'].append({'path':p,'reason':'service tooling outside declared source roots','provenance':[config_path]})
         for name,value in uv.get('sources',{}).items():
@@ -141,6 +144,7 @@ def add_unit(scan,facts,path,role=None,language=None):
             if source.get('registry') and name and external_source and any(isinstance(d,str) and compatible(d,name,package.get('version','')) for d in declared_deps):external.append(name)
         contexts=[{'source_root':r,'local_dependencies':sorted(deps)} for r in sorted(set(roots))]
     unit={'id':path,'path':path,'languages':sorted(languages),'source_roots':sorted(set(roots)), 'module_contexts':contexts,'provenance':[config_path] if config else [prefix+('go.mod' if 'go' in languages else 'package.json')], 'roles':[role] if role else [],'external_distributions':sorted(external),'python_requirement':config.get('project',{}).get('requires-python')}
+    if packages is not None:unit['python_packages']=packages
     facts['units'].append(unit);facts['enumeration']['observed_members'].append(path)
     if config:facts['enumeration']['declarations'].append(config_path)
     if role or path=='.' or path.startswith(('services/','apps/')):
@@ -248,6 +252,7 @@ def supported_app_context(scan,facts,unit):
     tool=config.get('tool',{});setuptools=tool.get('setuptools',{})
     packages=setuptools.get('packages',{})
     explicit=isinstance(packages,dict) and bool(packages.get('find',{}).get('where')) or bool(setuptools.get('package-dir')) or 'module-root' in tool.get('uv',{}).get('build-backend',{})
+    explicit=explicit or bool(unit.get('python_packages'))
     if not explicit:return False
     gaps=[*facts['enumeration']['gaps'],*scan.gaps]
     return not any(g.get('unit')==path or within(path,g.get('path','.')) for g in gaps)

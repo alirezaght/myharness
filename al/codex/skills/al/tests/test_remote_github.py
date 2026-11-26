@@ -25,9 +25,15 @@ def configured(repo):
 def inventory(repo):return CI.github_inventory(repo,['ordinary_project/__init__.py'],'merge_request_quality')
 
 
+def unavailable_execution(job):
+    # Exercise the transport seam directly; discovery deliberately grants no execution.
+    proof=job['unavailable_verification']
+    return {**proof,'argv':['gh','api'],'cwd':'.','execution_kind':'remote','env_names':CI.ENV}
+
+
 def gate_for(repo):
-    configured(repo);job=inventory(repo)['obligations'][0];execution=job['execution']
-    assert job['applicability']=='APPLICABLE',job
+    configured(repo);job=inventory(repo)['obligations'][0];execution=unavailable_execution(job)
+    assert job['applicability']=='UNRESOLVED' and job['execution'] is None,job
     return {**execution,'source':{'path':job['source_path'],'job':job['job'],'sha256':job['source_sha256']},'remote':{'provider':'github','repository_id':42,'run_id':11,'attempt':2,'job_id':9}}
 
 
@@ -84,11 +90,10 @@ def test_two_platforms_are_distinct_remote_required_source_chains(repo):
     mac=body.split('jobs:\n')[1].replace('quality:','quality-macos:').replace('ubuntu-latest','macos-latest').replace('sudo apt-get update && sudo apt-get install -y ripgrep','brew install ripgrep')
     (repo/'.github/workflows/quality.yml').write_text(body+mac)
     jobs=inventory(repo)['obligations']
-    assert len(jobs)==2 and all(j['applicability']=='APPLICABLE' for j in jobs)
-    assert {j['execution']['remote_source']['runner_label'] for j in jobs}=={'ubuntu-latest','macos-latest'}
-    assert all(j['execution']['execution_kind']=='remote' and j['execution']['argv']==['gh','api'] for j in jobs)
-    assert all('sudo' not in j['execution']['argv'] and 'brew' not in j['execution']['argv'] for j in jobs)
-    assert jobs[0]['execution']['remote_source']!=jobs[1]['execution']['remote_source']
+    assert len(jobs)==2 and all(j['applicability']=='UNRESOLVED' and j['execution'] is None for j in jobs)
+    assert {j['unavailable_verification']['remote_source']['runner_label'] for j in jobs}=={'ubuntu-latest','macos-latest'}
+    assert all('guarded pytest qualification' in j['reason'] for j in jobs)
+    assert jobs[0]['unavailable_verification']['remote_source']!=jobs[1]['unavailable_verification']['remote_source']
 
 
 @pytest.mark.parametrize('change',[
@@ -179,25 +184,28 @@ def test_source_bound_discovery_requires_both_platforms_and_selection(cli,repo,t
     _git(repo,'add','.');_git(repo,'commit','-qm','both platforms')
     start(cli);st,manifest=discover(cli,tmp_path,['ordinary_project/__init__.py'])
     bindings=[b for b in manifest['service_coverage']['assessment']['required_bindings'] if b['category']=='ci']
-    assert len(bindings)==2
+    assert bindings==[]
     assessment=manifest['service_coverage']['assessment']
-    assert assessment['outcome']=='incomplete'
-    assert any(g['code']=='missing-verification-check' for g in assessment['gaps'])
-    assert all('verification-root' not in b['obligation_ids'] for b in bindings)
-    gates=[g for g in manifest['gates'] if g.get('remote_source')]
-    assert len(gates)==2
-    for gate in gates:
-        gate['remote']={'provider':'github','repository_id':42,'run_id':11,'attempt':2,'job_id':9}
+    assert not any(g['code'] in {'missing-verification-check','missing-check'} for g in assessment['gaps'])
+    gates=[g for g in manifest['gates'] if g.get('source',{}).get('job') in {'quality','quality-macos'}]
+    assert len(gates)==2 and all(g['applicability']=='UNRESOLVED' and g['argv']==[] for g in gates)
+    assert all('guarded pytest qualification' in g['reason'] for g in gates)
     Discovery.validate_manifest(st,manifest)
-    # Removing a platform, changing source facts or forging a local mapping
-    # cannot be repaired by remote selection or a declaration-only edit.
+    from hook_regression_helpers import invoke
+    path=tmp_path/'delegated.json';path.write_text(json.dumps(manifest))
+    invoke(cli,'gates','plan','--file',str(path))
+    status=json.loads(invoke(cli,'gates','status')[1])
+    assert not status['coverage_blockers']
+    assert any(r.get('pipeline_verified') for r in status['unverified'])
+    assert {g['id'] for g in gates}<={r.get('gate') for r in status['unverified']}
     for mutation in ('omit','source','local','selection'):
-        forged=copy.deepcopy(manifest);gate=next(g for g in forged['gates'] if g.get('remote_source'))
+        forged=copy.deepcopy(manifest);gate=next(g for g in forged['gates'] if g['id']==gates[0]['id'])
         if mutation=='omit':forged['gates'].remove(gate)
-        elif mutation=='source':gate['remote_source']['runner_label']='macos-latest'
-        elif mutation=='local':gate['execution_kind']='local';gate['argv']=['true']
-        else:gate['remote']['attempt']=True
+        elif mutation=='source':gate['source']['sha256']='0'*64
+        elif mutation=='local':gate.update(applicability='APPLICABLE',execution_kind='local',argv=['true'])
+        else:gate.update(applicability='APPLICABLE',execution_kind='remote',argv=['gh','api'],remote={'provider':'github','attempt':True})
         with pytest.raises((SystemExit,ValueError)):Discovery.validate_manifest(st,forged)
+
 
 
 @pytest.mark.parametrize('kind',['source','origin','attempt','repository','workflow-membership'])
@@ -239,7 +247,7 @@ def test_source_bound_disjoint_collect_ignore_is_recorded_and_rechecked(repo):
     (repo/'conftest.py').write_text('collect_ignore = [".claude"]\n')
     value=Profile.profile(repo,['-m','not browser'],lambda p:(repo/p).read_bytes())
     assert value['conftest']['disjoint_collect_ignore']==[{'source':'conftest.py','paths':['.claude'],'disjoint_collection_roots':['tests']}]
-    before=inventory(repo)['obligations'][0]['execution']['remote_source']
+    before=inventory(repo)['obligations'][0]['unavailable_verification']['remote_source']
     assert 'conftest.py' in value['source_dependencies']
     (repo/'conftest.py').write_text('collect_ignore = ["tests"]\n')
     assert inventory(repo)['obligations'][0]['applicability']=='UNRESOLVED'
@@ -280,7 +288,7 @@ def test_exact_macos_mock_evidence(repo,tmp_path,monkeypatch):
     path.write_text(body.replace('ubuntu-latest','macos-latest').replace('sudo apt-get update && sudo apt-get install -y ripgrep','brew install ripgrep'))
     _git(repo,'add','.');_git(repo,'commit','-qm','macOS recipe')
     job=inventory(repo)['obligations'][0]
-    gate={**job['execution'],'source':{'path':job['source_path'],'job':job['job'],'sha256':job['source_sha256']},'remote':{'provider':'github','repository_id':42,'run_id':11,'attempt':2,'job_id':9}}
+    gate={**unavailable_execution(job),'source':{'path':job['source_path'],'job':job['job'],'sha256':job['source_sha256']},'remote':{'provider':'github','repository_id':42,'run_id':11,'attempt':2,'job_id':9}}
     sha=Remote.S.git_bytes('rev-parse','HEAD').decode().strip()
     assert_attestation(execute(repo,tmp_path,monkeypatch,gate,fixtures(gate,sha)))
 
@@ -314,7 +322,7 @@ def test_new_ignored_effective_config_during_lookup_refuses(repo,tmp_path,monkey
     gate=gate_for(repo)
     if name=='.python-version':
         (repo/name).unlink();_git(repo,'add','-u');_git(repo,'commit','-qm','no explicit version')
-        job=inventory(repo)['obligations'][0];gate.update(job['execution'])
+        job=inventory(repo)['obligations'][0];gate.update(unavailable_execution(job))
     # Bind ignore rules before observation; ignored semantic inputs still refuse.
     with (repo/'.gitignore').open('a') as stream:stream.write(name+'\n')
     _git(repo,'add','.gitignore');_git(repo,'commit','-qm','ignored config fixture')

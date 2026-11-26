@@ -52,11 +52,13 @@ def test_environment_change_cannot_authorize_failed_baseline(cli, repo, tmp_path
     next(g for g in m['gates'] if g['id']=='loc')['argv']=[sys.executable,'-c','raise SystemExit(1)'];path.write_text(json.dumps(m))
     invoke(cli,'gates','plan','--file',str(path))
     invoke(cli,'gates','run','--stage','base','--id','imports-root')
-    invoke(cli,'gates','run','--stage','base','--id','loc',ok=False)
+    invoke(cli,'gates','run','--stage','base','--id','loc')
+    state=json.loads(cli('show')[1]);run=next(item for item in reversed(state['gate_runs']) if item['gate']=='loc' and item['stage']=='base')
+    assert next(item for item in state['evidence']['entries'] if item['id']==run['evidence'])['status']=='FAIL'
     invoke(cli,'gates','decision','--id','loc','--action','fix','--source','user','--reason','Fix this baseline')
     assert not json.loads(cli('gates','status')[1])['base']
     monkeypatch.setenv('AL_VARIANT','after')
-    assert json.loads(cli('gates','status')[1])['base']
+    assert json.loads(cli('gates','status')[1])['base'] == ['base gate loc requires passing evidence']
     before=state_file().read_bytes()
     invoke(cli,'gates','decision','--id','loc','--action','fix','--source','user','--reason','Old failure',ok=False)
     assert state_file().read_bytes()==before

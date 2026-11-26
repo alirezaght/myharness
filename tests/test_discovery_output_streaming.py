@@ -3,13 +3,13 @@
 import os
 import subprocess
 import sys
-import threading
+from types import SimpleNamespace
 
 import pytest
 
 from harness.execution_logs import MAX_TEXT, StreamRedactor
 from harness.execution_processes import ProcessManager
-from tests.test_execution_operations import operations  # noqa: F401
+from tests.test_execution_operations import observed_principal, operations  # noqa: F401
 
 
 def test_completed_lines_do_not_lose_tail_after_retained_partial():
@@ -80,10 +80,16 @@ def test_public_dispatch_drains_all_large_pages(operations):  # noqa: F811
             operation.dispatch(principal, "poll_process", {"handle": "completed-output"})["output"]
             == ""
         )
-        with pytest.raises(ValueError, match="owned"):
+        before = dict(manager.records["completed-output"])
+        with pytest.raises(ValueError, match="^AUTHORITY_STALE$"):
             operation.dispatch(
                 principal | {"thread_id": "other"}, "poll_process", {"handle": "completed-output"}
             )
+        assert manager.records["completed-output"] == before
+        foreign = observed_principal(operation, "foreign-output-reader", "al-scout")
+        with pytest.raises(ValueError, match="owned"):
+            operation.dispatch(foreign, "poll_process", {"handle": "completed-output"})
+        assert manager.records["completed-output"] == before
         with pytest.raises(ValueError, match="bounded"):
             operation.dispatch(
                 principal, "poll_process", {"handle": "completed-output", "limit": 0}
@@ -92,32 +98,53 @@ def test_public_dispatch_drains_all_large_pages(operations):  # noqa: F811
         del manager.records["completed-output"]
 
 
-def test_incremental_utf8_actual_drain(monkeypatch):
+def test_incremental_utf8_actual_drain(monkeypatch, tmp_path):
     import harness.execution_processes as module
 
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import sys;sys.stdout.buffer.write('路径/é/🦋\\nfinal-tail'.encode())",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=True,
+    expected = "路径/é/🦋\nfinal-tail"
+    children, reads = [], []
+    original = os.read
+
+    def uncontained_popen(_profile, argv, **kwargs):
+        # Decoder proof only; no containment or native authority is claimed.
+        proc = subprocess.Popen(argv, **kwargs)
+        children.append(proc)
+        return proc
+
+    def one_byte_stdout(fd, size):
+        target = children[0].stdout if children else None
+        if target is not None and not target.closed and fd == target.fileno():
+            raw = original(fd, min(size, 1))
+            reads.append(len(raw))
+            return raw
+        return original(fd, size)
+
+    monkeypatch.setattr(module, "operation_popen", uncontained_popen)
+    monkeypatch.setattr(module.os, "read", one_byte_stdout)
+    profile = SimpleNamespace(
+        repository=str(tmp_path), temporary=str(tmp_path), process_temporary="", classification=None
     )
     manager = ProcessManager()
-    record = {
-        "process": proc,
-        "cancel": threading.Event(),
-        "output": "",
-        "error": None,
-        "classification": None,
-        "classification_root": ".",
-    }
-    original = os.read
-    monkeypatch.setattr(module.os, "read", lambda fd, size: original(fd, min(size, 1)))
-    manager._drain(record, 10)
-    assert record["status"] == "Exited" and record["output"] == "路径/é/🦋\nfinal-tail"
+    try:
+        result = manager.start(
+            "decoder-unit",
+            profile,
+            [sys.executable, "-c", f"import sys;sys.stdout.buffer.write({expected!r}.encode())"],
+            tmp_path,
+            task=None,
+            revision=None,
+            timeout=10,
+        )
+        record = manager._owned("decoder-unit", result["handle"])
+        record["thread"].join(timeout=10)
+        assert not record["thread"].is_alive()
+        assert record["status"] == "Exited" and record["output"] == expected
+        assert len(children) == 1 and record["returncode"] == 0
+        assert reads and all(size <= 1 for size in reads)
+        assert sum(reads) == len(expected.encode())
+        assert children[0].stdout.closed and children[0].stderr.closed
+    finally:
+        manager.close()
 
 
 def test_empty_and_final_unterminated_output():

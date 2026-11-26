@@ -29,7 +29,20 @@ def _cold(monkeypatch, st, paths=PATHS):
 
 
 @pytest.fixture
-def spies(monkeypatch):
+def inventory_state(cli, repo, run_state, request):
+    structural = request.node.name.startswith("test_structural_changes")
+    def build():
+        _fixture(repo)
+        if structural:
+            put(repo, '.gitignore', '*.log\n')
+            _git(repo, 'add', '.')
+            _git(repo, 'commit', '-qm', 'ignore rules')
+        return start(cli)
+    return run_state("incremental-repository-" + ("ignore" if structural else "base"), build)
+
+
+@pytest.fixture
+def spies(monkeypatch, inventory_state):
     """Snapshots built (with or without a known capture), files read, blobs analysed."""
     seen = {'known': [], 'reads': [], 'analysed': []}
     init, read, events = F.Snapshot.__init__, F.Snapshot.read_observed, blob.import_events
@@ -61,9 +74,8 @@ def _reset(seen):
         values.clear()
 
 
-def test_a_content_change_recomputes_only_the_changed_blob(cli, repo, monkeypatch, spies):
-    _fixture(repo)
-    st = start(cli)
+def test_a_content_change_recomputes_only_the_changed_blob(cli, repo, monkeypatch, spies, inventory_state):
+    st = inventory_state
     V.inventory(st, PATHS)
     _reset(spies)
     put(repo, 'services/a/src/app.py', 'import common\nVALUE = 2\n')
@@ -80,9 +92,8 @@ def test_a_content_change_recomputes_only_the_changed_blob(cli, repo, monkeypatc
     assert V.inventory(st, PATHS) == warm and spies['known'] == []
 
 
-def test_a_change_of_imports_is_re_derived_exactly(cli, repo, monkeypatch, spies):
-    _fixture(repo)
-    st = start(cli)
+def test_a_change_of_imports_is_re_derived_exactly(cli, repo, monkeypatch, spies, inventory_state):
+    st = inventory_state
     V.inventory(st, PATHS)
     # A changed blob whose facts differ (an import of another unit) changes the answer.
     put(repo, 'packages/shared/src/common.py', 'import extra\nVALUE = 1\n')
@@ -92,12 +103,8 @@ def test_a_change_of_imports_is_re_derived_exactly(cli, repo, monkeypatch, spies
 
 
 @pytest.mark.parametrize('change', ['added', 'removed', 'manifest', 'rule', 'ignore', 'kind'])
-def test_structural_changes_take_the_full_inventory(cli, repo, monkeypatch, spies, change):
-    _fixture(repo)
-    put(repo, '.gitignore', '*.log\n')
-    _git(repo, 'add', '.')
-    _git(repo, 'commit', '-qm', 'ignore rules')
-    st = start(cli)
+def test_structural_changes_take_the_full_inventory(cli, repo, monkeypatch, spies, change, inventory_state):
+    st = inventory_state
     V.inventory(st, PATHS)
     _reset(spies)
     if change == 'added':
@@ -118,9 +125,8 @@ def test_structural_changes_take_the_full_inventory(cli, repo, monkeypatch, spie
     _same(warm, _cold(monkeypatch, st))
 
 
-def test_drift_during_an_incremental_capture_retries_in_full(cli, repo, monkeypatch, spies):
-    _fixture(repo)
-    st = start(cli)
+def test_drift_during_an_incremental_capture_retries_in_full(cli, repo, monkeypatch, spies, inventory_state):
+    st = inventory_state
     V.inventory(st, PATHS)
     _reset(spies)
     put(repo, 'services/a/src/app.py', 'import common\nVALUE = 2\n')

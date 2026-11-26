@@ -1,5 +1,19 @@
 # Agent instructions
 
+## Implementation workflow
+
+Use the AL orchestrator for feature implementation.
+
+Standing user authorization permits direct, scoped self-repairs to AL and its test
+and verification tooling without AL orchestration or ledger stages. Run appropriate
+tests and obtain independent code review. Preserve existing work and failure history;
+do not weaken evidence integrity, ownership, schema, or security guards. This exception
+does not authorize bypassing AL for new features or claiming AL approval without the
+runtime's actual approval.
+
+Report functional results separately from timing-budget failures. Retain the raw
+results and keep performance issues open until their measured targets are met.
+
 ## Verifying AL changes
 
 After a change under `al/`, run the fast tier and do not wait on the slow tier:

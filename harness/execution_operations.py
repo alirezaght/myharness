@@ -604,12 +604,22 @@ class OperationController:
                     else "DISPATCH_REJECTED"
                 )
                 from harness.agent_contracts import ContractError
+                from harness.policy.contracts import PolicyError, qualification_diagnostic
 
+                diagnostic = None
+                if isinstance(error, PolicyError) and error.diagnostic is not None:
+                    diagnostic = qualification_diagnostic(error.diagnostic)
+                    # Correlation comes only from this dispatch, never the error producer.
+                    diagnostic.pop("observation_id", None)
+                    if observation is not None:
+                        diagnostic["observation_id"] = observation
+                    error = PolicyError(error.code, diagnostic=diagnostic)
                 observations.finish(
                     self,
                     observation,
                     code,
                     rejection=error if isinstance(error, ContractError) else None,
+                    diagnostic=diagnostic,
                 )
                 raise ValueError(str(error)) from None
             except Exception:

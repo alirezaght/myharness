@@ -74,7 +74,9 @@ def test_managed_isolated_no_site_bootstrap_ignores_startup_canaries(tmp_path):
     home = tmp_path / "home";home.mkdir()
     repository = tmp_path / "repository";repository.mkdir()
     virtual = tmp_path / "private-interpreter"
-    venv.EnvBuilder(with_pip=False).create(virtual)
+    # A copied uv-managed macOS executable can lose its relative libpython path.
+    # Keep the genuine base executable/library relationship and private venv site.
+    venv.EnvBuilder(with_pip=False, symlinks=True).create(virtual)
     interpreter = virtual / "bin/python"
     canary = tmp_path / "startup-executed"
     payload = "from pathlib import Path;Path(" + repr(str(canary)) + ").write_text('unapproved startup')\n"
@@ -87,6 +89,13 @@ def test_managed_isolated_no_site_bootstrap_ignores_startup_canaries(tmp_path):
     environment = dict(os.environ, HOME=str(home), PYTHONPATH=str(repository), PYTHONSTARTUP=str(startup))
     for key in ("AL_RUNTIME_DIR", "AL_DISTRIBUTION_STATE", "PYTHONHOME"):
         environment.pop(key, None)
+    # Prove that startup injection is live in this private environment before
+    # requiring the isolated no-site bootstrap to suppress it.
+    control = subprocess.run([str(interpreter), "-B", "-c", "pass"], cwd=repository,
+                             env=environment, capture_output=True, timeout=15)
+    assert control.returncode == 0, control.stderr
+    assert canary.read_text() == 'unapproved startup'
+    canary.unlink()
     git = "/Library/Developer/CommandLineTools/usr/bin/git" if sys.platform == "darwin" else "/usr/bin/git"
     subprocess.run([git, "init", "-q"], cwd=repository, env=environment, check=True)
     subprocess.run([git, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",

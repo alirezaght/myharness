@@ -10,7 +10,7 @@ from harness.execution_epoch_lock import epoch_action_lock
 from harness.execution_models import ExecutionConflict
 from harness.execution_store import get_execution
 from harness.reliability import store
-from tests.test_reliability_store import observed, rows  # noqa: F401
+from tests.test_reliability_store import install_statement_fault, observed, rows  # noqa: F401
 from tests.test_template_classification_integration import operations, registered  # noqa: F401
 
 
@@ -34,16 +34,19 @@ def test_dispatch_releases_sqlite_and_epoch_claim_before_effect(observed, monkey
 
 
 def test_terminal_failure_after_effect_never_replays(observed, monkeypatch):
-    operation, principal, controller = observed
+    operation, principal, _ = observed
     (Path(operation.envelope["repository"]) / "public.txt").write_text("safe fixture\n")
-    controller.conn.execute(
-        "CREATE TRIGGER fail_terminal BEFORE UPDATE ON reliability_observations "
-        "BEGIN SELECT RAISE(ABORT,'injected'); END"
+    hits = install_statement_fault(
+        monkeypatch,
+        store,
+        lambda sql, _parameters: "update reliability_observations set state="
+        in " ".join(sql.lower().split()),
     )
     effects = []
     monkeypatch.setattr(operation, "_dispatch", lambda *a: effects.append(True) or {"ok": True})
     with pytest.raises(ValueError, match="Reliability recording unavailable"):
         operation.dispatch(principal, "read_file", {"path": "public.txt"})
+    assert len(hits) == 1
     assert effects == [True] and rows(observed)[0]["state"] == "pending"
     assert not rows(observed, "reliability_incidents")
 

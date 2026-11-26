@@ -143,9 +143,9 @@ def test_base_commit_and_identical_worktree_share_the_input_identity(repo):
 
 # Store and reuse through the CLI --------------------------------------------------------
 
-def test_second_session_reuses_the_result_with_its_origin(cli, repo, state_file, tmp_path):
+def test_second_session_reuses_the_result_with_its_origin(cli, repo, state_file, tmp_path, run_state):
     marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *counting(marker))[0] == 0
     first = entries(state_file)[0]
     cli("--session", "al-other", "start", "--spec", SPEC)
@@ -164,9 +164,9 @@ def test_second_session_reuses_the_result_with_its_origin(cli, repo, state_file,
     assert " VALID " in cli("--session", "al-other", "evidence", "status")[1]
 
 
-def test_a_failure_is_reused_but_infra_is_not_stored(cli, repo, state_file, tmp_path):
+def test_a_failure_is_reused_but_infra_is_not_stored(cli, repo, state_file, tmp_path, run_state):
     marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "bad", "--scope", "svc", "--", *counting(marker, "1 failed", 1))[0] == 1
     assert cli("evidence", "run", "--area", "gone", "--scope", "svc", "--", "al-no-such-program-26")[0] == 1
     cli("--session", "al-other", "start", "--spec", SPEC)
@@ -179,13 +179,13 @@ def test_a_failure_is_reused_but_infra_is_not_stored(cli, repo, state_file, tmp_
     assert code == 1 and "reused from" not in out  # INFRA is executed again
 
 
-def test_rerunning_a_failed_area_in_the_same_run_executes_and_replaces_the_record(cli, repo, state_file, tmp_path):
+def test_rerunning_a_failed_area_in_the_same_run_executes_and_replaces_the_record(cli, repo, state_file, tmp_path, run_state):
     """A new run reuses a cached FAIL, but running the area again after it failed in this run
     is a retry (a flake or a timeout on a busy host): it executes, and its PASS is cached."""
     marker = tmp_path / "ran-once"
     flaky = [PY, "-c", "import os,sys; first=not os.path.exists(sys.argv[1]); open(sys.argv[1],'w').close(); "
                        "print('1 passed'); sys.exit(1 if first else 0)", str(marker)]
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "unit", "--scope", "svc", "--", *flaky)[0] == 1
     code, out, _ = cli("evidence", "run", "--area", "unit", "--scope", "svc", "--", *flaky)
     assert code == 0 and "reused from" not in out
@@ -207,9 +207,9 @@ def test_never_store_infra_torn_or_timeout(repo, tmp_path):
     assert Cache.lookup(plan)["status"] == "PASS"
 
 
-def test_changed_input_tree_misses_and_runs_again(cli, repo, state_file, tmp_path):
+def test_changed_input_tree_misses_and_runs_again(cli, repo, state_file, tmp_path, run_state):
     marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *counting(marker))[0] == 0
     (repo / "svc/app.py").write_text("x = 2\n")
     cli("--session", "al-other", "start", "--spec", SPEC)
@@ -219,12 +219,12 @@ def test_changed_input_tree_misses_and_runs_again(cli, repo, state_file, tmp_pat
 
 
 @pytest.mark.parametrize("opt_out", ["--no-cache", "--non-hermetic", "env"])
-def test_opt_outs_execute_and_record_nothing(cli, repo, state_file, tmp_path, monkeypatch, opt_out):
+def test_opt_outs_execute_and_record_nothing(cli, repo, state_file, tmp_path, monkeypatch, opt_out, run_state):
     marker = tmp_path / "runs"
     flags = [] if opt_out == "env" else [opt_out]
     if opt_out == "env":
         monkeypatch.setenv("AL_ACTION_CACHE", "0")
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "svc", "--scope", "svc", *flags, "--", *counting(marker))[0] == 0
     cli("--session", "al-other", "start", "--spec", SPEC)
     code, out, _ = cli("--session", "al-other", "evidence", "run", "--area", "svc", "--scope", "svc", *flags,
@@ -243,9 +243,9 @@ def test_planned_non_hermetic_check_is_never_cached(cli, repo, state_file, tmp_p
     assert marker.read_text() == "xx"
 
 
-def test_fresh_executes_and_replaces_the_record(cli, repo, state_file, tmp_path):
+def test_fresh_executes_and_replaces_the_record(cli, repo, state_file, tmp_path, run_state):
     marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *counting(marker))[0] == 0
     cli("--session", "al-other", "start", "--spec", SPEC)
     assert cli("--session", "al-other", "evidence", "run", "--area", "svc", "--scope", "svc", "--fresh",
@@ -264,9 +264,9 @@ def test_gate_opt_outs():
     assert Cache.gate_plan({}, {"gates": []}, gate, "base", no_cache=True)[0] is None
 
 
-def test_a_hit_from_another_worktree(cli, repo, state_file, tmp_path, monkeypatch, isolated_runtime):
+def test_a_hit_from_another_worktree(cli, repo, state_file, tmp_path, monkeypatch, isolated_runtime, run_state):
     marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     assert cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *counting(marker))[0] == 0
     first = entries(state_file)[0]
     other = tmp_path / "second-worktree"
@@ -298,13 +298,13 @@ def test_a_hit_from_another_worktree(cli, repo, state_file, tmp_path, monkeypatc
 
 # Gates -------------------------------------------------------------------------------
 
-def _gate_session(cli, repo, tmp_path, argv, session=None):
+def _gate_session(cli, repo, tmp_path, argv, session=None, run_state=None):
     from batch13_helpers import manifest, start
     if session:
         from hook_regression_helpers import invoke
         invoke(cli, "--session", session, "start", "--spec", "Materialize and validate this disposable gate boundary safely.")
     else:
-        start(cli, repo)
+        run_state("action-gate-pre-manifest", lambda: start(cli, repo))
     manifest(cli, tmp_path, argv)
 
 
@@ -315,10 +315,10 @@ def _boundary(cli, session=None):
     return state, m, next(g for g in m["gates"] if g["id"] == "boundary")
 
 
-def test_base_gate_runs_once_for_every_task_and_the_candidate_reuses_it(cli, repo, tmp_path):
+def test_base_gate_runs_once_for_every_task_and_the_candidate_reuses_it(cli, repo, tmp_path, run_state):
     from hook_regression_helpers import invoke
     marker = tmp_path / "runs"
-    _gate_session(cli, repo, tmp_path, counting(marker, "gate ok"))
+    _gate_session(cli, repo, tmp_path, counting(marker, "gate ok"), run_state=run_state)
     invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary")
     assert marker.read_text() == "x"
     _gate_session(cli, repo, tmp_path, counting(marker, "gate ok"), session="al-other")
@@ -336,10 +336,10 @@ def test_base_gate_runs_once_for_every_task_and_the_candidate_reuses_it(cli, rep
     assert {e["area"] for e in reused} == {"gate-base-boundary", "gate-candidate-boundary"}
 
 
-def test_a_failing_base_gate_is_reused_and_an_explicit_retry_executes(cli, repo, tmp_path):
+def test_a_failing_base_gate_is_reused_and_an_explicit_retry_executes(cli, repo, tmp_path, run_state):
     from hook_regression_helpers import invoke
     marker = tmp_path / "runs"
-    _gate_session(cli, repo, tmp_path, counting(marker, "violation", 1))
+    _gate_session(cli, repo, tmp_path, counting(marker, "violation", 1), run_state=run_state)
     invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary")  # a base failure is the baseline (#38)
     _gate_session(cli, repo, tmp_path, counting(marker, "violation", 1), session="al-other")
     _, out, _ = invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary")
@@ -350,10 +350,10 @@ def test_a_failing_base_gate_is_reused_and_an_explicit_retry_executes(cli, repo,
     assert marker.read_text() == "xx"
 
 
-def test_gates_no_cache_and_non_hermetic_gates_execute(cli, repo, tmp_path):
+def test_gates_no_cache_and_non_hermetic_gates_execute(cli, repo, tmp_path, run_state):
     from hook_regression_helpers import invoke
     marker = tmp_path / "runs"
-    _gate_session(cli, repo, tmp_path, counting(marker, "gate ok"))
+    _gate_session(cli, repo, tmp_path, counting(marker, "gate ok"), run_state=run_state)
     invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary", "--no-cache")
     _gate_session(cli, repo, tmp_path, counting(marker, "gate ok"), session="al-other")
     invoke(cli, "gates", "run", "--stage", "base", "--id", "boundary")
@@ -363,9 +363,9 @@ def test_gates_no_cache_and_non_hermetic_gates_execute(cli, repo, tmp_path):
     assert Cache.gate_plan(state, m, {**gate, "hermetic": False}, "base")[0] is None
 
 
-def test_the_review_packet_lists_reused_results_with_their_origin(cli, repo, state_file, tmp_path):
+def test_the_review_packet_lists_reused_results_with_their_origin(cli, repo, state_file, tmp_path, run_state):
     marker = tmp_path / "runs"
-    cli("start", "--spec", SPEC)
+    run_state("action-pre-evidence", lambda: cli("start", "--spec", SPEC))
     cli("evidence", "run", "--area", "svc", "--scope", "svc", "--", *counting(marker))
     original = json.loads(state_file().read_text())
     first = original["evidence"]["entries"][0]

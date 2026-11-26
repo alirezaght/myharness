@@ -79,7 +79,15 @@ def test_legitimate_extension_keeps_phase_and_admits_writer_before_new_base(cli,
     # recovery (b5735a9), so it stays open with the current replacement.
     writer(cli,target);st=state(cli)
     assert st['writers']['writer']['state']=='ACTIVE' and st['gate_recovery']['replacement_manifest']==st['gate_manifests'][-1]['sha256']
-    invoke(cli,'gates','run','--stage','base',ok=change!='unit')
+    invoke(cli,'gates','run','--stage','base')
+    if change=='unit':
+        st=state(cli)
+        from al_artifacts import read_json
+        current=read_json(st['gate_manifests'][-1])
+        gate=next(g for g in current['gates'] if g['category']=='ci' and g.get('source',{}).get('job')=='new-verify')
+        run=next(row for row in reversed(st['gate_runs']) if row['gate']==gate['id'] and row['stage']=='base')
+        evidence=next(e for e in st['evidence']['entries'] if e['id']==run['evidence'])
+        assert evidence['status']=='FAIL' and evidence['gate_stage']=='base'
 
 
 @pytest.mark.parametrize('phase',['IMPLEMENTATION','FINALIZATION'])
@@ -131,8 +139,12 @@ def test_new_consumer_or_unknown_import_cannot_hide_behind_existing_shared_path(
     unit(repo,'services/b')
     recorded_debt(cli,repo,'packages/shared/src/common.py',named=False)
     m=manifest(cli,repo,['packages/shared/src/common.py']);assert any('services/b' in g['units'] for g in m['gates'] if g['category']=='lint-imports')
-    plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base',ok=False)
-    failed=state(cli)['gate_runs'][-1]['gate']
+    plan(cli,tmp_path,m);invoke(cli,'gates','run','--stage','base')
+    st=state(cli)
+    failed_run=next(row for row in reversed(st['gate_runs']) if row['gate']=='imports-services-b' and row['stage']=='base')
+    failed=failed_run['gate']
+    failed_entry=next(e for e in st['evidence']['entries'] if e['id']==failed_run['evidence'])
+    assert failed_entry['status']=='FAIL' and failed_entry['gate_stage']=='base'
     invoke(cli,'gates','decision','--id',failed,'--action','fix','--source','Explicit fixture developer instruction','--reason','Implement this newly admitted service, absent in the pinned baseline.')
     writer(cli,'packages/shared/src/common.py')
     invoke(cli,'writer','finish','--id','writer','--outcome','success')

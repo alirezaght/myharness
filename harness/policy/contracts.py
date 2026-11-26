@@ -1,5 +1,6 @@
 "Closed, bounded contracts; no executable rules or caller-authored safe intents."
 
+import re
 from dataclasses import dataclass
 
 from harness.execution_contract import canonical, digest, identity
@@ -31,17 +32,82 @@ CODES = {
 }
 
 
+QUALIFICATION_CAUSES = frozenset(
+    {
+        "source_inventory_mismatch",
+        "source_bytes_mismatch",
+        "origin_binding_mismatch",
+        "receipt_binding_mismatch",
+        "origin_inventory_mismatch",
+        "interpreter_binding_mismatch",
+        "interpreter_bytes_mismatch",
+        "launcher_request_mismatch",
+        "launcher_bytes_mismatch",
+        "platform_unsupported",
+        "boundary_probe_failed",
+        "preparation_failed",
+        "source_state_changed",
+        "git_configuration_changed",
+        "boundary_profile_changed",
+        "git_version_unsupported",
+    }
+)
+
+
+def qualification_diagnostic(value):
+    """Closed metadata only; validation grants no execution authority."""
+    fields = {"schema_version", "cause", "qualification_ref"}
+    if (
+        not isinstance(value, dict)
+        or set(value) not in (fields, fields | {"observation_id"})
+        or type(value.get("schema_version")) is not int
+        or value["schema_version"] != 1
+        or not isinstance(value.get("cause"), str)
+        or value["cause"] not in QUALIFICATION_CAUSES
+        or any(
+            not isinstance(value.get(key), str) or re.fullmatch(r"[0-9a-f]{32}", value[key]) is None
+            for key in (
+                "qualification_ref",
+                *(["observation_id"] if "observation_id" in value else []),
+            )
+        )
+    ):
+        raise ValueError("invalid qualification diagnostic")
+    return dict(value)
+
+
 class PolicyError(ValueError):
-    def __init__(self, code):
+    def __init__(self, code, *, diagnostic=None):
         if code not in CODES:
             code = "POLICY_INVALID"
         self.code = code
-        super().__init__(code)
+        self.diagnostic = None
+        if diagnostic is not None:
+            if code != "UNSUPPORTED_ENFORCEMENT_CAPABILITY":
+                raise ValueError("invalid qualification diagnostic")
+            self.diagnostic = qualification_diagnostic(diagnostic)
+        super().__init__(
+            code if self.diagnostic is None else code + " " + canonical(self.diagnostic)
+        )
 
 
 def require(condition, code="POLICY_INVALID"):
     if not condition:
         raise PolicyError(code)
+
+
+def qualification_require(condition, cause, qualification_ref):
+    if not condition:
+        diagnostic = (
+            None
+            if qualification_ref is None
+            else {
+                "schema_version": 1,
+                "cause": cause,
+                "qualification_ref": qualification_ref,
+            }
+        )
+        raise PolicyError("UNSUPPORTED_ENFORCEMENT_CAPABILITY", diagnostic=diagnostic) from None
 
 
 def number(value, *, positive=False):

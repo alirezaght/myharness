@@ -25,13 +25,22 @@ FIXED_BACKPORTS: frozenset[tuple[int, int, int]] = frozenset()
 def _runtime_facts() -> str:
     return (
         f"sqlite3.sqlite_version={sqlite3.sqlite_version} "
-        f"python={sys.version.split()[0]} platform={platform.platform()}"
+        f"python={sys.version.split()[0]} platform={platform.platform()}. "
+        "Select a supported interpreter with: uv sync --locked --python "
+        "/absolute/path/to/supported/python; then rerun "
+        "uv run pytest -q tests/test_sqlite_capabilities.py"
     )
 
 
 def _is_wal_reset_fixed(version_info: tuple[int, ...]) -> bool:
     version = tuple(version_info)[:3]
     return version >= FIXED_VERSION or version in FIXED_BACKPORTS
+
+
+@pytest.fixture(autouse=True)
+def runtime_prerequisite_context():
+    """Include actual facts and repair guidance even when a real SQLite operation raises."""
+    print("SQLITE RUNTIME FACTS: " + _runtime_facts())
 
 
 def test_report_runtime_facts(capsys, record_property):

@@ -86,7 +86,8 @@ Each phase ships something you can run on a real task, and no phase breaks the o
 ## Development
 
 ```bash
-uv sync                    # install Python 3.13 and dependencies
+uv sync --locked           # install the locked dependencies
+uv run pytest -q tests/test_sqlite_capabilities.py  # verify actual SQLite prerequisites first
 uv run pytest              # run tests
 uv run python al/verify_changed.py   # verify an AL change: affected AL tests, both hosts, in parallel (see al/README.md)
 uv run ruff check .        # lint
@@ -149,6 +150,21 @@ uv run python -m harness.dashboard [<id>] [--db PATH] [--specs PATH] [--no-brows
 uv run python -m harness.redesign <id> [--db PATH]   # list the task's open diagram comments (read-only)
 uv run python -m harness.redesign address <id> <comment id>... [--db PATH]   # record the design as a diagram version, then mark the comments addressed (all or nothing)
 ```
+
+A Python minor version does not establish SQLite capability. The selected interpreter's real
+stdlib SQLite must support FTS5 and WAL and meet the WAL-reset fix policy: SQLite >=3.51.3
+or an explicitly sourced fixed backport. The capability suite reports actual Python, SQLite
+and platform details; a failure is an environment prerequisite failure. Select a genuinely
+supported interpreter and repeat the check:
+
+```sh
+uv sync --locked --python /absolute/path/to/supported/python
+uv run pytest -q tests/test_sqlite_capabilities.py
+```
+
+This changes the project's environment, not global Python. Do not skip the checks or
+substitute a patched `sqlite3` module or an unsourced backport claim.
+
 
 Global options go before the subcommand, e.g. `uv run harness --db /tmp/state.db show <id>`.
 

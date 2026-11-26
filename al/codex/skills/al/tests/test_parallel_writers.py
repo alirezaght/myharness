@@ -10,8 +10,8 @@ from evidence_helpers import start_implementation
 from test_task_attribution import run, state
 
 
-def _start_two(cli, tmp_path):
-    start_implementation(cli, tmp_path, ('svc', 'web'))
+def _start_two(cli, tmp_path, run_state):
+    run_state("parallel-pre-writer", lambda: start_implementation(cli, tmp_path, ("svc", "web")))
     run(cli, 'writer', 'start', '--id', 'left', '--role', 'al-engineer', '--files', 'svc')
 
 
@@ -28,8 +28,8 @@ def _editing(monkeypatch, repo, path):
     return lambda: monkeypatch.setattr(T, '_rows', original)
 
 
-def test_disjoint_writers_start_and_finish_while_sibling_edits(cli, repo, tmp_path, state_file, monkeypatch):
-    _start_two(cli, tmp_path)
+def test_disjoint_writers_start_and_finish_while_sibling_edits(cli, repo, tmp_path, state_file, monkeypatch, run_state):
+    _start_two(cli, tmp_path, run_state)
     (repo/'svc/app.py').write_text('x = 2\n')
     # `right` is admitted while `left` is still editing inside svc.
     stop = _editing(monkeypatch, repo, 'svc/app.py')
@@ -54,8 +54,8 @@ def test_disjoint_writers_start_and_finish_while_sibling_edits(cli, repo, tmp_pa
     assert not any(r['path'].startswith('web/') for r in after['files'])
 
 
-def test_concurrent_edit_outside_every_writer_scope_still_refuses_finish(cli, repo, tmp_path, state_file, monkeypatch):
-    _start_two(cli, tmp_path)
+def test_concurrent_edit_outside_every_writer_scope_still_refuses_finish(cli, repo, tmp_path, state_file, monkeypatch, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     (repo/'svc/app.py').write_text('x = 2\n')
     before = state_file().read_bytes()
@@ -66,8 +66,8 @@ def test_concurrent_edit_outside_every_writer_scope_still_refuses_finish(cli, re
     assert state_file().read_bytes() == before
 
 
-def test_concurrent_edit_inside_own_scope_still_refuses_finish(cli, repo, tmp_path, state_file, monkeypatch):
-    _start_two(cli, tmp_path)
+def test_concurrent_edit_inside_own_scope_still_refuses_finish(cli, repo, tmp_path, state_file, monkeypatch, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     before = state_file().read_bytes()
     stop = _editing(monkeypatch, repo, 'svc/app.py')
@@ -77,8 +77,8 @@ def test_concurrent_edit_inside_own_scope_still_refuses_finish(cli, repo, tmp_pa
     assert state_file().read_bytes() == before
 
 
-def test_out_of_scope_edit_during_parallel_writers_is_external(cli, repo, tmp_path, state_file):
-    _start_two(cli, tmp_path)
+def test_out_of_scope_edit_during_parallel_writers_is_external(cli, repo, tmp_path, state_file, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     (repo/'svc/app.py').write_text('x = 2\n')
     (repo/'docs/readme.md').write_text('outside every writer scope\n')
@@ -90,8 +90,8 @@ def test_out_of_scope_edit_during_parallel_writers_is_external(cli, repo, tmp_pa
     assert result['externally_changed'] == ['docs/readme.md']
 
 
-def test_overlapping_writer_ownership_is_still_refused(cli, repo, tmp_path):
-    _start_two(cli, tmp_path)
+def test_overlapping_writer_ownership_is_still_refused(cli, repo, tmp_path, run_state):
+    _start_two(cli, tmp_path, run_state)
     result, out, err = cli('writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'svc/app.py')
     assert result != 0 and 'writer overlap: left' in f'{result}{out}{err}'
 
@@ -105,8 +105,8 @@ def _drifting_discovery(monkeypatch):
     monkeypatch.setattr(D, 'discover', drift)
 
 
-def test_gates_discover_names_active_sibling_instead_of_capture_drift(cli, repo, tmp_path, state_file, monkeypatch):
-    _start_two(cli, tmp_path)
+def test_gates_discover_names_active_sibling_instead_of_capture_drift(cli, repo, tmp_path, state_file, monkeypatch, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     paths = tmp_path/'paths.json'
     paths.write_text(json.dumps(['svc']))
@@ -119,8 +119,8 @@ def test_gates_discover_names_active_sibling_instead_of_capture_drift(cli, repo,
     assert state_file().read_bytes() == before
 
 
-def test_gates_discover_drift_without_active_writer_is_reported_unchanged(cli, repo, tmp_path, monkeypatch):
-    start_implementation(cli, tmp_path, ('svc', 'web'))
+def test_gates_discover_drift_without_active_writer_is_reported_unchanged(cli, repo, tmp_path, monkeypatch, run_state):
+    run_state("parallel-pre-writer", lambda: start_implementation(cli, tmp_path, ("svc", "web")))
     paths = tmp_path/'paths.json'
     paths.write_text(json.dumps(['svc']))
     _drifting_discovery(monkeypatch)
@@ -141,8 +141,8 @@ def _lint_verdict(state_file):
     return entry, L.entry_verdict(st, entry)
 
 
-def test_writer_check_overlapping_sibling_is_provisional_then_revalidated(cli, repo, tmp_path, state_file):
-    _start_two(cli, tmp_path)
+def test_writer_check_overlapping_sibling_is_provisional_then_revalidated(cli, repo, tmp_path, state_file, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     (repo/'svc/app.py').write_text('x = 2\n')
     (repo/'web/app.js').write_text('let a = 2\n')
@@ -159,8 +159,8 @@ def test_writer_check_overlapping_sibling_is_provisional_then_revalidated(cli, r
     assert _lint_verdict(state_file)[1][0] == 'VALID'
 
 
-def test_provisional_check_is_stale_when_sibling_changed_its_inputs(cli, repo, tmp_path, state_file):
-    _start_two(cli, tmp_path)
+def test_provisional_check_is_stale_when_sibling_changed_its_inputs(cli, repo, tmp_path, state_file, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     result, out, err = _writer_check(cli, 'left')
     assert result == 0, f'{result}{out}{err}'
@@ -170,8 +170,8 @@ def test_provisional_check_is_stale_when_sibling_changed_its_inputs(cli, repo, t
     assert _lint_verdict(state_file)[1][0] == 'STALE'
 
 
-def test_provisional_check_stays_unaccepted_while_sibling_unresolved(cli, repo, tmp_path, state_file):
-    _start_two(cli, tmp_path)
+def test_provisional_check_stays_unaccepted_while_sibling_unresolved(cli, repo, tmp_path, state_file, run_state):
+    _start_two(cli, tmp_path, run_state)
     run(cli, 'writer', 'start', '--id', 'right', '--role', 'al-engineer', '--files', 'web')
     result, out, err = _writer_check(cli, 'left')
     assert result == 0, f'{result}{out}{err}'
@@ -179,8 +179,8 @@ def test_provisional_check_stays_unaccepted_while_sibling_unresolved(cli, repo, 
     assert _lint_verdict(state_file)[1][0] == 'PROVISIONAL'
 
 
-def test_check_without_writer_overlapping_sibling_is_still_refused(cli, repo, tmp_path, state_file):
-    _start_two(cli, tmp_path)
+def test_check_without_writer_overlapping_sibling_is_still_refused(cli, repo, tmp_path, state_file, run_state):
+    _start_two(cli, tmp_path, run_state)
     before = state_file().read_bytes()
     result, out, err = _writer_check(cli, None)
     text = f'{result}{out}{err}'
@@ -188,10 +188,10 @@ def test_check_without_writer_overlapping_sibling_is_still_refused(cli, repo, tm
     assert state_file().read_bytes() == before
 
 
-def test_writer_start_gate_refresh_drift_names_active_sibling(cli, repo, tmp_path, state_file, monkeypatch):
+def test_writer_start_gate_refresh_drift_names_active_sibling(cli, repo, tmp_path, state_file, monkeypatch, run_state):
     from al_repository_capture import CaptureDrift
     import al_gate_coverage
-    _start_two(cli, tmp_path)
+    _start_two(cli, tmp_path, run_state)
 
     def drift(st, paths):
         raise CaptureDrift('repeated-drift', ['svc/app.py'])
@@ -204,9 +204,9 @@ def test_writer_start_gate_refresh_drift_names_active_sibling(cli, repo, tmp_pat
     assert state_file().read_bytes() == before
 
 
-def test_writer_start_currency_drift_names_active_sibling_not_coverage_debt(cli, repo, tmp_path, state_file, monkeypatch):
+def test_writer_start_currency_drift_names_active_sibling_not_coverage_debt(cli, repo, tmp_path, state_file, monkeypatch, run_state):
     import al_gate_currency
-    _start_two(cli, tmp_path)
+    _start_two(cli, tmp_path, run_state)
 
     def drifted(st):
         return {'current': False, 'reasons': ['coverage capture unavailable: repeated-drift'],
@@ -218,3 +218,19 @@ def test_writer_start_currency_drift_names_active_sibling_not_coverage_debt(cli,
     assert result != 0 and 'writer start: writer left still active; run after writer finish' in text
     assert 'svc/app.py' in text
     assert state_file().read_bytes() == before
+
+
+def test_writer_root_refusal_names_explicit_paths_and_keeps_containment(tmp_path, monkeypatch):
+    import pytest
+    import al_writers as Writers
+    monkeypatch.setattr(Writers.al_store, 'REPO_ROOT', tmp_path)
+    with pytest.raises(SystemExit) as failure:
+        Writers.canonical_paths(['.'])
+    message = str(failure.value)
+    assert '--files' in message and 'explicit' in message and 'files or directories' in message
+    assert Writers.canonical_paths(['src', 'tests/test_case.py']) == ['src', 'tests/test_case.py']
+    for unsafe in ['../outside', str(tmp_path / 'absolute')]:
+        with pytest.raises(SystemExit):Writers.canonical_paths([unsafe])
+    (tmp_path / 'linked').symlink_to(tmp_path / 'real', target_is_directory=True)
+    with pytest.raises(SystemExit, match='symlinks'):
+        Writers.canonical_paths(['linked/member.py'])

@@ -77,7 +77,7 @@ def canonical_paths(paths):
         p=Path(raw)
         target=(al_store.REPO_ROOT/p).resolve()
         if p.is_absolute() or '..' in p.parts or target == al_store.REPO_ROOT or al_store.REPO_ROOT not in target.parents:
-            refuse('writer path must be a specific repository-relative path')
+            refuse("writer path must be a specific repository-relative path; list explicit files or directories instead, e.g. --files 'src,tests,README.md'. Gate/evidence '.' coverage does not grant writer ownership")
         if any((al_store.REPO_ROOT/Path(*p.parts[:i])).is_symlink() for i in range(1,len(p.parts)+1)):
             refuse('writer ownership cannot traverse symlinks')
         out.append(p.as_posix())

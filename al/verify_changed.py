@@ -10,8 +10,8 @@
 The selection comes from al/verification_affected.py (imports, file-name references,
 the test_<name>/al_<name> convention, structural guards, and complete-suite fallbacks).
 Tests run through the release runner (al/verification_runner.py): one isolated pytest
-process per group of at most --split tests of one file, with private HOME/TMP/runtime
-state, at most --workers at once.
+process per installer file or group of at most --split host tests of one file, with
+private HOME/TMP/runtime state, at most --workers at once.
 This is a development check. It never makes a release claim; release_verify.py --full
 remains the gate before tagging. Elapsed time is reported, never judged.
 """
@@ -86,6 +86,8 @@ def _plan(root, artifact_root, selection, *, strict_isolation, hosts, split=0):
         # process; splitting it would rebuild them per group, so it stays one process (#36).
         offsets, whole = {}, {}
         for assignment in assignments:
+            if assignment['suite'] == 'installer':
+                continue  # Preserve the release plan's whole-file installer grouping.
             key = assignment['suite'] + ':' + assignment['node']['source']['path']
             if key not in whole:
                 whole[key] = _uses_run_state(root, assignment['suite'], assignment['node']['source']['path'])
@@ -203,10 +205,12 @@ def main(argv=None, *, root=None):
     parser.add_argument('--depth', type=int, default=1,
                         help='also select tests of modules that import a changed module, up to DEPTH hops (default 1)')
     parser.add_argument('--workers', type=int, default=8)
+    parser.add_argument('--profile', action='store_true',
+                        help='enable runtime profiling in child processes; diagnostic timings, not wall-time proof')
     parser.add_argument('--strict-isolation', action='store_true',
                         help='serialize test files whose isolation review is not current, as release_verify --full does')
     parser.add_argument('--split', type=int, default=8, metavar='N',
-                        help='run each test file in groups of at most N tests, each in a fresh process (default 8; 0 = whole files)')
+                        help='run host files in groups of at most N tests (default 8; 0 = whole files); installer and run_state files stay whole')
     parser.add_argument('--report', help='report path outside the checkout (default: a new temporary directory)')
     parser.add_argument('--list', action='store_true', help='print the selected test files and exit')
     args = parser.parse_args(argv)
@@ -277,7 +281,7 @@ def verify(root, args):
             durations = {}
     except (OSError, ValueError):
         durations = {}
-    result = run(plan, workers=args.workers, artifact_root=directory / 'execution', cache_mode='cold', durations=durations)
+    result = run(plan, workers=args.workers, artifact_root=directory / 'execution', cache_mode='cold', durations=durations, profile=args.profile)
     observed = {node: seconds for shard in result.get('shards', []) for node, seconds in shard.get('durations', {}).items()
                 if type(seconds) in (int, float)}
     if observed:
@@ -300,7 +304,7 @@ def verify(root, args):
     report = {'schema_version': 1, 'contract': 'al-development-changed-v1', 'status': 'PASS' if passed else 'FAIL',
               'release_claim': False, 'changed': changed, 'base': base, 'selection': selection, 'reasons': chosen['reasons'],
               'complete_suites': chosen['full'], 'source_stable': stable, 'strict_isolation': args.strict_isolation,
-              'over_budget': over_budget,
+              'over_budget': over_budget, 'profile': args.profile,
               'verification': result, 'elapsed_seconds': elapsed}
     write_json(report_path, report)
     try:

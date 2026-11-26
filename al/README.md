@@ -48,9 +48,19 @@ uv run python al/verify_changed.py                # fast tier for changes since 
 uv run python al/verify_changed.py --base v0.1.30 # changes since another ref
 uv run python al/verify_changed.py --path al/codex/skills/al/scripts/al_gates.py   # explicit files
 uv run python al/verify_changed.py --list         # show the selection without running it
+uv run python al/verify_changed.py --profile      # enable child runtime profiling for diagnosis
 uv run python al/verify_changed.py --tier all     # also the affected slow tests
 uv run python al/verify_changed.py --all --tier all   # every collected test, as a development run
 ```
+
+
+`uv` needs a writable cache before Python starts. If that cache is denied, set
+`UV_CACHE_DIR` to an owned writable cache directory. The verifier also needs write
+access to its managed scratch namespace: `$HARNESS_HOME/managed-storage`, or
+`~/.local/share/harness/managed-storage` by default. An initialization or allocation
+permission refusal names that namespace and its stage. Retry through the host's reviewed execution
+route with the required access, retaining existing results and owned-process
+cleanup obligations.
 
 ### Test tiers
 
@@ -110,11 +120,12 @@ deleted module, or an `al/` file that no test references. Changes outside `al/`
 select no AL tests.
 
 The selected files run through the release runner, `al/verification_runner.py`.
-Each group of at most `--split` tests (default 8) from one file gets its own
-pytest process with private HOME, TMP, runtime and harness state. At most
+Each installer file, or group of at most `--split` tests (default 8) from one
+host file, gets its own pytest process with private HOME, TMP, runtime and harness state. At most
 `--workers` (default 8) processes run at once. A group rebuilds its session and
 module fixtures, so a long file no longer bounds the run; `--split 0` keeps
-whole files. A file whose tests start from `run_state(...)` always stays in one process, so its
+whole files. Installer files always stay whole to reuse their per-process setup.
+A file whose tests start from `run_state(...)` always stays in one process, so its
 prebuilt run states are built once. Test files whose isolation review is out of date also run in
 parallel. Pass `--strict-isolation` to use the release grouping and
 serialization of `release_verify.py --full`. Selected acceptance-tier files
@@ -122,6 +133,19 @@ serialization of `release_verify.py --full`. Selected acceptance-tier files
 the pass/fail counts and one final `PASS` or `FAIL` line. As in release
 verification, a skipped test counts as not passed; it is listed separately. It also writes a JSON
 report outside the checkout. The elapsed time is printed but never judged.
+For managed invocations, pass an explicit `--report` path outside both the checkout
+and the managed child's private temporary allocation, for example
+`--report /private/tmp/al-managed-check/report.json`. Do not place the retained
+report under the child's `$TMPDIR`: owned scratch can be removed during settlement.
+Collection failures embed a bounded, display-safe UTF-8 replacement-decoded excerpt
+of the owned `collection.log` in parent output, including its suite, failure category,
+location and truncation status. Missing or unreadable logs retain the original failure
+with a bounded diagnostic. This preserves useful context after child scratch cleanup;
+it does not change storage cleanup or turn an unavailable log into verification.
+`--profile` forwards runtime profiling to the child processes and records the requested
+setting in the development report. Profiling adds overhead; use it to locate costs, then
+measure the stable candidate without instrumentation. It keeps cold execution, collection
+reconciliation, source-stability checks, budgets and `release_claim: false` unchanged.
 `--host codex|claude` limits a quick iteration to one host. Before you finish,
 run both hosts.
 

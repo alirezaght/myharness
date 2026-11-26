@@ -266,3 +266,42 @@ def test_child_asker_parses_answers_and_refuses_other_roots():
     finally:
         parent.close()
         child.close()
+
+
+@pytest.mark.parametrize("exception", ["PermissionError", "ValueError"])
+def test_command_tail_permission_failure_has_recovery_without_replay(tmp_path, exception):
+    import subprocess
+    import sys
+
+    marker = tmp_path / "executions"
+    program = r"""
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from installer import runtime_service as R
+service = R.Service.__new__(R.Service)
+service.child_text = 'request=REQUEST'
+service.tail = compile("with Path(sys.argv[2]).open('a') as stream: stream.write('once\\n')\nraise " + sys.argv[3] + "('controlled command failure')", '<string>', 'exec')
+service.base = Path(sys.argv[2]).parent
+service.manifest = {}
+service.captured = {'bytes': {}}
+service.payload = service.prefix = service.base
+service.platform = 'codex'
+prepared = {'request': {}, 'transaction': {}, 'run_context': {}, 'value': {}, 'functions': {}}
+raise SystemExit(service.execute(prepared))
+"""
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", "-B", "-c", program,
+         str(Path(__file__).resolve().parents[1]), str(marker), exception],
+        capture_output=True, text=True, timeout=15,
+    )
+    assert result.returncode == 1
+    assert marker.read_text() == "once\n"
+    assert exception + ": controlled command failure" in result.stderr
+    assert "Traceback (most recent call last)" in result.stderr
+    hint = "AL resident service permission failure:"
+    assert (hint in result.stderr) == (exception == "PermissionError")
+    if exception == "PermissionError":
+        assert "AL_SERVICE=0" in result.stderr and "normal host permission review" in result.stderr
+        assert "No command was automatically replayed" in result.stderr
+        assert "possible partial effects" in result.stderr

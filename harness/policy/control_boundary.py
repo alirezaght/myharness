@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from harness.execution_isolation import operation_popen
-from harness.policy.contracts import require
+from harness.policy.contracts import qualification_require
 from harness.policy.control_git import capture, environment, file_state
 
 PROBE = r"""
@@ -47,8 +47,8 @@ print('allowed' if allowed else 'denied')
 """
 
 
-def prepare(operation, interpreter, *, al=False):
-    require(sys.platform == "darwin", "UNSUPPORTED_ENFORCEMENT_CAPABILITY")
+def prepare(operation, interpreter, *, al=False, qualification_ref=None):
+    qualification_require(sys.platform == "darwin", "platform_unsupported", qualification_ref)
     profile = operation.profile(al=True, al_optimizations=False) if al else operation.profile(())
     policy = Path(profile.policy)
     policy.write_bytes(policy.read_bytes() + b"\n(deny process-fork)\n")
@@ -63,5 +63,7 @@ def prepare(operation, interpreter, *, al=False):
         start_new_session=True,
     )
     raw, code = capture(process, limit=4096, timeout=10)
-    require(code == 0 and raw == b"denied\n", "UNSUPPORTED_ENFORCEMENT_CAPABILITY")
+    qualification_require(
+        code == 0 and raw == b"denied\n", "boundary_probe_failed", qualification_ref
+    )
     return profile, file_state(policy)

@@ -132,9 +132,14 @@ def test_gate_generation_runs_only_in_disposable_tree_and_drift_is_failure(cli):
                      scope=['code.txt'],source={'path':'code.txt','sha256':hashlib.sha256((cli.repo/'code.txt').read_bytes()).hexdigest()})
     contracts.pop('reason',None)
     f=cli.runtime/'manifest.json';f.write_text(json.dumps(manifest));cli('gates','plan','--file',str(f))
-    before=(cli.repo/'code.txt').read_bytes();cli('gates','run','--stage','base','--id',contracts['id'],ok=False)
+    before=(cli.repo/'code.txt').read_bytes();cli('gates','run','--stage','base','--id',contracts['id'])
     assert (cli.repo/'code.txt').read_bytes()==before
-    assert cli.state()['evidence']['entries'][-1]['status']=='FAIL'
+    state=cli.state()
+    run=next(item for item in reversed(state['gate_runs']) if item['gate']==contracts['id'] and item['stage']=='base')
+    entry=next(item for item in state['evidence']['entries'] if item['id']==run['evidence'])
+    assert entry['status']=='FAIL'
+    log=Path(entry['log']).read_text()
+    assert 'Generated/checkout metadata drift detected' in log and 'code.txt' in log
 
 def test_distribution_backs_up_and_preserves_unmanaged_files_and_rejects_drift(tmp_path):
     sys.path.insert(0,str(SCRIPTS));import al_distribution as d

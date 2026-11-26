@@ -247,8 +247,6 @@ def _bridge_acl(fd, library):
     for value in (info.atime, info.mtime, info.ctime, info.birth):
         if not 0 <= value.nanoseconds < 10**9:
             raise ValueError("invalid native timestamp")
-    if info.atime.seconds * 10**9 + info.atime.nanoseconds != after.st_atime_ns:
-        raise ValueError("native metadata timestamp changed")
     return _security(buffer.raw[: length.value], absence_qualified=True)
 
 

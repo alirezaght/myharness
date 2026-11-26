@@ -32,6 +32,16 @@ import al_writers
 import secrets
 
 
+def process_inspection_guidance(cleanup):
+    errors=' '.join(str(error) for error in cleanup.get('errors',[])).lower()
+    if not (('/bin/ps' in errors or 'process inspection' in errors)
+            and any(text in errors for text in ('operation not permitted','permission denied','errno 1','errno 13'))):return ''
+    return (' Process inspection was denied. Request the host’s reviewed process-inspection permission '
+            '(Codex: require_escalated is a host execution option, not an AL CLI flag). '
+            'Establish positive owned-process settlement and satisfy cleanup obligations, then retry the same protected evidence invocation '
+            'with process inspection available. Keep this historical INFRA result; leader exit alone is not cleanup proof.')
+
+
 def _split(raw):
     values = raw if isinstance(raw, (list, tuple)) else [raw]
     names = []
@@ -332,7 +342,7 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
         entry['cleanup'] = cleanup
         if cleanup['unresolved'] or cleanup['errors']:
             status = 'INFRA'
-            note = (note + '; ' if note else '') + 'owned-process cleanup uncertain'
+            note = (note + '; ' if note else '') + 'owned-process cleanup uncertain' + process_inspection_guidance(cleanup)
     if failure or entry.get('fingerprint_error'):
         status = 'INFRA'
         note = (note + '; ' if note else '') + str(failure or entry['fingerprint_error'])

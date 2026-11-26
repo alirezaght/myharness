@@ -92,7 +92,9 @@ def test_contained_links_are_supported_and_generated_changes_still_fail(cli,repo
     expression='write_text("changed")' if generate else 'read_text()=="original"'
     code='from pathlib import Path; '+('' if generate else 'assert ')+'Path('+repr(target)+').'+expression
     manifest(cli,tmp_path,[sys.executable,'-c',code],cwd=cwd)
-    invoke(cli,'gates','run','--stage',stage,'--id','boundary',ok=not generate);finished(cli,'FAIL' if generate else 'PASS')
+    # Baseline failures are retained as successful gate orchestration; only a new
+    # candidate failure makes the gate command itself fail.
+    invoke(cli,'gates','run','--stage',stage,'--id','boundary',ok=not generate or stage=='base');finished(cli,'FAIL' if generate else 'PASS')
     assert (repo/'safe/target').read_text()=='original'
     if shape=='directory':assert_incomplete_admission(cli)
 

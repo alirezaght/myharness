@@ -15,6 +15,7 @@ from harness.execution_store import get_execution
 from harness.workspace_proposals import ProposalConflict, WorkspaceProposalService, apply_operations
 from tests.execution_helpers import approved_execution
 from tests.test_dashboard_diagrams import _sample, _state
+from tests.test_reliability_store import install_statement_fault
 
 
 def binding(db_path, task):
@@ -101,15 +102,19 @@ def test_bad_or_foreign_targets_leave_no_records(db_path, operation):
     assert binding(db_path, task)["proposals"] == []
 
 
-def test_event_failure_rolls_back_proposal(db_path):
+def test_event_failure_rolls_back_proposal(db_path, monkeypatch):
     task = _sample(db_path)
     workspace = binding(db_path, task)
-    with open_state(db_path) as controller:
-        controller.conn.execute(
-            "CREATE TRIGGER fail_workspace_event BEFORE INSERT ON events "
-            "WHEN NEW.kind='workspace.proposed' BEGIN SELECT RAISE("
-            "ABORT,'event refused'); END"
-        )
+    from harness.dashboard import view
+
+    hits = install_statement_fault(
+        monkeypatch,
+        view,
+        lambda sql, parameters: (
+            "insert into events" in " ".join(sql.lower().split())
+            and any(value == "workspace.proposed" for value in parameters)
+        ),
+    )
     import sqlite3
 
     with pytest.raises(sqlite3.IntegrityError):
@@ -119,6 +124,7 @@ def test_event_failure_rolls_back_proposal(db_path):
             workspace["base"],
             [{"type": "requirement", "target": "request", "text": "No partial record"}],
         )
+    assert len(hits) == 1
     assert binding(db_path, task)["proposals"] == []
 
 
@@ -237,25 +243,23 @@ def test_proposal_base_rejects_a_new_recorded_execution_epoch_and_generation(
 
 
 def test_workspace_proposal_migration_respects_existing_upstream_version(tmp_path, monkeypatch):
-    import sqlite3
-
     from harness import db as db_module
 
     db_path = tmp_path / "upstream-version.db"
     migrations = db_module._migrations()
-    baseline = [migration for migration in migrations if migration[0] < 16]
+    baseline = [migration for migration in migrations if migration[0] <= 16]
     monkeypatch.setattr(db_module, "_migrations", lambda: baseline)
-    db_module.connect(db_path).close()
-
-    raw = sqlite3.connect(db_path)
+    conn = db_module.connect(db_path)
     try:
-        raw.execute(
-            "INSERT INTO schema_migrations (version,name,applied_at) VALUES (?,?,?)",
-            (16, "0016_knowledge_index.sql", "existing upstream migration"),
-        )
-        raw.commit()
+        existing = conn.execute(
+            "SELECT name,applied_at FROM schema_migrations WHERE version=16"
+        ).fetchone()[:]
+        assert existing[0] == "0016_knowledge_index.sql"
+        assert not conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='workspace_proposals'"
+        ).fetchone()
     finally:
-        raw.close()
+        conn.close()
 
     monkeypatch.setattr(db_module, "_migrations", lambda: migrations)
     conn = db_module.connect(db_path)
@@ -266,6 +270,12 @@ def test_workspace_proposal_migration_respects_existing_upstream_version(tmp_pat
         reserved_name = conn.execute(
             "SELECT name FROM schema_migrations WHERE version=16"
         ).fetchone()[0]
+        assert (
+            conn.execute(
+                "SELECT name,applied_at FROM schema_migrations WHERE version=16"
+            ).fetchone()[:]
+            == existing
+        )
         assert {
             "proposal_table_created": proposal_table is not None,
             "reserved_migration_name": reserved_name,

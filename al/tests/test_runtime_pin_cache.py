@@ -12,19 +12,52 @@ from al.installer import runtime_pin, runtime_pin_cache
 from al.installer.runtime_pin import prepare_pin, verify_pin
 from al.installer.runtime_pin_cache import record_path, verify_pin_cached
 from al.installer.validator_origin import canonical, digest
-from al.tests.conftest import copy_al_source
-from al.tests.runtime_run_helpers import launched  # noqa: F401
+from al.installer.bootstrap import bootstrap_cli
+from al.installer.validator_origin import capture_canonical, verify_snapshot
+from al.tests.runtime_run_helpers import _environment, invoke
 
 MEMBER = "codex/skills/al/scripts/al_state.py"
 _PIN = {}
 
 
+def _distribution(root):
+    """Small distribution for payload/cache decisions; no application code is executed."""
+    layout = {
+        "schema_version": 1,
+        "platforms": ["codex"],
+        "package": "skills/al",
+        "package_roots": ["SKILL.md", "scripts", "reference"],
+        "roles": ["al-engineer"],
+        "required_scripts": ["al_state.py"],
+        "required_claude_scripts": [],
+        "exclude_parts": ["__pycache__"],
+        "exclude_suffixes": [".pyc"],
+        "prerequisites": {"python": "3.11", "git": "2.30"},
+        "runtime_schema": 2,
+    }
+    files = {
+        "release-layout.json": json.dumps(layout),
+        "alctl.py": '"""Synthetic bootstrap resource."""\n',
+        "installer/fixture.py": "VALUE = 1\n",
+        "codex/agents/al-engineer.toml": 'name = "al-engineer"\n',
+        "codex/skills/al/SKILL.md": "# Synthetic pin decision fixture\n",
+        "codex/skills/al/reference/guide.md": "# Reference resource\n",
+        MEMBER: "VALUE = 1\n",
+        "codex/skills/al/scripts/nested/helper.py": "VALUE = 2\n",
+    }
+    for name, text in files.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    return root
+
+
 @pytest.fixture
 def pinned(tmp_path_factory, tmp_path, monkeypatch):
-    """A private copy of one real runtime pin (prepared once per process) and a payload counter."""
+    """A private copy of a genuinely prepared small pin and a payload counter."""
     if "template" not in _PIN:
         base = tmp_path_factory.mktemp("pin-cache-template")
-        distribution = copy_al_source(base / "distribution")
+        distribution = _distribution(base / "distribution")
         storage = base / "al-run-pins/pins"
         storage.parent.mkdir(mode=0o700)
         binding = prepare_pin(distribution, "codex", storage)
@@ -298,7 +331,27 @@ def test_launcher_dispatch_uses_the_cache_and_old_pins_verify_in_full():
     assert "verify_pin(" not in run.replace("verify_pin_cached(", "")
 
 
-def test_public_commands_reuse_the_record_and_refuse_a_changed_pin(launched):
+@pytest.fixture
+def readonly_launched(tmp_path):
+    source = Path(__file__).resolve().parents[1]
+    before = capture_canonical(source)["origin"]["closure"]
+    home, repo = tmp_path / "readonly-home", tmp_path / "readonly-repo"
+    home.mkdir(); repo.mkdir()
+    env = _environment(home)
+    for args in [("init", "-q"), ("-c", "user.name=fixture", "-c", "user.email=f@invalid", "commit", "--allow-empty", "-qm", "initial")]:
+        result = invoke(["git", *args], repo, env)
+        assert result.returncode == 0, result.stderr
+    launcher = home / "bin/alctl"
+    boot = bootstrap_cli(source, launcher, home / "installer")
+    snapshot = Path(boot["snapshot"])
+    verify_snapshot(snapshot, boot["validator_binding"])
+    yield snapshot, home, repo, launcher, env
+    assert capture_canonical(source)["origin"]["closure"] == before
+    verify_snapshot(snapshot, boot["validator_binding"])
+
+
+def test_public_commands_reuse_the_record_and_refuse_a_changed_pin(readonly_launched):
+    launched = readonly_launched
     from al.tests.runtime_run_helpers import public_run, run_record, start
 
     start(launched)

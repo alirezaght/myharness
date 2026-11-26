@@ -74,6 +74,13 @@ def environment_gap(e):
         e.get('execution_stage') == 'setup' or e.get('exit') in {126,127}))
 
 
+def current_fix(st,m,g,e):
+    decision=st.get('gate_decisions',{}).get(g['id']) or {}
+    return bool(e and decision.get('action')=='fix'
+                and decision.get('manifest')==st['gate_manifests'][-1]['sha256']
+                and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id'])
+
+
 def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     """Why a current non-passing gate run is reported instead of blocking, or None.
 
@@ -90,7 +97,8 @@ def accepted_failure(st,m,g,stage,e,r,fp,environment_current=True):
     prior=L.find(st,base[-1]['evidence']) if base else None
     if stage!='candidate' or e['status']!='FAIL' or not prior or prior['status']!='FAIL':return None
     # A base `fix` decision commits this change to repairing the failure, so the candidate must pass.
-    if (st.get('gate_decisions',{}).get(g['id']) or {}).get('action')=='fix':return None
+    if gate_result(st,m,g,'base',m['base_oid']) not in {'accepted-base-decision','accepted-existing-failure'}:return None
+    if current_fix(st,m,g,prior):return None
     if not set(g['units'])&touched_units(st,m):
         return 'pre-existing failure: it also fails at base and the change does not touch '+', '.join(g['units'])
     match=Signature.pre_existing(prior,e)
@@ -169,9 +177,8 @@ def gate_result(st,m,g,stage,fp):
         valid=not al_check_setup.current_gaps(e['setup'])
     if valid:return 'valid'
     if advisory:return 'advisory'
-    decision=st.get('gate_decisions',{}).get(g['id'])
     if stage=='base' and environment_current and e['status']=='FAIL' and e.get('log') and Path(e['log']).is_file() and L.file_sha(e['log'])==e.get('log_sha256') and r['fingerprint']==fp:
-        if decision and decision['action']=='fix' and decision.get('manifest')==st['gate_manifests'][-1]['sha256'] and decision.get('base_oid')==m['base_oid'] and decision.get('evidence')==e['id']:return 'accepted-base-decision'
+        if current_fix(st,m,g,e):return 'accepted-base-decision'
         if Exceptions.current(st,m,g):return 'accepted-base-decision'
     reason=accepted_failure(st,m,g,stage,e,r,fp,environment_current)
     if reason:return 'accepted-existing-failure'
@@ -342,6 +349,22 @@ def _discover_window(st,paths,bounded):
     return m,V.last_inputs_key()
 
 
+
+def _discovery_active_writers(st):
+    """Normal authoring may overlap observation, never manifest admission."""
+    from al_writers import operation_gaps
+    from al_gate_continuation import _uncertain
+    active = sorted(w['id'] for w in st.get('writers', {}).values() if w['state'] == 'ACTIVE')
+    allowed = {'writer ' + name + ' is ACTIVE' for name in active}
+    missing = [gap for gap in operation_gaps(st) if gap not in allowed]
+    missing += ['owned cleanup unresolved: ' + entry['id']
+                for entry in st['evidence']['entries'] if _uncertain(entry)]
+    if missing:
+        refuse('gates discover blocked: ' + '; '.join(missing)
+               + '. Run `recovery next` for the supported reconciliation command.')
+    return active
+
+
 def _discover(a,sid):
     """Analyse outside the run admission lock; lock only to read and to save.
 
@@ -351,6 +374,7 @@ def _discover(a,sid):
     with al_store.locked(sid):
         st=al_store.load(sid)
         if st['status']!='RUNNING':refuse('run is not running; explicit resume required')
+        _discovery_active_writers(st)
     # `pinned-base` (as the docs write it) names the run's pinned merge base.
     _check_base(a,st)
     paths,extended=_discover_requested_paths(a,st)
@@ -365,10 +389,19 @@ def _discover(a,sid):
                 if current['status']!='RUNNING' or V.inputs_key(inputs)!=validated:
                     refuse('run state changed while gates discover was analysing (base, planned paths, task changes or CI context); '
                            'nothing was saved. Re-run: '+_rerun_command(a))
-            from al_gate_recovery import planning
-            planning(current,sid,m.get('paths',[]))
-            _save_manifest(current,sid,m,a.paths_file)
+            active = _discovery_active_writers(current)
+            if not active:
+                from al_gate_recovery import planning
+                planning(current,sid,m.get('paths',[]))
+                _save_manifest(current,sid,m,a.paths_file)
     _emit_manifest(m,a.output)
+    if active:
+        import sys
+        import shlex
+        destination = str(a.output) if a.output else '<saved-manifest.json>'
+        print('gates discover: observation only while writer(s) ' + ', '.join(active)
+              + ' remain ACTIVE; manifest not admitted. After writers settle, use gates plan --file '
+              + shlex.quote(destination) + '. Gates plan revalidates before admission.', file=sys.stderr)
 
 
 def _save_manifest(st,sid,m,source):
@@ -410,7 +443,16 @@ def cmd_gates(a,sid):
         if not failed or failed['status']!='FAIL' or not failed.get('log') or not Path(failed['log']).is_file() or L.file_sha(failed['log'])!=failed.get('log_sha256'):refuse('baseline decision requires current manifest failed base evidence')
         st.setdefault('gate_decisions',{})[a.id]={'action':a.decision,'source':a.source,'reason':a.reason,'at':time.time(),
                                                'manifest':st['gate_manifests'][-1]['sha256'],'base_oid':m['base_oid'],'evidence':failed['id']}
-        if a.decision in {'stop','defer'}: st.update(status='STOPPED_WITH_BLOCKERS',stop_reason='user '+a.decision+' for gate '+a.id)
+        if a.decision in {'stop','defer'}:
+            from al_recovery import checkpoint,close_occurrence
+            reason='user '+a.decision+' for gate '+a.id
+            binding={'kind':'gate-decision-stop','gate':a.id,'decision':dict(st['gate_decisions'][a.id])}
+            ref=checkpoint(st,sid,reason,'Resume this gate decision with the bound stopping checkpoint',gate_decision=binding)
+            st['gate_decisions'][a.id]['checkpoint']=ref['id']
+            st.update(status='STOPPED_WITH_BLOCKERS',stop_reason=reason,stopping_checkpoint=ref['id'])
+            close_occurrence(st)
+            print('Run stopped by '+a.decision+'; checkpoint '+ref['id']+'. Resume with: resume --checkpoint '+ref['id'])
+            print('Base failures ordinarily are the baseline and need no defer/stop decision.')
         al_store.save(sid,st); return
     if a.action=='status':
         print(json.dumps(status(st),indent=2)); return

@@ -33,6 +33,15 @@ def evidence_block(st, sid, writer_id, areas):
         lines += ['Area ' + area + ': tier=' + spec['tier'] + '; preflight=' +
                   str(spec.get('preflight') or 'none') + '; needs=' + json.dumps(spec.get('needs') or []),
                   shlex.join(prefix + ['evidence', 'run', '--writer', writer_id, '--area', area])]
+    if platform == 'codex':
+        lines += [
+            'Codex permission recovery: the protected launcher writes user-level registry/run locks as well as checkout files.',
+            'If the host denies access before a check starts, retain this exact command, session, writer and runtime pin. '
+            'Where available, request exec_command sandbox_permissions=require_escalated through normal host approval review.',
+            'Honor a rejected request; do not change the runtime or bypass the guard. '
+            'Keep any INFRA result and establish owned-process settlement before retrying. '
+            'This is host permission recovery, not a new specification approval.',
+        ]
     if 'integration' in st:
         lines += ['Harness tool route: use al_command; the controller binds the worker to its own writer.']
         lines += ['al_command ' + json.dumps(['evidence', 'run', '--area', area]) for area in areas if not st['evidence']['plan'][area].get('recipe_context')]
