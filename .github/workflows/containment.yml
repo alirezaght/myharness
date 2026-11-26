@@ -2,6 +2,12 @@ name: Linux containment checks
 
 on:
   workflow_dispatch:
+    inputs:
+      issue96_probe:
+        description: "Validate process ownership and sealed source identities on Linux"
+        type: boolean
+        default: false
+        required: false
   push:
     tags:
       - "v[0-9]*.[0-9]*.[0-9]*"
@@ -19,4 +25,30 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - run: uv python install
       - run: uv sync --locked
-      - run: uv run pytest tests/test_operation_isolation.py tests/test_guarded_check_channel.py tests/test_private_runtime_operation.py tests/test_execution_operations.py
+      - name: Record focused validation runtime and source identities
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.issue96_probe }}
+        shell: bash
+        run: |
+          mkdir -p issue96-artifacts
+          uv run python -c 'import sys, sqlite3, platform; print(sys.version); print("SQLite", sqlite3.sqlite_version); print(platform.platform())' | tee issue96-artifacts/runtime.txt
+          bwrap --version | tee -a issue96-artifacts/runtime.txt
+          sha256sum al/codex/skills/al/scripts/al_recovery.py al/claude/skills/al/scripts/al_recovery.py al/codex/skills/al/scripts/al_process_observation.py harness/execution_check_ownership.py harness/policy/control_sources_installer.py tests/test_agent_contracts_recovery.py | tee issue96-artifacts/source-sha256.txt
+      - name: Run focused recovery and source-boundary validation
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.issue96_probe }}
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p issue96-artifacts
+          uv run pytest -q --tb=short tests/test_agent_contracts_recovery.py::test_interrupted_public_harness_check_reconciliation tests/test_check_ownership.py tests/test_control_source_inventory.py tests/test_policy_retry_control.py tests/test_policy_retry_control_warm.py --junitxml=issue96-artifacts/reconciliation.xml 2>&1 | tee issue96-artifacts/reconciliation.log
+      - name: Retain focused diagnostic even on failure
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.issue96_probe }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue96-linux-validation-${{ github.run_id }}
+          path: issue96-artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Run ordinary containment selection
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.issue96_probe }}
+        run: uv run pytest tests/test_operation_isolation.py tests/test_guarded_check_channel.py tests/test_private_runtime_operation.py tests/test_execution_operations.py
