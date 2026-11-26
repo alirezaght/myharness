@@ -1,6 +1,24 @@
 "use strict";
 
 const INCIDENT_VIEWS = new Map();
+
+// Live repaints re-render the reliability panels on every dashboard change. A panel fetches
+// its scoped list again only when the execution's reliability marker (computed from the
+// reliability, incident and policy tables) or an explicit dashboard refresh changes, or when
+// its last load failed; filters, paging and "Latest" buttons still load directly (#110).
+let reliabilityRefreshes = 0;
+
+function noteReliabilityRefresh() {
+  reliabilityRefreshes += 1;
+}
+
+function reliabilityFetchDue(view, slot, execution, failed = false) {
+  const key = `${execution.reliability_revision ?? "unknown"}|${reliabilityRefreshes}`;
+  view.fetchedKeys ||= {};
+  if (!failed && view.fetchedKeys[slot] === key) return false;
+  view.fetchedKeys[slot] = key;
+  return true;
+}
 const INCIDENT_HISTORY_LIMIT = 100;
 
 function incidentView(execution) {
@@ -325,7 +343,9 @@ function renderOperationIncidents(execution) {
   form.addEventListener("submit", (event) => event.preventDefault());
   section.append(form);
   renderIncidentContent(execution, view, section);
-  loadIncidentList(execution, view, section);
+  if (reliabilityFetchDue(view, "list", execution, Boolean(view.error))) {
+    loadIncidentList(execution, view, section);
+  }
   if (view.detailId && !view.detail && !view.detailLoading && !view.detailError) {
     loadIncidentDetail(execution, view, section, view.detailId);
   }
@@ -1421,7 +1441,10 @@ function renderIncidentIntelligence(execution, existingView = null) {
     outputs.append(iiEl("p", "Choose a selected execution and epoch to browse published output descriptors."));
   }
   iiRenderGroups(execution, view, section);
-  if (!view.items.length || view.loading) iiLoadList(execution, view, section);
+  // A repaint during a load re-issues it for the new section, which owns the results.
+  if (reliabilityFetchDue(view, "list", execution, Boolean(view.error)) || view.loading) {
+    iiLoadList(execution, view, section);
+  }
   if (view.selectedId && (!view.detail || (view.detailLoading && view.detailOwner !== section))) {
     iiLoadDetail(execution, view, section, view.selectedId, true);
   }

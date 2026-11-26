@@ -235,8 +235,10 @@ function renderExecutionTimeline(execution) {
   principal.addEventListener("input", () => { view.principal = principal.value; loadTimeline(execution, view, section, {reset: true}); });
   form.addEventListener("submit", (event) => event.preventDefault());
   form.append(kindLabel, principalLabel); section.append(form);
-  renderTimelineContent(execution, view, section); loadTimeline(execution, view, section);
-  if (view.spanId && !view.detailLoading && (view.detail || !view.detailError)) {
+  renderTimelineContent(execution, view, section);
+  if (reliabilityFetchDue(view, "list", execution, Boolean(view.error))) loadTimeline(execution, view, section);
+  if (view.spanId && !view.detailLoading && (view.detail || !view.detailError)
+    && (!view.detail || reliabilityFetchDue(view, "span", execution))) {
     const selected = view.items.find((item) => item.item_id === view.selectedId);
     if (selected) loadTimelineSpan(execution, view, section, selected, { refresh: Boolean(view.detail) });
   }

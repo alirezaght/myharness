@@ -223,9 +223,10 @@ function renderExecutionPolicy(execution) {
   paintPolicy(execution, view, section);
   setTimeout(() => {
     if (!policySection(execution, view)) return;
-    loadPolicy(execution, view);
-    if (view.capAdvanced) loadCapabilities(execution, view);
-    if (view.selected && (!view.detail || ["reserved", "started", "unresolved"].includes(view.detail.attempt.state))) loadPolicyDetail(execution, view, view.selected);
+    if (reliabilityFetchDue(view, "list", execution, Boolean(view.error))) loadPolicy(execution, view);
+    if (view.capAdvanced && reliabilityFetchDue(view, "capabilities", execution, Boolean(view.capError))) loadCapabilities(execution, view);
+    const active = view.detail && ["reserved", "started", "unresolved"].includes(view.detail.attempt.state);
+    if (view.selected && (!view.detail || (active && reliabilityFetchDue(view, "detail", execution)))) loadPolicyDetail(execution, view, view.selected);
   }, 0);
   return section;
 }
