@@ -283,7 +283,7 @@ def _execute(sid, entry, timeout, commit=True, *, recipe_context=None):
                     prepared = al_evidence_storage.PreparedStorage(sid, entry)
                     proc = prepared.launch(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative, output=out, recipe_input=entry.get('recipe_assignment'))
                 else:
-                    proc = al_harness_process.popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
+                    proc = al_harness_process.verification_popen(entry['argv'], cwd=al_store.REPO_ROOT.resolve() / relative,
                                             stdout=out, stderr=subprocess.STDOUT, start_new_session=True,
                                             process_observation=entry.get('process_observation'))
                 import al_process_observation

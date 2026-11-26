@@ -316,5 +316,5 @@ def test_harness_context_keeps_existing_dispatch(tmp_path,monkeypatch,lifecycle)
         owner.entry={'process_observation':{'mode':'harness','binding':'fixture'}}
         monkeypatch.setattr(__import__('al_process_observation'),'spawned',lambda *_args:None)
         assert owner.spawn(['fixed-check'],stdout=subprocess.PIPE) is child
-        assert calls==[((['fixed-check'],),{'stdout':subprocess.PIPE,'process_observation':owner.entry['process_observation'],'start_new_session':True})]
+        assert calls==[((['fixed-check'],),{'stdout':subprocess.PIPE,'execution_policy':{'version':2,'default_stdin':'closed-pipe'},'process_observation':owner.entry['process_observation'],'start_new_session':True})]
         assert owner.completion()['ownership']=='private-Harness-owned-Popen'

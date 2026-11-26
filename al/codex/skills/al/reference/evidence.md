@@ -1,5 +1,19 @@
 # Evidence supersession and isolated setup
 
+Managed verification is noninteractive by default: ordinary evidence, gates, setup and
+version checks, remote checks, and managed-storage/recipe children receive EOF on stdin
+through a pipe whose writer is closed before launch. This does not set `CI`, add repository-specific flags, or reclassify
+command failures. An explicit standalone stdin pipe or file keeps its supplied input;
+input-descriptor transport through Harness is not qualified by this contract. Generic
+interactive/native process launchers retain their existing stdin behavior.
+
+Managed Harness checks negotiate the exact execution policy before allocating outputs or starting a child. Unsupported backends or explicit remote input are refused without fallback. New backends retain DEVNULL for historical clients that omit the policy; managed clients require the matching start acknowledgement.
+
+The versioned execution policy is separate from environment inputs. It binds action-cache
+keys and ledger fingerprints, including environment-only/preflight checks. Evidence from
+an older policy must be rerun even with the action cache disabled; immutable old pins and
+historical evidence are not rewritten.
+
 Register a check with AL options before the literal `--` separator and the
 program plus its arguments after it:
 

@@ -119,6 +119,7 @@
   "test_storage_go_integration.py",
   "test_unverified_policy.py",
   "test_verification_prepare.py",
+  "test_verification_stdin.py",
   "test_warm_agents.py",
   "test_workflow_routing.py",
   "test_writer_handoff.py",

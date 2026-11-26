@@ -11,7 +11,38 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
+
+EXECUTION_POLICY = {"version": 2, "default_stdin": "closed-pipe"}
+
+
+def selected_execution_policy(value):
+    if (
+        type(value) is not dict
+        or value != EXECUTION_POLICY
+        or type(value.get("version")) is not int
+    ):
+        raise ValueError("unsupported check execution policy")
+    return dict(EXECUTION_POLICY)
+
+
+@contextmanager
+def check_input(policy):
+    if policy is None:
+        yield subprocess.DEVNULL
+        return
+    reader, writer = os.pipe()
+    try:
+        os.close(writer)
+        writer = None
+        yield reader
+    finally:
+        try:
+            if writer is not None:
+                os.close(writer)
+        finally:
+            os.close(reader)
 
 
 def exact(stream, size):
@@ -159,6 +190,20 @@ class CheckChannel:
 
     def request(self, value, descriptors):
         action = value.get("action")
+        self.requesting_handle = None
+        if action == "capabilities":
+            if (
+                set(value) != {"action", "schema_version"}
+                or type(value["schema_version"]) is not int
+                or value["schema_version"] != 1
+                or descriptors
+            ):
+                raise ValueError("invalid check capabilities request")
+            self.validate()
+            return {"schema_version": 1, "execution_policy": dict(EXECUTION_POLICY)}
+        policy = None
+        if action == "start" and "execution_policy" in value:
+            policy = selected_execution_policy(value["execution_policy"])
         self.requesting_handle = value.get("handle")
         if action in {
             "start",
@@ -320,16 +365,17 @@ class CheckChannel:
                         record["deadline"] = min(record["deadline"], bound)
                 if time.monotonic() >= record["deadline"]:
                     raise ValueError("BUDGET_EXHAUSTED")
-                record["process"] = subprocess.Popen(
-                    [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
-                    cwd=cwd,
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=descriptors[0],
-                    stderr=descriptors[1],
-                    close_fds=True,
-                    start_new_session=True,
-                )
+                with check_input(policy) as stdin:
+                    record["process"] = subprocess.Popen(
+                        [sys.executable, "-I", "-B", "-c", program, str(process_context), *argv],
+                        cwd=cwd,
+                        env=env,
+                        stdin=stdin,
+                        stdout=descriptors[0],
+                        stderr=descriptors[1],
+                        close_fds=True,
+                        start_new_session=True,
+                    )
                 if record["policy"]:
                     record["policy"].spawned(record["process"])
                 if record["observer"]:
@@ -343,6 +389,8 @@ class CheckChannel:
                     self.stop(identifier)
                 raise
             result = {"handle": identifier, "pid": record["process"].pid}
+            if policy is not None:
+                result["execution_policy"] = policy
             if managed is not None:
                 self.storage.started(identifier, record["process"].pid)
                 result["storage"] = managed

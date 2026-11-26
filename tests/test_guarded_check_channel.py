@@ -18,6 +18,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def settle_coordinator(process):
+    if process is None:
+        return
+    # This fixed coordinator only delegates children through CheckChannel; close it first.
+    try:
+        if process.poll() is None:
+            process.kill()
+    finally:
+        try:
+            process.communicate(timeout=5)
+        finally:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+
+
 def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -51,7 +67,9 @@ def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path
     )
     scripts = Path(__file__).resolve().parents[1] / "al/codex/skills/al/scripts"
     check = (
-        "import os;from pathlib import Path\n"
+        "import os,stat;from pathlib import Path\n"
+        "assert stat.S_ISFIFO(os.fstat(0).st_mode) and not os.isatty(0)\n"
+        "assert os.read(0,1)==b''\n"
         "assert 'HARNESS_CHECK_FD' not in os.environ\n"
         "for target in " + repr([str(ledger), str(repo / "UNOWNED")]) + ":\n"
         " try: Path(target).write_text('escape')\n"
@@ -61,15 +79,22 @@ def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path
     program = (
         "import sys,subprocess;from pathlib import Path;sys.path.insert(0,"
         + repr(str(scripts))
-        + ");from al_harness_process import popen;"
-        + "p=popen([sys.executable,'-I','-c',"
+        + ");from al_harness_process import popen,verification_popen;"
+        + "p=verification_popen([sys.executable,'-I','-c',"
         + repr(check)
         + "],stdout=subprocess.PIPE,"
         "stderr=subprocess.PIPE);out,err=p.communicate(timeout=15);"
         "assert p.returncode==0,(out,err);assert out.count(b'refused')==2;"
+        "legacy=popen([sys.executable,'-I','-c',"
+        '"import os,stat;assert stat.S_ISCHR(os.fstat(0).st_mode);'
+        "assert os.read(0,1)==b'';print('legacy retained')\""
+        "],stdout=subprocess.PIPE,stderr=subprocess.PIPE);"
+        "legacy_out,legacy_err=legacy.communicate(timeout=15);"
+        "assert legacy.returncode==0 and b'legacy retained' in legacy_out,(legacy_out,legacy_err);"
         "Path(" + repr(str(ledger)) + ").write_text('recorded');print('verified')"
     )
     channel = CheckChannel(context, lambda: None)
+    process = None
     try:
         env = safe_environment() | {
             "PATH": os.environ.get("PATH", os.defpath),
@@ -91,7 +116,10 @@ def test_check_channel_preserves_ledger_authority_without_delegating_it(tmp_path
         assert process.returncode == 0, (stdout, stderr)
         assert ledger.read_text() == "recorded" and not (repo / "UNOWNED").exists()
     finally:
-        channel.close()
+        try:
+            channel.close()
+        finally:
+            settle_coordinator(process)
 
 
 def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_path):
@@ -156,6 +184,7 @@ def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_p
         "assert p.returncode==0,(out,err);sys.stdout.write(out.decode())"
     )
     channel = CheckChannel(context, lambda: None)
+    process = None
     try:
         env = safe_environment() | {
             "PATH": os.environ.get("PATH", os.defpath),
@@ -176,7 +205,10 @@ def test_dispatched_check_gets_short_private_tmpdir_released_at_settlement(tmp_p
         stdout, stderr = process.communicate(timeout=60)
         assert process.returncode == 0, (stdout, stderr)
     finally:
-        channel.close()
+        try:
+            channel.close()
+        finally:
+            settle_coordinator(process)
     used = Path(stdout.decode().split("TMP=")[1].split()[0])
     assert used.parent == Path("/tmp") and used.name.startswith("h-")
     assert not used.exists()
