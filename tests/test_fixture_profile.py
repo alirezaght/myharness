@@ -66,11 +66,19 @@ def test_real_fixture_setup_is_isolated_and_database_teardown_closes_connection(
     original_home = os.environ.get("HOME")
     with monkeypatch.context() as local:
         local.setenv("HARNESS_DB", "must-be-cleared")
-        home = conftest.isolated_home.__wrapped__(tmp_path / "another", local, global_alctl_shadow)
-        assert os.environ["HARNESS_HOME"] == str(home)
-        assert "HARNESS_DB" not in os.environ
-        assert os.environ["AL_DISTRIBUTION_STATE"] == str(
-            tmp_path / "another/al-distribution/registry"
+        home_lifetime = conftest.isolated_home.__wrapped__(
+            tmp_path / "another", global_alctl_shadow
         )
-        assert os.environ["HARNESS_ALCTL"] == str(tmp_path / "another/no-global-alctl/alctl")
-        assert os.environ.get("HOME") == original_home
+        try:
+            home = next(home_lifetime)
+            assert os.environ["HARNESS_HOME"] == str(home)
+            assert "HARNESS_DB" not in os.environ
+            assert os.environ["AL_DISTRIBUTION_STATE"] == str(
+                tmp_path / "another/al-distribution/registry"
+            )
+            assert os.environ["HARNESS_ALCTL"] == str(tmp_path / "another/no-global-alctl/alctl")
+            assert os.environ.get("HOME") == original_home
+        finally:
+            home_lifetime.close()
+        assert os.environ["HARNESS_DB"] == "must-be-cleared"
+    assert "HARNESS_DB" not in os.environ
