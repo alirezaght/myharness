@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 import pytest
 import al_gate_continuation as Resume
+import al_agent_exchange as Exchange
 import al_gates as Gates
 from batch13_helpers import start, manifest
 from hook_regression_helpers import invoke
@@ -137,7 +138,12 @@ def test_cleanup_uncertainty_remains_blocking_even_after_reconciliation(cli, rep
     release.write_text('success')
     invoke(cli, 'gates', 'run', '--stage', 'candidate')
     state = cli.state(); entry = next(e for e in reversed(state['evidence']['entries']) if e['area'] == 'gate-candidate-middle')
-    entry.update(cleanup={'errors':['signal denied'], 'unresolved':True}, reconciliation={'note':'does not prove cleanup'})
+    # Record the row as execution does when owned cleanup is uncertain (INFRA, interrupted), add a
+    # reconciliation, and republish its typed observation as if the row had first been observed in
+    # this form (state save publishes a terminal row's observation once).
+    entry.update(status='INFRA', interrupted=True, cleanup={'errors':['signal denied'], 'unresolved':True},
+                 reconciliation={'note':'does not prove cleanup'})
+    Exchange.produce(state, 'verification-result', entry['id'], entry, status='observed')
     value = Gates.manifest(state)
     assert 'middle' not in [g['id'] for g in Resume.select_continuation(state, value, 'candidate', retry_failed=True)]
     assert 'middle' in Resume.stage_report(state, 'candidate')['unresolved']
@@ -226,6 +232,8 @@ def test_stale_fix_after_public_replan_and_base_rerun_has_no_authority(cli, repo
     failed=next(e for e in reversed(new_failure['evidence']['entries']) if e['area']=='gate-candidate-middle')
     log=tmp_path/'new-candidate-failure.log';log.write_text('new.py:1: error newly introduced violation\n')
     failed.update(log=str(log),log_sha256=Gates.L.file_sha(log))
+    # This alternative history observed the new failure: publish its row as state save does.
+    Exchange.produce(new_failure,'verification-result',failed['id'],failed,status='observed')
     assert Gates.gate_result(new_failure,Gates.manifest(new_failure),gate,'candidate',candidate_run['fingerprint'])=='failed'
     decision = copy.deepcopy(prior['gate_decisions']['middle'])
     replacement = Gates.manifest(prior)

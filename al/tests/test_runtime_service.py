@@ -348,6 +348,7 @@ def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(t
     value = Setup(tmp_path / "fallback-service")
     marker = value.base / "fallback.jsonl"
     suppressed = value.base / "suppressed-cookies.jsonl"
+    faulted = value.base / "faulted-watchers.jsonl"
     try:
         variant = value.variant()
         watcher = variant / "installer/runtime_service_watch.py"
@@ -358,6 +359,11 @@ def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(t
         # Pin monitoring has an empty skip set and retains the genuine native backend.
         control = f'''
     if skip:
+        fd = os.open({str(faulted)!r}, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+        try:
+            os.write(fd, b'worktree-watcher-faulted\\n')
+        finally:
+            os.close(fd)
         global emit
         real_emit = emit
         def unavailable_cookie(kind, path=''):
@@ -406,12 +412,17 @@ def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(t
         deleted = _assert_protected_facts(value, "fallback")
         assert "app.py" not in deleted["files"] and not deleted["edges"]
         assert len(marker.read_bytes().splitlines()) > len(first_markers)
-        # The worktree watcher starts lazily on the first request, and under this fault the only
-        # cookies are written by the background helper's own currency check, asynchronously.
-        # A slow native delivery can therefore trail both served commands; wait for it, bounded.
-        suppressed_rows = value.wait(
-            lambda: suppressed.exists() and suppressed.read_bytes().splitlines())
-        assert all(row == b"cookie-ack-withheld" for row in suppressed_rows)
+        # The served worktree watcher ran the faulted code (it starts lazily, so wait, bounded).
+        assert all(row == b"worktree-watcher-faulted"
+                   for row in value.wait(lambda: faulted.exists() and faulted.read_bytes().splitlines()))
+        # The service itself attempted a cookie proof and could not obtain one. Whether the ack was
+        # withheld by the fault or never delivered natively (macOS FSEvents can drop cookie events;
+        # test_runtime_service_performance owns that availability obligation), the outcome must be
+        # this same fallback. The background helper retries every few seconds, so this is bounded.
+        missed = "watcher missed a cookie for " + os.path.realpath(value.repo)
+        assert value.wait(lambda: any(
+            missed in log.read_text(errors="replace")
+            for log in (value.home / "installer/al-services").glob("*/log")))
         # The facts above came from authenticated served commands of a verified snapshot, not a direct oracle call.
         assert verify_snapshot(value.snapshot, value.boot["validator_binding"])
     finally:
