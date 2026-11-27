@@ -348,9 +348,25 @@ def test_engineer_actual_synthetic_task_source_query_and_output(
     adapter.package["role"] = "al-engineer"
     adapter.package["specification"]["task_files"] = ["synthetic/source.py"]
     operation = adapter.operation
-    adapter.dispatch(supervisor, "await_assignment", {"timeout": 1})
-    principal = child(operation, "al-engineer")
-    assert principal["writable"] is True
+    with closing(connect(operation.database)) as conn:
+        if arm == "C":
+            refresh(conn, current_operator_scope(conn, adapter.root))
+        else:
+            assert conn.execute("SELECT count(*) FROM knowledge_snapshots").fetchone()[0] == 0
+
+    def retrieval_counts():
+        with closing(connect(operation.database)) as conn:
+            return tuple(
+                conn.execute(sql).fetchone()[0]
+                for sql in (
+                    "SELECT count(*) FROM knowledge_receipts",
+                    "SELECT count(*) FROM reliability_timeline_links WHERE source_kind='retrieval'",
+                    "SELECT count(*) FROM operation_audit WHERE request LIKE '%knowledge_query%'",
+                )
+            )
+
+    before = retrieval_counts()
+    assert before == (0, 0, 0)
     monkeypatch.setattr(
         "harness.task_environment.prepare",
         lambda *a, **kw: pytest.fail("evaluation registration must not launch automatic setup"),
@@ -359,24 +375,30 @@ def test_engineer_actual_synthetic_task_source_query_and_output(
         "harness.knowledge.integration.assignment_context",
         lambda *a: pytest.fail("evaluation must not retrieve automatic assignment knowledge"),
     )
+    control = adapter.dispatch(supervisor, "await_assignment", {"timeout": 1})
+    assert control["status"] == "Supervisor" and control["writable"] is False
+    assert "knowledge_context" not in control and "handoff" not in control
+    principal = child(operation, "al-engineer")
+    assert principal["writable"] is True
     assignment = adapter.dispatch(principal, "await_assignment", {"timeout": 1})
     assert assignment["status"] == "Assigned"
     assert assignment["handoff"]["status"] == "unavailable"
     assert assignment["knowledge_context"]["status"] == "unavailable"
+    assert retrieval_counts() == before
+    repeated = adapter.dispatch(supervisor, "await_assignment", {"timeout": 1})
+    assert repeated["status"] == "Supervisor" and "knowledge_context" not in repeated
+    assert retrieval_counts() == before
     source = adapter.dispatch(principal, "read_file", {"path": "synthetic/source.py"})
     assert "synthetic_value" in source["text"]
-    with closing(connect(operation.database)) as conn:
-        if arm == "C":
-            refresh(conn, current_operator_scope(conn, adapter.root))
-        else:
-            assert conn.execute("SELECT count(*) FROM knowledge_snapshots").fetchone()[0] == 0
     if arm == "C":
-        assert isinstance(
-            adapter.dispatch(principal, "knowledge_query", {"query": "synthetic"}), dict
-        )
+        queried = adapter.dispatch(principal, "knowledge_query", {"query": "synthetic"})
+        assert queried["receipt_id"] and queried["bundle_hash"]
+        after = retrieval_counts()
+        assert all(current > previous for current, previous in zip(after, before, strict=True))
     else:
         with pytest.raises(ValueError):
             adapter.dispatch(principal, "knowledge_query", {"query": "synthetic"})
+        assert retrieval_counts() == before
     result = adapter.dispatch(
         principal,
         "submit_output",

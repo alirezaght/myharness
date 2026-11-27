@@ -39,7 +39,10 @@ TOOL_HELP = {
         "handoff/context do not grant writer authority. registered_assignment observes only your "
         "registered AL task and distinct Harness execution binding, not writer admission. "
         "knowledge_contribution_contract describes advisory report formatting. "
-        "Refresh before submitting output."
+        "knowledge_context returns bounded cited context with exact presentation hash/size "
+        "or an actionable raw-source fallback. Server-return preparation does not prove "
+        "transport receipt or model use. Refresh after scope/source/recovery changes and "
+        "before submitting output."
     ),
     "al_command": (
         "Run the bounded Harness subset of guarded AL commands, e.g. "

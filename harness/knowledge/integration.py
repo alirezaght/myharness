@@ -2,7 +2,6 @@
 
 import json
 import os
-import sqlite3
 from dataclasses import replace
 
 from harness.analyzer import analyze
@@ -198,38 +197,24 @@ def investigate_with_context(controller, task_id, repo_root, request=None, decis
 
 
 def assignment_context(operation, controller, principal):
-    """Return only references to a bundle issued for this already-admitted writer."""
-    from pathlib import Path
-
-    from harness.knowledge.policy import derive_scope
-
-    execution, state = operation.authority(controller, principal, operation="read")
-    assignment = operation.assignments[principal["thread_id"]]
-    task = state["integration"]["tasks"][assignment["task"]]
-    try:
-        scope = derive_scope(
-            controller,
-            execution,
-            principal,
-            state,
-            Path(operation.envelope["repository"]),
-            operation=operation,
-        )
-        bundle = query(controller.conn, scope, ContextRequest(task["title"][:4096]))
-    except (ValueError, OSError, LookupError, sqlite3.Error):
-        return {"status": "unavailable"}
-    result = {
-        "status": "available",
-        "bundle_hash": bundle.bundle_hash,
-        "snapshot_id": bundle.payload["snapshot_id"],
-        "assertion_ids": [a["assertion_id"] for a in bundle.payload["assertions"]],
-        "receipt_id": bundle.receipt_id,
-    }
-
-    from harness.reliability.timeline_store import assignment_link
+    """Compatibility entry point; retrieval uses the authenticated public dispatch route."""
+    from harness.knowledge.delivery import presentation, unavailable
 
     try:
-        assignment_link(operation, principal, result)
-    except (OSError, ValueError, sqlite3.Error):
-        result["telemetry_status"] = "unavailable"
-    return result
+        return presentation(operation.dispatch(principal, "knowledge_query", {}))
+    except ValueError as error:
+        reason = str(error)
+        if reason in {
+            "knowledge:disabled",
+            "knowledge:not-indexed",
+            "knowledge:busy-or-unavailable",
+            "no authorized knowledge snapshot; refresh first",
+            "knowledge:binding-missing",
+            "knowledge presentation exceeds supported bounds",
+            "knowledge:source-presentation-redacted",
+            "request metadata exceeds bundle budget",
+            "knowledge:assignment-scope-exceeds-context-budget",
+            "knowledge:directory-scope-exceeds-context-budget",
+        }:
+            return unavailable(reason)
+        raise
