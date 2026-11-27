@@ -46,7 +46,8 @@ def readiness(state,args,issuer):
     if budgets(state)!=proof['budget_binding']:raise ValueError('issuing workflow budgets changed')
     completed=[p for p in state['phase_occurrences'] if p.get('completed')]
     if any(p not in completed for p in proof['completed_phases']):raise ValueError('completed phase history changed')
-    gaps=workflow_gaps(state)+Gates.candidate_gaps(state)+Ledger.gaps(state,'broad')
+    # The issuing runtime recorded its gate and evidence environment fingerprints with its own scheme.
+    gaps=Ledger.issuer_gaps(lambda:workflow_gaps(state)+Gates.candidate_gaps(state)+Ledger.gaps(state,'broad'))
     if gaps:raise ValueError('current-policy readiness requires current base/candidate/broad proof: '+str(gaps))
     receipts=[r for r in state.get('gate_runs',[]) if r['manifest']==refs[-1]['sha256']]
     return {'stored_manifest_digest':refs[-1]['sha256'],'coverage_semantic_digest':stored['service_coverage']['semantic_sha256'],

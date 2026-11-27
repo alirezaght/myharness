@@ -35,6 +35,7 @@
   "test_discovery_reuse.py",
   "test_discovery_scaling.py",
   "test_distribution_registry.py",
+  "test_env_fingerprint_schemes.py",
   "test_escape_seeds.py",
   "test_evidence_cancellation.py",
   "test_evidence_cli_arguments.py",

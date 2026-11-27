@@ -47,7 +47,9 @@ def evaluate(session, run, repository):
                     'comparison': reviewed.get('comparison')}
         if any(approved.get(key) != value or value is None for key, value in expected.items()):
             raise ValueError('terminal approval artifact/source binding mismatch')
-        gaps = completion_gaps(state) + review.approval_gaps(state)
+        # An old issuer's evidence fingerprints are judged by the scheme that issuer recorded them with.
+        import al_ledger as ledger
+        gaps = ledger.issuer_gaps(lambda: completion_gaps(state) + review.approval_gaps(state))
         # A terminal source proof applies current repository policy even to an old issuer.
         # The issuer's historical review cannot supply newly required coverage declarations.
         if state.get('gate_manifests'):
