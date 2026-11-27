@@ -531,6 +531,14 @@ def test_chrome_attached_material_subset_and_stale_preview_require_explicit_refr
             )
             click_text(call, "Refresh latest state and keep my text")
             wait(call, "document.body.innerText.includes('Latest server state loaded')")
+            # The preview and confirmations described the replaced state; adoption needs an
+            # explicit new preview against the refreshed state (#139).
+            assert evaluate(
+                call,
+                "!document.querySelector('.reconcile-preview button') && "
+                "[...document.querySelectorAll("
+                "'.authoring-reconcile > label input[type=checkbox]')].every(box=>!box.checked)",
+            )
             _select_candidate(call, candidate["id"])
             _confirm_adoption(call)
             _preview_adoption(call)
@@ -893,5 +901,128 @@ def test_chrome_source_replacement_keeps_corrected_question_history_readable(
             assert original_answer in package_history, package_history
             package = _http_json(server, f"/api/authoring?task={bridge.task_id}")[1]
             assert any(row["id"] == original_id for row in package["historical"]["questions"])
+    finally:
+        _shutdown(server, thread)
+
+
+def test_chrome_preview_survives_a_live_repaint_while_its_request_is_in_flight(
+    controller, db_path, tmp_path, monkeypatch
+):
+    """#139: a stream repaint during the preview request must not drop the preview or the
+    operator's confirmations; adoption still needs both checkboxes and the preview."""
+    root = tmp_path / "repaint-spec"
+    root.mkdir()
+    task = controller.create_task("Review a manually drafted export specification")
+    monkeypatch.setattr(AuthoringWorker, "start", lambda self: False)
+    server, thread = _server(db_path, task.id, root)
+    try:
+        with chrome(
+            tmp_path / "chrome-repaint", server.url + f"?task={task.id}&tab=spec", 1280, 900
+        ) as call:
+            wait(call, 'Boolean(document.querySelector(".spec-editor"))')
+            body = "## Export\n\nExport the selected accounts as CSV.\n"
+            enter(call, ".spec-editor", body)
+            click_text(call, "Save working specification")
+            wait(call, "document.body.innerText.includes('Working specification saved')")
+            candidate_id = _http_json(server, f"/api/authoring?task={task.id}")[1]["working"]["id"]
+            click_text(call, "Review")
+            _select_candidate(call, candidate_id)
+            _confirm_adoption(call)
+            evaluate(
+                call,
+                "(()=>{window.__held=[];let release;window.__gate=new Promise(r=>release=r);"
+                "window.__release=release;const original=window.fetch;window.fetch=async(...a)=>{"
+                "const response=await original(...a);"
+                "if(String(a[0]).includes('/api/authoring/reconcile-preview')){"
+                "window.__held.push(response.status);await window.__gate;}"
+                "return response;};return true;})()",
+            )
+            click_text(call, "Preview explicit adoption")
+            wait(call, "window.__held.length===1")
+            # A live frame repaints the panel while the preview response is still pending.
+            evaluate(call, "workspaceRerender();true")
+            assert evaluate(call, "!document.querySelector('.reconcile-preview button')")
+            evaluate(call, "window.__release();true")
+            wait(call, 'Boolean(document.querySelector(".reconcile-preview button"))')
+            assert evaluate(
+                call,
+                "[...document.querySelectorAll("
+                "'.authoring-reconcile > label input[type=checkbox]')].every(box=>box.checked)",
+            )
+            click_text(
+                call,
+                "Adopt this revision and request review",
+                'document.querySelector(".reconcile-preview")',
+            )
+            wait(call, "document.body.innerText.includes('Revision adopted')")
+            # The used preview is gone: adopting again needs a new explicit preview.
+            assert not evaluate(
+                call,
+                "[...document.querySelectorAll('.reconcile-preview button')].some(b=>"
+                "b.textContent==='Adopt this revision and request review')",
+            )
+            assert (
+                _http_json(server, f"/api/authoring?task={task.id}")[1]["adopted"]["body"] == body
+            )
+            assert evaluate(call, "document.documentElement.scrollWidth<=innerWidth+1")
+    finally:
+        _shutdown(server, thread)
+
+
+def test_chrome_preview_is_dropped_when_a_live_frame_brings_a_newer_state(
+    controller, db_path, tmp_path, monkeypatch
+):
+    """#139: a preview kept across repaints is only for its own authoring state; a live frame
+    with a newer state (another client changed it) drops it until it is previewed again."""
+    root = tmp_path / "superseded-spec"
+    root.mkdir()
+    task = controller.create_task("Review a manually drafted export specification")
+    monkeypatch.setattr(AuthoringWorker, "start", lambda self: False)
+    server, thread = _server(db_path, task.id, root)
+    try:
+        with chrome(
+            tmp_path / "chrome-superseded", server.url + f"?task={task.id}&tab=spec", 1280, 900
+        ) as call:
+            wait(call, 'Boolean(document.querySelector(".spec-editor"))')
+            enter(call, ".spec-editor", "## Export\n\nExport the selected accounts as CSV.\n")
+            click_text(call, "Save working specification")
+            wait(call, "document.body.innerText.includes('Working specification saved')")
+            candidate_id = _http_json(server, f"/api/authoring?task={task.id}")[1]["working"]["id"]
+            click_text(call, "Review")
+            _select_candidate(call, candidate_id)
+            _confirm_adoption(call)
+            _preview_adoption(call)
+            adopt = (
+                "[...document.querySelectorAll('.reconcile-preview button')].some(b=>"
+                "b.textContent==='Adopt this revision and request review')"
+            )
+            assert evaluate(call, adopt)
+            before = _http_json(server, f"/api/authoring?task={task.id}")[1]
+            status, changed = _http_json(
+                server,
+                "/api/authoring/followup",
+                method="POST",
+                body={
+                    "task": task.id,
+                    "expected": before["base"],
+                    "request_id": str(uuid.uuid4()),
+                    "body": "Another client added context after the preview.",
+                },
+            )
+            assert status == 200, changed
+            newer = _http_json(server, f"/api/authoring?task={task.id}")[1]["base"]["generation"]
+            assert newer > before["base"]["generation"]
+            # The live frame carrying the newer state re-renders the panel.
+            wait(
+                call,
+                "workspaceStates.get(" + json.dumps(task.id) + ").authoring.base.generation"
+                f"==={newer}",
+            )
+            assert not evaluate(call, adopt)
+            assert evaluate(
+                call,
+                "[...document.querySelectorAll("
+                "'.authoring-reconcile > label input[type=checkbox]')].every(box=>!box.checked)",
+            )
     finally:
         _shutdown(server, thread)

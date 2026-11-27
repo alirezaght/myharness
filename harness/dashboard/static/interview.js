@@ -64,13 +64,33 @@ function authoringStoredBuffer(state, key) {
   }
 }
 
+// Authoring requests per task whose post-save refresh has not finished. Kept in memory only.
+// While one is in flight the page's base is about to change, so saves wait for it (#139).
+const authoringInFlight = new Map();
+
+function authoringBusy(taskId) {
+  return (authoringInFlight.get(taskId) || 0) > 0;
+}
+
+function authoringTrackInFlight(taskId, delta) {
+  const next = Math.max(0, (authoringInFlight.get(taskId) || 0) + delta);
+  if (next) authoringInFlight.set(taskId, next);
+  else authoringInFlight.delete(taskId);
+  // Visible settle signal: the page is applying a saved change and its base is about to move.
+  document.documentElement.toggleAttribute("data-authoring-busy", authoringInFlight.size > 0);
+  if (next) {
+    // Saves wait for the refreshed base; each re-render after the change settles recomputes them.
+    for (const save of document.querySelectorAll(`[data-authoring-save="${CSS.escape(taskId)}"]`)) save.disabled = true;
+  }
+}
+
 function authoringFormChanged(state, key, buffer, field, value) {
   buffer.value[field] = value;
   buffer.dirty = true;
   buffer.generation += 1;
   authoringPersistBuffer(state, key, buffer);
   for (const save of document.querySelectorAll(`[data-authoring-form-key="${CSS.escape(key)}"]`)) {
-    save.disabled = !buffer.dirty;
+    save.disabled = !buffer.dirty || authoringBusy(state.task);
   }
 }
 
@@ -262,38 +282,43 @@ async function workspaceAuthoringRefresh(task, state, { hosts = false } = {}) {
 }
 
 async function workspaceAuthoringPost(task, state, action, fields, options = {}) {
-  const { key = action, expected = state.authoring?.base, retry = true, useExisting = false } = options;
-  state.authoringRequests ||= {};
-  let payload = state.authoringRequests[key];
-  const requested = { task: task.id, expected, ...fields };
-  if (payload && useExisting) {
-    // Replay the exact prior request after an unknown outcome.
-  } else if (payload && retry && JSON.stringify(Object.fromEntries(Object.entries(payload).filter(([name]) => name !== "request_id"))) !== JSON.stringify(requested)) {
-    throw new Error("A previous request with different text is unresolved. Retry that exact request or explicitly start a new one.");
-  } else if (!payload || !retry) {
-    payload = { ...requested, request_id: authoringRequestId() };
-    state.authoringRequests[key] = payload;
+  authoringTrackInFlight(task.id, 1);
+  try {
+    const { key = action, expected = state.authoring?.base, retry = true, useExisting = false } = options;
+    state.authoringRequests ||= {};
+    let payload = state.authoringRequests[key];
+    const requested = { task: task.id, expected, ...fields };
+    if (payload && useExisting) {
+      // Replay the exact prior request after an unknown outcome.
+    } else if (payload && retry && JSON.stringify(Object.fromEntries(Object.entries(payload).filter(([name]) => name !== "request_id"))) !== JSON.stringify(requested)) {
+      throw new Error("A previous request with different text is unresolved. Retry that exact request or explicitly start a new one.");
+    } else if (!payload || !retry) {
+      payload = { ...requested, request_id: authoringRequestId() };
+      state.authoringRequests[key] = payload;
+      workspacePersist(state);
+    }
+    const response = await fetch(`/api/authoring/${action}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    const result = await response.json();
+    if (!response.ok) throw Object.assign(new Error(result.error || `HTTP ${response.status}`), { status: response.status, result, payload });
+    await workspaceAuthoringRefresh(task, state);
+    if (action === "answer" && state.authoring?.phase === "interview") {
+      if (state.drawerQuestionId === fields.question) state.drawerQuestionId = null;
+      result.acknowledgement = fields.mode === "unknown"
+        ? `Saved Q${fields.question} as not known yet. It remains unresolved; the next question is shown.`
+        : fields.mode === "defer" ? `Deferral for Q${fields.question} saved. Review remains required.`
+          : `Answer for Q${fields.question} saved. The next question is shown.`;
+    }
+    if (workspaceData?.task?.id === task.id) await refreshDashboard();
+    delete state.authoringRequests[key];
+    delete state.authoringRequestActions?.[key];
+    delete state.authoringRequestForms?.[key];
     workspacePersist(state);
+    return result;
+  } finally {
+    authoringTrackInFlight(task.id, -1);
   }
-  const response = await fetch(`/api/authoring/${action}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-  });
-  const result = await response.json();
-  if (!response.ok) throw Object.assign(new Error(result.error || `HTTP ${response.status}`), { status: response.status, result, payload });
-  await workspaceAuthoringRefresh(task, state);
-  if (action === "answer" && state.authoring?.phase === "interview") {
-    if (state.drawerQuestionId === fields.question) state.drawerQuestionId = null;
-    result.acknowledgement = fields.mode === "unknown"
-      ? `Saved Q${fields.question} as not known yet. It remains unresolved; the next question is shown.`
-      : fields.mode === "defer" ? `Deferral for Q${fields.question} saved. Review remains required.`
-        : `Answer for Q${fields.question} saved. The next question is shown.`;
-  }
-  if (workspaceData?.task?.id === task.id) await refreshDashboard();
-  delete state.authoringRequests[key];
-  delete state.authoringRequestActions?.[key];
-  delete state.authoringRequestForms?.[key];
-  workspacePersist(state);
-  return result;
 }
 
 function authoringStatus(state, text, isError = false) {
@@ -367,6 +392,10 @@ function authoringConflictRecovery(task, state) {
         delete state.authoringRequestActions?.[conflict.key];
       }
       state.authoringConflict = null;
+      // A preview and its confirmations described the replaced state: preview again explicitly.
+      state.reconcilePreview = null;
+      state.reconcilePreviewRevision = null;
+      state.reconcileConfirmations = null;
       state.authoringMessage = { text: "Latest server state loaded. Your text is preserved; saving it now creates a new request against the refreshed revision." };
       workspacePersist(state);
     } catch (error) {
@@ -1266,7 +1295,8 @@ function workspaceRevisionTargetCard(task, state, target) {
       target: target.target, target_revision: buffer.token, body: values.body,
     }, { expected: buffer.base, key: `revise:${target.target}` }), { token: result => result?.contribution || buffer.token }));
     save.dataset.authoringFormKey = key;
-    save.disabled = !buffer.dirty;
+    save.dataset.authoringSave = task.id;
+    save.disabled = !buffer.dirty || authoringBusy(task.id);
     card.append(field, save);
     return card;
   }
@@ -1330,7 +1360,8 @@ function workspaceRevisionTargetCard(task, state, target) {
     return current?.revision || result?.contribution || buffer.token;
   } }));
   save.dataset.authoringFormKey = key;
-  save.disabled = !buffer.dirty;
+  save.dataset.authoringSave = task.id;
+  save.disabled = !buffer.dirty || authoringBusy(task.id);
   form.append(save); card.append(form);
   return card;
 }
