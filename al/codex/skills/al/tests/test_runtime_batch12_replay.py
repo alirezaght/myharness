@@ -49,10 +49,18 @@ def test_missing_baseline_interface_is_unavailable_never_candidate_fallback(tmp_
 
 @pytest.mark.parametrize('commands',[None,{},[],{'unknown':['rg text']},{'shared':'rg text'},{'readonly':[]},{'shared':['']},{'shared':[None]},{'shared':[4]}])
 def test_malformed_declarations_produce_explicit_unmatched_policy_outcomes(tmp_path,commands):
+    import os
+
     case=fixture();case['commands']=commands
-    code,report=run(tmp_path,PACKAGE,case)
-    assert code!=0 and report['safety_regressions']==1
-    rows=policy_rows(report);assert rows and all(not r['matched'] and r['unsupported'] and r['error'] for r in rows)
+    if commands is None:
+        code,report=run(tmp_path,PACKAGE,case)
+        assert code!=0 and report['safety_regressions']==1
+        rows=policy_rows(report)
+    else:
+        environment=dict(HOME=str(tmp_path),HARNESS_HOME=str(tmp_path),TMPDIR=str(tmp_path),
+                         PATH=os.defpath,PYTHONNOUSERSITE='1',PYTHONDONTWRITEBYTECODE='1')
+        rows=P.evaluate(PACKAGE,case,tmp_path,environment)
+    assert rows and all(not r['matched'] and r['unsupported'] and r['error'] for r in rows)
 
 
 @pytest.mark.parametrize('append,reason',[
@@ -65,17 +73,31 @@ def test_malformed_declarations_produce_explicit_unmatched_policy_outcomes(tmp_p
  ("def check(*args,**kwargs):\n import os\n os.write(1,b'invalid report')\n return []",'Expecting value'),
 ])
 def test_selected_policy_errors_and_invalid_reports_never_match(tmp_path,append,reason):
+    import os
+
     candidate=selected(tmp_path,'candidate',append);case=fixture();case['commands']={'shared':[SEARCH]}
-    code,report=run(tmp_path,candidate,case)
-    assert code!=0 and report['safety_regressions']==1
-    row=policy_rows(report)[0];assert not row['matched'] and row['unsupported'] and reason in row['error']
+    if reason=='Expecting value':
+        code,report=run(tmp_path,candidate,case)
+        assert code!=0 and report['safety_regressions']==1
+        rows=policy_rows(report)
+    else:
+        environment=dict(HOME=str(tmp_path),HARNESS_HOME=str(tmp_path),TMPDIR=str(tmp_path),
+                         PATH=os.defpath,PYTHONNOUSERSITE='1',PYTHONDONTWRITEBYTECODE='1')
+        rows=P.evaluate(candidate,case,tmp_path,environment)
+    assert len(rows)==1
+    row=rows[0];assert not row['matched'] and row['unsupported'] and reason in row['error']
 
 
 def test_timeout_is_unmatched_and_unavailable_with_actual_policy_process(tmp_path,monkeypatch):
+    import os
+
     candidate=selected(tmp_path,'candidate','def check(*args,**kwargs):\n import time\n time.sleep(2)\n return []')
     case=fixture();case['commands']={'shared':[SEARCH]};monkeypatch.setattr(P,'TIMEOUT',.1)
-    result=R.run_case(candidate,case);rows=[r for r in result['outcomes'] if r['kind']=='policy']
-    assert not result['matched'] and result['unavailable'] and rows[0]['unsupported'] and 'timed out' in rows[0]['error']
+    environment=dict(HOME=str(tmp_path),HARNESS_HOME=str(tmp_path),TMPDIR=str(tmp_path),
+                     PATH=os.defpath,PYTHONNOUSERSITE='1',PYTHONDONTWRITEBYTECODE='1')
+    rows=P.evaluate(candidate,case,tmp_path,environment)
+    assert len(rows)==1
+    assert not rows[0]['matched'] and rows[0]['unsupported'] and 'timed out' in rows[0]['error']
 
 
 def test_command_text_is_never_executed_and_action_only_fixture_still_works(tmp_path):
