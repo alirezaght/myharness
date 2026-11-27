@@ -8,13 +8,16 @@ existing, supported routes only:
   * Harness: `uv tool install --force <checkout of the release tag>`
   * alctl:   `al/alctl.py bootstrap` from that checkout
     (both only when absent or installed by this bridge; `apply --adopt` takes over existing ones)
-  * AL:      `alctl install --global --source <source>` on a clean machine, else `alctl update --global`
+  * AL:      `alctl install --global --source <source>` on a clean machine,
+             else `alctl update --global`
   * the global Harness skill files, refreshed from `harness skill show` where absent or unedited
 
-Every installer guard stays authoritative. A pinned target, active runs, required reviews or drift are
-reported with the exact operator command; the bridge never forces, adopts, reviews or edits approvals.
+Every installer guard stays authoritative. A pinned target, active runs, required reviews or drift
+are reported with the exact operator command; the bridge never forces, adopts, reviews or edits
+approvals.
 Runs with Python 3.9+ and the standard library only (the hook uses whatever `python3` is on PATH).
 """
+
 import argparse
 import contextlib
 import datetime
@@ -111,11 +114,11 @@ def log(message):
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         if path.stat().st_size > LOG_LIMIT:
-            tail = path.read_bytes()[-LOG_LIMIT // 2:]
+            tail = path.read_bytes()[-LOG_LIMIT // 2 :]
             path.write_bytes(tail)
     except OSError:
         pass
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     with open(path, "a") as handle:
         handle.write(stamp + " " + message.rstrip() + "\n")
 
@@ -127,7 +130,9 @@ def notice(state, key, text, level="info"):
 
 
 def resolve(state, prefix):
-    state["notices"] = [n for n in state.get("notices", []) if not n.get("id", "").startswith(prefix)]
+    state["notices"] = [
+        n for n in state.get("notices", []) if not n.get("id", "").startswith(prefix)
+    ]
 
 
 def run(argv, timeout, cwd=None, env=None):
@@ -135,8 +140,15 @@ def run(argv, timeout, cwd=None, env=None):
     merged = dict(os.environ, GIT_TERMINAL_PROMPT="0")
     merged.update(env or {})
     try:
-        result = subprocess.run([str(a) for a in argv], cwd=cwd, env=merged, stdin=subprocess.DEVNULL,
-                                capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            [str(a) for a in argv],
+            cwd=cwd,
+            env=merged,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         log("! " + repr(exc))
         return 127, "", str(exc)
@@ -164,7 +176,7 @@ def latest_tag():
             tags.append(tuple(int(x) for x in TAG.match(parts[1]).groups()))
     if not tags:
         return None, "no stable vMAJOR.MINOR.PATCH tag at " + source()
-    return "v%d.%d.%d" % max(tags), None
+    return "v{}.{}.{}".format(*max(tags)), None
 
 
 def checkout(tag):
@@ -175,15 +187,31 @@ def checkout(tag):
         return target, None
     root.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix=".clone-", dir=str(root)))
-    code, out, err = run(["git", "-c", "advice.detachedHead=false", "clone", "--quiet", "--depth", "1",
-                          "--branch", tag, source(), temporary / "repo"], timeout=600)
+    code, out, err = run(
+        [
+            "git",
+            "-c",
+            "advice.detachedHead=false",
+            "clone",
+            "--quiet",
+            "--depth",
+            "1",
+            "--branch",
+            tag,
+            source(),
+            temporary / "repo",
+        ],
+        timeout=600,
+    )
     if code:
         shutil.rmtree(temporary, ignore_errors=True)
         return None, summary(out, err)
     os.replace(temporary / "repo", target)
     shutil.rmtree(temporary, ignore_errors=True)
-    keep = sorted((p for p in root.iterdir() if p.is_dir() and TAG.match(p.name)),
-                  key=lambda p: tuple(int(x) for x in TAG.match(p.name).groups()))[-2:]
+    keep = sorted(
+        (p for p in root.iterdir() if p.is_dir() and TAG.match(p.name)),
+        key=lambda p: tuple(int(x) for x in TAG.match(p.name).groups()),
+    )[-2:]
     for path in root.iterdir():
         if path.is_dir() and TAG.match(path.name) and path not in keep:
             shutil.rmtree(path, ignore_errors=True)
@@ -199,7 +227,7 @@ def alctl_path():
 
 
 def bootstrap_python():
-    """The interpreter of the existing alctl launcher when usable, else a uv-provided CPython 3.13."""
+    """The existing alctl launcher's interpreter when usable, else a uv-provided CPython 3.13."""
     launcher = alctl_path()
     if launcher:
         try:
@@ -235,7 +263,7 @@ def global_target():
 
 
 def sync_harness_skills(state):
-    """Write each host's global Harness skill from the installed package, never over an edited file."""
+    """Write each host's global Harness skill from the installed package, never over edits."""
     harness = shutil.which("harness") or str(home() / ".local/bin/harness")
     owned = state.setdefault("skills", {})
     for provider, base in (("claude", home() / ".claude"), ("codex", home() / ".codex")):
@@ -243,7 +271,12 @@ def sync_harness_skills(state):
             continue
         code, out, err = run([harness, "skill", "show", "--provider", provider], timeout=120)
         if code:
-            notice(state, "skill:" + provider, "Harness skill for " + provider + " not refreshed: " + summary(out, err), "action")
+            notice(
+                state,
+                "skill:" + provider,
+                "Harness skill for " + provider + " not refreshed: " + summary(out, err),
+                "action",
+            )
             continue
         path = base / "skills/harness/SKILL.md"
         new = out.encode()
@@ -259,9 +292,14 @@ def sync_harness_skills(state):
             owned[str(path)] = digest
             resolve(state, "skill:" + provider)
         else:
-            notice(state, "skill:" + provider, "Left the edited " + str(path) + " unchanged. Delete it to let the "
-                   "myharness plugin manage it, or refresh it yourself with `harness skill show --provider "
-                   + provider + "`.", "action")
+            notice(
+                state,
+                "skill:" + provider,
+                "Left the edited " + str(path) + " unchanged. Delete it to let the "
+                "myharness plugin manage it, or refresh it yourself with "
+                "`harness skill show --provider " + provider + "`.",
+                "action",
+            )
 
 
 def apply(host=None, adopt=False):
@@ -272,14 +310,21 @@ def apply(host=None, adopt=False):
         state.update(checked_at=now(), source=source(), script=str(Path(__file__).resolve()))
         missing = [tool for tool in ("git", "uv") if not shutil.which(tool)]
         if missing:
-            notice(state, "prerequisites", "myharness needs " + " and ".join(missing) + " on PATH to install or update "
-                   "Harness and AL (uv: https://docs.astral.sh/uv/).", "action")
+            notice(
+                state,
+                "prerequisites",
+                "myharness needs " + " and ".join(missing) + " on PATH to install or update "
+                "Harness and AL (uv: https://docs.astral.sh/uv/).",
+                "action",
+            )
             save(state)
             return 1
         resolve(state, "prerequisites")
         tag, error = latest_tag()
         if not tag:
-            notice(state, "source", "Could not read releases from " + source() + ": " + error, "action")
+            notice(
+                state, "source", "Could not read releases from " + source() + ": " + error, "action"
+            )
             save(state)
             return 1
         resolve(state, "source")
@@ -289,8 +334,15 @@ def apply(host=None, adopt=False):
         manage_harness = adopt or bool(state.get("harness_tag")) or not shutil.which("harness")
         manage_alctl = adopt or bool(state.get("alctl_tag")) or not alctl_path()
         if not (manage_harness and manage_alctl):
-            notice(state, "adopt", "Harness or alctl was installed outside myharness, so it is left as is. To let myharness keep "
-                   "both at the newest release, run `python3 " + str(Path(__file__).resolve()) + " apply --adopt`.")
+            notice(
+                state,
+                "adopt",
+                "Harness or alctl was installed outside myharness, so it is left as is. "
+                "To let myharness keep "
+                "both at the newest release, run `python3 "
+                + str(Path(__file__).resolve())
+                + " apply --adopt`.",
+            )
         else:
             resolve(state, "adopt")
         if manage_harness and (state.get("harness_tag") != tag or not shutil.which("harness")):
@@ -302,11 +354,14 @@ def apply(host=None, adopt=False):
                     resolve(state, "harness")
                     notice(state, "harness-updated", "Harness updated to " + tag + ".")
                 else:
-                    notice(state, "harness", "Harness " + tag + " install failed: " + summary(out, err), "action")
+                    notice(
+                        state,
+                        "harness",
+                        "Harness " + tag + " install failed: " + summary(out, err),
+                        "action",
+                    )
             else:
                 notice(state, "harness", "Could not fetch " + tag + ": " + error, "action")
-        if shutil.which("harness") or (home() / ".local/bin/harness").is_file():
-            sync_harness_skills(state)
         if manage_alctl and (state.get("alctl_tag") != tag or not alctl_path()):
             tree, error = (tree, None) if tree else checkout(tag)
             python = bootstrap_python() if tree else None
@@ -316,38 +371,87 @@ def apply(host=None, adopt=False):
                     state["alctl_tag"] = tag
                     resolve(state, "alctl")
                 else:
-                    notice(state, "alctl", "alctl " + tag + " bootstrap refused: " + summary(out, err), "action")
+                    notice(
+                        state,
+                        "alctl",
+                        "alctl " + tag + " bootstrap refused: " + summary(out, err),
+                        "action",
+                    )
             else:
-                notice(state, "alctl", "alctl " + tag + " not bootstrapped: " + (error or "no Python 3.13 available"), "action")
+                notice(
+                    state,
+                    "alctl",
+                    "alctl " + tag + " not bootstrapped: " + (error or "no Python 3.13 available"),
+                    "action",
+                )
         row, error = global_target()
         launcher = alctl_path()
         if row is None:
             notice(state, "al", "AL status unavailable: " + error, "action")
         elif not row:
-            code, out, err = run([launcher, "install", "--global", "--source", source()], timeout=3600)
+            code, out, err = run(
+                [launcher, "install", "--global", "--source", source()], timeout=3600
+            )
             if code == 0:
                 resolve(state, "al")
-                notice(state, "al-updated", "AL " + version + " installed globally for Claude and Codex.")
-                state["al_version"] = version
+                notice(
+                    state,
+                    "al-updated",
+                    "AL " + version + " installed globally for Claude and Codex.",
+                )
+                state["al_version"], state["al_policy"] = version, "follow"
             else:
-                notice(state, "al", "AL install needs attention: " + summary(out, err)
-                       + " Run `alctl install --global --source " + source() + "` (see al/INSTALL.md).", "action")
+                notice(
+                    state,
+                    "al",
+                    "AL install needs attention: "
+                    + summary(out, err)
+                    + " Run `alctl install --global --source "
+                    + source()
+                    + "` (see al/INSTALL.md).",
+                    "action",
+                )
         else:
             state["al_version"], state["al_policy"] = row.get("version"), row.get("policy")
             if row.get("version") == version:
                 resolve(state, "al")
             elif row.get("policy") != "follow":
-                notice(state, "al", "AL is pinned at " + str(row.get("version")) + "; " + version + " is available. "
-                       "To receive releases automatically run `alctl update --global --policy follow`.", "action")
+                notice(
+                    state,
+                    "al",
+                    "AL is pinned at "
+                    + str(row.get("version"))
+                    + "; "
+                    + version
+                    + " is available. "
+                    "To receive releases automatically run "
+                    "`alctl update --global --policy follow`.",
+                    "action",
+                )
             else:
                 code, out, err = run([launcher, "update", "--global"], timeout=3600)
                 if code == 0:
                     state["al_version"] = version
                     resolve(state, "al")
-                    notice(state, "al-updated", "AL updated to " + version + " (active runs stay on their pinned runtime).")
+                    notice(
+                        state,
+                        "al-updated",
+                        "AL updated to " + version + " (active runs stay on their pinned runtime).",
+                    )
                 else:
-                    notice(state, "al", "AL " + version + " is available but the update was deferred: " + summary(out, err)
-                           + " Run `alctl update --global` when ready (see al/INSTALL.md).", "action")
+                    notice(
+                        state,
+                        "al",
+                        "AL "
+                        + version
+                        + " is available but the update was deferred: "
+                        + summary(out, err)
+                        + " Run `alctl update --global` when ready (see al/INSTALL.md).",
+                        "action",
+                    )
+        # Last, so host directories a fresh AL install created are covered too.
+        if shutil.which("harness") or (home() / ".local/bin/harness").is_file():
+            sync_harness_skills(state)
         state["completed_at"] = now()
         save(state)
         return 0
@@ -358,13 +462,18 @@ def spawn(host):
     directory = state_dir()
     directory.mkdir(parents=True, exist_ok=True)
     with open(directory / "worker.out", "ab") as output:
-        subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "apply", "--host", host],
-                         stdin=subprocess.DEVNULL, stdout=output, stderr=output,
-                         start_new_session=True, close_fds=True)
+        subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "apply", "--host", host],
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=output,
+            start_new_session=True,
+            close_fds=True,
+        )
 
 
 def hook(host):
-    """Fast path for SessionStart: print pending notices, start a check when one is due. Never fails."""
+    """SessionStart fast path: print pending notices, start a due check. Never fails."""
     try:
         state = load()
         due = now() - float(state.get("checked_at") or 0) >= interval()
@@ -399,14 +508,31 @@ def status(as_json):
     if as_json:
         print(json.dumps(state, indent=2, sort_keys=True))
         return 0
+
     def when(value):
-        return datetime.datetime.fromtimestamp(value).isoformat(timespec="seconds") if value else "never"
+        return (
+            datetime.datetime.fromtimestamp(value).isoformat(timespec="seconds")
+            if value
+            else "never"
+        )
+
     print("source:        " + str(state.get("source") or source()))
     print("latest:        " + str(state.get("latest") or "unknown"))
     print("harness:       " + str(state.get("harness_tag") or "not installed by myharness"))
     print("alctl:         " + str(state.get("alctl_tag") or "not bootstrapped by myharness"))
-    print("AL (global):   " + str(state.get("al_version") or "unknown") + " (" + str(state.get("al_policy") or "?") + ")")
-    print("last check:    " + when(state.get("checked_at")) + "; completed " + when(state.get("completed_at")))
+    print(
+        "AL (global):   "
+        + str(state.get("al_version") or "unknown")
+        + " ("
+        + str(state.get("al_policy") or "?")
+        + ")"
+    )
+    print(
+        "last check:    "
+        + when(state.get("checked_at"))
+        + "; completed "
+        + when(state.get("completed_at"))
+    )
     print("log:           " + str(state_dir() / "bridge.log"))
     for item in state.get("notices", []):
         print(("ACTION: " if item.get("level") == "action" else "note:   ") + item["text"])
@@ -420,8 +546,11 @@ def main(argv=None):
         command = commands.add_parser(name)
         command.add_argument("--host", choices=HOSTS, default="claude")
         if name == "apply":
-            command.add_argument("--adopt", action="store_true",
-                                 help="also take over a Harness/alctl installed outside myharness")
+            command.add_argument(
+                "--adopt",
+                action="store_true",
+                help="also take over a Harness/alctl installed outside myharness",
+            )
     shown = commands.add_parser("status")
     shown.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)

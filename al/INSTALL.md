@@ -457,6 +457,14 @@ upgrade. See [implementation-continuity.md](codex/skills/al/reference/implementa
 No supported route edits a retained pin/state/index or invents standalone
 successor authority, coordinator tokens or transferred PASS results.
 
+## Plugin bridge
+
+The `myharness` plugin ([plugins/myharness](../plugins/myharness/README.md)) is a thin bridge for Claude Code
+and Codex. It uses only the commands in this guide: it bootstraps `alctl` from the newest stable tag, runs
+`alctl install --global --source <source>` on a clean machine and `alctl update --global` for a target that
+follows releases. A pinned target, a deferred update, a required review or drift is reported with the exact
+operator command and left unchanged. Pushing a stable tag therefore reaches plugin users on their next session.
+
 ## Releasing
 
 Ordinary installation uses fixed structural smoke and integrity checks. Release

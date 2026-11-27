@@ -83,6 +83,17 @@ The harness **does not** replace AL and must not become a competing orchestrator
 
 Each phase ships something you can run on a real task, and no phase breaks the ones before it.
 
+## Install as a plugin (Claude and Codex)
+
+```bash
+claude plugin marketplace add alirezaght/myharness && claude plugin install myharness@myharness
+codex plugin marketplace add alirezaght/myharness && codex plugin add myharness@myharness
+```
+
+The `myharness` plugin installs Harness and AL through `uv` and `alctl` and keeps them at the newest release tag on
+each session start, without overriding pins, active runs or required reviews. In Codex, trust its SessionStart hook
+once. See [plugins/myharness/README.md](plugins/myharness/README.md).
+
 ## Development
 
 ```bash
