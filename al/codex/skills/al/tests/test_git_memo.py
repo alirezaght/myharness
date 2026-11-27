@@ -131,3 +131,149 @@ def test_blob_content_hashes_are_computed_once_per_process(repo, monkeypatch):
     second = S._blob_hashes(repo, [oid, oid])
     assert first == second and len(first[oid]) == 64
     assert requested == [[oid], []]
+
+
+def test_implementation_digest_reads_changed_bytes_when_file_metadata_collides(tmp_path, monkeypatch):
+    """Equal coarse metadata must not certify unchanged ordinary module bytes."""
+    import hashlib
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    assert Path(R.__file__).resolve() == Path(__file__).resolve().parents[1] / 'scripts/al_runtime_resources.py'
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir()
+    member = scripts / 'al_one.py'
+    before_bytes, after_bytes = b'VALUE = 1\n', b'VALUE = 2\n'
+    assert len(before_bytes) == len(after_bytes)
+    member.write_bytes(before_bytes)
+    real_os = R.os
+    before_stat = real_os.stat(member)
+    fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+
+    def metadata(value):
+        return tuple(getattr(value, field) for field in fields)
+
+    def coarse_stat(path):
+        # Controlled filesystem-view model: retain actual identity/size, expose equal
+        # timestamps for these same-length writes. This is not E27 native cause proof.
+        current = real_os.stat(path)
+        assert Path(path) == member
+        return SimpleNamespace(st_dev=current.st_dev, st_ino=current.st_ino,
+                               st_size=current.st_size, st_mtime_ns=before_stat.st_mtime_ns,
+                               st_ctime_ns=before_stat.st_ctime_ns)
+
+    monkeypatch.setattr(R, '__file__', str(scripts / 'al_runtime_resources.py'))
+    monkeypatch.setattr(R, '_CONTEXT', None)
+    monkeypatch.setattr(R, '_DIGEST', None)
+    monkeypatch.setattr(R, '_USED', False)
+    # Keep real byte reads and directory enumeration; model only stat timestamps.
+    monkeypatch.setattr(R, 'os', SimpleNamespace(scandir=real_os.scandir, stat=coarse_stat, path=real_os.path))
+    exposed_before = metadata(R.os.stat(member))
+    first = R.implementation_digest()
+    assert member.read_bytes() == before_bytes
+    assert first == hashlib.sha256(before_bytes).hexdigest()
+    assert R.implementation_digest() == first
+    member.write_bytes(after_bytes)
+    assert member.read_bytes() == after_bytes != before_bytes
+    after_stat = real_os.stat(member)
+    exposed_after = metadata(R.os.stat(member))
+    assert exposed_after == exposed_before
+    expected_new = hashlib.sha256(after_bytes).hexdigest()
+    assert expected_new != first
+    (tmp_path / 'metadata-collision.json').write_text(json.dumps({
+        'model': 'controlled equal metadata; actual byte writes and reads',
+        'fields': fields, 'actual_before': metadata(before_stat), 'actual_after': metadata(after_stat),
+        'exposed_before': exposed_before, 'exposed_after': exposed_after,
+        'first_digest': first, 'expected_new_digest': expected_new,
+    }, indent=2))
+    assert R.implementation_digest() == expected_new
+
+
+def _ordinary_digest_modules(tmp_path, monkeypatch, contents):
+    scripts = tmp_path / 'scripts'
+    scripts.mkdir(parents=True)
+    for name, raw in contents.items():
+        (scripts / name).write_bytes(raw)
+    monkeypatch.setattr(R, '__file__', str(scripts / 'al_runtime_resources.py'))
+    monkeypatch.setattr(R, '_CONTEXT', None)
+    monkeypatch.setattr(R, '_DIGEST', None)
+    monkeypatch.setattr(R, '_USED', False)
+    return scripts
+
+
+def test_implementation_digest_follows_module_deletion(tmp_path, monkeypatch):
+    import hashlib
+
+    first, second = b'ONE = 1\n', b'TWO = 2\n'
+    scripts = _ordinary_digest_modules(tmp_path, monkeypatch, {'al_one.py': first, 'al_two.py': second})
+    assert R.implementation_digest() == hashlib.sha256(first + second).hexdigest()
+    (scripts / 'al_two.py').unlink()
+    assert R.implementation_digest() == hashlib.sha256(first).hexdigest()
+
+
+def test_implementation_digest_propagates_real_read_errors_after_enumeration(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    import pytest
+
+    real_os = R.os
+    for transition in ('missing', 'directory'):
+        scripts = _ordinary_digest_modules(tmp_path / transition, monkeypatch, {'al_one.py': b'ONE = 1\n'})
+        member = scripts / 'al_one.py'
+        R.implementation_digest()  # A previous successful digest must not hide the read failure.
+
+        @contextmanager
+        def changed_after_listing(path, target=member, action=transition):
+            with real_os.scandir(path) as listing:
+                yield listing
+            target.unlink()
+            if action == 'directory':
+                target.mkdir()
+
+        proxy = SimpleNamespace(**vars(real_os))
+        proxy.scandir = changed_after_listing
+        monkeypatch.setattr(R, 'os', proxy)
+        with pytest.raises(OSError) as failure:
+            R.implementation_digest()
+        assert failure.value.filename == str(member)
+        monkeypatch.setattr(R, 'os', real_os)
+
+
+def test_implementation_digest_uses_memoized_captured_bytes_despite_physical_edit(tmp_path, monkeypatch):
+    import hashlib
+    from types import SimpleNamespace
+
+    before, after = b'VALUE = 1\n', b'VALUE = 2\n'
+    scripts = _ordinary_digest_modules(tmp_path, monkeypatch, {'al_one.py': before})
+    digest = hashlib.sha256(before).hexdigest()
+    supplied = {'identities': {'al_one.py': 'fixture:al_one.py'}, 'bytes': {'al_one.py': before},
+                'platform': 'codex', 'closure_digest': digest, 'origin_digest': digest}
+    R._bind_verified_context(supplied)
+    actual_sha256 = hashlib.sha256
+    hashed = []
+
+    def observed_sha256(raw):
+        hashed.append(raw)
+        return actual_sha256(raw)
+
+    monkeypatch.setattr(R, 'hashlib', SimpleNamespace(sha256=observed_sha256))
+    assert R.implementation_digest() == digest
+    (scripts / 'al_one.py').write_bytes(after)
+    supplied['bytes']['al_one.py'] = after  # The actual binder owns an immutable copied mapping.
+    assert (scripts / 'al_one.py').read_bytes() == after
+    assert R.implementation_digest() == digest
+    assert hashed == [before]  # Real hash work is reused for the bound immutable context.
+
+
+def test_proof_policy_identity_follows_actual_runtime_module_bytes(tmp_path, monkeypatch):
+    import al_new_origin as Origin
+
+    scripts = _ordinary_digest_modules(tmp_path, monkeypatch, {'al_one.py': b'VALUE = 1\n'})
+    original = Origin.policy()
+    assert Origin.policy() == original
+    (scripts / 'al_one.py').write_bytes(b'VALUE = 2\n')
+    changed = Origin.policy()
+    assert changed['id'] == original['id'] and changed['version'] == original['version']
+    assert changed['digest'] != original['digest']
