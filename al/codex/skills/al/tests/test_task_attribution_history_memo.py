@@ -217,3 +217,28 @@ def test_tree_backed_history_is_reused_with_a_private_snapshot_object_store(
     assert trees, 'the captures must be tree-backed for this test to mean anything'
     assert owner.hits == 1 and len(replays) == 1
     assert first == second == expected
+
+
+def test_history_with_retained_unmerged_stages_is_never_reused(cli, repo, tmp_path, replays):
+    # 55-HISTORY-DEPENDENCY-01: retained unmerged index stages are validated against git blob
+    # content, which the reuse fence does not re-verify; such a history is always recomputed.
+    from evidence_helpers import git, start_implementation
+    from test_merge_conflicts import stages
+    stages(repo)
+    stages(repo, 'web/app.js')
+    start_implementation(cli, tmp_path)
+    assert cli('writer', 'start', '--id', 'repair', '--role', 'al-engineer', '--files', 'svc/app.py')[0] == 0
+    (repo / 'svc/app.py').write_text('resolved\n')
+    git(repo, 'add', '--', 'svc/app.py')
+    assert cli('writer', 'finish', '--id', 'repair', '--outcome', 'success')[0] == 0
+    st = cli.state()
+    contribution = A.read_json(st['task_attribution']['contributions'][-1])
+    before = A.read_json(contribution['before_capture_ref'])
+    assert any('stages' in (row.get('index') or {}) for row in before['files'])
+    expected = uncached(st)
+    replays.clear()
+    with H.assessment() as owner:
+        first = T._classify(st)
+        second = T._classify(st)
+    assert first == second == expected
+    assert owner.stores == owner.hits == 0 and len(replays) == 2

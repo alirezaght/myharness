@@ -80,6 +80,17 @@ def enroll_reference(reference):
         recorder.reference(reference)
 
 
+def exclude_recording():
+    """A history input the reuse fence does not re-verify was read: never store this recording.
+
+    Retained unmerged index stages are checked against git blob content (al_scope._blob_hashes);
+    the fence re-reads artifacts and trees only, so such a history is always recomputed.
+    """
+    recorder = _RECORDER.get()
+    if recorder is not None:
+        recorder.complete = False
+
+
 def enroll_tree(tree):
     """Called by attribution readers after the snapshot tree was required successfully."""
     recorder = _RECORDER.get()

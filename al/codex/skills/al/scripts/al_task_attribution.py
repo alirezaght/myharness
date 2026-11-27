@@ -177,7 +177,10 @@ def _validate_conflict_records(rows):
                 or row['worktree'].get('type') not in {'file', 'deleted'}):
             refuse('invalid retained unmerged index records')
         # Git object identity includes its content: recheck immutable stage evidence rather
-        # than accepting an arbitrary digest supplied in a retained artifact.
+        # than accepting an arbitrary digest supplied in a retained artifact. The history reuse
+        # fence does not cover these blob checks, so this history is never memoized (#55).
+        from al_task_history_memo import exclude_recording
+        exclude_recording()
         hashes = S._blob_hashes(al_store.REPO_ROOT, [e['oid'] for e in stages])
         if any(hashes[e['oid']] != e['sha256'] for e in stages):
             refuse('retained unmerged stage content differs')
