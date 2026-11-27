@@ -4167,6 +4167,7 @@
     "digest": "2b71b4f89eeb067dbb5bb0f9b2374bb798af5df1e44cf8f33b6b8faac03b839d"
   },
   "acceptance": [
+    "installer:al/tests/test_runtime_service_performance.py::*",
     "installer:al/tests/test_workspace_journey.py::*",
     "installer:al/tests/test_issuing_runtime.py::*",
     "installer:al/tests/test_terminal_queries.py::*",
