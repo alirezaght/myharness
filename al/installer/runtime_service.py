@@ -171,7 +171,8 @@ class Worktree:
 
     def start(self, watch_source):
         import al_service_cache
-        request = {'deep': [self.root], 'shallow': [d for d in self.git_dirs if not d.startswith(self.root + '/')],
+        request = {'deep': [self.root], 'shallow': [d for d in self.git_dirs
+                   if sys.platform.startswith('linux') or not d.startswith(self.root + '/')],
                    'skip': list(al_service_cache.EXCLUDED)}
         self.process = subprocess.Popen(
             [sys.executable, '-I', '-S', '-B', '-c', watch_source, json.dumps(request)],
