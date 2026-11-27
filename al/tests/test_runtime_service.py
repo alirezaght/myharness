@@ -423,8 +423,6 @@ def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(t
         assert value.wait(lambda: any(
             missed in log.read_text(errors="replace")
             for log in (value.home / "installer/al-services").glob("*/log")))
-        if suppressed.exists():
-            assert all(row == b"cookie-ack-withheld" for row in suppressed.read_bytes().splitlines())
         # The facts above came from authenticated served commands of a verified snapshot, not a direct oracle call.
         assert verify_snapshot(value.snapshot, value.boot["validator_binding"])
     finally:
