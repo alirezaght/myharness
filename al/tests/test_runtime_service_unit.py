@@ -2,6 +2,7 @@
 
 import os
 import socket
+import sys
 from pathlib import Path
 
 import pytest
@@ -379,3 +380,83 @@ raise SystemExit(service.execute(prepared))
         assert "AL_SERVICE=0" in result.stderr and "normal host permission review" in result.stderr
         assert "No command was automatically replayed" in result.stderr
         assert "possible partial effects" in result.stderr
+
+
+@pytest.mark.skipif(not sys.platform.startswith('linux'), reason='native Linux inotify backend')
+@pytest.mark.parametrize('external_git_dir', [False, True], ids=['nested-dot-git', 'external-git-dir'])
+def test_linux_worktree_observes_source_git_inputs_and_cookie(tmp_path, monkeypatch, external_git_dir):
+    import selectors
+    import subprocess
+    import time
+    from types import SimpleNamespace
+    from al.installer import runtime_service as R
+
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / 'codex/skills/al/scripts'))
+    root = tmp_path / 'repo'
+    git_dir = tmp_path / 'git' if external_git_dir else root / '.git'
+    command = ['git', 'init', '-q']
+    if external_git_dir:
+        command += ['--separate-git-dir', str(git_dir)]
+    subprocess.run([*command, str(root)], env=git_env(), check=True,
+                   capture_output=True, timeout=10)
+    source = root / 'app.py';source.write_text('VALUE = 1\n')
+    (git_dir / 'info').mkdir(exist_ok=True)
+    exclude = git_dir / 'info/exclude';exclude.write_text('initial-excluded-file\n')
+    selector = selectors.DefaultSelector()
+
+    def forget(stream):
+        try:
+            selector.unregister(stream)
+        except KeyError:
+            pass
+
+    worktree = R.Worktree(SimpleNamespace(selector=selector, forget=forget),
+                          str(root), str(git_dir), str(git_dir))
+    child = None
+    try:
+        worktree.start((Path(R.__file__).with_name('runtime_service_watch.py')).read_text())
+        child = worktree.process
+        deadline = time.monotonic() + 10
+        while not worktree.ready and worktree.process is not None:
+            remaining = deadline - time.monotonic()
+            assert remaining > 0, 'native watcher did not become ready'
+            for key, _ in selector.select(remaining):
+                key.data[1].readable()
+        assert worktree.ready and worktree.backend == 'inotify'
+        baseline = worktree.changes('')
+        assert baseline is not None  # Actual Git-directory cookie must come back.
+        assert baseline['paths'] == []
+        source.write_text('VALUE = 2\n')
+        config = git_dir / 'config'
+        config.write_text(config.read_text() + '\n# changed snapshot configuration\n')
+        exclude.write_text(exclude.read_text() + '\nignored-fixture-file\n')
+        ignored_object = git_dir / 'objects/ignored-fixture-object'
+        ignored_object.write_text('not a snapshot input\n')
+        changed = worktree.changes(baseline['token'])
+        assert changed is not None
+        assert changed['token'] != baseline['token']
+        assert {str(source), str(config), str(exclude)} <= set(changed['paths'])
+        assert str(ignored_object) not in changed['paths']
+        assert not worktree.cookies
+        assert worktree.sync()  # Subsequent cookies still work after delivery.
+    finally:
+        # This test owns exactly this Popen, including partial start failures.
+        child = child if child is not None else worktree.process
+        try:
+            if child is not None:
+                try:
+                    if child.poll() is None:
+                        child.kill()
+                finally:
+                    child.wait(timeout=5)
+        finally:
+            try:
+                if child is not None:
+                    try:
+                        if child.stdin is not None:
+                            child.stdin.close()
+                    finally:
+                        if child.stdout is not None:
+                            child.stdout.close()
+            finally:
+                selector.close()
