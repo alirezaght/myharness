@@ -200,9 +200,18 @@ def test_refusals_leave_the_state_unchanged(cli, state_file, tmp_path, run_state
     clean = load(state_file)
     for change, expected in (({"approval": {"reason": "forged"}}, "has an approval"),
                              ({"review_iteration": 1}, "review has started and its packets are bound"),
-                             ({"phase": "PLAN_CONFLICT"}, "phase PLAN_CONFLICT cannot reopen planning")):
+                             ({"phase": "PLAN_CONFLICT"}, "phase PLAN_CONFLICT cannot reopen planning"),
+                             ({"gate_recovery": {"forged": True}}, "a gate recovery is active")):
         state_file().write_text(json.dumps({**clean, **change}))
         assert expected in refused(cli, state_file, "planning", "revise", "--reason", "Revise."), change
+    if clean["evidence"]["entries"]:
+        # An owned process whose cleanup is not confirmed keeps planning closed.
+        uncertain = json.loads(json.dumps(clean))
+        entry = uncertain["evidence"]["entries"][0]
+        entry["cleanup"] = {**(entry.get("cleanup") or {}), "complete": False}
+        state_file().write_text(json.dumps(uncertain))
+        assert "owned cleanup unresolved: " + entry["id"] in refused(
+            cli, state_file, "planning", "revise", "--reason", "Revise.")
     state_file().write_text(json.dumps(clean))
     revise(cli)
     # Pending admission: there is nothing admitted to revise.
