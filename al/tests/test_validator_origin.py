@@ -1,9 +1,11 @@
 """Protected snapshot identity and closed original-resource provenance."""
 import copy
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 import pytest
 from al.installer import validator_origin as V
@@ -74,7 +76,7 @@ def test_snapshot_tampering_cannot_recertify_itself(installed, damage):
         elif damage=='symlink':path.unlink();path.symlink_to(source/name)
         else:path.write_bytes(path.read_bytes()+b'\n# changed\n')
     with pytest.raises(ValueError):V.verify_snapshot(root,result['validator_binding'])
-    observed = subprocess.run([str(launcher),'--help'],capture_output=True,text=True,timeout=30)
+    observed = subprocess.run([str(launcher),'--help'],cwd=source.parent,capture_output=True,text=True,timeout=30)
     assert observed.returncode != 0
     assert len(observed.stdout)<1000
 
@@ -92,15 +94,54 @@ def test_original_resources_remain_data_with_exact_membership(installed,damage):
         else:path.write_bytes(path.read_bytes()+b'\n')
     with pytest.raises(ValueError):V.verify_origin_data(captured['origin'],captured['bytes'])
     # Ordinary tagged CLI operations do not require origin data to stay present.
-    result = subprocess.run([str(launcher),'--help'],capture_output=True,text=True,timeout=30)
+    result = subprocess.run([str(launcher),'--help'],cwd=source.parent,capture_output=True,text=True,timeout=30)
     assert result.returncode == 0, result.stderr[-1500:]
 
 
-def run_control(body, root, *args):
+def _control_environment():
+    from al.installer.source import git_env
+
+    environment = git_env()
+    environment.update(GIT_CONFIG_COUNT='2', GIT_CONFIG_KEY_0='core.hooksPath',
+                       GIT_CONFIG_VALUE_0=os.devnull, GIT_CONFIG_KEY_1='core.fsmonitor',
+                       GIT_CONFIG_VALUE_1='false')
+    return environment
+
+
+def _fixture_git(directory, *args):
+    return subprocess.run(['/usr/bin/git', *args], cwd=directory, env=_control_environment(),
+                          capture_output=True, check=True, timeout=10).stdout
+
+
+def _control_repository(directory):
+    directory.mkdir()
+    _fixture_git(directory, 'init', '-q')
+    sentinel = directory/'sentinel.txt'
+    sentinel.write_text('committed sentinel\n')
+    _fixture_git(directory, 'add', 'sentinel.txt')
+    _fixture_git(directory, '-c', 'user.name=fixture', '-c', 'user.email=fixture@example.invalid',
+                 'commit', '-qm', 'private control sentinel')
+    sentinel.write_text('uncommitted sentinel\n')
+    return sentinel
+
+
+def run_control(body, root, *args, cwd):
+    from al.installer.owned_process import OwnedProcess
+
+    cwd = Path(cwd).resolve(strict=True)
+    scratch = Path(tempfile.mkdtemp(prefix='validator-control-', dir=cwd.parent))
+    owner = OwnedProcess(scratch/'process', 'validator-control-probe')
     program = "import sys;sys.path.insert(0,sys.argv[1]);"+body
-    result = subprocess.run([sys.executable,'-I','-S','-B','-c',program,str(root),*args],
-                            capture_output=True,text=True,timeout=30)
-    assert result.returncode==0,result.stderr[-3000:]+result.stdout[-1000:]
+    log = scratch/'output.log'
+    with log.open('wb') as output:
+        try:
+            process = owner.spawn([sys.executable,'-I','-S','-B','-c',program,str(root),*args],
+                                  cwd=cwd,env=_control_environment(),output=output)
+            process.wait(timeout=30)
+        finally:
+            cleanup = owner.cleanup()
+            assert cleanup['complete'], cleanup
+    assert process.returncode==0,log.read_text(errors='replace')[-4000:]
 
 
 @pytest.mark.parametrize('mode',['unknown','preloaded','resource','rebind','truthful'])
@@ -131,7 +172,7 @@ try:
 except (ValueError,ImportError):
  if mode=='truthful':raise
 '''
-    run_control(body,source,mode,str(tmp_path))
+    run_control(body,source,mode,str(tmp_path),cwd=tmp_path)
     assert not marker.exists()
 
 
@@ -139,6 +180,17 @@ except (ValueError,ImportError):
 def test_probe_observational_boundary_denies_mutation_and_gate_execution(tmp_path,operation):
     root = Path(__file__).resolve().parents[1]
     marker = tmp_path/'marker'
+    repository = tmp_path/'guarded-repository'
+    sentinel = _control_repository(repository)
+    if operation == 'git-mutation':
+        positive = tmp_path/'unguarded-repository'
+        positive_sentinel = _control_repository(positive)
+        assert positive_sentinel.read_text() == 'uncommitted sentinel\n'
+        _fixture_git(positive, 'reset', '--hard')
+        assert positive_sentinel.read_text() == 'committed sentinel\n'
+        assert _fixture_git(positive, 'status', '--porcelain') == b''
+    before = (sentinel.read_bytes(), _fixture_git(repository, 'rev-parse', 'HEAD'),
+              (repository/'.git/index').read_bytes(), _fixture_git(repository, 'status', '--porcelain'))
     body = '''
 from installer.validator_readonly import Readonly
 from pathlib import Path
@@ -151,10 +203,16 @@ try:
  if operation=='git-mutation':subprocess.run(['git','reset','--hard'])
  if operation=='git-external':subprocess.run(['git','diff','--ext-diff'])
  raise AssertionError('mutation accepted')
-except PermissionError:pass
+except PermissionError as error:
+ expected={'write':'terminal validator is read-only','gate':'terminal validator permits system read-only Git only',
+           'git-mutation':'unsupported terminal read-only Git grammar','git-external':'unsupported terminal read-only Git grammar'}
+ assert str(error)==expected[operation]
 '''
-    run_control(body,root,operation,str(marker))
+    run_control(body,root,operation,str(marker),cwd=repository)
     assert not marker.exists()
+    after = (sentinel.read_bytes(), _fixture_git(repository, 'rev-parse', 'HEAD'),
+             (repository/'.git/index').read_bytes(), _fixture_git(repository, 'status', '--porcelain'))
+    assert after == before
 
 
 def test_read_set_detects_actual_external_input_drift(tmp_path):
@@ -165,14 +223,23 @@ from installer.validator_readonly import Readonly
 from pathlib import Path
 import subprocess
 child=subprocess.Popen([sys.executable,'-I','-S','-c',"import sys;sys.stdin.read(1);open(sys.argv[1],'w').write('after')",sys.argv[2]],stdin=subprocess.PIPE)
-readonly=Readonly();readonly.start()
-assert Path(sys.argv[2]).read_text()=='before'
-child.stdin.write(b'x');child.stdin.close()
-assert child.wait(timeout=10)==0
-try:readonly.verify();raise AssertionError('input drift accepted')
-except ValueError:pass
+try:
+ readonly=Readonly();readonly.start()
+ assert Path(sys.argv[2]).read_text()=='before'
+ child.stdin.write(b'x');child.stdin.close()
+ assert child.wait(timeout=10)==0
+ try:readonly.verify();raise AssertionError('input drift accepted')
+ except ValueError:pass
+finally:
+ try:
+  if child.poll() is None:child.kill()
+ finally:
+  try:child.wait(timeout=5)
+  finally:
+   for stream in (child.stdin,child.stdout,child.stderr):
+    if stream is not None:stream.close()
 '''
-    run_control(body,root,str(path))
+    run_control(body,root,str(path),cwd=tmp_path)
 
 
 @pytest.mark.parametrize('argv',[
@@ -197,10 +264,10 @@ readonly=Readonly();readonly.start()
 try:subprocess.run(['git',*json.loads(sys.argv[2])]);raise AssertionError('unsafe Git accepted')
 except PermissionError:pass
 '''
-    run_control(body,root,json.dumps(argv))
+    run_control(body,root,json.dumps(argv),cwd=tmp_path)
 
 
-def test_stdlib_optional_absence_is_precise_without_import_fallthrough(installed):
+def test_stdlib_optional_absence_is_precise_without_import_fallthrough(installed,tmp_path):
     source,_,_ = installed
     body='''
 from installer.validator_origin import capture_canonical
@@ -221,7 +288,7 @@ try:__import__('al_unbound');raise AssertionError('unknown AL accepted')
 except ImportError:pass
 assert not calls
 '''
-    run_control(body,source)
+    run_control(body,source,cwd=tmp_path)
 
 
 def test_wrong_platform_mapping_is_not_authenticated_by_its_own_digest(installed):
@@ -257,7 +324,7 @@ print(json.dumps(resources.binding_identity()))
 '''
     for source,platform in ((first,'codex'),(second,'codex'),(first,'claude')):
         program="import sys;sys.path.insert(0,sys.argv[1]);"+body
-        result=subprocess.run([sys.executable,'-I','-S','-B','-c',program,str(source),platform],capture_output=True,text=True,timeout=30)
+        result=subprocess.run([sys.executable,'-I','-S','-B','-c',program,str(source),platform],cwd=tmp_path,capture_output=True,text=True,timeout=30)
         assert result.returncode==0,result.stderr[-2000:]
         results.append(json.loads(result.stdout))
     assert results[0]['origin_digest']!=results[1]['origin_digest']
@@ -287,7 +354,7 @@ def test_bootstrap_utility_ordinary_repository_identity_ignores_activation_marke
 ):
     root = tmp_path / 'repo'
     root.mkdir()
-    subprocess.run(['/usr/bin/git', 'init', '-q', str(root)], check=True)
+    subprocess.run(['/usr/bin/git', 'init', '-q', str(root)], cwd=root, env=_control_environment(), check=True)
     monkeypatch.delitem(sys.modules, '_al_retry_control_context', raising=False)
     if environment_markers:
         monkeypatch.setenv('HARNESS_RETRY_CONTROL_FD', '9999999')
