@@ -132,6 +132,7 @@
   "test_ci_pytest_profile.py": "'.claude' is a collect_ignore path in a fixture repository, not the host",
   "test_code_facts.py": "a host runtime directory is fixture data the code facts must skip",
   "test_distribution_registry.py": "'codex' is registry row data passed to the shared registry",
+  "test_git_memo.py": "test_git_memo.py supplies a valid platform label as inert fixture data to the shared verified-resource binder. The tested implementation digest depends on captured module bytes, not the platform label; no host implementation is selected. The proof-policy consumer test holds the active model policy constant and checks runtime-byte invalidation only.",
   "test_remote_github.py": "'.claude' is a collect_ignore path in a fixture repository",
   "test_runtime_batch11_distribution.py": "'codex' is registry row data passed to the shared registry",
   "test_service_cache.py": "a host runtime state path is fixture data the shared cache must ignore",
