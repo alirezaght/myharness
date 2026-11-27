@@ -58,6 +58,13 @@ literal assignment controls the child's value; an ambient `CI` change can still
 conservatively invalidate its evidence. Other repository-specific environment
 inputs require explicit `--env` declarations.
 
+A run keeps the fingerprint scheme of the runtime that issued it: released AL up to
+v0.1.70 hashed only the declared names, v0.1.71 added `CI`, and current AL also binds
+the execution policy. Current-policy readiness and terminal source proofs, which apply
+current code to an older issuer's run, accept its records only when one older scheme
+reproduces all of them; the declared values must still match. Records made by a newer
+runtime never match an older scheme, so they are not judged by it.
+
 ## Action cache (reuse across runs, tasks and worktrees)
 
 When no PASS of this run can be reused, `evidence run` looks the check up in the

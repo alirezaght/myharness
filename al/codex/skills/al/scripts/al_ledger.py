@@ -43,6 +43,7 @@ import al_store  # noqa: E402
 import al_sources as Sources
 import al_scope as S
 import al_runner_output as RunnerOutput
+from al_environment_observation import ENV_SCHEMES, env_scheme  # noqa: E402,F401  (re-exported scheme API)
 
 STATUSES = ("PASS", "FAIL", "EMPTY", "INFRA", "TORN", "RUNNING")
 TIERS = ("focused", "broad", "preflight")
@@ -164,19 +165,37 @@ def _prefixes(p):
     return [Path(*parts[: i + 1]) for i in range(len(parts))] if p != "." else []
 
 
+def issuer_gaps(compute):
+    """Gaps in records an issuing runtime made, judged by the one scheme that reproduces them.
+
+    `compute` returns the gaps of the whole run. Current gaps are returned unless a single older scheme
+    leaves none: an issuer records every fingerprint with its own scheme, and a record matches only the
+    scheme that made it, so a newer runtime's records never pass under an older scheme."""
+    gaps=compute()
+    for name in ENV_SCHEMES[:-1] if gaps else ():
+        with env_scheme(name):
+            if not compute():return []
+    return gaps
+
+
+def _env_names(env_names):
+    from al_environment_observation import default_names
+    return sorted(set(env_names or ()) | default_names())
+
+
 def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
     from al_analysis_cache import CURRENT
-    from al_environment_observation import DEFAULT_VERIFICATION_NAMES
+    from al_environment_observation import current_scheme
     from al_profile import span
     from al_verification_policy import execution_policy
     policy=execution_policy()
-    env_names=sorted(set(env_names or ()) | DEFAULT_VERIFICATION_NAMES)
+    env_names=_env_names(env_names)
     context=CURRENT.get()
     with span('scope-hashing'):
         if context is None:return _scope_fingerprint(scope,env_names,sources,cwd)
         from al_environment_observation import value_digest
         environment={name:value_digest(name) for name in env_names}
-        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment,policy],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
+        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment,policy,current_scheme()],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
 
 
 def _scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
@@ -287,10 +306,12 @@ def mutation_source(st, e):
 
 
 def _env_digest(h, env_names):
-    from al_verification_policy import execution_policy
-    h.update(b'\0execution_policy:'+json.dumps(execution_policy(),sort_keys=True,separators=(',',':')).encode())
-    from al_environment_observation import DEFAULT_VERIFICATION_NAMES, value_digest
-    for name in sorted(set(env_names or ()) | DEFAULT_VERIFICATION_NAMES):
+    from al_environment_observation import current_scheme
+    if current_scheme()=='policy':
+        from al_verification_policy import execution_policy
+        h.update(b'\0execution_policy:'+json.dumps(execution_policy(),sort_keys=True,separators=(',',':')).encode())
+    from al_environment_observation import value_digest
+    for name in _env_names(env_names):
         digest = value_digest(name)
         h.update(f"\0env:{name}={digest}".encode())
     return h.hexdigest()[:16]
