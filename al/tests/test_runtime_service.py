@@ -406,8 +406,12 @@ def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(t
         deleted = _assert_protected_facts(value, "fallback")
         assert "app.py" not in deleted["files"] and not deleted["edges"]
         assert len(marker.read_bytes().splitlines()) > len(first_markers)
-        suppressed_rows = suppressed.read_bytes().splitlines()
-        assert suppressed_rows and all(row == b"cookie-ack-withheld" for row in suppressed_rows)
+        # The worktree watcher starts lazily on the first request, and under this fault the only
+        # cookies are written by the background helper's own currency check, asynchronously.
+        # A slow native delivery can therefore trail both served commands; wait for it, bounded.
+        suppressed_rows = value.wait(
+            lambda: suppressed.exists() and suppressed.read_bytes().splitlines())
+        assert all(row == b"cookie-ack-withheld" for row in suppressed_rows)
         # The hook was reached in authenticated served commands, not a direct oracle call.
         assert verify_snapshot(value.snapshot, value.boot["validator_binding"])
     finally:
