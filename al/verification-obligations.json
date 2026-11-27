@@ -31,6 +31,12 @@
         "codex:*test_parity*",
         "codex:*test_resources*"
       ]
+    },
+    {
+      "source": "al/installer/operator_facts*.py",
+      "tests": [
+        "installer:al/tests/test_operator_facts.py"
+      ]
     }
   ],
   "isolation_review": {

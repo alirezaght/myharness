@@ -157,3 +157,55 @@ def test_facts_command_is_read_only_canonical_json(monorepo):
     assert [c['locator'] for c in value['consumers']] == ['apps/web/src/page.tsx']
     after = sorted(p.name for p in state.rglob('*')) if state.exists() else []
     assert before == after
+
+
+@pytest.mark.parametrize(('frame', 'message'), [
+    (b'not-an-object-header\n', 'invalid Git blob frame'),
+    (b'0' * 40 + b' blob 7\ncontent\n', 'invalid Git blob frame'),
+    (b'0' * 40 + b' tree 7\ncontent\n', 'invalid Git blob frame'),
+    (b'0' * 40 + b' blob 7\nshort\n', 'invalid Git blob length'),
+    (b'0' * 40 + b' blob 7\nchanged\n', 'Git blob content mismatch'),
+    (b'0' * 40 + b' blob 7\ncontent\ntrailing', 'trailing Git blob data'),
+])
+def test_view_read_rejects_malformed_git_blob_frames(monkeypatch, tmp_path, frame, message):
+    import hashlib
+    import al_snapshot
+
+    content = b'content'
+    oid = hashlib.sha1(b'blob 7\0' + content).hexdigest()
+    if message == 'invalid Git blob frame' and frame.startswith(b'0' * 40):
+        frame = frame.replace(b'0' * 40, oid.encode(), 1)
+        if b' blob 7\ncontent\n' in frame:
+            frame = frame.replace(oid.encode(), (('f' if oid[0] != 'f' else 'e') + oid[1:]).encode(), 1)
+        elif b' tree 7\n' in frame:
+            frame = oid.encode() + b' tree 7\ncontent\n'
+    elif message == 'invalid Git blob length':
+        frame = oid.encode() + b' blob 7\nshort\n'
+    elif message == 'Git blob content mismatch':
+        frame = oid.encode() + b' blob 7\nchanged\n'
+    elif message == 'trailing Git blob data':
+        frame = oid.encode() + b' blob 7\ncontent\ntrailing'
+
+    view = facts.View.__new__(facts.View)
+    view.root = tmp_path
+    view.files = {'sample.py': oid}
+    view._bytes = {}
+    monkeypatch.setattr(al_snapshot, '_run', lambda *_args, **_kwargs: frame)
+    with pytest.raises(ValueError, match=message):
+        view.read(['sample.py'])
+
+
+def test_view_read_accepts_valid_git_blob_frame(monkeypatch, tmp_path):
+    import hashlib
+    import al_snapshot
+
+    content = b'content'
+    oid = hashlib.sha1(b'blob 7\0' + content).hexdigest()
+    view = facts.View.__new__(facts.View)
+    view.root = tmp_path
+    view.files = {'sample.py': oid}
+    view._bytes = {}
+    monkeypatch.setattr(
+        al_snapshot, '_run', lambda *_args, **_kwargs: oid.encode() + b' blob 7\ncontent\n'
+    )
+    assert view.read(['sample.py']) == {'sample.py': content}

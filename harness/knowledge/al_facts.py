@@ -10,10 +10,10 @@ That is the plain `run` form the resident AL service (#27) serves from a warm pr
 query while an AL run is active reads the service's in-memory working-copy tree and fact-store
 pack headers. Without the service the launcher runs the same command in process.
 
-Facts are available only where an AL run can be named: an execution's own run, an explicit
-session, or the native Claude conversation's run. Otherwise (`resolve` returns None), or when
-the launcher fails, the knowledge graph keeps its text and symbol index and reports
-`al-facts-unavailable` instead of import edges.
+Run-bound queries keep their explicit or native route. Public operator refresh may select the
+verified standalone `alctl facts` route before execution, without creating an AL run. Failure
+never changes that selection; unavailable facts retain text/symbol fallback. Advisory facts
+confer no execution, writer or approval authority.
 """
 
 import json
@@ -85,13 +85,44 @@ class ALFacts:
         return value
 
 
-def resolve(repository, *, platform=None, session=None, runner=None, launcher=None):
-    """The AL run to query: an explicit session, else the native Claude conversation's run
-    (the launcher resolves it), else None (the knowledge graph then has no import edges)."""
-    if session:
+class OperatorFacts(ALFacts):
+    """Advisory facts from the verified installer, without an implementation run."""
+
+    def __init__(self, repository, *, launcher=None, runner=None):
+        super().__init__(repository, None, launcher=launcher, runner=runner)
+
+    def argv(self, *arguments):
+        launcher = self.launcher
+        if launcher is None:
+            from harness.execution_hosts import managed_launcher
+
+            launcher = managed_launcher()
+        return [str(launcher), "facts", "--repository", self.repository, *arguments]
+
+
+def resolve(
+    repository, *, platform=None, session=None, runner=None, launcher=None, allow_operator=False
+):
+    """Select once: explicit run, native conversation, then trusted operator opt-in.
+
+    A selected client's refusal never changes its route or grants another authority.
+    """
+    if platform is not None and platform not in {"codex", "claude"}:
+        raise ValueError("invalid AL facts platform")
+    if session is not None:
+        if (
+            not isinstance(session, str)
+            or not session.strip()
+            or len(session) > 256
+            or any(ord(c) < 32 for c in session)
+        ):
+            raise ValueError("invalid explicit AL facts session")
         return ALFacts(repository, platform or "claude", session, runner=runner, launcher=launcher)
-    if (platform in (None, "claude")) and (
-        os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
-    ):
+    native = os.environ.get("CLAUDE_SESSION_ID") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    if native:
+        if platform not in (None, "claude"):
+            raise ValueError("explicit platform differs from native facts route; supply a session")
         return ALFacts(repository, "claude", None, runner=runner, launcher=launcher)
-    return None
+    if platform is not None:
+        raise ValueError("explicit AL facts platform requires a session")
+    return OperatorFacts(repository, runner=runner, launcher=launcher) if allow_operator else None

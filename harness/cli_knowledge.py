@@ -84,18 +84,29 @@ def inspect_knowledge(controller, repository, *, task_id=None):
 
 
 def refresh_knowledge(
-    controller, repository, *, task_id=None, commit=None, included_paths=(), rounds=None
+    controller,
+    repository,
+    *,
+    task_id=None,
+    commit=None,
+    included_paths=(),
+    rounds=None,
+    al_session=None,
+    al_platform=None,
 ):
     """Explicit indexing opts the repository in; it settles incremental batches by default."""
+    from harness.knowledge.al_facts import resolve
     from harness.knowledge.consumers import coverage_summary
 
     scope = current_operator_scope(controller.conn, repository, task_id=task_id)
+    facts = resolve(repository, platform=al_platform, session=al_session, allow_operator=True)
     result = asdict(
         refresh_until_settled(
             controller,
             scope,
             RefreshRequest(included_paths=tuple(sorted(set(included_paths))), commit=commit),
             rounds=rounds,
+            facts=facts,
         )
     )
     result["summary"] = coverage_summary(controller.conn, scope)
@@ -203,9 +214,9 @@ def add_knowledge_parser(subparsers):
             action.add_argument("--limit", type=int, default=200)
         elif name == "edges":
             action.add_argument("paths", nargs="*", help="files or directories (all code if none)")
-        if name in {"consumers", "edges"}:
-            # Import edges are AL's code facts (#34): name the AL run to ask, or run inside a
-            # Claude conversation with an active AL run; otherwise the answer is unavailable.
+        if name in {"consumers", "edges", "refresh"}:
+            # Explicit/native runs remain authoritative. Standalone operator refresh alone
+            # opts into the verified advisory route when neither run selection applies.
             action.add_argument("--al-session", help="AL run id whose launcher answers")
             action.add_argument("--al-platform", choices=("claude", "codex"), default=None)
         if name == "explain":
@@ -300,6 +311,8 @@ def cmd_knowledge(args: argparse.Namespace) -> int:
                 commit=args.commit,
                 included_paths=args.include,
                 rounds=args.rounds,
+                al_session=args.al_session,
+                al_platform=args.al_platform,
             )
         elif args.knowledge_action == "consumers":
             result = consumers_knowledge(

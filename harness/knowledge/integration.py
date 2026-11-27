@@ -16,7 +16,7 @@ from harness.knowledge.models import (
 )
 from harness.knowledge.policy import current_operator_scope, validate_scope
 from harness.knowledge.query import query
-from harness.knowledge.refresh import refresh
+from harness.knowledge.refresh import _AUTO_FACTS, refresh
 from harness.knowledge.store import publish_snapshot
 
 _DEFAULT_REFRESH_REQUEST = RefreshRequest()
@@ -48,8 +48,8 @@ def _pending(result):
     return sum(1 for gap in result.coverage if gap.get("reason") in _INCREMENTAL)
 
 
-def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
-    result = refresh(controller.conn, scope, request)
+def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST, *, facts=_AUTO_FACTS):
+    result = refresh(controller.conn, scope, request, facts=facts)
     if (
         request.commit
         or result.snapshot_id is None
@@ -115,7 +115,9 @@ def refresh_with_records(controller, scope, request=_DEFAULT_REFRESH_REQUEST):
     )
 
 
-def refresh_until_settled(controller, scope, request=_DEFAULT_REFRESH_REQUEST, *, rounds=None):
+def refresh_until_settled(
+    controller, scope, request=_DEFAULT_REFRESH_REQUEST, *, rounds=None, facts=_AUTO_FACTS
+):
     """Repeat incremental refreshes while each one publishes and defers the remainder.
 
     Every round hashes the inventory but retains and extracts only uncached sources, in
@@ -124,7 +126,7 @@ def refresh_until_settled(controller, scope, request=_DEFAULT_REFRESH_REQUEST, *
     from harness.knowledge.policy import current_operator_scope as current
 
     rounds = MAX_SETTLE_ROUNDS if rounds is None else rounds
-    result = refresh_with_records(controller, scope, request)
+    result = refresh_with_records(controller, scope, request, facts=facts)
     for _ in range(rounds - 1):
         if request.commit or result.status not in {"published", "published-partial"}:
             break
@@ -133,7 +135,7 @@ def refresh_until_settled(controller, scope, request=_DEFAULT_REFRESH_REQUEST, *
         scope = current(
             controller.conn, scope.repository, task_id=scope.task_id, purpose=scope.purpose
         )
-        result = refresh_with_records(controller, scope, request)
+        result = refresh_with_records(controller, scope, request, facts=facts)
     return result
 
 

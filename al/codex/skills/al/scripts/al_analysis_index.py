@@ -47,6 +47,10 @@ def enabled():
 
 
 def index_root():
+    from al_snapshot import operator_source
+    source = operator_source()
+    if source is not None:
+        return source.cache_root
     configured = os.environ.get('AL_ANALYSIS_INDEX_DIR')
     if configured:
         return Path(configured)
@@ -144,6 +148,10 @@ def identity(namespace, code, key):
 # ---------------------------------------------------------------- store
 
 def _common_dir(root):
+    from al_snapshot import operator_source
+    source = operator_source(root)
+    if source is not None:
+        return str(source.common_dir)
     result = subprocess.run(['git', '--no-optional-locks', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
                             cwd=str(root), capture_output=True, timeout=10)
     if result.returncode:
@@ -379,8 +387,10 @@ def store(root=None):
     value = Store(str(directory)) if ready else None
     _STORES[key] = value
     if value is not None:
-        import atexit
-        atexit.register(value.flush)
+        from al_snapshot import operator_source
+        if operator_source(root) is None:
+            import atexit
+            atexit.register(value.flush)
     return value
 
 
