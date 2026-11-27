@@ -164,37 +164,81 @@ def test_global_harness_guidance_preserves_approval_text_and_requires_collision_
     assert collision.read_bytes() == before
 
 
-def _in_thread(function):
-    import threading
+def _owned_probe(tmp_path, program, *arguments):
+    from al import verification_process as P
 
-    box = {}
+    home = tmp_path / "coordination-probe-home"
+    home.mkdir(mode=0o700)
+    environment = dict(
+        os.environ, HOME=str(home), AL_SERVICE="0", PYTHONDONTWRITEBYTECODE="1",
+        AL_DISTRIBUTION_STATE=str(tmp_path / "coordination-probe-distribution"),
+    )
+    for name in ("AL_RUNTIME_DIR", "PYTHONPATH", "PYTHONHOME"):
+        environment.pop(name, None)
+    output = tmp_path / "coordination-probe-output"
+    with output.open("wb") as stream:
+        owner = P.execute(
+            [
+                os.sys.executable,
+                "-I",
+                "-c",
+                program,
+                str(Path(__file__).resolve().parents[2]),
+                *(str(value) for value in arguments),
+            ],
+            cwd=tmp_path,
+            env=environment,
+            output=stream,
+            directory=tmp_path / "coordination-probe-owned",
+            assignment="workspace-cli-coordination",
+            timeout=120,
+        )
+    text = output.read_text()
+    assert owner.process.returncode == 0, text[-4000:]
+    return text
 
-    def run():
+
+PREPARE_PROBE = """
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from al.installer import workspace_cli as C
+from al.installer.registry import coordination
+source, home, state, preparation = map(Path, sys.argv[2:])
+with coordination(state) as held:
+    result = C.prepare_cli(source, home, state, preparation, held=held)
+print(json.dumps(result["kind"]))
+"""
+
+
+THREAD_TOKEN_PROBE = """
+import sys, threading
+sys.path.insert(0, sys.argv[1])
+from al.installer.registry import coordination
+box = {}
+with coordination(sys.argv[2]) as held:
+    def attempt():
         try:
-            box["value"] = function()
-        except BaseException as exc:  # surfaced to the test thread
-            box["error"] = exc
-
-    thread = threading.Thread(target=run, daemon=True)
+            with coordination(sys.argv[2], held=held):
+                box["accepted"] = True
+        except BaseException as error:
+            box["error"] = error
+    thread = threading.Thread(target=attempt)
     thread.start()
-    thread.join(timeout=120)
-    assert not thread.is_alive(), "nested coordination deadlocked"
-    if "error" in box:
-        raise box["error"]
-    return box["value"]
+    thread.join()
+error = box.get("error")
+assert isinstance(error, ValueError) and "does not hold" in str(error), box
+assert not box.get("accepted"), box
+print("thread token refused")
+"""
 
 
 def test_planner_cli_preparation_runs_under_the_held_coordination_lock(old_cli, tmp_path):
-    from al.installer.registry import coordination
-
     source, home, state, _destination, _owner = old_cli
-
-    def plan_path():
-        # workspace_plan.plan_workspace holds the lock while preparing the CLI.
-        with coordination(state) as held:
-            return C.prepare_cli(source, home, state, tmp_path / "preparation", held=held)
-
-    assert _in_thread(plan_path)["kind"] == "workspace-cli-preparation-v1"
+    result = _owned_probe(
+        tmp_path, PREPARE_PROBE, source, home, state, tmp_path / "preparation"
+    )
+    assert json.loads(result) == "workspace-cli-preparation-v1"
 
 
 PROBE = """
@@ -229,10 +273,9 @@ def test_coordination_tokens_are_bound_and_standalone_bootstrap_acquires(tmp_pat
         with pytest.raises(ValueError, match="does not hold"):
             with coordination(other, held=held):
                 pass
-        with pytest.raises(ValueError, match="does not hold"):
-            _in_thread(lambda: coordination(state, held=held).__enter__())
         with coordination(state, held=held) as nested:
             assert nested is held
+    assert _owned_probe(tmp_path, THREAD_TOKEN_PROBE, state).strip() == "thread token refused"
     with pytest.raises(ValueError, match="does not hold"):
         with coordination(state, held=held):
             pass
