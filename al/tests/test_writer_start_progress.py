@@ -28,6 +28,8 @@ def coordinator(tmp_path, monkeypatch):
     """Stop exactly at execv; exercise coordinator boundaries without native authority."""
     monkeypatch.delenv('AL_RUNTIME_DIR', raising=False)
     monkeypatch.delenv('CLAUDE_PROJECT_DIR', raising=False)
+    monkeypatch.setenv('AL_SERVICE', '0')
+    monkeypatch.setattr(R, '_managed_issuer', lambda: {})
     stderr = Diagnostic()
     isolated = SimpleNamespace(flags=SimpleNamespace(isolated=True, no_site=True),
                                dont_write_bytecode=True, stderr=stderr, modules=sys.modules)
@@ -53,14 +55,20 @@ def coordinator(tmp_path, monkeypatch):
         events.append(('verify', kwargs, stderr.getvalue()))
         return {'manifest': manifest}
     monkeypatch.setattr(R, 'verify_pin_cached', verify)
-    monkeypatch.setattr(R, 'validate_live', lambda *args: None)
-    monkeypatch.setattr(R, 'observe', lambda *args: {})
+    validated_launches = []
+    def validate_launch(profile, expected, requested):
+        assert profile is manifest['interpreter_execution_identity']
+        assert expected is manifest['interpreter']
+        assert requested == '/fixture/python'
+        validated_launches.append(requested)
+    monkeypatch.setattr(R, 'validate_launch', validate_launch)
     requests, executions = [], []
     def program(request):
         requests.append(request)
         return 'EXACT FIXTURE PROGRAM'
     monkeypatch.setattr(R, 'program', program)
     def execute(executable, argv):
+        assert validated_launches == ['/fixture/python']
         executions.append((executable, argv))
         raise Delegated()
     monkeypatch.setattr(R.os, 'execv', execute)
