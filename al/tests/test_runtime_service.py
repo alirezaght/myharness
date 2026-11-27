@@ -167,9 +167,13 @@ class Setup:
     def stop_services(self):
         self.control("status")
         self.control("stop")
-        for observed in self.owned_services.values():
+        observed_services = dict(self.owned_services)
+        for observed in observed_services.values():
             wait_service_exit(observed)
         self.owned_services.clear()
+        (self.base / "owned-cleanup.json").write_text(json.dumps({
+            "complete": True, "identity_bound_services_settled": observed_services,
+        }))
 
     def wait(self, predicate, seconds=20):
         deadline = time.monotonic() + seconds
@@ -282,16 +286,133 @@ def _service_tree(setup):
     return tree
 
 
-def test_watcher_keeps_the_in_memory_snapshot_current(setup):
-    first = setup.wait(lambda: _service_tree(setup))
-    assert first == _direct_snapshot(setup)
-    (setup.repo / "app.py").write_text("print('changed')\n")
-    second = setup.wait(lambda: (tree := _service_tree(setup)) != first and tree)
-    assert second == _direct_snapshot(setup)
-    # AL's own runtime files and excluded directories never change the tree.
-    (setup.repo / "node_modules").mkdir(exist_ok=True)
-    (setup.repo / "node_modules/x.js").write_text("x")
-    assert setup.wait(lambda: _service_tree(setup)) == second == _direct_snapshot(setup)
+def _assert_snapshot_is_current(setup, expected):
+    tree = _service_tree(setup)
+    # None is an honest cache miss. A stale non-None answer fails on this very reply.
+    assert tree is None or tree == expected
+
+
+def _assert_protected_facts(setup, session="s1"):
+    expected = _direct_snapshot(setup)
+    before = setup.served()
+    code, out, err = setup.run(session, "facts", "edges")
+    assert code == 0, (out[-4000:], err[-4000:])
+    assert setup.served() == before + 1
+    value = json.loads(out)
+    assert value["tree"] == expected and value["status"] == "complete"
+    entries = git(setup.repo, "ls-tree", "-r", expected).splitlines()
+    expected_files = {}
+    for row in entries:
+        metadata, name = row.split("\t", 1)
+        if name.endswith(".py"):
+            expected_files[name] = metadata.split()[2]
+    assert value["files"] == expected_files
+    return value
+
+
+def test_snapshot_replies_and_protected_facts_remain_current_after_edit_and_deletion(setup):
+    app = setup.repo / "app.py"
+    try:
+        app.write_text("import changed_dependency\n")
+        expected = _direct_snapshot(setup)
+        _assert_snapshot_is_current(setup, expected)
+        edited = _assert_protected_facts(setup)
+        assert edited["files"]["app.py"] == git(setup.repo, "hash-object", "app.py")
+        assert any(edge["locator"] == "app.py" and edge["target"] == "module:changed_dependency"
+                   for edge in edited["edges"])
+        app.unlink()
+        expected = _direct_snapshot(setup)
+        _assert_snapshot_is_current(setup, expected)
+        deleted = _assert_protected_facts(setup)
+        assert "app.py" not in deleted["files"]
+        assert not any(edge["locator"] == "app.py" for edge in deleted["edges"])
+    finally:
+        app.write_text("print('x')\n")
+
+
+def test_snapshot_safety_assertion_rejects_stale_reply_immediately(monkeypatch):
+    # Mutation control for the assertion used by the genuine native journey above.
+    monkeypatch.setattr(sys.modules[__name__], "_service_tree", lambda setup: "a" * 40)
+    with pytest.raises(AssertionError):
+        _assert_snapshot_is_current(None, "b" * 40)
+
+
+def _settle_private_edit(path, text):
+    path.write_text(text)
+    info = path.stat()
+    os.utime(path, ns=(info.st_mtime_ns + 10**9, info.st_mtime_ns))
+    path.read_bytes()
+
+
+def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(tmp_path):
+    value = Setup(tmp_path / "fallback-service")
+    marker = value.base / "fallback.jsonl"
+    suppressed = value.base / "suppressed-cookies.jsonl"
+    try:
+        variant = value.variant()
+        watcher = variant / "installer/runtime_service_watch.py"
+        anchor = "    deep, shallow, skip = request['deep'], request['shallow'], set(request['skip'])\n"
+        original = watcher.read_text()
+        assert original.count(anchor) == 1
+        # FAULT INJECTION: only worktree cookie acknowledgments are unavailable.
+        # Pin monitoring has an empty skip set and retains the genuine native backend.
+        control = f'''
+    if skip:
+        global emit
+        real_emit = emit
+        def unavailable_cookie(kind, path=''):
+            if kind == 'E' and os.path.basename(path).startswith('al-service-cookie.'):
+                fd = os.open({str(suppressed)!r}, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+                try:
+                    os.write(fd, b'cookie-ack-withheld\\n')
+                finally:
+                    os.close(fd)
+                return
+            real_emit(kind, path)
+        emit = unavailable_cookie
+'''
+        _settle_private_edit(watcher, original.replace(anchor, anchor + control))
+        cache = variant / "codex/skills/al/scripts/al_service_cache.py"
+        original = cache.read_text()
+        anchor = "            return tree if tree is not None else original(root)\n"
+        assert original.count(anchor) == 1
+        observed = f'''            if tree is None:
+                fd = os.open({str(marker)!r}, os.O_WRONLY | os.O_CREAT | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+                try:
+                    os.write(fd, b'actual-direct-snapshot-fallback\\n')
+                finally:
+                    os.close(fd)
+            return tree if tree is not None else original(root)
+'''
+        _settle_private_edit(cache, original.replace(anchor, observed))
+        value.bootstrap(variant)
+        code, out, err = value.run("fallback", "start", "--spec", SPEC)
+        assert code == 0, (out[-4000:], err[-4000:])
+        code, out, err = value.run("fallback", "show", "--json")
+        assert code == 0, (out[-4000:], err[-4000:])
+        value.wait_ready()
+        app = value.repo / "app.py"
+        app.write_text("import fallback_dependency\n")
+        assert _service_tree(value) is None
+        before_markers = len(marker.read_bytes().splitlines()) if marker.exists() else 0
+        edited = _assert_protected_facts(value, "fallback")
+        assert edited["files"]["app.py"] == git(value.repo, "hash-object", "app.py")
+        assert any(edge["target"] == "module:fallback_dependency" for edge in edited["edges"])
+        first_markers = marker.read_bytes().splitlines()
+        assert len(first_markers) > before_markers
+        assert all(row == b"actual-direct-snapshot-fallback" for row in first_markers)
+        app.unlink()
+        assert _service_tree(value) is None
+        deleted = _assert_protected_facts(value, "fallback")
+        assert "app.py" not in deleted["files"] and not deleted["edges"]
+        assert len(marker.read_bytes().splitlines()) > len(first_markers)
+        suppressed_rows = suppressed.read_bytes().splitlines()
+        assert suppressed_rows and all(row == b"cookie-ack-withheld" for row in suppressed_rows)
+        # The hook was reached in authenticated served commands, not a direct oracle call.
+        assert verify_snapshot(value.snapshot, value.boot["validator_binding"])
+    finally:
+        value.stop_services()
+        assert capture_canonical(value.source)["origin"]["closure"] == value.source_files
 
 
 def _request(directory, value, *, fds=()):

@@ -471,3 +471,9 @@ source changes/deletion, policy identity and refusal during first construction.
 Matched complete one-worker runtime-pin profiles must charge all first construction
 and per-case copies; functional results, wall/CPU measurements and raw timing budgets
 remain separate. Independent isolation review precedes any scoped closure renewal.
+
+## Native resident-service cache contract (#24/#36)
+
+The ordinary service journey rejects each stale non-None authenticated snapshot reply immediately and verifies protected facts after edits and deletion. A private verified-source fault withholds worktree cookie acknowledgments while leaving pin monitoring intact; the real protected facts command must exercise its direct snapshot fallback and return independently checked tree/blob identities.
+
+The original positive-cache availability test is preserved unchanged in `test_runtime_service_performance.py`, explicitly registered as acceptance. Its original 20-second bounds, initial/edit/excluded-directory assertions remain. E18 remains a retained failure and native availability/performance debt remains open in #36; this disposition establishes no native cause or performance result. Existing deterministic positive cache, lifecycle and cookie safety controls remain unchanged.
