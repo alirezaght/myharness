@@ -125,7 +125,7 @@ class Setup:
         self.stop_services()
         code, out, err = self.run("s1", "show", "--json")
         assert code == 0, (out[-2000:], err[-2000:])
-        rows = self.wait(lambda: self.control("status"))
+        rows = self.wait_ready()
         assert [row["pin_identity"] for row in rows] == [self.pin_of("s1")["pin_identity"]]
         before = self.served()
         code, out, err = self.run("s1", "show", "--json")
@@ -180,6 +180,12 @@ class Setup:
             time.sleep(0.1)
         raise AssertionError("condition not reached")
 
+    def wait_ready(self):
+        def ready():
+            rows = self.control("status")
+            return rows if rows and all(row["pin_ready"] for row in rows) else None
+        return self.wait(ready)
+
     def served(self, pin=None):
         rows = [row for row in self.control("status") if pin is None or row["pin_identity"] == pin]
         return sum(row["commands_served"] for row in rows)
@@ -200,7 +206,7 @@ def setup(tmp_path_factory):
     # The first command after start runs in process and leaves a warm service behind.
     code, out, err = value.run("s1", "show", "--json")
     assert code == 0, (out[-4000:], err[-4000:])
-    value.wait(lambda: value.control("status"))
+    value.wait_ready()
     yield value
     try:
         assert capture_canonical(value.source)["origin"]["closure"] == value.source_files
@@ -373,7 +379,8 @@ def test_runs_pinned_to_different_runtimes_are_isolated(setup, restored_service,
         status = setup.control("status")
         launchers = {row["launcher_identity"] for row in status if row["pin_identity"] == second_pin["pin_identity"]}
         rows = {row["pin_identity"]: row for row in status if row["launcher_identity"] in launchers}
-        return rows if {first_pin["pin_identity"], second_pin["pin_identity"]} <= set(rows) else None
+        return rows if ({first_pin["pin_identity"], second_pin["pin_identity"]} <= set(rows)
+                        and all(row["pin_ready"] for row in rows.values())) else None
 
     rows = setup.wait(current)
     assert len({row["launcher_identity"] for row in rows.values()}) == 1

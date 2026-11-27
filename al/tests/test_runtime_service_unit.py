@@ -263,6 +263,7 @@ def test_snapshot_operation_requires_current_proof_despite_advertised_status(wat
     service.pin, service.platform = {"pin_identity": "fixture"}, "codex"
     service.started, service.last_active, service.idle = time.time(), time.monotonic(), 300
     service.served, service.children, service.stopping, service.packs = 0, {}, False, {}
+    service.pin_ready = False
     service.worktrees = {worktree.root: worktree}
     located = (worktree.root, worktree.git_dir, worktree.common_dir)
     service.location = lambda repository: located if repository == worktree.root else None
