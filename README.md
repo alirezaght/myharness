@@ -91,7 +91,7 @@ codex plugin marketplace add alirezaght/myharness && codex plugin add myharness@
 ```
 
 The `myharness` plugin installs Harness and AL through `uv` and `alctl` and keeps them at the newest release tag on
-each session start, without overriding pins, active runs or required reviews. In Codex, trust its SessionStart hook
+session start (checked at most hourly), without overriding pins, active runs or required reviews. In Codex, trust its SessionStart hook
 once. See [plugins/myharness/README.md](plugins/myharness/README.md).
 
 ## Development

@@ -7,6 +7,7 @@ A real local Git source with release tags stands in for GitHub. `uv`, the bootst
 command ever bypasses an installer guard.
 """
 
+import importlib.util
 import json
 import os
 import shutil
@@ -23,7 +24,14 @@ PLUGIN = ROOT / "plugins/myharness"
 BRIDGE = PLUGIN / "scripts/bridge.py"
 # Resolved at import, before fixtures put test shims on PATH.
 CLAUDE = shutil.which("claude")
-FORBIDDEN = ("--allow-running", "--reviews", "--adopt", "--force-", "--documentation-only")
+FORBIDDEN = (
+    "--allow-running",
+    "--reviews",
+    "--adopt",
+    "--documentation-only",
+    "--reviewed-runtime-update",
+    "--policy",
+)
 
 FAKE_ALCTL = textwrap.dedent("""\
     #!/bin/sh
@@ -32,21 +40,46 @@ FAKE_ALCTL = textwrap.dedent("""\
     import json, os, sys
     from pathlib import Path
     home = Path(os.environ["HOME"])
-    calls = home / "calls.jsonl"
-    with calls.open("a") as f: f.write(json.dumps(["alctl", *sys.argv[1:]]) + "\\n")
+    with (home / "calls.jsonl").open("a") as f: f.write(json.dumps(["alctl", *sys.argv[1:]]) + "\\n")
     state = home / "al-target.json"
-    version = (Path(__file__).resolve().parent / "alctl.version").read_text().strip()
     command = sys.argv[1]
     if command == "list":
         rows = [json.loads(state.read_text())] if state.exists() else []
         print(json.dumps({"installations": rows, "legacy": []})); sys.exit(0)
     if (home / "refuse").exists():
         print("update deferred: 2 potentially resumable runs", file=sys.stderr); sys.exit(13)
-    latest = os.environ["FAKE_LATEST"]
+    latest = (home / "latest").read_text().strip()
     if command == "install":
-        state.write_text(json.dumps({"target": {"scope": "global", "root": str(home)}, "version": latest, "policy": "follow"}))
-    elif command == "update":
+        state.write_text(json.dumps({"target": {"scope": "global", "root": str(home)}, "version": latest, "policy": "follow", "source": {"identity": sys.argv[-1]}}))
+    elif command == "update" and not (home / "noop").exists():
         row = json.loads(state.read_text()); row["version"] = latest; state.write_text(json.dumps(row))
+    """)
+
+BOOTSTRAP = textwrap.dedent("""\
+    import os, sys
+    from pathlib import Path
+    here = Path(__file__).resolve().parent
+    home = Path(os.environ["HOME"]); target = home / ".local/bin/alctl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with (home / "calls.jsonl").open("a") as f: f.write('["bootstrap", "' + str(here.parent) + '"]\\n')
+    target.write_text((here / "fake_alctl").read_text().replace("PYTHON", sys.executable) + "# " + str(here.parent) + "\\n"); target.chmod(0o755)
+    """)
+
+UV = textwrap.dedent("""\
+    #!/bin/sh
+    printf '%s\\n' "$(PYTHON -c 'import json,sys;print(json.dumps(["uv",*sys.argv[1:]]))' "$@")" >> "$HOME/calls.jsonl"
+    tools="$HOME/.local/share/uv/tools"; bin="$HOME/.local/bin"
+    if [ "$1 $2 $3" = "tool dir --bin" ]; then echo "$bin"; exit 0; fi
+    if [ "$1 $2" = "tool dir" ]; then echo "$tools"; exit 0; fi
+    if [ "$1 $2" = "tool install" ]; then
+      tree="$4"; version=$(cat "$tree/VERSION")
+      mkdir -p "$bin" "$tools/harness"
+      printf '[tool]\\nrequirements = [{ name = "harness", directory = "%s" }]\\n' "$tree" > "$tools/harness/uv-receipt.toml"
+      printf '#!/bin/sh\\nprintf "harness skill for %%s at %s\\\\n" "$4"\\n' "$version" > "$bin/harness"
+      chmod +x "$bin/harness"; exit 0
+    fi
+    if [ "$1 $2" = "python find" ]; then echo "PYTHON"; exit 0; fi
+    exit 2
     """)
 
 
@@ -73,39 +106,18 @@ def git(cwd, *args):
 
 
 class World:
-    def __init__(self, tmp_path):
+    def __init__(self, tmp_path, python=sys.executable):
+        self.python = python
         self.home = tmp_path / "home"
         self.bin = tmp_path / "bin"
         self.source = tmp_path / "source"
         for path in (self.home / ".claude", self.home / ".codex", self.bin, self.source):
             path.mkdir(parents=True)
-        bootstrap = textwrap.dedent("""\
-            import os, sys
-            from pathlib import Path
-            here = Path(__file__).resolve().parent
-            home = Path(os.environ["HOME"]); target = home / ".local/bin/alctl"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with (home / "calls.jsonl").open("a") as f: f.write('["bootstrap", "' + sys.executable + '"]\\n')
-            target.write_text((here / "fake_alctl").read_text().replace("PYTHON", sys.executable)); target.chmod(0o755)
-            (target.parent / "alctl.version").write_text((here.parent / "VERSION").read_text())
-            """)
-        write(self.source / "al/alctl.py", bootstrap)
+        write(self.source / "al/alctl.py", BOOTSTRAP)
         write(self.source / "al/fake_alctl", FAKE_ALCTL)
         git(self.source, "init", "-q", "-b", "main")
         self.release("v0.1.70")
-        uv = textwrap.dedent("""\
-            #!/bin/sh
-            printf '%s\\n' "$(python3 -c 'import json,sys;print(json.dumps(["uv",*sys.argv[1:]]))' "$@")" >> "$HOME/calls.jsonl"
-            if [ "$1 $2" = "tool install" ]; then
-              tree="$4"; version=$(cat "$tree/VERSION")
-              mkdir -p "$HOME/.local/bin"
-              printf '#!/bin/sh\\necho "$HOME" >/dev/null\\nprintf "harness skill for %%s at %s\\\\n" "$4"\\n' "$version" > "$HOME/.local/bin/harness"
-              chmod +x "$HOME/.local/bin/harness"; exit 0
-            fi
-            if [ "$1 $2" = "python find" ]; then echo "PYTHON"; exit 0; fi
-            exit 2
-            """).replace("PYTHON", sys.executable)
-        write(self.bin / "uv", uv, 0o755)
+        write(self.bin / "uv", UV.replace("PYTHON", sys.executable), 0o755)
         self.env = {
             "HOME": str(self.home),
             "PATH": os.pathsep.join(
@@ -117,22 +129,25 @@ class World:
                     "/bin",
                 ]
             ),
-            "MYHARNESS_SOURCE": str(self.source),
-            "XDG_STATE_HOME": str(self.home / ".local/state"),
         }
+        self.state = self.home / ".local/state/myharness-bridge"
 
     def release(self, tag):
         write(self.source / "VERSION", tag[1:] + "\n")
         git(self.source, "add", "-A")
         git(self.source, "commit", "-qm", tag)
         git(self.source, "tag", "-a", tag, "-m", tag)
-        self.latest = tag[1:]
+        self.set_latest(tag[1:])
+
+    def set_latest(self, version):
+        (self.home / "latest").write_text(version)
 
     def bridge(self, *args, extra=None, timeout=120):
-        env = dict(self.env, FAKE_LATEST=self.latest, **(extra or {}))
+        if args[:1] == ("apply",) and not self.state.joinpath("status.json").exists():
+            args = (*args, "--source", str(self.source))
         return subprocess.run(
-            [sys.executable, str(BRIDGE), *args],
-            env=env,
+            [self.python, str(BRIDGE), *args],
+            env=dict(self.env, **(extra or {})),
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -142,11 +157,18 @@ class World:
         path = self.home / "calls.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def status(self):
-        return json.loads((self.home / ".local/state/myharness-bridge/status.json").read_text())
+    def reset_calls(self):
+        (self.home / "calls.jsonl").unlink(missing_ok=True)
 
-    def actions(self):
-        return [n["text"] for n in self.status()["notices"] if n["level"] == "action"]
+    def status(self):
+        return json.loads((self.state / "status.json").read_text())
+
+    def notices(self, level=None):
+        return [n["text"] for n in self.status()["notices"] if level in (None, n["level"])]
+
+    def tree(self, tag):
+        [path] = (self.state / "src").glob(tag + "-*")
+        return str(path)
 
 
 @pytest.fixture
@@ -159,118 +181,143 @@ def assert_guarded(calls):
     assert not [arg for arg in flat if arg.startswith(FORBIDDEN)], calls
 
 
+def installs(calls):
+    return [c for c in calls if c[:3] == ["uv", "tool", "install"]]
+
+
+def bootstraps(calls):
+    return [c for c in calls if c[0] == "bootstrap"]
+
+
+QUIET = {"MYHARNESS_BRIDGE_INTERVAL": "99999"}
+
+
 def test_clean_machine_installs_harness_alctl_al_and_skills(world):
     assert world.bridge("apply").returncode == 0
     calls = world.calls()
-    tree = str(world.home / ".local/state/myharness-bridge/src/v0.1.70")
-    assert ["uv", "tool", "install", "--force", tree] in calls
-    assert any(call[0] == "bootstrap" for call in calls)
+    tree = world.tree("v0.1.70")
+    assert installs(calls) == [["uv", "tool", "install", "--force", tree]]
+    assert bootstraps(calls) == [["bootstrap", tree]]
     assert ["alctl", "install", "--global", "--source", str(world.source)] in calls
     assert_guarded(calls)
     for provider, base in (("claude", ".claude"), ("codex", ".codex")):
-        assert (
-            world.home / base / "skills/harness/SKILL.md"
-        ).read_text() == "harness skill for " + provider + " at 0.1.70\n"
+        text = (world.home / base / "skills/harness/SKILL.md").read_text()
+        assert text == "harness skill for " + provider + " at 0.1.70\n"
     status = world.status()
-    assert (status["harness_tag"], status["alctl_tag"], status["al_version"]) == (
-        "v0.1.70",
-        "v0.1.70",
-        "0.1.70",
-    )
-    assert world.actions() == []
+    assert (status["harness_tag"], status["alctl_tag"]) == ("v0.1.70", "v0.1.70")
+    assert (status["al_version"], status["al_policy"]) == ("0.1.70", "follow")
+    assert world.notices("action") == []
 
 
-def test_new_release_tag_updates_everything_on_the_next_check(world):
+def test_new_release_moves_al_first_then_its_coordinator(world):
     assert world.bridge("apply").returncode == 0
     world.release("v0.1.71")
-    (world.home / "calls.jsonl").unlink()
+    world.reset_calls()
     assert world.bridge("apply").returncode == 0
     calls = world.calls()
-    assert [
-        "uv",
-        "tool",
-        "install",
-        "--force",
-        str(world.home / ".local/state/myharness-bridge/src/v0.1.71"),
-    ] in calls
-    assert any(call[0] == "bootstrap" for call in calls)
-    assert ["alctl", "update", "--global"] in calls
+    tree = world.tree("v0.1.71")
+    assert installs(calls) == [["uv", "tool", "install", "--force", tree]]
+    assert bootstraps(calls) == [["bootstrap", tree]]
+    assert calls.index(["bootstrap", tree]) > calls.index(["alctl", "update", "--global"])
     assert_guarded(calls)
     assert "0.1.71" in (world.home / ".claude/skills/harness/SKILL.md").read_text()
     assert world.status()["al_version"] == "0.1.71"
-    # Same tag again: nothing is reinstalled.
-    (world.home / "calls.jsonl").unlink()
+    world.reset_calls()
     assert world.bridge("apply").returncode == 0
-    assert [
-        c
-        for c in world.calls()
-        if c[:2] in (["uv", "tool"], ["alctl", "update"]) or c[0] == "bootstrap"
-    ] == []
+    assert not installs(world.calls()) and not bootstraps(world.calls())
+    assert ["alctl", "update", "--global"] not in world.calls()
 
 
-def test_refused_update_is_reported_with_the_operator_command_never_forced(world):
+def test_refused_update_is_reported_and_leaves_the_coordinator_alone(world):
     assert world.bridge("apply").returncode == 0
+    launcher = (world.home / ".local/bin/alctl").read_bytes()
     world.release("v0.1.71")
     (world.home / "refuse").write_text("")
+    world.reset_calls()
     assert world.bridge("apply").returncode == 0
     assert_guarded(world.calls())
+    assert not bootstraps(world.calls())
+    assert (world.home / ".local/bin/alctl").read_bytes() == launcher
     assert world.status()["al_version"] == "0.1.70"
-    [action] = [a for a in world.actions() if a.startswith("AL ")]
-    assert (
-        "deferred" in action
-        and "2 potentially resumable runs" in action
-        and "`alctl update --global`" in action
-    )
-    # Action notices repeat every session until resolved.
+    [action] = [a for a in world.notices("action") if a.startswith("AL ")]
+    assert "deferred" in action and "'update deferred: 2 potentially resumable runs'" not in action
+    assert 'details: "update deferred: 2 potentially resumable runs"' in action
+    assert "`alctl update --global`" in action
     for _ in range(2):
-        assert (
-            "2 potentially resumable runs"
-            in world.bridge("hook", extra={"MYHARNESS_BRIDGE_INTERVAL": "99999"}).stdout
-        )
+        shown = json.loads(world.bridge("hook", extra=QUIET).stdout)
+        assert "2 potentially resumable runs" in shown["systemMessage"]
+        assert shown["hookSpecificOutput"]["additionalContext"] == shown["systemMessage"]
     (world.home / "refuse").unlink()
     assert world.bridge("apply").returncode == 0
-    assert world.status()["al_version"] == "0.1.71" and not [
-        a for a in world.actions() if a.startswith("AL ")
-    ]
+    assert world.status()["al_version"] == "0.1.71"
+    assert not [a for a in world.notices("action") if a.startswith("AL ")]
+    assert bootstraps(world.calls())
 
 
-def test_pinned_target_is_left_pinned_and_the_opt_in_is_named(world):
+def test_pinned_target_keeps_al_and_coordinator_and_names_the_opt_in_once(world):
     assert world.bridge("apply").returncode == 0
     target = world.home / "al-target.json"
     row = json.loads(target.read_text())
     row["policy"] = "pinned"
     target.write_text(json.dumps(row))
     world.release("v0.1.71")
-    (world.home / "calls.jsonl").unlink()
+    world.bridge("hook", extra=QUIET)  # show the install notices first
+    world.reset_calls()
     assert world.bridge("apply").returncode == 0
-    assert not [c for c in world.calls() if c[:2] in (["alctl", "update"], ["alctl", "install"])]
+    calls = world.calls()
+    assert not [c for c in calls if c[:2] in (["alctl", "update"], ["alctl", "install"])]
+    assert not bootstraps(calls)
     assert json.loads(target.read_text())["version"] == "0.1.70"
-    assert any(
-        "pinned at 0.1.70" in a and "alctl update --global --policy follow" in a
-        for a in world.actions()
-    )
+    [pinned] = [n for n in world.notices() if "pinned at 0.1.70" in n]
+    assert "alctl update --global --policy follow" in pinned
+    assert "pinned at 0.1.70" in world.bridge("hook", extra=QUIET).stdout
+    assert "pinned" not in world.bridge("hook", extra=QUIET).stdout
+    assert world.bridge("apply").returncode == 0
+    assert "pinned" not in world.bridge("hook", extra=QUIET).stdout
 
 
-def test_existing_installs_are_not_replaced_without_adopt(world):
-    write(
-        world.home / ".local/bin/harness",
-        "#!/bin/sh\nprintf 'dev harness skill %s\\n' \"$4\"\n",
-        0o755,
-    )
-    alctl = world.home / ".local/bin/alctl"
-    write(alctl, FAKE_ALCTL.replace("PYTHON", sys.executable), 0o755)
-    (alctl.parent / "alctl.version").write_text("dev\n")
+def test_update_without_effect_is_reported_not_claimed(world):
+    assert world.bridge("apply").returncode == 0
+    world.release("v0.1.71")
+    (world.home / "noop").write_text("")
+    world.reset_calls()
+    assert world.bridge("apply").returncode == 0
+    assert world.status()["al_version"] == "0.1.70"
+    assert not any("AL updated" in n for n in world.notices())
+    assert any("left AL at 0.1.70" in n for n in world.notices())
+    assert not bootstraps(world.calls())
+
+
+def test_existing_installs_are_left_alone_until_take_over(world):
+    bin_dir = world.home / ".local/bin"
+    write(bin_dir / "harness", "#!/bin/sh\nprintf 'dev harness skill %s\\n' \"$4\"\n", 0o755)
+    write(bin_dir / "alctl", FAKE_ALCTL.replace("PYTHON", sys.executable) + "# dev\n", 0o755)
+    # Not on PATH: ownership still comes from the install locations, not from PATH.
+    world.env["PATH"] = world.env["PATH"].replace(str(bin_dir) + os.pathsep, "")
     assert world.bridge("apply").returncode == 0
     calls = world.calls()
-    assert not [c for c in calls if c[:2] == ["uv", "tool"] or c[0] == "bootstrap"]
+    assert not installs(calls) and not bootstraps(calls)
     assert "dev harness skill" in (world.home / ".claude/skills/harness/SKILL.md").read_text()
-    assert any("apply --adopt" in n["text"] for n in world.status()["notices"])
-    assert world.bridge("apply", "--adopt").returncode == 0
+    assert sum("apply --take-over" in n for n in world.notices()) == 2
+    assert world.bridge("apply", "--take-over").returncode == 0
     calls = world.calls()
-    assert [c for c in calls if c[:2] == ["uv", "tool"]] and [
-        c for c in calls if c[0] == "bootstrap"
-    ]
-    assert not any("apply --adopt" in n["text"] for n in world.status()["notices"])
+    assert installs(calls) and bootstraps(calls)
+    assert not any("take-over" in n for n in world.notices())
+
+
+def test_reinstall_outside_the_bridge_ends_ownership(world):
+    assert world.bridge("apply").returncode == 0
+    receipt = world.home / ".local/share/uv/tools/harness/uv-receipt.toml"
+    receipt.write_text(
+        '[tool]\nrequirements = [{ name = "harness", editable = "/dev/checkout" }]\n'
+    )
+    launcher = world.home / ".local/bin/alctl"
+    launcher.write_text(launcher.read_text() + "# rebootstrapped from a dev checkout\n")
+    world.release("v0.1.71")
+    world.reset_calls()
+    assert world.bridge("apply").returncode == 0
+    assert not installs(world.calls()) and not bootstraps(world.calls())
+    assert ["alctl", "update", "--global"] in world.calls()
 
 
 def test_edited_global_skill_is_never_overwritten(world):
@@ -279,58 +326,162 @@ def test_edited_global_skill_is_never_overwritten(world):
     assert world.bridge("apply").returncode == 0
     assert edited.read_text() == "my own edits\n"
     assert "0.1.70" in (world.home / ".codex/skills/harness/SKILL.md").read_text()
-    assert any(str(edited) in a for a in world.actions())
-    # A file the bridge wrote keeps being refreshed on later releases.
+    assert any(str(edited) in n for n in world.notices())
     world.release("v0.1.71")
     assert world.bridge("apply").returncode == 0
     assert "0.1.71" in (world.home / ".codex/skills/harness/SKILL.md").read_text()
     assert edited.read_text() == "my own edits\n"
 
 
-def test_missing_prerequisite_and_unreachable_source_are_actionable(world):
+def test_failures_after_an_install_keep_ownership_and_report(world):
+    blocked = world.home / ".claude/skills/harness/SKILL.md"
+    blocked.mkdir(parents=True)  # makes the skill write raise
+    assert world.bridge("apply").returncode == 0
+    status = world.status()
+    assert status["harness_tag"] == "v0.1.70" and status["alctl_tag"] == "v0.1.70"
+    blocked.rmdir()
+    world.release("v0.1.71")
+    (world.home / ".local/bin/alctl").write_text("#!/bin/sh\nexit 3\n")
+    assert world.bridge("apply").returncode == 1
+    assert world.status()["harness_tag"] == "v0.1.71"
+    assert any("AL status unavailable" in n for n in world.notices("action"))
+
+
+def test_unexpected_error_is_reported_and_progress_kept(world):
+    assert world.bridge("apply").returncode == 0
+    world.release("v0.1.71")
+    target = world.home / "al-target.json"
+    target.write_text(
+        json.dumps({"target": {"scope": "global", "root": str(world.home)}, "version": 7})
+    )
+    (world.home / "noop").write_text("")
+    target.write_text("[1, 2")  # alctl list now prints unparseable rows
+    assert world.bridge("apply").returncode in (0, 1)
+    assert world.status()["harness_tag"] == "v0.1.71"
+    assert world.notices("action")
+
+
+def test_hook_never_loses_what_a_worker_saved(world, monkeypatch):
+    assert world.bridge("apply").returncode == 0
+    spec = importlib.util.spec_from_file_location("bridge_under_test", BRIDGE)
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    monkeypatch.setenv("HOME", str(world.home))
+    monkeypatch.setattr(bridge, "spawn", lambda host: None)
+    real_lock = bridge.lock
+
+    def worker_saves_first():
+        state = bridge.load()
+        state["harness_tag"] = "v9.9.9"
+        bridge.notice(state, "late", "a worker saved this just now")
+        bridge.save(state)
+        return real_lock()
+
+    monkeypatch.setattr(bridge, "lock", worker_saves_first)
+    assert bridge.hook("codex") == 0
+    status = world.status()
+    assert status["harness_tag"] == "v9.9.9" and status["alctl_tag"] == "v0.1.70"
+    assert [n["shown"] for n in status["notices"] if n["id"] == "late"] == [True]
+
+
+def test_release_selection_ordering_and_retention(world):
+    for tag in ("v0.1.9", "v0.1.10", "v1.2.3-rc1", "v1.2", "v01.2.3", "v0.1.070"):
+        git(world.source, "tag", "-a", tag, "-m", tag)
+    assert world.bridge("apply").returncode == 0
+    assert world.status()["latest"] == "v0.1.70"
+    for tag in ("v0.1.71", "v0.1.72"):
+        world.release(tag)
+        assert world.bridge("apply").returncode == 0
+    names = sorted(p.name.split("-")[0] for p in (world.state / "src").iterdir())
+    assert names == ["v0.1.71", "v0.1.72"]
+    # A retracted newest tag: the lower requested tag is kept, never deleted on arrival.
+    git(world.source, "tag", "-d", "v0.1.72")
+    world.set_latest("0.1.71")
+    assert world.bridge("apply").returncode == 0
+    assert Path(world.tree("v0.1.71"), "al/alctl.py").is_file()
+
+
+def test_moved_tag_gets_a_fresh_checkout(world):
+    assert world.bridge("apply").returncode == 0
+    first = world.tree("v0.1.70")
+    write(world.source / "VERSION", "0.1.70-moved\n")
+    git(world.source, "commit", "-qam", "move")
+    git(world.source, "tag", "-f", "-a", "v0.1.70", "-m", "moved")
+    world.reset_calls()
+    assert world.bridge("apply", "--take-over").returncode == 0
+    [second] = [str(p) for p in (world.state / "src").glob("v0.1.70-*") if str(p) != first]
+    assert Path(second, "VERSION").read_text() == "0.1.70-moved\n"
+    assert installs(world.calls()) == [["uv", "tool", "install", "--force", second]]
+
+
+def test_source_comes_from_the_recorded_state_never_the_environment(world):
+    assert world.bridge("apply").returncode == 0
+    elsewhere = world.home / "elsewhere"
+    assert world.bridge("apply", extra={"MYHARNESS_SOURCE": str(elsewhere)}).returncode == 0
+    assert world.status()["source"] == str(world.source)
+    assert not any("Could not read releases" in n for n in world.notices())
+    assert world.bridge("apply", "--source", str(elsewhere)).returncode == 1
+    assert world.status()["source"] == str(elsewhere)
+    assert any("Could not read releases" in n for n in world.notices("action"))
+
+
+def test_missing_prerequisite_is_actionable(world):
     (world.bin / "uv").unlink()
     assert world.bridge("apply").returncode == 1
-    assert any("needs uv" in a for a in world.actions())
-    write(world.bin / "uv", "#!/bin/sh\nexit 2\n", 0o755)
-    assert (
-        world.bridge("apply", extra={"MYHARNESS_SOURCE": str(world.home / "missing")}).returncode
-        == 1
-    )
-    assert any("Could not read releases" in a for a in world.actions())
-    assert not any("needs uv" in a for a in world.actions())
+    assert any("needs uv" in n for n in world.notices("action"))
 
 
 def test_hook_is_fast_rate_limited_and_survives_a_corrupt_status(world):
-    state = world.home / ".local/state/myharness-bridge"
+    world.state.mkdir(parents=True)
+    (world.state / "status.json").write_text(
+        json.dumps({"schema_version": 1, "notices": [], "source": "https://127.0.0.1:9/x"})
+    )
     started = time.monotonic()
-    result = world.bridge("hook", extra={"MYHARNESS_SOURCE": "https://127.0.0.1:9/unreachable"})
+    result = world.bridge("hook", "--host", "codex")
     assert result.returncode == 0 and time.monotonic() - started < 5
-    # The due check started a detached worker and stamped the check time.
     assert world.status()["checked_at"] > 0
     for _ in range(100):
-        if any("Could not read releases" in a for a in world.actions()):
+        if any("Could not read releases" in n for n in world.notices()):
             break
         time.sleep(0.1)
-    assert any("Could not read releases" in a for a in world.actions())
-    # Not due again within the interval: no new worker.
+    assert any("Could not read releases" in n for n in world.notices("action"))
     checked = world.status()["checked_at"]
-    assert world.bridge("hook").returncode == 0
+    shown = world.bridge("hook", "--host", "codex").stdout
+    assert shown.startswith("myharness (Harness + AL):\n- Could not read releases")
     assert world.status()["checked_at"] == checked
-    (state / "status.json").write_text("{not json")
-    assert (
-        world.bridge(
-            "hook", extra={"MYHARNESS_SOURCE": "https://127.0.0.1:9/unreachable"}
-        ).returncode
-        == 0
-    )
+    (world.state / "status.json").write_text("{not json")
+    assert world.bridge("hook").returncode == 0
 
 
 def test_info_notices_show_once_action_notices_every_session(world):
     assert world.bridge("apply").returncode == 0
-    quiet = {"MYHARNESS_BRIDGE_INTERVAL": "99999"}
-    first = world.bridge("hook", extra=quiet).stdout
+    first = json.loads(world.bridge("hook", extra=QUIET).stdout)["systemMessage"]
     assert "AL 0.1.70 installed globally" in first and "Harness updated to v0.1.70" in first
-    assert world.bridge("hook", extra=quiet).stdout == ""
+    assert world.bridge("hook", extra=QUIET).stdout == ""
+
+
+def python39():
+    for candidate in ("/usr/bin/python3", shutil.which("python3.9")):
+        if candidate and Path(candidate).is_file():
+            version = subprocess.run(
+                [candidate, "-c", "import sys;print(sys.version_info[:2] < (3, 11))"],
+                capture_output=True,
+                text=True,
+            )
+            if version.stdout.strip() == "True":
+                return candidate
+    return None
+
+
+@pytest.mark.skipif(python39() is None, reason="no Python older than 3.11 available")
+def test_bridge_runs_on_old_stock_python(tmp_path):
+    world = World(tmp_path, python=python39())
+    result = world.bridge("apply")
+    assert result.returncode == 0, result.stderr
+    assert world.status()["harness_tag"] == "v0.1.70"
+    assert world.bridge("hook", extra=QUIET).returncode == 0
+    assert "harness:" in world.bridge("status").stdout
+    assert "Traceback" not in (world.state / "bridge.log").read_text()
 
 
 def test_manifests_hooks_and_marketplace_agree():
@@ -338,13 +489,17 @@ def test_manifests_hooks_and_marketplace_agree():
     codex = json.loads((PLUGIN / ".codex-plugin/plugin.json").read_text())
     assert claude["name"] == codex["name"] == "myharness" and claude["version"] == codex["version"]
     assert (PLUGIN / codex["skills"]).is_dir() and (PLUGIN / codex["hooks"]).is_file()
-    for path, host in ((PLUGIN / "hooks/hooks.json", "claude"), (PLUGIN / codex["hooks"], "codex")):
+    for path, host, timeout in (
+        (PLUGIN / "hooks/hooks.json", "claude", "timeout"),
+        (PLUGIN / codex["hooks"], "codex", "timeoutSec"),
+    ):
         [entry] = json.loads(path.read_text())["hooks"]["SessionStart"]
+        assert entry["matcher"] == "startup|resume|clear"
         [command] = entry["hooks"]
-        assert (
-            command["command"]
-            == 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge.py" hook --host ' + host
+        assert command["command"] == (
+            'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bridge.py" hook --host ' + host
         )
+        assert command[timeout] == 15
     market = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
     [entry] = market["plugins"]
     assert entry["name"] == "myharness" and (ROOT / entry["source"]).resolve() == PLUGIN.resolve()

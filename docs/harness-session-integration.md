@@ -32,7 +32,10 @@ Use the matching entry only inside its provider's active conversation. Codex
 uses its active `CODEX_SESSION_ID` and `CODEX_THREAD_ID`; locally loaded Claude
 skills use `${CLAUDE_SESSION_ID}` substitution. Missing identity stops the
 attachment attempt. Do not copy skill files into global configuration as part
-of a Harness task; local installation is an explicit user action. Codex skill
+of a Harness task; local installation is an explicit user action. The optional
+[myharness plugin](../plugins/myharness/README.md) is that explicit choice for the global copies: once a user
+installs it, it writes `~/.claude/skills/harness/SKILL.md` and `~/.codex/skills/harness/SKILL.md` from this
+command where they are absent or still unedited. Codex skill
 names are not merged across duplicate local/global definitions, so inspect the
 active skill source if an older installed `harness` skill takes precedence.
 

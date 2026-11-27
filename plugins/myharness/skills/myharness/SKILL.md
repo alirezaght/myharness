@@ -7,8 +7,9 @@ description: Check or update the Harness + AL installation that the myharness pl
 
 The myharness plugin does not contain Harness or AL itself. It keeps the user's global installation at the
 newest release tag of https://github.com/alirezaght/myharness through the supported installers:
-`uv tool install` for Harness, `al/alctl.py bootstrap` for `alctl`, and `alctl install|update --global` for AL
-(Claude and Codex). A session-start hook checks at most once an hour and updates in the background.
+`uv tool install` for Harness, `alctl install|update --global` for AL (Claude and Codex), and
+`al/alctl.py bootstrap` for `alctl` once AL is at that release. A session-start hook checks at most once an hour
+and updates in the background.
 
 ## Find the bridge script
 
@@ -28,7 +29,7 @@ can run; do not run commands that change the global installation unless the user
 ## Update now
 
 When the user asks to update immediately, run `python3 <bridge.py> apply` and then `status`.
-`apply --adopt` additionally takes over a Harness or `alctl` that was installed outside the plugin (for example
+`apply --take-over` additionally manages a Harness or `alctl` that was installed outside the plugin (for example
 from a development checkout) and replaces it with the newest release; run it only when the user asks for that.
 
 ## Guards stay in charge

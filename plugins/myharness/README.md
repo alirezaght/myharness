@@ -27,18 +27,27 @@ Prerequisites: `git`, [`uv`](https://docs.astral.sh/uv/) and `python3` on `PATH`
 
 ## What happens
 
-On session start the hook prints any pending notices and returns immediately. At most once an hour it starts a
-detached worker. The worker:
+When a session starts, resumes or is cleared, the hook shows any pending notices and returns immediately. In Claude
+they appear to you and to the model; in Codex, to the model. At most once an hour it starts a detached worker. The
+worker:
 
 1. reads the newest stable `vMAJOR.MINOR.PATCH` tag (`git ls-remote`) and clones exactly that tag;
 2. installs Harness with `uv tool install --force <checkout>`;
-3. re-bootstraps `alctl` from the same checkout (`al/alctl.py bootstrap`);
-4. installs AL globally for Claude and Codex (`alctl install --global --source …`, follow policy) on a clean
+3. installs AL globally for Claude and Codex (`alctl install --global --source …`, follow policy) on a clean
    machine, or runs `alctl update --global` for a target that follows releases;
+4. bootstraps `alctl` from the same checkout (`al/alctl.py bootstrap`): on a clean machine before step 3, otherwise
+   only after AL reached that release, so the CLI never moves under a pinned or deferred target;
 5. refreshes `~/.claude/skills/harness/SKILL.md` and `~/.codex/skills/harness/SKILL.md` from `harness skill show`
    where they are absent, unedited, or were written by the bridge.
 
-So when a new release tag is pushed, both apps pick it up on their next session.
+So when a new release tag is pushed, both apps pick it up within an hour of their next session. Harness and
+`alctl` are managed only when absent or provably installed by the bridge (the uv receipt names a bridge checkout;
+the `alctl` launcher still has the digest the bridge recorded). Reinstalling either yourself ends that management.
+
+The release source is recorded in `~/.local/state/myharness-bridge/status.json` (default
+`https://github.com/alirezaght/myharness`); only `apply --source <url-or-path>` changes it, never the environment.
+The bridge executes the newest stable tag's `al/alctl.py bootstrap` and installs its Harness package without an
+operator review, so install the plugin only from a source whose tag publishing you control.
 
 ## Guards stay in charge
 
@@ -49,8 +58,9 @@ command for the operator, and leaves the installation as it is:
 - An update deferred by active or resumable runs, required instruction reviews, or drift: `alctl update --global`
   when ready, as described in `al/INSTALL.md`. Runs in progress always stay on their pinned runtime.
 - Harness or `alctl` installed outside the plugin (for example from a development checkout):
-  `python3 <bridge.py> apply --adopt` lets the plugin take them over.
-- A global Harness skill file you edited is left unchanged.
+  `python3 <bridge.py> apply --take-over` lets the plugin manage them from then on.
+- A global Harness skill file that differs from the installed package and was not written by the bridge is left
+  unchanged (noted once per release).
 
 ## Status and manual update
 

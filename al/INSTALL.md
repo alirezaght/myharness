@@ -460,10 +460,16 @@ successor authority, coordinator tokens or transferred PASS results.
 ## Plugin bridge
 
 The `myharness` plugin ([plugins/myharness](../plugins/myharness/README.md)) is a thin bridge for Claude Code
-and Codex. It uses only the commands in this guide: it bootstraps `alctl` from the newest stable tag, runs
-`alctl install --global --source <source>` on a clean machine and `alctl update --global` for a target that
-follows releases. A pinned target, a deferred update, a required review or drift is reported with the exact
-operator command and left unchanged. Pushing a stable tag therefore reaches plugin users on their next session.
+and Codex. It runs `alctl install --global --source <source>` on a clean machine and `alctl update --global`
+for a target that follows releases. A pinned target, a deferred update, a required review or drift is reported
+with the exact operator command and left unchanged, together with the `alctl` CLI: the bridge bootstraps `alctl`
+from a release checkout only on a clean machine or after AL reached that release, and only when the launcher is
+absent or one it installed itself.
+
+Trust note: unlike `alctl update`, which reads release objects without executing them, the bridge executes the
+newest stable tag's `al/alctl.py bootstrap` and installs its Harness package without an operator review. Anyone
+who can push a stable tag to the recorded source can therefore run code on plugin users' machines within an
+hour. Install the plugin only from a source whose tag publishing you control.
 
 ## Releasing
 
