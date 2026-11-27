@@ -42,6 +42,8 @@ from .runtime_service_client import PROTOCOL, namespace
 WIRE = namespace()
 TAIL_MARKER = 'import al_runtime_resources'
 COOKIE_TIMEOUT = 2.0
+# Completion-spaced fallback; native pin events still trigger immediate full verification.
+PIN_VERIFY_INTERVAL = 5.0
 WATCH_RETRY = 1.0
 SETTLE = 0.3
 MAX_WORKTREES = 16
@@ -377,6 +379,7 @@ class Service:
         self.pin_buffer = b''
         self.pin_ready = False
         self.manifest_identity = None
+        self.pin_verify_deadline = None
         self.subscribers = {}
 
     # ------------------------------------------------------------------ lifecycle
@@ -469,12 +472,21 @@ class Service:
             if self.pin_manifest_identity() != before:
                 raise ValueError('runtime pin manifest moved during verification')
             self.manifest_identity = before
+            self.pin_verify_deadline = time.monotonic() + PIN_VERIFY_INTERVAL
         except (OSError, ValueError, KeyError) as exc:
             log('pinned runtime failed verification after ' + reason + ': ' + str(exc) + '; stopping')
             self.stopping = True
             self.pin_ready = False
             return False
         return True
+
+    def audit_pin_if_due(self):
+        if (self.stopping or not self.pin_ready or self.pin_watch is None or self.pin_buffer):
+            return False
+        deadline = getattr(self, 'pin_verify_deadline', None)
+        if deadline is not None and time.monotonic() < deadline:
+            return True
+        return self.verify_pin('its scheduled audit')
 
     def pin_monitor_failed(self, reason):
         self.pin_ready = False
@@ -573,6 +585,7 @@ class Service:
         log('serving ' + self.request['common_dir'] + ' with pin ' + self.pin['pin_identity'])
         while True:
             self.reap()
+            self.audit_pin_if_due()
             if self.stopping and not self.children:
                 break
             if self.stopping:
@@ -732,7 +745,7 @@ class Service:
             return self.verify_pin('its manifest disappeared')
         if current != self.manifest_identity:
             return self.verify_pin('its manifest changed')
-        return True
+        return self.audit_pin_if_due()
 
     def connection(self, conn, pid):
         """A forwarded signal from the client, or its disconnection."""
