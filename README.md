@@ -133,7 +133,7 @@ uv run harness decision change <id> <DEC-id> --decision C --rationale W --impact
 uv run harness decision decide <id> <cid> accept|reject|modify [--response TEXT] [--decisions PATH]   # developer's verdict on a proposed change
 uv run harness decision suggest <id> --from PATH [--from PATH ...] [--json] [--decisions PATH]   # hints from other repositories' decisions (read-only)
 uv run harness knowledge inspect <id>                                      # task-scoped snapshot, coverage and latest refresh state
-uv run harness knowledge refresh <id> [--rounds N]                         # opt in: index eligible tracked sources and task records, incremental batches until settled
+uv run harness knowledge refresh <id> [--rounds N] [--al-session RUN]     # opt in: standalone AL facts by default; explicit run remains authoritative
 uv run harness knowledge consumers <id> <path|dir|module|/endpoint> [--al-session RUN [--al-platform P]]   # who imports, or calls over HTTP, a changed file, module or endpoint (AL code facts)
 uv run harness knowledge edges <id> [PATH...] [--al-session RUN [--al-platform P]]   # AL's import/endpoint edges of the visible code files
 uv run harness knowledge query <id> <terms...> [--entity REF] [--as-of SNAPSHOT]   # bounded evidence-linked context
@@ -193,13 +193,24 @@ What the graph adds over grep is consumer inventory: `harness knowledge consumer
 who imports, requires or calls a changed file, directory, Python module or HTTP endpoint,
 and labels each consumer `intra-unit` or `cross-unit`. AL and the knowledge graph share one
 import analyser (#34): edges and consumers are AL's code facts, which Harness asks for through
-the protected launcher (`alctl run ... -- facts consumers <target>` / `facts edges`) and never
-by importing AL code. Inside an execution the tool asks the execution's own AL run, which its
-resident AL service answers from memory; from the CLI pass `--al-session` or run inside a
-Claude conversation with an active AL run. The graph limits the answer to the sources the
-task may see in its snapshot and answers a commit snapshot at its commit. Without AL the
-graph keeps its text and symbol index, and `consumers`/`edges` report `unavailable` with an
-`al-facts-unavailable` gap instead of guessing; an unindexed repository never asks AL.
+the protected launcher and never by importing AL code. An opted-in standalone Knowledge refresh
+uses `alctl facts --repository /path/to/repository edges [PATH...]` or
+`alctl facts --repository /path/to/repository consumers TARGET`; add `--commit REV` to query a
+commit snapshot. This advisory route creates no AL run and grants no execution or approval
+authority. Explicit `--al-session` and an authenticated native conversation remain authoritative;
+a refusal on either route is reported and never falls through to operator access. The graph
+limits the answer to sources visible in its snapshot and answers a commit snapshot at its commit.
+When AL facts are unavailable, the graph keeps its text and symbol index and records an
+`al-facts-unavailable` gap instead of guessing. An unindexed repository never asks AL.
+
+Standalone capture uses the installed, verified AL analyser, an owned local Git repository and
+private derived analysis storage. It refuses unsupported Git routing, object-store indirection,
+working-copy conversions, symlinks, and source movement. Target hooks, filters and fsmonitor
+commands are not run. Remote URLs are inert metadata; capture does not fetch. Selected packs and
+returned object payloads have separate 512 MiB limits, with a 1 GiB selected-pack byte limit, a
+32 MiB result limit and a 100-second capture deadline. These limits do not bound Git's internal
+decompression work or peak memory. A refusal leaves import and endpoint coverage explicit while
+text and symbol results remain available.
 Imports are resolved lazily for the asked target against the repository layout: Python import roots (regular packages, `src`
 layouts, uv/poetry workspace members), relative ES imports, `require`, `tsconfig`/`jsconfig`
 `paths` and `baseUrl` (including `extends`), and workspace packages from pnpm, yarn and npm

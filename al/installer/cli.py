@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from .bootstrap import bootstrap_cli
 from .doctor import doctor, prerequisites
@@ -17,6 +18,16 @@ from .payload_provenance import display_version
 def parser():
     ap = argparse.ArgumentParser(prog='alctl', description='Install and manage verified, Git-tagged AL releases.')
     sub = ap.add_subparsers(dest='command', required=True)
+    facts = sub.add_parser('facts', help='read verified advisory code facts without an AL run', allow_abbrev=False)
+    facts.add_argument('--repository', required=True)
+    facts_actions = facts.add_subparsers(dest='facts_action', required=True)
+    edges = facts_actions.add_parser('edges', allow_abbrev=False)
+    edges.add_argument('paths', nargs='*')
+    edges.add_argument('--commit')
+    consumers = facts_actions.add_parser('consumers', allow_abbrev=False)
+    consumers.add_argument('target')
+    consumers.add_argument('--commit')
+    consumers.add_argument('--limit', type=int, default=200)
     pinned = sub.add_parser('run', help='run AL through its protected immutable runtime')
     pinned.add_argument('--repository', required=True)
     pinned.add_argument('--platform', choices=('codex', 'claude'), required=True)
@@ -136,6 +147,11 @@ def main(argv=None):
             os.environ.pop(key)
     os.environ.update(clean)
     try:
+        if args.command == 'facts':
+            from .operator_facts import run as operator_facts
+            return operator_facts(args.repository, args.facts_action, paths=getattr(args, 'paths', ()),
+                                  target=getattr(args, 'target', None), commit=args.commit,
+                                  limit=getattr(args, 'limit', 200))
         if args.command == 'runtime-successor':
             from .runtime_successor import prepare_successor, inspect_successor, distribution
             if args.successor_action == 'prepare':
@@ -281,5 +297,8 @@ def main(argv=None):
         print(json.dumps({'status': 'deferred', 'error': str(exc)}, indent=2))
         return 3
     except (ValueError, OSError, KeyError, TypeError, SyntaxError, subprocess.SubprocessError) as exc:
+        if args.command == 'facts':
+            print('operator facts unavailable: ' + str(exc)[:1000], file=sys.stderr)
+            return 1
         print(json.dumps({'status': 'failed', 'error': str(exc)}, indent=2))
         return 1

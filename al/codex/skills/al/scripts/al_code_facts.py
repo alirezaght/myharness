@@ -19,6 +19,7 @@ relays exactly these bytes' content.
     facts edges [PATH ...] [--commit REV]
     facts consumers TARGET [--commit REV] [--limit N]
 """
+import hashlib
 import json
 import posixpath
 import re
@@ -310,13 +311,23 @@ class View:
     def __init__(self, root, commit=None):
         import al_snapshot
         self.root = Path(root)
-        if commit:
+        source = al_snapshot.operator_source(self.root)
+        if source is not None:
+            self.tree = source.snapshot()
+        elif commit:
             tree = al_snapshot._run(self.root, ['rev-parse', '--verify', '--end-of-options', commit + '^{tree}'])
             self.tree = tree.decode().strip()
         else:
             self.tree = al_snapshot.snapshot(self.root)
         self.files, self.gaps = {}, []
-        for path, (mode, kind, oid, size) in al_snapshot.entries(self.root, self.tree).items():
+        entries = al_snapshot.entries(self.root, self.tree)
+        if source is not None:
+            candidates = [p for p, (mode, kind, _, _) in entries.items()
+                          if kind == 'blob' and mode in ('100644', '100755')
+                          and not _generated(p) and _layout_input(p)]
+            sizes = source.blob_sizes([entries[p][2] for p in candidates])
+            entries.update({p: (*entries[p][:3], sizes[entries[p][2]]) for p in candidates})
+        for path, (mode, kind, oid, size) in entries.items():
             if kind != 'blob' or mode not in ('100644', '100755') or _generated(path) or not _layout_input(path):
                 continue
             if size is None or size > FILE_BYTES:
@@ -340,13 +351,24 @@ class View:
                 raw = al_snapshot._run(self.root, ['cat-file', '--batch'], data=data, timeout=600)
                 offset = 0
                 for name in batch:
-                    end = raw.index(b'\n', offset)
+                    end = raw.find(b'\n', offset, offset + 256)
+                    if end < 0:
+                        raise ValueError('truncated Git blob header for ' + name)
                     header = raw[offset:end].split()
-                    if len(header) != 3 or header[1] != b'blob':
+                    if (len(header) != 3 or header[0] != self.files[name].encode()
+                            or header[1] != b'blob' or not header[2].isdigit()):
                         raise ValueError('invalid Git blob frame for ' + name)
                     length = int(header[2])
-                    self._bytes[name] = raw[end + 1:end + 1 + length]
+                    if length > FILE_BYTES or end + 2 + length > len(raw) or raw[end + 1 + length:end + 2 + length] != b'\n':
+                        raise ValueError('invalid Git blob length for ' + name)
+                    content = raw[end + 1:end + 1 + length]
+                    algorithm = 'sha1' if len(self.files[name]) == 40 else 'sha256'
+                    if hashlib.new(algorithm, b'blob ' + str(length).encode() + b'\0' + content).hexdigest() != self.files[name]:
+                        raise ValueError('Git blob content mismatch for ' + name)
+                    self._bytes[name] = content
                     offset = end + 2 + length
+                if offset != len(raw):
+                    raise ValueError('trailing Git blob data')
                 batch, size = [], 0
         return {p: self._bytes[p] for p in paths if p in self._bytes}
 

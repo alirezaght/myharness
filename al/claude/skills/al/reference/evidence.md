@@ -346,3 +346,29 @@ Apply these standards whenever authoring, changing, consolidating, or reviewing 
 - Exercise meaningful inputs and dispatch/action effects, not merely that a helper was called. Prefer the least-mocked seam that proves the contract. Keep synthetic, static, browser, and native execution evidence distinct and describe what each actually establishes. Browser evidence also checks visual alignment, layout, focus, scrolling, and other UI/UX hiccups.
 - Preserve tests protecting functionality, business logic, important edge cases, integrations, security, and fixed regressions. If value is uncertain, keep the test and document the concern. Never delete useful tests, weaken assertions, skip relevant failing tests, or change behavior merely to obtain green results.
 - During an explicitly authorized test cleanup, review the suite holistically across unit, API/integration, and end-to-end coverage; parallelize independent review work only when useful. For every file, understand the production behavior first; classify duplicate, hollow, implementation-detail, and existence-only tests; document each removed, rewritten, retained, or flagged disposition and why. Remove only tests demonstrably incapable of meaningful protection. Consolidate overlap only after comparing fixtures, parameters, platforms, helpers, and assertions, and transfer every unique assertion into the surviving test. Strengthen weak tests when the underlying behavior matters. Do not alter production behavior during cleanup unless a test exposes a genuine defect.
+
+### Standalone operator facts evidence
+
+Acceptance for standalone facts uses the installed managed launcher and public Knowledge refresh.
+Source-script runners and mocked facts clients remain useful for narrow unit decisions, but they do
+not establish installed-route behavior. Compare operator results with the actual run-bound route on
+the same committed and supported working-copy bytes. Inspect refresh persistence from a separate
+connection to its disposable SQLite file. Assert source, index, refs, and protected run state around
+operator calls, allowing only the reviewed private derived-analysis storage. Target execution
+canaries are inert fixture programs; observe that their marker remains absent. Use deterministic
+barriers for movement cases and record when a test exercises the capture seam rather than the full
+public launcher. Pack admission counters distinguish selected-pack declared logical bytes from
+returned/hash-verified payload bytes; neither measures Git's internal decompression or peak memory.
+
+### Standalone operator facts evidence
+
+Acceptance for standalone facts uses the installed managed launcher and public Knowledge refresh.
+Source-script runners and mocked facts clients remain useful for narrow unit decisions, but they do
+not establish installed-route behavior. Compare operator results with the actual run-bound route on
+the same committed and supported working-copy bytes. Inspect refresh persistence from a separate
+connection to its disposable SQLite file. Assert source, index, refs, and protected run state around
+operator calls, allowing only the reviewed private derived-analysis storage. Target execution
+canaries are inert fixture programs; observe that their marker remains absent. Use deterministic
+barriers for movement cases and record when a test exercises the capture seam rather than the full
+public launcher. Pack admission counters distinguish selected-pack declared logical bytes from
+returned/hash-verified payload bytes; neither measures Git's internal decompression or peak memory.

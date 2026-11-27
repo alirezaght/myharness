@@ -39,6 +39,34 @@ The checkout's CLI can be bootstrapped into an independent local snapshot with
 not install or replace the AL runtime. See [INSTALL.md](INSTALL.md) for
 installation, updates, review/adoption, diagnostics, and recovery.
 
+### Standalone advisory code facts
+
+The protected managed launcher exposes:
+
+```sh
+alctl facts --repository REPOSITORY edges [PATH ...] [--commit REV]
+alctl facts --repository REPOSITORY consumers TARGET [--commit REV] [--limit N]
+```
+
+It uses the installed shared analyser and returns bounded,
+source/blob-bound facts without creating a run, pin, approval, or execution binding. It is
+advisory data access; run-bound facts continue to use their existing run and native identity.
+An explicit or native route refusal is never retried through this operator route.
+
+Operator capture accepts ordinary owned Git repositories with supported metadata and
+working-copy inputs. It refuses target object-store indirection, unsupported index forms,
+conversions, selected symlinks/gitlinks, executable configuration, malformed metadata,
+movement, and capacity excesses. Hooks, filters, fsmonitor, and target configuration are not
+executed. Remote URLs are inert and no fetch is performed. Changes are limited to private
+derived analysis storage under the managed AL state; target source, config, refs, real index,
+and run state remain read-only.
+
+Capture bounds include a 1 GiB cumulative selected-pack byte limit, separate 512 MiB limits
+for selected-pack declared logical content and returned/hash-verified payload bytes, a
+32 MiB output limit, and a 100-second total capture deadline. Declared logical content is
+metadata for pack admission; it is not a bound on Git's internal decompression work or peak
+memory. A refusal is explicit and does not emit a partial facts document.
+
 ## Verifying a change
 
 Use one command to verify an AL change. Do not run plain `pytest` serially per host:

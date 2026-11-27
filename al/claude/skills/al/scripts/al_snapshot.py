@@ -47,6 +47,24 @@ _GIT = ['git', '--no-optional-locks', '-c', 'core.excludesFile=/dev/null', '-c',
 # A tree an enclosing capture took and will confirm unchanged when it ends (attribution, #25).
 _REUSE = contextvars.ContextVar('al_snapshot_reuse', default=None)
 
+_OPERATOR = contextvars.ContextVar('al_snapshot_operator', default=None)
+
+
+def operator_source(root=None):
+    source = _OPERATOR.get()
+    if source is not None and root is not None and Path(root) != source.repository:
+        raise Unavailable('operator source repository mismatch')
+    return source
+
+
+@contextlib.contextmanager
+def using_operator(source):
+    token = _OPERATOR.set(source)
+    try:
+        yield
+    finally:
+        _OPERATOR.reset(token)
+
 
 @contextlib.contextmanager
 def reusing(root, tree):
@@ -89,6 +107,9 @@ def _objects(root):
 
 
 def _run(root, args, *, env=None, data=None, timeout=120):
+    source = operator_source(root)
+    if source is not None:
+        return source.run(args, env=env, data=data, timeout=timeout)
     import al_retry_control
     control = al_retry_control.current()
     if control:
@@ -342,6 +363,9 @@ def _checked_tree(root, answer):
 
 
 def snapshot(root=None):
+    source = operator_source(root)
+    if source is not None:
+        return source.snapshot()
     import al_retry_control
     if al_retry_control.current() is not None:
         raise Unavailable("snapshot optimization disabled for sealed control")
@@ -511,6 +535,10 @@ _ENTRIES = {}
 
 def entries(root, tree, paths=None):
     """{path: (mode, kind, oid, size or None)} of a tree, recursively (optionally under `paths`)."""
+    source = operator_source(root)
+    if source is not None:
+        return {p: row for p, row in source.entries(tree).items()
+                if not paths or any(p == q or p.startswith(q.rstrip('/') + '/') for q in paths)}
     key = (str(_root(root)), tree)
     if not paths and key in _ENTRIES:
         return dict(_ENTRIES[key])
@@ -531,6 +559,9 @@ def entries(root, tree, paths=None):
 def convertible(root, paths):
     """Paths whose working-tree bytes Git may convert (so their blob is not their content)."""
     root = _root(root)
+    source = operator_source(root)
+    if source is not None:
+        return source.convertible(paths)
     config = _run(root, ['config', '--get', 'core.autocrlf'], timeout=10) if _has_config(root, 'core.autocrlf') else b''
     if config.strip().lower() in {b'true', b'input'}:
         return set(paths)

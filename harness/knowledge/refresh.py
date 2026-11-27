@@ -118,7 +118,12 @@ def _cursor(conn, scope, expected, observation):
     }
 
 
-def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> RefreshResult:
+_AUTO_FACTS = object()
+
+
+def refresh(
+    conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST, *, facts=_AUTO_FACTS
+) -> RefreshResult:
     ensure_project(conn, scope)
     project = validate_scope(conn, scope)
     if scope.purpose not in {"operator", "investigation"}:
@@ -139,7 +144,8 @@ def refresh(conn, scope, request: RefreshRequest = _DEFAULT_REFRESH_REQUEST) -> 
         )
         from harness.knowledge import al_facts
 
-        facts = al_facts.resolve(scope.repository)
+        if facts is _AUTO_FACTS:
+            facts = al_facts.resolve(scope.repository)
         inventory = enumerate_sources(scope, request, cached, facts is not None)
     except (OSError, ValueError):
         _record_incomplete(conn, scope, [{"status": "unreadable", "kind": "inventory"}])
