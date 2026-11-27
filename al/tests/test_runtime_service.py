@@ -412,7 +412,7 @@ def test_protected_facts_falls_back_when_native_cache_cannot_prove_currentness(t
         suppressed_rows = value.wait(
             lambda: suppressed.exists() and suppressed.read_bytes().splitlines())
         assert all(row == b"cookie-ack-withheld" for row in suppressed_rows)
-        # The hook was reached in authenticated served commands, not a direct oracle call.
+        # The facts above came from authenticated served commands of a verified snapshot, not a direct oracle call.
         assert verify_snapshot(value.snapshot, value.boot["validator_binding"])
     finally:
         value.stop_services()
