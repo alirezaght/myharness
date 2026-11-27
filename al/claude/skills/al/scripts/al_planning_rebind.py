@@ -95,6 +95,9 @@ def draft_report(original, current_template):
     fresh = current_template['authored_obligations']
     behavior['binding'] = copy.deepcopy(fresh['binding'])
     behavior['authorship'] = copy.deepcopy(fresh['authorship'])
+    if fresh['supersedes'] is not None:
+        # After `planning revise` the current packet fixes the obligation revision lineage.
+        behavior['revision'], behavior['supersedes'] = fresh['revision'], copy.deepcopy(fresh['supersedes'])
     # Coverage, normative references and authored behavior stay inherited.
     # A changed implementation context requires an explicit current assessment.
     if behavior['implementation_context'] != fresh['implementation_context']:
@@ -127,7 +130,8 @@ def cmd_rebind(a, sid):
     P.validate_report(view, original, old, old_contents, old_attempt, None, current_implementation=False)
     original_ref = old.get('report') or J.snapshot(sid, original, 'unsubmitted-architect-planning-report-v1', a.from_report)
     template = T.template(current['packet'], contents,
-                          partially_built=bool(st.get('writers') or st.get('task_attribution', {}).get('contributions')))
+                          partially_built=bool(st.get('writers') or st.get('task_attribution', {}).get('contributions')),
+                          lineage=P.revision_lineage(st, contents))
     draft = draft_report(original, template)
     diagnostics = []
     try:

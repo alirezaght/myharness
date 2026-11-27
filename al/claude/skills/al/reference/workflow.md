@@ -648,6 +648,51 @@ Ordinary report validation and current-source admission still apply. The receipt
 records derivation and the Architect's stated reassessment; it does not invent
 host-observed invocation evidence or waive any missing verification.
 
+### Revise admitted planning obligations
+
+When the planning Architect finds that its own admitted obligations are wrong (for
+example a scenario over-specifies a validation seam) and authors a bounded revision
+within the same immutable task, reopen admission instead of editing the admitted
+report:
+
+```sh
+"${STATE[@]}" planning revise --reason "<why the Architect revises the obligations>" [--invocation-id <id>]
+```
+
+It is accepted only for a RUNNING SPEC_READY classified run whose obligations are
+admitted, in PLANNING, PSEUDOCODE, IMPLEMENTATION, REWORK, FINALIZATION or
+VERIFICATION. It refuses, leaving the state unchanged, once review has started
+(`review` or a `review_iteration`), when an approval exists, from PLAN_CONFLICT or any
+other phase, during an active gate recovery, while a bounded rework recovery is
+pending or stopped, while inherited-lineage recovery is incomplete, and while a writer
+or check is unresolved or owned cleanup is uncertain. `--reason` is required (at most
+2000 characters). `--invocation-id` records the requesting invocation as
+`requested_by`; it is not authorship.
+
+The admitted proof (authority, packet, report, obligations and generation), the phase,
+reason, requester and time are archived as an immutable
+`planning-obligation-revision-v1` record listed in `planning_revisions`. Admission is
+reopened like `retarget`: status `pending`, `invalidation_generation` + 1, and a new
+PLANNING occurrence for AL-Architect. Evidence, gate plans, completed phases, review
+history, counters and the original report and obligation artifacts are kept; the
+authorship moves to `planning_history` when the next packet is issued. Then follow the
+ordinary route: `planning packet`, the actual Architect revision, `planning report
+--file <report.json> --invocation-id <id>` and `planning admit`. The template fills
+`authored_obligations.revision` (the archived revision + 1) and `supersedes` (the
+archived obligations reference); both are restored when omitted and refused when
+changed. The new admission has a new authority, so behavior observations recorded
+under the previous authority no longer count: record them again with `behavior
+packet` / `behavior observe` from passing evidence. Walk the phase edges again
+(`phase IMPLEMENTATION`, and so on) before review.
+
+A run pinned to an AL runtime without `planning revise` (installs never upgrade a
+pin), or one whose review has started, cannot be revised in place. Retain that run
+and its history, settle its operations, and start a fresh verification-only run that
+carries the original specification and lists every old admitted obligation with its
+disposition (kept, revised or withdrawn, with the reason), as for a rebase after
+writers above. Admit fresh planning there, rerun the required evidence and gates, and
+obtain a fresh independent review. Old evidence is history, not verification.
+
 ### Record behavior observations (before review)
 
 After implementation and its evidence pass, and before `review-start`, every

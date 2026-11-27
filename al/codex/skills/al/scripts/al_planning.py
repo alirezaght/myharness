@@ -30,6 +30,15 @@ REPORT = {
 }
 
 
+ADMITTED = (
+    "planning obligations are already admitted; for a genuine current Architect revision run "
+    "`planning revise --reason TEXT`, then planning packet, planning report and planning admit. "
+    "A run pinned to an AL runtime without `planning revise` uses a fresh verification-only run that "
+    "carries the original specification and lists each old admitted obligation with its disposition "
+    "(reference/workflow.md)"
+)
+
+
 def binding(st, source_sha256, planning_occurrence=None, document=None):
     from al_task_editorial import document_binding, require_document
     document = document_binding(st)["hash"] if document is None else require_document(st, document)
@@ -53,7 +62,7 @@ def readiness_gap(st, *, authoring=False):
     """The actual planning guards, classified without inspecting exception prose."""
     N.validate(st)
     if st["proof_admission"]["status"] != "pending":
-        return "planning-current-admission", "planning provenance is already admitted; use a current substantive revision"
+        return "planning-current-admission", ADMITTED
     if (
         st["status"] != "RUNNING"
         or st["spec_status"] != "SPEC_READY"
@@ -214,9 +223,21 @@ def validate_report(st, report, current, contents, attempt, report_ref, *, curre
         current_implementation=current_implementation,
         path="authored_obligations",
     )
+    from al_planning_revision import lineage
+    expected = lineage(st, contents["binding"]["planning_occurrence"])
+    if expected is not None and (authored["revision"] != expected["revision"]
+                                 or authored["supersedes"] != expected["supersedes"]):
+        refuse("authored obligations must continue the recorded planning revision: revision "
+               + str(expected["revision"]) + " superseding " + expected["supersedes"]["sha256"])
     if report_ref is not None:
         authored["authorship"]["report_ref"] = report_ref
     return authored
+
+
+def revision_lineage(st, value):
+    """The obligation revision lineage the report template for this packet content carries."""
+    from al_planning_revision import lineage
+    return lineage(st, value["binding"]["planning_occurrence"])
 
 
 def cmd_packet(a, sid):
@@ -236,7 +257,8 @@ def cmd_packet(a, sid):
         if old["binding"] == target:
             print(J.raw({"packet": previous["packet"], "content": old,
                          "authoring": authoring_view(st),
-                         "report_template": Template.template(previous["packet"], old, partially_built=partially_built)}).decode())
+                         "report_template": Template.template(previous["packet"], old, partially_built=partially_built,
+                                                              lineage=revision_lineage(st, old))}).decode())
             return
     if previous:
         same = J.read(previous["packet"])["binding"] == target
@@ -275,7 +297,8 @@ def cmd_packet(a, sid):
     al_store.save(sid, st)
     print(J.raw({"packet": reference, "content": value,
                  "authoring": authoring_view(st),
-                 "report_template": Template.template(reference, value, partially_built=partially_built)}).decode())
+                 "report_template": Template.template(reference, value, partially_built=partially_built,
+                                                      lineage=revision_lineage(st, value))}).decode())
 
 
 def _recorded(st, value):
@@ -354,7 +377,9 @@ def cmd_report(a, sid):
     report = J.loads(Path(a.file).read_bytes())
     if isinstance(report, dict):
         # Identity fields the template pre-fills are restored when omitted, refused when changed.
-        Template.restore_fixed(report, Template.template(current["packet"], contents))
+        revision = revision_lineage(st, contents)
+        Template.restore_fixed(report, Template.template(current["packet"], contents, lineage=revision),
+                               Template.restored(revision))
     authored = copy.deepcopy(report)
     stamp = stamp_invocation(report, getattr(a, "invocation_id", None))
     supplement = supplement_discovery(st, report, a.discovery_ref or [], a.resolve_uncertainty or [])
@@ -439,7 +464,7 @@ def cmd_admit(a, sid):
     st = al_store.load(sid)
     ready(st)
     if st["proof_admission"]["status"] != "pending":
-        refuse("observable obligations already admitted")
+        refuse(ADMITTED)
     current = validate_admitted(st)
     if a.file and Path(a.file).read_bytes() != J.reference(current["obligations"]):
         refuse("supplied materialized obligation bytes differ from retained report")
@@ -498,3 +523,10 @@ def register(sub):
     p.add_argument("--file")
     p.add_argument("--recovery-file", dest="operation_recovery_file")
     p.set_defaults(fn=cmd_admit)
+    from al_planning_revision import cmd_revise
+    p = children.add_parser("revise", help="reopen admitted obligations for a genuine current Architect revision "
+                                           "before review starts")
+    p.add_argument("--reason", required=True, help="why the Architect revises the admitted obligations")
+    p.add_argument("--invocation-id", metavar="ID",
+                   help="the invocation that requested the revision (recorded as requested_by, not authorship)")
+    p.set_defaults(fn=cmd_revise)
