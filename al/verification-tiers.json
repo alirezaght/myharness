@@ -2,7 +2,7 @@
   "schema_version": 1,
   "policy": "Fast tier (default of al/verify_changed.py): affected test files not listed here plus the parity, consistency and docs guards; run after every change. Slow tier: the files below and the acceptance tier; run by release_verify.py --full (release) or nightly, never by default.",
   "rule": "a test file is slow when its mean measured test time exceeds 1.0 s",
-  "measured_files": 300,
+  "measured_files": 301,
   "slow": {
     "claude:tests/test_core_hardening.py": {
       "tests": 11,
@@ -616,6 +616,10 @@
     "installer:al/tests/test_runtime_run_native.py": {
       "tests": 2,
       "seconds": 98.1
+    },
+    "installer:al/tests/test_runtime_service_pin_guard.py": {
+      "tests": 18,
+      "seconds": 38.7
     },
     "installer:al/tests/test_runtime_successor.py": {
       "tests": 5,

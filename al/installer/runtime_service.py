@@ -44,6 +44,7 @@ TAIL_MARKER = 'import al_runtime_resources'
 COOKIE_TIMEOUT = 2.0
 SETTLE = 0.3
 MAX_WORKTREES = 16
+MAX_PIN_RECORD = 1 << 16
 # Changed paths a worktree keeps for change-set answers (#35); older ones are forgotten (lost).
 MAX_EVENTS = 20000
 # A change-set answer longer than this is no answer: the command lists the repository itself.
@@ -330,6 +331,9 @@ class Service:
         self.stopping = False
         self.environment = dict(os.environ)
         self.pin_watch = None
+        self.pin_buffer = b''
+        self.pin_ready = False
+        self.manifest_identity = None
         self.subscribers = {}
 
     # ------------------------------------------------------------------ lifecycle
@@ -408,17 +412,33 @@ class Service:
         os.set_blocking(self.pin_watch.stdout.fileno(), False)
         self.selector.register(self.pin_watch.stdout, selectors.EVENT_READ, ('pin', None))
 
+    def pin_manifest_identity(self):
+        state = os.lstat(self.base / 'pins' / self.pin['pin_identity'] / 'manifest.json')
+        return (state.st_dev, state.st_ino, state.st_size, state.st_mtime_ns, state.st_ctime_ns, state.st_mode)
+
     def verify_pin(self, reason):
         from installer.runtime_pin import verify_pin
         try:
+            before = self.pin_manifest_identity()
             verified = verify_pin(self.base / 'pins', self.pin, readonly=True)
             if verified['bytes'] != self.captured['bytes']:
                 raise ValueError('runtime pin bytes differ from the verified service runtime')
+            if self.pin_manifest_identity() != before:
+                raise ValueError('runtime pin manifest moved during verification')
+            self.manifest_identity = before
         except (OSError, ValueError, KeyError) as exc:
             log('pinned runtime failed verification after ' + reason + ': ' + str(exc) + '; stopping')
             self.stopping = True
+            self.pin_ready = False
             return False
         return True
+
+    def pin_monitor_failed(self, reason):
+        self.pin_ready = False
+        self.stopping = True
+        self.forget(self.pin_watch.stdout)
+        log('pin watcher ' + reason + '; stopping')
+        # Keep the child handle until shutdown proves bounded settlement.
 
     def pin_event(self):
         try:
@@ -428,17 +448,46 @@ class Service:
         except OSError:
             data = b''
         if not data:
-            self.forget(self.pin_watch.stdout)
-            self.pin_watch = None
+            self.pin_monitor_failed('ended')
             return
-        if any(record[:1] in (b'E', b'O') for record in data.split(b'\0')):
-            self.verify_pin('a change in its pin directory')
+        self.pin_buffer += data
+        *records, self.pin_buffer = self.pin_buffer.split(b'\0')
+        if len(self.pin_buffer) > MAX_PIN_RECORD or any(len(row) > MAX_PIN_RECORD for row in records):
+            self.pin_monitor_failed('record exceeded its limit')
+            return
+        ready = changed = False
+        for record in records:
+            kind = record[:1]
+            if kind == b'R' and len(record) > 1:
+                ready = True
+            elif kind in (b'E', b'O'):
+                changed = True
+            else:
+                self.pin_monitor_failed('unavailable or malformed: ' + os.fsdecode(record))
+                return
+        if ready or changed:
+            reason = 'watcher readiness' if ready else 'a change in its pin directory'
+            if self.verify_pin(reason) and ready and not self.stopping:
+                self.pin_ready = True
+
+    def stop_pin_watch(self):
+        self.pin_ready = False
+        process = self.pin_watch
+        if process is None:
+            return
+        self.forget(process.stdout)
+        try:
+            process.kill()
+            process.wait(timeout=2)
+        finally:
+            process.stdout.close()
+            process.stdin.close()
+        self.pin_watch = None
 
     def shutdown(self):
         for worktree in self.worktrees.values():
             worktree.stop()
-        if self.pin_watch is not None:
-            self.pin_watch.kill()
+        self.stop_pin_watch()
         for conn in list(self.subscribers):
             conn.close()  # subscribers see the end and fall back to polling
         self.subscribers.clear()
@@ -585,6 +634,10 @@ class Service:
             for descriptor in fds:
                 os.close(descriptor)
             return self.reply(conn, {'event': 'fallback', 'reason': 'service of another launcher'})
+        if not self.pin_ready:
+            for descriptor in fds:
+                os.close(descriptor)
+            return self.reply(conn, {'event': 'fallback', 'reason': 'pin watcher initializing'})
         if not self.pin_unchanged():
             for descriptor in fds:
                 os.close(descriptor)
@@ -608,15 +661,17 @@ class Service:
         self.selector.register(conn, selectors.EVENT_READ, ('connection', pid))
 
     def pin_unchanged(self):
-        manifest = self.base / 'pins' / self.pin['pin_identity'] / 'manifest.json'
+        if not self.pin_ready or self.stopping or self.pin_watch is None:
+            return False
+        # Consume already-delivered changes/loss before authorizing another command.
+        self.pin_event()
+        if not self.pin_ready or self.stopping or self.pin_buffer:
+            return False
         try:
-            current = os.lstat(manifest)
+            current = self.pin_manifest_identity()
         except OSError:
             return self.verify_pin('its manifest disappeared')
-        identity = (current.st_ino, current.st_size, current.st_mtime_ns, current.st_mode)
-        if getattr(self, 'manifest_identity', None) is None:
-            self.manifest_identity = identity
-        if identity != self.manifest_identity:
+        if current != self.manifest_identity:
             return self.verify_pin('its manifest changed')
         return True
 
@@ -670,6 +725,7 @@ class Service:
             'pin_identity': self.pin['pin_identity'], 'launcher_identity': self.request['launcher_identity'],
             'started': self.started, 'uptime_seconds': round(time.time() - self.started, 3),
             'idle_seconds': round(time.monotonic() - self.last_active, 3), 'idle_timeout_seconds': self.idle,
+            'pin_ready': self.pin_ready and not self.stopping,
             'commands_served': self.served, 'running_commands': len(self.children), 'stopping': self.stopping,
             'worktrees': [{'root': w.root, 'watcher': w.backend if w.process is not None else 'none',
                            'snapshot': w.tree if w.tree is not None and w.tree_generation == w.generation else None}
@@ -1139,12 +1195,18 @@ def serve(request, manifest, captured, loader, child_text):
         service.watch_pin()
     except BaseException:
         log('could not start: ' + traceback.format_exc())
-        service.shutdown()
+        try:
+            service.shutdown()
+        except Exception:
+            log('cleanup failed: ' + traceback.format_exc())
         raise
     try:
         service.run()
     except BaseException:
         log('failed: ' + traceback.format_exc())
-        service.shutdown()
+        try:
+            service.shutdown()
+        except Exception:
+            log('cleanup failed: ' + traceback.format_exc())
         raise
     return 0
