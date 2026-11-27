@@ -79,6 +79,7 @@ def test_tagged_payload_verification_binds_manifest_to_selected_tag(tmp_path):
 
 import pytest
 from al import release_verify as verifier
+from al.tests import update_templates
 from al.tests.test_manifest import git_test, make_source, tag_second
 
 
@@ -90,9 +91,16 @@ def _report(capsys):
     return value
 
 
+@pytest.fixture(scope='module')
+def _release_source_prefix(tmp_path_factory):
+    # Only the genuine tagged source is reused; each case restores independent files.
+    container = tmp_path_factory.mktemp('release-source-prefix')
+    return update_templates.build(container, make_source)
+
+
 @pytest.fixture
-def release_checkout(tmp_path, monkeypatch):
-    source = make_source(tmp_path)
+def release_checkout(tmp_path, monkeypatch, _release_source_prefix):
+    source = update_templates.restore(_release_source_prefix)
     monkeypatch.setattr(verifier, 'ROOT', source / 'al')
     for key in ('GITHUB_REF', 'GITHUB_SHA', 'GITHUB_ACTIONS', 'GITHUB_REF_TYPE'):
         monkeypatch.delenv(key, raising=False)
