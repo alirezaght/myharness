@@ -159,37 +159,22 @@ def test_trace_survives_launch_failure_and_recorded_cancellation(observed, monke
     assert controller.conn.execute("SELECT trace_id FROM reliability_traces").fetchone()[0] == old
 
 
-def test_actual_assignment_result_links_issued_receipt_without_content(observed):
-    import subprocess
-    from pathlib import Path
+def test_actual_assignment_result_links_issued_receipt_without_content(operations):
+    from tests.test_execution_operations import generated_handoff_fixture
+    from tests.test_knowledge_delivery import seed_task
 
-    from harness.knowledge.integration import assignment_context
-    from harness.knowledge.policy import operator_scope
-    from harness.knowledge.refresh import refresh
-    from tests.test_reliability_timeline_fencing import child_principal
-
-    operation, _, controller = observed
-    principal = child_principal(operation, "al-engineer")
-    root = Path(operation.envelope["repository"])
-    (root / "assignment.py").write_text("import assignment_private_canary\n")
-    subprocess.run(["git", "-C", str(root), "add", "assignment.py"], check=True)
-    refresh(controller.conn, operator_scope(root))
-    operation.assignments = {principal["thread_id"]: {"task": "assigned"}}
-    operation.state = lambda execution: {
-        "run_id": execution["al_run_id"],
-        "phase": "IMPLEMENTATION",
-        "integration": {
-            "agents": {},
-            "tasks": {"assigned": {"title": "assignment_private_canary"}},
-        },
-    }
-    result = assignment_context(operation, controller, principal)
+    operation, _, controller, _, _, _, _ = operations
+    principal, _ = generated_handoff_fixture(operations)
+    seed_task(operations)
+    result = operation.dispatch(principal, "await_assignment", {"timeout": 1})["knowledge_context"]
     assert result["status"] == "available"
     row = controller.conn.execute(
-        "SELECT * FROM reliability_timeline_links WHERE event_kind='retrieval.bundle'"
+        "SELECT * FROM reliability_timeline_links WHERE receipt_id=? AND reference_id IS NOT NULL",
+        (result["receipt_id"],),
     ).fetchone()
     assert row["receipt_id"] == result["receipt_id"] and row["bundle_hash"] == result["bundle_hash"]
-    assert "assignment_private_canary" not in str(dict(row))
+    assert result["presentation"]["sha256"] in row["reference_id"]
+    assert result["context"]["assertions"][0]["text"] not in str(dict(row))
 
     from urllib.parse import urlencode
 
@@ -203,10 +188,35 @@ def test_actual_assignment_result_links_issued_receipt_without_content(observed)
                 "execution": operation.execution_id,
                 "epoch": operation.epoch_id,
                 "principal": principal["thread_id"],
+                "kind": "retrieval.bundle",
             }
         ),
     )
-    assert status == 200 and data["items"][0]["receipt_id"] == result["receipt_id"]
+    assert status == 200
+    assert data["scope"] == {
+        "task": operation.envelope["task_id"],
+        "execution": operation.execution_id,
+        "epoch": operation.epoch_id,
+    }
+    matches = [item for item in data["items"] if item["item_id"] == row["link_id"]]
+    assert len(matches) == 1
+    item = matches[0]
+    assert item["event_kind"] == "retrieval.bundle"
+    assert item["provenance"] == "runtime_observed"
+    assert item["principal_id"] == principal["thread_id"]
+    assert item["receipt_id"] == result["receipt_id"]
+    assert item["bundle_hash"] == result["bundle_hash"]
+    assert item["snapshot_id"] == result["snapshot_id"]
+    assert item["reference_id"] == (
+        f"await_assignment-return-prepared:sha256:{result['presentation']['sha256']}:"
+        f"bytes:{result['presentation']['size']}"
+    )
+    assert all(a["text"] not in str(data) for a in result["context"]["assertions"])
+    foreign_status, foreign = read_timeline(
+        operation.database,
+        urlencode({**data["scope"], "principal": "foreign", "kind": "retrieval.bundle"}),
+    )
+    assert foreign_status == 404 and "items" not in foreign
 
 
 def test_real_foreground_al_dispatch_links_its_process_without_changing_result(operations):

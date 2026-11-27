@@ -397,6 +397,21 @@ try:
         assert observed["agent_id"] == principal["thread_id"]
         assert observed["al_task_id"] == "handoff-task" and observed["files"] == ["source"]
         assert observed["execution_id"] == context["execution"]["id"]
+        import hashlib
+        delivery = assignment["knowledge_context"]
+        assert delivery["status"] == "available", delivery
+        received = json.dumps(delivery["context"], sort_keys=True, separators=(",", ":"),
+                              ensure_ascii=False).encode()
+        assert len(received) <= 32768
+        assert delivery["presentation"]["size"] == len(received)
+        assert delivery["presentation"]["sha256"] == hashlib.sha256(received).hexdigest()
+        assert delivery["presentation"]["model_use"] == "unobserved"
+        estimate = delivery["presentation"]["size_estimate"]
+        assert type(estimate["value"]) is int and estimate["value"] > 0
+        assert estimate["unit"] == "estimated tokens"
+        assert "not-tokenizer-exact" in estimate["method"]
+        assert delivery["context"]["context"]["request"]["stage"] == "planning"
+        assert delivery["context"]["citations"]
         bundle = tool(3, "knowledge_query", {"query": "sealed donor continuity"})
         claim = next(a for a in bundle["assertions"] if a["predicate"] == "handles")
         assert claim["verification"] == "unverified"
@@ -448,6 +463,10 @@ def test_sealed_bridge_http_reaches_assignment_contribution_and_outbox(operation
     from tests.test_execution_bootstrap_closure import isolated_snapshot_child
 
     operation, supervisor, controller, initialization, package, execution, envelope = operations
+    root = Path(operation.envelope["repository"])
+    (root / "source").mkdir(exist_ok=True)
+    (root / "source/context.py").write_text("def bounded_fixture():\n    return 1\n")
+    subprocess.run(["git", "-C", str(root), "add", "source/context.py"], check=True)
     scope = seeded(operations)
     parent = query(controller.conn, scope, ContextRequest("serve")).payload["assertions"][0][
         "assertion_id"
