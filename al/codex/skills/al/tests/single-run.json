@@ -78,6 +78,7 @@
   "test_plan_verification.py",
   "test_planning_authoring.py",
   "test_planning_rebind.py",
+  "test_planning_revision.py",
   "test_planning_template.py",
   "test_protected_file_membership.py",
   "test_remote_gates.py",

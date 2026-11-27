@@ -20,7 +20,11 @@ def _fill(what):
     return PLACEHOLDER + ' ' + what
 
 
-def template(packet_ref, value, *, partially_built=False):
+def template(packet_ref, value, *, partially_built=False, lineage=None):
+    """The report template for an issued packet.
+
+    `lineage` is the {revision, supersedes} a recorded `planning revise` requires of obligations
+    authored for this packet; without one the obligations are the first revision."""
     registry = Q.accepted_criteria(value['task_package'], value['accepted_amendments'])
     criteria = [entry['id'] for entry in registry]
     group = {
@@ -78,8 +82,10 @@ def template(packet_ref, value, *, partially_built=False):
                        'permitted_simulated_component_ids': ['simulated']}],
     }
     binding = value['binding']
+    lineage = lineage or {'revision': 1, 'supersedes': None}
     behavior = {
-        'schema_version': 1, 'kind': 'behavior-obligations-v1', 'id': 'task-behavior', 'revision': 1, 'supersedes': None,
+        'schema_version': 1, 'kind': 'behavior-obligations-v1', 'id': 'task-behavior',
+        'revision': lineage['revision'], 'supersedes': copy.deepcopy(lineage['supersedes']),
         'binding': {key: binding[key] for key in ('repository_identity', 'session_id', 'run_id', 'requirement_lineage_hash')},
         'authorship': {'role': 'al-architect', 'planning_occurrence': binding['planning_occurrence'], 'report_ref': None},
         'criteria_registry': registry,
@@ -150,6 +156,16 @@ RESTORED = {
     'authored_obligations': {'schema_version': None, 'kind': None, 'binding': None,
                              'authorship': None, 'criteria_registry': None},
 }
+# After `planning revise` the obligation revision lineage is runtime-fixed as well.
+REVISED = copy.deepcopy(RESTORED)
+REVISED['authored_obligations'].update(revision=None, supersedes=None)
+
+
+def restored(lineage):
+    """The runtime-fixed fields for a report whose packet carries `lineage` (or none)."""
+    return REVISED if lineage else RESTORED
+
+
 COMPARED_ELSEWHERE = {'model', 'specification.status', 'authored_obligations.criteria_registry'}
 
 
