@@ -583,6 +583,14 @@ def test_chrome_new_task_interview_spec_candidate_and_explicit_adoption(
             })()"""
                 ),
             )
+            # While the first save is in flight the page is busy and cannot submit the newer
+            # edit against the base that save is about to replace (#139).
+            assert evaluate(
+                call,
+                "document.documentElement.hasAttribute('data-authoring-busy') && "
+                "[...document.querySelectorAll('button')].find(node=>"
+                "node.textContent==='Save working specification').disabled",
+            )
             evaluate(call, "window.releaseSpecSave(); true")
             wait(
                 call,
@@ -1910,6 +1918,9 @@ def test_chrome_rework1_buffers_structured_interview_design_and_test_plan_gates(
                 "document.querySelector('#workspace-tab-plan').click();return location.href;})()",
             )
             design_url = evaluate(call, "location.href")
+            # Reload only after the last authoring change settled; a reload inside the window
+            # would persist an already-answered request with a stale base (#139).
+            wait(call, "!document.documentElement.hasAttribute('data-authoring-busy')")
             call("Page.navigate", {"url": design_url})
             wait(call, 'Boolean(document.querySelector("[aria-label=\\"Design description\\"]"))')
             design_draft = evaluate(
@@ -1980,6 +1991,9 @@ def test_chrome_rework1_buffers_structured_interview_design_and_test_plan_gates(
                 "document.querySelector('#workspace-tab-plan').click();return location.href;})()",
             )
             scenario_url = evaluate(call, "location.href")
+            # Reload only after the last authoring change settled; a reload inside the window
+            # would persist an already-answered request with a stale base (#139).
+            wait(call, "!document.documentElement.hasAttribute('data-authoring-busy')")
             call("Page.navigate", {"url": scenario_url})
             wait(call, 'Boolean(document.querySelector("[aria-label=\\"Scenario\\"]"))')
             scenario_draft = evaluate(
@@ -3187,6 +3201,9 @@ def test_chrome_rework1_revisions_apply_successive_current_and_retired_targets(
             ):
                 question_target = f"question-response:{current_id}"
                 card_selector = f'[data-revision-target="{question_target}"]'
+                # Each prior save settles (its post-save refresh brings the new base) before the
+                # correction is edited; until then the page's Save buttons stay disabled (#139).
+                wait(call, "!document.documentElement.hasAttribute('data-authoring-busy')")
                 wait(call, f"Boolean(document.querySelector({json.dumps(card_selector)}))")
                 evaluate(
                     call,

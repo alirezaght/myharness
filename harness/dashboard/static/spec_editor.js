@@ -40,7 +40,7 @@ function workspaceSpecPanel(task, state, inspector) {
     buffer.value = editor.value; buffer.dirty = editor.value !== initial;
     buffer.generation = Number(buffer.generation || 0) + 1;
     authoringPersistBuffer(state, key, buffer);
-    if (save) save.disabled = !buffer.dirty || !(buffer.base || authoring.base);
+    if (save) save.disabled = !buffer.dirty || !(buffer.base || authoring.base) || authoringBusy(task.id);
     workspaceSpecStatus(state, buffer, panel);
     preview.replaceChildren(el("h3", "Rendered working preview"), authoringMarkdown(buffer.value));
   });
@@ -79,7 +79,8 @@ function workspaceSpecPanel(task, state, inspector) {
   // Manual specification editing is available for existing tasks even before
   // an interview workspace/model is initialized. A current base still guards
   // the save against task changes.
-  save.disabled = !buffer.dirty || !(buffer.base || authoring.base);
+  save.dataset.authoringSave = task.id;
+  save.disabled = !buffer.dirty || !(buffer.base || authoring.base) || authoringBusy(task.id);
   toolbar.append(save);
   const changedBase = buffer.base && state.authoring?.base && JSON.stringify(buffer.base) !== JSON.stringify(state.authoring.base);
   const rebase = workspaceButton("Keep my text and save against the current revision", () => {
@@ -217,6 +218,7 @@ function workspaceReconciliation(task, state) {
     state.reconcilePreviewRequestSequence = (state.reconcilePreviewRequestSequence || 0) + 1;
     state.reconcilePreviewRequest = null;
     state.reconcilePreview = null;
+    state.reconcileConfirmations = null;
     confirmGraph.checked = false;
     acknowledged.checked = false;
     compare.replaceChildren(el("p", "Load the selected candidate before previewing adoption."));
@@ -267,6 +269,18 @@ function workspaceReconciliation(task, state) {
   const acknowledge = el("label", "I acknowledge the listed source changes, unresolved requirements and downstream review work.");
   const acknowledged = el("input"); acknowledged.type = "checkbox"; acknowledge.prepend(acknowledged);
   section.append(confirm, acknowledge);
+  // A live re-render (stream frame or refresh) rebuilds this panel; keep the operator's explicit
+  // confirmations and a received preview for the same candidate instead of silently losing them.
+  const confirmations = state.reconcileConfirmations;
+  if (confirmations?.identity === identity && confirmations.revision === select.value) {
+    confirmGraph.checked = Boolean(confirmations.graph);
+    acknowledged.checked = Boolean(confirmations.acknowledged);
+  }
+  const rememberConfirmations = () => {
+    state.reconcileConfirmations = { identity, revision: select.value, graph: confirmGraph.checked, acknowledged: acknowledged.checked };
+  };
+  confirmGraph.addEventListener("change", rememberConfirmations);
+  acknowledged.addEventListener("change", rememberConfirmations);
   const adopt = el("button", "Preview explicit adoption"); adopt.type = "button";
   adopt.addEventListener("click", async () => {
     const revision = state.selectedRevision;
@@ -285,13 +299,26 @@ function workspaceReconciliation(task, state) {
       const preview = await response.json();
       const currentRequest = state.reconcilePreviewRequest;
       if (currentRequest?.identity !== identity || currentRequest.revision !== revision
-          || currentRequest.request !== request || !select.isConnected || select.value !== revision
+          || currentRequest.request !== request || (select.isConnected && select.value !== revision)
           || state.selectedRevision !== revision || state.candidateChoice?.identity !== identity
           || state.candidateChoice.id !== revision || state.candidateInspection?.identity !== identity
-          || state.candidateInspection.id !== revision || !previewBox.isConnected) return;
+          || state.candidateInspection.id !== revision) return;
       if (!response.ok) throw new Error(preview.error || "Preview unavailable");
       state.reconcilePreview = preview;
-      state.reconcilePreviewRevision = { identity, revision, request };
+      state.reconcilePreviewRevision = { identity, revision, request, generation: Number(preview.base?.generation), base: workspaceCanonicalBase(preview.base) };
+      if (previewBox.isConnected) showPreview(preview, revision);
+      else if (workspaceData?.task?.id === task.id && state.tab === "review") workspaceRerender();
+    } catch (error) {
+      const currentRequest = state.reconcilePreviewRequest;
+      if (currentRequest?.identity === identity && currentRequest.revision === revision
+          && currentRequest.request === request && select.isConnected && select.value === revision
+          && state.selectedRevision === revision && previewBox.isConnected)
+        previewBox.replaceChildren(el("p", error.message));
+    } finally {
+      if (state.reconcilePreviewRequest?.request === request) state.reconcilePreviewRequest = null;
+    }
+  });
+  function showPreview(preview, revision) {
       previewBox.replaceChildren(el("h3", "Adoption preview"), el("p", `Exact body hash ${preview.body_hash}`), el("p", `Current source ${preview.base.source}${preview.source_changed ? " · source has changed" : ""}`));
       for (const finding of preview.findings || []) previewBox.append(el("p", finding));
       for (const item of preview.downstream || []) previewBox.append(el("p", item));
@@ -319,6 +346,9 @@ function workspaceReconciliation(task, state) {
           await authoringAction(task, state, "reconcile", { revision, token: preview.token,
             confirm_graph: confirmGraph.checked, acknowledge: acknowledged.checked, actions: [],
             handling: material.entries() }, { key: `reconcile:${revision}` });
+          state.reconcilePreview = null;
+          state.reconcilePreviewRevision = null;
+          state.reconcileConfirmations = null;
           state.authoringMessage = { text: "Revision adopted. Harness requires a fresh design review and explicit approval." };
           workspaceRerender();
         } catch (error) {
@@ -337,21 +367,41 @@ function workspaceReconciliation(task, state) {
         }
       });
       previewBox.append(apply);
-    } catch (error) {
-      const currentRequest = state.reconcilePreviewRequest;
-      if (currentRequest?.identity === identity && currentRequest.revision === revision
-          && currentRequest.request === request && select.isConnected && select.value === revision
-          && state.selectedRevision === revision && previewBox.isConnected)
-        previewBox.replaceChildren(el("p", error.message));
-    } finally {
-      if (state.reconcilePreviewRequest?.request === request) state.reconcilePreviewRequest = null;
+  }
+  const received = state.reconcilePreviewRevision;
+  // Restore only for the exact authoring state the preview was computed against, or while the page
+  // still lags behind it. Any other state (even with an unchanged generation) needs an explicit new
+  // preview, so the superseded preview and its confirmations are dropped.
+  const shownGeneration = Number(authoring.base?.generation);
+  if (state.reconcilePreview && received?.identity === identity && received.revision === select.value
+      && state.selectedRevision === received.revision) {
+    const lagging = Number.isInteger(received.generation) && Number.isInteger(shownGeneration)
+      && shownGeneration < received.generation;
+    if (lagging || received.base === workspaceCanonicalBase(authoring.base)) {
+      showPreview(state.reconcilePreview, received.revision);
+    } else {
+      state.reconcilePreview = null;
+      state.reconcilePreviewRevision = null;
+      state.reconcileConfirmations = null;
+      confirmGraph.checked = false;
+      acknowledged.checked = false;
     }
-  });
+  }
   section.append(adopt, previewBox);
   if (authoring.execution && !["Completed", "Failed"].includes(authoring.execution.status))
     section.append(el("p", "Adoption is unavailable while this execution is active or unsettled. Your candidate remains editable."));
   const message = authoringMessage(state); if (message) section.append(message);
   return section;
+}
+
+// Key-order independent identity of an authoring base (stream frames and action responses may
+// serialize the same base differently).
+function workspaceCanonicalBase(value) {
+  const canonical = item => Array.isArray(item) ? item.map(canonical)
+    : item && typeof item === "object"
+      ? Object.fromEntries(Object.keys(item).sort().map(name => [name, canonical(item[name])]))
+      : item;
+  return JSON.stringify(canonical(value ?? null));
 }
 
 function workspaceMaterialInputLabel(input) {
