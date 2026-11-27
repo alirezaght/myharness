@@ -37,6 +37,10 @@ def _authority(st, reference):
         refuse("editorial authority has no accepted substantive prefix")
     historical = copy.deepcopy(st)
     historical["amendments"] = historical["amendments"][: len(amendments)]
+    if len(amendments) < len(current):
+        # The current requirement analysis binds every accepted amendment and is validated on
+        # the full state at every load; a prefix view only rebuilds normative bytes.
+        historical.get("agent_contracts", {}).pop("requirement-analysis:" + st["task_package"]["id"], None)
     generation = value["invalidation_generation"]
     if type(generation) is not int or generation < 0:
         refuse("invalid editorial authority generation")
