@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "myharness",
+  "version": "1.0.0",
+  "description": "Installs Harness and AL and keeps them at the newest release tag through the existing alctl and uv installers.",
+  "author": {"name": "alirezaght"},
+  "homepage": "https://github.com/alirezaght/myharness",
+  "repository": "https://github.com/alirezaght/myharness",
+  "license": "UNLICENSED",
+  "keywords": ["harness", "al", "orchestration", "planning"]
+}

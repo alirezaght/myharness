@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "myharness",
+  "description": "Harness planning and the AL orchestrator for Claude and Codex.",
+  "owner": {"name": "alirezaght", "url": "https://github.com/alirezaght"},
+  "plugins": [
+    {
+      "name": "myharness",
+      "source": "./plugins/myharness",
+      "description": "Installs Harness and AL and keeps them at the newest release tag through the existing alctl and uv installers.",
+      "homepage": "https://github.com/alirezaght/myharness",
+      "category": "development"
+    }
+  ]
+}
