@@ -320,7 +320,13 @@ class Worktree:
                 left = deadline - time.monotonic()
                 if left <= 0:
                     log('watcher missed a cookie for ' + self.root)
-                    self.stop()
+                    # Latency is not a dead monitor: discard proof without restarting its stream.
+                    self.tree = self.tree_generation = None
+                    self.generation += 1
+                    self.epoch = os.urandom(8).hex()
+                    self.sequence = self.lost = 0
+                    self.events.clear()
+                    self.last_event = time.monotonic()
                     return False
                 ready, _, _ = select.select([self.process.stdout.fileno()], [], [], left)
                 if ready:

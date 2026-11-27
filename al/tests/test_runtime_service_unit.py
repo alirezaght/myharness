@@ -460,3 +460,297 @@ def test_linux_worktree_observes_source_git_inputs_and_cookie(tmp_path, monkeypa
                             child.stdout.close()
             finally:
                 selector.close()
+
+
+
+@pytest.fixture
+def cookie_protocol(tmp_path, monkeypatch):
+    """Real Worktree and owned child; control delays only actual published cookie events."""
+    import json
+    import select
+    import selectors
+    import subprocess
+    import time
+    from types import SimpleNamespace
+
+    from al.installer import runtime_service as R
+    from al.installer.owned_process import OwnedProcess, cleanup_barrier
+
+    assert Path(R.__file__).resolve() == Path(__file__).resolve().parents[1] / 'installer/runtime_service.py'
+    assert R.COOKIE_TIMEOUT == 2.0
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / 'codex/skills/al/scripts'))
+    repository = tmp_path / 'repo'
+    gitdir = repository / '.git'
+    gitdir.mkdir(parents=True)
+    app = repository / 'app.py'
+    app.write_text('before\n')
+    selector = selectors.DefaultSelector()
+
+    def forget(stream):
+        try:
+            selector.unregister(stream)
+        except (KeyError, ValueError):
+            pass
+
+    worktree = R.Worktree(SimpleNamespace(selector=selector, forget=forget),
+                          str(repository), str(gitdir), str(gitdir))
+    read, write = os.pipe()
+    notice_read, notice_write = os.pipe()
+    descriptors = {'read': read, 'write': write, 'notice_read': notice_read, 'notice_write': notice_write}
+    os.set_blocking(notice_read, False)
+    owner = OwnedProcess(tmp_path / 'producer-owner', 'cookie-timeout-recovery-protocol')
+    producer = r"""
+import json, os, sys
+from pathlib import Path
+control, notice = map(int, sys.argv[1:3])
+def emit(kind, path=''):
+    raw = kind.encode() + os.fsencode(path) + b'\0'
+    assert os.write(1, raw) == len(raw)
+emit('R', 'controlled-protocol')
+held = None
+expired = None
+for line in os.fdopen(control, 'rb'):
+    message = json.loads(line)
+    if message['op'] == 'cookie':
+        path = message['path']
+        assert Path(path).is_file(), 'event requires the real published cookie'
+        if message['hold']:
+            tail = None
+            if message['partial']:
+                raw = b'E' + os.fsencode(message['app']) + b'\0'
+                split = len(raw) // 2
+                assert os.write(1, raw[:split]) == split
+                tail = raw[split:]
+            if expired:
+                assert tail is None
+                emit('E', expired)
+            held = (path, tail)
+            os.write(notice, os.fsencode(path) + b'\n')
+        else:
+            emit('E', path)
+    elif message['op'] == 'release':
+        assert held is not None
+        if held[1] is None:
+            emit('E', message['app'])
+        else:
+            assert os.write(1, held[1]) == len(held[1])
+        emit('E', held[0])
+        expired = held[0]
+        held = None
+    elif message['op'] == 'error':
+        emit('X', 'controlled terminal backend error')
+"""
+    state = {'base': str(Path(__file__).resolve().parents[2]), 'production_module': R.__file__,
+             'timeout': R.COOKIE_TIMEOUT, 'qualification': 'controlled protocol only; no native/AL approval'}
+    created, mode = [], {'hold': False, 'partial': False}
+    real_open = os.open
+
+    def command(value):
+        raw = json.dumps(value).encode() + b'\n'
+        assert os.write(descriptors['write'], raw) == len(raw)
+
+    def observed_open(path, flags, *args, **kwargs):
+        descriptor = real_open(path, flags, *args, **kwargs)
+        candidate = Path(os.fsdecode(path))
+        if candidate.parent == gitdir and candidate.name.startswith('al-service-cookie.'):
+            assert flags & os.O_EXCL and flags & os.O_NOFOLLOW
+            created.append(str(candidate))
+            try:
+                command({'op': 'cookie', 'path': str(candidate), **mode, 'app': str(app)})
+            except BaseException:
+                os.close(descriptor)
+                raise
+        return descriptor
+
+    def close_descriptor(name):
+        descriptor = descriptors.pop(name)
+        os.close(descriptor)
+
+    def receive_until(predicate):
+        deadline = time.monotonic() + 2
+        while not predicate():
+            remaining = deadline - time.monotonic()
+            assert remaining > 0 and select.select([child.stdout], [], [], remaining)[0], 'missing controlled record'
+            worktree.readable()
+
+    try:
+        child = owner.spawn_streams([sys.executable, '-I', '-S', '-B', '-c', producer, str(read), str(notice_write)],
+            cwd=repository, env=dict(os.environ, AL_SERVICE='0'), stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=(read, notice_write))
+        close_descriptor('read')
+        close_descriptor('notice_write')
+        state['ownership'] = owner.record()
+        worktree.process = child
+        os.set_blocking(child.stdout.fileno(), False)
+        selector.register(child.stdout, selectors.EVENT_READ)
+        receive_until(lambda: worktree.ready)
+        monkeypatch.setattr(R.os, 'open', observed_open)
+        baseline = worktree.changes('')
+        assert baseline is not None and baseline['paths'] == []
+        yield SimpleNamespace(R=R, worktree=worktree, child=child, baseline=baseline, app=app,
+            repository=repository, mode=mode, created=created, command=command, state=state,
+            notice_read=notice_read, close_descriptor=close_descriptor, receive_until=receive_until,
+            forget=forget, directory=tmp_path)
+    finally:
+        with cleanup_barrier([]):
+            try:
+                state['cleanup'] = owner.cleanup()
+            finally:
+                if owner.process is not None:
+                    for name in ('stdin', 'stdout', 'stderr'):
+                        stream = getattr(owner.process, name, None)
+                        if stream is not None:
+                            stream.close()
+                for descriptor in descriptors.values():
+                    os.close(descriptor)
+                selector.close()
+                (tmp_path / 'protocol-result.json').write_text(json.dumps(state, indent=2) + '\n')
+            assert state['cleanup']['complete']
+            assert not any(state['cleanup'].get(k) for k in ('errors', 'unresolved', 'secondary_signals'))
+
+
+def test_cookie_timeout_preserves_live_producer_for_recovery(cookie_protocol):
+    import time
+
+    p = cookie_protocol
+    worktree, child = p.worktree, p.child
+    old_generation, old_epoch = worktree.generation, worktree.epoch
+    worktree.tree, worktree.tree_generation = 'a' * 40, old_generation
+    p.app.write_text('after\n')
+    p.mode['hold'] = True
+    started = time.monotonic()
+    answer = worktree.changes(p.baseline['token'])
+    p.state.update(answer=answer, elapsed=time.monotonic() - started, cookie_paths=p.created[:],
+                   producer_returncode=child.poll(), retained_same_process=worktree.process is child)
+    assert answer is None, 'expired cookie cannot grant a change-set proof'
+    held_notice = os.read(p.notice_read, 4096).decode().strip()
+    assert held_notice == p.created[-1], 'producer must have observed the actual held cookie'
+    p.state['held_cookie_observed'] = held_notice
+    assert child.poll() is None and worktree.process is child, \
+        'cookie latency killed the healthy producer before its valid late event could arrive'
+    assert worktree.ready and not worktree.watch_failed
+    assert worktree.tree is None and worktree.generation > old_generation
+    assert worktree.epoch != old_epoch and not worktree.events
+    p.mode['hold'] = False
+    p.command({'op': 'release', 'app': str(p.app)})
+    fresh = worktree.changes('')
+    assert fresh is not None and fresh['token'] != p.baseline['token']
+    assert len(p.created) == 3, 'recovery requires its own new exclusive cookie'
+    assert worktree.changes(p.baseline['token']) is None, 'expired epoch cannot claim complete history'
+    assert child.poll() is None and worktree.process is child
+
+
+def test_partial_record_survives_timeout_and_expired_cookie_cannot_ack_new_request(cookie_protocol):
+    p = cookie_protocol
+    p.app.write_text('after\n')
+    p.mode.update(hold=True, partial=True)
+    assert p.worktree.changes(p.baseline['token']) is None
+    assert os.read(p.notice_read, 4096).decode().strip() == p.created[-1]
+    assert p.worktree.buffer.startswith(b'E') and b'\0' not in p.worktree.buffer
+    assert p.worktree.ready and p.child.poll() is None
+    p.command({'op': 'release', 'app': str(p.app)})
+    p.mode['partial'] = False
+    # The producer repeats the expired cookie while withholding this new real one.
+    assert p.worktree.changes('') is None, 'an expired cookie cannot certify a new request'
+    assert os.read(p.notice_read, 4096).decode().strip() == p.created[-1]
+    assert not p.worktree.buffer and p.worktree.current() is None
+    assert p.child.poll() is None and p.worktree.process is p.child
+    p.mode['hold'] = False
+    p.command({'op': 'release', 'app': str(p.app)})
+    fresh = p.worktree.changes('')
+    assert fresh is not None and fresh['token'] != p.baseline['token']
+    assert p.worktree.changes(p.baseline['token']) is None
+
+
+def test_helper_publication_requires_fresh_generation_and_new_cookie(cookie_protocol):
+    import contextlib
+    import json
+    import subprocess
+    from types import SimpleNamespace
+
+    from al.installer.owned_process import OwnedProcess
+
+    p = cookie_protocol
+    service = SimpleNamespace(forget=p.forget)
+    scripts = Path(__file__).resolve().parents[1] / 'codex/skills/al/scripts'
+
+    @contextlib.contextmanager
+    def snapshot_helper(name):
+        directory = p.directory / name
+        directory.mkdir()
+        result = directory / 'tree'
+        code = ("import subprocess,sys; from pathlib import Path; "
+                "subprocess.run(['git','init','-q',sys.argv[1]],check=True); "
+                "subprocess.run(['git','-C',sys.argv[1],'add','--','app.py'],check=True) "
+                "if not (Path(sys.argv[1])/'.git/index').exists() else None; "
+                "sys.path.insert(0,sys.argv[2]); import al_snapshot; "
+                "tree=al_snapshot.snapshot(sys.argv[1]); Path(sys.argv[3]).write_text(tree); print(tree,end='')")
+        owner = OwnedProcess(directory / 'owner', 'cookie-snapshot-helper-' + name)
+        try:
+            child = owner.spawn_streams([sys.executable, '-B', '-c', code, str(p.repository),
+                str(scripts), str(result)], cwd=p.repository, env=dict(os.environ, AL_SERVICE='0'),
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            assert child.wait(timeout=5) == 0, child.stderr.read()
+            yield child, result.read_text()
+        finally:
+            try:
+                cleanup = owner.cleanup()
+                (directory / 'cleanup.json').write_text(json.dumps(cleanup, indent=2) + '\n')
+                assert cleanup['complete'] and not any(cleanup.get(k) for k in ('errors', 'unresolved', 'secondary_signals'))
+            finally:
+                if owner.process is not None:
+                    owner.process.stdout.close()
+                    owner.process.stderr.close()
+
+    with snapshot_helper('old-helper') as (old, old_tree):
+        generation = p.worktree.generation
+        p.worktree.helper = (old.pid, generation)
+        p.app.write_text('after\n')
+        p.mode['hold'] = True
+        assert p.worktree.changes(p.baseline['token']) is None
+        assert os.read(p.notice_read, 4096).decode().strip() == p.created[-1]
+        count = len(p.created)
+        p.R.Service.helper_done(service, old.stdout, p.worktree)
+        assert p.worktree.current() is None and len(p.created) == count, 'old-generation helper cannot publish'
+        assert p.worktree.helper is None
+    p.mode['hold'] = False
+    p.command({'op': 'release', 'app': str(p.app)})
+    p.receive_until(lambda: any(path == str(p.app) for _, path in p.worktree.events))
+    with snapshot_helper('fresh-helper') as (fresh, fresh_tree):
+        assert fresh_tree != old_tree, 'helper must recompute the changed working copy'
+        p.worktree.helper = (fresh.pid, p.worktree.generation)
+        count = len(p.created)
+        p.R.Service.helper_done(service, fresh.stdout, p.worktree)
+        assert len(p.created) == count + 1, 'fresh helper publication requires its own cookie proof'
+        assert p.worktree.current() == fresh_tree
+
+
+@pytest.mark.parametrize('terminal', ['eof', 'error'])
+def test_terminal_monitor_stops_and_refuses_proof(cookie_protocol, terminal):
+    p = cookie_protocol
+    p.worktree.tree, p.worktree.tree_generation = 'a' * 40, p.worktree.generation
+    if terminal == 'eof':
+        p.close_descriptor('write')
+    else:
+        p.command({'op': 'error'})
+    p.receive_until(lambda: p.worktree.process is None)
+    assert p.child.poll() is not None and p.worktree.watch_failed and not p.worktree.ready
+    assert p.worktree.current() is None and p.worktree.changes(p.baseline['token']) is None
+
+
+def test_uncertain_monitor_settlement_retains_ownership_and_refuses_proof(cookie_protocol, monkeypatch):
+    import subprocess
+
+    p = cookie_protocol
+    real_wait = p.child.wait
+
+    def unavailable_wait(*args, **kwargs):
+        raise subprocess.TimeoutExpired(p.child.args, 2)
+
+    monkeypatch.setattr(p.child, 'wait', unavailable_wait)
+    try:
+        assert p.worktree.stop() is False
+        assert p.worktree.process is p.child, 'failed settlement cannot discard owned Popen'
+        assert p.worktree.current() is None and p.worktree.changes(p.baseline['token']) is None
+    finally:
+        monkeypatch.setattr(p.child, 'wait', real_wait)

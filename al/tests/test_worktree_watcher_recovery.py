@@ -199,7 +199,7 @@ def recovery(tmp_path, monkeypatch):
         case.close()
 
 
-def test_cookie_loss_recovers_same_worktree_and_existing_channel(recovery):
+def test_watcher_eof_recovers_same_worktree_and_existing_channel(recovery):
     c = recovery
     assert c.request() == {'event': 'snapshot', 'tree': None}
     c.ready()
@@ -210,7 +210,9 @@ def test_cookie_loss_recovers_same_worktree_and_existing_channel(recovery):
     token = original.changes('')['token']
     failed_child = original.process
     c.cookies = False
-    assert c.ask(pair) == b'-'  # Real sync waits its unchanged cookie deadline and stops.
+    failed_child.stdin.close()  # Real controlled watcher EOF still requires stopped-monitor recovery.
+    c.until(lambda: original.process is None)
+    assert c.ask(pair) == b'-'
     assert failed_child.poll() is not None
     assert original.process is None and original.tree is None
     c.source.write_text('VALUE = 2\n')  # A real unobserved gap invalidates old change tokens.
@@ -236,6 +238,38 @@ def test_cookie_loss_recovers_same_worktree_and_existing_channel(recovery):
     delta = json.loads(c.ask(pair, b'c' + fresh['token'].encode() + b'\n'))
     assert delta['paths'] == [str(c.source)]
     assert delta['token'] != fresh['token']
+
+
+def test_cookie_timeout_recovers_same_live_monitor_and_existing_channel(recovery):
+    c = recovery
+    assert R.COOKIE_TIMEOUT == 2.0
+    assert c.request() == {'event': 'snapshot', 'tree': None}
+    c.ready()
+    original = c.worktree
+    pair = c.channel()
+    initial = c.snapshot()
+    assert c.git('show', initial + ':app.py') == 'VALUE = 1'
+    token = original.changes('')['token']
+    child, generation = original.process, original.generation
+    watcher_count = len(c.watchers)
+    c.cookies = False
+    assert c.ask(pair) == b'-'  # The unchanged real deadline returns unknown on this existing channel.
+    assert c.worktree is original and original.process is child and child.poll() is None
+    assert original.ready and not original.watch_failed
+    assert original.tree is None and original.tree_generation is None and original.generation > generation
+    assert original.epoch != token.split(':')[0]
+    assert c.ask(pair) == b'-'  # A live monitor cannot advertise the revoked cached tree.
+    assert len(c.watchers) == watcher_count
+    c.source.write_text('VALUE = 2\n')
+    c.cookies = True
+    recovered = c.snapshot()
+    assert recovered != initial and c.git('show', recovered + ':app.py') == 'VALUE = 2'
+    assert c.ask(pair) == recovered.encode()
+    assert c.ask(pair, b'c' + token.encode() + b'\n') == b'-'
+    fresh = json.loads(c.ask(pair, b'c\n'))
+    assert fresh['token'] != token and fresh['paths'] == []
+    assert c.worktree is original and original.process is child and child.poll() is None
+    assert len(c.watchers) == watcher_count
 
 
 def test_old_helper_settles_before_recovery_and_cannot_publish(recovery):
