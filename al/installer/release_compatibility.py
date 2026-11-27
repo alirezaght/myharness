@@ -33,6 +33,9 @@ al_acceptance.py al_check_setup.py al_evidence_supersession.py al_repository_aud
 al_rework_recovery.py al_rework_recovery_attempts.py al_rework_recovery_contract.py
 al_task_risk.py
 """.split())
+# Helpers first required by the release after the named published version. Published
+# releases up to that version keep their genuine layout; never infer it from missing files.
+_INTRODUCED_AFTER = {'al_planning_revision.py': (0, 1, 71)}
 _VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 
 
@@ -47,7 +50,8 @@ def required_scripts(layout, release=None):
         raise ValueError('invalid release version/tag identity')
     major, minor, patch = map(int, version.split('.'))
     if (major, minor) != (0, 1) or patch > 24:
-        return current
+        return frozenset(name for name in current
+                         if (major, minor, patch) > _INTRODUCED_AFTER.get(name, (-1,)))
     required = _HISTORICAL
     if patch < 3:
         required = required - _INTRODUCED_013
