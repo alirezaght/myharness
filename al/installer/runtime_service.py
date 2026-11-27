@@ -42,6 +42,7 @@ from .runtime_service_client import PROTOCOL, namespace
 WIRE = namespace()
 TAIL_MARKER = 'import al_runtime_resources'
 COOKIE_TIMEOUT = 2.0
+WATCH_RETRY = 1.0
 SETTLE = 0.3
 MAX_WORKTREES = 16
 MAX_PIN_RECORD = 1 << 16
@@ -161,6 +162,8 @@ class Worktree:
         self.cookies = {}
         self.counter = 0
         self.helper = None
+        self.watch_failed = False
+        self.retry_after = 0.0
         # Change set (#35): every relevant event is numbered; `lost` is the latest number at or
         # before which events may be missing (before the watcher was ready, a lost-events
         # notice, or forgotten old events). A token is `<epoch>:<number>`.
@@ -169,27 +172,60 @@ class Worktree:
         self.lost = 0
         self.events = []
 
+    def invalidate(self):
+        self.ready = False
+        self.tree = self.tree_generation = None
+        self.generation += 1
+        self.buffer = b''
+        self.cookies.clear()
+
     def start(self, watch_source):
         import al_service_cache
+        if self.process is not None or self.helper is not None:
+            return False
+        self.invalidate()
+        self.epoch = os.urandom(8).hex()
+        self.sequence = self.lost = 0
+        self.events.clear()
+        self.last_event = time.monotonic()
+        self.retry_after = self.last_event + WATCH_RETRY
+        self.watch_failed = True
         request = {'deep': [self.root], 'shallow': [d for d in self.git_dirs
                    if sys.platform.startswith('linux') or not d.startswith(self.root + '/')],
                    'skip': list(al_service_cache.EXCLUDED)}
-        self.process = subprocess.Popen(
-            [sys.executable, '-I', '-S', '-B', '-c', watch_source, json.dumps(request)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, close_fds=True)
-        os.set_blocking(self.process.stdout.fileno(), False)
-        self.service.selector.register(self.process.stdout, selectors.EVENT_READ, ('watch', self))
+        try:
+            self.process = subprocess.Popen(
+                [sys.executable, '-I', '-S', '-B', '-c', watch_source, json.dumps(request)],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, close_fds=True)
+            os.set_blocking(self.process.stdout.fileno(), False)
+            self.service.selector.register(self.process.stdout, selectors.EVENT_READ, ('watch', self))
+        except (OSError, ValueError, KeyError) as exc:
+            log('worktree watcher launch failed for ' + self.root + ': ' + str(exc))
+            self.stop()
+            return False
+        self.watch_failed = False
+        return True
 
     def stop(self):
-        if self.process is not None:
-            self.service.forget(self.process.stdout)
-            self.process.kill()
-            self.process.wait()
-            self.process.stdout.close()
-            self.process.stdin.close()
-            self.process = None
-        self.ready = False
-        self.tree = None
+        self.watch_failed = True
+        self.invalidate()
+        self.retry_after = max(self.retry_after, time.monotonic() + WATCH_RETRY)
+        if self.process is None:
+            return True
+        self.service.forget(self.process.stdout)
+        try:
+            if self.process.poll() is None:
+                self.process.kill()
+            self.process.wait(timeout=2)
+            try:
+                self.process.stdout.close()
+            finally:
+                self.process.stdin.close()
+        except (OSError, subprocess.SubprocessError) as exc:
+            log('worktree watcher settlement uncertain for ' + self.root + ': ' + str(exc))
+            return False  # Retain ownership; a later request may try settlement again.
+        self.process = None
+        return True
 
     def readable(self):
         try:
@@ -266,7 +302,7 @@ class Worktree:
 
     def sync(self):
         """Wait until every event before now has been delivered; False when that is unknown."""
-        if self.process is None or not self.ready:
+        if self.process is None or self.watch_failed or not self.ready:
             return False
         import al_service_cache
         self.counter += 1
@@ -295,7 +331,7 @@ class Worktree:
                 os.unlink(path)
             except OSError:
                 pass
-        return self.process is not None
+        return self.process is not None and not self.watch_failed and self.ready
 
     def current(self):
         """The snapshot tree proven current now, or None."""
@@ -486,17 +522,33 @@ class Service:
         self.pin_watch = None
 
     def shutdown(self):
+        self.stopping = True
+        errors = []
         for worktree in self.worktrees.values():
-            worktree.stop()
-        self.stop_pin_watch()
+            try:
+                if not worktree.stop():
+                    errors.append('unsettled worktree watcher: ' + worktree.root)
+            except Exception as exc:
+                errors.append('worktree cleanup: ' + str(exc))
+        try:
+            self.stop_pin_watch()
+        except Exception as exc:
+            errors.append('pin watcher cleanup: ' + str(exc))
         for conn in list(self.subscribers):
-            conn.close()  # subscribers see the end and fall back to polling
-        self.subscribers.clear()
+            try:
+                conn.close()  # Subscribers see the end and fall back to polling.
+                del self.subscribers[conn]
+            except Exception as exc:
+                errors.append('subscriber cleanup: ' + str(exc))
         for path in (self.directory / 's', self.directory / 'token'):
             try:
                 os.unlink(path)
-            except OSError:
+            except FileNotFoundError:
                 pass
+            except OSError as exc:
+                errors.append('service path cleanup: ' + str(exc))
+        if errors:
+            raise RuntimeError('service shutdown incomplete: ' + '; '.join(errors))
         log('stopped after serving ' + str(self.served) + ' commands')
 
     # ------------------------------------------------------------------ loop
@@ -748,6 +800,20 @@ class Service:
                 self.locations[repository] = None
         return self.locations[repository]
 
+    def worktree_available(self, worktree):
+        if getattr(self, 'stopping', False):
+            return False
+        if worktree.process is not None and not worktree.watch_failed:
+            return True
+        if (worktree.helper is not None or time.monotonic() < worktree.retry_after
+                or not self.pin_ready or self.pin_watch is None
+                or self.worktrees.get(worktree.root) is not worktree
+                or worktree.common_dir != os.path.realpath(self.request['common_dir'])):
+            return False
+        if worktree.stop():
+            worktree.start(self.captured['bytes']['installer/runtime_service_watch.py'].decode())
+        return False
+
     def memory(self, message):
         """In-memory data handed to the command child (see al_service_cache), and the parent's
         end of the child's snapshot channel. The child asks over the channel only when it takes
@@ -764,7 +830,8 @@ class Service:
         worktree = self.worktrees.get(root)
         if worktree is None and len(self.worktrees) < MAX_WORKTREES:
             worktree = self.worktrees[root] = Worktree(self, *located)
-            worktree.start(self.captured['bytes']['installer/runtime_service_watch.py'].decode())
+        if worktree is not None:
+            self.worktree_available(worktree)
         if not self.packs:
             self.refresh_packs(root)
         if worktree is None:
@@ -847,12 +914,10 @@ class Service:
             return {'event': 'snapshot', 'tree': None}
         self.last_active = time.monotonic()
         worktree = self.worktrees.get(located[0])
-        if worktree is None:
-            if len(self.worktrees) < MAX_WORKTREES:
-                worktree = self.worktrees[located[0]] = Worktree(self, *located)
-                worktree.start(self.captured['bytes']['installer/runtime_service_watch.py'].decode())
-            return {'event': 'snapshot', 'tree': None}
-        return {'event': 'snapshot', 'tree': worktree.current() if worktree.process is not None else None}
+        if worktree is None and len(self.worktrees) < MAX_WORKTREES:
+            worktree = self.worktrees[located[0]] = Worktree(self, *located)
+        available = worktree is not None and self.worktree_available(worktree)
+        return {'event': 'snapshot', 'tree': worktree.current() if available else None}
 
     def snapshot_request(self, channel, worktree):
         """A command child asks for the current snapshot tree of its worktree (`?`) or for its
@@ -869,7 +934,7 @@ class Service:
         while buffer:
             if buffer[:1] == b'?':
                 buffer = buffer[1:]
-                tree = worktree.current() if worktree.process is not None else None
+                tree = worktree.current() if self.worktree_available(worktree) else None
                 answer = (tree or '-').encode()
             elif buffer[:1] == b'c':
                 if b'\n' not in buffer:
@@ -878,7 +943,7 @@ class Service:
                         return
                     break
                 line, buffer = buffer.split(b'\n', 1)
-                value = worktree.changes(line[1:].decode(errors='replace')) if worktree.process is not None else None
+                value = worktree.changes(line[1:].decode(errors='replace')) if self.worktree_available(worktree) else None
                 answer = json.dumps(value, sort_keys=True, separators=(',', ':')).encode() if value is not None else b'-'
             else:
                 self.forget(channel)
@@ -907,13 +972,15 @@ class Service:
 
     def background(self):
         """After changes settle, recompute a worktree's snapshot in a forked helper."""
+        if self.stopping:
+            return
         now = time.monotonic()
         for root, worktree in list(self.worktrees.items()):
             if not os.path.isdir(root):
-                worktree.stop()
-                del self.worktrees[root]
+                if worktree.stop() and worktree.helper is None:
+                    del self.worktrees[root]
                 continue
-            if (worktree.process is None or not worktree.ready or worktree.helper is not None
+            if (worktree.process is None or worktree.watch_failed or not worktree.ready or worktree.helper is not None
                     or (worktree.tree is not None and worktree.tree_generation == worktree.generation)
                     or now - worktree.last_event < SETTLE):
                 continue
@@ -939,9 +1006,12 @@ class Service:
             pass
         worktree.helper = None
         tree = data.decode(errors='replace').strip()
-        if len(tree) not in (40, 64) or worktree.process is None:
+        if (len(tree) not in (40, 64) or worktree.process is None
+                or worktree.watch_failed):
             worktree.last_event = time.monotonic() + 30  # retry later, not in a tight loop
             return
+        if generation != worktree.generation:
+            return  # An ordinary edit raced this helper; recompute after normal settling.
         if worktree.sync() and worktree.generation == generation:
             worktree.tree, worktree.tree_generation = tree, generation
 
