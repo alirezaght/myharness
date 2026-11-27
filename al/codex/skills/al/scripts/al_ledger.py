@@ -29,8 +29,6 @@ fingerprint is unchanged; otherwise the check runs again (issue #21).
 Pure helpers over the state dict plus the fingerprint/log I/O; the CLI lives in
 al_evidence.py.
 """
-import contextlib
-import contextvars
 import hashlib
 import json
 import os
@@ -45,6 +43,7 @@ import al_store  # noqa: E402
 import al_sources as Sources
 import al_scope as S
 import al_runner_output as RunnerOutput
+from al_environment_observation import ENV_SCHEMES, env_scheme  # noqa: E402,F401  (re-exported scheme API)
 
 STATUSES = ("PASS", "FAIL", "EMPTY", "INFRA", "TORN", "RUNNING")
 TIERS = ("focused", "broad", "preflight")
@@ -166,26 +165,6 @@ def _prefixes(p):
     return [Path(*parts[: i + 1]) for i in range(len(parts))] if p != "." else []
 
 
-# Environment fingerprint schemes, oldest first; the last one is current. A recorded fingerprint is
-# reproduced only by the scheme that made it, so evidence an older issuing runtime recorded is judged by
-# its own scheme on the compatibility route (readiness_validation), never by a newer one it could not
-# produce. Changing what _env_digest hashes means appending a scheme here, never editing one.
-#   declared: the declared names only (released AL up to v0.1.70)
-#   defaults: plus DEFAULT_VERIFICATION_NAMES (v0.1.71)
-#   policy:   plus the managed verification execution policy (current)
-ENV_SCHEMES = ('declared', 'defaults', 'policy')
-_ENV_SCHEME = contextvars.ContextVar('al_env_scheme', default=ENV_SCHEMES[-1])
-
-
-@contextlib.contextmanager
-def env_scheme(name):
-    """Compute environment fingerprints with an older issuing runtime's scheme inside this block."""
-    if name not in ENV_SCHEMES:raise ValueError('unknown environment fingerprint scheme: '+str(name))
-    token=_ENV_SCHEME.set(name)
-    try:yield
-    finally:_ENV_SCHEME.reset(token)
-
-
 def issuer_gaps(compute):
     """Gaps in records an issuing runtime made, judged by the one scheme that reproduces them.
 
@@ -200,14 +179,13 @@ def issuer_gaps(compute):
 
 
 def _env_names(env_names):
-    from al_environment_observation import DEFAULT_VERIFICATION_NAMES
-    names=set(env_names or ())
-    if _ENV_SCHEME.get()!='declared':names|=DEFAULT_VERIFICATION_NAMES
-    return sorted(names)
+    from al_environment_observation import default_names
+    return sorted(set(env_names or ()) | default_names())
 
 
 def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
     from al_analysis_cache import CURRENT
+    from al_environment_observation import current_scheme
     from al_profile import span
     from al_verification_policy import execution_policy
     policy=execution_policy()
@@ -217,7 +195,7 @@ def scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
         if context is None:return _scope_fingerprint(scope,env_names,sources,cwd)
         from al_environment_observation import value_digest
         environment={name:value_digest(name) for name in env_names}
-        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment,policy,_ENV_SCHEME.get()],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
+        return context.get_or_compute('fingerprint',[scope,list(env_names),sources,cwd,environment,policy,current_scheme()],lambda:_scope_fingerprint(scope,env_names,sources,cwd))
 
 
 def _scope_fingerprint(scope, env_names=(), sources=(), cwd='.'):
@@ -328,7 +306,8 @@ def mutation_source(st, e):
 
 
 def _env_digest(h, env_names):
-    if _ENV_SCHEME.get()=='policy':
+    from al_environment_observation import current_scheme
+    if current_scheme()=='policy':
         from al_verification_policy import execution_policy
         h.update(b'\0execution_policy:'+json.dumps(execution_policy(),sort_keys=True,separators=(',',':')).encode())
     from al_environment_observation import value_digest

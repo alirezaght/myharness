@@ -1,5 +1,7 @@
 """Fresh caller hashes for read-only terminal verification, never executable env."""
 
+import contextlib
+import contextvars
 import hashlib
 import os
 import re
@@ -49,6 +51,39 @@ DEFAULT_VERIFICATION_NAMES = frozenset({"CI"})
 EXECUTION_NAMES = frozenset({"PATH", "HOME", "LANG", "TZ"}) | DEFAULT_VERIFICATION_NAMES
 EXECUTION_PREFIXES = ("PYTHON", "LC_")
 
+# Environment fingerprint schemes, oldest first; the last one is current. A run keeps the scheme of the
+# runtime that issued it, and a recorded fingerprint is reproduced only by that scheme, so the
+# compatibility route (al_ledger.issuer_gaps) judges an older issuer's records by its own scheme.
+# A released scheme's inputs are frozen: changing DEFAULT_VERIFICATION_NAMES or the execution policy
+# means freezing the previous values as a new historical scheme here, never editing one.
+#   declared: the declared names only (released AL up to v0.1.70)
+#   defaults: plus CI (v0.1.71)
+#   policy:   plus the managed verification execution policy (current; live values)
+ENV_SCHEMES = ("declared", "defaults", "policy")
+HISTORICAL_DEFAULT_NAMES = {"declared": frozenset(), "defaults": frozenset({"CI"})}
+_ENV_SCHEME = contextvars.ContextVar("al_env_scheme", default=ENV_SCHEMES[-1])
+
+
+def current_scheme():
+    return _ENV_SCHEME.get()
+
+
+@contextlib.contextmanager
+def env_scheme(name):
+    """Fingerprint and observe execution inputs with an older issuing runtime's scheme in this block."""
+    if name not in ENV_SCHEMES:
+        raise ValueError("unknown environment fingerprint scheme: " + str(name))
+    token = _ENV_SCHEME.set(name)
+    try:
+        yield
+    finally:
+        _ENV_SCHEME.reset(token)
+
+
+def default_names():
+    """Automatic verification dependencies of the active scheme."""
+    return HISTORICAL_DEFAULT_NAMES.get(_ENV_SCHEME.get(), DEFAULT_VERIFICATION_NAMES)
+
 
 def execution_environment(declared):
     """Declared names plus execution-relevant variables, by exact digest.
@@ -56,7 +91,8 @@ def execution_environment(declared):
     Unrelated session variables (agent or terminal markers) never bind evidence."""
     snapshot = observed()
     present = set(snapshot) if snapshot is not None else set(os.environ)
-    names = set(declared) | EXECUTION_NAMES | {n for n in present if n.startswith(EXECUTION_PREFIXES)}
+    names = (set(declared) | (EXECUTION_NAMES - DEFAULT_VERIFICATION_NAMES) | default_names()
+             | {n for n in present if n.startswith(EXECUTION_PREFIXES)})
     return environment(names)
 
 

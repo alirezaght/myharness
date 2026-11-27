@@ -91,3 +91,57 @@ def test_one_issuer_scheme_must_reproduce_every_record(cli, run_state, state_fil
     assert sorted(gaps()) == [('declared-area', 'STALE'), ('defaults-area', 'STALE')]
     # No single runtime records with two schemes; the current gaps are reported.
     assert sorted(Ledger.issuer_gaps(gaps)) == [('declared-area', 'STALE'), ('defaults-area', 'STALE')]
+
+
+def test_one_observation_keeps_each_scheme_apart(cli, run_state, state_file, monkeypatch):
+    """The validators run every scheme inside one observation; cached fingerprints must not cross."""
+    from al_analysis_cache import ObservationContext
+    run_state('implemented')
+    monkeypatch.setenv('FIXTURE_TOKEN', 'one')
+    _record(cli, 'issued', 'defaults')
+    gaps = _gaps(state_file, {'issued'})
+    with ObservationContext({'test': 'one validator observation across schemes'}):
+        assert gaps() == [('issued', 'STALE')]
+        assert Ledger.issuer_gaps(gaps) == []
+        assert gaps() == [('issued', 'STALE')]
+
+
+def test_changed_execution_policy_is_not_excused_by_an_older_scheme(cli, run_state, state_file, monkeypatch):
+    import al_verification_policy as Policy
+    run_state('implemented')
+    monkeypatch.setenv('FIXTURE_TOKEN', 'one')
+    _record(cli, 'current', 'policy')
+    gaps = _gaps(state_file, {'current'})
+    before = Policy.execution_policy()
+    monkeypatch.setattr(Policy, 'execution_policy', lambda: {**before, 'version': before['version'] + 1})
+    assert gaps() == [('current', 'STALE')]
+    assert Ledger.issuer_gaps(gaps) == [('current', 'STALE')]
+
+
+@pytest.mark.parametrize('scheme', ['declared', 'defaults'])
+def test_recorded_execution_inputs_follow_the_issuer_scheme(repo, monkeypatch, scheme):
+    """Reused-result and projection policies bind execution inputs; v0.1.70 never bound CI."""
+    import al_verification_inputs as Inputs
+    from al_environment_observation import env_scheme
+    monkeypatch.setenv('FIXTURE_TOKEN', 'one')
+    monkeypatch.delenv('CI', raising=False)
+    with env_scheme(scheme):
+        recorded = {'kind': 'declared-execution-v1', 'declared_names': ['FIXTURE_TOKEN'],
+                    'inputs': Inputs.execution_environment(['FIXTURE_TOKEN'])}
+    assert ('CI' in recorded['inputs']) is (scheme != 'declared')
+    assert Inputs.environment_gaps(recorded) == ([] if scheme == 'defaults' else ['execution environment inputs differ'])
+    assert Ledger.issuer_gaps(lambda: Inputs.environment_gaps(recorded)) == []
+    monkeypatch.setenv('FIXTURE_TOKEN', 'two')
+    assert Ledger.issuer_gaps(lambda: Inputs.environment_gaps(recorded)) == ['execution environment inputs differ']
+
+
+def test_current_scheme_inputs_are_the_frozen_release_contract():
+    """A released scheme's inputs never change. If this fails, freeze the previous values as a new
+    historical scheme in al_environment_observation (ENV_SCHEMES/HISTORICAL_DEFAULT_NAMES and the
+    policy line in al_ledger._env_digest), then update these expectations."""
+    import al_environment_observation as Observation
+    import al_verification_policy as Policy
+    assert Observation.ENV_SCHEMES == ('declared', 'defaults', 'policy')
+    assert Observation.HISTORICAL_DEFAULT_NAMES == {'declared': frozenset(), 'defaults': frozenset({'CI'})}
+    assert Observation.DEFAULT_VERIFICATION_NAMES == frozenset({'CI'})
+    assert Policy.execution_policy() == {'version': 2, 'default_stdin': 'closed-pipe'}
