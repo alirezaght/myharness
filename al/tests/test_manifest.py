@@ -146,3 +146,12 @@ print('standalone typed contract used')
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == 'standalone typed contract used'
     assert verify_cache(cache, manifest['digest']) == manifest
+
+
+def test_installer_contract_schema_matches_both_hosts_and_harness():
+    # The installer observes data without importing a target run's pinned code.
+    root = Path(__file__).resolve().parents[2]
+    expected = (root / 'harness/agent_contracts.py').read_bytes()
+    assert (root / 'al/installer/activity_contract_schema.py').read_bytes() == expected
+    for platform in ('codex', 'claude'):
+        assert (root / 'al' / platform / 'skills/al/scripts/al_agent_contracts.py').read_bytes() == expected
