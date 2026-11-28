@@ -136,14 +136,14 @@ def _conversations(root, session):
     return found
 
 
-def _flat_sources(item):
+def _flat_sources(item, conversations):
     root, session = Path(item["runtime_root"]), item["session_id"]
     sources = []
     pointer = root / "current"
     # Pointers move before the state so the root never holds a dangling pointer.
     if pointer.is_file() and not pointer.is_symlink() and pointer.read_text().strip() == session:
         sources.append(pointer)
-    for conversation in _conversations(root, session):
+    for conversation in conversations:
         sources.append(conversation)
         if os.path.lexists(conversation.with_suffix(".lock")):
             sources.append(conversation.with_suffix(".lock"))
@@ -157,7 +157,12 @@ def _flat_sources(item):
 def _local_archive(item, stamp):
     """Flat runtime files archive beside the runtime root: workspace inventory walks inside it."""
     root = Path(item["runtime_root"])
-    return safe(root.parent / (root.name + "-archive") / stamp)
+    base = safe(root.parent / (root.name + "-archive"))
+    base.mkdir(mode=0o700, exist_ok=True)
+    ignore = base / ".gitignore"
+    if not os.path.lexists(ignore):
+        ignore.write_text("*\n")  # like the runtime root, the archive never shows up in Git
+    return safe(base / stamp)
 
 
 def close_runs(state_root, sessions=(), *, reason="", apply=False, runtime_roots=(), invoking=None, now=None):
@@ -193,7 +198,8 @@ def close_runs(state_root, sessions=(), *, reason="", apply=False, runtime_roots
         "archived_at": archive.name,
         "reason": reason,
         "registry_root": str(storage),
-        "restore": "move each entry's 'archived' path back to its 'source' path",
+        "restore": ("move each entry's 'archived' path back to its 'source' path, in reverse order; "
+                    "after an interruption trust where each path exists over its 'moved' flag"),
         "status": "IN_PROGRESS",
         "runs": [],
     }
@@ -206,8 +212,9 @@ def close_runs(state_root, sessions=(), *, reason="", apply=False, runtime_roots
             locks = [Path(item["binding"]).with_suffix(".lock")] if item["binding"] else []
             # The session lock is what every AL command of the run holds, in both layouts.
             locks.append(root / ("." + item["session_id"] + ".lock"))
-            if item["layout"] == "flat":
-                locks.extend(path.with_suffix(".lock") for path in _conversations(root, item["session_id"]))
+            # One pointer listing serves both the locks and the moves: none moves without its lock.
+            conversations = _conversations(root, item["session_id"]) if item["layout"] == "flat" else []
+            locks.extend(path.with_suffix(".lock") for path in conversations)
             busy = False
             for lock in locks:
                 descriptor = _locked(lock)
@@ -245,7 +252,7 @@ def close_runs(state_root, sessions=(), *, reason="", apply=False, runtime_roots
             if item["layout"] == "flat":
                 local = _local_archive(item, archive.name)
                 entry["local_archive"] = str(local)
-                moves.extend((source, local / source.relative_to(root)) for source in _flat_sources(item))
+                moves.extend((source, local / source.relative_to(root)) for source in _flat_sources(item, conversations))
             if item["binding"]:
                 binding = Path(item["binding"])
                 moves.extend((source, archive / "al-run-pins" / source.relative_to(storage))
@@ -260,7 +267,7 @@ def close_runs(state_root, sessions=(), *, reason="", apply=False, runtime_roots
                 os.rename(source, destination)
                 move["moved"] = True
             result["closed"].append(entry)
-        except (OSError, ValueError) as exc:
+        except Exception as exc:  # noqa: BLE001 - recorded in the manifest, then re-raised below
             # Stop at the first failure; the manifest says exactly which moves happened.
             failure = exc
             if manifest["runs"] and manifest["runs"][-1]["session_id"] == item["session_id"]:

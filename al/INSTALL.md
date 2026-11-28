@@ -429,7 +429,8 @@ closed, and a run whose binding, session or conversation lock is held is skipped
 is one whose state or binding changed after listing. `--apply` moves a flat run's
 `current` and native conversation pointers (only those naming the run), state file,
 companion directory and session lock into `<runtime root>-archive/<timestamp>/`
-beside the runtime root (never inside it, where the workspace inventory walks), and
+beside the runtime root (never inside it, where the workspace inventory walks; the
+archive carries a `.gitignore` of `*`), and
 the run's protected binding records (a durable run's runtime directory included)
 into `runtime-archive/<timestamp>/al-run-pins/` beside the registry. The
 `manifest.json` there records the reason and each `source` and `archived` path with

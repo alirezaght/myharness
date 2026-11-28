@@ -79,6 +79,7 @@ def test_abandoned_flat_run_defers_updates_until_closed_and_restores(flat):
     local = runtime.parent / "al-runtime-archive" / manifest["archived_at"] / "manifest.json"
     assert json.loads(local.read_text()) == manifest
     assert sorted(p.name for p in runtime.iterdir()) == ["finished.json"]
+    assert (runtime.parent / "al-runtime-archive" / ".gitignore").read_text() == "*\n"
 
     for item in reversed(moved):  # the documented restore
         os.rename(item["archived"], item["source"])
@@ -178,6 +179,7 @@ def test_closed_claude_run_leaves_the_workspace_inventory_clean(tmp_path):
     repository = _private_dir(tmp_path / "repository")
     subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
     runtime = _private_dir(repository / ".claude" / "al-runtime")
+    (runtime / ".gitignore").write_text("*\n")  # as AL creates every runtime root
     _state(runtime / "left.json", repository, status="RUNNING", phase="PLANNING")
     (runtime / ".left.lock").touch(mode=0o600)
     (runtime / ".left.lock.holder").write_text("123\n")
@@ -199,6 +201,10 @@ def test_closed_claude_run_leaves_the_workspace_inventory_clean(tmp_path):
     inventory.pop("digest", None)
     with locked_activity(seal(inventory)):
         pass  # no archived lock or dangling pointer is left for the workspace to trip on
+    # The archived run stays out of Git, as the runtime root does.
+    status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=repository,
+                            check=True, capture_output=True, text=True)
+    assert status.stdout == ""
 
 
 def test_a_pointer_naming_another_session_stays(flat):
@@ -225,3 +231,22 @@ def test_a_run_that_changes_after_listing_is_left_alone(flat, monkeypatch):
     result = _close(state_root, runtime, "abandoned", reason=REASON, apply=True)
     assert result["skipped"] == [{"session_id": "abandoned", "reason": "run changed while closing"}]
     assert result["closed"] == [] and _tree(repository) == before
+
+
+def test_a_durable_run_whose_session_lock_is_held_is_left_alone(tmp_path):
+    state_root, storage = _registry(tmp_path)
+    repository = _private_dir(tmp_path / "live-repository")
+    binding, value = _binding(storage, repository, session="harness-busy")
+    runtime = Path(value["runtime_directory"])
+    _state(runtime / "harness-busy.json", repository, status="RUNNING", phase="IMPLEMENTATION")
+    lock = runtime / ".harness-busy.lock"
+    lock.touch(mode=0o600)
+    before = _tree(storage)
+    descriptor = os.open(lock, os.O_RDWR)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)  # an AL command of the run is in flight
+        result = close_runs(state_root, ["harness-busy"], reason=REASON, apply=True, invoking=tmp_path)
+    finally:
+        os.close(descriptor)
+    assert result["skipped"] == [{"session_id": "harness-busy", "reason": "run lock is held"}]
+    assert _tree(storage) == before and binding.is_file()
