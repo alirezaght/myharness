@@ -54,7 +54,13 @@ if 'installer/runtime_pin_cache.py' in captured:
     verified=verify_pin_cached(base/'pins',pin,captured=captured,write=False)
 else:verified=verify_pin(base/'pins',pin)
 if verified['bytes']!=captured:raise ValueError('runtime pin moved before import')
-from installer.runtime_retry_control import activate,complete
+# Pins that predate sealed retry control (#168) still run their own commands; they cannot take
+# part in a sealed exchange, so one that is offered is refused rather than silently dropped.
+if 'installer/runtime_retry_control.py' in captured:
+    from installer.runtime_retry_control import activate,complete
+else:
+    if os.environ.get('HARNESS_RETRY_CONTROL_FD') is not None:raise ValueError('sealed control requires a pinned runtime that carries it')
+    activate=lambda stage,**kwargs:None;complete=lambda exit_code=0:None
 activate('pin',repository=transaction['repository_identity']['root'],platform=platform,session=transaction['session_id'],argv=request['argv'],pin=pin['pin_identity'])
 value=subject(transaction['repository_identity']['root'],platform,transaction['session_id'])
 if request.get('prepared_start'):
@@ -66,8 +72,11 @@ if request.get('prepared_start'):
     if set(result)!={'transaction','argv','lineage_ref','authorized_start_binding'} or result['transaction']!=transaction or result['argv']!=request['argv'] or request['argv'][0]!='start':raise ValueError('prepared start identity differs')
     run_context.initialization_client=client;run_context.prepared_start=result
 else:
-    from installer.runtime_successor_store import require_ordinary_authority
-    require_ordinary_authority(value)
+    # The launcher has already required ordinary authority with its own code; a pin that
+    # predates successor runs repeats the check only when it carries it (#168).
+    if 'installer/runtime_successor_store.py' in captured:
+        from installer.runtime_successor_store import require_ordinary_authority
+        require_ordinary_authority(value)
     with coordinated(value) as path:
         if read(path)!=transaction:raise ValueError('protected run transaction changed')
 validate(transaction,value)

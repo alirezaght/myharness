@@ -409,6 +409,40 @@ and writes a `manifest.json` listing each `source` and `archived` path. Nothing
 is deleted; restore by moving each archived path back to its source. A binding
 whose lock is held is skipped.
 
+### Abandoned runs
+
+An update is deferred while any run it can see is potentially resumable: every
+runtime state other than `APPROVED`/`DONE`, a deliberately stopped run included.
+A run that was simply left behind therefore defers every update, and the deferral
+message points here. List and close such runs with:
+
+```sh
+alctl close-runs                     # dry run: the runs that defer updates, and other blockers
+alctl close-runs --session <id> [--session <id> ...] --reason "<why>" --apply
+```
+
+Run it from the repository (or pass `--runtime-root`); it scans the same roots as
+an update, and the dry run shows each run's status, phase and last change. Only the
+named sessions that are potentially resumable close. A run with malformed state, an
+unresolved writer or a running check is listed under `other_blockers` and never
+closed, and a run whose binding, session or conversation lock is held is skipped, as
+is one whose state or binding changed after listing. `--apply` moves a flat run's
+`current` and native conversation pointers (only those naming the run), state file,
+companion directory and session lock into `<runtime root>-archive/<timestamp>/`
+beside the runtime root (never inside it, where the workspace inventory walks; the
+archive carries a `.gitignore` of `*`), and
+the run's protected binding records (a durable run's runtime directory included)
+into `runtime-archive/<timestamp>/al-run-pins/` beside the registry. The
+`manifest.json` there records the reason and each `source` and `archived` path with
+whether it moved, with a copy beside the archived runtime files; a failure stops the
+command with the manifest marked `FAILED`. No state byte changes and nothing is
+deleted; restore by moving each archived path back to its source in reverse order.
+
+The run child accepts runs pinned before a later installer module existed: a pin
+without sealed retry control runs its commands but refuses an offered sealed
+exchange, and a pin that predates successor runs relies on the launcher's own
+ordinary-authority check.
+
 ### Resident service
 
 `alctl run` starts a resident AL service per repository and pinned runtime on first use;
