@@ -115,17 +115,21 @@ def describe_gap(g):
     return g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason']
 
 
-# Gaps that mean AL cannot see or trust what the change touches block: the repository moved
-# during discovery, a link/gitlink/opaque boundary hides reached content, or governing rules are
-# unreadable. Every other gap means AL could not establish a check for a unit (no executable
-# binding, an unmodelable manifest or package script, an unsupported layout or CI provider): that
-# check is unverified, listed for review and never blocking (#157).
-BLOCKING_CODES=frozenset({'torn-scan','torn-capture','unsupported-rules','base-symlink'})
+# A gap that only means AL could not establish a check for a unit (no executable binding, an
+# unmodelable manifest, package script or CI definition, an unclassified directory) is an
+# unverified check: listed for review, never blocking (#157). Every other gap blocks - torn
+# captures, link/gitlink/opaque boundaries, a changed coverage contract, unreadable or missing
+# inputs, unknown impact - and so does any code not listed here (fail closed).
+UNVERIFIED_CODES=frozenset({
+    'missing-check','missing-verification-check','missing-architecture-check',
+    'unsupported-architecture-chain','missing-manifest','package-execution-pending',
+    'package-discovery-unavailable','package-script-nonliteral','package-semantic-unverified',
+    'unclassified-unit','unknown-ci-inventory','unsupported-ci-provider',
+})
 
 
 def blocking(g):
-    code=str(g.get('code',''))
-    return code in BLOCKING_CODES or code.endswith('-boundary')
+    return str(g.get('code','')) not in UNVERIFIED_CODES
 
 
 def readiness_gaps(value,gates):

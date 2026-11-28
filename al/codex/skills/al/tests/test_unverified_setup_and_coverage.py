@@ -20,10 +20,12 @@ def test_a_check_al_cannot_establish_does_not_block(code):
     assert Coverage.coverage_guidance([gap]) == Coverage.NEXT_COVERAGE_STEP
 
 
-@pytest.mark.parametrize('code', ['torn-scan', 'torn-capture', 'unsupported-rules', 'base-symlink',
+@pytest.mark.parametrize('code', ['torn-scan', 'torn-capture', 'base-symlink', 'contract-changed',
                                   'gitlink-boundary', 'symlink-boundary', 'opaque-boundary',
-                                  'unsafe-boundary', 'required-rule-boundary'])
-def test_gaps_that_hide_or_move_what_the_change_touches_still_block(code):
+                                  'unsafe-boundary', 'required-rule-boundary', 'missing-input',
+                                  'file-limit', 'unsupported-shared-language', 'a-future-gap-code'])
+def test_every_other_gap_blocks_including_unknown_codes(code):
+    # Integrity, visibility and unknown-impact gaps, and any code not listed as unverified (fail closed).
     gap = {'code': code, 'unit': None, 'path': 'vendor/child', 'reason': 'cannot be enumerated'}
     assert Coverage.blocking(gap)
     guidance = Coverage.coverage_guidance([gap])
@@ -60,17 +62,77 @@ def test_package_gate_whose_setup_al_cannot_qualify_is_unverified_not_blocking(c
     _, manifest = discover(cli, tmp_path, ['apps/web/src/app.js'])
     gate = next(g for g in manifest['gates'] if g.get('package_script', {}).get('script') == 'test')
     cli('gates', 'run', '--stage', 'base', '--id', gate['id'])
+    cli('gates', 'run', '--stage', 'candidate', '--id', gate['id'])
     state = json.loads(cli('show')[1])
     entry = next(e for e in reversed(state['evidence']['entries']) if e['area'] == 'gate-base-' + gate['id'])
     assert entry['status'] == 'INFRA'
     assert entry['note'].startswith(UNQUALIFIED_NOTE) and 'authored install lifecycle' in entry['note']
     status = json.loads(cli('gates', 'status')[1])
     assert not any(gate['id'] in gap for gap in status['base']), status['base']
-    rows = [row for row in status['unverified'] if row['gate'] == gate['id']]
-    assert rows and rows[0]['verified_by'] == 'not verified' and rows[0]['stage'] == 'base'
+    assert not any(gate['id'] in gap for gap in status['candidate']), status['candidate']
+    rows = {row['stage']: row for row in status['unverified'] if row['gate'] == gate['id']}
+    assert set(rows) == {'base', 'candidate'} and all(r['verified_by'] == 'not verified' for r in rows.values())
     # The same INFRA from any other materialization refusal still requires passing evidence.
     m = G.manifest(state)
     other = copy.deepcopy(state)
     next(e for e in reversed(other['evidence']['entries']) if e['id'] == entry['id'])['note'] = 'rejected base materialization'
     assert G.gate_result(other, m, gate, 'base', m['base_oid']) not in G.ACCEPTED
     assert G.gate_result(state, m, gate, 'base', m['base_oid']) == 'unverified'
+
+
+def test_a_changed_setup_input_or_environment_asks_for_a_new_attempt(cli, repo, tmp_path, monkeypatch):
+    import al_gates as G
+    import al_store
+
+    js(repo, {'test': 'node --test', 'prepare': 'husky install'})
+    start(cli)
+    _, manifest = discover(cli, tmp_path, ['apps/web/src/app.js'])
+    gate = next(g for g in manifest['gates'] if g.get('package_script', {}).get('script') == 'test')
+    cli('gates', 'run', '--stage', 'base', '--id', gate['id'])
+    state = json.loads(cli('show')[1])
+    m = G.manifest(state)
+    assert G.gate_result(state, m, gate, 'base', m['base_oid']) == 'unverified'
+    monkeypatch.setenv('npm_config_ignore_scripts', 'true')  # the package-manager environment moved
+    assert G.gate_result(state, m, gate, 'base', m['base_oid']) == 'stale'
+    monkeypatch.delenv('npm_config_ignore_scripts')
+    (al_store.REPO_ROOT / 'apps/web/.npmrc').write_text('ignore-scripts=true\n')  # a setup file moved
+    assert G.gate_result(state, m, gate, 'base', m['base_oid']) == 'stale'
+
+
+def test_setup_the_change_introduces_keeps_blocking(cli, repo, tmp_path):
+    from test_service_coverage import put
+
+    js(repo, {'test': 'node --test'})
+    # The change itself adds the authored install lifecycle AL cannot qualify.
+    package = json.loads((repo / 'apps/web/package.json').read_text())
+    package['scripts']['postinstall'] = 'node scripts/setup.js'
+    put(repo, 'apps/web/package.json', json.dumps(package))
+    start(cli)
+    _, manifest = discover(cli, tmp_path, ['apps/web/package.json'])
+    gate = next(g for g in manifest['gates'] if g.get('package_script', {}).get('script') == 'test')
+    cli('gates', 'run', '--stage', 'base', '--id', gate['id'])
+    state = json.loads(cli('show')[1])
+    entry = next(e for e in reversed(state['evidence']['entries']) if e['area'] == 'gate-base-' + gate['id'])
+    assert entry['status'] == 'INFRA' and not entry['note'].startswith(UNQUALIFIED_NOTE)
+    assert 'setup the change edits is not qualified by AL (apps/web/package.json)' in entry['note']
+    status = json.loads(cli('gates', 'status')[1])
+    assert any(gate['id'] in gap for gap in status['base'])
+    assert not any(row['gate'] == gate['id'] for row in status['unverified'])
+
+
+def test_an_unverified_candidate_result_is_bound_to_its_candidate(cli, repo, tmp_path):
+    import al_gates as G
+    import al_scope as S
+    import al_store
+
+    js(repo, {'test': 'node --test', 'prepare': 'husky install'})
+    start(cli)
+    _, manifest = discover(cli, tmp_path, ['apps/web/src/app.js'])
+    gate = next(g for g in manifest['gates'] if g.get('package_script', {}).get('script') == 'test')
+    cli('gates', 'run', '--stage', 'candidate', '--id', gate['id'])
+    state = json.loads(cli('show')[1])
+    m = G.manifest(state)
+    assert G.gate_result(state, m, gate, 'candidate', S.capture_candidate(state)['fingerprint']) == 'unverified'
+    (al_store.REPO_ROOT / 'apps/web/src/app.js').write_text('module.exports = 2;\n')
+    # A different candidate is a different execution: never the earlier unverified row.
+    assert G.gate_result(state, m, gate, 'candidate', S.capture_candidate(state)['fingerprint']) != 'unverified'

@@ -119,7 +119,7 @@ literal dependency closure and the links they consume): a torn capture, a link, 
 opaque boundary, or unreadable governing rules. A check AL cannot establish (no executable
 binding, an unmodelable manifest or package script, an unclassified directory, an unsupported
 layout, CI inventory or provider, or a package setup AL's own policy cannot qualify) is
-unverified: listed in `gates status` (`coverage_notes`, `unverified`) and the review packet,
+unverified: listed in `gates status` (`coverage_notes`, `unverified`) and the agent brief,
 never blocking (#157). Gaps outside the change's reach, including units selected only through
 dependency uncertainty, are verification notes too. A coverage refusal names each blocking
 gap, its repair and the `gates discover --extend current` / `gates plan` commands. An

@@ -141,10 +141,6 @@ def cmd_packet(a,sid):
     # results, pre-existing and advisory failures): the reviewer weighs them, they never block.
     from al_gates import unverified
     data['unverified']=unverified(st)
-    # Coverage AL could not establish (in the change's scope or outside its reach): reviewer input,
-    # never a blocker (#157).
-    from al_service_coverage import coverage_notes
-    data['coverage_notes']=coverage_notes(st)
     # Results reused from the action cache, each with the run where it originally executed.
     from al_action_cache import annotate_packet
     data=annotate_packet(st,data)

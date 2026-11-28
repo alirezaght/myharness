@@ -188,7 +188,10 @@ def gate_result(st,m,g,stage,fp):
               and r.get('execution_kind')==g['execution_kind'])
     if same and e['status']=='FAIL' and L.entry_verdict(st,e)[0]=='FAIL':return 'failed'
     if same and e['status']=='INFRA' and str(e.get('note','')).startswith(__import__('al_check_setup').UNQUALIFIED_NOTE):
-        return 'unverified'
+        import al_check_setup
+        if e.get('setup_policy_inputs')==al_check_setup.policy_inputs(al_store.REPO_ROOT,al_check_setup.setup_unit(g))[0]:
+            return 'unverified'
+        return 'stale'
     if same and e['status'] in {'INFRA','EMPTY','TORN'}:return 'blocked'
     return 'stale'
 
@@ -756,12 +759,22 @@ def cmd_run(a,sid):
                     status='TORN';code=126;note=str(exc);log.write_text(str(exc)+'\n')
                 except al_checkouts.MaterializationError as exc:
                     import al_check_setup
+                    introduced=[]
                     if al_check_setup.unqualified(exc):
+                        inputs,present=al_check_setup.policy_inputs(al_store.REPO_ROOT,al_check_setup.setup_unit(g))
+                        # Setup files the change edits are the change's own: their refusal keeps blocking.
+                        introduced=sorted(present&set(S.changed_paths(st['identity']['merge_base'])))
+                    if al_check_setup.unqualified(exc) and not introduced:
                         # AL's own setup qualification cannot model this repository's setup, so the check
                         # never ran: it stays unverified and listed for review, never blocking (#157). The
-                        # stage fingerprint is kept so a changed candidate asks for a new attempt.
+                        # stage fingerprint and the setup-input digest bind the result: a changed candidate,
+                        # setup file or package-manager environment asks for a new attempt.
                         status='INFRA';code=126;note=al_check_setup.UNQUALIFIED_NOTE+str(exc)
+                        entry['setup_policy_inputs']=inputs
                         fp=m['base_oid'] if a.stage=='base' else pinned if pinned is not None else S.capture_candidate(st)['fingerprint']
+                    elif introduced:
+                        status='INFRA';code=126;fp=None
+                        note='setup the change edits is not qualified by AL ('+', '.join(introduced)+'): '+str(exc)
                     else:
                         status='INFRA';code=126;fp=None;note=('dependency setup failed; hook NOT_RUN: '+str(exc)) if entry.get('execution_stage')=='setup' else 'rejected '+a.stage+' materialization'
                     with log.open('a') as out:out.write('Disposable materialization rejected during setup: '+str(exc)+'\n')

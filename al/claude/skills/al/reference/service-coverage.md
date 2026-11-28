@@ -97,14 +97,18 @@ uncertainty is an unverified check, not a safety gap. Out-of-scope gaps are defe
 `coverage_notes`) and never block admission, final proof, review or approval. Layout,
 manifest and contract gaps that leave a unit's imports unknown could hide a consumer and keep
 their conservative relevance; torn captures, opaque governing rules and repository-wide gaps
-of unknown extent always stay in scope. Within scope, only gaps that mean AL cannot see or trust
-what the change touches block (`torn-scan`, `torn-capture`, `unsupported-rules`, `base-symlink`
-and every `*-boundary`); a gap that means AL could not establish a check for a unit (for example
-`missing-check`, `missing-manifest`, `package-semantic-unverified`, `unclassified-unit`) is an
-unverified check: listed as `coverage unverified (in the change's scope ...)` in `coverage_notes`
-and in the review packet, never blocking (#157). A package gate whose setup AL's own
-qualification policy refuses (an `unqualified ...`/`unsupported ...` setup) is not run and is
-reported `unverified`, not INFRA-blocked; a real setup failure still blocks. A refusal names each
+of unknown extent always stay in scope. Within scope, a gap that only means AL could not establish a
+check for a unit is an unverified check (`missing-check`, `missing-verification-check`,
+`missing-architecture-check`, `unsupported-architecture-chain`, `missing-manifest`,
+`package-execution-pending`, `package-discovery-unavailable`, `package-script-nonliteral`,
+`package-semantic-unverified`, `unclassified-unit`, `unknown-ci-inventory`,
+`unsupported-ci-provider`): listed as `coverage unverified (in the change's scope ...)` in
+`coverage_notes` and in the agent brief, never blocking (#157). Every other gap blocks - torn
+captures, boundaries, a changed coverage contract, missing or unreadable inputs, unknown impact -
+and so does any code not in that list. A package gate whose setup AL's own qualification policy
+refuses (an `unqualified ...`/`unsupported ...` setup) is not run and is reported `unverified`
+while its setup files and package-manager environment stay byte-identical; a refusal caused by
+setup files the change edits, a real setup failure or an integrity refusal still blocks. A refusal names each
 blocking gap with its repair and the rediscovery commands (`gates discover --extend current --paths-file <file containing []>`
 and `gates plan --file <manifest>`).
 
