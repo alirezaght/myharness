@@ -103,6 +103,8 @@ _PREFIX_CASES = frozenset({
     'test_superseded_is_bookkeeping_noncapability_without_epoch_or_bridge_authority',
     'test_superseded_corruption_or_ambiguous_chain_is_never_ignored',
     'test_superseded_reads_never_select_mutating_storage',
+    # Its subject is a coordinator copy injected after construction, not the construction itself.
+    'test_removed_storage_is_refused_without_recreation',
 })
 
 
@@ -121,7 +123,15 @@ def _prefix_cache():
 
 @pytest.fixture
 def enrolled(tmp_path, tmp_path_factory, request, _prefix_cache):
-    if request.node.originalname not in _PREFIX_CASES or hasattr(request, 'param'):
+    if hasattr(request, 'param'):
+        # A fault or reserved start is injected after the shared genuine old install (#36): that
+        # install is built once and restored at the same absolute paths for every case.
+        if 'installed' not in _prefix_cache:
+            container = tmp_path_factory.mktemp('reviewed-update-installed')
+            _prefix_cache['installed'] = update_templates.build(container, _installed)
+        value = update_templates.restore(_prefix_cache['installed'])
+        return _finish(value['root'], value, request.param)
+    if request.node.originalname not in _PREFIX_CASES:
         return _fresh_enrolled(tmp_path, request)
     if 'prefix' not in _prefix_cache:
         container = tmp_path_factory.mktemp('reviewed-update-prefix')
@@ -134,6 +144,11 @@ def enrolled(tmp_path, tmp_path_factory, request, _prefix_cache):
 
 def _fresh_enrolled(tmp_path, request):
     """Real old payload pin, genuine managed updater and exact local immutable tags."""
+    return _finish(tmp_path, _installed(tmp_path), getattr(request, 'param', None))
+
+
+def _installed(tmp_path):
+    """The genuine 0.1.7 install with an old pinned run: everything before the case's own steps."""
     source = tmp_path / 'tagged-source.git'
     git_test(tmp_path, 'init', '--bare', str(source))
     git_test(source, 'fetch', '--no-tags', str(ROOT),
@@ -168,11 +183,24 @@ def _fresh_enrolled(tmp_path, request):
     started = invoke([launcher, 'run', '--repository', repo, '--platform', 'codex', '--session', 'old-session',
                       '--', 'start', '--spec', 'An old pinned fixture remains independent.'], repo, env)
     assert started.returncode == 0, started.stdout + started.stderr
-    if getattr(request, 'param', None) == 'reserved':
+    return dict(root=tmp_path, source=source, home=home, repo=repo, state=state, launcher=launcher,
+                old_boot=old_boot, old_source=old_source, new_source=new_source)
+
+
+def _finish(tmp_path, base, fault):
+    """The case's reserved start or barrier fault, the new bootstrap and the update reviews."""
+    source, home, repo, state, launcher = (base[k] for k in ('source', 'home', 'repo', 'state', 'launcher'))
+    old_boot, old_source, new_source = base['old_boot'], base['old_source'], base['new_source']
+    env = _environment(home)
+    def boot(distribution):
+        result = invoke([sys.executable, '-I', '-S', '-B', distribution / 'alctl.py', 'bootstrap',
+                         '--source-root', distribution, '--destination', launcher, '--state-root', state], repo, env)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.data
+    if fault == 'reserved':
         reserved = invoke([launcher, 'run', '--repository', repo, '--platform', 'codex', '--session', 'reserved-session',
                            '--', 'start', '--review-mode', 'unsupported', '--spec', 'A failed fixed-pin initialization.'], repo, env)
         assert reserved.returncode != 0
-    fault = getattr(request, 'param', None)
     if fault in {'race-state', 'race-index', 'race-pin', 'race-review', 'late-state', 'plan', 'preimage', 'second-platform'}:
         history = repo / '.codex/al-runtime/old-session.json'
         index = next((state / 'al-run-pins/runs').glob('*.json'))
