@@ -268,23 +268,51 @@ def test_one_public_command_replays_an_unchanged_history_once(history, replays, 
         assert len(replays) == 1, command
 
 
-@pytest.mark.parametrize('target', ['retained-content', 'contribution-record'])
-def test_reuse_refuses_an_enrolled_artifact_altered_during_current_observation(
+@pytest.mark.parametrize('target', ['retained-content', 'contribution-record', 'task-package',
+                                    'snapshot-tree', 'repository-root'])
+def test_reuse_is_fenced_again_after_current_observation(
         history, replays, state_file, monkeypatch, target):
     """55-HISTORY-FENCE-02: the cache hit is fenced again after current-source observation."""
+    import al_snapshot
+    from pathlib import Path
+
     st, _, content = history
-    reference = content if target == 'retained-content' else st['task_attribution']['contributions'][0]
     before_state = state_file().read_bytes()
     before = copy.deepcopy(st)
     events = []
     with H.assessment() as owner:
         T.classify_changes(st)  # primes the history memo
         assert owner.stores == 1 and owner.hits == 0
+        if target == 'snapshot-tree':
+            # Enroll a tree the pre-reuse fence finds, which then disappears during observation.
+            refs, trees = __import__('json').loads(owner.dependencies)
+            owner.dependencies = H.encoded([refs, [*trees, 'e' * 40]])
+            available = {'value': True}
+            original_run = al_snapshot._run
+
+            def run(root, argv, **kwargs):
+                if argv[:2] == ['cat-file', '-e'] and argv[2].startswith('e' * 40):
+                    if available['value']:
+                        return None
+                    raise al_snapshot.Unavailable('tree removed during observation')
+                return original_run(root, argv, **kwargs)
+
+            monkeypatch.setattr(al_snapshot, '_run', run)
         original = T.observe
 
         def tampering(*args, **kwargs):
             current = original(*args, **kwargs)
-            corrupt_same_size(reference)  # after the pre-reuse fence, before the result returns
+            # After the pre-reuse fence, before the reused classification returns.
+            if target == 'retained-content':
+                corrupt_same_size(content)
+            elif target == 'contribution-record':
+                corrupt_same_size(st['task_attribution']['contributions'][0])
+            elif target == 'task-package':
+                corrupt_same_size(st['task_package'])
+            elif target == 'snapshot-tree':
+                available['value'] = False
+            else:
+                monkeypatch.setattr(al_store, 'REPO_ROOT', Path(str(al_store.REPO_ROOT) + '-moved'))
             events.append('tamper')
             return current
 
