@@ -130,6 +130,22 @@ class HistoryMemo:
         key = self.state_key(st)
         if key is None or key != self.key or self.payload is None:
             return None
+        if not self._fence(st, key):
+            return None
+        self.hits += 1
+        return json.loads(self.payload)
+
+    def revalidate(self, st, key):
+        """Fence a reused history again after current-source observation, before it is returned.
+
+        Observation runs between the reuse and the result; a retained artifact, snapshot tree,
+        task package, state, root or transaction that changed meanwhile refuses here, exactly as
+        the uncached path's final content fence does (#55)."""
+        if key is None or key != self.key or self.payload is None or not self._fence(st, key):
+            refuse('reused attribution history changed during current-source observation')
+
+    def _fence(self, st, key):
+        """Re-verify every enrolled dependency in full; False when the state binding moved."""
         import al_task
         from al_writer_progress import report
         # The task package and its revision inputs are read afresh, never supplied by the memo.
@@ -153,10 +169,7 @@ class HistoryMemo:
             except (al_snapshot.Unavailable, OSError, subprocess.TimeoutExpired):
                 refuse('historical attribution snapshot tree is unavailable')
         report('attribution-history-fence', count=len(references), force=True)
-        if self.state_key(st) != key:
-            return None
-        self.hits += 1
-        return json.loads(self.payload)
+        return self.state_key(st) == key
 
     def store(self, st, key, payload, dependencies):
         """Keep `payload` (history serialized before the caller mutated it) for this state."""

@@ -498,6 +498,9 @@ def _classify(st, current_capture=None, causes=None):
               'overlapping_or_ambiguous': sorted(ambiguous), 'limitations': limitations}
     result['discovery_paths'] = sorted(owned | external | ambiguous)
     content_memo.validate()
+    if history is not None:
+        # The reused history is fenced again after observation, like the uncached path above.
+        owner.revalidate(st, key)
     if payload is not None:
         owner.store(st, key, payload, dependencies)
     return result

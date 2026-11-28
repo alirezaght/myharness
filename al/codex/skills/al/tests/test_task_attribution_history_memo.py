@@ -266,3 +266,31 @@ def test_one_public_command_replays_an_unchanged_history_once(history, replays, 
         replays.clear()
         cli(*command)
         assert len(replays) == 1, command
+
+
+@pytest.mark.parametrize('target', ['retained-content', 'contribution-record'])
+def test_reuse_refuses_an_enrolled_artifact_altered_during_current_observation(
+        history, replays, state_file, monkeypatch, target):
+    """55-HISTORY-FENCE-02: the cache hit is fenced again after current-source observation."""
+    st, _, content = history
+    reference = content if target == 'retained-content' else st['task_attribution']['contributions'][0]
+    before_state = state_file().read_bytes()
+    before = copy.deepcopy(st)
+    events = []
+    with H.assessment() as owner:
+        T.classify_changes(st)  # primes the history memo
+        assert owner.stores == 1 and owner.hits == 0
+        original = T.observe
+
+        def tampering(*args, **kwargs):
+            current = original(*args, **kwargs)
+            corrupt_same_size(reference)  # after the pre-reuse fence, before the result returns
+            events.append('tamper')
+            return current
+
+        monkeypatch.setattr(T, 'observe', tampering)
+        with pytest.raises(SystemExit):
+            result = T.classify_changes(st)
+            events.append(('published', result))  # the caller's publication edge, never reached
+        assert owner.hits == 1 and len(replays) == 1  # it really was the reuse path
+    assert events == ['tamper'] and st == before and state_file().read_bytes() == before_state
