@@ -71,11 +71,14 @@ def test_abandoned_flat_run_defers_updates_until_closed_and_restores(flat):
     moved = manifest["runs"][0]["moved"]
     # The pointer leaves before the state, so the root never holds a dangling pointer.
     assert [Path(item["source"]).name for item in moved] == ["current", "abandoned.json", "abandoned", ".abandoned.lock"]
+    assert all(item["moved"] for item in moved)
     archived = {Path(item["source"]).name: Path(item["archived"]) for item in moved}
     assert archived["abandoned.json"].read_bytes() == original  # no state byte changes
     assert (archived["abandoned"] / "evidence" / "E1.log").read_text() == "check output\n"
-    local = runtime / "runtime-archive" / manifest["archived_at"] / "manifest.json"
+    # Flat files archive beside the runtime root, never inside the tree workspace inventory walks.
+    local = runtime.parent / "al-runtime-archive" / manifest["archived_at"] / "manifest.json"
     assert json.loads(local.read_text()) == manifest
+    assert sorted(p.name for p in runtime.iterdir()) == ["finished.json"]
 
     for item in reversed(moved):  # the documented restore
         os.rename(item["archived"], item["source"])
@@ -161,3 +164,64 @@ def test_cli_parses_close_runs():
     assert (args.command, args.session, args.reason, args.runtime_root, args.apply) == (
         "close-runs", ["a", "b"], "gone", ["/r"], True)
     assert parser().parse_args(["close-runs"]).apply is False
+
+
+def test_closed_claude_run_leaves_the_workspace_inventory_clean(tmp_path):
+    import hashlib
+    import subprocess
+
+    from al.installer.activity_inventory import inventory_activity, repository_identity
+    from al.installer.activity_observation import locked_activity
+    from al.installer.activity_retirement import seal
+
+    state_root, _ = _registry(tmp_path)
+    repository = _private_dir(tmp_path / "repository")
+    subprocess.run(["git", "init", "-q"], cwd=repository, check=True)
+    runtime = _private_dir(repository / ".claude" / "al-runtime")
+    _state(runtime / "left.json", repository, status="RUNNING", phase="PLANNING")
+    (runtime / ".left.lock").touch(mode=0o600)
+    (runtime / ".left.lock.holder").write_text("123\n")
+    conversations = _private_dir(runtime / "conversations")
+    native = "conversation-1"
+    pointer = conversations / (hashlib.sha256(native.encode()).hexdigest() + ".json")
+    pointer.write_text(json.dumps({"conversation_id": native, "session_id": "left"}))
+    pointer.with_suffix(".lock").touch(mode=0o600)
+
+    result = _close(state_root, runtime, "left", reason=REASON, apply=True)
+    moved = [Path(item["source"]).relative_to(runtime).as_posix() for item in result["closed"][0]["moved"]]
+    assert moved[:2] == [pointer.relative_to(runtime).as_posix(), pointer.with_suffix(".lock").relative_to(runtime).as_posix()]
+    assert ".left.lock.holder" in moved and not os.path.lexists(pointer)
+
+    rows = [{"repository": repository_identity(repository), "platform": "claude", "runtime_root": str(runtime)}]
+    inventory = inventory_activity(rows, invoking_run=None)
+    assert inventory["stable"], [root.get("errors") for root in inventory["roots"]]
+    inventory = dict(inventory, kind="workspace-activity-inventory")
+    inventory.pop("digest", None)
+    with locked_activity(seal(inventory)):
+        pass  # no archived lock or dangling pointer is left for the workspace to trip on
+
+
+def test_a_pointer_naming_another_session_stays(flat):
+    state_root, _, _, runtime, _ = flat
+    (runtime / "current").write_text("finished\n")
+    _close(state_root, runtime, "abandoned", reason=REASON, apply=True)
+    assert (runtime / "current").read_text() == "finished\n"
+    require_inactive([runtime])
+
+
+def test_a_run_that_changes_after_listing_is_left_alone(flat, monkeypatch):
+    from al.installer import runtime_close_runs
+
+    state_root, _, repository, runtime, _ = flat
+    original = runtime_close_runs._locked
+
+    def resumed(lock):  # the run saves new state between the listing and the locked re-check
+        if lock.name == ".abandoned.lock":
+            _state(runtime / "abandoned.json", repository, status="RUNNING", phase="REVIEW")
+        return original(lock)
+
+    monkeypatch.setattr(runtime_close_runs, "_locked", resumed)
+    before = _tree(repository)
+    result = _close(state_root, runtime, "abandoned", reason=REASON, apply=True)
+    assert result["skipped"] == [{"session_id": "abandoned", "reason": "run changed while closing"}]
+    assert result["closed"] == [] and _tree(repository) == before

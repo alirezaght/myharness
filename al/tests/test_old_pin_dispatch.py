@@ -74,3 +74,22 @@ def test_old_pin_refuses_an_offered_sealed_control_exchange(tmp_path, monkeypatc
     assert result.returncode != 0
     assert 'sealed control requires a pinned runtime that carries it' in result.stderr
     assert 'fixture-application-dispatched' not in result.stdout
+
+
+@pytest.mark.parametrize('missing', [(), SUCCESSOR], ids=['current-pin', 'no-successor-runs'])
+def test_child_ordinary_authority_check_follows_the_pin(tmp_path, monkeypatch, missing):
+    from al.installer.runtime_pin_transaction import key
+
+    verified, transaction, base, repository, env = _old_pin(tmp_path, monkeypatch, missing)
+    subject = {k: transaction[k] for k in ('repository_identity', 'platform', 'session_id')}
+    fences = base / 'successor-fences'
+    fences.mkdir(mode=0o700)
+    (fences / (key(subject) + '.json')).write_text('{}')  # a prepared successor owns this session
+    result = invoke(_child(verified, transaction, base, ['start']), repository, env)
+    if not missing:
+        # A pin that carries successor runs still refuses in the child, not only in the launcher.
+        assert result.returncode != 0
+        assert 'prepared successor has no product authority' in result.stderr
+    else:
+        # A pin that predates successor runs relies on the launcher's check (runtime_run.run).
+        assert result.returncode == 0, result.stderr
