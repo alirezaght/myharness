@@ -141,7 +141,19 @@ def test_explain_ambiguity_reuses_the_history_with_identical_causes(history, rep
         expected = T.explain_ambiguity(st)
     finally:
         del os.environ['AL_ANALYSIS_CACHE']
+    # A later writer of the same path, then an unregistered edit after it: the current part adds
+    # changed-after-writer causes on top of the restored history causes on every call.
+    contribution(st, ['svc'], lambda: (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 9\n'), wid='third')
+    (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 10\n')
+    os.environ['AL_ANALYSIS_CACHE'] = '0'
+    try:
+        expected = T.explain_ambiguity(st)
+    finally:
+        del os.environ['AL_ANALYSIS_CACHE']
     assert expected['overlaps'], 'the fixture must produce a replay-recorded ambiguity'
+    causes = [c for row in expected['overlaps'] for c in row['causes']]
+    assert any('changed-after-writer' in c for c in causes) and len(causes) > 1
+    assert expected['overlaps'][0]['writers'] == ['second', 'third', 'writer']
     replays.clear()
     with H.assessment() as owner:
         T.classify_changes(st)
@@ -262,7 +274,8 @@ def test_one_public_command_replays_an_unchanged_history_once(history, replays, 
     """#55: every classification inside one guarded command shares one fenced replay."""
     st, _, _ = history
     al_store.save(st['session_id'], st)
-    for command in (('gates', 'status'), ('recovery', 'next')):
+    # Ordinary (dispatcher-locked) commands and a self-locking intent command alike.
+    for command in (('gates', 'status'), ('recovery', 'next'), ('next',)):
         replays.clear()
         cli(*command)
         assert len(replays) == 1, command
