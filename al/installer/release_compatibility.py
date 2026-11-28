@@ -49,7 +49,11 @@ def required_scripts(layout, release=None):
             or not _VERSION.fullmatch(version) or release.get('tag') != 'v' + version):
         raise ValueError('invalid release version/tag identity')
     major, minor, patch = map(int, version.split('.'))
-    if (major, minor) != (0, 1) or patch > 24:
+    if (major, minor) != (0, 1):
+        # Unsupported release lines (0.0.x, 1.x, ...) were never audited: the full current set.
+        return current
+    if patch > 24:
+        # Only the audited published 0.1 interval keeps a later helper's historical omission.
         return frozenset(name for name in current
                          if (major, minor, patch) > _INTRODUCED_AFTER.get(name, (-1,)))
     required = _HISTORICAL
