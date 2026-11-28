@@ -46,6 +46,7 @@ _STAGES = {
     'attribution-final': 'checking retained source stability',
     'attribution-history': 'validating retained contribution evidence',
     'attribution-replay': 'replaying recorded task contributions',
+    'attribution-history-fence': 'reverifying reused contribution history',
     'scope-index': 'reading indexed source metadata',
     'scope-worktree': 'hashing current worktree members',
 }

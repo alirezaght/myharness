@@ -150,6 +150,8 @@ def _save(st, data, kind):
 def _read(st, ref, kind):
     try:value = A.read_json(ref)
     except (OSError, ValueError, KeyError, TypeError):refuse('unreadable task attribution artifact: '+kind)
+    from al_task_history_memo import enroll_reference
+    enroll_reference(ref)
     if not isinstance(value, dict):refuse('invalid task attribution artifact: '+kind)
     if value.get('schema_version') != 1 or value.get('kind') != kind or value.get('binding') != _binding(st):
         refuse('foreign or corrupt task attribution')
@@ -175,7 +177,10 @@ def _validate_conflict_records(rows):
                 or row['worktree'].get('type') not in {'file', 'deleted'}):
             refuse('invalid retained unmerged index records')
         # Git object identity includes its content: recheck immutable stage evidence rather
-        # than accepting an arbitrary digest supplied in a retained artifact.
+        # than accepting an arbitrary digest supplied in a retained artifact. The history reuse
+        # fence does not cover these blob checks, so this history is never memoized (#55).
+        from al_task_history_memo import exclude_recording
+        exclude_recording()
         hashes = S._blob_hashes(al_store.REPO_ROOT, [e['oid'] for e in stages])
         if any(hashes[e['oid']] != e['sha256'] for e in stages):
             refuse('retained unmerged stage content differs')
@@ -203,11 +208,15 @@ def _capture(st, ref, *, content_memo=None):
             refuse('incomplete retained attribution content')
         import al_attribution_tree
         al_attribution_tree.require(tree)
+        from al_task_history_memo import enroll_tree
+        enroll_tree(tree)
         retained = {p: w for p, w in retained.items() if p in contents}
     progress.report('attribution-history', count=0)
     for count,(path, work) in enumerate(retained.items(),1):
         try:actual = A.digest(A.read(contents[path])) if content_memo is None else content_memo.digest(contents[path])
         except (OSError, ValueError, KeyError, TypeError):refuse('unreadable retained attribution content')
+        from al_task_history_memo import enroll_reference
+        enroll_reference(contents[path])
         expected = hashlib.sha256(os.fsencode(work['text'])).hexdigest() if work['type'] == 'symlink' else work['sha256']
         if actual != expected:refuse('retained attribution content differs')
         progress.report('attribution-history', count=count)
@@ -433,12 +442,35 @@ def _classify(st, current_capture=None, causes=None):
                 'limitations': ['historical run has no start attribution snapshot'],
                 'discovery_paths': S.changed_paths(st['identity']['merge_base'])}
     from al_task_content_memo import ContentMemo
+    import al_task_history_memo as H
     content_memo = ContentMemo()
-    snapshot = _snapshot(st)
-    baseline = _map(_capture(st, snapshot['baseline_capture_ref'], content_memo=content_memo))
-    expected = dict(baseline)
-    owned, ambiguous = set(), set()
-    external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=causes, content_memo=content_memo)
+    # Within one readiness assessment the replayed history of this exact state is reused after
+    # a full fence (H.HistoryMemo.lookup); the current-source part below always runs.
+    owner = H.current() if causes is None else None
+    key = owner.state_key(st) if owner is not None else None
+    history = owner.lookup(st) if key is not None else None
+    payload = dependencies = None
+    if history is not None:
+        baseline, expected = history['baseline'], history['expected']
+        owned, ambiguous = set(history['owned']), set(history['ambiguous'])
+        external_reconciled = set(history['external'])
+        baseline_changed_paths = history['baseline_changed_paths']
+    else:
+        with H.recording() as dependencies:
+            snapshot = _snapshot(st)
+            baseline = _map(_capture(st, snapshot['baseline_capture_ref'], content_memo=content_memo))
+            expected = dict(baseline)
+            owned, ambiguous = set(), set()
+            external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=causes, content_memo=content_memo)
+        baseline_changed_paths = snapshot['baseline_changed_paths']
+        if key is not None:
+            # Serialized now: the current part below mutates these collections.
+            try:
+                payload = H.encoded({'baseline': baseline, 'expected': expected, 'owned': sorted(owned),
+                                     'ambiguous': sorted(ambiguous), 'external': sorted(external_reconciled),
+                                     'baseline_changed_paths': baseline_changed_paths})
+            except (TypeError, ValueError):
+                owner.close()  # Not reusable; the classification itself proceeds unchanged.
     current = _map(current_capture or observe(st))
     limitations = S.child_content_gaps({'files': list(current.values())}) + S.unresolved_index_gaps({'files': list(current.values())})
     children = {r['path'] for r in current.values() if r.get('child') and (r['child'].get('dirty') or r['child']['state'] == 'inspection-failed')}
@@ -454,10 +486,12 @@ def _classify(st, current_capture=None, causes=None):
     owned -= ambiguous | external
     # Contributions that reverted to start content are no longer task changes.
     owned &= set(_content_changes(baseline, current))
-    preexisting = {p for p in snapshot['baseline_changed_paths'] if _content(baseline.get(p)) == _content(current.get(p))} - owned - ambiguous
+    preexisting = {p for p in baseline_changed_paths if _content(baseline.get(p)) == _content(current.get(p))} - owned - ambiguous
     result = {'attributed': True, 'task_owned': sorted(owned), 'unchanged_preexisting': sorted(preexisting),
               'externally_changed': sorted(external - ambiguous), 'ambiguous': sorted(ambiguous),
               'overlapping_or_ambiguous': sorted(ambiguous), 'limitations': limitations}
     result['discovery_paths'] = sorted(owned | external | ambiguous)
     content_memo.validate()
+    if payload is not None:
+        owner.store(st, key, payload, dependencies)
     return result
