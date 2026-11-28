@@ -446,7 +446,7 @@ def _classify(st, current_capture=None, causes=None):
     content_memo = ContentMemo()
     # Within one readiness assessment the replayed history of this exact state is reused after
     # a full fence (H.HistoryMemo.lookup); the current-source part below always runs.
-    owner = H.current() if causes is None else None
+    owner = H.current()
     key = owner.state_key(st) if owner is not None else None
     history = owner.lookup(st) if key is not None else None
     payload = dependencies = None
@@ -455,20 +455,26 @@ def _classify(st, current_capture=None, causes=None):
         owned, ambiguous = set(history['owned']), set(history['ambiguous'])
         external_reconciled = set(history['external'])
         baseline_changed_paths = history['baseline_changed_paths']
+        if causes is not None:
+            # The replay's ambiguity causes are part of the history (explain_ambiguity, #55).
+            causes.update(history['causes'])
     else:
+        # A history that may be stored also records its replay causes, so explanation reuses it.
+        recorded = causes if causes is not None else ({} if key is not None else None)
         with H.recording() as dependencies:
             snapshot = _snapshot(st)
             baseline = _map(_capture(st, snapshot['baseline_capture_ref'], content_memo=content_memo))
             expected = dict(baseline)
             owned, ambiguous = set(), set()
-            external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=causes, content_memo=content_memo)
+            external_reconciled = _replay(st, expected, owned, ambiguous, content_only=True, causes=recorded, content_memo=content_memo)
         baseline_changed_paths = snapshot['baseline_changed_paths']
         if key is not None:
             # Serialized now: the current part below mutates these collections.
             try:
                 payload = H.encoded({'baseline': baseline, 'expected': expected, 'owned': sorted(owned),
                                      'ambiguous': sorted(ambiguous), 'external': sorted(external_reconciled),
-                                     'baseline_changed_paths': baseline_changed_paths})
+                                     'baseline_changed_paths': baseline_changed_paths,
+                                     'causes': recorded})
             except (TypeError, ValueError):
                 owner.close()  # Not reusable; the classification itself proceeds unchanged.
     current = _map(current_capture or observe(st))
@@ -492,6 +498,9 @@ def _classify(st, current_capture=None, causes=None):
               'overlapping_or_ambiguous': sorted(ambiguous), 'limitations': limitations}
     result['discovery_paths'] = sorted(owned | external | ambiguous)
     content_memo.validate()
+    if history is not None:
+        # The reused history is fenced again after observation, like the uncached path above.
+        owner.revalidate(st, key)
     if payload is not None:
         owner.store(st, key, payload, dependencies)
     return result

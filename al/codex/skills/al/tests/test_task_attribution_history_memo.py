@@ -129,12 +129,38 @@ def test_an_incomplete_dependency_recording_is_never_stored(history, replays, mo
     assert len(replays) == 2 and owner.stores == owner.hits == 0
 
 
-def test_explain_ambiguity_never_uses_the_memo(history, replays):
+def test_explain_ambiguity_reuses_the_history_with_identical_causes(history, replays):
+    from test_task_attribution import contribution
     st, _, _ = history
+    # An unregistered edit between two writers of the same file: the replay itself records why
+    # the path is ambiguous, so the explanation depends on the history's causes.
+    (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 7\n')
+    contribution(st, ['svc'], lambda: (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 8\n'), wid='second')
+    os.environ['AL_ANALYSIS_CACHE'] = '0'
+    try:
+        expected = T.explain_ambiguity(st)
+    finally:
+        del os.environ['AL_ANALYSIS_CACHE']
+    # A later writer of the same path, then an unregistered edit after it: the current part adds
+    # changed-after-writer causes on top of the restored history causes on every call.
+    contribution(st, ['svc'], lambda: (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 9\n'), wid='third')
+    (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 10\n')
+    os.environ['AL_ANALYSIS_CACHE'] = '0'
+    try:
+        expected = T.explain_ambiguity(st)
+    finally:
+        del os.environ['AL_ANALYSIS_CACHE']
+    assert expected['overlaps'], 'the fixture must produce a replay-recorded ambiguity'
+    causes = [c for row in expected['overlaps'] for c in row['causes']]
+    assert any('changed-after-writer' in c for c in causes) and len(causes) > 1
+    assert expected['overlaps'][0]['writers'] == ['second', 'third', 'writer']
+    replays.clear()
     with H.assessment() as owner:
         T.classify_changes(st)
-        T.explain_ambiguity(st)
-    assert len(replays) == 2 and owner.hits == 0
+        first = T.explain_ambiguity(st)
+        second = T.explain_ambiguity(st)
+    assert len(replays) == 1 and owner.hits == 2
+    assert first == second == expected
 
 
 def test_a_missing_enrolled_snapshot_tree_refuses_on_reuse(history):
@@ -242,3 +268,70 @@ def test_history_with_retained_unmerged_stages_is_never_reused(cli, repo, tmp_pa
         second = T._classify(st)
     assert first == second == expected
     assert owner.stores == owner.hits == 0 and len(replays) == 2
+
+
+def test_one_public_command_replays_an_unchanged_history_once(history, replays, cli):
+    """#55: every classification inside one guarded command shares one fenced replay."""
+    st, _, _ = history
+    al_store.save(st['session_id'], st)
+    # Ordinary (dispatcher-locked) commands and a self-locking intent command alike.
+    for command in (('gates', 'status'), ('recovery', 'next'), ('next',)):
+        replays.clear()
+        cli(*command)
+        assert len(replays) == 1, command
+
+
+@pytest.mark.parametrize('target', ['retained-content', 'contribution-record', 'task-package',
+                                    'snapshot-tree', 'repository-root'])
+def test_reuse_is_fenced_again_after_current_observation(
+        history, replays, state_file, monkeypatch, target):
+    """55-HISTORY-FENCE-02: the cache hit is fenced again after current-source observation."""
+    import al_snapshot
+    from pathlib import Path
+
+    st, _, content = history
+    before_state = state_file().read_bytes()
+    before = copy.deepcopy(st)
+    events = []
+    with H.assessment() as owner:
+        T.classify_changes(st)  # primes the history memo
+        assert owner.stores == 1 and owner.hits == 0
+        if target == 'snapshot-tree':
+            # Enroll a tree the pre-reuse fence finds, which then disappears during observation.
+            refs, trees = __import__('json').loads(owner.dependencies)
+            owner.dependencies = H.encoded([refs, [*trees, 'e' * 40]])
+            available = {'value': True}
+            original_run = al_snapshot._run
+
+            def run(root, argv, **kwargs):
+                if argv[:2] == ['cat-file', '-e'] and argv[2].startswith('e' * 40):
+                    if available['value']:
+                        return None
+                    raise al_snapshot.Unavailable('tree removed during observation')
+                return original_run(root, argv, **kwargs)
+
+            monkeypatch.setattr(al_snapshot, '_run', run)
+        original = T.observe
+
+        def tampering(*args, **kwargs):
+            current = original(*args, **kwargs)
+            # After the pre-reuse fence, before the reused classification returns.
+            if target == 'retained-content':
+                corrupt_same_size(content)
+            elif target == 'contribution-record':
+                corrupt_same_size(st['task_attribution']['contributions'][0])
+            elif target == 'task-package':
+                corrupt_same_size(st['task_package'])
+            elif target == 'snapshot-tree':
+                available['value'] = False
+            else:
+                monkeypatch.setattr(al_store, 'REPO_ROOT', Path(str(al_store.REPO_ROOT) + '-moved'))
+            events.append('tamper')
+            return current
+
+        monkeypatch.setattr(T, 'observe', tampering)
+        with pytest.raises(SystemExit):
+            result = T.classify_changes(st)
+            events.append(('published', result))  # the caller's publication edge, never reached
+        assert owner.hits == 1 and len(replays) == 1  # it really was the reuse path
+    assert events == ['tamper'] and st == before and state_file().read_bytes() == before_state

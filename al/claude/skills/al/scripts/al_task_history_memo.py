@@ -8,9 +8,10 @@ state and on content-addressed artifacts it references, so within one assessment
 once and reused - but only after a full fence: every enrolled artifact is re-read in full
 (content-addressed), every enrolled snapshot tree is checked directly in git (bypassing the
 process-wide existence cache), the task revision hashes are recomputed, and the state key is
-recomputed. Current-source observation is never reused. The memo lives only inside the
-assessment; it is never global, persistent or shared across commands, and it never stores an
-incomplete dependency recording.
+recomputed. Current-source observation is never reused. The memo lives only inside one guarded
+command (al_state's dispatch opens the owner; a readiness assessment nested in it reuses that
+owner): it is never global, persistent or shared across commands, and it never stores an
+incomplete dependency recording. Any state change gives a new key and a fresh replay.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -129,6 +130,22 @@ class HistoryMemo:
         key = self.state_key(st)
         if key is None or key != self.key or self.payload is None:
             return None
+        if not self._fence(st, key):
+            return None
+        self.hits += 1
+        return json.loads(self.payload)
+
+    def revalidate(self, st, key):
+        """Fence a reused history again after current-source observation, before it is returned.
+
+        Observation runs between the reuse and the result; a retained artifact, snapshot tree,
+        task package, state, root or transaction that changed meanwhile refuses here, exactly as
+        the uncached path's final content fence does (#55)."""
+        if key is None or key != self.key or self.payload is None or not self._fence(st, key):
+            refuse('reused attribution history changed during current-source observation')
+
+    def _fence(self, st, key):
+        """Re-verify every enrolled dependency in full; False when the state binding moved."""
         import al_task
         from al_writer_progress import report
         # The task package and its revision inputs are read afresh, never supplied by the memo.
@@ -152,10 +169,7 @@ class HistoryMemo:
             except (al_snapshot.Unavailable, OSError, subprocess.TimeoutExpired):
                 refuse('historical attribution snapshot tree is unavailable')
         report('attribution-history-fence', count=len(references), force=True)
-        if self.state_key(st) != key:
-            return None
-        self.hits += 1
-        return json.loads(self.payload)
+        return self.state_key(st) == key
 
     def store(self, st, key, payload, dependencies):
         """Keep `payload` (history serialized before the caller mutated it) for this state."""
