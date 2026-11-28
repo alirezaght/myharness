@@ -125,7 +125,9 @@ def planning(st):
 
 def _ready_planning(st, admission):
     current = st.get("planning_authorship")
-    if not current:
+    if not current or _reentered(st, current):
+        # Planning was re-entered (revise, retarget, delivery correction) after the
+        # retained packet was issued: its authorship is history and a current packet is next.
         recovery = action("planning.packet", {"replace_unavailable_attempt": False})
     else:
         from al_planning import packet
@@ -151,6 +153,18 @@ def _ready_planning(st, admission):
                     {},
                 )
     return _planning_issue(st, admission, recovery)
+
+
+def _reentered(st, current):
+    """The retained packet was issued in an earlier planning occurrence than the current one."""
+    import al_new_origin as N
+    import al_proof_json as J
+
+    try:
+        issued = J.read(current["packet"])["binding"]["planning_occurrence"]
+    except (OSError, ValueError, KeyError, TypeError, SystemExit):
+        return False  # Unreadable provenance stays a provenance inspection.
+    return type(issued) is int and issued < N.occurrence(st)
 
 
 def _planning_issue(st, admission, recovery):

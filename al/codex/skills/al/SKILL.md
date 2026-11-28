@@ -106,7 +106,9 @@ Record SPEC_READY and the justified classification. Defined scoped implementatio
 may proceed while planning proof, coverage or tooling is incomplete. Collect
 required final proof alongside the work; do not ask the developer to waive it.
 `planning admit` records incomplete relevant coverage as verification obligations
-instead of refusing. The first ordinary `writer start` records the PLANNING (or
+instead of refusing. When the Architect revises its own admitted obligations before review,
+`planning revise --reason TEXT` archives the admission and reopens planning for the
+ordinary packet, report and admit route ([workflow](reference/workflow.md#revise-admitted-planning-obligations)). The first ordinary `writer start` records the PLANNING (or
 PSEUDOCODE) to IMPLEMENTATION edge itself; a Designer route records `phase PSEUDOCODE`
 first. Refusals on this path name the next supported command. A verification-only
 run whose implementation already exists in the worktree walks the same edges without
