@@ -326,14 +326,18 @@ def _dispatch(a, al_recovery_guidance):
         # `evidence run` / `preflight` / `gates discover` and the intent commands can take minutes:
         # they lock each read/write themselves; every other command is one short locked load-modify-save.
         import al_intent
-        if al_intent.self_locking(a):
-            a.fn(a, sid)
-        else:
-            with locked(sid):
-                if al_intent.requires_running(a):
-                    existing = load(sid)
-                    if existing["status"] != "RUNNING": al_schema.refuse("run is not running; explicit resume required")
+        # One command reuses a run state's replayed attribution history across its classifications,
+        # each reuse fenced in full and keyed to the exact state (al_task_history_memo, #55).
+        from al_task_history_memo import assessment
+        with assessment():
+            if al_intent.self_locking(a):
                 a.fn(a, sid)
+            else:
+                with locked(sid):
+                    if al_intent.requires_running(a):
+                        existing = load(sid)
+                        if existing["status"] != "RUNNING": al_schema.refuse("run is not running; explicit resume required")
+                    a.fn(a, sid)
 
 
 def main():

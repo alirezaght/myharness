@@ -8,9 +8,10 @@ state and on content-addressed artifacts it references, so within one assessment
 once and reused - but only after a full fence: every enrolled artifact is re-read in full
 (content-addressed), every enrolled snapshot tree is checked directly in git (bypassing the
 process-wide existence cache), the task revision hashes are recomputed, and the state key is
-recomputed. Current-source observation is never reused. The memo lives only inside the
-assessment; it is never global, persistent or shared across commands, and it never stores an
-incomplete dependency recording.
+recomputed. Current-source observation is never reused. The memo lives only inside one guarded
+command (al_state's dispatch opens the owner; a readiness assessment nested in it reuses that
+owner): it is never global, persistent or shared across commands, and it never stores an
+incomplete dependency recording. Any state change gives a new key and a fresh replay.
 """
 from contextlib import contextmanager
 from contextvars import ContextVar

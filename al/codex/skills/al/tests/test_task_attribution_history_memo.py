@@ -129,12 +129,26 @@ def test_an_incomplete_dependency_recording_is_never_stored(history, replays, mo
     assert len(replays) == 2 and owner.stores == owner.hits == 0
 
 
-def test_explain_ambiguity_never_uses_the_memo(history, replays):
+def test_explain_ambiguity_reuses_the_history_with_identical_causes(history, replays):
+    from test_task_attribution import contribution
     st, _, _ = history
+    # An unregistered edit between two writers of the same file: the replay itself records why
+    # the path is ambiguous, so the explanation depends on the history's causes.
+    (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 7\n')
+    contribution(st, ['svc'], lambda: (al_store.REPO_ROOT / 'svc/app.py').write_text('x = 8\n'), wid='second')
+    os.environ['AL_ANALYSIS_CACHE'] = '0'
+    try:
+        expected = T.explain_ambiguity(st)
+    finally:
+        del os.environ['AL_ANALYSIS_CACHE']
+    assert expected['overlaps'], 'the fixture must produce a replay-recorded ambiguity'
+    replays.clear()
     with H.assessment() as owner:
         T.classify_changes(st)
-        T.explain_ambiguity(st)
-    assert len(replays) == 2 and owner.hits == 0
+        first = T.explain_ambiguity(st)
+        second = T.explain_ambiguity(st)
+    assert len(replays) == 1 and owner.hits == 2
+    assert first == second == expected
 
 
 def test_a_missing_enrolled_snapshot_tree_refuses_on_reuse(history):
@@ -242,3 +256,13 @@ def test_history_with_retained_unmerged_stages_is_never_reused(cli, repo, tmp_pa
         second = T._classify(st)
     assert first == second == expected
     assert owner.stores == owner.hits == 0 and len(replays) == 2
+
+
+def test_one_public_command_replays_an_unchanged_history_once(history, replays, cli):
+    """#55: every classification inside one guarded command shares one fenced replay."""
+    st, _, _ = history
+    al_store.save(st['session_id'], st)
+    for command in (('gates', 'status'), ('recovery', 'next')):
+        replays.clear()
+        cli(*command)
+        assert len(replays) == 1, command
