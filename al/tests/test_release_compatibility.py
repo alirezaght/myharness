@@ -90,8 +90,11 @@ def test_unversioned_workspace_still_requires_new_helpers(helper, tmp_path):
         payload.build_payload(source, contents)
 
 
-@pytest.mark.parametrize("version,required", [("0.1.71", False), ("0.1.72", True), ("1.0.0", True)])
-def test_planning_revision_helper_is_required_from_the_release_after_0_1_71(version, required):
+@pytest.mark.parametrize("version,required", [("0.1.71", False), ("0.1.76", False), ("0.1.77", True),
+                                              ("1.0.0", True), ("0.0.99", True)])
+def test_planning_revision_helper_is_required_from_the_release_after_0_1_76(version, required):
+    # Only the audited published 0.1 line keeps the historical omission; an unsupported
+    # older line (0.0.99) or a later major requires the helper (PLANNING-REVISION-01).
     from al.installer.release_compatibility import required_scripts
 
     layout = load_layout()
