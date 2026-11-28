@@ -72,7 +72,15 @@ as `descendant_settlement_unproven`, once its record is older than
 `HARNESS_STORAGE_SETTLEMENT_GRACE_SECONDS` (default 15 minutes).
 `retention_expired` applies to anything else retained or abandoned (failed
 outcomes, unfinalized allocations) after `HARNESS_STORAGE_RETENTION_SECONDS`
-(default 3 days, `0` disables it). Allocations with consumers, an open cleanup
+(default 3 days, `0` disables it). Retained verification-fixture and
+operation scratch whose owner did not report a pass (failed, unknown or never
+finalized) uses `HARNESS_STORAGE_FAILED_RETENTION_SECONDS` instead (default 1
+day): it is most of what accumulates. Under disk pressure, when free space is
+below `HARNESS_STORAGE_PRESSURE_FREE_BYTES` (default 15 GiB) or the soft
+warning is raised, retained scratch older than
+`HARNESS_STORAGE_PRESSURE_RETENTION_SECONDS` (default 1 hour) is reclaimed;
+allocations still `ALLOCATED` or `RUNNING` keep the normal windows.
+`HARNESS_STORAGE_RETENTION_SECONDS=0` disables every expiry rule. Allocations with consumers, an open cleanup
 transaction, a live owner tree or a process inside them stay retained, and so
 does every candidate when the observation is unsupported, unavailable or
 incomplete (`settlement_undecidable`). The process observation cannot see
@@ -82,7 +90,7 @@ A late reclaim records a `REMOVED` receipt with the bytes it unlinked; a later
 finalization of the same allocation returns that receipt and never changes the
 evidence result.
 
-A bounded pass (2 seconds) runs before each new allocation, so every Harness
+A bounded pass (2 seconds, 10 under disk pressure) runs before each new allocation, so every Harness
 check, AL evidence run and `verify_changed` run reclaims settled scratch first.
 The explicit command is a dry run unless `--apply` is given:
 

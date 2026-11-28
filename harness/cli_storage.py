@@ -114,6 +114,9 @@ def cmd_storage(args):
         for reason, count in sorted(result["retained_by_reason"].items()):
             print(f"Retained: {count} · {reason}")
         print(f"Retained logical bytes (observed): {result['retained_logical_bytes']}")
+        if result["retained_by_reason"]:
+            # The exact command, so retained scratch never needs a manual search (#164).
+            print("Reclaim what is settled or expired now: harness storage prune --apply")
         for row in result["legacy"]:
             print("Unregistered, retained: " + row["name"])
         print(

@@ -48,6 +48,15 @@ DEFAULT_POLICY = {
     # settlement was unproven at completion becomes reclaimable once a later
     # process observation proves it settled and its record is this old.
     "settlement_grace_seconds": 15 * 60,
+    # Finished scratch (verification fixtures, operation scratch) whose owner did not report a
+    # pass - failed, unknown or never finalized - is kept for diagnosis this long, not the full
+    # retention window: it is most of what accumulates (#164). 0 falls back to retention.
+    "failed_retention_seconds": 24 * 3600,
+    # Disk pressure: below this many free bytes (or past the soft warning), retained scratch
+    # older than pressure_retention_seconds is reclaimed, still never one whose owner or any
+    # process using it is alive (#164). retention_seconds=0 disables every expiry rule.
+    "pressure_free_bytes": 15 * 1024**3,
+    "pressure_retention_seconds": 3600,
 }
 EXPIRED = "retention_expired"
 SETTLED_LATER = "settlement_proven_later"
@@ -55,6 +64,8 @@ LATE_REASONS = {EXPIRED, SETTLED_LATER}
 UNPROVEN = "descendant_settlement_unproven"
 EXPIRABLE_STATES = {"ALLOCATED", "RUNNING", "RETAINED"}
 OPPORTUNISTIC_SECONDS = 2.0
+PRESSURE_OPPORTUNISTIC_SECONDS = 10.0
+SCRATCH_CLASSES = {"verification-fixtures", "operation-scratch"}
 
 
 def configured_policy(policy=None):
@@ -64,6 +75,9 @@ def configured_policy(policy=None):
         ("minimum_free_bytes", "HARNESS_STORAGE_MINIMUM_FREE_BYTES"),
         ("retention_seconds", "HARNESS_STORAGE_RETENTION_SECONDS"),
         ("settlement_grace_seconds", "HARNESS_STORAGE_SETTLEMENT_GRACE_SECONDS"),
+        ("failed_retention_seconds", "HARNESS_STORAGE_FAILED_RETENTION_SECONDS"),
+        ("pressure_free_bytes", "HARNESS_STORAGE_PRESSURE_FREE_BYTES"),
+        ("pressure_retention_seconds", "HARNESS_STORAGE_PRESSURE_RETENTION_SECONDS"),
     ):
         value = os.environ.get(name)
         if value is not None:
@@ -672,7 +686,8 @@ class StorageManager:
         try:
             # Bounded, best-effort: reclaim provably settled or expired scratch
             # before admitting new scratch so the namespace cannot grow without limit.
-            self.last_expiry = self.reclaim(limits={"seconds": OPPORTUNISTIC_SECONDS})
+            seconds = PRESSURE_OPPORTUNISTIC_SECONDS if self.under_pressure() else OPPORTUNISTIC_SECONDS
+            self.last_expiry = self.reclaim(limits={"seconds": seconds})
         except (OSError, StorageError):
             self.last_expiry = None
         with self._locked() as directories:
@@ -1098,7 +1113,35 @@ class StorageManager:
         """One bounded applying reclaim pass (kept for callers of the old name)."""
         return self.reclaim(limits=limits, now=now, apply=True)
 
-    def _reclaim_rule(self, value, age):
+    def under_pressure(self):
+        """Free space below ``pressure_free_bytes`` or the last soft warning (#164)."""
+        try:
+            info = os.statvfs(self.root)
+            if info.f_bavail * info.f_frsize < self.policy["pressure_free_bytes"]:
+                return True
+        except OSError:
+            pass
+        return bool((getattr(self, "last_pressure", None) or {}).get("warning"))
+
+    def _retention(self, value, pressured):
+        retention = self.policy["retention_seconds"]
+        if not retention:
+            return 0  # the master switch: no expiry at all
+        failed = self.policy["failed_retention_seconds"]
+        if (
+            failed
+            and value["state"] == "RETAINED"
+            and value["class"] in SCRATCH_CLASSES
+            and value["terminal_outcome"] != "passed"
+        ):
+            retention = min(retention, failed)
+        # Only finished (RETAINED) scratch: a long ALLOCATED/RUNNING record's age runs from its
+        # last write, and its parent may still read it before finalizing.
+        if pressured and self.policy["pressure_retention_seconds"] and value["state"] == "RETAINED":
+            retention = min(retention, self.policy["pressure_retention_seconds"])
+        return retention
+
+    def _reclaim_rule(self, value, age, pressured=False):
         """(rule, blocker) for one record from metadata alone.
 
         ``settlement_proven_later``: the owner finalized a passed result and only
@@ -1133,7 +1176,7 @@ class StorageManager:
                 if value["state"] != "RETAINED"
                 else value["retention_reason"] or "owner_unsettled"
             )
-        retention = self.policy["retention_seconds"]
+        retention = self._retention(value, pressured)
         if retention and age >= retention:
             return EXPIRED, None
         return None, blocker
@@ -1169,6 +1212,8 @@ class StorageManager:
             return result
         now = time.time() if now is None else now
         deadline = time.monotonic() + bound["seconds"]
+        pressured = self.under_pressure()
+        result["pressure"] = pressured
 
         def keep(allocation_id, reason, listed=True):
             result["retained_by_reason"][reason] = result["retained_by_reason"].get(reason, 0) + 1
@@ -1204,7 +1249,7 @@ class StorageManager:
                 except (OSError, StorageError):
                     keep(name[:-5], "record_unreadable")
                     continue
-                rule, blocker = self._reclaim_rule(value, age)
+                rule, blocker = self._reclaim_rule(value, age, pressured)
                 if rule is None:
                     if blocker is not None:
                         keep(value["allocation_id"], blocker, listed=False)

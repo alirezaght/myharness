@@ -55,7 +55,7 @@ def storage(tmp_path):
 
     manager = lifecycle.StorageManager(
         tmp_path / "manager",
-        policy={"minimum_free_bytes": 0},
+        policy={"minimum_free_bytes": 0, "pressure_free_bytes": 0},
         verify_owner=owner,
         verify_publication=publication,
     )
@@ -581,7 +581,7 @@ def test_expire_handles_missing_directory_and_can_be_disabled(storage, tmp_path)
     manager, allocation, _, _ = storage
     _age(manager, allocation, 10**7)
     disabled = lifecycle.StorageManager(
-        manager.root, policy={"minimum_free_bytes": 0, "retention_seconds": 0}, create=False
+        manager.root, policy={"minimum_free_bytes": 0, "pressure_free_bytes": 0, "retention_seconds": 0}, create=False
     )
     assert disabled.expire()["results"] == []
     Path(allocation["path"]).rmdir()
