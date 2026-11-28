@@ -20,6 +20,18 @@ class SetupError(MaterializationError):
     pass
 
 
+# AL's own qualification policy refusing a repository's setup it cannot model (an authored
+# install lifecycle, an unsupported package-manager configuration, ...): the check is not run and
+# is reported unverified, never as a failure or a blocker (#157). Integrity refusals (moved or
+# differing inputs, invalid locks) are not policy refusals and keep blocking.
+UNQUALIFIED_NOTE='setup not qualified by AL; check not run (unverified): '
+POLICY_PREFIXES=('unqualified ','unsupported ','noncanonical ')
+
+
+def unqualified(exc):
+    return isinstance(exc,SetupError) and str(exc).startswith(POLICY_PREFIXES)
+
+
 def plan(root, cwd='.', *, package_root=None):
     root = Path(root).resolve()
     current = root / cwd

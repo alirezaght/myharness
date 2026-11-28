@@ -68,7 +68,11 @@ def test_unreached_members_gaps_are_notes_even_when_a_shared_file_name_selects_t
     assert blocking <= {'.', 'apps/web'}
     rendered = Coverage.notes({'assessment': assessment})
     assert any('services/a' in n for n in rendered)
-    assert all(n.startswith("coverage note (outside the change's reach") for n in rendered)
+    outside = [n for n in rendered if any(s in n for s in services)]
+    assert outside and all(n.startswith("coverage note (outside the change's reach") for n in outside)
+    # In-scope gaps that only mean AL could not establish a check are unverified notes too (#157).
+    assert all(n.startswith(("coverage note (outside the change's reach", 'coverage unverified (in the change'))
+               for n in rendered)
 
 
 def test_a_literal_path_reference_still_reaches_the_member(repo):

@@ -116,7 +116,7 @@ def cmd_review_start(a,sid):
     elif previous and getattr(a,'mode',None)!='full':print('AL · full review: '+'; '.join(reasons))
     from al_service_coverage import coverage_notes
     notes=coverage_notes(st)
-    if notes:print('AL · '+str(len(notes))+" coverage gap(s) outside the change's reach recorded as verification notes, not blockers (`gates status` coverage_notes)")
+    if notes:print('AL · '+str(len(notes))+" coverage gap(s) recorded as verification notes, not blockers (`gates status` coverage_notes)")
 
 def _render_packet(ref,data):
     value={'packet':ref,'content':data}
@@ -141,6 +141,10 @@ def cmd_packet(a,sid):
     # results, pre-existing and advisory failures): the reviewer weighs them, they never block.
     from al_gates import unverified
     data['unverified']=unverified(st)
+    # Coverage AL could not establish (in the change's scope or outside its reach): reviewer input,
+    # never a blocker (#157).
+    from al_service_coverage import coverage_notes
+    data['coverage_notes']=coverage_notes(st)
     # Results reused from the action cache, each with the run where it originally executed.
     from al_action_cache import annotate_packet
     data=annotate_packet(st,data)

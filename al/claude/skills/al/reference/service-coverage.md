@@ -97,8 +97,15 @@ uncertainty is an unverified check, not a safety gap. Out-of-scope gaps are defe
 `coverage_notes`) and never block admission, final proof, review or approval. Layout,
 manifest and contract gaps that leave a unit's imports unknown could hide a consumer and keep
 their conservative relevance; torn captures, opaque governing rules and repository-wide gaps
-of unknown extent always stay in scope. A refusal names each in-scope gap with its repair and
-the rediscovery commands (`gates discover --extend current --paths-file <file containing []>`
+of unknown extent always stay in scope. Within scope, only gaps that mean AL cannot see or trust
+what the change touches block (`torn-scan`, `torn-capture`, `unsupported-rules`, `base-symlink`
+and every `*-boundary`); a gap that means AL could not establish a check for a unit (for example
+`missing-check`, `missing-manifest`, `package-semantic-unverified`, `unclassified-unit`) is an
+unverified check: listed as `coverage unverified (in the change's scope ...)` in `coverage_notes`
+and in the review packet, never blocking (#157). A package gate whose setup AL's own
+qualification policy refuses (an `unqualified ...`/`unsupported ...` setup) is not run and is
+reported `unverified`, not INFRA-blocked; a real setup failure still blocks. A refusal names each
+blocking gap with its repair and the rediscovery commands (`gates discover --extend current --paths-file <file containing []>`
 and `gates plan --file <manifest>`).
 
 Unconsumed narrative documentation has no generic runtime-data fallback. This is not a `docs/**`

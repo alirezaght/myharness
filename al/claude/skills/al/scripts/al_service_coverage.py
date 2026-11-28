@@ -115,6 +115,19 @@ def describe_gap(g):
     return g['code']+': '+str(g.get('unit') or g.get('path'))+' '+g['reason']
 
 
+# Gaps that mean AL cannot see or trust what the change touches block: the repository moved
+# during discovery, a link/gitlink/opaque boundary hides reached content, or governing rules are
+# unreadable. Every other gap means AL could not establish a check for a unit (no executable
+# binding, an unmodelable manifest or package script, an unsupported layout or CI provider): that
+# check is unverified, listed for review and never blocking (#157).
+BLOCKING_CODES=frozenset({'torn-scan','torn-capture','unsupported-rules','base-symlink'})
+
+
+def blocking(g):
+    code=str(g.get('code',''))
+    return code in BLOCKING_CODES or code.endswith('-boundary')
+
+
 def readiness_gaps(value,gates):
     """Reconstruct coverage before granting any admission; sentinels confer no authority.
 
@@ -123,14 +136,18 @@ def readiness_gaps(value,gates):
     validate_declaration(value,gates)
     a=value['assessment']
     if a['outcome']!='incomplete':return []
-    return sorted(set('coverage incomplete: '+describe_gap(g) for g in a['gaps']))
+    return sorted(set('coverage incomplete: '+describe_gap(g) for g in a['gaps'] if blocking(g)))
 
 
 def notes(value):
     """Verification notes: coverage gaps outside the change's reach (never blocking)."""
     if not isinstance(value,dict):return []
-    return sorted(set('coverage note (outside the change\'s reach; not verified by this task): '+describe_gap(g)
-                      for g in value.get('assessment',{}).get('coverage_notes',[])))
+    assessment=value.get('assessment',{})
+    outside={'coverage note (outside the change\'s reach; not verified by this task): '+describe_gap(g)
+             for g in assessment.get('coverage_notes',[])}
+    inside={'coverage unverified (in the change\'s scope; AL could not establish this check): '+describe_gap(g)
+            for g in assessment.get('gaps',[]) if not blocking(g)}
+    return sorted(outside|inside)
 
 
 def coverage_notes(st):
@@ -179,6 +196,7 @@ REPAIRS={
 
 def coverage_guidance(gaps,manifest=None):
     """Name each in-scope gap with its repair and the exact rediscovery commands (#14)."""
+    gaps=[g for g in gaps if blocking(g)]
     if not gaps:return NEXT_COVERAGE_STEP
     lines=['next: these coverage gaps are in the change\'s scope (a changed path, its unit, or a unit or',
            'link it literally reaches); rediscovery alone cannot clear them:']
@@ -190,7 +208,8 @@ def coverage_guidance(gaps,manifest=None):
     lines+=['after the repair, rediscover over the same planned paths and replan:',
             '  gates discover --extend current --paths-file <file containing []>'+bounded+' --output <manifest.json>',
             '  gates plan --file <manifest.json>',
-            'coverage gaps outside the change\'s reach are verification notes (`gates status` coverage_notes) and do not block']
+            'coverage gaps outside the change\'s reach, and checks AL cannot establish in it, are verification notes',
+            '(`gates status` coverage_notes) and do not block']
     return '\n'.join(lines)
 
 

@@ -187,6 +187,8 @@ def gate_result(st,m,g,stage,fp):
               and e.get('sources',[])==g.get('sources',[]) and r.get('sources',[])==g.get('sources',[])
               and r.get('execution_kind')==g['execution_kind'])
     if same and e['status']=='FAIL' and L.entry_verdict(st,e)[0]=='FAIL':return 'failed'
+    if same and e['status']=='INFRA' and str(e.get('note','')).startswith(__import__('al_check_setup').UNQUALIFIED_NOTE):
+        return 'unverified'
     if same and e['status'] in {'INFRA','EMPTY','TORN'}:return 'blocked'
     return 'stale'
 
@@ -228,6 +230,10 @@ def unverified(st):
                     out.append({'gate':g['id'],'category':g['category'],'stage':stage,'evidence':e['id'] if e else None,
                                 'reason':'advisory, does not block: '+g['advisory']+(' (run '+e['status']+')' if e else ' (not run)'),
                                 'verified_by':'not verified','advisory':True})
+                continue
+            if e is not None and e['status']=='INFRA' and gate_result(st,m,g,stage,fp)=='unverified':
+                out.append({'gate':g['id'],'category':g['category'],'stage':stage,'evidence':e['id'],
+                            'reason':e.get('note',''),'verified_by':'not verified'})
                 continue
             # A base failure is the baseline; the candidate row reports it when it persists.
             reason=accepted_failure(st,m,g,stage,e,runs[-1] if runs else None,fp) if stage=='candidate' else None
@@ -749,7 +755,15 @@ def cmd_run(a,sid):
                 except CandidateChanged as exc:
                     status='TORN';code=126;note=str(exc);log.write_text(str(exc)+'\n')
                 except al_checkouts.MaterializationError as exc:
-                    status='INFRA';code=126;fp=None;note=('dependency setup failed; hook NOT_RUN: '+str(exc)) if entry.get('execution_stage')=='setup' else 'rejected '+a.stage+' materialization'
+                    import al_check_setup
+                    if al_check_setup.unqualified(exc):
+                        # AL's own setup qualification cannot model this repository's setup, so the check
+                        # never ran: it stays unverified and listed for review, never blocking (#157). The
+                        # stage fingerprint is kept so a changed candidate asks for a new attempt.
+                        status='INFRA';code=126;note=al_check_setup.UNQUALIFIED_NOTE+str(exc)
+                        fp=m['base_oid'] if a.stage=='base' else pinned if pinned is not None else S.capture_candidate(st)['fingerprint']
+                    else:
+                        status='INFRA';code=126;fp=None;note=('dependency setup failed; hook NOT_RUN: '+str(exc)) if entry.get('execution_stage')=='setup' else 'rejected '+a.stage+' materialization'
                     with log.open('a') as out:out.write('Disposable materialization rejected during setup: '+str(exc)+'\n')
                 except (L.FingerprintError, Sources.SourceError, SystemExit) as exc:
                     status='INFRA';code=126;fp=None;note='source capture/capability unavailable'

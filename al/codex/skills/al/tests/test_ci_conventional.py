@@ -89,7 +89,7 @@ def test_unsupported_chain_never_certifies(cli,repo,tmp_path,change):
     a=m['service_coverage']['assessment']
     assert a['outcome']=='incomplete'
     assert any(g['code']=='missing-verification-check' for g in a['gaps'])
-    assert_incomplete_refuses_admission(cli,tmp_path)
+    assert_incomplete_is_unverified(cli,tmp_path)
 
 
 @pytest.mark.parametrize('line',['uv run ruff check .','uv run ruff format --check .','uv run pytest','uv build'])
@@ -195,33 +195,13 @@ def assert_left_to_pipeline(cli,m):
     assert any(u['category']=='ci' for u in status['unverified'])
 
 
-def assert_incomplete_refuses_admission(cli,tmp_path):
+def assert_incomplete_is_unverified(cli,tmp_path):
+    """A check AL cannot establish is unverified (#157): listed in `gates status` coverage notes and
+    never a coverage blocker, admission debt or final-proof refusal."""
     status=json.loads(cli('gates','status')[1])
-    assert status['coverage_blockers'] and status['coverage_resolution']
+    assert not status['coverage_blockers']
+    assert any(n.startswith('coverage unverified') for n in status['coverage_notes']),status['coverage_notes']
     state=json.loads(cli('show')[1])
-    if state.get('proof_admission',{}).get('status')!='pending':
-        import al_service_coverage as Coverage
-        import al_gate_currency as Currency
-        import al_store
-        expected=Currency.check(state)['reasons']+Coverage.admission_gaps(state,current=True)
-        assert expected
-        invoke(cli,'phase','IMPLEMENTATION')
-        current=json.loads(cli('show')[1])
-        assert set(expected)<=set(current['implementation_readiness']['obligations'])
-        assert current['proof_admission']==state['proof_admission']
-        invoke(cli,'phase','VERIFICATION')
-        path=al_store.state_path(state['session_id']);before=path.read_bytes()
-        invoke(cli,'review-start',ok=False)
-        assert path.read_bytes()==before
-        return
-    from launcher_context import _reports
-    packet=json.loads(invoke(cli,'planning','packet')[1])
-    file=tmp_path/'blocked-report.json';file.write_text(json.dumps(_reports().report_for(packet)))
-    response=json.loads(invoke(cli,'planning','report','--file',str(file))[1])
-    # Incomplete coverage is recorded as verification debt; final proof still refuses.
-    invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
-    state=json.loads(cli('show')[1])
-    assert state['proof_admission']['status']=='admitted'
-    assert any(o.startswith('coverage incomplete') for o in state['implementation_readiness']['obligations'])
     import al_service_coverage as Coverage
-    assert Coverage.admission_gaps(state,current=True)
+    assert not Coverage.admission_gaps(state,current=True)
+    assert not any(o.startswith('coverage incomplete') for o in state.get('implementation_readiness',{}).get('obligations',[]))
