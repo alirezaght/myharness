@@ -31,7 +31,7 @@ def test_manifest_tampering_refuses_without_state_mutation(cli,repo,tmp_path,sta
     if mutation!='env':assert state_file().read_bytes()==before
 
 
-def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proof(cli,repo,tmp_path,state_file):
+def test_unestablished_checks_are_unverified_notes_in_and_outside_the_change_reach(cli,repo,tmp_path,state_file):
     # services/a literally imports the changed module (in scope); services/b is selected only
     # through dependency uncertainty, so its missing check is a verification note (#15).
     seed(repo);unit(repo,'services/a','import common\n',check=False);unit(repo,'services/b',check=False)
@@ -41,8 +41,7 @@ def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proo
     assert {g['unit'] for g in a['gaps']}=={'services/a'}
     assert 'services/b' in {g['unit'] for g in a['coverage_notes']}
     plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
-    # Incomplete coverage is verification debt: the Architect plan is admitted and
-    # every reconstructed gap is recorded as an implementation-readiness obligation.
+    # A check AL cannot establish is unverified (#157): the plan is admitted without debt.
     from launcher_context import _reports
     packet=json.loads(invoke(cli,'planning','packet')[1])
     report=tmp_path/'planning.json';report.write_text(json.dumps(_reports().report_for(packet)))
@@ -50,32 +49,25 @@ def test_incomplete_coverage_is_recorded_at_admission_and_blocks_only_final_proo
     invoke(cli,'planning','admit','--file',response['materialized_obligations']['stored_path'])
     st=json.loads(cli('show')[1])
     assert st['proof_admission']['status']=='admitted' and st['phase']=='PLANNING'
-    obligations=st['implementation_readiness']['obligations']
-    assert any(o.startswith('coverage incomplete: missing-check: services/a') for o in obligations)
-    assert not any('services/b' in o for o in obligations)
+    obligations=st.get('implementation_readiness',{}).get('obligations',[])
+    assert not any(o.startswith('coverage incomplete') for o in obligations)
     # The admitted plan leaves the run where an ordinary scoped writer starts directly:
     # writer start records the documented PLANNING -> IMPLEMENTATION edge itself.
     code,out,err=invoke(cli,'writer','start','--id','scoped','--role','al-engineer','--files','packages/shared/src/common.py')
     assert 'IMPLEMENTATION entered by writer start' in out
     st=json.loads(cli('show')[1])
     assert st['phase']=='IMPLEMENTATION' and st['writers']['scoped']['state']=='ACTIVE'
-    assert any(o.startswith('coverage incomplete:') for o in st['implementation_readiness']['obligations'])
+    assert not any(o.startswith('coverage incomplete:') for o in st.get('implementation_readiness',{}).get('obligations',[]))
     invoke(cli,'writer','finish','--id','scoped','--outcome','success')
     invoke(cli,'phase','VERIFICATION')
-    before=state_file().read_bytes()
     code,out,err=invoke(cli,'review-start',ok=False)
-    # Final proof still enforces the in-scope coverage debt: it names the uncovered unit, its
-    # repair and the exact rediscovery commands (#14 item 4).
-    message=str(code)+out+err
-    assert 'coverage incomplete' in message and 'services/a' in message
-    assert 'missing-check at unit services/a' in message
-    assert 'gates discover --extend current --paths-file' in message and 'gates plan --file' in message
-    assert 'services/b' not in message
-    assert state_file().read_bytes()==before
-    invoke(cli,'approved',ok=False)
+    # Final proof no longer refuses for a check AL cannot establish; other proof still applies.
+    assert 'coverage incomplete' not in str(code)+out+err
     status=json.loads(cli('gates','status')[1])
-    assert any('services/b' in note for note in status['coverage_notes'])
-    assert not any('services/b' in blocker for blocker in status['coverage_blockers'])
+    assert not status['coverage_blockers']
+    notes=status['coverage_notes']
+    assert any(n.startswith('coverage unverified') and 'missing-check: services/a' in n for n in notes),notes
+    assert any(n.startswith('coverage note (outside') and 'services/b' in n for n in notes),notes
 
 
 def test_designer_route_writer_refusal_names_the_next_phase_command(cli,repo,tmp_path,state_file):
@@ -146,7 +138,10 @@ def test_structure_gaps_outside_the_change_reach_are_notes_not_obligations(repo)
     assert not blocking&notes
     assert assessment['global_inventory']['status']=='incomplete'
     rendered=Coverage.notes({'assessment':assessment})
-    assert rendered and all(n.startswith('coverage note (outside the change') for n in rendered)
+    outside=[n for n in rendered if n.startswith('coverage note (outside the change')]
+    assert outside and len(outside)==len(assessment['coverage_notes'])
+    # The reached unit's package gap is a check AL cannot establish: unverified, not blocking (#157).
+    assert any(n.startswith('coverage unverified') and 'services/a' in n for n in rendered)
 
 
 def test_structure_gaps_the_change_reaches_still_block(repo):
@@ -408,37 +403,36 @@ def test_control_flow_and_custom_tool_paths_cannot_certify_verification(cli,repo
         assert a['outcome']=='incomplete' and any(g['code']=='missing-verification-check' for g in a['gaps'])
 
 
-def test_incomplete_coverage_preserves_proof_guards_but_allows_writer_readiness(cli,repo,tmp_path,state_file):
+def test_unestablished_check_keeps_proof_guards_but_records_no_coverage_debt(cli,repo,tmp_path,state_file):
     seed(repo);start(cli);plan(cli,repo,tmp_path,['packages/shared/src/common.py'])
     assert json.loads(cli('show')[1])['proof_admission']['status']=='admitted'
     unit(repo,'services/b',check=False);put(repo,'packages/shared/src/common.py','__import__(unknown)\n')
     _,m=discover(cli,tmp_path,['packages/shared/src/common.py'])
+    assert m['service_coverage']['assessment']['outcome']=='incomplete'
     st=json.loads(cli('show')[1]);before=deepcopy(st);disk=state_file().read_bytes()
-    from al_new_origin import require_admitted,prepare_save
+    from al_new_origin import prepare_save
     from al_gate_coverage import writer_ready
-    from al_gate_recovery import ready
     from al_transitions import require_transition
     from al_review import approval_gaps
     from al_gates import gate_gaps
+    import al_service_coverage as Coverage
+    # services/b has no check AL can establish: unverified and listed, never coverage debt (#157).
     writing=deepcopy(st)
     writer_ready(writing,['packages/shared/src/common.py'])
-    assert writing['implementation_readiness']['obligations']
-    assert st==before and state_file().read_bytes()==disk
-    for check in [lambda:require_admitted(st),lambda:ready(st)]:
-        with pytest.raises(SystemExit,match='coverage'):check()
-        assert st==before and state_file().read_bytes()==disk
+    assert not any(o.startswith('coverage incomplete') for o in writing.get('implementation_readiness',{}).get('obligations',[]))
+    assert not Coverage.admission_gaps(st)
+    assert not any('coverage incomplete' in g for g in gate_gaps(st,'candidate'))
+    assert not any('coverage incomplete' in g for g in approval_gaps(st))
+    assert any(n.startswith('coverage unverified') for n in Coverage.coverage_notes(st))
+    # Proof guards that are not coverage still refuse, without mutating state.
     for command,destination,diagnostic in [
         ('review-start','REVIEW','review-start is not allowed from PLANNING'),
         ('approved','DONE','approved is not allowed from PLANNING'),
     ]:
         with pytest.raises(SystemExit,match=diagnostic):require_transition(st,command,destination)
-        assert st==before and state_file().read_bytes()==disk
-    assert any('coverage incomplete' in g for g in gate_gaps(st,'candidate'))
-    assert any('coverage incomplete' in g for g in approval_gaps(st))
-    # Admission records incomplete coverage as verification debt instead of refusing.
     previous=deepcopy(st);previous['proof_admission']['status']='pending'
     admitted=deepcopy(st);prepare_save(admitted,previous)
-    assert any(o.startswith('coverage incomplete') for o in admitted['implementation_readiness']['obligations'])
+    assert not any(o.startswith('coverage incomplete') for o in admitted.get('implementation_readiness',{}).get('obligations',[]))
     assert st==before and state_file().read_bytes()==disk
 
 
@@ -859,12 +853,11 @@ def test_manifestless_checks_need_source_authority_after_admission(
     invoke(cli,'writer','start','--id','root-source','--role','al-engineer','--files','tools/pkg.py')
     invoke(cli,'writer','finish','--id','root-source','--outcome','success')
     invoke(cli,'phase','VERIFICATION')
-    before=state_file().read_bytes()
     code,out,err=invoke(cli,'review-start',ok=False)
-    message=str(code)+out+err
-    assert code and 'coverage incomplete: missing-check: .' in message
-    assert 'verification-root' in message
-    assert state_file().read_bytes()==before
+    # The root check AL cannot source is unverified and listed, not a coverage refusal (#157).
+    assert 'coverage incomplete' not in str(code)+out+err
+    notes=json.loads(cli('gates','status')[1])['coverage_notes']
+    assert any(n.startswith('coverage unverified') and 'verification-root' in n for n in notes),notes
 
 
 

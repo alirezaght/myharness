@@ -20,6 +20,52 @@ class SetupError(MaterializationError):
     pass
 
 
+# AL's own qualification policy refusing a repository's setup it cannot model (an authored
+# install lifecycle, an unsupported package-manager configuration, ...): the check is not run and
+# is reported unverified, never as a failure or a blocker (#157). Integrity refusals (moved or
+# differing inputs, invalid locks) are not policy refusals and keep blocking.
+UNQUALIFIED_NOTE='setup not qualified by AL; check not run (unverified): '
+POLICY_PREFIXES=('unqualified ','unsupported ','noncanonical ')
+
+
+def unqualified(exc):
+    return isinstance(exc,SetupError) and str(exc).startswith(POLICY_PREFIXES)
+
+
+# Setup inputs AL's package-manager policy reads for a unit (in the unit and every ancestor) and
+# the package-manager environment. A refusal caused by inputs the change edits is not an
+# unmodelable repository setup and keeps blocking; an unverified result is reused only while
+# these inputs are byte-identical (#157).
+SETUP_FILES=('package.json','package-lock.json','npm-shrinkwrap.json','pnpm-lock.yaml','pnpm-workspace.yaml',
+             '.npmrc','.pnpmfile.cjs','pnpmfile.cjs','binding.gyp','.yarnrc','.yarnrc.yml')
+ENVIRONMENT_PREFIXES=('npm_config_','node_','pnpm_','yarn_','corepack_')
+
+
+def policy_inputs(root,unit):
+    """(digest, present relative paths) of the setup inputs and environment of `unit`."""
+    import hashlib,json,os
+    from pathlib import Path
+    parts=tuple(p for p in Path(unit or '.').parts if p not in {'.',''})
+    rows=[]
+    for depth in range(len(parts)+1):
+        for name in SETUP_FILES:
+            relative=Path(*parts[:depth],name);path=Path(root)/relative
+            try:
+                if path.is_symlink() or not path.is_file():continue
+                data=hashlib.sha256(path.read_bytes()).hexdigest()
+            except OSError:data='unreadable'
+            rows.append([relative.as_posix(),data])
+    environment=sorted([k,v] for k,v in os.environ.items()
+                       if k.lower().startswith(ENVIRONMENT_PREFIXES) or (k.lower()=='path' and k!='PATH'))
+    raw=json.dumps({'files':rows,'environment':environment},sort_keys=True).encode()
+    return hashlib.sha256(raw).hexdigest(),{row[0] for row in rows}
+
+
+def setup_unit(gate):
+    profile=gate.get('package_script')
+    return profile['unit'] if profile else gate.get('cwd') or '.'
+
+
 def plan(root, cwd='.', *, package_root=None):
     root = Path(root).resolve()
     current = root / cwd

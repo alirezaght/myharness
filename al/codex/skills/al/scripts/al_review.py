@@ -116,7 +116,7 @@ def cmd_review_start(a,sid):
     elif previous and getattr(a,'mode',None)!='full':print('AL · full review: '+'; '.join(reasons))
     from al_service_coverage import coverage_notes
     notes=coverage_notes(st)
-    if notes:print('AL · '+str(len(notes))+" coverage gap(s) outside the change's reach recorded as verification notes, not blockers (`gates status` coverage_notes)")
+    if notes:print('AL · '+str(len(notes))+" coverage gap(s) recorded as verification notes, not blockers (`gates status` coverage_notes)")
 
 def _render_packet(ref,data):
     value={'packet':ref,'content':data}

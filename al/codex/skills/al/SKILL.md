@@ -113,12 +113,16 @@ run whose implementation already exists in the worktree walks the same edges wit
 a writer: `phase IMPLEMENTATION` (after `phase PSEUDOCODE` on a Designer route),
 `phase FINALIZATION` when COMPLEX, then `phase VERIFICATION` and `review-start`
 (`verify` records these edges itself when no Designer or finalization work is pending).
-Final proof, review and approval enforce unverified-check, link, unclassified-directory,
-outside-layout consumer and CI-inventory gaps only where the change reaches (its paths, their units, the literal
-dependency closure and the links they consume); such gaps elsewhere, including units
-selected only through dependency uncertainty, are verification notes (`gates status`
-`coverage_notes`). A coverage refusal names each in-scope gap, its
-repair and the `gates discover --extend current` / `gates plan` commands. An
+Final proof, review and approval enforce only coverage gaps that mean AL cannot see or
+trust what the change touches, and only where the change reaches (its paths, their units, the
+literal dependency closure and the links they consume): a torn capture, a link, gitlink or
+opaque boundary, or unreadable governing rules. A check AL cannot establish (no executable
+binding, an unmodelable manifest or package script, an unclassified directory, an unsupported
+layout, CI inventory or provider, or a package setup AL's own policy cannot qualify) is
+unverified: listed in `gates status` (`coverage_notes`, `unverified`) and the agent brief,
+never blocking (#157). Gaps outside the change's reach, including units selected only through
+dependency uncertainty, are verification notes too. A coverage refusal names each blocking
+gap, its repair and the `gates discover --extend current` / `gates plan` commands. An
 `ATTRIBUTION_AMBIGUOUS` from `recovery next` names the paths, writers and causes and the
 `task reconcile-attribution` steps; staging or committing between writers is no overlap.
 Use [the detailed command workflow](reference/workflow.md) only for the operation

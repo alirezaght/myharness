@@ -405,7 +405,7 @@ def test_real_go_public_planning_and_pending_proof_guards(
     invoke(cli, "review-start")
 
 
-def test_missing_go_recipe_blocks_actual_planning_admission(cli, repo, tmp_path, state_file):
+def test_missing_go_recipe_is_an_unverified_check_not_admission_debt(cli, repo, tmp_path, state_file):
     import json
 
     from hook_regression_helpers import invoke
@@ -424,15 +424,17 @@ def test_missing_go_recipe_blocks_actual_planning_admission(cli, repo, tmp_path,
     p = tmp_path / "report.json"
     p.write_text(json.dumps(_reports().report_for(packet)))
     response = json.loads(invoke(cli, "planning", "report", "--file", str(p))[1])
-    # A missing recipe is verification debt: admission records it, final proof refuses.
+    # A missing recipe is a check AL cannot establish: unverified and listed, never debt (#157).
     invoke(cli, "planning", "admit", "--file", response["materialized_obligations"]["stored_path"])
     state = json.loads(cli("show")[1])
     assert state["proof_admission"]["status"] == "admitted"
-    obligations = state["implementation_readiness"]["obligations"]
-    assert any(o.startswith("coverage incomplete") for o in obligations)
+    obligations = state.get("implementation_readiness", {}).get("obligations", [])
+    assert not any(o.startswith("coverage incomplete") for o in obligations)
     import al_service_coverage as Coverage
 
-    assert Coverage.admission_gaps(state, current=True)
+    assert not Coverage.admission_gaps(state, current=True)
+    notes = json.loads(cli("gates", "status")[1])["coverage_notes"]
+    assert any(n.startswith("coverage unverified") for n in notes), notes
 
 
 @pytest.mark.parametrize("provider", ["gitlab", "github"])

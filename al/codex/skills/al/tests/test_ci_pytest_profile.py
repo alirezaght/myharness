@@ -8,7 +8,7 @@ import al_service_coverage as Coverage
 from al_repository_facts import digest
 import al_pytest_profile as Profile
 from hook_regression_helpers import invoke,manifest_for
-from test_ci_conventional import project,WORKFLOW,assert_incomplete_refuses_admission
+from test_ci_conventional import project,WORKFLOW,assert_incomplete_is_unverified
 from test_service_coverage import start,discover,put
 from launcher_context import admit_planning
 
@@ -80,14 +80,14 @@ def test_unmodeled_conftest_cannot_gain_authority_from_hashes(cli,repo,tmp_path,
 def assert_never_certified(cli,tmp_path,m,planned=None):
     """A pytest profile AL cannot model never certifies the quality chain. Since #17 the job is
     left to the pipeline (checks.pipeline_verified, an unverified CI obligation in gates status);
-    an assessment that is still incomplete keeps refusing admission."""
+    an assessment that is still incomplete reports the check unverified (#157)."""
     file=tmp_path/'unmodeled-profile.json';file.write_text(json.dumps(planned or m));invoke(cli,'gates','plan','--file',str(file))
     a=m['service_coverage']['assessment']
     assert not any(b.get('conventional_verification') or b.get('verification_chain') for b in a['required_bindings'])
     delegated=m['service_coverage']['semantic_requirements']['checks'].get('pipeline_verified')
     if not delegated:
         assert a['outcome']=='incomplete'
-        assert_incomplete_refuses_admission(cli,tmp_path)
+        assert_incomplete_is_unverified(cli,tmp_path)
         return
     # 'exhaustive' when a competing configuration also leaves a dependency uncertainty.
     assert a['outcome'] in {'identified','exhaustive'}

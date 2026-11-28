@@ -162,6 +162,8 @@ def _current(st,manifest,declaration,ref,inputs):
     # verification notes); each is named so the refusal says what is uncovered.
     import al_service_coverage as Coverage
     for gap in assessment['gaps']:
+        # A check AL cannot establish is an unverified note: rediscovery cannot clear it (#157).
+        if not Coverage.blocking(gap):continue
         reasons.append('task-relevant coverage incomplete: '+Coverage.describe_gap(gap));pathless=True
     widened=None
     if projection['semantic_sha256']!=declaration['projection']['semantic_sha256']:

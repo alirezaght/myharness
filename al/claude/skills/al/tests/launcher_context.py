@@ -261,9 +261,12 @@ def admit_planning(cli, directory=None, *, expect_coverage_debt=False):
     result, out, err = cli("planning", "admit", "--file", obligations)
     assert result == 0, f"planning admission failed: {result} {out}{err}"
     if expect_coverage_debt:
-        # Incomplete coverage is recorded as verification debt, never an admission refusal.
-        obligations = json.loads(cli("show")[1])["implementation_readiness"]["obligations"]
-        assert any("coverage" in o for o in obligations), obligations
+        # Incomplete coverage never refuses admission: a gap that blocks is recorded as debt, and a
+        # check AL cannot establish is an unverified coverage note (#157).
+        obligations = json.loads(cli("show")[1]).get("implementation_readiness", {}).get("obligations", [])
+        notes = json.loads(cli("gates", "status")[1])["coverage_notes"]
+        assert any("coverage" in o for o in obligations) or any(
+            n.startswith("coverage unverified") for n in notes), (obligations, notes)
 
 
 def _tracked_source(root, scopes=(".",)):

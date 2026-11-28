@@ -141,7 +141,7 @@ def test_uv_workspace_container_and_unsupported_members(cli,repo,tmp_path):
     assert any(e['path']=='backend/**' for e in m['service_coverage']['semantic_requirements']['enumeration']['exclusions'])
 
 
-def test_unmanifested_foreign_source_root_blocks_admission(cli,repo,tmp_path,state_file):
+def test_unmanifested_foreign_source_root_is_unverified_not_blocking(cli,repo,tmp_path,state_file):
     (repo/'pyproject.toml').unlink();(repo/'svc/app.py').unlink();(repo/'web/app.js').unlink()
     put(repo,'backend/src/mod.py','VALUE=1\n');start(cli)
     _,m=discover(cli,tmp_path,['backend/src/mod.py'])
@@ -151,16 +151,16 @@ def test_unmanifested_foreign_source_root_blocks_admission(cli,repo,tmp_path,sta
     packet=json.loads(invoke(cli,'planning','packet')[1]);report=tmp_path/'planning.json'
     report.write_text(json.dumps(_reports().report_for(packet)))
     materialized=json.loads(invoke(cli,'planning','report','--file',str(report))[1])
-    # Incomplete coverage is recorded as verification debt instead of refusing admission.
+    # An unmanifested source root is a check AL cannot establish: unverified, never debt (#157).
     invoke(cli,'planning','admit','--file',materialized['materialized_obligations']['stored_path'])
-    obligations=json.loads(cli('show')[1])['implementation_readiness']['obligations']
-    assert any(o.startswith('coverage incomplete') for o in obligations)
+    obligations=json.loads(cli('show')[1]).get('implementation_readiness',{}).get('obligations',[])
+    assert not any(o.startswith('coverage incomplete') for o in obligations)
     invoke(cli,'writer','start','--id','scoped-source','--role','al-engineer','--files','backend/src/mod.py')
     invoke(cli,'writer','finish','--id','scoped-source','--outcome','success')
-    invoke(cli,'phase','VERIFICATION');before=state_file().read_bytes()
-    invoke(cli,'review-start',ok=False)
-    assert state_file().read_bytes()==before
-    assert json.loads(cli('gates','status')[1])['coverage_blockers']
+    invoke(cli,'phase','VERIFICATION')
+    status=json.loads(cli('gates','status')[1])
+    assert not status['coverage_blockers']
+    assert any(n.startswith('coverage unverified') and 'backend' in n for n in status['coverage_notes']),status['coverage_notes']
 
 
 def test_source_free_manifest_still_requires_v2_declaration(cli,repo,tmp_path,state_file):
