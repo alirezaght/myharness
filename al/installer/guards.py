@@ -121,7 +121,12 @@ def activity_roots(rows, target=None, explicit=(), invoking=None, *, state_root=
 def require_inactive(roots):
     report = scan_activity(roots)
     if report['blockers']:
-        raise ActiveRuns('active/unknown AL runtime state: ' + '; '.join(x['path'] + ': ' + x['reason'] for x in report['blockers']))
+        message = 'active/unknown AL runtime state: ' + '; '.join(x['path'] + ': ' + x['reason'] for x in report['blockers'])
+        if any(x.get('category') == 'terminal-workflow' for x in report['blockers']):
+            # A run that was left behind defers every update until it is closed (#168).
+            message += ('; list runs that defer updates with `alctl close-runs` and archive abandoned ones restorably '
+                        'with `alctl close-runs --session <id> --reason <text> --apply`')
+        raise ActiveRuns(message)
     return report
 
 

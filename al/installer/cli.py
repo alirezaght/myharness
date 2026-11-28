@@ -79,9 +79,10 @@ def parser():
             proof.add_argument('--expected-manifest',required=True)
             proof.add_argument('--replan-proof',required=True);proof.add_argument('--replan-proof-sha256',required=True)
             proof.add_argument('--self-area')
-    for command in ('install', 'list', 'update', 'doctor', 'rollback', 'bootstrap', 'prune-stale-runs'):
-        p = (sub.add_parser(command, help='archive run bindings whose repository no longer exists (dry run unless --apply)')
-             if command == 'prune-stale-runs' else sub.add_parser(command))
+    helps = {'prune-stale-runs': 'archive run bindings whose repository no longer exists (dry run unless --apply)',
+             'close-runs': 'list runs that defer updates; archive named abandoned ones restorably (dry run unless --apply)'}
+    for command in ('install', 'list', 'update', 'doctor', 'rollback', 'bootstrap', 'prune-stale-runs', 'close-runs'):
+        p = sub.add_parser(command, help=helps[command]) if command in helps else sub.add_parser(command)
         p.add_argument('--state-root', default=os.environ.get('AL_DISTRIBUTION_STATE') or str(Path.home() / '.local/state/al-distribution/registry'),
                        help='ownership registry root (explicit paths are used directly; default: ~/.local/state/al-distribution/registry)')
         p.add_argument('--home', default=str(Path.home()), help='global installation home (also useful for isolated tests)')
@@ -114,6 +115,12 @@ def parser():
         if command == 'prune-stale-runs':
             p.add_argument('--apply', action='store_true',
                            help='move the stale records into runtime-archive/<timestamp>/ (never deletes)')
+        if command == 'close-runs':
+            p.add_argument('--session', action='append', default=[], help='session id of a run to close (repeatable)')
+            p.add_argument('--reason', default='', help='why the runs are closed; recorded in the archive manifest')
+            p.add_argument('--runtime-root', action='append', default=[])
+            p.add_argument('--apply', action='store_true',
+                           help='move the named runs into runtime-archive/<timestamp>/ (never deletes)')
         if command == 'bootstrap':
             p.add_argument('--source-root', default=str(Path(__file__).resolve().parents[1]))
             p.add_argument('--destination', default=str(Path.home() / '.local/bin/alctl'))
@@ -230,6 +237,10 @@ def main(argv=None):
         elif args.command == 'prune-stale-runs':
             from .runtime_stale_runs import prune_stale_runs
             result = prune_stale_runs(state_root, apply=args.apply)
+        elif args.command == 'close-runs':
+            from .runtime_close_runs import close_runs
+            result = close_runs(state_root, args.session, reason=args.reason, apply=args.apply,
+                                runtime_roots=args.runtime_root)
         elif args.command == 'doctor':
             selection = None
             if args.repo or args.global_scope:
