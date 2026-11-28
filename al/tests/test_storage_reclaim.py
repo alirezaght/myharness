@@ -73,7 +73,7 @@ def setup(tmp_path):
     observer = Observer()
     manager = lifecycle.StorageManager(
         tmp_path / "managed-storage",
-        policy={"minimum_free_bytes": 0},
+        policy={"minimum_free_bytes": 0, "pressure_free_bytes": 0},
         verify_owner=lambda record, reference: dict(facts),
         verify_publication=publication,
         observe=observer,
@@ -356,7 +356,17 @@ def test_disk_pressure_reclaims_anything_expirable_past_the_pressure_window(setu
     assert [r["allocation_id"] for r in result["results"]] == [old["allocation_id"]]
     assert result["results"][0]["reason"] == lifecycle.EXPIRED
     assert Path(young["path"]).exists() and not Path(old["path"]).exists()
-    # Pressure never overrides a live owner or a process working inside the allocation.
+    # Pressure never touches an allocation still ALLOCATED/RUNNING (its parent may read it) ...
+    running = manager.allocate(
+        owner={"adapter_kind": "evidence", "identity": "run", "reservation": "r3"},
+        allocation_class="verification-fixtures",
+        declaration_digest="c" * 64,
+    )
+    manager.mark_running(running["allocation_id"], generation=running["generation"],
+                         owner_receipt={"pid": 4242, "token": "t"})
+    age(manager, running, pressure + 60)
+    assert not manager.reclaim()["results"] and Path(running["path"]).exists()
+    # ... and never overrides a live owner or a process working inside the allocation.
     busy = retained(manager, finalized=False)
     age(manager, busy, pressure + 60)
     observer.value = dict(observer.value, users={busy["allocation_id"]: [4242]})
@@ -375,3 +385,34 @@ def test_pressure_policy_is_configurable_and_validated(monkeypatch):
     monkeypatch.setenv("HARNESS_STORAGE_PRESSURE_FREE_BYTES", "-1")
     with pytest.raises(StorageError, match="invalid_storage_policy_configuration"):
         lifecycle.configured_policy()
+
+
+def test_a_soft_warning_alone_is_pressure(setup):
+    manager, _, _ = setup
+    assert manager.under_pressure() is False
+    manager.last_pressure = {"warning": "managed scratch exceeds the soft threshold"}
+    assert manager.under_pressure() is True
+
+
+def test_build_cache_keeps_the_full_window_after_a_failed_run(setup):
+    manager, _, _ = setup
+    failed_retention = lifecycle.DEFAULT_POLICY["failed_retention_seconds"]
+    cache = manager.allocate(
+        owner={"adapter_kind": "evidence", "identity": "run", "reservation": "cache"},
+        allocation_class="build-cache",
+        declaration_digest="d" * 64,
+    )
+    manager.retain(cache["allocation_id"], reason="owner_unsettled")
+    age(manager, cache, failed_retention + 1)
+    assert manager.reclaim()["results"] == [] and Path(cache["path"]).exists()
+
+
+def test_zero_retention_disables_every_expiry_rule(setup, monkeypatch):
+    manager, _, facts = setup
+    facts["outcome"] = "failed"
+    failed = retained(manager)
+    age(manager, failed, 10 * RETENTION)
+    monkeypatch.setitem(manager.policy, "retention_seconds", 0)
+    monkeypatch.setitem(manager.policy, "pressure_free_bytes", 2**62)
+    assert manager.reclaim()["results"] == [] and Path(failed["path"]).exists()
+

@@ -16,7 +16,7 @@ def _retained_settled(root):
     lifecycle = load_core()["storage_lifecycle"]
     manager = lifecycle.StorageManager(
         root,
-        policy={"minimum_free_bytes": 0},
+        policy={"minimum_free_bytes": 0, "pressure_free_bytes": 0},
         verify_owner=lambda record, reference: {
             "outcome": "passed",
             "settled": False,
@@ -103,3 +103,14 @@ def test_storage_prune_previews_then_applies(capsys, monkeypatch, observation):
             assert result["observation_error"] == "process_observation_unavailable", result
         assert record.read_bytes() == original_record
         assert (Path(allocation["path"]) / "fixture").read_bytes() == b"x" * 512
+
+
+def test_storage_inspect_names_the_prune_command_only_when_scratch_is_retained(capsys):
+    root = harness_home() / "managed-storage"
+    assert main(["storage", "inspect"]) == 0
+    assert "harness storage prune --apply" not in capsys.readouterr().out
+    _retained_settled(root)
+    assert main(["storage", "inspect"]) == 0
+    out = capsys.readouterr().out
+    assert "Retained: 1" in out
+    assert "Reclaim what is settled or expired now: harness storage prune --apply" in out

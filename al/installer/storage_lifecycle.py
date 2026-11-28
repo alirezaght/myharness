@@ -52,9 +52,9 @@ DEFAULT_POLICY = {
     # pass - failed, unknown or never finalized - is kept for diagnosis this long, not the full
     # retention window: it is most of what accumulates (#164). 0 falls back to retention.
     "failed_retention_seconds": 24 * 3600,
-    # Disk pressure: below this many free bytes (or past the soft warning), every expirable
-    # allocation older than pressure_retention_seconds is reclaimed, oldest first, still never
-    # one whose owner or any process using it is alive (#164).
+    # Disk pressure: below this many free bytes (or past the soft warning), retained scratch
+    # older than pressure_retention_seconds is reclaimed, still never one whose owner or any
+    # process using it is alive (#164). retention_seconds=0 disables every expiry rule.
     "pressure_free_bytes": 15 * 1024**3,
     "pressure_retention_seconds": 3600,
 }
@@ -1125,6 +1125,8 @@ class StorageManager:
 
     def _retention(self, value, pressured):
         retention = self.policy["retention_seconds"]
+        if not retention:
+            return 0  # the master switch: no expiry at all
         failed = self.policy["failed_retention_seconds"]
         if (
             failed
@@ -1132,10 +1134,11 @@ class StorageManager:
             and value["class"] in SCRATCH_CLASSES
             and value["terminal_outcome"] != "passed"
         ):
-            retention = min(retention, failed) if retention else failed
-        if pressured and self.policy["pressure_retention_seconds"]:
-            pressure = self.policy["pressure_retention_seconds"]
-            retention = min(retention, pressure) if retention else pressure
+            retention = min(retention, failed)
+        # Only finished (RETAINED) scratch: a long ALLOCATED/RUNNING record's age runs from its
+        # last write, and its parent may still read it before finalizing.
+        if pressured and self.policy["pressure_retention_seconds"] and value["state"] == "RETAINED":
+            retention = min(retention, self.policy["pressure_retention_seconds"])
         return retention
 
     def _reclaim_rule(self, value, age, pressured=False):
@@ -1226,16 +1229,7 @@ class StorageManager:
                     if entry.name.endswith(".json") and _identifier(entry.name[:-5])
                 )
             result["records"] = len(names)
-            if names and pressured:
-                # Under pressure the oldest scratch goes first.
-                def mtime(name):
-                    try:
-                        return os.stat(name, dir_fd=directories["records"]).st_mtime
-                    except OSError:
-                        return 0.0
-
-                names.sort(key=mtime)
-            elif names:
+            if names:
                 # Rotate so a bounded pass over a large namespace is not stuck on
                 # the same first records.
                 start = secrets.randbelow(len(names))

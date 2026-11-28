@@ -77,9 +77,10 @@ operation scratch whose owner did not report a pass (failed, unknown or never
 finalized) uses `HARNESS_STORAGE_FAILED_RETENTION_SECONDS` instead (default 1
 day): it is most of what accumulates. Under disk pressure, when free space is
 below `HARNESS_STORAGE_PRESSURE_FREE_BYTES` (default 15 GiB) or the soft
-warning is raised, every expirable allocation older than
-`HARNESS_STORAGE_PRESSURE_RETENTION_SECONDS` (default 1 hour) is reclaimed,
-oldest record first. Allocations with consumers, an open cleanup
+warning is raised, retained scratch older than
+`HARNESS_STORAGE_PRESSURE_RETENTION_SECONDS` (default 1 hour) is reclaimed;
+allocations still `ALLOCATED` or `RUNNING` keep the normal windows.
+`HARNESS_STORAGE_RETENTION_SECONDS=0` disables every expiry rule. Allocations with consumers, an open cleanup
 transaction, a live owner tree or a process inside them stay retained, and so
 does every candidate when the observation is unsupported, unavailable or
 incomplete (`settlement_undecidable`). The process observation cannot see
